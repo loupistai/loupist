@@ -1,7 +1,7 @@
 import { CanvasBoundary } from "./CanvasBoundary";
 import { useConflictHighlights } from "./useConflictHighlights";
 import { mapStatsText } from "./stats";
-import { XIcon } from "lucide-react";
+import { XIcon, ScanIcon } from "lucide-react";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin } from "../../types";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
@@ -311,7 +311,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
     {mapExport.status}
     <div ref={toolbar}><MapToolbar disabled={recording} empty={!!map && !hasWorldNodes} replayActive={replay.active} onReplay={replay.active ? closeReplay : replay.open} exportActions={{ image: mapExport.image, video: mapExport.video, disabled: !!list || !hasWorldNodes || mapExport.busy }} lenses={(map?.nodes ?? []).filter(isLensNode)} appliedCounts={appliedCounts} lensTitles={lensTitles} baseLensIds={baseLensIds} overlayId={overlayId} onOverlay={setOverlayId} libraryOpen={libraryOpen} onLibrary={() => { setWhatsNewOpen(false); setLibraryOpen(!libraryOpen); }}
       local={focal && map ? { focal, followed: followedNames(map.nodes), recent: recent.filter((id) => id !== focal.id).flatMap((id) => map.nodes.filter((node) => node.id === id)), onFocal: (node) => changeFocal(node.id), onPickOnMap: () => setPicking(true), scope, onScope: setScope } : undefined}
-      whatsNew={{ count: badgeCount, open: whatsNewOpen, onToggle: () => { if (whatsNewOpen) closeWhatsNew(); else openWhatsNew(); } }} nodes={searchResults} query={query} onQuery={setQuery} filters={filters} onFilters={setFilters} onSelect={select} list={!!list} onList={() => onPatch({ ...location, view: { ...location.view, listMode: !list } })} onFit={() => controls.current?.fit()} fitDisabled={!!map && !hasWorldNodes} replayDisabled={!!map && !hasWorldNodes} listDisabled={!!map && !hasWorldNodes} /></div>
+      whatsNew={{ count: badgeCount, open: whatsNewOpen, onToggle: () => { if (whatsNewOpen) closeWhatsNew(); else openWhatsNew(); } }} nodes={searchResults} query={query} onQuery={setQuery} filters={filters} onFilters={setFilters} onSelect={select} list={!!list} onList={() => onPatch({ ...location, view: { ...location.view, listMode: !list } })} replayDisabled={!!map && !hasWorldNodes} listDisabled={!!map && !hasWorldNodes} /></div>
     {lensBanner ? <div className="map-hint-row" data-map-caption={compactMap || undefined}>{lensBanner}</div> : null}
     <div inert={recording} className={`map-body${selected || selectedClaimId || reading ? " has-selection" : ""}`}>
       <div className="map-stage" tabIndex={focal && !list ? 0 : undefined} role={focal && !list ? "group" : undefined} aria-label={focal && !list ? t("map.stageLabel", { name: focalName }) : undefined} aria-keyshortcuts={focal && !list ? "ArrowLeft ArrowRight Enter Shift+Enter Backspace 1 2 0" : undefined} onKeyDown={stageKeys}>
@@ -322,6 +322,8 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
         {data.loading && !map ? <div className="map-skeleton" /> : map && !hasWorldNodes ? <div className="map-empty" data-testid="map-empty"><h2>{t("map.emptyTitle")}</h2><p>{t("map.emptyBody")}</p><div><Button onClick={onAskInChat} disabled={!onAskInChat}>{t("map.askInChat")}</Button>{onAddSource ? <Button variant="outline" onClick={onAddSource}>{t("map.addSource")}</Button> : null}</div></div> : map ? <>
           {list ? <MapList nodes={replayed.nodes} edges={replayed.edges} onSelect={select} onClaim={(id) => onPatch({ ...location, selection: { kind: "claim", id } })} /> : <CanvasBoundary onError={() => setCanvasFailed(true)}><Suspense fallback={<div className="map-skeleton" />}><MapCanvas learnedIds={learnedIds} learningGlowIds={learningGlowIds} replayAt={replay.active ? replay.time : undefined} key={location.loupistId} scopeKey={`${location.loupistId}:${map.worldRevisionId}:${viewKey}`} nodes={positioned} edges={edges} selectedId={selectedId} focalId={local ? focalId : undefined} overlayIds={overlayHighlight ?? highlightIds} highlightIds={highlightIds ?? cursorIds} emphasisEdgeId={pointedEdge} controls={controls} onSelect={select} onClear={clear} stats={stats} dataArrivedAt={data.arrivedAt} reserveLegend={!list} /></Suspense></CanvasBoundary>}
           {!visible.length ? <div className="map-empty" data-testid="map-empty"><p>{t("map.noFiltered")}</p><Button variant="outline" onClick={() => { setFilters(defaultFilters()); setOverlayId(undefined); }}>{t("map.clearFilters")}</Button></div> : null}
+          {/* Fit sits on the canvas, at the end of the key strip. */}
+          {!list ? <Button type="button" variant="outline" size="icon-sm" className="map-fit" data-map-fit aria-label={t("map.fitToView")} title={t("map.fitToView")} disabled={recording || (!!map && !hasWorldNodes)} onClick={() => controls.current?.fit()}><ScanIcon /></Button> : null}
           {!list ? <MapLegend open={legendOpen} lead={showMapHint} nodes={replayed.nodes} conflicts={conflicts > 0} lensLines={!!overlayHighlight} onOpenChange={(open) => { setLegendChoice(open); rememberLegendOpen(open); }} /> : null}
         </> : null}
       </div>

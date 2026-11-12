@@ -459,7 +459,8 @@
     "notes": "Notes",
     "searchForOthers": "Search to find the others",
     "legendLine": "Line: a stated relationship",
-    "legendLead": "Click a name to see what your Loupist knows about it and where that came from."
+    "legendLead": "Click a name to see what your Loupist knows about it and where that came from.",
+    "fitToView": "Fit to view"
   },
   "principles": {
     "yours": "YOUR RULES",

@@ -426,3 +426,6 @@
 .map-inspector h3 { color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); line-height:var(--gg-leading-caption); font-weight:var(--gg-weight-medium); letter-spacing:.06em; text-transform:uppercase; }
 .map-inspector h3:lang(ko) { color:var(--gg-color-text-secondary); font-size:var(--gg-text-meta); letter-spacing:0; text-transform:none; }
 .map-disclosure { color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); line-height:var(--gg-leading-caption); }
+
+/* M4b: Fit is a raised 28px button at the stage's bottom-right, beside the key strip. */
+.map-fit { position:absolute; z-index:var(--gg-z-sticky); right:calc(var(--map-covered-right, 0px) + var(--gg-space-2)); bottom:calc(var(--map-covered-bottom, 0px) + var(--gg-space-2)); background:var(--gg-color-bg-raised); box-shadow:var(--gg-shadow-xs); }

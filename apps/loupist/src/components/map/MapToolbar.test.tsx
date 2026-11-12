@@ -7,13 +7,12 @@ const noop = () => {};
 it("keeps Library in the row and runs Export and the other secondary actions from More", async () => {
   const user = userEvent.setup();
   const onList = vi.fn(), onLibrary = vi.fn(), image = vi.fn(), video = vi.fn();
-  render(<MapToolbar nodes={[]} query="" onQuery={noop} filters={defaultFilters()} onFilters={noop} onSelect={noop} list={false} onList={onList} onFit={noop}
+  render(<MapToolbar nodes={[]} query="" onQuery={noop} filters={defaultFilters()} onFilters={noop} onSelect={noop} list={false} onList={onList}
     lenses={[]} onOverlay={noop} libraryOpen={false} onLibrary={onLibrary} onReplay={noop} exportActions={{ image, video }} />);
   await user.click(screen.getByRole("button", { name: "Library" }));
   expect(onLibrary).toHaveBeenCalledOnce();
   expect(document.querySelector(".map-toolbar [data-map-fit], .map-toolbar [data-map-list], .map-toolbar [data-map-export]")).toBeNull();
   await user.click(screen.getByRole("button", { name: "More actions" }));
-  expect(screen.getByRole("menuitem", { name: "Fit" })).toBeVisible();
   expect(screen.getByRole("menuitemcheckbox", { name: "Replay" })).toBeVisible();
   await user.click(screen.getByRole("menuitem", { name: "Export image (PNG)" }));
   expect(image).toHaveBeenCalledOnce();
@@ -30,7 +29,7 @@ it("collapses Scope when Library and More leave too little room", () => {
   });
   try {
     const focal = { id: "acme", label: "Acme", kind: "entity" as const, degree: 1, watched: false, held: false };
-    render(<MapToolbar nodes={[]} query="" onQuery={noop} filters={defaultFilters()} onFilters={noop} onSelect={noop} list={false} onList={noop} onFit={noop}
+    render(<MapToolbar nodes={[]} query="" onQuery={noop} filters={defaultFilters()} onFilters={noop} onSelect={noop} list={false} onList={noop}
       lenses={[]} onOverlay={noop} libraryOpen={false} onLibrary={noop}
       local={{ focal, followed: [], recent: [], onFocal: noop, onPickOnMap: noop, scope: "1", onScope: noop }} />);
     expect(document.querySelector("[data-overflow-item=scope]")).toHaveAttribute("inert");

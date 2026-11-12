@@ -451,7 +451,8 @@
     "notes": "메모",
     "searchForOthers": "검색으로 나머지를 찾아보세요",
     "legendLine": "선: 자료에 적힌 관계",
-    "legendLead": "이름을 누르면 루피스트가 아는 내용과 출처를 볼 수 있어요."
+    "legendLead": "이름을 누르면 루피스트가 아는 내용과 출처를 볼 수 있어요.",
+    "fitToView": "화면에 맞추기"
   },
   "principles": {
     "yours": "내 원칙",

@@ -1,6 +1,6 @@
 import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ImageIcon, ListIcon, MoreHorizontalIcon, NetworkIcon, ScanIcon, SearchIcon, SlidersHorizontalIcon, VideoIcon, WaypointsIcon } from "lucide-react";
+import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ImageIcon, ListIcon, MoreHorizontalIcon, NetworkIcon, SearchIcon, SlidersHorizontalIcon, VideoIcon, WaypointsIcon } from "lucide-react";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { useTranslation } from "../../i18n";
 import { Button } from "../ui/button";
@@ -32,8 +32,8 @@ export type MapLocalControls = {
 export type MapWhatsNewControl = { count: number; open: boolean; onToggle: () => void };
 const scopeKey = { "1": "map.scope1", "2": "map.scope2", all: "map.scopeAll" } as const;
 
-export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect, list, onList, onFit, lenses, overlayId, onOverlay, appliedCounts, lensTitles, baseLensIds, libraryOpen, onLibrary, replayActive, onReplay, exportActions, disabled, fitDisabled = false, replayDisabled = false, listDisabled = false, empty = false, local, whatsNew }: {
-  disabled?: boolean; fitDisabled?: boolean; replayDisabled?: boolean; listDisabled?: boolean;
+export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect, list, onList, lenses, overlayId, onOverlay, appliedCounts, lensTitles, baseLensIds, libraryOpen, onLibrary, replayActive, onReplay, exportActions, disabled, replayDisabled = false, listDisabled = false, empty = false, local, whatsNew }: {
+  disabled?: boolean; replayDisabled?: boolean; listDisabled?: boolean;
   /** Nothing on the Map yet: What's new, Filter and More have nothing to act on. */
   empty?: boolean;
   local?: MapLocalControls; whatsNew?: MapWhatsNewControl;
@@ -45,7 +45,7 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
   appliedCounts?: Record<string, number>; lensTitles?: Record<string, string>; baseLensIds?: ReadonlySet<string>;
   libraryOpen: boolean; onLibrary: () => void;
   nodes: KnowledgeMapNode[]; query: string; onQuery: (value: string) => void; filters: MapFilters; onFilters: (value: MapFilters) => void;
-  onSelect: (node: KnowledgeMapNode) => void; list: boolean; onList: () => void; onFit: () => void;
+  onSelect: (node: KnowledgeMapNode) => void; list: boolean; onList: () => void;
 }) {
   const { t, i18n } = useTranslation("knowledge");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -92,7 +92,6 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
       <DropdownMenuTrigger asChild><Button className="map-toolbar-button" variant="ghost" data-map-more disabled={disabled || empty} aria-label={t("map.moreActions")} title={t("map.moreActions")}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="map-more-menu">
         <DropdownMenuItem role="menuitemcheckbox" aria-checked={!!replayActive} data-map-replay disabled={disabled || replayDisabled} onSelect={onReplay}><PlayIcon />{t("map.replay.label")}</DropdownMenuItem>
-        <DropdownMenuItem data-map-fit disabled={disabled || fitDisabled} onSelect={onFit}><ScanIcon />{t("map.fit")}</DropdownMenuItem>
         <DropdownMenuItem role="menuitemcheckbox" aria-checked={list} data-map-list disabled={disabled || listDisabled} onSelect={onList}>{list ? <WaypointsIcon /> : <ListIcon />}{listLabel}</DropdownMenuItem>
         {exportActions ? <>
           <DropdownMenuSeparator />
