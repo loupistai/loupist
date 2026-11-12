@@ -715,20 +715,22 @@ pub(super) fn disable_bindings_and_delete_credentials_locked(
     entry_id: &str,
     _lifecycle_guard: &MutexGuard<'static, ()>,
 ) -> Result<(), CommandError> {
-    // Disable every Loupist binding before deleting the credential. If either
-    // persistence boundary fails, no successful deletion can leave an enabled
-    // binding that appears executable.
+    // Visit every reachable folder even if another folder is offline. Until
+    // offline revocations can be reconciled on folder open, retain the secret
+    // and refuse success rather than let an old grant authorize a replacement.
+    let mut unavailable = Vec::new();
     for loupist in state
         .store
         .list_loupists()
         .map_err(|error| CommandError::internal(error.to_string()))?
     {
-        let Some(mut binding) = state
-            .store
-            .get_loupist_capability(&loupist.id, entry_id)
-            .map_err(|error| CommandError::internal(error.to_string()))?
-        else {
-            continue;
+        let mut binding = match state.store.get_loupist_capability(&loupist.id, entry_id) {
+            Ok(Some(binding)) => binding,
+            Ok(None) => continue,
+            Err(_) => {
+                unavailable.push(format!("{} ({})", loupist.name, loupist.workspace_root));
+                continue;
+            }
         };
         if binding.enabled || !binding.granted_permissions.is_empty() {
             binding.enabled = false;
@@ -736,11 +738,16 @@ pub(super) fn disable_bindings_and_delete_credentials_locked(
             binding.updated_at_ms = Utc::now()
                 .timestamp_millis()
                 .max(binding.updated_at_ms.saturating_add(1));
-            state
-                .store
-                .save_loupist_capability(&binding)
-                .map_err(|error| CommandError::internal(error.to_string()))?;
+            if state.store.save_loupist_capability(&binding).is_err() {
+                unavailable.push(format!("{} ({})", loupist.name, loupist.workspace_root));
+            }
         }
+    }
+    if !unavailable.is_empty() {
+        return Err(CommandError::conflict(format!(
+            "Reconnect these Loupists and retry deleting the credential: {}. Access was removed from reachable Loupists; the credential is still stored.",
+            unavailable.join(", ")
+        )));
     }
     crate::finance_credentials::delete(&state.credential_environment, entry_id)
         .map_err(|error| CommandError::internal(error.to_string()))
