@@ -2,6 +2,7 @@ import { useState } from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "@/bridge/mockBridge";
+import { renderWithOpen } from "@/test/open";
 import { HoldingsSheet } from "./HoldingsSheet";
 import { detectNetwork, looksLikeSecret } from "./walletAddress";
 
@@ -18,9 +19,10 @@ it("shows each source as not imported, then imports a Kraken file with quantitie
   vi.spyOn(bridge, "pickFile").mockResolvedValue("/mock/kraken-ledger.csv");
   render(<Harness bridge={bridge} onImported={imported} />);
   const sheet = await screen.findByRole("dialog", { name: "Your holdings" });
-  expect(within(sheet).getAllByText("not imported")).toHaveLength(2);
-  expect(within(sheet).getByText("not connected")).toBeVisible();
-  expect(within(sheet).getByRole("button", { name: "Import" })).toBeDisabled();
+  expect(within(sheet).getAllByText("Not imported yet")).toHaveLength(2);
+  expect(within(sheet).getByText("Not connected")).toBeVisible();
+  // Not connected: no dead Import. Without an opener (this lone sheet) the path text is the only next step.
+  expect(within(sheet).queryByRole("button", { name: "Import" })).toBeNull();
   expect(within(sheet).getByText("Connect Korea Investment in Settings › Data connections")).toBeVisible();
 
   const crypto = within(sheet).getAllByRole("button", { name: "Import file" })[1]!;
@@ -31,10 +33,20 @@ it("shows each source as not imported, then imports a Kraken file with quantitie
   expect(within(table).getByText("XETH, ETH2.S")).toBeVisible();
   expect(within(sheet).getByText("Skipped: USD, EUR (cash) · DOGE (zero balance)")).toBeVisible();
   await user.click(within(sheet).getByRole("button", { name: "Import 3 assets" }));
-  await waitFor(() => expect(within(sheet).getByText(/^imported .* · 3 assets$/)).toBeVisible());
+  await waitFor(() => expect(within(sheet).getByText(/^Imported .* · 3 assets$/)).toBeVisible());
   expect(imported).toHaveBeenCalledWith(expect.arrayContaining([{ symbol: "BTC", market: "CRYPTO", displayName: null }]));
   // After import the sheet shows counts and dates, never quantities.
   expect(sheet).not.toHaveTextContent("0.4271");
+});
+
+it("offers Connect for Korea Investment, which closes the sheet and opens Settings › Data connections", async () => {
+  const { bridge, user } = setup();
+  const { open } = renderWithOpen(<Harness bridge={bridge} />);
+  const sheet = await screen.findByRole("dialog", { name: "Your holdings" });
+  expect(within(sheet).queryByRole("button", { name: "Import" })).toBeNull();
+  await user.click(within(sheet).getByRole("button", { name: "Connect…" }));
+  expect(open).toHaveBeenCalledWith({ kind: "settings", section: "connections" }, expect.anything());
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Your holdings" })).toBeNull());
 });
 
 it("asks for the asset and balance columns, and refuses a file of trades", async () => {
@@ -62,7 +74,8 @@ it("asks for the asset and balance columns, and refuses a file of trades", async
   expect(within(sheet).queryByRole("button", { name: /^Import \d/ })).toBeNull();
   // The refused file names itself and offers both ways forward; the first action has focus, not the dialog.
   expect(within(sheet).getByText("trades.csv")).toBeVisible();
-  expect(within(sheet).getByRole("button", { name: "Choose another file" })).toBeVisible();
+  expect(within(sheet).getByRole("button", { name: "Choose another file" })).toHaveAttribute("data-variant", "default");
+  expect(within(sheet).getByRole("button", { name: "Add a wallet address" })).toHaveAttribute("data-variant", "outline");
   await waitFor(() => expect(within(sheet).getByRole("button", { name: "Cancel" })).toHaveFocus());
   await user.click(within(sheet).getByRole("button", { name: "Add a wallet address" }));
   expect(await within(sheet).findByRole("textbox", { name: "Address" })).toBeVisible();
@@ -84,6 +97,8 @@ it("clears a pasted recovery phrase, detects networks and shows wallets only mas
   render(<Harness bridge={bridge} />);
   const sheet = await screen.findByRole("dialog", { name: "Your holdings" });
   await user.click(within(sheet).getByRole("button", { name: "Add a wallet address" }));
+  // One filled button at a time: Done steps back while the form offers Add and read.
+  expect(within(sheet).getByRole("button", { name: "Done" })).toHaveAttribute("data-variant", "outline");
   const field = within(sheet).getByRole("textbox", { name: "Address" });
   fireEvent.change(field, { target: { value: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about" } });
   expect(field).toHaveValue("");
@@ -122,7 +137,7 @@ it("keeps the last good read when a refresh fails and removes a wallet after con
   expect(await within(sheet).findByText(/^Couldn't read · last read/)).toBeVisible();
   await user.click(within(sheet).getByRole("button", { name: /^More for Bitcoin wallet/ }));
   await user.click(await screen.findByRole("menuitem", { name: "Remove" }));
-  expect(within(sheet).getByText("Remove this wallet? Its balances are deleted from this computer.")).toBeVisible();
+  expect(within(sheet).getByText("Remove this wallet? Its balances are deleted from this Mac.")).toBeVisible();
   await user.click(within(sheet).getByRole("button", { name: "Remove" }));
   expect(remove).toHaveBeenCalledWith({ walletId: wallet!.id });
 });
