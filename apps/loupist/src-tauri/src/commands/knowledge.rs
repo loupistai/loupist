@@ -503,7 +503,7 @@ pub struct LensSearchHitDto {
     pub snippet: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_lens_search(
     request: KnowledgeLensSearchRequest,
     state: State<'_, AppState>,
@@ -721,7 +721,7 @@ fn source_retain_request(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_source_retain(
     request: KnowledgeSourceRetainRequest,
     state: State<'_, AppState>,

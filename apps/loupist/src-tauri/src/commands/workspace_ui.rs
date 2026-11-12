@@ -315,7 +315,7 @@ pub struct DraftAttachment {
     url: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn chat_draft_files_write(
     state: State<'_, AppState>,
     request: DraftIdentity,
