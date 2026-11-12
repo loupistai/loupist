@@ -76,8 +76,9 @@
 .map-inspector-back { margin:0 0 var(--gg-space-1) calc(var(--gg-space-2) * -1); }
 .map-inspector-views { display:inline-flex; margin:var(--gg-space-2) 0 0; }
 .map-relationships { display:grid; gap:var(--gg-space-3); margin-top:var(--gg-space-3); }
-.map-relationships h4 { margin:0 0 var(--gg-space-1); color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); font-weight:var(--gg-weight-medium); letter-spacing:.06em; text-transform:uppercase; }
-.map-relationships:lang(ko) h4 { letter-spacing:0; text-transform:none; }
+/* Listed with .map-workspace too: knowledge.css styles .map-workspace :is(h3, h4) at equal weight, and bundle order must not decide. */
+.map-relationships h4, .map-workspace .map-relationships h4 { margin:0 0 var(--gg-space-1); color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); font-weight:var(--gg-weight-medium); letter-spacing:.06em; text-transform:uppercase; }
+.map-relationships:lang(ko) h4, .map-workspace .map-relationships:lang(ko) h4 { letter-spacing:0; text-transform:none; }
 .map-relationships ul { list-style:none; margin:0; padding:0; display:grid; gap:var(--gg-space-1); }
 .map-relationship-group { padding-top:var(--gg-space-2); border-top:1px solid var(--gg-color-border-subtle); }
 .map-relationship-group:first-child { padding-top:0; border-top:0; }
@@ -343,7 +344,7 @@
 .map-legend li { grid-template-columns:40px minmax(0, 1fr); }
 .map-legend .map-legend-glyphs .map-swatch { justify-self:auto; }
 .map-legend li.map-legend-more { display:block; }
-.map-legend-more summary { display:flex; align-items:center; min-height:var(--gg-size-control-sm); padding:0; border-radius:var(--gg-radius-sm); color:var(--gg-color-text-secondary); }
+.map-legend-more summary { display:flex; align-items:center; min-height:var(--gg-size-control-sm); padding:0; border-radius:var(--gg-radius-sm); color:var(--gg-color-text-secondary); font-size:inherit; }
 .map-legend-more ul { padding:var(--gg-space-2) 0 0; }
 .map-whats-new [tabindex="-1"]:focus:not(:focus-visible) { outline:none; box-shadow:none; }
 .map-view[data-keyboard-focus="false"] .map-whats-new [tabindex="-1"]:focus-visible { outline:none !important; box-shadow:none; }
@@ -427,8 +428,8 @@
 .learning-actions button { font-weight:var(--gg-weight-regular); }
 
 /* M6/X2: inspector section labels match the asset page's caption labels; Korean drops uppercase and tracking. */
-.map-inspector h3 { color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); line-height:var(--gg-leading-caption); font-weight:var(--gg-weight-medium); letter-spacing:.06em; text-transform:uppercase; }
-.map-inspector h3:lang(ko) { color:var(--gg-color-text-secondary); font-size:var(--gg-text-meta); letter-spacing:0; text-transform:none; }
+.map-inspector h3, .map-workspace .map-inspector h3 { color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); line-height:var(--gg-leading-caption); font-weight:var(--gg-weight-medium); letter-spacing:.06em; text-transform:uppercase; }
+.map-inspector h3:lang(ko), .map-workspace .map-inspector h3:lang(ko) { color:var(--gg-color-text-secondary); font-size:var(--gg-text-meta); letter-spacing:0; text-transform:none; }
 .map-disclosure { color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); line-height:var(--gg-leading-caption); }
 
 /* M4b: Fit is a raised 28px button at the stage's bottom-right, beside the key strip. */
