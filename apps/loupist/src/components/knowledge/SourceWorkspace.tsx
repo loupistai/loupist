@@ -1,3 +1,4 @@
+import { useSettledScroll } from "./settledScroll";
 import { ConnectionOrigin } from "../connections/custom/ConnectionOrigin";
 import { formatDate, formatNumber } from "../../i18n/format";
 import { dateValue, timePointValue, spanSelectorLabel } from "../../knowledge/presentation";
@@ -86,6 +87,8 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
   const currentScope = useRef(scopeKey);
   currentScope.current = scopeKey;
   const reading = !compact && Boolean(selected?.sourceId || selected?.spanId);
+  const onLibraryScroll = useSettledScroll((top) => patchView({ sourceScrollTop: top }), scopeKey);
+  const onReaderScroll = useSettledScroll((top) => patchView({ readerScrollTop: top }), scopeKey);
   const readSelectedSource = useCallback(() => bridge.knowledgeSourceRead({
     loupistId: location.loupistId, recordId: location.recordId!, revisionId: location.revisionId!,
     sourceId: selected?.sourceId, spanId: selected?.spanId, worldRecordId: selected?.worldRecordId,
@@ -181,7 +184,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
   };
 
   return <div className={`knowledge-source world-sources${reading ? " has-reader" : ""}${readerOnly ? " source-reader-only" : ""}${compact ? " is-library-only" : ""}`}>
-    {!readerOnly ? <div ref={libraryRef} className="knowledge-browser source-library" onScroll={(event) => patchView({ sourceScrollTop: event.currentTarget.scrollTop })}>
+    {!readerOnly ? <div ref={libraryRef} className="knowledge-browser source-library" onScroll={onLibraryScroll}>
       <div className="source-library-controls">
       {compact ? null : <div className="source-library-heading"><h2>{t("sourceWorkspace.savedSources")}</h2><span>{formatNumber(sources.length)}</span></div>}
       {onQueryChange ? <div className="memory-search source-search"><SearchIcon aria-hidden="true" /><Input aria-label={t("sourceWorkspace.searchSources")} placeholder={t("sourceWorkspace.companyFilingOrSource")} value={query} onChange={(event) => onQueryChange(event.target.value)} />{query ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.clearSearch")} onClick={() => onQueryChange("")}><XIcon /></Button> : null}</div> : null}
@@ -200,7 +203,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
         </li>)}
       </ul>
     </div> : null}
-    {reading ? <div ref={scrollReaderRef} className="knowledge-reading source-reader" onScroll={(event) => patchView({ readerScrollTop: event.currentTarget.scrollTop })}>
+    {reading ? <div ref={scrollReaderRef} className="knowledge-reading source-reader" onScroll={onReaderScroll}>
       <div className="memory-reader-toolbar">
         {!readerOnly ? <Button variant="ghost" size="sm" aria-label={t("sourceWorkspace.closeSource")} onClick={closeReader}><ArrowLeftIcon />{t("sourceWorkspace.backToSources")}</Button> : <span>{t("sourceWorkspace.savedSourceReadOnly")}</span>}
         {detail ? <Button size="sm" onClick={() => onAsk(pinForSource(detail, location.loupistId))}>{t("sourceWorkspace.addToQuestion")}</Button> : null}

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { MapReplayBar } from "./MapReplayBar";
-import { DAY_MS, presentAt, replayTime, replayVisible, useMapReplay } from "./replay";
+import { DAY_MS, presentAt, replayTime, replayVisible, useMapReplay, useReplayVisible } from "./replay";
 import userEvent from "@testing-library/user-event";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { frozenLayout } from "./layout";
@@ -15,6 +15,20 @@ it("shows exactly timestamp <= t and undated nodes; edges wait for their timesta
   for (const n of visible.nodes) expect(n).toBe(positions.find(p => p.id === n.id));
   expect(replayVisible(positions, edges, 9).nodes.map(n => n.id)).toEqual(["undated", "zero"]);
   expect(presentAt(node("epoch", 0), -1)).toBe(false);
+});
+it("keeps the replayed set between first appearances so frames inside one step reuse it", () => {
+  const nodes = [node("undated"), node("early", 10), node("late", 30)];
+  const edges = [{ id: "link", kind: "claim" as const, source: "early", target: "late" }];
+  const { result, rerender } = renderHook(({ time }: { time?: number }) => useReplayVisible(nodes, edges, time), { initialProps: { time: 11 } as { time?: number } });
+  const first = result.current;
+  rerender({ time: 29 });
+  expect(result.current).toBe(first);
+  expect(first.nodes.map(n => n.id)).toEqual(["undated", "early"]);
+  rerender({ time: 30 });
+  expect(result.current.nodes.map(n => n.id)).toEqual(["undated", "early", "late"]);
+  expect(result.current.edges.map(e => e.id)).toEqual(["link"]);
+  rerender({ time: undefined });
+  expect(result.current).toEqual({ nodes, edges });
 });
 it("steps reduced playback by whole days and always reaches now", () => {
   expect(replayTime(0, 10 * DAY_MS, .15, true)).toBe(DAY_MS);

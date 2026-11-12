@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { formatDate, formatDateTime, formatNumber, formatTime } from "@/i18n/format";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowLeftIcon, SearchIcon, XIcon } from "lucide-react";
@@ -118,7 +119,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
       bridge.memoryLearningSettingsGet({ loupistId }).then(settings => settings.learnMethods).catch(() => null),
       bridge.watchlistList().catch(() => []),
       bridge.holdingsSummary().catch(() => null),
-      bridge.knowledgeMap({ loupistId, maxNodes: 1000 }).then(map => map.nodes.filter(node => node.kind === "entity" && (node.watched || node.held))).catch(() => []),
+      readKnowledgeMap(bridge, loupistId).then(map => map.nodes.filter(node => node.kind === "entity" && (node.watched || node.held))).catch(() => []),
       bridge.packSuggestions({ loupistId }).catch(() => []),
       bridge.packList({ loupistId }).catch(() => []),
       bridge.githubAccount().then(account => account.indexConfigured).catch(() => false),
