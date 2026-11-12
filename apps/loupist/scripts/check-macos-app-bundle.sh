@@ -115,7 +115,7 @@ fi
     --source "$REPO_ROOT/src/knowledge/embed_assets" \
     --packaged "$EMBED_ASSETS"
 
-diff -qr "$APP_ROOT/agent" "$AGENT_DIR" >/dev/null
+"$PYTHON_BIN" "$SCRIPT_DIR/check_agent_resources.py" --source "$APP_ROOT/agent" --packaged "$AGENT_DIR"
 cmp -s "$REPO_ROOT/LICENSE" "$RESOURCE_DIR/LICENSE"
 cmp -s "$REPO_ROOT/NOTICE" "$RESOURCE_DIR/NOTICE"
 cmp -s "$APP_ROOT/THIRD_PARTY_NOTICES.md" "$RESOURCE_DIR/THIRD_PARTY_NOTICES.md"

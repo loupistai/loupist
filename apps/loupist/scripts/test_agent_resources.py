@@ -1,0 +1,52 @@
+"""Exercise the exact release resource list without building an app."""
+import json
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+
+from check_agent_resources import check, production_files
+
+APP = Path(__file__).resolve().parents[1]
+
+
+class AgentResourcesTest(unittest.TestCase):
+    def test_renderer_has_no_unused_notification_or_asset_grant(self):
+        capability = json.loads((APP / "src-tauri/capabilities/default.json").read_text())
+        self.assertNotIn("notification:default", capability["permissions"])
+        config = json.loads((APP / "src-tauri/tauri.conf.json").read_text())
+        self.assertNotIn("asset:", config["app"]["security"]["csp"].split())
+
+    def test_release_resources_stage_exactly_production_agent_files(self):
+        mappings = json.loads((APP / "src-tauri/tauri.release.conf.json").read_text())["bundle"]["resources"]
+        with tempfile.TemporaryDirectory() as temporary:
+            resources = Path(temporary)
+            for source, destination in mappings.items():
+                if not destination.startswith("loupist-agent/"):
+                    continue
+                target = resources / destination
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(APP / "src-tauri" / source, target)
+            packaged = resources / "loupist-agent"
+            check(APP / "agent", packaged)
+            self.assertTrue(production_files(packaged))
+            for mutation in ("test", "extra", "changed", "missing"):
+                with self.subTest(mutation=mutation):
+                    file = packaged / "loupist-extension.mjs"
+                    original = file.read_bytes()
+                    extra = packaged / ("fixture.test.mjs" if mutation == "test" else "extra.mjs")
+                    if mutation in ("test", "extra"):
+                        extra.write_text("fixture")
+                    elif mutation == "changed":
+                        file.write_text("changed")
+                    else:
+                        file.unlink()
+                    with self.assertRaises(ValueError):
+                        check(APP / "agent", packaged)
+                    if extra.exists():
+                        extra.unlink()
+                    file.write_bytes(original)
+
+
+if __name__ == "__main__":
+    unittest.main()
