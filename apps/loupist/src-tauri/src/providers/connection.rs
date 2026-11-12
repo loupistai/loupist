@@ -780,12 +780,13 @@ async fn discover_provider_models(
     }
     // A ChatGPT sign-in lists what the plan offers (`GET /v1/models`); the
     // extension falls back to Pi's catalog when that call fails.
+    let was_oauth = crate::providers::catalog::provider_credential_kind(&agent_data_dir, provider)?
+        .as_deref()
+        == Some("oauth");
     let live = crate::providers::manifest::spec(provider)
         .and_then(|spec| spec.sign_in.as_ref())
         .is_some_and(|sign_in| sign_in.live_models)
-        && crate::providers::catalog::provider_credential_kind(&agent_data_dir, provider)?
-            .as_deref()
-            == Some("oauth");
+        && was_oauth;
     let result = run_support_command(
         state,
         format!(
@@ -809,16 +810,46 @@ async fn discover_provider_models(
         .into_iter()
         .map(|model| configured_model(provider, model))
         .collect::<Result<Vec<_>, _>>()?;
-    let current_generation = provider_credential_generation(&agent_data_dir, provider)?;
-    publish_provider_models(
+    publish_discovered_provider_models(
         state,
         provider,
         models,
         &credential_generation,
-        current_generation.as_deref(),
+        was_oauth,
         admission,
     )?;
     state.model_catalog_view()
+}
+
+fn publish_discovered_provider_models(
+    state: &AppState,
+    provider: &str,
+    models: Vec<ConfiguredModel>,
+    initial_generation: &str,
+    was_oauth: bool,
+    admission: &ProviderSupportLease,
+) -> Result<(), CommandError> {
+    let agent_data_dir = state.pi_agent_data_dir()?;
+    let current_generation = provider_credential_generation(&agent_data_dir, provider)?;
+    // The support lease excludes host credential mutations. Pi persists OAuth
+    // refresh (including a rotated refresh token) before returning auth. Adopt
+    // that durable generation so a successful discovery is usable immediately.
+    let remains_oauth =
+        crate::providers::catalog::provider_credential_kind(&agent_data_dir, provider)?.as_deref()
+            == Some("oauth");
+    let expected = if was_oauth && remains_oauth {
+        current_generation.as_deref().unwrap_or(initial_generation)
+    } else {
+        initial_generation
+    };
+    publish_provider_models(
+        state,
+        provider,
+        models,
+        expected,
+        current_generation.as_deref(),
+        admission,
+    )
 }
 
 fn publish_provider_models(
@@ -1945,6 +1976,69 @@ mod tests {
         assert_eq!(
             custom_key_to_store(None, Some(old), old, false),
             Some(custom::NO_KEY)
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_accepts_a_durably_rotated_oauth_token_and_caches_the_new_generation() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        // A fixture provider has no ambient credential environment variable.
+        let provider = "custom-rotation-fixture";
+        let mut model = discovery_model("Fresh");
+        model.provider = provider.into();
+        model.id = format!("{provider}/{}", model.model);
+        let agent_dir = state.pi_agent_data_dir().unwrap();
+        let auth = agent_dir.join("auth.json");
+        ensure_private_regular_file(&auth).unwrap();
+        let save = |credential: Value| {
+            let mut saved = serde_json::json!({});
+            saved[provider] = credential;
+            std::fs::write(&auth, serde_json::to_vec(&saved).unwrap()).unwrap();
+        };
+        let oauth = |refresh: &str| serde_json::json!({"type":"oauth","access":"fixture-access","refresh":refresh,"expires":1900000000000_u64});
+        save(oauth("initial-refresh"));
+        let generation = provider_credential_generation(&agent_dir, provider)
+            .unwrap()
+            .unwrap();
+        let admission = state.provider_support.try_acquire_discovery().unwrap();
+        save(oauth("rotated-refresh")); // Pi persisted the refresh before returning its catalog.
+        publish_discovered_provider_models(
+            &state,
+            provider,
+            vec![model.clone()],
+            &generation,
+            true,
+            &admission,
+        )
+        .unwrap();
+        let rotated = provider_credential_generation(&agent_dir, provider)
+            .unwrap()
+            .unwrap();
+        assert_ne!(generation, rotated);
+        assert!(state.provider_model_cache.is_fresh(provider, &rotated));
+        let published: Vec<_> = state
+            .model_catalog()
+            .unwrap()
+            .models
+            .into_iter()
+            .filter(|entry| entry.provider == provider)
+            .collect();
+        assert_eq!(published, vec![model]);
+        // A credential type change remains a conflict.
+        save(serde_json::json!({"type":"api_key","key":"replacement-key"}));
+        assert_eq!(
+            publish_discovered_provider_models(
+                &state,
+                provider,
+                vec![],
+                &generation,
+                true,
+                &admission
+            )
+            .unwrap_err()
+            .code,
+            "conflict"
         );
     }
 
