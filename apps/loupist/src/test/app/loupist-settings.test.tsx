@@ -133,7 +133,7 @@ it("opens the current Loupist's Skills & connections from the Connections page a
     await openApp();
     await user.click(await mainTab(/Connections/));
     expect(document.querySelector('.settings-navigation [aria-current="page"]')).toHaveTextContent("Data connections");
-    await user.click(await screen.findByRole("button", { name: "Choose which Loupists can use them" }));
+    await user.click(await screen.findByRole("button", { name: "Loupist access" }));
     const page = await screen.findByRole("region", { name: "Loupist settings" });
     await waitFor(() => expect(page.querySelector<HTMLDetailsElement>('[data-loupist-section="capabilities"]')!.open).toBe(true));
     // It lands on the connections list, past the Skills above it.

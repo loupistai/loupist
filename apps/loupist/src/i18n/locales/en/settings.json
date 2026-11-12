@@ -501,8 +501,7 @@
     "description": "Profile, chat, learning, skills and connections for each Loupist."
   },
   "custom": {
-    "title": "Your connections",
-    "addButton": "+ Add a connection",
+    "addButton": "Add a connection",
     "empty": "Connect your own data sources, like a company’s investor data server or a research tool. Only read-only tools can be used.",
     "loupist": "Loupist",
     "chooseLoupist": "Choose a Loupist to review tool access.",
@@ -574,7 +573,8 @@
       "not_read_only": "Not read-only. Hidden from your Loupist.",
       "financial_action": "Looks like a trading or payment action. Blocked."
     },
-    "urlPlaceholder": "{{scheme}}…"
+    "urlPlaceholder": "{{scheme}}…",
+    "disclosure": "Add your own connection (advanced)"
   },
   "runDiagnostics": {
     "title": "Diagnostics",

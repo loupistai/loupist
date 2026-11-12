@@ -125,10 +125,10 @@
   },
   "marketplaceView": {
     "couldNotLoadConnections": "연결 목록을 불러오지 못했어요. 다시 시도해 주세요.",
-    "connections": "연결",
+    "connections": "데이터 연결",
     "availableConnections": "연결할 수 있는 서비스",
     "newConnectionsAreEnabledForAvailableLoupistsAdjust": "처음에는 연결이 없어도 돼요. 무료 자료는 설정 없이 바로 쓸 수 있고, 다른 연결은 필요할 때 추가하면 돼요.",
-    "manageLoupistAccess": "연결을 쓸 루피스트 고르기",
+    "manageLoupistAccess": "루피스트별 사용 설정",
     "retry": "다시 시도",
     "connectionReadiness": "연결 준비 상태",
     "allConnections": "모든 연결",

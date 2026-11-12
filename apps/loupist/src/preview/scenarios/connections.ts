@@ -24,6 +24,9 @@ export const connectionScenarios: PreviewScenario[] = [
         return;
       }
       await settings(root, "connections");
+      // Your own connections sit in a closed advanced disclosure until one exists.
+      const custom = await until(() => select("[data-custom-connections]") as HTMLDetailsElement | null, "Custom connections did not load");
+      if (id !== "connections-custom-empty" && !custom.open) custom.querySelector("summary")?.click();
       if (id === "connection-detail") { await click('[data-custom-connection="preview-custom-changed"]'); return; }
       if (!id.startsWith("connection-add") && id !== "connection-review-tools") return;
       await click("[data-custom-add]");

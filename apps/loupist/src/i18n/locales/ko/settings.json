@@ -502,8 +502,7 @@
     "description": "루피스트별 프로필, 대화, 학습, 스킬과 연결을 한곳에서 관리해요."
   },
   "custom": {
-    "title": "내 연결",
-    "addButton": "+ 연결 추가",
+    "addButton": "연결 추가",
     "empty": "회사 IR 데이터 서버나 리서치 도구 같은 나만의 데이터 소스를 연결해 보세요. 읽기 전용 도구만 사용할 수 있어요.",
     "loupist": "루피스트",
     "chooseLoupist": "도구 권한을 검토할 루피스트를 선택해 주세요.",
@@ -575,7 +574,8 @@
       "not_read_only": "내용을 바꿀 수 있는 도구라 루피스트가 쓰지 않도록 숨겼어요.",
       "financial_action": "거래나 결제 동작으로 보여서 차단했어요."
     },
-    "urlPlaceholder": "{{scheme}}…"
+    "urlPlaceholder": "{{scheme}}…",
+    "disclosure": "직접 연결 추가 (고급)"
   },
   "runDiagnostics": {
     "title": "진단",
