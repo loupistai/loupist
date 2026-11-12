@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ChatMessage, LoupistWorkspace } from "../../types";
 import { evidenceFixture } from "../evidenceFixtures";
-import { openApp, privateChatToggle } from "../renderApp";
+import { openApp, privateChatOn, togglePrivateChat } from "../renderApp";
 
 const withFirstMessage = async (edit: (message: ChatMessage, workspace: LoupistWorkspace) => void) => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -60,7 +60,7 @@ describe("Loupist · Chat memory", () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const chatSend = vi.spyOn(bridge, "chatSend");
     await openApp(bridge);
-    await user.click(privateChatToggle());
+    await togglePrivateChat();
     await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Answer without a new framework");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(chatSend).toHaveBeenCalled());
@@ -68,9 +68,9 @@ describe("Loupist · Chat memory", () => {
     expect(await screen.findByText(/using only this conversation/)).toBeVisible();
     expect(screen.queryByLabelText("Loupist memory activity")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /^Capital allocation checklist$/ }));
-    expect(privateChatToggle()).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() => expect(privateChatOn()).toBe(false));
     await user.click(screen.getByRole("button", { name: /^How should we read the margin decline\?$/ }));
-    expect(privateChatToggle()).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(privateChatOn()).toBe(true));
   });
 
   it("keeps Memory provenance out of the answer until the work trace is opened", async () => {

@@ -6,6 +6,7 @@ import {
   within,
 
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { App } from "../App";
 import { APP_DESTINATIONS, APP_PAGES } from "../app/navigation";
 import { MockLoupistBridge } from "../bridge/mockBridge";
@@ -74,7 +75,14 @@ export const newChatButton = () => screen.getByRole("button", { name: "New chat"
 
 export const savedSurface = (name: string) => screen.getByRole("tab", { name });
 
-export const privateChatToggle = () => screen.getByRole("button", { name: "Private chat" });
+/** Private chat is a checkbox in the + menu; while it is on, the composer shows its chip with an off button. */
+export const privateChatOn = () => Boolean(screen.queryByRole("button", { name: "Turn off private chat" }));
+export const togglePrivateChat = async () => {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Add to this message" }));
+  await user.click(await screen.findByRole("menuitemcheckbox", { name: /Private chat/ }));
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+};
 
 export const chooseLoupist = async (
   user: { click: (element: Element) => Promise<unknown> },

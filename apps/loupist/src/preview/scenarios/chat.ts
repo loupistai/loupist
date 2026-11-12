@@ -35,7 +35,9 @@ export const chatScenarios: PreviewScenario[] = [
     return message?.querySelector(".morning-ask") && !message.querySelector(".morning-upcoming") ? message : null;
   }), setup: bridge => prepareUpcomingFixture(bridge, "none") },
   base("chat-private", "Private chat with persistent disclosure", () => select(".composer-private-status") && select(".composer-disclosure"), async (root) => {
-    await click('.composer-private-toggle[aria-pressed="false"]', root);
+    const trigger = await until(() => root.querySelector<HTMLElement>(".composer-add-trigger"), "The + control did not render");
+    trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    (await until(() => select("[data-composer-private]"), "Private chat item did not render") as HTMLElement).click();
   }),
   { ...base("chat-answer", "Completed sourced answer", () => {
     const answer = select("article.message.assistant.complete");

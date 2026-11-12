@@ -4,7 +4,7 @@ import {
   ClipboardIcon,
   EyeOffIcon,
   ArrowUpIcon,
-  CornerDownLeftIcon,
+  CornerDownRightIcon,
   FileIcon,
   LibraryIcon,
   MapIcon,
@@ -62,6 +62,7 @@ import { asOfProblem, formatAsOf, typedAsOf } from "../../chat/asOf";
 import { fileSize } from "../../chat/fileSize";
 import {
   DropdownMenuLabel,
+  DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
@@ -363,6 +364,7 @@ function ComposerPromptTools({
   onAddKnowledgePin?: (pin: KnowledgePin) => void;
 }) {
   useTranslation("chat");
+  const accountConnected = hasAccount(models, providers);
   const addTrigger = useRef<HTMLButtonElement>(null);
   const [addMenuOffset, setAddMenuOffset] = useState({ side: 4, align: 0 });
   // The + menu shows its focus ring for keys only (WebKit would ring it after a click from the composer).
@@ -378,16 +380,6 @@ function ComposerPromptTools({
   };
   return (
     <PromptInputTools className="composer-tools">
-      <PromptInputButton
-        className="composer-private-toggle"
-        aria-label={t("chatComposer.privateChat")}
-        aria-pressed={privateChat}
-        tooltip={t("chatComposer.privateChatHint")}
-        onClick={() => onPrivateChatChange(!privateChat)}
-      >
-        <EyeOffIcon aria-hidden="true" />
-        {privateChat ? <span>{t("chatComposer.privateOn")}</span> : null}
-      </PromptInputButton>
       <PromptInputActionMenu onOpenChange={anchorAddMenu}>
         <PromptInputActionMenuTrigger
           ref={addTrigger}
@@ -410,9 +402,15 @@ function ComposerPromptTools({
               <LibraryIcon /><span className="composer-add-menu-label">{source.label}</span>
             </PromptInputActionMenuItem>)}
           </> : null}
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem className="composer-private-item" data-composer-private checked={privateChat} onCheckedChange={(checked) => onPrivateChatChange(checked === true)}>
+            <EyeOffIcon aria-hidden="true" />
+            <span className="composer-private-item-copy"><span>{t("chatComposer.privateChat")}</span><small>{t("chatComposer.privateMenuDetail")}</small></span>
+          </DropdownMenuCheckboxItem>
         </PromptInputActionMenuContent>
       </PromptInputActionMenu>
-      <ChatModelMenu
+      {/* Without an AI account the connect action takes the send slot (ChatComposer renders it there). */}
+      {accountConnected ? <ChatModelMenu
         models={models}
         providers={providers}
         selection={modelSelection}
@@ -422,7 +420,7 @@ function ComposerPromptTools({
         onOpenUsage={onOpenUsage}
         auto={modelAuto}
         onResetToAuto={onModelResetToAuto}
-      />
+      /> : null}
     </PromptInputTools>
   );
 }
@@ -467,7 +465,7 @@ function ComposerRunActions({
           onMouseDown={onPreserveFocus}
           onClick={onSteer}
         >
-          <CornerDownLeftIcon />
+          <CornerDownRightIcon />
         </PromptInputButton>
       ) : null}
       {showSend ? (
@@ -497,6 +495,10 @@ function ComposerRunActions({
     </div>
   );
 }
+
+/** Any AI account can run a model: without one, the composer asks to connect instead of offering Send. */
+const hasAccount = (models: readonly ConfiguredModel[], providers: readonly ModelProviderOption[]) =>
+  providers.some((provider) => provider.credential_source !== "missing") || models.some((model) => model.credential_source !== "missing");
 
 function ComposerSubmit({
   prompt,
@@ -1026,7 +1028,7 @@ export function ChatComposer({
               aria-autocomplete="list"
               aria-controls={activeTrigger ? assistId : undefined}
               aria-activedescendant={activeTrigger && assistOptions.length ? `${assistId}-${activeOption}` : undefined}
-              placeholder={asOf ? t("asOf.placeholder", { date: formatAsOf(asOf) }) : placeholder}
+              placeholder={asOf ? t("asOf.placeholder", { date: formatAsOf(asOf) }) : !hasAccount(models, providers) && onOpenModelSettings ? t("chatComposer.connectToAsk") : placeholder}
               value={prompt}
               onChange={handlePromptChange}
               onSelect={event => inline.rememberSelection(event.currentTarget)}
@@ -1044,7 +1046,10 @@ export function ChatComposer({
             />
           </div>
         </PromptInputBody>
-        {privateChat ? <div className="composer-private-status"><span>{t("chatComposer.privateStatus")}</span></div> : null}
+        {privateChat ? <div className="composer-private-status"><span className="composer-private-chip" title={t("chatComposer.privateStatus")} aria-description={t("chatComposer.privateStatus")}>
+          <EyeOffIcon aria-hidden="true" /><span>{t("chatComposer.privateChip")}</span>
+          <button type="button" aria-label={t("chatComposer.privateOff")} onClick={() => onPrivateChatChange(false)}><XIcon aria-hidden="true" /></button>
+        </span></div> : null}
         <ComposerChipTray
           chips={ownedChips.filter(chip => chip.kind === "skill")}
           asOf={asOf}
@@ -1082,6 +1087,9 @@ export function ChatComposer({
               onAbort={onAbort}
               onPreserveFocus={preserveComposerFocus}
             />
+          ) : !hasAccount(models, providers) && onOpenModelSettings ? (
+            <ChatModelMenu models={models} providers={providers} selection={modelSelection} onSelectionChange={onModelSelectionChange}
+              onManageModels={onOpenModelSettings} auto={modelAuto} onResetToAuto={onModelResetToAuto} />
           ) : (
             <ComposerSubmit
               prompt={submission}

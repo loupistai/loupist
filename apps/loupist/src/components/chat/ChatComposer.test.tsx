@@ -135,16 +135,17 @@ describe("ChatComposer input", () => {
     expect(textarea).toHaveAttribute("placeholder", "Loupist에게 질문…");
   });
 
-  it("toggles private chat from the keyboard and keeps the AI notice visible", async () => {
+  it("turns private chat on from the + menu, shows its chip and keeps the AI notice visible", async () => {
     const user = userEvent.setup();
     render(<RunningComposer isRunning={false} />);
-    const toggle = screen.getByRole("button", { name: "Private chat" });
-    expect(toggle).not.toHaveTextContent("Private");
-    toggle.focus();
-    await user.keyboard(" ");
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
-    expect(toggle).toHaveTextContent("Private");
-    expect(screen.getByText("Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Private chat" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Add to this message" }));
+    await user.click(await screen.findByRole("menuitemcheckbox", { name: /Private chat/ }));
+    const off = await screen.findByRole("button", { name: "Turn off private chat" });
+    expect(screen.getByText("Private · memory off")).toBeVisible();
+    expect(screen.getByText("Private · memory off").parentElement).toHaveAccessibleDescription("Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.");
+    await user.click(off);
+    expect(screen.queryByText("Private · memory off")).toBeNull();
     expect(screen.getByText("AI can be wrong. Not a licensed financial adviser.")).toBeVisible();
   });
 
