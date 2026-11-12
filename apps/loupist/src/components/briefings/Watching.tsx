@@ -31,7 +31,7 @@ export function WatchingItem({ settings, current, onOpen }: { settings: WatchSet
   const status = settings.consentOff ? t("watch.consentOff") : t(settings.paused ? "watch.statusPaused" : empty ? "watch.statusSetup" : "schedule.status.active");
   const state = settings.paused || settings.consentOff ? "paused" : empty ? "setup" : "active";
   const summary = empty
-    ? t("watch.summaryChoose", { count: settings.notWatched.length, formattedCount: formatNumber(settings.notWatched.length) })
+    ? t("watch.nothingWatchedRow")
     : t("watch.summary", { count: settings.watched.length, formattedCount: formatNumber(settings.watched.length) });
   return <li className="schedule-task watching-item" data-schedule-task={WATCHING_TASK_ID} data-status={state} data-current={current || undefined}>
     <div className="schedule-task-row">
@@ -79,6 +79,14 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
   useTranslation(["briefings", "assets", "chat"]);
   const loupistId = loupist.id;
   const [busy, setBusy] = useState<"pause" | "check" | null>(null);
+  const [toggling, setToggling] = useState<string | null>(null);
+  const [toggleFailed, setToggleFailed] = useState(false);
+  const toggle = async (asset: WatchAsset, kind: WatchKind, enabled: boolean) => {
+    setToggling(`${asset.assetId}:${kind}`); setToggleFailed(false);
+    try { onSettings?.(await bridge.watchSettingSet({ loupistId, assetId: asset.assetId, kind, enabled, expectedRevision: asset.revision })); }
+    catch { setToggleFailed(true); }
+    finally { setToggling(null); }
+  };
   const [controlError, setControlError] = useState<string | null>(null);
   const [checked, setChecked] = useState<number | null>(null);
   // Pausing and checking are host work on this computer; neither starts a model run.
@@ -114,7 +122,9 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
   }, [bridge, loupistId, unseen.join(",")]);
 
   const nameOf = (asset: Pick<WatchAsset, "name" | "assetId" | "symbol" | "market">) => names(asset);
-  const rows = allRows ? settings.watched : settings.watched.slice(0, ROWS);
+  // On the Following page every followed asset has a row, so its kinds can be ticked there.
+  const listed = embedded ? [...settings.watched, ...settings.notWatched] : settings.watched;
+  const rows = allRows ? listed : listed.slice(0, ROWS);
   // One table per asset class, each with its own kinds as columns.
   const groups = WATCH_KIND_GROUPS
     .map(group => ({ ...group, rows: rows.filter(asset => asset.kinds.some(state => (group.kinds as readonly WatchKind[]).includes(state.kind))) }))
@@ -131,7 +141,7 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
   const openEvidence = (event: WatchEvent) => (evidence: AssetEvidence) => { if (evidence.url) void bridge.openExternalUrl(evidence.url); else openPage(event); };
   const status = settings.paused ? <><strong className="watching-paused">{t("watch.statusPaused")}</strong> · {t("watch.pausedDetail", { loupist: loupist.name })}</>
     : settings.consentOff ? t("watch.consentOff")
-      : noWatchedAssets ? t("watch.setupDetail")
+      : noWatchedAssets ? t("watch.nothingWatched")
     : settings.lastCheckedMs ? t("watch.cadence", { loupist: loupist.name, time: formatTime(settings.lastCheckedMs) })
       : t("watch.cadenceFirst", { loupist: loupist.name });
 
@@ -164,9 +174,19 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
           <tbody>{group.rows.map(asset => {
             const name = nameOf(asset);
             return <tr key={asset.assetId} data-asset={asset.assetId}>
-              <th scope="row" className="watching-asset-cell"><span className="watching-asset"><strong>{name}</strong><small className="gg-num">{asset.symbol} · {asset.market}</small></span></th>
+              <th scope="row" className="watching-asset-cell"><span className="watching-asset">{embedded && openAsset ? <button type="button" className="watching-asset-open" onClick={() => openPage(asset)}>{name}</button> : <strong>{name}</strong>}<small className="gg-num">{asset.symbol} · {asset.market}</small></span></th>
               {group.kinds.map(kind => <td key={kind} className="watching-kind">
-                {asset.kinds.find(state => state.kind === kind)?.enabled ? "✓" : "—"}
+                {(() => {
+                  const state = asset.kinds.find(item => item.kind === kind);
+                  if (!embedded) return state?.enabled ? "✓" : "—";
+                  // A kind that does not apply is an empty cell; one that needs a connection is a disabled box.
+                  if (!state) return null;
+                  const pending = toggling === `${asset.assetId}:${kind}`;
+                  return <label className="watching-check" data-disabled={Boolean(state.needsConnection) || undefined}>
+                    <input type="checkbox" checked={state.enabled} disabled={Boolean(state.needsConnection) || pending || settings.consentOff}
+                      aria-label={t("watch.checkbox", { kind: watchKindColumn(kind), name })} onChange={event => void toggle(asset, kind, event.target.checked)} />
+                  </label>;
+                })()}
               </td>)}
               <td className="watching-last">{asset.lastAlert ? <><span className="watching-last-date gg-num">{shortDay(asset.lastAlert.factDate)}</span><span className="watching-last-kind">{watchKindColumn(asset.lastAlert.kind)}</span></> : "—"}</td>
             </tr>;
@@ -174,6 +194,7 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
         </table>
       </MatrixScroll>;
     })}
+    {toggleFailed ? <p className="inline-error" role="alert">{t("watch.toggleFailed")}</p> : null}
     {[...needed].map(([kind, connection]) => <p key={kind} className="watching-hint">{t("watch.kindNeeds", { kind: watchKindColumn(kind), connection })}</p>)}
     {settings.watched.length > rows.length ? <Button variant="ghost" size="sm" onClick={() => setAllRows(true)}>{t("watch.showAll")}</Button> : null}
 

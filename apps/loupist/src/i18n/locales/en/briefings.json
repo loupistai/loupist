@@ -154,10 +154,7 @@
     "title": "Watching",
     "summary_one": "{{formattedCount}} asset · hourly",
     "summary_other": "{{formattedCount}} assets · hourly",
-    "summaryChoose_one": "Choose from {{formattedCount}} followed asset",
-    "summaryChoose_other": "Choose from {{formattedCount}} followed assets",
     "statusSetup": "Set up",
-    "setupDetail": "Choose a followed asset below to start hourly checks.",
     "cadence": "Hourly while {{loupist}} is open · last checked {{time}}",
     "cadenceFirst": "Hourly while {{loupist}} is open",
     "privacy": "Your quantities and values never leave this computer. Checks ask data sources only about the names you follow.",
@@ -202,7 +199,10 @@
     "checkbox": "{{kind}}, {{name}}",
     "showAll": "Show all",
     "showEarlier": "Show earlier",
-    "failed": "Couldn't check now. Try again in a moment."
+    "failed": "Couldn't check now. Try again in a moment.",
+    "toggleFailed": "Couldn't change what is watched. Try again.",
+    "nothingWatchedRow": "Nothing watched yet",
+    "nothingWatched": "Nothing is being watched yet."
   },
   "following": {
     "title": "Following",
@@ -212,6 +212,7 @@
     "importHoldings": "Import holdings…",
     "watchAll": "Watch all {{n}}",
     "watchAllDetail": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",
-    "watchAllFailed": "Couldn't turn on Watching. Try again."
+    "watchAllFailed": "Couldn't turn on Watching. Try again.",
+    "holdingsTitle": "Your holdings"
   }
 }

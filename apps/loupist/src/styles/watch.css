@@ -88,3 +88,27 @@
 /* Row utilities stay quieter than the alert sentence. */
 .watching-alert [data-slot="button"] { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-regular); }
 .watching-reader .schedule-section-label { margin-inline: 0; }
+/* Following: each kind cell is a Watch-for checkbox with a 28px hit area. */
+.watching-check { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; cursor: pointer; }
+.watching-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--gg-color-accent); cursor: inherit; }
+.watching-check[data-disabled] { cursor: not-allowed; opacity: .5; }
+.watching-asset-open { padding: 0; border: 0; background: none; color: var(--gg-color-text-primary); font: inherit; font-weight: var(--gg-weight-medium); text-align: start; cursor: pointer; }
+.watching-asset-open:hover { text-decoration: underline; }
+
+/* Following: the asset page's frame; two columns when the pane is wide, one when compact. */
+.following-page { width: min(100%, var(--gg-size-page)); margin: 0 auto; padding: var(--gg-space-4) var(--gg-space-6) var(--gg-space-8); container: following-pane / inline-size; }
+.following-head h1 { margin: 0; font-size: var(--gg-text-page); line-height: var(--gg-leading-page); font-weight: var(--gg-weight-semibold); }
+.following-head p { margin: var(--gg-space-1) 0 0; max-width: 72ch; }
+.following-body { display: grid; grid-template-columns: minmax(0, var(--gg-size-reading-column)) var(--gg-size-mini-map); gap: var(--gg-space-6); margin-top: var(--gg-space-4); align-items: start; }
+.following-main { display: grid; gap: var(--gg-space-4); min-width: 0; }
+.following-main .watching-reader { padding: 0; }
+.following-side { display: grid; gap: var(--gg-space-2); justify-items: start; }
+.following-caption { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
+.following-caption:lang(ko) { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); letter-spacing: 0; text-transform: none; }
+.following-empty { margin: 0 0 var(--gg-space-3); color: var(--gg-color-text-secondary); }
+.following-watch-all { align-items: center; }
+.following-watch-all p { flex: 1 1 24ch; max-width: 60ch; margin: 0; }
+@container following-pane (max-width: 900px) {
+  .following-page { padding-inline: var(--gg-space-4); }
+  .following-body { grid-template-columns: minmax(0, 1fr); }
+}

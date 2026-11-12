@@ -72,7 +72,7 @@ export function FollowingPage({ bridge, loupist, onBack }: FollowingPageProps) {
   const [applying, setApplying] = useState(false);
   const { settings, setSettings, reload: reloadWatch } = useWatchSettings(bridge, loupistId);
   const openAsset = useAssetPageOpener();
-  const headingId = useId(), listId = useId();
+  const headingId = useId(), listId = useId(), holdingsId = useId();
   const refresh = useCallback(() => setReload(value => value + 1), []);
 
   useEffect(() => {
@@ -120,6 +120,8 @@ export function FollowingPage({ bridge, loupist, onBack }: FollowingPageProps) {
       <p className="briefings-meta">{t("following.intro")}</p>
     </header>
 
+    <div className="following-body">
+    <div className="following-main">
     <section className="memory-card following-list" data-testid="memory-about" aria-labelledby={listId}>
       <h2 id={listId} className="sr-only">{tk("memoryPage.about.follow")}</h2>
       {loadFailed ? <div role="alert" className="inline-error"><span>{t("following.loadFailed")}</span> <Button variant="outline" size="sm" onClick={refresh}>{t("retry")}</Button></div>
@@ -140,9 +142,6 @@ export function FollowingPage({ bridge, loupist, onBack }: FollowingPageProps) {
       </form>
       <p className="memory-meta memory-follow-hint">{tk("memoryPage.about.addHint")}</p>
       {mapping ? <p className="memory-meta" role="status" data-follow-mapping>{tk("memoryPage.about.addingToMap")}</p> : null}
-      <p className="memory-meta memory-holdings" data-holdings-kinds>{holdingsLine(holdings)}
-        <Button variant="link" size="sm" className="memory-holdings-update" data-testid="memory-holdings-update" onClick={() => setHoldingsOpen(true)}>{t("following.importHoldings")}</Button></p>
-      <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={open => { setHoldingsOpen(open); if (!open) refresh(); }} />
       {error ? <p className="memory-reader-error" role="alert">{error}</p> : null}
     </section>
 
@@ -151,6 +150,15 @@ export function FollowingPage({ bridge, loupist, onBack }: FollowingPageProps) {
       <Button disabled={applying} onClick={() => void watchAll()}>{applying ? <Spinner /> : null}{t("following.watchAll", { n: formatNumber(undecided || watchlist.length) })}</Button>
     </div> : null}
 
-    {settings ? <WatchingReader bridge={bridge} loupist={loupist} settings={settings} onSettings={setSettings} embedded /> : null}
+    {settings && watchlist?.length ? <WatchingReader bridge={bridge} loupist={loupist} settings={settings} onSettings={setSettings} embedded /> : null}
+    </div>
+    {/* Side column at wide sizes, after the list when compact: holdings are counts and dates only. */}
+    <aside className="following-side" aria-labelledby={holdingsId}>
+      <h2 id={holdingsId} className="following-caption">{t("following.holdingsTitle")}</h2>
+      <p className="memory-meta" data-holdings-kinds>{holdingsLine(holdings)}</p>
+      <Button variant="outline" size="sm" className="memory-holdings-update" data-testid="memory-holdings-update" onClick={() => setHoldingsOpen(true)}>{t("following.importHoldings")}</Button>
+      <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={open => { setHoldingsOpen(open); if (!open) refresh(); }} />
+    </aside>
+    </div>
   </section>;
 }

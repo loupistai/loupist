@@ -53,6 +53,16 @@ it("lists follows and holdings as counts only, removes a follow, and imports hol
   expect(await screen.findByRole("dialog")).toBeVisible();
 });
 
+it("lists every followed asset with a Watch-for box per kind that saves on change", async () => {
+  const { bridge, loupist, user } = await fixture(async bridge => { await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }); });
+  const set = vi.spyOn(bridge, "watchSettingSet");
+  const box = await screen.findByRole("checkbox", { name: "Filings, Apple" });
+  expect(box).not.toBeChecked();
+  await user.click(box);
+  expect(set).toHaveBeenCalledWith(expect.objectContaining({ loupistId: loupist.id, kind: "filings", enabled: true }));
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "Filings, Apple" })).toBeChecked());
+});
+
 it("watches every followed asset with the class defaults in one step", async () => {
   const { bridge, loupist, user } = await fixture(async bridge => { await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }); });
   const apply = vi.spyOn(bridge, "watchDefaultsApply");
