@@ -73,7 +73,10 @@ workspace instruction files still follow the [workspace contract](chat-turns.md#
 Rust routes canonical operations to the owning Loupist. An exclusive folder lock
 prevents concurrent app instances from writing the same data. Loupist databases use
 full synchronous rollback journaling. Removing a Loupist unregisters it and preserves
-its folder. Missing or replaced folders require reconnection, which validates the
+its folder, Chats and Memory. Import can reopen an app-created workspace directly
+under this profile's `loupists/` directory only when it contains a valid existing
+Loupist; the profile root and disposable runtime folders remain private. Missing
+or replaced folders require reconnection, which validates the
 profile, preserves its Loupist id and requires a newer update time; absent filesystem
 identities do not establish that two folders are the same. Copy/reopen rules are in
 [Folder portability](../knowledge/growth.md#folder-portability). Versions, upgrades

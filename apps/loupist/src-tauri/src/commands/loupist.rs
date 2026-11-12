@@ -173,7 +173,7 @@ pub(super) async fn create_folder_loupist_with_setup(
     research_focus: Option<String>,
     world_processing: Option<crate::providers::world_defaults::NewLoupistWorldSettings>,
 ) -> Result<LoupistSummary, CommandError> {
-    let workspace = selected_workspace(state, workspace_path)?;
+    let workspace = selected_workspace(state, workspace_path, false)?;
     create_bound_loupist(
         state,
         workspace,
@@ -304,7 +304,11 @@ async fn create_bound_loupist(
     profile_summary_at(state, &profile, &workspace).await
 }
 
-fn selected_workspace(state: &AppState, path: &Path) -> Result<BoundLoupistRoot, CommandError> {
+fn selected_workspace(
+    state: &AppState,
+    path: &Path,
+    importing: bool,
+) -> Result<BoundLoupistRoot, CommandError> {
     if !path.is_absolute() {
         return Err(CommandError::invalid("choose an absolute workspace folder"));
     }
@@ -325,6 +329,35 @@ fn selected_workspace(state: &AppState, path: &Path) -> Result<BoundLoupistRoot,
         .find(|path| path.file_name().is_some_and(|name| name == ".loupist"))
         .unwrap_or(&state.artifacts.app_data_dir);
     let project_data = canonical.join(".loupist");
+    // Managed workspaces are direct children of this profile's Loupists
+    // directory. Reopening one must not admit arbitrary private runtime folders.
+    let managed_parent = state
+        .artifacts
+        .app_data_dir
+        .join("loupists")
+        .canonicalize()
+        .ok();
+    let runtime_directory = canonical
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix("loupist-"))
+        .is_some_and(|id| uuid::Uuid::parse_str(id).is_ok());
+    if importing
+        && !runtime_directory
+        && canonical
+            .parent()
+            .is_some_and(|parent| Some(parent) == managed_parent.as_deref())
+    {
+        let workspace = BoundLoupistRoot::open_unbound(canonical.clone())?;
+        if let Some(profile) = state.store.folder_profile(&workspace).map_err(map_store)? {
+            if canonical
+                .file_name()
+                .is_some_and(|name| name != profile.id.as_str())
+            {
+                return Ok(workspace);
+            }
+        }
+    }
     if canonical.starts_with(private_root)
         || project_data.starts_with(private_root)
         || private_root.starts_with(&project_data)
@@ -390,7 +423,7 @@ pub(super) async fn reconnect_loupist_inner(
         .get_loupist(&request.loupist_id)
         .map_err(map_store)?
         .ok_or_else(|| CommandError::not_found("Loupist"))?;
-    let workspace = selected_workspace(state, Path::new(&request.workspace_path))?;
+    let workspace = selected_workspace(state, Path::new(&request.workspace_path), false)?;
     let mut updated = expected.clone();
     updated.workspace_root = workspace
         .path()
@@ -641,7 +674,7 @@ pub async fn loupist_import(
     let _activity = state
         .maintenance
         .admit_kind(MaintenanceActivityKind::LoupistMutation)?;
-    let workspace = selected_workspace(state.inner(), Path::new(&request.workspace_path))?;
+    let workspace = selected_workspace(state.inner(), Path::new(&request.workspace_path), true)?;
     if state
         .store
         .folder_profile(&workspace)

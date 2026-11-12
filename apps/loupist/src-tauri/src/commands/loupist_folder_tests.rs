@@ -927,3 +927,109 @@ async fn a_scan_skips_one_broken_folder_and_returns_the_healthy_ones() {
     );
     assert!(state.store.for_each_database(scan).is_err());
 }
+
+#[tokio::test]
+async fn removed_managed_loupist_reopens_through_import_with_chats_and_memory() {
+    use tauri::Manager;
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let loupist = create_managed_loupist(
+        &state,
+        super::types::LoupistCreateRequest {
+            name: "Research desk".into(),
+            focus: Some("Cash flow".into()),
+            avatar: None,
+            template: None,
+            tone: None,
+        },
+    )
+    .await
+    .unwrap();
+    let chat = super::tests::chat("chat-kept", &loupist.id, 10);
+    state.store.create_chat(&chat).unwrap();
+    let memory = KnowledgeStore::for_loupist(state.store.clone(), &loupist.id).unwrap();
+    let source = retain(&memory, &loupist.id, "Retained research");
+    drop(memory);
+    delete_loupist_inner(&state, &loupist.id).await.unwrap();
+    assert!(state.store.list_loupists().unwrap().is_empty());
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state);
+    let reopened = loupist_import(
+        super::types::LoupistImportRequest {
+            workspace_path: loupist.workspace_path.clone(),
+        },
+        app.state(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(reopened.id, loupist.id);
+    let state = app.state::<AppState>();
+    assert_eq!(state.store.get_chat(&chat.id).unwrap().unwrap(), chat);
+    let memory = KnowledgeStore::for_loupist(state.store.clone(), &loupist.id).unwrap();
+    assert_eq!(
+        memory
+            .read(|write| write.get_revision(&loupist.id, &source.revision_id))
+            .unwrap()
+            .record_id,
+        source.record_id
+    );
+    // Private profile data and a runtime directory stay inadmissible.
+    for path in [
+        state.artifacts.app_data_dir.clone(),
+        state
+            .artifacts
+            .app_data_dir
+            .join("loupists")
+            .join(&loupist.id),
+    ] {
+        assert!(loupist_import(
+            super::types::LoupistImportRequest {
+                workspace_path: path.to_str().unwrap().into()
+            },
+            app.state()
+        )
+        .await
+        .is_err());
+    }
+}
+
+#[tokio::test]
+async fn import_does_not_turn_a_private_runtime_directory_into_a_workspace() {
+    use tauri::Manager;
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let loupist = create_managed_loupist(
+        &state,
+        super::types::LoupistCreateRequest {
+            name: "Research".into(),
+            focus: None,
+            avatar: None,
+            template: None,
+            tone: None,
+        },
+    )
+    .await
+    .unwrap();
+    delete_loupist_inner(&state, &loupist.id).await.unwrap();
+    let runtime = state
+        .artifacts
+        .app_data_dir
+        .join("loupists")
+        .join(&loupist.id);
+    fs::rename(&loupist.workspace_path, &runtime).unwrap();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state);
+    assert!(loupist_import(
+        super::types::LoupistImportRequest {
+            workspace_path: runtime.to_str().unwrap().into()
+        },
+        app.state()
+    )
+    .await
+    .is_err());
+    assert!(runtime.join(".loupist/loupist.sqlite3").is_file());
+}
