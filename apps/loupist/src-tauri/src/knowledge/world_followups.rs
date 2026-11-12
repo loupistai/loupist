@@ -9,6 +9,7 @@ use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
 pub const SHOWN_PER_DAY: usize = 3;
+#[cfg(test)]
 const LIST_LIMIT: usize = 200;
 const DAY_MS: i64 = 86_400_000;
 
@@ -262,6 +263,7 @@ fn view_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConnectionView> {
 const COLUMNS: &str =
     "connection_id, loupist_id, seed_node_id, far_node_id, path_json, score, status, created_at_ms";
 
+#[cfg(test)]
 pub(super) fn list(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Vec<ConnectionView>> {
     let mut statement = tx.prepare(&format!(
         "SELECT {COLUMNS} FROM knowledge_connections WHERE loupist_id = ?1

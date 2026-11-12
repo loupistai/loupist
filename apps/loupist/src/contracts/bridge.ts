@@ -107,6 +107,7 @@ import type {
 import type { ConfigScope, ConfigSnapshot, ConfigUpdateRequest } from "./config";
 
 export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridge, AssetBridge, SharingBridge, EarningsBridge, WatchBridge {
+  watchDefaultsApply(request: import("./generated").WatchDefaultsApplyRequest): Promise<import("./generated").WatchDefaultsApplyResult>;
   noticeSettingsGet(): Promise<NoticeSettings>;
   noticeAcknowledge(): Promise<NoticeSettings>;
   learningReviewList(request: import("./knowledge").LearningReviewQuery): Promise<import("./knowledge").LearningReview[]>;
@@ -303,8 +304,6 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   chatRetryLast(request: ChatRetryRequest): Promise<{ prompt: string; as_of?: string }>;
   /** Opens a research session that runs on its own and reports into the Bot; a repeated key returns the same one. */
   researchHandoffStart(request: ResearchHandoffRequest): Promise<ResearchHandoffReceipt>;
-  /** Links discovery found after World publications, newest first. */
-  knowledgeConnections(request: { loupistId: string }): Promise<import("./knowledge").ConnectionView[]>;
   /** Not useful: the link stays recorded so it is never found again. */
   knowledgeConnectionDismiss(request: { loupistId: string; connectionId: string }): Promise<import("./knowledge").ConnectionView>;
   /** Look into it: records that a research hand-off was started for the link. */

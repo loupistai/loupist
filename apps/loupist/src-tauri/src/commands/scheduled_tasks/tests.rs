@@ -382,3 +382,205 @@ fn scheduled_pause_and_history_remain_available_during_memory_recovery() {
     );
     service::delete(&state, &loupist.id, &task.id, paused.revision).unwrap();
 }
+
+#[tokio::test]
+async fn run_now_rejects_an_active_claim_and_finishes_one_host_run_without_model_work() {
+    use tauri::Manager;
+    let directory = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(directory.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", workspace.path(), 1),
+    );
+    let task = state
+        .store
+        .scheduled_task_create_kind(
+            "loupist-a",
+            "earnings-loupist-a",
+            draft(TaskStatus::Paused),
+            crate::scheduled_tasks::types::TaskKind::Earnings,
+            1,
+        )
+        .unwrap();
+    let (claim, live) = state
+        .scheduled
+        .claim_host_run(&state, "loupist-a", &task.id, true)
+        .await
+        .unwrap()
+        .unwrap();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state.clone());
+    let request = || TaskRequest {
+        loupist_id: "loupist-a".into(),
+        task_id: task.id.clone(),
+    };
+    assert_eq!(
+        scheduled_task_run_now(request(), app.state())
+            .await
+            .unwrap_err()
+            .code,
+        "conflict"
+    );
+    assert_eq!(
+        state
+            .store
+            .scheduled_task_runs("loupist-a", &task.id)
+            .unwrap()
+            .len(),
+        1
+    );
+    state
+        .store
+        .scheduled_task_finish(
+            "loupist-a",
+            &claim.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            claim.run.started_at_ms + 1,
+        )
+        .unwrap();
+    drop(live);
+    let run = scheduled_task_run_now(request(), app.state())
+        .await
+        .unwrap();
+    assert_eq!(run.status, RunStatus::Succeeded);
+    assert_eq!(
+        state
+            .store
+            .scheduled_task_runs("loupist-a", &task.id)
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn schedule_commands_pause_resume_and_delete_with_undelivered_history() {
+    use tauri::Manager;
+    let directory = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(directory.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", workspace.path(), 1),
+    );
+    let host = state
+        .store
+        .scheduled_task_create_kind(
+            "loupist-a",
+            "earnings-loupist-a",
+            draft(TaskStatus::Active),
+            crate::scheduled_tasks::types::TaskKind::Earnings,
+            1,
+        )
+        .unwrap();
+    let task = state
+        .store
+        .scheduled_task_create("loupist-a", draft(TaskStatus::Paused), 1)
+        .unwrap();
+    let claim = state
+        .store
+        .scheduled_task_claim_with("loupist-a", &task.id, 2, true, |_| Ok(()))
+        .unwrap()
+        .unwrap()
+        .0;
+    state
+        .store
+        .scheduled_task_finish(
+            "loupist-a",
+            &claim.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            3,
+        )
+        .unwrap();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state.clone());
+    let paused = scheduled_task_set_status(
+        StatusRequest {
+            loupist_id: "loupist-a".into(),
+            task_id: host.id.clone(),
+            expected_revision: host.revision,
+            status: TaskStatus::Paused,
+        },
+        app.state(),
+    )
+    .unwrap();
+    assert_eq!(paused.status, TaskStatus::Paused);
+    let resumed = scheduled_task_set_status(
+        StatusRequest {
+            loupist_id: "loupist-a".into(),
+            task_id: host.id,
+            expected_revision: paused.revision,
+            status: TaskStatus::Active,
+        },
+        app.state(),
+    )
+    .unwrap();
+    assert_eq!(resumed.status, TaskStatus::Active);
+    let current = state
+        .store
+        .scheduled_task_get("loupist-a", &task.id)
+        .unwrap()
+        .unwrap();
+    scheduled_task_delete(
+        RevisionRequest {
+            loupist_id: "loupist-a".into(),
+            task_id: task.id.clone(),
+            expected_revision: current.revision,
+        },
+        app.state(),
+    )
+    .unwrap();
+    assert!(state
+        .store
+        .scheduled_task_get("loupist-a", &task.id)
+        .unwrap()
+        .is_none());
+    assert!(state
+        .store
+        .scheduled_task_run_get("loupist-a", &claim.run.run_id)
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn resident_command_persists_the_setting_across_profile_restart() {
+    use tauri::Manager;
+    const CHILD_ENV: &str = "LOUPIST_TEST_RESIDENT_COMMAND_DIR";
+    if let Some(profile) = std::env::var_os(CHILD_ENV) {
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(AppState::for_persistent_test(profile.into()));
+        let settings = crate::briefings::desktop::briefing_resident_settings_set(
+            serde_json::from_value(serde_json::json!({"keepRunning": false})).unwrap(),
+            app.state(),
+        )
+        .unwrap();
+        assert!(!settings.keep_running);
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let profile = directory.path().join("app");
+    // Tauri's mock manager can retain its AppState. A joined child establishes
+    // a real process exit and lock-release boundary without unsafe unmanage.
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "commands::scheduled_tasks::tests::resident_command_persists_the_setting_across_profile_restart"])
+        .env(CHILD_ENV, &profile).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let reopened = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    reopened.manage(AppState::for_persistent_test(profile));
+    assert!(
+        !crate::briefings::desktop::briefing_resident_settings_get(reopened.state())
+            .unwrap()
+            .keep_running
+    );
+}

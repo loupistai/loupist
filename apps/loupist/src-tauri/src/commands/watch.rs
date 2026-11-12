@@ -103,6 +103,9 @@ pub(crate) struct Runtime {
     checking: Mutex<BTreeSet<String>>,
     /// Loupists whose first check after launch already ran (morning rule).
     first_checked: Mutex<BTreeSet<String>>,
+    /// Consecutive failures in this process. After restart, a persisted failure
+    /// starts with the first retry delay; no stored route format changes.
+    failures: Mutex<HashMap<(String, String, Route), u8>>,
     /// Captures running now, by event id ("Capturing what's expected…").
     preparing: Mutex<BTreeSet<String>>,
     pass: tokio::sync::Mutex<()>,
@@ -126,6 +129,47 @@ impl Runtime {
 
     fn count_read(&self, now_ms: i64) {
         self.reads.lock().expect("watch runtime lock").push(now_ms);
+    }
+
+    fn route_due(
+        &self,
+        loupist: &str,
+        asset: &str,
+        prior: &RouteState,
+        now: DateTime<Utc>,
+    ) -> bool {
+        if prior.status != "failed" {
+            return route_due(prior.route, Some(prior.checked_at_ms), now);
+        }
+        let attempts = self
+            .failures
+            .lock()
+            .expect("watch runtime lock")
+            .get(&(loupist.to_owned(), asset.to_owned(), prior.route))
+            .copied()
+            .unwrap_or(1);
+        let delay = match attempts {
+            0 | 1 => HOUR_MS / 4,
+            2 => HOUR_MS,
+            3 => 4 * HOUR_MS,
+            _ => 24 * HOUR_MS,
+        };
+        now.timestamp_millis().saturating_sub(prior.checked_at_ms) >= delay
+    }
+
+    fn route_result(&self, want: &Want, route: Route, failed: bool) {
+        let key = (want.loupist_id.clone(), want.page.asset_id.clone(), route);
+        let mut failures = self.failures.lock().expect("watch runtime lock");
+        if failed {
+            let previous = want
+                .prior
+                .as_ref()
+                .is_some_and(|prior| prior.status == "failed");
+            let count = failures.entry(key).or_insert(u8::from(previous));
+            *count = count.saturating_add(1).min(4);
+        } else {
+            failures.remove(&key);
+        }
     }
 
     pub(crate) fn is_checking(&self, loupist_id: &str) -> bool {
@@ -813,7 +857,10 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
                     .and_then(|states| states.iter().find(|state| state.route == route))
                     .cloned();
                 if !forced
-                    && !route_due(route, prior.as_ref().map(|state| state.checked_at_ms), now)
+                    && !prior.as_ref().map_or_else(
+                        || route_due(route, None, now),
+                        |prior| runtime.route_due(loupist_id, &page.asset_id, prior, now),
+                    )
                 {
                     continue;
                 }
@@ -863,6 +910,8 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
         .collect();
     keys.sort();
     let mut prior_baseline: BTreeMap<(String, String, Route), bool> = BTreeMap::new();
+    let mut touched = BTreeSet::new();
+    let mut admitted_routes = BTreeSet::new();
     // Class signals found by this pass's reads, per Loupist, before the switches filter them.
     let mut class_found: BTreeMap<String, Vec<NewWatchEvent>> = BTreeMap::new();
     for (_, key) in keys {
@@ -884,14 +933,15 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
         let Some(read) = route_read(key.route, &first.page, today) else {
             continue;
         };
-        // The first Loupist that holds the grant makes the read for everyone.
-        let mut reading = None;
+        // Capture every recipient's own grants before choosing the reader.
+        // Initializing only the first session leaves the others unadmitted.
+        let mut granted = BTreeSet::new();
         for want in &list {
             if reader.ensure(state, &want.loupist_id) && reader.granted(&want.loupist_id, &read) {
-                reading = Some(want.loupist_id.clone());
-                break;
+                granted.insert(want.loupist_id.clone());
             }
         }
+        let reading = granted.first().cloned();
         let outcome = match &reading {
             Some(id) => {
                 runtime.count_read(now_ms);
@@ -907,8 +957,15 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
         };
         let mut copies: HashMap<String, Value> = HashMap::new();
         for want in &list {
-            let granted = reader.granted(&want.loupist_id, &read);
-            let result = match (&outcome, granted) {
+            let allowed = granted.contains(&want.loupist_id);
+            if allowed {
+                admitted_routes.insert((
+                    want.loupist_id.clone(),
+                    want.page.asset_id.clone(),
+                    key.route,
+                ));
+            }
+            let result = match (&outcome, allowed) {
                 (ReadOutcome::Ok { payload, provider }, true) => {
                     let payload = if Some(&want.loupist_id) == reading.as_ref() {
                         payload.clone()
@@ -952,7 +1009,7 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
                             .extend(found)
                     })
                 }
-                (ReadOutcome::Ok { .. }, false) => record(
+                (_, false) => record(
                     state,
                     want,
                     key.route,
@@ -972,14 +1029,22 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
                     record(state, want, key.route, "failed", connection, now_ms)
                 }
             };
-            if let Err(error) = result {
-                eprintln!("Watch check could not record a read: {}", error.code);
+            match result {
+                Ok(()) => {
+                    touched.insert(want.loupist_id.clone());
+                    runtime.route_result(
+                        want,
+                        key.route,
+                        allowed && matches!(outcome, ReadOutcome::Failed(_)),
+                    );
+                }
+                Err(error) => eprintln!("Watch check could not record a read: {}", error.code),
             }
         }
     }
     // Dates, releases and IR notices, then alerts and delivery, per Loupist.
     let mut alerts = BTreeMap::new();
-    for loupist_id in &checked {
+    for loupist_id in checked.iter().filter(|id| touched.contains(*id)) {
         let Ok(_activity) = state
             .maintenance
             .admit_kind(MaintenanceActivityKind::MemoryMutation)
@@ -1003,7 +1068,13 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
                         .unwrap_or(true)
                 };
                 for event in detect_events(tx, loupist_id, page, today, now_ms, &baseline)? {
-                    if !switch.enabled(event.kind) {
+                    if !switch.enabled(event.kind)
+                        || !admitted_routes.contains(&(
+                            loupist_id.clone(),
+                            page.asset_id.clone(),
+                            kind_route(event.kind, is_korean_market(&page.market)),
+                        ))
+                    {
                         continue;
                     }
                     if watch::insert_event(tx, loupist_id, &event, now_ms)?.is_some() {
@@ -1192,11 +1263,16 @@ fn apply_read(
             .collect(),
         _ => Vec::new(),
     };
-    let events = signals
+    let events: Vec<NewWatchEvent> = signals
         .into_iter()
         .filter(|signal| class_kinds.contains(&signal.kind))
         .map(|signal| signal_event(page, &tool_read, signal, baseline_done))
         .collect();
+    // Save class starting points in the same transaction as the route. Later
+    // delivery may be skipped, but re-reading the same signal must stay silent.
+    for event in events.iter().filter(|event| event.baseline) {
+        watch::insert_event(tx, loupist_id, event, now.timestamp_millis())?;
+    }
     let found: Vec<NewObservation> = match route {
         // A price read also keeps the page's closes (its price row and the
         // crypto fall from the high).
@@ -1212,8 +1288,11 @@ fn apply_read(
             .collect(),
     };
     let override_baseline = match route {
-        // A cluster or a turn seen by the route's first check is its starting point.
-        Route::Insiders | Route::Flows => Some(!baseline_done),
+        // Persist the first read's starting point with its observations, so a
+        // skipped alert/delivery phase cannot later announce those rows as new.
+        Route::Filings | Route::Calendar | Route::Dividends | Route::Insiders | Route::Flows => {
+            Some(!baseline_done)
+        }
         _ => None,
     };
     assets::record_observations_with(
@@ -1226,6 +1305,21 @@ fn apply_read(
         now.timestamp_millis(),
         override_baseline,
     )?;
+    if !baseline_done && page.class == AssetClass::Equity {
+        // Earlier research may already have retained these rows as new. Their
+        // observation flags stay intact; the watch's own starting-point events
+        // are saved before recording that the route has completed its baseline.
+        for mut event in
+            detect_events(tx, loupist_id, page, today, now.timestamp_millis(), &|_| {
+                true
+            })?
+        {
+            if kind_route(event.kind, is_korean_market(&page.market)) == route {
+                event.baseline = true;
+                watch::insert_event(tx, loupist_id, &event, now.timestamp_millis())?;
+            }
+        }
+    }
     Ok(events)
 }
 
@@ -1448,7 +1542,7 @@ pub(crate) fn detect_events(
             &source.fact_date,
             json!({"date": date, "period": event_record.period, "eventId": event_record.event_id}),
             &source.evidence,
-            baseline(results_route),
+            source.baseline || baseline(results_route),
         ));
     }
     // A dividend record date within 7 days.
@@ -1472,7 +1566,7 @@ pub(crate) fn detect_events(
             &item.fact_date,
             json!({"amount": item.facts["amount"], "currency": item.facts["currency"], "exDate": item.facts["exDate"], "recordDate": record.to_string()}),
             &item.evidence,
-            baseline(Route::Dividends),
+            item.baseline || baseline(Route::Dividends),
         ));
     }
     let _ = now_ms;
@@ -1543,23 +1637,26 @@ fn template_class(state: &AppState, loupist_id: &str) -> Option<AssetClass> {
         .and_then(crate::domain::LoupistTemplate::asset_class)
 }
 
-/// A Loupist gives proactive consent: followed assets with no decision get
-/// the default kinds (`watch::class_defaults`), and an untouched earnings task
-/// turns on.
-#[cfg(any(test, feature = "eval-harness"))]
-pub(crate) fn on_consent(state: &AppState, loupist_id: &str) -> Result<(), CommandError> {
+fn apply_followed_defaults(state: &AppState, loupist_id: &str) -> Result<bool, CommandError> {
     let pages = followed_pages(state, loupist_id)?;
     let template = template_class(state, loupist_id);
     with_assets(state, loupist_id, true, |tx| {
+        let mut changed = false;
         for page in pages.iter().filter(|page| watchable(page)) {
             let defaults = watch::class_defaults(page.class, template);
-            watch::apply_defaults(tx, loupist_id, &page.asset_id, &defaults, now_ms())?;
+            changed |= watch::apply_defaults(tx, loupist_id, &page.asset_id, &defaults, now_ms())?;
         }
-        Ok(())
-    })?;
-    super::earnings::ensure_task(state, loupist_id, true)?;
-    changed(loupist_id);
-    Ok(())
+        Ok(changed)
+    })
+}
+
+/// Consent enables an untouched Results task. Earlier briefing opt-ins keep
+/// their defaults; a new explicit watch choice leaves every other kind alone.
+pub(crate) fn on_consent(state: &AppState, loupist_id: &str) -> Result<(), CommandError> {
+    if consent_mode(state, loupist_id)? == "legacy" {
+        apply_followed_defaults(state, loupist_id)?;
+    }
+    super::earnings::ensure_task(state, loupist_id, true)
 }
 
 /// A newly followed asset gets the default kinds in the Loupist that was open
@@ -1791,6 +1888,100 @@ pub fn watch_settings_list(
 #[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WatchDefaultsApplyRequest {
+    pub loupist_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct WatchDefaultsConnectionNeed {
+    pub kind: WatchKind,
+    pub connection: ConnectionRef,
+    pub asset_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct WatchDefaultsApplyResult {
+    pub watched_assets: usize,
+    pub needs_connections: Vec<WatchDefaultsConnectionNeed>,
+}
+
+#[tauri::command(async)]
+pub fn watch_defaults_apply(
+    state: State<'_, AppState>,
+    request: WatchDefaultsApplyRequest,
+) -> Result<WatchDefaultsApplyResult, CommandError> {
+    apply_defaults_with_consent(state.inner(), &request.loupist_id)
+}
+
+fn apply_defaults_with_consent(
+    state: &AppState,
+    loupist_id: &str,
+) -> Result<WatchDefaultsApplyResult, CommandError> {
+    admit(state, loupist_id)?;
+    let _activity = state
+        .maintenance
+        .admit_kind(MaintenanceActivityKind::MemoryMutation)?;
+    consent_mode(state, loupist_id)?;
+    let consent_changed = state
+        .store
+        .lock()
+        .map_err(map_store)?
+        .execute(
+            "UPDATE watcher_consent SET mode='selected' WHERE loupist_id=?1 AND mode='off'",
+            [loupist_id],
+        )
+        .map_err(|error| map_store(error.into()))?
+        > 0;
+    let defaults_changed = apply_followed_defaults(state, loupist_id)?;
+    let earnings_state = || -> Result<_, CommandError> {
+        Ok(state
+            .store
+            .scheduled_tasks_list(loupist_id)
+            .map_err(map_store)?
+            .into_iter()
+            .find(|task| task.kind == TaskKind::Earnings)
+            .map(|task| (task.id, task.revision)))
+    };
+    let earnings_before = earnings_state()?;
+    super::earnings::ensure_task(state, loupist_id, true)?;
+    let earnings_changed = earnings_before != earnings_state()?;
+    let settings = settings_view(state, &state.scheduled.watch_runtime(), loupist_id)?;
+    let mut needs: BTreeMap<(WatchKind, String), WatchDefaultsConnectionNeed> = BTreeMap::new();
+    for asset in &settings.watched {
+        for kind in asset.kinds.iter().filter(|kind| kind.enabled) {
+            if let Some(connection) = &kind.needs_connection {
+                needs
+                    .entry((kind.kind, connection.id.clone()))
+                    .or_insert_with(|| WatchDefaultsConnectionNeed {
+                        kind: kind.kind,
+                        connection: connection.clone(),
+                        asset_ids: Vec::new(),
+                    })
+                    .asset_ids
+                    .push(asset.asset_id.clone());
+            }
+        }
+    }
+    if !settings.watched.is_empty() {
+        // Watching runs only while the app stays resident; an explicit user choice is kept.
+        crate::briefings::desktop::enable_for_watching(state)?;
+    }
+    if consent_changed || defaults_changed || earnings_changed {
+        changed(loupist_id);
+    }
+    Ok(WatchDefaultsApplyResult {
+        watched_assets: settings.watched.len(),
+        needs_connections: needs.into_values().collect(),
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WatchSettingSetRequest {
     pub loupist_id: String,
     pub asset_id: String,
@@ -1853,6 +2044,7 @@ pub(crate) fn update_setting(
             .map_err(super::map_internal)?;
     }
     if request.enabled {
+        on_consent(state, &loupist)?;
         crate::briefings::desktop::enable_for_watching(state)?;
     }
     changed(&loupist);

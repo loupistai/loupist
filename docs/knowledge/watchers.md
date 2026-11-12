@@ -49,7 +49,13 @@ the asset tables.
 While the app runs, `commands/watch.rs` checks what each Loupist follows against data
 sources only, with no model call; nothing runs while the app is closed. A loop started
 with the scheduler ticks every minute, and the first scheduled check waits two minutes
-after launch. A Loupist is checked after watch consent and while its watchers are running. Existing active briefings retain their earlier opt-in on first access. New explicit watch requests enable the chosen asset and kind. Creating a new briefing leaves watch consent unchanged.
+after launch. A Loupist is checked after watch consent and while its watchers are running. Existing active briefings retain their earlier opt-in on first access. New explicit watch requests enable the chosen asset and kind and turn on an untouched
+Results before and after task; a task the user paused stays paused. `watch_defaults_apply`
+records consent and applies the class defaults to every currently followed asset with
+no saved choice. Existing per-asset choices stay intact, and a repeated call changes
+nothing. It returns `watchedAssets` and `needsConnections` grouped by kind and
+connection with their `assetIds`; it changes no Chat privacy or as-of state. Other
+watch kinds keep their choices. Creating a new briefing leaves watch consent unchanged.
 [Watch kinds](watchers.md#watchers) map to routes: filings (holders, and every
 Korean kind except flows; OpenDART, or SEC filings through OpenBB), insider trades
 (`sec`, `fmp` or `intrinio` only), the earnings calendar (`nasdaq`, `fmp` or `tmx`; one
@@ -68,16 +74,22 @@ that wants it: the first one holding the grant reads, the others get a copy in t
 dataset store, and a Loupist without the grant records `needs_connection`. The app makes
 at most 60 reads per rolling hour across all Loupists (`MAX_READS_PER_HOUR`); a pass
 reads the least recently checked routes first and defers the rest. A failed read keeps
-the last good state and names the connection that did not answer. Check now
+the last good state and names the connection that did not answer. Failed routes retry
+after 15 minutes, then one hour, four hours and daily; success resets the backoff.
+The consecutive-failure count lives in the running app: after restart, a persisted
+failure uses the 15-minute delay from its last attempt. An idle minute with no due
+route leaves the last-check timestamp and saved watch state unchanged. Check now
 (`watch_check_now`) checks every enabled kind of one Loupist once, ignoring cadence but
 not the budget, one check at a time.
 
 A check records dated observations on the asset pages and turns new ones of the kinds
-that are on into alerts; a route's first check only sets its starting point. The first
+that are on into alerts; a route's first check only sets its starting point. That starting point is saved
+with the observations, so skipping the later alert/delivery phase cannot make a
+first read alert on the next pass. The first
 check after launch, or the day's first check, hands its alerts to the morning message;
 later ones post in the [home Thread](../ui/home-thread.md). No OS notification is sent for a watch
-event. Schedule › Watching offers Pause or Resume and Check now (unavailable while paused) and reports how many new alerts a check found. It fades the right edge of a class table only when that table is wider than the pane. Watch for on the asset page and Schedule › Watching use `watch_settings_list`,
-`watch_setting_set` (guarded by the asset's revision; turning a kind on needs consent and
+event. Schedule › Watching offers Pause or Resume and Check now (unavailable while paused) and reports how many new alerts a check found. It fades the right edge of a class table only when that table is wider than the pane. Watch for on the asset page, the Following page and Schedule › Watching use `watch_settings_list`,
+`watch_defaults_apply`, `watch_setting_set` (guarded by the asset's revision; turning a kind on needs consent and
 a kind that applies), `watch_pause_set`, `watch_check_now`, `watch_events_list` and
 `watch_events_seen`; Rust emits `watch-changed` after each change.
 

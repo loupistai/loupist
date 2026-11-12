@@ -304,8 +304,9 @@ fn host_memory_context_excluding(
                     map_names: Vec::new(),
                 });
             }
-            // Index order: pages anchored to a followed name, then most recently
-            // filed. The index excludes principles (their own block) and the
+            // Reserve the first 20 index lines for methods. Within that group
+            // and the remaining pages, followed names precede recency.
+            // The index excludes principles (their own block) and the
             // perspective (delivered whole).
             let followed_nodes = followed_node_ids(&write, loupist_id, &followed)?;
             let mut pages = write.lens_index(loupist_id)?;
@@ -325,13 +326,45 @@ fn host_memory_context_excluding(
                     .then(b.updated_at_ms.cmp(&a.updated_at_ms))
                     .then(a.record_id.cmp(&b.record_id))
             });
+            let methods: std::collections::BTreeSet<_> = pages
+                .iter()
+                .filter(|page| page.kind == crate::knowledge::lens_page::LensKind::Method)
+                .take(20)
+                .map(|page| page.record_id.clone())
+                .collect();
+            pages.sort_by_key(|page| !methods.contains(&page.record_id));
             let anchored = anchored_pages(&write, loupist_id, message, &pages)?;
-            for page in pages {
+            for (position, page) in pages.into_iter().enumerate() {
+                let summary = if page.kind == crate::knowledge::lens_page::LensKind::Method {
+                    if page.summary.trim().is_empty() && position < LENS_INDEX_LINES {
+                        write
+                            .read_page(loupist_id, &page.record_id)?
+                            .body
+                            .sections()
+                            .iter()
+                            .find(|section| section.key.as_str() == "use-when")
+                            .map(|section| {
+                                section
+                                    .markdown
+                                    .split_whitespace()
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                                    .chars()
+                                    .take(160)
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        page.summary.clone()
+                    }
+                } else {
+                    page.summary.chars().take(120).collect()
+                };
                 entries.push(HostMemoryEntry {
                     id: page.record_id.clone(),
                     title: page.title.clone(),
                     kind: "lens".into(),
-                    summary: page.summary.chars().take(120).collect(),
+                    summary,
                     as_of: recorded_at_rfc3339(page.updated_at_ms),
                     lens_kind: Some(page.kind),
                     sections: page.section_count,
@@ -577,9 +610,8 @@ fn anchored_pages(
         .collect())
 }
 
-// The research search accepts at most 200 UTF-8 bytes (Lens accepts 200
-// characters). Reserve the final clause when a paste precedes it, and drop
-// any token longer than 32 bytes so one hash cannot fill the budget.
+// Automatic term selection keeps a conservative 200-byte budget. Drop
+// tokens longer than 32 bytes so one hash cannot fill that budget.
 fn memory_query_terms(message: &str) -> Vec<String> {
     const STOP: &[&str] = &[
         "a",
@@ -1137,7 +1169,7 @@ fn search_with_options(
     }
     // Reference Sources of a removed shared pack stay hidden.
     let removed = with_loupist_knowledge(state, loupist_id, |tx, _| {
-        let mut excluded = crate::sharing::store::removed_sources(tx, loupist_id)?;
+        let mut excluded = super::removed_pack_sources(tx, loupist_id)?;
         let controls = crate::knowledge::memory_controls::load(tx, loupist_id)?;
         excluded.extend(controls.removed);
         if !include_paused {
@@ -1315,7 +1347,7 @@ pub(in crate::commands) fn host_prepare_read(
             }
             match request.scope.as_str() {
                 "source"
-                    if crate::sharing::store::removed_sources(tx, loupist_id)?
+                    if super::removed_pack_sources(tx, loupist_id)?
                         .contains(&request.record_id) =>
                 {
                     Err(crate::knowledge::KnowledgeError::NotFound)

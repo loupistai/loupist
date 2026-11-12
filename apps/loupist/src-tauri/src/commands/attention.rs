@@ -314,7 +314,9 @@ pub(crate) fn refresh_indicator(app: &tauri::AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         if let Some(state) = app.try_state::<AppState>() {
-            if let Ok(items) = collect(&state).await {
+            if let Ok(items) = collect(&state).await.inspect_err(|error| {
+                eprintln!("Could not refresh attention indicator: {}", error.code);
+            }) {
                 show_indicator(&app, &items);
             }
         }
@@ -340,83 +342,84 @@ pub(crate) fn window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
 pub(crate) async fn collect(state: &AppState) -> Result<Vec<AttentionItem>, CommandError> {
     let now = crate::commands::now_ms();
     let today = chrono::Local::now().date_naive();
-    let loupists = state
-        .store
-        .list_loupists()
-        .map_err(|error| CommandError::internal(error.to_string()))?;
+    let loupists = state.store.list_loupists().map_err(super::map_store)?;
     let mut items = Vec::new();
     let mut refused: Vec<(String, String, String, i64, Vec<ChatToolRefusal>)> = Vec::new();
     for loupist in &loupists {
         if state.ensure_loupist_available(&loupist.id).is_err() {
             continue;
         }
-        if let Ok(chats) = state
+        let chats = state
             .store
             .chats_ending_in_refusals(&loupist.id, now - WAITING_WINDOW_MS)
-        {
-            for (chat_id, _title, at_ms, json) in chats {
-                let refusals: Vec<ChatToolRefusal> =
-                    serde_json::from_str(&json).unwrap_or_default();
-                let needs: Vec<_> = refusals
-                    .into_iter()
-                    .filter(|item| item.reason == ChatToolRefusalReason::NeedsApproval)
-                    .collect();
-                if !needs.is_empty() {
-                    refused.push((
-                        loupist.id.clone(),
-                        loupist.name.clone(),
-                        chat_id,
-                        at_ms,
-                        needs,
-                    ));
-                }
+            .map_err(super::map_store)?;
+        for (chat_id, _title, at_ms, json) in chats {
+            let refusals: Vec<ChatToolRefusal> =
+                serde_json::from_str(&json).unwrap_or_else(|error| {
+                    eprintln!("Could not decode Chat tool refusals: {error}");
+                    Vec::new()
+                });
+            let needs: Vec<_> = refusals
+                .into_iter()
+                .filter(|item| item.reason == ChatToolRefusalReason::NeedsApproval)
+                .collect();
+            if !needs.is_empty() {
+                refused.push((
+                    loupist.id.clone(),
+                    loupist.name.clone(),
+                    chat_id,
+                    at_ms,
+                    needs,
+                ));
             }
         }
         // A reply from the user ends the wait: only a chat's last answer is read.
-        if let Ok(chats) = state
+        let chats = state
             .store
             .chats_ending_in_answer(&loupist.id, now - WAITING_WINDOW_MS)
-        {
-            for (chat_id, title, at_ms, answer) in chats {
-                if !asks_user(&answer) {
-                    continue;
-                }
-                items.push(AttentionItem {
-                    kind: AttentionKind::Question,
-                    loupist_id: loupist.id.clone(),
-                    loupist_name: loupist.name.clone(),
-                    chat_id: Some(chat_id),
-                    record_id: None,
-                    title,
-                    count: None,
-                    due_date: None,
-                    at_ms,
-                });
+            .map_err(super::map_store)?;
+        for (chat_id, title, at_ms, answer) in chats {
+            if !asks_user(&answer) {
+                continue;
             }
+            items.push(AttentionItem {
+                kind: AttentionKind::Question,
+                loupist_id: loupist.id.clone(),
+                loupist_name: loupist.name.clone(),
+                chat_id: Some(chat_id),
+                record_id: None,
+                title,
+                count: None,
+                due_date: None,
+                at_ms,
+            });
         }
-        if let Ok((count, conflict, latest)) = state.store.unread_runs_summary(&loupist.id) {
-            if count > 0 {
-                items.push(AttentionItem {
-                    kind: if conflict {
-                        AttentionKind::BriefingConflict
-                    } else {
-                        AttentionKind::UnreadResults
-                    },
-                    loupist_id: loupist.id.clone(),
-                    loupist_name: loupist.name.clone(),
-                    chat_id: None,
-                    record_id: None,
-                    title: String::new(),
-                    count: Some(count),
-                    due_date: None,
-                    at_ms: latest,
-                });
-            }
+        let (count, conflict, latest) = state
+            .store
+            .unread_runs_summary(&loupist.id)
+            .map_err(super::map_store)?;
+        if count > 0 {
+            items.push(AttentionItem {
+                kind: if conflict {
+                    AttentionKind::BriefingConflict
+                } else {
+                    AttentionKind::UnreadResults
+                },
+                loupist_id: loupist.id.clone(),
+                loupist_name: loupist.name.clone(),
+                chat_id: None,
+                record_id: None,
+                title: String::new(),
+                count: Some(count),
+                due_date: None,
+                at_ms: latest,
+            });
         }
         if let Ok((count, latest)) =
             crate::commands::assets::with_assets(state, &loupist.id, false, |tx| {
                 crate::knowledge::watch::unseen(tx, &loupist.id)
             })
+            .inspect_err(|error| eprintln!("Could not collect watch attention: {}", error.code))
         {
             if count > 0 {
                 items.push(AttentionItem {
@@ -434,7 +437,9 @@ pub(crate) async fn collect(state: &AppState) -> Result<Vec<AttentionItem>, Comm
         }
         if let Ok(crossed) = crate::commands::assets::with_assets(state, &loupist.id, false, |tx| {
             crate::knowledge::assets::unseen_crossings(tx, &loupist.id)
-        }) {
+        })
+        .inspect_err(|error| eprintln!("Could not collect crossed lines: {}", error.code))
+        {
             for (asset_id, name, at_ms) in crossed {
                 items.push(AttentionItem {
                     kind: AttentionKind::LineCrossed,
@@ -449,7 +454,9 @@ pub(crate) async fn collect(state: &AppState) -> Result<Vec<AttentionItem>, Comm
                 });
             }
         }
-        if let Ok(records) = crate::commands::knowledge::journal::open_checks(state, &loupist.id) {
+        if let Ok(records) = crate::commands::knowledge::journal::open_checks(state, &loupist.id)
+            .inspect_err(|error| eprintln!("Could not collect Journal checks: {}", error.code))
+        {
             for record in records {
                 let Some(check) = record.check else { continue };
                 // An undated line is read on its asset page, not reviewed on a day.
@@ -602,6 +609,25 @@ pub(crate) fn attention_notify(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn an_attention_store_failure_is_returned_without_raw_sqlite_details() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        crate::commands::tests::seed_profile(
+            state.store.as_ref(),
+            &crate::commands::tests::profile("loupist-a", &temporary.path().join("workspace"), 1),
+        );
+        state
+            .store
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TABLE chat_sessions")
+            .unwrap();
+        let error = collect(&state).await.unwrap_err();
+        assert_eq!(error.code, "internal");
+        assert_eq!(error.message, "Could not access saved data.");
+    }
 
     fn item(kind: AttentionKind, at_ms: i64, due: Option<&str>) -> AttentionItem {
         AttentionItem {

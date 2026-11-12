@@ -69,7 +69,6 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::knowledge::KnowledgeCatalogDto,
         crate::commands::knowledge::KnowledgeCatalogRequest,
         crate::commands::knowledge::KnowledgeConnectionRequest,
-        crate::commands::knowledge::KnowledgeConnectionsRequest,
         crate::commands::knowledge::KnowledgeGraphJobRequest,
         crate::commands::knowledge::KnowledgeGraphLoupistRequest,
         crate::commands::knowledge::KnowledgeGraphPauseRequest,
@@ -163,6 +162,8 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::user_context::WatchlistRemoveRequest,
         crate::commands::watch::WatchCheckNowRequest,
         crate::commands::watch::WatchCheckResult,
+        crate::commands::watch::WatchDefaultsApplyRequest,
+        crate::commands::watch::WatchDefaultsApplyResult,
         crate::commands::watch::WatchEventsListRequest,
         crate::commands::watch::WatchEventsSeenRequest,
         crate::commands::watch::WatchPauseSetRequest,
@@ -352,7 +353,6 @@ commands! {
         knowledge_catalog: crate::commands::knowledge::KnowledgeCatalogRequest => crate::commands::knowledge::KnowledgeCatalogDto;
         knowledge_connection_dismiss: crate::commands::knowledge::KnowledgeConnectionRequest => crate::knowledge::ConnectionView;
         knowledge_connection_open: crate::commands::knowledge::KnowledgeConnectionRequest => crate::knowledge::ConnectionView;
-        knowledge_connections: crate::commands::knowledge::KnowledgeConnectionsRequest => Vec<crate::knowledge::ConnectionView>;
         knowledge_graph_job: crate::commands::knowledge::KnowledgeGraphJobRequest => crate::knowledge::GraphJobView;
         knowledge_graph_pause: crate::commands::knowledge::KnowledgeGraphPauseRequest => crate::knowledge::GraphProcessingView;
         knowledge_graph_recover: crate::commands::knowledge::KnowledgeGraphLoupistRequest => crate::knowledge::GraphProcessingView;
@@ -452,6 +452,7 @@ commands! {
         watchlist_add: crate::commands::user_context::WatchlistAddRequest => crate::store::user_context::WatchlistEntry;
         watchlist_list: () => Vec<crate::store::user_context::WatchlistEntry>;
         watchlist_remove: crate::commands::user_context::WatchlistRemoveRequest => ();
+        watch_defaults_apply: crate::commands::watch::WatchDefaultsApplyRequest => crate::commands::watch::WatchDefaultsApplyResult;
         watch_check_now: crate::commands::watch::WatchCheckNowRequest => crate::commands::watch::WatchCheckResult;
         watch_events_list: crate::commands::watch::WatchEventsListRequest => Vec<crate::knowledge::watch::WatchEventView>;
         watch_events_seen: crate::commands::watch::WatchEventsSeenRequest => ();
@@ -719,11 +720,6 @@ async fn command_signatures() {
     let _: Result<crate::knowledge::ConnectionView, CommandError> =
         crate::commands::knowledge::knowledge_connection_open(
             any::<crate::commands::knowledge::KnowledgeConnectionRequest>(),
-            any(),
-        );
-    let _: Result<Vec<crate::knowledge::ConnectionView>, CommandError> =
-        crate::commands::knowledge::knowledge_connections(
-            any::<crate::commands::knowledge::KnowledgeConnectionsRequest>(),
             any(),
         );
     let _: Result<crate::knowledge::GraphJobView, CommandError> =
@@ -1210,6 +1206,11 @@ async fn command_signatures() {
         any::<crate::commands::user_context::WatchlistRemoveRequest>(),
         any(),
     );
+    let _: Result<crate::commands::watch::WatchDefaultsApplyResult, CommandError> =
+        crate::commands::watch::watch_defaults_apply(
+            any(),
+            any::<crate::commands::watch::WatchDefaultsApplyRequest>(),
+        );
     let _: Result<crate::commands::watch::WatchCheckResult, CommandError> =
         crate::commands::watch::watch_check_now(
             any(),

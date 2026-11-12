@@ -665,6 +665,7 @@ impl<'a> KnowledgeWrite<'a> {
         lens::resolve_anchors(self.tx, loupist_id, nodes)
     }
 
+    #[cfg(test)]
     pub fn connections(&self, loupist_id: &str) -> KnowledgeResult<Vec<ConnectionView>> {
         world_followups::list(self.tx, loupist_id)
     }

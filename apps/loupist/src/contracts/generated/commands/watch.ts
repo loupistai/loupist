@@ -28,6 +28,19 @@ export type WatchCheckNowRequest = { loupistId: string };
 
 export type WatchCheckResult = { newAlerts: number, settings: WatchSettingsView };
 
+export type WatchDefaultsApplyRequest = { loupistId: string };
+
+export type WatchDefaultsApplyResult = {
+  watchedAssets: number,
+  needsConnections: Array<WatchDefaultsConnectionNeed>,
+};
+
+export type WatchDefaultsConnectionNeed = {
+  kind: WatchKind,
+  connection: ConnectionRef,
+  assetIds: Array<string>,
+};
+
 export type WatchEventsListRequest = { loupistId: string, sinceMs?: number | null, limit: number };
 
 export type WatchEventsSeenRequest = {

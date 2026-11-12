@@ -589,3 +589,122 @@ fn host_research_search_uses_the_same_korean_character_limit_as_the_store() {
     assert_eq!(found[0]["researchId"], id);
     assert!(host_search(&state, "loupist-a", &(query + "나"), "research").is_err());
 }
+
+#[test]
+fn methods_stay_in_a_sixty_line_index_crowded_by_eighty_subject_pages() {
+    use crate::knowledge::lens_page::{
+        Basis, BasisRef, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
+    };
+    let (_dir, state) = fixture();
+    let expected = with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+        let write = KnowledgeWrite::bind(tx, blobs);
+        let origin = FilingOrigin::User {
+            chat_id: None,
+            message_id: None,
+        };
+        let mut expected = Vec::new();
+        for index in 0..3 {
+            let use_when = format!(
+                "Use method {index} to check durable cash flow.\n\n{}",
+                "Exact fallback context. ".repeat(12)
+            );
+            let page = write.file_section(
+                "loupist-a",
+                PageKind::Method,
+                &format!("Method {index}"),
+                "use-when",
+                &use_when,
+                &origin,
+                index + 1,
+            )?;
+            let summary = if index == 2 {
+                use_when
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .chars()
+                    .take(160)
+                    .collect()
+            } else {
+                let text = format!(
+                    "Method {index} summary: {}",
+                    "Preserve this method context. ".repeat(7)
+                )
+                .trim()
+                .to_owned();
+                write.file(
+                    "loupist-a",
+                    &origin,
+                    vec![PageDelta {
+                        target: PageTarget::Existing {
+                            record_id: page.record_id.clone(),
+                        },
+                        ops: vec![LensOp::Summary { text: text.clone() }],
+                    }],
+                    index + 10,
+                )?;
+                text
+            };
+            expected.push((page.record_id, summary));
+        }
+        for index in 0..80 {
+            let filed = write.file(
+                "loupist-a",
+                &origin,
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Subject,
+                        title: format!("Subject {index}"),
+                        anchors: vec![],
+                    },
+                    ops: vec![LensOp::Put {
+                        key: SectionKey::new("notes")?,
+                        heading: "Notes".into(),
+                        markdown: "More recent subject research.".into(),
+                        expected: None,
+                        basis: Basis {
+                            refs: vec![BasisRef::Page {
+                                record_id: expected[0].0.clone(),
+                                section_key: None,
+                            }],
+                            uncertainty: Some("A research view based on the method.".into()),
+                        },
+                    }],
+                }],
+                index + 100,
+            )?;
+            assert!(!filed[0].record_id.is_empty(), "{filed:?}");
+        }
+        Ok(expected)
+    })
+    .unwrap();
+    let context = host_memory_context(&state, "loupist-a", "").unwrap();
+    assert_eq!(context.lens_total, 83);
+    assert_eq!(context.lens_shown, LENS_INDEX_LINES);
+    assert_eq!(
+        context
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == "lens")
+            .count(),
+        LENS_INDEX_LINES
+    );
+    assert!(context
+        .entries
+        .iter()
+        .take(3)
+        .all(|entry| entry.lens_kind == Some(crate::knowledge::lens_page::LensKind::Method)));
+    for (id, summary) in expected {
+        assert_eq!(
+            context
+                .entries
+                .iter()
+                .find(|entry| entry.id == id)
+                .unwrap()
+                .summary,
+            summary
+        );
+    }
+    // The remaining budget preserves the old newest-first subject order.
+    assert_eq!(context.entries[3].title, "Subject 79");
+}

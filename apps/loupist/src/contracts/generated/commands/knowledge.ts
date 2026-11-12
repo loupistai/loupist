@@ -27,8 +27,6 @@ export type KnowledgeCatalogRequest = { loupistId: string };
 
 export type KnowledgeConnectionRequest = { loupistId: string, connectionId: string };
 
-export type KnowledgeConnectionsRequest = { loupistId: string };
-
 export type KnowledgeGraphJobRequest = { loupistId: string, jobId: string };
 
 export type KnowledgeGraphLoupistRequest = { loupistId: string };
