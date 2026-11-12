@@ -5,11 +5,11 @@ use serde_json::{json, Value};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::OpenOptions,
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 
@@ -31,6 +31,83 @@ use crate::{
 const PROTOCOL: &str = "loupist-provider/1";
 const MAX_REQUEST_BYTES: usize = 512 * 1024;
 const MAX_RESULT_BYTES: u64 = 512 * 1024;
+
+/// Excludes concurrent probes without spending the durable back-off window on
+/// preparation or a launch failure. Every service for this app shares the gate.
+struct ProbePermit {
+    key: (PathBuf, String),
+}
+
+fn active_probes() -> &'static Mutex<BTreeSet<(PathBuf, String)>> {
+    static ACTIVE: OnceLock<Mutex<BTreeSet<(PathBuf, String)>>> = OnceLock::new();
+    ACTIVE.get_or_init(Default::default)
+}
+
+impl ProbePermit {
+    fn begin(
+        store: &SqliteStore,
+        agent_dir: &Path,
+        provider: &str,
+        now: i64,
+    ) -> Result<Option<Self>, ()> {
+        use crate::providers::status::background_hold;
+        match background_hold(store, provider, now) {
+            BackgroundHold::Clear => Ok(None),
+            BackgroundHold::Held => Err(()),
+            BackgroundHold::ProbeDue => {
+                let permit = Self::acquire(agent_dir, provider)?;
+                match background_hold(store, provider, now) {
+                    BackgroundHold::Clear => Ok(None),
+                    BackgroundHold::Held => Err(()),
+                    BackgroundHold::ProbeDue => Ok(Some(permit)),
+                }
+            }
+        }
+    }
+
+    fn acquire(agent_dir: &Path, provider: &str) -> Result<Self, ()> {
+        let key = (agent_dir.to_owned(), provider.to_owned());
+        if !active_probes().lock().map_err(|_| ())?.insert(key.clone()) {
+            return Err(());
+        }
+        Ok(Self { key })
+    }
+
+    fn record_support_failure<E>(
+        &self,
+        store: &SqliteStore,
+        outcome: &Result<(), SupportFailure<E>>,
+        shutdown_failed: bool,
+        now: i64,
+    ) {
+        if !matches!(
+            outcome,
+            Err(SupportFailure::Launch(_) | SupportFailure::CancelledBeforeDispatch)
+        ) && (outcome.is_err() || shutdown_failed)
+        {
+            crate::providers::status::claim_probe(store, &self.key.1, now);
+        }
+    }
+
+    fn record_reply(
+        &self,
+        store: &SqliteStore,
+        disposition: ProviderInferenceDisposition,
+        now: i64,
+    ) {
+        if disposition != ProviderInferenceDisposition::NotSent {
+            crate::providers::status::claim_probe(store, &self.key.1, now);
+        }
+    }
+}
+
+impl Drop for ProbePermit {
+    fn drop(&mut self) {
+        if let Ok(mut active) = active_probes().lock() {
+            active.remove(&self.key);
+        }
+    }
+}
 
 /// Pinned Pi providers whose model adapters support our fetch guard
 /// (`isolated_inference` in the provider manifest). The Pi process checks the
@@ -297,17 +374,6 @@ impl ProviderInferenceService {
         {
             return ProviderInferenceReply::not_sent("The model provider is not connected.");
         }
-        // A held account gets one attempt per back-off window; it is spent here,
-        // once, even when several jobs reach this point together.
-        let now = crate::commands::now_ms();
-        if crate::providers::status::background_hold(&self.store, &request.provider, now)
-            == BackgroundHold::ProbeDue
-            && !crate::providers::status::claim_probe(&self.store, &request.provider, now)
-        {
-            return ProviderInferenceReply::not_sent(
-                "This account is waiting until a request goes through.",
-            );
-        }
         let _admission = match self.admit() {
             Ok(lease) => lease,
             Err(_) => {
@@ -333,6 +399,21 @@ impl ProviderInferenceService {
         if write_request(path, &request).is_err() {
             return ProviderInferenceReply::not_sent("The isolated request could not be prepared.");
         }
+        let probe = match ProbePermit::begin(
+            &self.store,
+            &self.agent_data_dir,
+            &request.provider,
+            crate::commands::now_ms(),
+        ) {
+            Ok(permit) => permit,
+            Err(()) => {
+                return ProviderInferenceReply::not_sent(
+                    "This account is waiting until a request goes through.",
+                )
+            }
+        };
+        // Recheck under the gate. Only a dispatch (confirmed or uncertain)
+        // consumes a due probe; local setup and spawn failures leave it due.
         let launch = PiSupportLaunchConfig {
             executable: pi.executable.clone(),
             runtime_dir: pi.runtime_dir.clone(),
@@ -361,6 +442,14 @@ impl ProviderInferenceService {
             None,
         )
         .await;
+        if let Some(probe) = &probe {
+            probe.record_support_failure(
+                &self.store,
+                &outcome.result,
+                outcome.shutdown.is_err(),
+                crate::commands::now_ms(),
+            );
+        }
         #[cfg(feature = "eval-harness")]
         {
             self.record_diagnostic(
@@ -413,6 +502,9 @@ impl ProviderInferenceService {
             Ok((reply, _, failure)) => (reply, failure),
             Err(()) => (ProviderInferenceReply::uncertain(), None),
         };
+        if let Some(probe) = &probe {
+            probe.record_reply(&self.store, reply.disposition, crate::commands::now_ms());
+        }
         self.record_outcome(&request.provider, &reply, provider_failure);
         reply
     }
@@ -680,6 +772,81 @@ fn read_reply(path: &Path) -> Result<ReadReply, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn probe_preparation_and_launch_failures_leave_the_window_due_and_dispatch_spends_it() {
+        use crate::providers::status::{self, CredentialKind, Trigger};
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        let agent = state.pi_agent_data_dir().unwrap();
+        status::record(&state, "xai", Trigger::Connected(CredentialKind::Plan)).unwrap();
+        status::record(
+            &state,
+            "xai",
+            Trigger::Failure(crate::domain::ChatFailureKind::PlanLimit),
+        )
+        .unwrap();
+        let now = status::load(&state, "xai")
+            .unwrap()
+            .unwrap()
+            .notice
+            .unwrap()
+            .at_ms
+            + status::PROBE_WINDOW_MS;
+        let permit = ProbePermit::begin(&state.store, &agent, "xai", now)
+            .unwrap()
+            .unwrap();
+        assert!(ProbePermit::begin(&state.store, &agent, "xai", now).is_err());
+        assert_eq!(state.store.provider_probe_at("xai").unwrap(), None);
+        drop(permit); // Local preparation was cancelled.
+        let permit = ProbePermit::begin(&state.store, &agent, "xai", now)
+            .unwrap()
+            .unwrap();
+        for outcome in [
+            Err(SupportFailure::<()>::Launch(
+                crate::pi::PiError::UntrustedRuntime,
+            )),
+            Err(SupportFailure::CancelledBeforeDispatch),
+        ] {
+            permit.record_support_failure(&state.store, &outcome, false, now);
+            assert_eq!(state.store.provider_probe_at("xai").unwrap(), None);
+        }
+        // A support result can still report that the provider call was not sent.
+        permit.record_support_failure(&state.store, &Ok::<_, SupportFailure<()>>(()), false, now);
+        permit.record_reply(&state.store, ProviderInferenceDisposition::NotSent, now);
+        assert_eq!(state.store.provider_probe_at("xai").unwrap(), None);
+        // A partially written command is uncertain and must count as an attempt.
+        permit.record_support_failure(
+            &state.store,
+            &Err(SupportFailure::<()>::Dispatch(
+                crate::pi::PiError::WriteTimeout,
+            )),
+            false,
+            now,
+        );
+        assert_eq!(state.store.provider_probe_at("xai").unwrap(), Some(now));
+        drop(permit);
+        assert!(ProbePermit::begin(&state.store, &agent, "xai", now).is_err());
+        let permit = ProbePermit::begin(&state.store, &agent, "xai", now + status::PROBE_WINDOW_MS)
+            .unwrap()
+            .unwrap();
+        permit.record_reply(
+            &state.store,
+            ProviderInferenceDisposition::Completed,
+            now + status::PROBE_WINDOW_MS,
+        );
+        assert_eq!(
+            state.store.provider_probe_at("xai").unwrap(),
+            Some(now + status::PROBE_WINDOW_MS)
+        );
+        // Healthy accounts do not serialize their inference behind this gate.
+        assert!(ProbePermit::begin(&state.store, &agent, "openai", now)
+            .unwrap()
+            .is_none());
+        assert!(ProbePermit::begin(&state.store, &agent, "openai", now)
+            .unwrap()
+            .is_none());
+    }
 
     #[tokio::test]
     async fn background_inference_and_provider_controls_coexist_but_both_block_updates() {
