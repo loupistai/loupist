@@ -224,6 +224,8 @@ function ScopedChatWorkspacePanel({
   const [shownRevision, setShownRevision] = useState<number | null>(null);
   const [restored, setRestored] = useState<{ from: number; to: number } | null>(null);
   const versionTriggerRef = useRef<HTMLButtonElement>(null);
+  // The open item's view switch and actions render into the status row (chat design change 24).
+  const [statusSlot, setStatusSlot] = useState<HTMLSpanElement | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const sideBounds = workspacePanelBounds("side", stageSize.width);
@@ -544,6 +546,7 @@ function ScopedChatWorkspacePanel({
           {view && view.artifact.id === openWork.artifact.artifact_id && !readError ? <ArtifactStatus view={view} version={
             <WorkVersionMenu key={view.artifact.id} bridge={bridge} loupistId={loupistId} threadId={openWork.threadId} view={view} triggerRef={versionTriggerRef} onChoose={showRevision} />
           } /> : null}
+          <span className="workspace-status-slot" ref={setStatusSlot} />
         </div>
         {view && shownRevision !== null && !loadingArtifact && !readError ? <WorkVersionBar key={`${view.artifact.id}:${view.revision.revision}`} bridge={bridge} loupistId={loupistId} threadId={openWork.threadId} view={view}
           onBack={backToCurrent}
@@ -571,7 +574,7 @@ function ScopedChatWorkspacePanel({
             {shownRevision !== null ? <Button type="button" variant="ghost" size="sm" onClick={() => showRevision(null)}>{t("workVersions.backToCurrent")}</Button> : null}
           </div>
         ) : view ? (
-          <ArtifactContent view={view} theme={theme} workspacePath={workspacePath} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(request)} />
+          <ArtifactContent view={view} theme={theme} workspacePath={workspacePath} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(request)} toolbarTarget={statusSlot} />
         ) : null}
       </> : <WorkspaceWorkList bridge={bridge} loupistId={loupistId} refreshKey={workRefreshKey} building={buildingWork}
         onOpen={async (item) => {

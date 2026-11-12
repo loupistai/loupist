@@ -40,12 +40,12 @@ it("keeps original drawings locked until the user enables editing", async () => 
   await waitFor(() => expect(instance.createOverlay).toHaveBeenCalledWith(expect.objectContaining({ name: "horizontalStraightLine", lock: true })));
   expect(instance.createOverlay).toHaveBeenCalledWith(expect.objectContaining({ name: "simpleAnnotation", lock: true, extendData: "support" }));
   expect(instance.createIndicator).toHaveBeenCalledWith({ name: "SAR", paneId: "candle_pane" }, true);
-  // Drawing tools sit behind "Draw" so the toolbar stays one row.
+  // Drawing, colour, zoom and Latest sit behind "…" so the toolbar stays one row.
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Draw" }));
+  await user.click(screen.getByRole("button", { name: "More chart controls" }));
   await user.click(screen.getByRole("menuitem", { name: "Edit drawings" }));
   expect(instance.overrideOverlay).toHaveBeenCalledWith({ lock: false });
-  await user.click(screen.getByRole("button", { name: "Draw" }));
+  await user.click(screen.getByRole("button", { name: "More chart controls" }));
   expect(screen.getByRole("menuitem", { name: "Stop editing drawings" })).toBeInTheDocument();
   await user.click(screen.getByRole("menuitem", { name: "Trend" }));
   expect(instance.createOverlay).toHaveBeenCalledWith(expect.objectContaining({ name: "segment", lock: false }));
@@ -104,11 +104,11 @@ it("gives a panel chart's study panes a quarter of its height, so a short dock k
 it("undoes a completed local drawing", async () => {
   const user = userEvent.setup();
   render(<FinancialChart chart={chart} dataset={dataset} theme="light" />);
-  await user.click(screen.getByRole("button", { name: "Draw" }));
+  await user.click(screen.getByRole("button", { name: "More chart controls" }));
   await user.click(screen.getByRole("menuitem", { name: "Trend" }));
   const overlay = instance.createOverlay.mock.calls.at(-1)![0];
   act(() => overlay.onDrawEnd());
-  await user.click(screen.getByRole("button", { name: "Draw" }));
+  await user.click(screen.getByRole("button", { name: "More chart controls" }));
   await user.click(screen.getByRole("menuitem", { name: "Undo drawing" }));
   expect(instance.removeOverlay).toHaveBeenCalledWith();
 });
@@ -136,7 +136,8 @@ it("updates candle and change-marker colors from locale tokens without losing th
 
 it("restyles a theme change without replacing local drawings or the zoomed chart", async () => {
   const view = render(<FinancialChart chart={chart} dataset={dataset} theme="light" />);
-  fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+  await userEvent.setup().click(screen.getByRole("button", { name: "More chart controls" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Zoom in" }));
   const initializations = init.mock.calls.length;
   const disposals = dispose.mock.calls.length;
   const drawings = instance.createOverlay.mock.calls.length;

@@ -1055,3 +1055,12 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .workspace-lens-content .memory-page[data-reader-open] .memory-reader:not(.is-lens) { flex:1 1 auto; align-self:stretch; width:100%; min-height:0; overflow:auto; scroll-padding-block: var(--gg-space-4); }
 .workspace-world-content > .memory-workspace { flex:1; min-height:0; }
 .artifact-panel[data-expanded] > .workspace-kind-heading { display:none; }
+
+/* The open item's view switch and actions join the Work status row (chat design change 24). */
+.workspace-status-slot { display: contents; }
+.workspace-status .artifact-view-toolbar[data-in-status] { min-height: 0; margin-left: auto; padding: 0; border-bottom: 0; gap: var(--gg-space-2); }
+
+/* The plot keeps the flexible row whether or not a header row is drawn above it. */
+.artifact-chart-shell:not([data-compact]) > .chart-engine-header { grid-row: 1; }
+.artifact-chart-shell:not([data-compact]) > .chart-engine-surface { grid-row: 2; }
+.artifact-chart-shell:not([data-compact]) > .artifact-chart-note { grid-row: 3; }

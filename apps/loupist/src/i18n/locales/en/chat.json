@@ -732,6 +732,7 @@
   },
   "financialChart": {
     "chartControls": "Chart controls",
+    "moreControls": "More chart controls",
     "draw": "Draw",
     "stopEditingDrawings": "Stop editing drawings",
     "volumeIndicator": "Volume",

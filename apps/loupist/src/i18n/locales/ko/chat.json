@@ -693,6 +693,7 @@
   },
   "financialChart": {
     "chartControls": "차트 도구",
+    "moreControls": "차트 도구 더 보기",
     "draw": "그리기",
     "stopEditingDrawings": "그리기 편집 끝내기",
     "volumeIndicator": "거래량",
