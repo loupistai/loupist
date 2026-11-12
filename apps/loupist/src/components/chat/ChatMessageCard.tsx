@@ -194,8 +194,6 @@ type Props = {
   /** Edit forks (X18): show the version of the chat before or after this message's version. */
   onEarlierVersion?: () => void;
   onLaterVersion?: () => void;
-  /** No longer used: the outline is a trigger in the meta row for every long answer. Kept until the Schedule reader stops passing it. */
-  outlineOpen?: boolean;
   onRetry?: () => void;
   /** The newest answer, or the newest question, keeps its action row visible; earlier ones show it on hover or focus (X1). */
   latest?: boolean;

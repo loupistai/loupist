@@ -13,7 +13,9 @@ followed assets in one table per class with a Watch-for checkbox per kind, add (
 six-digit code is a KRX listing), remove, a quiet "Adding to the map…" line while
 `knowledge_followed_status` reports queued or running work, holdings as a count and date
 per kind from `holdings_summary` with Import holdings, Watch all through
-`watch_defaults_apply`, Check now and Pause. Schedule's Watching row opens it. The shared
+`watch_defaults_apply` (also offered on the first follow receipt in chat; both list each kind that
+still needs a data connection, linked to Settings › Data connections), Check now and Pause.
+It is the `following` page from its sidebar row; Schedule's Watching row opens it. The shared
 Loupists list sits under Pages and is hidden [in this release](sharing.md#this-release).
 **Pages**: every active Lens page in one list grouped as Topics (`subject`), Ideas
 (`idea`), Methods (`method`), Your principles (`principle`) and Perspective (`perspective`);

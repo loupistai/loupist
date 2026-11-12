@@ -279,7 +279,7 @@
     "notAnnounced": "Not announced",
     "noExpectations": "No company guidance found.",
     "consensusNeedsKey": "Analyst consensus needs a market-data key (FMP or Intrinio).",
-    "openConnections": "Open Connections",
+    "openConnections": "Open Data connections",
     "consensusLate": "Consensus wasn't captured before the report.",
     "implied": "Price implied",
     "impliedText": "{{low}}–{{high}} yearly cash-flow growth for {{years}} years, at the {{date}} close of {{price}}",

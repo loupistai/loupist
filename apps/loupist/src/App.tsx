@@ -18,7 +18,8 @@ import {
 } from "react";
 import { createLoupistBridge } from "./bridge/tauriBridge";
 import { HoldingsSheet } from "./components/holdings/HoldingsSheet";
-import { FollowingPage } from "./components/app/FollowingPage";
+import { FollowingPage } from "./components/briefings/FollowingPage";
+import { requestLibrary } from "./components/map/libraryState";
 import { ChatView } from "./components/ChatView";
 import { DismissOnOpen, OpenProvider } from "./components/navigation/Open";
 import { useAppOpen } from "./app/useAppOpen";
@@ -638,6 +639,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       { id: "print-chat", label: i18n.t("app:palette.actions.printChat"), run: () => exportThread(activeExportThread, "pdf") },
     ] : []),
     { id: "import-holdings", label: i18n.t("app:palette.actions.importHoldings"), run: () => setHoldingsOpen(true) },
+    ...(selectedLoupist ? [{ id: "new-journal-entry", label: i18n.t("app:palette.actions.newJournalEntry"), run: () => { requestLibrary(bridge, selectedLoupist.id, "journal", { journalNew: true }); navigate("map"); } }] : []),
     { id: "settings", label: i18n.t("app:palette.actions.settings"), keys: shortcutFor("settings"), run: () => openSettings() },
     { id: "keyboard", label: i18n.t("app:palette.actions.keyboard"), run: () => openSettings("keyboard") },
   ];
@@ -995,11 +997,11 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   >
                     {chatViewProps ? <ChatView key={selectedLoupist.id} {...chatViewProps} /> : null}
                   </div>
-                  {tab === "following" ? <div className="app-panel" id="main-panel-following" aria-labelledby="current-location">
-                    <FollowingPage key={selectedLoupist.id} bridge={bridge} loupist={selectedLoupist} onImportHoldings={() => setHoldingsOpen(true)} />
+                  {tab === "following" ? <div className="app-panel following-route" id="main-panel-following" aria-labelledby="current-location">
+                    <FollowingPage key={selectedLoupist.id} bridge={bridge} loupist={selectedLoupist} onOpenConnections={connectionId => openSettings("connections", { entryId: connectionId })} />
                   </div> : null}
                   {tab === "schedule" ? <div className="app-panel" id="main-panel-schedule" aria-labelledby="current-location">
-                    <ScheduleView onOpenModelSettings={() => openSettings("model")} modelCatalog={model.catalog} initialRunId={inboxFocus?.loupistId === selectedLoupist.id ? inboxFocus.runId ?? undefined : undefined} initialTaskId={scheduledFocus?.loupistId === selectedLoupist.id ? scheduledFocus.taskId : undefined} onInitialConsumed={() => { setInboxFocus(null); setScheduledFocus(null); }} key={`${selectedLoupist.id}:${selectedLoupist.workspace_path}`} bridge={bridge} loupist={selectedLoupist} theme={resolvedTheme}
+                    <ScheduleView onOpenModelSettings={() => openSettings("model")} onAskHome={askInChat} onOpenFollowing={() => setTab("following")} modelCatalog={model.catalog} initialRunId={inboxFocus?.loupistId === selectedLoupist.id ? inboxFocus.runId ?? undefined : undefined} initialTaskId={scheduledFocus?.loupistId === selectedLoupist.id ? scheduledFocus.taskId : undefined} onInitialConsumed={() => { setInboxFocus(null); setScheduledFocus(null); }} key={`${selectedLoupist.id}:${selectedLoupist.workspace_path}`} bridge={bridge} loupist={selectedLoupist} theme={resolvedTheme}
                       open={(item, to, how) => appOpenIn(item.threadId, to, how)}
                       onOpenMap={disputedEntityIds => {
                         if (disputedEntityIds?.length) {

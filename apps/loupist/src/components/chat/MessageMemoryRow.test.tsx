@@ -45,13 +45,13 @@ it("shows the principle statement and supports View and Undo", async () => {
   expect(archive).toHaveBeenLastCalledWith({ loupistId, recordId: principle.recordId, archived: true });
 });
 
-it("opens a saved journal entry on the notes tab", async () => {
+it("opens a saved journal entry on the Journal tab", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const loupistId = (await bridge.loupistList())[0].id;
   const message: ChatMessage = { id: "answer", role: "assistant", content: "Saved.", status: "complete", created_at: new Date().toISOString(), memory_update: { status: "applied", commitId: "commit", changes: [{ kind: "Journal", title: "Hold the quality call", recordId: "journal-1", operation: "create", lesson: "", basis: "", futureUse: "", knowledge: { kind: "journal", recordId: "journal-1", revisionId: "rev", objectId: "journal-1" } }] } };
   const { open } = renderWithOpen(<MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={message} />);
   await userEvent.click(screen.getByRole("button", { name: "Saved 1 journal entry" }));
-  expect(libraryState(bridge, loupistId)).toMatchObject({ open: true, tab: "note" });
+  expect(libraryState(bridge, loupistId)).toMatchObject({ open: true, tab: "journal" });
   expect(open).toHaveBeenCalledWith({ kind: "memory", location: expect.objectContaining({ loupistId, surface: "note" }), title: "Hold the quality call" });
 });
 

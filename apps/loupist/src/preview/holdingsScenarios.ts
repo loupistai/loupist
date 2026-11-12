@@ -36,10 +36,9 @@ function type(field: HTMLInputElement, value: string) {
 }
 
 export function holdingsScenarios({ base, select, until, click }: Helpers): PreviewScenario[] {
-  /** Following, reached from Schedule's Watching row until the sidebar row lands. */
+  /** Following, from its sidebar row. */
   const openAbout = async (root: HTMLElement) => {
-    await navigate(root, "schedule");
-    await click('[data-schedule-task="watching"] .schedule-task-summary');
+    await navigate(root, "following");
     await until(() => select("[data-testid=following-page] [data-holdings-kinds]"), "Following did not load");
   };
   const openSheet = async (root: HTMLElement) => {
@@ -94,6 +93,20 @@ export function holdingsScenarios({ base, select, until, click }: Helpers): Prev
     {
       ...base("memory-about-holdings-by-kind", "Following: holdings by kind, counts and dates only", () => select("[data-holdings-kinds]"), openAbout),
       setup: async bridge => { await prepareFixture(bridge); await holdings(bridge); },
+    },
+    {
+      ...base("following-empty", "Following with nothing followed: the add field and holdings import", () => select("[data-testid=following-page] [data-following-empty]") && select("[data-testid=following-page] [data-holdings-kinds]"), openAbout),
+      setup: async bridge => {
+        await prepareFixture(bridge);
+        for (const entry of await bridge.watchlistList()) await bridge.watchlistRemove({ symbol: entry.symbol, market: entry.market });
+      },
+    },
+    {
+      ...base("following-unwatched", "Following two names that nothing watches yet: Watch all", () => select("[data-testid=following-page] [data-watch-all]"), openAbout),
+      setup: async bridge => {
+        await prepareFixture(bridge);
+        for (const entry of [{ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }, { symbol: "005930", market: "KRX", displayName: "Samsung Electronics" }]) await bridge.watchlistAdd(entry);
+      },
     },
     {
       ...base("following-page", "Following: the list, Watch all and what this Loupist watches", () => select("[data-testid=following-page] [data-watch-all]") && select("[data-testid=following-page] .watching-reader"), openAbout),

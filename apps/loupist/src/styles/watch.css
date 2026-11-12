@@ -108,6 +108,7 @@
 .following-empty { margin: 0 0 var(--gg-space-3); color: var(--gg-color-text-secondary); }
 .following-watch-all { align-items: center; }
 .following-watch-all p { flex: 1 1 24ch; max-width: 60ch; margin: 0; }
+.following-needs { display: grid; gap: var(--gg-space-1); margin: 0; padding: 0; list-style: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 @container following-pane (max-width: 900px) {
   .following-page { padding-inline: var(--gg-space-4); }
   .following-body { grid-template-columns: minmax(0, 1fr); }

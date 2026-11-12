@@ -5,7 +5,7 @@ import { useTranslation } from "../../i18n";
 import { Button } from "../ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
 import { SourceWorkspace } from "../knowledge/SourceWorkspace";
-import { librarySurface, libraryState, type LibraryTab } from "./libraryState";
+import { librarySurface, libraryState, useLibraryRequests, type LibraryTab } from "./libraryState";
 import { ResearchLibrary } from "../knowledge/ResearchLibrary";
 
 /** The note tab that shows what a location selects: a Journal entry opens Journal, a research note opens Notes. */
@@ -21,6 +21,7 @@ export function MapLibrary({ bridge, catalog, location, onOpen, onAsk, onChanged
   const [tab, setTab] = useState<LibraryTab>(() => location.surface === "note" ? noteTab(location, savedState.tab) : savedState.tab);
   const [views, setViews] = useState(savedState.views);
   useEffect(() => { Object.assign(libraryState(bridge, location.loupistId), { tab, views }); }, [bridge, location.loupistId, tab, views]);
+  useLibraryRequests(bridge, location.loupistId, state => { setTab(state.tab); setViews(state.views); });
   const surface = librarySurface(tab);
   const saved = views[tab] ?? { loupistId: location.loupistId, surface };
   const current = { ...saved, recordId: location.surface === surface ? location.recordId : undefined, revisionId: location.surface === surface ? location.revisionId : undefined, selection: location.surface === surface ? location.selection : undefined };

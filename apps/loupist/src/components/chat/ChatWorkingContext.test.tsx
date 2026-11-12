@@ -20,8 +20,8 @@ describe("Chat working context", () => {
     const read = vi.spyOn(bridge, "knowledgeWorkingNotes").mockResolvedValue({ current: second });
     render(<ChatWorkingContext {...props}><p>Conversation content</p></ChatWorkingContext>);
     expect(screen.getByText("Conversation content")).toBeVisible();
-    await user.click(await screen.findByRole("button", { name: "Working note" }));
-    expect(await screen.findByRole("article", { name: "Working note" })).toHaveTextContent("750");
+    await user.click(await screen.findByRole("button", { name: "Research note" }));
+    expect(await screen.findByRole("article", { name: "Research note" })).toHaveTextContent("750");
     expect(screen.getByText(second.changeSummary)).toBeVisible();
     expect(read).toHaveBeenLastCalledWith({ loupistId: "loupist-a", chatId: "chat-a" });
     expect(screen.queryByRole("button", { name: "Changes" })).not.toBeInTheDocument();
@@ -42,11 +42,11 @@ describe("Chat working context", () => {
     } };
     vi.spyOn(bridge, "knowledgeWorkingNotes").mockResolvedValue({ current: note });
     const { open } = renderWithOpen(<ChatWorkingContext {...props}><p>Conversation content</p></ChatWorkingContext>);
-    await user.click(await screen.findByRole("button", { name: "Working note" }));
+    await user.click(await screen.findByRole("button", { name: "Research note" }));
     await user.click(screen.getByRole("button", { name: "Source: Original filing" }));
     expect(destinations(open).at(-1)).toEqual({ kind: "memory", title: "Source: Original filing", location: expect.objectContaining({ loupistId: "loupist-a", surface: "source", recordId: "source-record", revisionId: "source-at-research", selection: { kind: "source", sourceId: undefined, spanId: "original-span" } }) });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Working note" }));
+    await user.click(screen.getByRole("button", { name: "Research note" }));
     await user.click(screen.getByRole("button", { name: "Lens 1 · Applied" }));
     expect(destinations(open).at(-1)).toEqual({ kind: "memory", title: "Lens 1 · Applied", location: expect.objectContaining({ surface: "lens", recordId: "lens-record", revisionId: "lens-at-research" }) });
     expect(screen.getByText("Conversation content")).toBeVisible();
@@ -60,7 +60,7 @@ describe("Chat working context", () => {
     await waitFor(() => expect(read).toHaveBeenCalledOnce());
     view.rerender(<ChatWorkingContext key="chat-b" {...props} chatId="chat-b" isRunning><p>Second chat is streaming</p></ChatWorkingContext>);
     await act(async () => resolve({ current: first }));
-    expect(screen.queryByRole("article", { name: "Working note" })).toBeNull();
+    expect(screen.queryByRole("article", { name: "Research note" })).toBeNull();
     expect(screen.getByText("Second chat is streaming")).toBeVisible();
     expect(read).toHaveBeenCalledOnce();
   });

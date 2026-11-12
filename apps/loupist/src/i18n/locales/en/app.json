@@ -15,9 +15,9 @@
     "discussThisLensWhatShouldWeRevise": "Discuss this Lens: {{label}}. What should we revise, and on what evidence?",
     "skillCreatorTurnedOnForThisLoupist": "Skill Creator turned on for this Loupist.",
     "skillCreatorTurnedOnForAllLoupists": "Skill Creator turned on for all Loupists.",
-    "correctTheConfigurationFileInSettingsChat": "Correct the configuration file in Loupist settings → Chat preferences to start a new run.",
+    "correctTheConfigurationFileInSettingsChat": "Correct the configuration file in Loupist settings → Chat defaults to start a new run.",
     "theConfiguredChatDefaultsAreUnavailableFor": "The configured Chat defaults are unavailable for the current model. Review Loupist settings → Chat defaults or choose a model in Chat.",
-    "correctTheConfigurationFileBeforeSending": "Correct the configuration file in Loupist settings → Chat preferences before sending.",
+    "correctTheConfigurationFileBeforeSending": "Correct the configuration file in Loupist settings → Chat defaults before sending.",
     "showOrLoadAModelInSettings": "Show or load a model in Settings to send messages. Your saved chats, Map and Lens are available.",
     "pleaseLookAtWorkspaceFile": "Please look at workspace file {{path}}. ",
     "source": "Source",
@@ -109,7 +109,6 @@
     "skills": "Skills",
     "skillsCreatorInstallerInstructionsWorkflowsCreateInstallZip": "skills creator installer instructions workflows create install zip github",
     "addAndManageReusableWorkflowsForYourLoupists": "Manage shared skills and defaults for all Loupists. Customize one Loupist on its settings page.",
-    "skillsCaption": "Extra abilities like documents and charts",
     "worldProcessing": "Map building",
     "memorySourcesRelationshipsProcessingModelLimits": "memory sources relationships processing model limits",
     "chooseHowEachLoupistConnectsWhatItLearns": "Choose how each Loupist connects what it learns from saved sources.",
@@ -340,6 +339,7 @@
       "openLens": "Open Lens",
       "openSchedule": "Open schedule",
       "importHoldings": "Import holdings…",
+      "newJournalEntry": "New Journal entry",
       "allChats": "All chats",
       "togglePanel": "Show or hide the panel",
       "settings": "Settings",
@@ -347,9 +347,5 @@
       "exportChat": "Export this chat as Markdown",
       "printChat": "Print this chat or save it as PDF"
     }
-  },
-  "following": {
-    "intro": "What you follow is shared by all your Loupists. Each Loupist chooses what to watch for.",
-    "empty": "Add a company, fund or coin to follow. Following is not a holding or a trade."
   }
 }

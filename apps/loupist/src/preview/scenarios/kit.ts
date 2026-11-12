@@ -90,9 +90,14 @@ export async function selectPanel(kind: "lens" | "world" | "materials") {
   await click(`[data-workspace-kind="${kind}"]`);
 }
 
-export async function navigate(root: HTMLElement, tab: "map" | "lens" | "schedule" | "settings") {
+export async function navigate(root: HTMLElement, tab: "map" | "lens" | "following" | "schedule" | "settings") {
   await until(() => root.querySelector('textarea[data-chat-composer]'), "Chat did not initialize");
   if (tab === "map" || tab === "lens") { await selectPanel(tab === "map" ? "world" : "lens"); return; }
+  if (tab === "following") {
+    await openNavigation('[data-sidebar-place="following"] button');
+    await click('[data-sidebar-place="following"] button');
+    return;
+  }
   if (tab === "schedule") {
     await openNavigation(".loupist-chat-row[data-home]");
     const more = await until(() => document.querySelector<HTMLButtonElement>("[data-bot-menu]"), "Bot menu did not initialize");

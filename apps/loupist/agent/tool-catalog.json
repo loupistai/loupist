@@ -624,8 +624,8 @@
       "progress": {
         "category": "memory",
         "operation": "submit",
-        "running": "Saving a working note",
-        "done": "Saved a working note",
+        "running": "Saving a research note",
+        "done": "Saved a research note",
         "source": "memory"
       }
     },
@@ -2294,8 +2294,8 @@
       "progress": {
         "category": "capability",
         "operation": "generic",
-        "running": "Opening a research session",
-        "done": "Opened a research session"
+        "running": "Opening a new chat",
+        "done": "Opened a new chat"
       }
     },
     {

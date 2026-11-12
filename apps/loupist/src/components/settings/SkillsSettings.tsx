@@ -17,7 +17,7 @@ import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control"
 import { ConfigurationDiagnostics } from "./AgentSettings";
 
 const keyOf = (skill: ManagedSkill) => skill.path ?? skill.id;
-const SKILL_TOOLING = new Set(["skill-installer", "skill-creator"]);
+const SKILL_TOOLING = new Set(["skill-creator"]);
 const origin = (skill: ManagedSkill) => skill.source === "bundled" ? i18n.t("settings:skillsSettings.includedWithLoupist") : skill.source === "personal" ? i18n.t("settings:skillsSettings.personal") : i18n.t("settings:skillsSettings.thisLoupist");
 export function SkillsSettings({ bridge, loupists, scope, onScopeChange, onDraftSkill }: {
   bridge: LoupistBridge; loupists: LoupistSummary[]; scope: ConfigScope; onScopeChange?: (scope: ConfigScope) => void;

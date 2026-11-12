@@ -1,5 +1,5 @@
 import { CheckIcon, LaptopIcon, LanguagesIcon, MoonIcon, SunIcon } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import type { ThemePreference } from "../../app/useTheme";
 import type { LanguagePreference } from "../../i18n/useLanguage";
 import { pseudoLocaleEnabled, useTranslation } from "../../i18n";
@@ -27,10 +27,6 @@ export function AppearanceSettings({ theme, onThemeChange, language, onLanguageC
   const { t } = useTranslation("settings");
   return (
     <Card className="appearance-card">
-      <CardHeader>
-        <CardTitle>{t("appearance.title")}</CardTitle>
-        <CardDescription>{t("appearance.description")}</CardDescription>
-      </CardHeader>
       <CardContent className="space-y-4">
         <h3 className="text-sm font-semibold">{t("appearance.theme.label")}</h3>
         <div className="theme-grid" role="group" aria-label={t("appearance.theme.label")}>

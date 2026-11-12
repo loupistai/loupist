@@ -170,7 +170,7 @@
     "recent": "Recent alerts",
     "empty": "No alerts yet. The first check sets a starting point.",
     "watch": "Watch",
-    "consentOff": "Asset watches are off",
+    "consentOff": "Watching is off",
     "group": {
       "equity": "Stocks",
       "crypto": "Crypto",

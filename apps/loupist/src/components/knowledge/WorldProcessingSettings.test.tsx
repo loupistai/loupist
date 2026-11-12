@@ -62,7 +62,7 @@ it("offers provider management when there are no connected models without enabli
   expect(await screen.findByText(/No connected models/)).toBeVisible();
   expect(screen.queryByRole("button", { name: /Map building model/ })).toBeNull();
   expect(autoProcess()).not.toBeChecked();
-  await user.click(screen.getByRole("button", { name: "Manage providers" }));
+  await user.click(screen.getByRole("button", { name: "Manage AI accounts" }));
   expect(props.onManageProviders).toHaveBeenCalledOnce();
   await user.click(autoProcess());
   expect(screen.getByRole("button", { name: "Save processing settings" })).toBeDisabled();
@@ -78,7 +78,7 @@ it("shows host readiness for a disconnected provider", async () => {
   const readiness = await screen.findByLabelText("Map building readiness");
   expect(within(readiness).getByText(label)).toBeVisible();
   expect(readiness).toHaveTextContent("Saved model");
-  expect(within(readiness).getByText("Connect the model provider in Settings.")).toBeVisible();
+  expect(within(readiness).getByText("Connect its AI account in Settings.")).toBeVisible();
   expect(screen.getByText(/The saved model is unavailable/)).toBeVisible();
 });
 
@@ -88,11 +88,11 @@ it("words the host's readiness note in the interface language", async () => {
   vi.spyOn(props.bridge, "knowledgeGraphSettingsGet").mockResolvedValue({ ...view, readiness: { status: "model_required", note: "awaiting_provider", modelName: null, providerName: null, authKind: null } });
   render(<WorldProcessingSettings {...props} />);
   const readiness = await screen.findByLabelText("Map building readiness");
-  expect(readiness).toHaveTextContent("Waiting for a supported model provider. A recommended map-building model will be selected when one is connected.");
+  expect(readiness).toHaveTextContent("Waiting for a supported AI account. A recommended map-building model will be selected when one is connected.");
   await act(async () => { await i18n.changeLanguage("ko"); });
   try {
     expect(readiness).toHaveTextContent("지원되는 AI 서비스를 기다리는 중이에요. 연결되면 추천 지도 구성 모델을 골라 드려요.");
-    expect(readiness).not.toHaveTextContent("Waiting for a supported model provider");
+    expect(readiness).not.toHaveTextContent("Waiting for a supported AI account");
   } finally {
     await act(async () => { await i18n.changeLanguage("en"); });
   }

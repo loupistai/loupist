@@ -253,10 +253,7 @@
 .knowledge-processing-form > fieldset > legend { width: 100%; }
 .knowledge-processing-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gg-space-4); }
 .knowledge-processing-fields > label { display: grid; gap: 6px; min-width: 0; }
-.world-processing-panel > summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); list-style: none; }
-.world-processing-panel > summary::-webkit-details-marker { display: none; }
-.world-processing-panel > summary::before { content: "▸"; }
-.world-processing-panel[open] > summary::before { content: "▾"; }
+.world-processing-summary { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); }
 .world-processing-status { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); align-items: center; margin-block: var(--gg-space-3) var(--gg-space-5); font-size: var(--gg-text-meta); }
 .world-processing-status > p { flex-basis: 100%; }
 .world-processing-recovery { display: grid; justify-items: start; gap: var(--gg-space-2); margin-bottom: var(--gg-space-5); font-size: var(--gg-text-meta); }

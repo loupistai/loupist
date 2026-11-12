@@ -30,7 +30,7 @@
     "accountLookupsNeedYourAccountNumberAndProduct": "Account lookups need your account number and product code. Those stay on this device and are never sent in chat.",
     "automaticUsesBuiltInWebSearchWithOpenai": "Automatic uses built-in web search with OpenAI and Anthropic when available, and Exa otherwise. Model search only requires web search from your selected model provider. Exa only uses Exa for every search.",
     "keysAreStoredSecurelyOnThisDeviceAnd": "Keys are stored securely on this device and never shown again.",
-    "modelsProviders": "Models & providers",
+    "modelsProviders": "AI accounts",
     "aboutThisConnection": "About this connection",
     "publisher": "Publisher",
     "integration": "Integration",
@@ -250,7 +250,7 @@
   },
   "readiness": {
     "unavailableNote": "This connection is unavailable. Update or reinstall the app to restore it.",
-    "setupNote": "Set up in Connections"
+    "setupNote": "Set up in Data connections"
   },
   "state": {
     "ready": "Ready",

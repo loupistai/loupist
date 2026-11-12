@@ -15,6 +15,7 @@ import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
 import { ShareSheet } from "../sharing/ShareSheet";
 import { pinForLens } from "../../knowledge/location";
+import { sourceTitle } from "../../knowledge/hostSource";
 import "@/styles/page-reader.css";
 
 const WORLD_LINK = /\]\(world:([^)\s]+)\)/gu;
@@ -136,9 +137,15 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
   const chip = (ref: BasisRefView, index: number) => {
     switch (ref.kind) {
       case "claim": return <button key={index} type="button" className="page-chip" data-chip="claim" onClick={() => openClaim(ref.claimId)}>{t("pageReader.chip.claim")}</button>;
-      case "span": return catalog?.sources.some(item => item.recordId === ref.recordId)
-        ? <button key={index} type="button" className="page-chip" data-chip="source" onClick={() => openSource(ref)}>{t("pageReader.chip.source")}</button>
-        : <span key={index} className="page-chip" data-chip="source">{t("pageReader.chip.source")}</span>;
+      case "span": {
+        // "Source · {title}" when the Library has the source, else just "Source" (direction N3).
+        const record = catalog?.sources.find(item => item.recordId === ref.recordId);
+        const title = record ? sourceTitle(record).trim() : "";
+        const label = title ? t("pageReader.chip.sourceTitled", { title }) : t("pageReader.chip.source");
+        return record
+          ? <button key={index} type="button" className="page-chip" data-chip="source" title={title || undefined} onClick={() => openSource(ref)}><span className="page-chip-label">{label}</span></button>
+          : <span key={index} className="page-chip" data-chip="source">{label}</span>;
+      }
       case "said": return <span key={index} className="page-chip" data-chip="said">{t("pageReader.chip.said")}</span>;
       case "page": return <button key={index} type="button" className="page-chip" data-chip="page" onClick={() => onOpenPage(ref.recordId)}>{t("pageReader.chip.page", { title: known.get(ref.recordId) ?? t("pageReader.chip.pageUnknown") })}</button>;
     }

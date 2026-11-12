@@ -15,7 +15,7 @@ it("reads the saved note and continues its original chat", async () => {
   const props = setup();
   const read = vi.spyOn(props.bridge, "knowledgeWorkingNoteRead").mockResolvedValue(note);
   render(<ResearchReader {...props} />);
-  expect(await screen.findByRole("article", { name: "Saved working note" })).toHaveTextContent(note.markdown);
+  expect(await screen.findByRole("article", { name: "Saved research note" })).toHaveTextContent(note.markdown);
   expect(read).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality", noteId: "old-note" });
   fireEvent.click(screen.getByRole("button", { name: "Continue chat" }));
   expect(props.onAsk).toHaveBeenCalledWith(expect.objectContaining({ kind: "research", objectId: "old-note" }), "deleted-chat");
@@ -47,7 +47,7 @@ it("retries the same note identity and focuses its restored reader", async () =>
   expect(await screen.findByRole("alert")).toHaveTextContent("Read unavailable");
   fireEvent.click(screen.getByRole("button", { name: "Retry saved record" }));
   // Focus moves in an effect after the reader mounts, so wait for it rather than for the element alone.
-  await waitFor(() => expect(screen.getByRole("article", { name: "Saved working note" })).toHaveFocus());
+  await waitFor(() => expect(screen.getByRole("article", { name: "Saved research note" })).toHaveFocus());
   expect(read).toHaveBeenCalledTimes(2);
   expect(read.mock.calls[1]).toEqual(read.mock.calls[0]);
 });
@@ -67,7 +67,7 @@ it("rejects mismatched exact record and source receipt identities", async () => 
   const props = setup();
   vi.spyOn(props.bridge, "knowledgeWorkingNoteRead").mockResolvedValue({ ...note, researchId: "another-note" });
   const view = render(<ResearchReader {...props} />);
-  expect(await screen.findByRole("alert")).toHaveTextContent("The requested working note was not returned.");
+  expect(await screen.findByRole("alert")).toHaveTextContent("The requested research note was not returned.");
   vi.spyOn(props.bridge, "knowledgeJournalRead").mockResolvedValue({ loupistId: "loupist-quality", researchId: "research", entities: [], createdAtMs: 1, updatedAtMs: 1, archived: false, inputDigest: "mock", journalId: "journal-http", check, judgment: "Saved conclusion", reasoning: "", inputs: { sources: [source], worlds: [], lenses: [], earlier: [] }, originChatId: null });
   vi.spyOn(props.bridge, "knowledgeJournalSourceRead").mockResolvedValue({ mediaType: "text/plain", byteLength: 3, text: "wrong receipt", pinned: { ...source, revisionId: "other-revision" } });
   view.rerender(<ResearchReader {...props} location={journalLocation} />);

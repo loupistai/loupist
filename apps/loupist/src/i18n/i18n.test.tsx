@@ -39,7 +39,7 @@ it("switches subscribed UI and document language immediately after saving, and p
 it("pseudo-localizes copy while preserving interpolation", async () => {
   await i18n.changeLanguage("en-XA");
   expect(i18n.t("appearance.theme.optionLabel", { ns: "settings", theme: "DARK" })).toContain("DARK");
-  expect(i18n.t("appearance.title", { ns: "settings" })).toMatch(/^⟦.*⟧$/);
+  expect(i18n.t("appearance.theme.label", { ns: "settings" })).toMatch(/^⟦.*⟧$/);
 });
 it("renders Korean appearance with English placeholder values and English fallback for missing copy", async () => {
   await i18n.changeLanguage("ko");
@@ -47,14 +47,14 @@ it("renders Korean appearance with English placeholder values and English fallba
   const ko = i18n.getResourceBundle("ko", "settings");
   i18n.removeResourceBundle("ko", "settings");
   render(<AppearanceSettings theme="system" onThemeChange={vi.fn()} language="ko" onLanguageChange={change} />);
-  expect(screen.getByText(resources.en.settings.appearance.title)).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: resources.en.settings.appearance.theme.label })).toBeInTheDocument();
   expect(screen.getByText(resources.en.settings.appearance.language.description)).toBeInTheDocument();
   const group = screen.getByRole("group", { name: "Language" });
   expect(within(group).getByRole("button", { name: "한국어" })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(within(group).getByRole("button", { name: "English" }));
   expect(change).toHaveBeenCalledWith("en");
   i18n.addResourceBundle("ko", "settings", ko);
-  expect(i18n.t("appearance.title", { ns: "settings" })).toBe(resources.ko.settings.appearance.title);
+  expect(i18n.t("appearance.theme.label", { ns: "settings" })).toBe(resources.ko.settings.appearance.theme.label);
 });
 
 it.each([

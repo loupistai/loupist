@@ -7,6 +7,7 @@ import type { AttentionItem } from "../../contracts/attention";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { nodeColorKey } from "../../knowledge/mapKinds";
 import { entityLabel } from "../../knowledge/mapItems";
+import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { attentionNamesLoupist, attentionWhat } from "./NeedsAttention";
 import type { WatchlistEntry } from "../../contracts/userContext";
 import { useAssetPageOpener } from "../assets/assetOpener";
@@ -35,7 +36,7 @@ async function readLoupist(bridge: LoupistBridge, loupistId: string): Promise<Lo
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), READ_BUDGET_MS); });
   const read = Promise.all([
-    bridge.knowledgeMap({ loupistId, maxNodes: 1000 }).catch(() => null),
+    readKnowledgeMap(bridge, loupistId).catch(() => null),
     bridge.principleList({ loupistId }).catch(() => []),
     bridge.inboxList({ loupistId, limit: 20 }).catch(() => null),
   ]).then(([map, principles, inbox]): LoupistIndex => ({

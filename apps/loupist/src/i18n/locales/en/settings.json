@@ -19,8 +19,6 @@
     "applicationTitle": "Application"
   },
   "appearance": {
-    "title": "Appearance",
-    "description": "Customize the interface appearance and language.",
     "theme": {
       "label": "Theme",
       "system": "System",
@@ -68,8 +66,6 @@
     "savedAppliesToNewResponses": "Saved · Applies to new responses",
     "selectionsSaveAutomaticallyChangesApplyToNewResponses": "Selections save automatically. Changes apply to new responses.",
     "reload": "Reload",
-    "chatDefaults": "Chat defaults",
-    "startEachChatYourWayYouCanChange": "Start each Chat your way. You can change these choices in the Chat composer.",
     "defaultModel": "Default model",
     "theModelToUseWhenStartingAChat": "The model to use when starting a Chat.",
     "useGlobalDefaultModel": "Use global default model",
@@ -148,7 +144,7 @@
     "noMatchingModels": "No matching models.",
     "bringYourPreferredAI": "Bring your preferred AI",
     "signInWithAnExistingAccountOrAdd": "Sign in with an existing account or add an API key to start chatting.",
-    "loadingModelProviders": "Loading model providers…",
+    "loadingModelProviders": "Loading AI accounts…",
     "cancel": "Cancel",
     "disconnectProvider": "Disconnect provider?",
     "savedCredentialsForLabelWillBeRemovedIts": "Saved credentials for {{label}} will be removed. Its models will no longer be available in Chat.",
@@ -293,15 +289,15 @@
       "recoveryRequired": "Map building was interrupted. Recover the last confirmed map to continue. The interrupted source will not be processed again automatically.",
       "recovering": "Restoring the last confirmed map. This does not use a model or retry interrupted processing.",
       "runtimeUnavailable": "Map building is unavailable. Update or reinstall the app to restore it.",
-      "awaitingProvider": "Waiting for a supported model provider. A recommended map-building model will be selected when one is connected.",
+      "awaitingProvider": "Waiting for a supported AI account. A recommended map-building model will be selected when one is connected.",
       "chooseModel": "Choose a Map building model.",
       "modelUnavailable": "The selected model is unavailable for Map building.",
       "connectProvider": "Connect the selected provider in Settings.",
       "isolationUnsupported": "This provider does not support isolated, non-retrying Map building.",
       "runtimeMissing": "The model runtime is unavailable.",
       "chooseConnectedModel": "Choose an available connected model.",
-      "notConnected": "Connect the model provider in Settings.",
-      "accountWaiting": "This account is waiting until a request goes through. See Settings › Models & providers."
+      "notConnected": "Connect its AI account in Settings.",
+      "accountWaiting": "This account is waiting until a request goes through. See Settings › AI accounts."
     }
   },
   "useAppUpdate": {
@@ -379,7 +375,7 @@
     "noMatchingModels": "No matching models",
     "noConnectedModels": "No connected models",
     "notConnected": "Not connected",
-    "manageModelsProviders": "Manage models & providers",
+    "manageModelsProviders": "Manage AI accounts",
     "selection": "{{model}} · {{thinking}}",
     "selectionWithOptions": "{{model}} · {{thinking}} · {{options}}",
     "thinkingForModel": "Thinking <0>{{model}}</0>"
@@ -405,10 +401,6 @@
     "skill-creator": {
       "name": "Skill Creator",
       "description": "Create or improve a reusable workflow with instructions, references, scripts, or templates."
-    },
-    "skill-installer": {
-      "name": "Skill Installer",
-      "description": "Find, inspect, and add skills from GitHub, ZIP packages, or local folders."
     },
     "dividend-income": {
       "name": "Dividend income",
@@ -460,19 +452,19 @@
     },
     "pdf": {
       "name": "PDF",
-      "description": "Read, extract, edit, assemble, fill, or generate PDF files, including scanned pages and financial tables. Use when PDF structure, OCR, forms, or page layout matter."
+      "description": "Extract text from PDF files, combine pages or generate text PDFs with Python in the offline sandbox. There is no OCR for scanned pages and no rendering, and generated PDFs use Latin-only fonts."
     },
-    "documents": {
+    "word-documents": {
       "name": "Word documents",
-      "description": "Create, inspect, or edit Word documents and templates (.docx/.dotx), including tables, styles, headers, citations, and revisions. Use for Word-file deliverables; plain chat prose needs no document workflow."
+      "description": "Read, create or edit .docx Word files with Python in the offline sandbox. It cannot render pages or convert to PDF, so the layout is not checked visually."
     },
     "spreadsheets": {
       "name": "Spreadsheets",
-      "description": "Read, build, or edit spreadsheet files such as .xlsx and .xlsm, including formulas, financial models, formatting, and charts. Use when workbook behavior matters; ordinary CSV analysis can use data-analysis."
+      "description": "Read or write .xlsx workbooks and CSV files with Python in the offline sandbox, including stored formulas and basic formatting. Formulas are not recalculated and sheets are not rendered."
     },
     "presentations": {
       "name": "Presentations",
-      "description": "Read, create, or edit PowerPoint decks and templates (.pptx/.potx), including financial charts, tables, speaker notes, and slide layouts. Use for a deck deliverable or an existing presentation."
+      "description": "Read, create or edit .pptx slides with Python in the offline sandbox, using editable text, tables and shapes. Slides are not rendered, so the layout is not checked visually, and chart labels use Latin-only fonts."
     },
     "world": {
       "name": "Map",
@@ -480,7 +472,7 @@
     },
     "lens": {
       "name": "Lens",
-      "description": "Use when the user teaches or corrects a reusable method, rule, convention, or preference, or when inspecting this Loupist's perspective and methods. Skip a one-off."
+      "description": "Use when the user teaches or corrects a reusable method, principle, convention, or preference, or when inspecting this Loupist's perspective and methods. Skip a one-off."
     },
     "journal": {
       "name": "Journal",

@@ -27,7 +27,7 @@ it.each(["Chat", "Lens"])("opens an exact research note inline and restores it a
   await user.type(screen.getByRole("textbox", { name: "Search notes" }), "margin");
   await waitFor(() => expect(search).toHaveBeenLastCalledWith({ loupistId: loupist.id, query: "margin" }));
   await user.click(await within(screen.getByRole("list", { name: "Saved research" })).findByRole("button", { name: /Quarterly margin review/ }));
-  expect(await screen.findByRole("article", { name: "Saved working note" })).toHaveTextContent(note.markdown);
+  expect(await screen.findByRole("article", { name: "Saved research note" })).toHaveTextContent(note.markdown);
   expect(exactRead).toHaveBeenCalledExactlyOnceWith({ loupistId: loupist.id, noteId: note.researchId });
 
   await user.click(await mainTab(new RegExp(`^${destination}$`)));
@@ -35,5 +35,5 @@ it.each(["Chat", "Lens"])("opens an exact research note inline and restores it a
   if (destination === "Lens") await user.click(savedSurface("Notes"));
   await waitFor(() => expect(savedSurface("Notes")).toHaveAttribute("aria-selected", "true"));
   expect(screen.getByRole("textbox", { name: "Search notes" })).toHaveValue("margin");
-  expect(await screen.findByRole("article", { name: "Saved working note" })).toHaveTextContent(note.markdown);
+  expect(await screen.findByRole("article", { name: "Saved research note" })).toHaveTextContent(note.markdown);
 });

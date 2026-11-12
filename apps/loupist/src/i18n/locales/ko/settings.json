@@ -20,8 +20,6 @@
     "applicationTitle": "애플리케이션"
   },
   "appearance": {
-    "title": "화면",
-    "description": "화면과 언어를 원하는 대로 설정해요.",
     "theme": {
       "label": "테마",
       "system": "시스템",
@@ -69,8 +67,6 @@
     "savedAppliesToNewResponses": "저장됨 · 새 응답부터 적용돼요",
     "selectionsSaveAutomaticallyChangesApplyToNewResponses": "선택한 내용은 자동으로 저장되며 새 응답부터 적용돼요.",
     "reload": "새로고침",
-    "chatDefaults": "대화 기본값",
-    "startEachChatYourWayYouCanChange": "원하는 설정으로 대화를 시작해요. 대화 입력창에서도 바꿀 수 있어요.",
     "defaultModel": "기본 모델",
     "theModelToUseWhenStartingAChat": "대화를 시작할 때 사용할 모델이에요.",
     "useGlobalDefaultModel": "전체 기본 모델 사용",
@@ -239,7 +235,7 @@
     "quarterlyEarningsReview": "분기 실적 검토",
     "whenToUseIt": "사용 시점",
     "useWhenReviewingACompanySQuarterlyEarnings": "기업의 분기 실적을 검토할 때 사용해요.",
-    "describeTheWorkflowConventionsAndChecksThatMatter": "작업 흐름, 규칙, 확인할 내용을 설명해 주세요.",
+    "describeTheWorkflowConventionsAndChecksThatMatter": "작업 흐름, 관례, 확인할 내용을 설명해 주세요.",
     "draftWithLoupist": "루피스트와 초안 작성",
     "cancel": "취소",
     "skillSavedAvailableOnTheNextTurn": "스킬을 저장했어요. 다음 응답부터 사용할 수 있어요.",
@@ -302,7 +298,7 @@
       "runtimeMissing": "모델 런타임을 사용할 수 없어요.",
       "chooseConnectedModel": "연결된 모델 중 사용할 수 있는 것을 골라 주세요.",
       "notConnected": "설정에서 AI 계정을 연결해 주세요.",
-      "accountWaiting": "이 계정은 요청이 통과될 때까지 기다리는 중이에요. 설정 › AI 모델 및 서비스를 확인해 주세요."
+      "accountWaiting": "이 계정은 요청이 통과될 때까지 기다리는 중이에요. 설정 › AI 계정을 확인해 주세요."
     }
   },
   "useAppUpdate": {
@@ -380,7 +376,7 @@
     "noMatchingModels": "검색한 모델이 없어요",
     "noConnectedModels": "연결된 모델이 없어요",
     "notConnected": "연결되지 않음",
-    "manageModelsProviders": "AI 모델 및 서비스 관리",
+    "manageModelsProviders": "AI 계정 관리",
     "selection": "{{model}} · {{thinking}}",
     "selectionWithOptions": "{{model}} · {{thinking}} · {{options}}",
     "thinkingForModel": "추론 수준 <0>{{model}}</0>"
@@ -406,10 +402,6 @@
     "skill-creator": {
       "name": "스킬 만들기",
       "description": "지침, 참고 자료, 스크립트, 템플릿으로 다시 사용할 작업 흐름을 만들거나 개선해요."
-    },
-    "skill-installer": {
-      "name": "스킬 설치",
-      "description": "GitHub, ZIP 패키지, 로컬 폴더에서 스킬을 찾아 확인하고 추가해요."
     },
     "dividend-income": {
       "name": "배당 점검",
@@ -461,19 +453,19 @@
     },
     "pdf": {
       "name": "PDF",
-      "description": "스캔한 페이지와 재무 표를 포함해 PDF를 읽고 추출, 편집, 병합, 작성하거나 생성해요. PDF 구조, OCR, 양식, 페이지 배치가 중요할 때 사용해요."
+      "description": "오프라인 샌드박스의 Python으로 PDF 파일의 텍스트를 추출하고, 페이지를 합치거나 텍스트 PDF를 만들어요. 스캔한 페이지의 OCR과 렌더링은 지원하지 않고, 만든 PDF는 라틴 문자 글꼴만 써요."
     },
-    "documents": {
+    "word-documents": {
       "name": "Word 문서",
-      "description": "표, 스타일, 머리글, 출처, 변경 내용을 포함한 Word 문서와 템플릿(.docx/.dotx)을 만들고 확인하거나 편집해요. Word 파일이 필요할 때 사용하며, 일반 대화에는 문서 작업이 필요하지 않아요."
+      "description": "오프라인 샌드박스의 Python으로 .docx Word 파일을 읽고 만들거나 편집해요. 페이지를 렌더링하거나 PDF로 변환하지 못해서 배치를 눈으로 확인하지는 않아요."
     },
     "spreadsheets": {
       "name": "스프레드시트",
-      "description": "수식, 재무 모형, 서식, 차트를 포함한 .xlsx, .xlsm 등의 스프레드시트를 읽고 만들거나 편집해요. 통합 문서의 기능이 중요할 때 사용하며, 일반 CSV 분석에는 data-analysis를 사용할 수 있어요."
+      "description": "오프라인 샌드박스의 Python으로 저장된 수식과 기본 서식을 포함해 .xlsx 통합 문서와 CSV 파일을 읽거나 써요. 수식을 다시 계산하지 않고 시트를 렌더링하지도 않아요."
     },
     "presentations": {
       "name": "프레젠테이션",
-      "description": "재무 차트, 표, 발표자 노트, 슬라이드 배치를 포함한 PowerPoint 자료와 템플릿(.pptx/.potx)을 읽고 만들거나 편집해요. 발표 자료를 제작하거나 기존 자료를 다룰 때 사용해요."
+      "description": "오프라인 샌드박스의 Python으로 편집 가능한 텍스트, 표, 도형을 써서 .pptx 슬라이드를 읽고 만들거나 편집해요. 슬라이드를 렌더링하지 않아 배치를 눈으로 확인하지 않고, 차트 글자는 라틴 문자 글꼴만 써요."
     },
     "world": {
       "name": "지도",
@@ -481,7 +473,7 @@
     },
     "lens": {
       "name": "렌즈",
-      "description": "사용자가 다시 사용할 방법, 규칙, 관례, 선호를 알려 주거나 수정할 때, 또는 이 루피스트의 관점과 방법을 살펴볼 때 사용해요. 일회성 요청에는 사용하지 않아요."
+      "description": "사용자가 다시 사용할 방법, 원칙, 관례, 선호를 알려 주거나 수정할 때, 또는 이 루피스트의 관점과 방법을 살펴볼 때 사용해요. 일회성 요청에는 사용하지 않아요."
     },
     "journal": {
       "name": "저널",

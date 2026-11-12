@@ -1,6 +1,6 @@
 import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ImageIcon, ListIcon, MoreHorizontalIcon, NetworkIcon, SearchIcon, SlidersHorizontalIcon, VideoIcon, WaypointsIcon } from "lucide-react";
+import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ImageIcon, ListIcon, MoreHorizontalIcon, SearchIcon, SlidersHorizontalIcon, VideoIcon, WaypointsIcon } from "lucide-react";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { useTranslation } from "../../i18n";
 import { Button } from "../ui/button";
@@ -137,7 +137,9 @@ function LensMenu({ lenses, overlayId, onOverlay, disabled, appliedCounts, lensT
 function LocalControls({ local, disabled, scopeFolded }: { local: MapLocalControls; disabled?: boolean; scopeFolded: boolean }) {
   const { t, i18n } = useTranslation("knowledge");
   const [aroundOpen, setAroundOpen] = useState(false);
-  const [scopeOpen, setScopeOpen] = useState(false);
+  // Narrow, the Scope segment is hidden (by measurement or the container query): the Around menu carries the three choices.
+  const [scopeInMenu, setScopeInMenu] = useState(false);
+  const segment = useRef<HTMLDivElement>(null);
   const name = entityLabel(local.focal, i18n.language);
   const choose = (node: KnowledgeMapNode) => { local.onFocal(node); setAroundOpen(false); };
   const option = (node: KnowledgeMapNode) => <Button key={node.id} variant="ghost" disabled={disabled} aria-pressed={node.id === local.focal.id} onClick={() => choose(node)}>
@@ -151,25 +153,25 @@ function LocalControls({ local, disabled, scopeFolded }: { local: MapLocalContro
     local.onScope(next);
     event.currentTarget.querySelector<HTMLButtonElement>(`[data-scope="${next}"]`)?.focus();
   };
+  const openAround = (open: boolean) => {
+    if (open) setScopeInMenu(scopeFolded || (segment.current ? getComputedStyle(segment.current).display === "none" : false));
+    setAroundOpen(open);
+  };
   return <>
-    <Popover open={aroundOpen} onOpenChange={setAroundOpen}>
-      <PopoverTrigger asChild><Button className="map-toolbar-button map-around" disabled={disabled} variant="ghost" data-map-around aria-label={t("map.around", { name })} title={t("map.around", { name })}>
-        <i className="map-swatch is-watching map-around-glyph" aria-hidden="true" /><span className="map-control-label map-around-label">{t("map.around", { name })}</span><ChevronDownIcon className="map-around-chevron" />
+    <Popover open={aroundOpen} onOpenChange={openAround}>
+      <PopoverTrigger asChild><Button className="map-toolbar-button map-around" disabled={disabled} variant="ghost" data-map-around data-scope-folded={scopeFolded || undefined}
+        aria-label={scopeFolded ? `${t("map.around", { name })}, ${t("map.scope")}: ${t(scopeKey[local.scope])}` : t("map.around", { name })} title={t("map.around", { name })}>
+        <span className="map-control-label map-around-label">{t("map.around", { name })}</span><span className="map-around-name" aria-hidden="true">{name}</span><ChevronDownIcon className="map-around-chevron" />
       </Button></PopoverTrigger>
       <PopoverContent className="map-lens-menu map-around-menu" align="start" aria-label={t("map.aroundMenu")}>
+        {scopeInMenu ? <section aria-label={t("map.scope")} data-map-around-scope><h3>{t("map.scope")}</h3>{mapScopes.map((scope) => <Button key={scope} variant="ghost" disabled={disabled} data-around-scope={scope} aria-pressed={local.scope === scope} onClick={() => { local.onScope(scope); setAroundOpen(false); }}>{t(scopeKey[scope])}</Button>)}</section> : null}
         {local.followed.length ? <section aria-label={t("map.aroundWatching")}><h3>{t("map.aroundWatching")}</h3>{local.followed.slice(0, 12).map(option)}</section> : null}
         {local.recent.length ? <section aria-label={t("map.aroundRecent")}><h3>{t("map.aroundRecent")}</h3>{local.recent.map(option)}</section> : null}
         <Button variant="ghost" disabled={disabled} data-map-pick onClick={() => { setAroundOpen(false); local.onPickOnMap(); }}>{t("map.aroundPick")}</Button>
       </PopoverContent>
     </Popover>
-    <div className="map-segmented map-scope-segment" {...foldProps("scope", scopeFolded)} role="group" aria-label={t("map.scope")} onKeyDown={moveScope}>
+    <div ref={segment} className="map-segmented map-scope-segment" {...foldProps("scope", scopeFolded)} role="group" aria-label={t("map.scope")} onKeyDown={moveScope}>
       {mapScopes.map((scope) => <button type="button" key={scope} data-scope={scope} disabled={disabled} aria-pressed={local.scope === scope} tabIndex={local.scope === scope ? 0 : -1} onClick={() => local.onScope(scope)}>{t(scopeKey[scope])}</button>)}
     </div>
-    <Popover open={scopeOpen} onOpenChange={setScopeOpen}>
-      <PopoverTrigger asChild><Button className="map-toolbar-button map-scope-menu-button" disabled={disabled} variant="ghost" data-map-scope-menu data-scope-folded={scopeFolded || undefined} aria-label={`${t("map.scope")}: ${t(scopeKey[local.scope])}`} title={t("map.scope")}><NetworkIcon /></Button></PopoverTrigger>
-      <PopoverContent className="map-lens-menu" align="start">
-        {mapScopes.map((scope) => <Button key={scope} variant="ghost" disabled={disabled} aria-pressed={local.scope === scope} onClick={() => { local.onScope(scope); setScopeOpen(false); }}>{t(scopeKey[scope])}</Button>)}
-      </PopoverContent>
-    </Popover>
   </>;
 }

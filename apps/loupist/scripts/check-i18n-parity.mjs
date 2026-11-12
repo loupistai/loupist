@@ -44,6 +44,7 @@ const allowedTerms = new Map([
   ["Office", "Document product family"],
   ["Word", "Document product name"],
   ["PowerPoint", "Presentation product name"],
+  ["Python", "Programming language the file Skills run in the sandbox"],
 ]);
 
 // Technical literals and subscription names are exceptions only at the exact
@@ -57,9 +58,9 @@ const exceptions = new Map([
   ["settings.modelSettingsPanel.customNamePlaceholder", { terms: ["Ollama"], reason: "Product name in an example provider name" }],
   ["settings.skillsSettings.chooseFolderDescription", { terms: ["SKILL.md"], reason: "Required skill filename" }],
   ["settings.skillsSettings.repairSkill", { terms: ["SKILL.md"], reason: "Required skill filename" }],
-  ["settings.bundledSkills.documents.description", { terms: [".docx", ".dotx"], reason: "Literal supported file extensions" }],
-  ["settings.bundledSkills.spreadsheets.description", { terms: [".xlsx", ".xlsm", "data-analysis"], reason: "Literal file extensions and skill identifier" }],
-  ["settings.bundledSkills.presentations.description", { terms: [".pptx", ".potx"], reason: "Literal supported file extensions" }],
+  ["settings.bundledSkills.word-documents.description", { terms: [".docx"], reason: "Literal supported file extension" }],
+  ["settings.bundledSkills.spreadsheets.description", { terms: [".xlsx"], reason: "Literal supported file extension" }],
+  ["settings.bundledSkills.presentations.description", { terms: [".pptx"], reason: "Literal supported file extension" }],
   ["connections.catalog.community_web_researchSummary", { terms: ["HTML"], reason: "Supported document format acronym" }],
   ["chat.browserWorkspaceView.enterAnHTTPOrHTTPSAddressAboveSearchQueries", { terms: ["HTTP", "HTTPS"], reason: "Accepted URL protocols" }],
   ["onboarding.wizard.pasteInvalid", { terms: ["http"], reason: "Literal loopback address the pasted sign-in address starts with" }],

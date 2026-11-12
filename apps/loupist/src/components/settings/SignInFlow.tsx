@@ -109,8 +109,8 @@ function SignInError({ flow, onUseApiKey }: { flow: SignInController; onUseApiKe
   return <div className="signin-error" role="alert" data-tone={copy.warning ? "warning" : "negative"} data-reason={reason ?? "other"}>
     <p>{text}</p>
     <div className="signin-error-actions">
-      {reason === "plan_not_eligible" && onUseApiKey ? <Button type="button" size="sm" onClick={onUseApiKey}>{t("wizard.useApiKey")}</Button> : null}
-      <Button type="button" size="sm" variant="ghost" onClick={() => void flow.start(provider)}>{t("wizard.retry")}</Button>
+      {reason === "plan_not_eligible" && onUseApiKey ? <Button type="button" size="sm" variant="outline" onClick={onUseApiKey}>{t("wizard.useApiKey")}</Button> : null}
+      <Button type="button" size="sm" variant="outline" onClick={() => void flow.start(provider)}>{t("wizard.retry")}</Button>
     </div>
   </div>;
 }

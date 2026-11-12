@@ -50,7 +50,7 @@ sidebar search and the "n more" row of Needs attention). The narrow navigation
 sheet is not a modal, so ⌘K, the tab keys and the panel shortcut still work
 while that sheet is open, and ⌘B still closes it. The search field keeps its 52px height and the result list scrolls. Results are grouped into Needs
 attention, Chats, What you follow (opens the asset page), Map names, Principles,
-Briefings and Actions, four rows per group. Actions include Import holdings…, which opens the holdings sheet. Map names, Principles and Briefings come from every available Loupist, at most eight (the active one first, then sidebar order), each read through its own `knowledge_map`, `principle_list` and `inbox_list` when the palette opens; a Loupist that has not answered within 2 s is left out of that opening. In each group the active Loupist's rows come first and every row names its Loupist; opening another Loupist's result selects that Loupist first.
+Briefings and Actions, four rows per group. Actions include Import holdings…, which opens the holdings sheet, and New Journal entry, which opens the Map's Library on its Journal tab with the new-entry form open. Map names, Principles and Briefings come from every available Loupist, at most eight (the active one first, then sidebar order), each read through its own `knowledge_map`, `principle_list` and `inbox_list` when the palette opens; a Loupist that has not answered within 2 s is left out of that opening. In each group the active Loupist's rows come first and every row names its Loupist; opening another Loupist's result selects that Loupist first.
 "/" focuses the composer when no text field has focus.
 
 ## Export and print

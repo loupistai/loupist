@@ -9,8 +9,10 @@
 .map-search > input { height:32px; padding-left:32px; border-radius:var(--gg-radius-sm); text-overflow:ellipsis; }
 /* A folded action stays mounted for its state and width, out of the row and out of sight. */
 .map-toolbar [data-overflowed=true] { position:absolute; top:0; left:0; visibility:hidden; pointer-events:none; }
-/* Last to give way, the scope segment becomes the Scope menu button a narrow Map uses. */
-.map-toolbar-button.map-scope-menu-button[data-scope-folded=true] { display:inline-flex; }
+/* Last to give way, the scope segment folds into the Around menu, and Around reads just the focal name ("TSMC ▾"). */
+.map-toolbar-button.map-around[data-scope-folded=true] { max-width:120px; }
+.map-toolbar-button.map-around[data-scope-folded=true] .map-around-label { display:none; }
+.map-toolbar-button.map-around[data-scope-folded=true] .map-around-name { display:inline; }
 .map-more-menu { min-width:200px; }
 .map-search-results { position:absolute; inset:38px auto auto 0; width:max(100%,280px); max-width:calc(100cqw - 32px); z-index:var(--gg-z-popover); background:var(--gg-color-bg-raised); box-shadow:var(--gg-shadow-sm); border:1px solid var(--gg-color-border-subtle); border-radius:var(--gg-radius-sm); padding:var(--gg-space-1); }
 .map-search-results button { display:flex; align-items:center; gap:var(--gg-space-2); width:100%; padding:var(--gg-space-2); text-align:left; border-radius:var(--gg-radius-sm); }
@@ -67,6 +69,9 @@
 .map-summary { display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
 .map-facts { list-style:none; padding:0; margin:0; }.map-facts li { margin-bottom:12px; }.map-facts small,.map-muted,.map-relation { color:var(--gg-color-text-secondary); font-size:var(--gg-text-meta); }.map-facts small button { height:auto; padding:0 6px; font-size:inherit; }
 .map-connection { display:flex; width:100%; justify-content:flex-start; height:auto; text-align:left; white-space:normal; padding:8px 0; }
+/* Lenses applied: the title, then its kind word in caption tertiary (no swatch). */
+.map-lens-applied { align-items:baseline; gap:var(--gg-space-2); }
+.map-lens-applied > small { margin-left:auto; flex:none; color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); font-weight:var(--gg-weight-regular); }
 /* Relationships view (map spec §2.3): suppliers flow into the focal name and on to customers. */
 .map-inspector-back { margin:0 0 var(--gg-space-1) calc(var(--gg-space-2) * -1); }
 .map-inspector-views { display:inline-flex; margin:var(--gg-space-2) 0 0; }
@@ -310,14 +315,13 @@
 .map-segmented > button:disabled { cursor:default; opacity:.5; }
 .map-around { max-width:220px; }
 .map-around-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.map-around-glyph, .map-scope-menu-button { display:none; }
+.map-around-name { display:none; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .map-around-menu h3 { margin:var(--gg-space-2) var(--gg-space-2) var(--gg-space-1); color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); font-weight:var(--gg-weight-medium); }
 .map-around-menu section + button { margin-top:var(--gg-space-1); border-top:1px solid var(--gg-color-border-subtle); border-radius:0; }
 @container map (max-width:900px) {
-  .map-around { width:var(--gg-size-control-md); }
-  .map-toolbar-button.map-around .map-around-glyph { display:inline-block; }
-  .map-around-chevron, .map-scope-segment { display:none; }
-  .map-toolbar-button.map-scope-menu-button { display:inline-flex; }
+  .map-toolbar-button.map-around { max-width:120px; }
+  .map-toolbar-button.map-around .map-around-label, .map-scope-segment { display:none; }
+  .map-toolbar-button.map-around .map-around-name { display:inline; }
   .map-toolbar-button[data-map-whats-new] { position:relative; }
   .map-toolbar-button[data-map-whats-new] .map-badge { position:absolute; top:-2px; right:-4px; }
 }

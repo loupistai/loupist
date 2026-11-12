@@ -108,7 +108,7 @@ it("late capture and no expectations say what could not be captured", async () =
   const none = await card(morrowSnapshot("none"), { onOpenConnections });
   expect(within(none.region).getByText("No company guidance found.")).toBeVisible();
   expect(within(none.region).getByText(/Analyst consensus needs a market-data key \(FMP or Intrinio\)\./)).toBeVisible();
-  await none.user.click(within(none.region).getByRole("button", { name: "Open Connections" }));
+  await none.user.click(within(none.region).getByRole("button", { name: "Open Data connections" }));
   expect(onOpenConnections).toHaveBeenCalled();
 });
 

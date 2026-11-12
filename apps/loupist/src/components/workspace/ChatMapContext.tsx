@@ -3,6 +3,7 @@ import type { ChatMessage, LoupistBridge } from "../../types";
 import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
 import type { WorldReadinessStatus } from "../../knowledge/worldReadiness";
 import { addedMapItems, chatMapData, chatSourceWork, stepEntityIds } from "../../chat/chatMapData";
+import { readKnowledgeMap } from "../../knowledge/mapRead";
 
 type ChatMapState = {
   loupistId: string; chatId: string; map?: KnowledgeMap; events: GrowthEvent[];
@@ -58,7 +59,7 @@ export function ChatMapProvider(props: { bridge: LoupistBridge; loupistId: strin
     let polls = 0;
     setLoading(true); setError(false);
     const readMap = async () => {
-      const mapPromise = bridge.knowledgeMap({ loupistId, maxNodes: 1000 });
+      const mapPromise = readKnowledgeMap(bridge, loupistId);
       const eventsPromise = (async () => {
         const events: GrowthEvent[] = [];
         let cursor: string | undefined;

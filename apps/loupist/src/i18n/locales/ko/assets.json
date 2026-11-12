@@ -279,7 +279,7 @@
     "notAnnounced": "발표 일정 없음",
     "noExpectations": "회사 가이던스를 찾지 못했어요.",
     "consensusNeedsKey": "애널리스트 컨센서스는 시장 데이터 키(FMP 또는 Intrinio)가 필요해요.",
-    "openConnections": "연결 열기",
+    "openConnections": "데이터 연결 열기",
     "consensusLate": "발표 전에 컨센서스를 기록하지 못했어요.",
     "implied": "주가에 담긴 기대",
     "impliedText": "{{date}} 종가 {{price}} 기준, {{years}}년간 연 {{low}}–{{high}} 현금흐름 성장",

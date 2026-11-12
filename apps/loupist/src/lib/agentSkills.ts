@@ -5,7 +5,7 @@ import type { AgentSkillSummary } from "../types";
 type BundledSkillId = keyof typeof englishSettings.bundledSkills;
 type BundledSkill = Omit<AgentSkillSummary, "enabled">;
 
-/** World, Lens, Journal and Visualize are always on; the other bundled Skills can be toggled. */
+/** Map (`world`), Lens, Journal and Visualize are always on; the other bundled Skills can be toggled. */
 const FIXED_SKILL_IDS: ReadonlySet<string> = new Set(["world", "lens", "journal", "visualize"]);
 
 const BUNDLED_SKILLS: BundledSkill[] = (Object.keys(englishSettings.bundledSkills) as BundledSkillId[]).map((id) => ({
@@ -26,7 +26,7 @@ export function skillPresentation(skill: Pick<AgentSkillSummary, "id" | "name" |
   }
   const id = builtin.id as BundledSkillId;
   return {
-    name: id === "world" || id === "lens" ? builtin.name : i18n.t(`settings:bundledSkills.${id}.name`),
+    name: i18n.t(`settings:bundledSkills.${id}.name`),
     description: i18n.t(`settings:bundledSkills.${id}.description`),
   };
 }

@@ -163,7 +163,7 @@
     "recent": "최근 알림",
     "empty": "아직 알림이 없어요. 첫 확인으로 기준을 잡아요.",
     "watch": "지켜보기",
-    "consentOff": "종목 감시 꺼짐",
+    "consentOff": "지켜보기 꺼짐",
     "group": {
       "equity": "주식",
       "crypto": "크립토",

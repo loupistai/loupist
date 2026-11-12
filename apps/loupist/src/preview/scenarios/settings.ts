@@ -6,7 +6,7 @@ import { base, centerOn, click, openLoupistSettings, prepareAttention, select, s
 export const settingsPageScenarios: PreviewScenario[] = [
   // W17.3 (providers §2.3): one card per account; ChatGPT plan line, key accounts.
   ...([
-    ["settings-models", "Models & providers", '[data-provider-card="anthropic"]'],
+    ["settings-models", "AI accounts", '[data-provider-card="anthropic"]'],
     ["settings-models-plan-limit", "A ChatGPT plan at its limit", '[data-provider-card="openai"] [data-notice="plan_limit"]'],
     ["settings-models-needs-reconnect", "A sign-in that needs reconnecting", '[data-provider-card="openai"][data-state="needs_reconnect"]'],
     ["settings-models-disconnected", "A disconnected account schedules still use", '[data-provider-card="xai"][data-state="disconnected"]'],

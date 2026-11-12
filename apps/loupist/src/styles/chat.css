@@ -2190,6 +2190,8 @@ button.sent-image { cursor: zoom-in; }
 .memory-row .follow-watch-offer [data-slot="button"] { padding: 0 var(--gg-space-3); border-radius: var(--gg-radius-md); background: var(--gg-color-action); color: var(--gg-color-action-ink); font-weight: var(--gg-weight-medium); text-decoration: none; }
 .memory-row .follow-watch-offer [data-slot="button"]:hover { background: var(--gg-color-action); color: var(--gg-color-action-ink); opacity: .9; text-decoration: none; }
 .follow-watch-offer .inline-error { flex-basis: 100%; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+.watch-all-offer > p { margin: 0; }
+.watch-all-needs { display: grid; gap: var(--gg-space-1); margin: var(--gg-space-1) 0 0; padding: 0; list-style: none; font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 
 /* The recommended answer is an outlined option with a primary edge, not a filled slab (chat design change 12). */
 .question-card .question-card-option[data-recommended] { border-color: var(--gg-color-text-primary); }

@@ -107,7 +107,7 @@ describe("World and Lens in the single Chat flow", () => {
     await user.click(await mainTab(/Lens/));
     await user.click(await screen.findByRole("button", { name: /^TCP, Topic/ }));
     const overview = (await screen.findByRole("heading", { name: "Overview" })).closest("section")!;
-    await user.click(within(overview).getByRole("button", { name: "Source" }));
+    await user.click(within(overview).getByRole("button", { name: `Source · ${source.title}` }));
     expect(await screen.findByRole("button", { name: "Add to question" })).toBeVisible();
     expect(read).toHaveBeenCalledWith(expect.objectContaining({ recordId: source.recordId, revisionId: source.revisionId }));
     const page = screen.getByRole("region", { name: /What .* knows/ });

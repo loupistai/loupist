@@ -16,7 +16,7 @@ const openModelSettings = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(screen.getByRole("button", { name: "AI accounts" }));
 };
 
-/** Settings › Models & providers › Add a provider, then one of its ways to connect. */
+/** Settings › AI accounts › Add an AI account, then one of its ways to connect. */
 const openProviderPicker = async (user: ReturnType<typeof userEvent.setup>, row: RegExp) => {
   await openModelSettings(user);
   await screen.findByRole("article", { name: "ChatGPT" });
@@ -288,7 +288,8 @@ describe("Loupist · Model providers", () => {
     render(<App bridge={bridge} />);
     expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
     expect(selectedLoupistButton()).toHaveTextContent("Quality Compounder");
-    await user.click(screen.getByRole("button", { name: "Connect an AI account" }));
+    // Home's first-visit checklist and the composer both offer it; the checklist comes first.
+    await user.click(screen.getAllByRole("button", { name: "Connect an AI account" })[0]!);
     await user.click(await screen.findByRole("button", { name: "Add an AI account" }));
     const dialog = await screen.findByRole("dialog", { name: "Add an AI account" });
     await user.click(within(dialog).getByRole("button", { name: /Continue with ChatGPT/u }));

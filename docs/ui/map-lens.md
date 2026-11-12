@@ -65,7 +65,7 @@ claims grouped by relation, one row per counterpart ranked by weight, then degre
 then name, six per group then "+n more", line weight by claim weight and dashed when
 disputed; Lens entries applied to the name (`applies_to`) close Other on one "Lenses applied" line with dotted rules in the method colour; pointing at a counterpart or Lens entry (hover or focus) widens its line on the canvas to 2.5 px (a Lens line stays dotted in the method colour); clicking a counterpart walks there and Back retraces. Clicking a Lens opens its document.
 
-The Library drawer has three tabs: Sources, Journal (your entries) and Notes (the Loupist's research notes). A Journal selection opens the Journal tab.
+The Library drawer has three tabs: Sources, Journal (your entries) and Notes (the Loupist's research notes). A Journal selection, a Journal change in a chat receipt and the palette's "New Journal entry" open the Journal tab; the palette action also opens its new-entry form (`requestLibrary` in `components/map/libraryState.ts`).
 On a map narrower than 720px, including the default 460px side panel, the Library covers the canvas instead of leaving a strip too narrow to read. Closing it brings the map back.
 The source and note filters stay at the top of the list while it scrolls.
 Entity/claim inspectors and Source and note readers open alongside the map.
@@ -75,7 +75,7 @@ Lens was applied to and names them. It does not draw the Lens, and it does not
 treat a claim line as an application. When every applied name is outside the
 current scope, the Map says so and can show the whole map, instead of dimming
 every visible name.
-Library is a toolbar button; Replay, Fit, List view, Export image (PNG) and Export replay video live in More. Scope collapses to its menu when the row leaves too little room. With no names yet, What's new, Filter and More are disabled and the empty Map offers Ask in Chat and Add source.
+Library is a toolbar button; Replay, Fit, List view, Export image (PNG) and Export replay video live in More. When the row leaves too little room (or the Map is 900px or narrower), the Scope segment folds into the Around menu, whose first section holds the three scope choices, and the Around button reads just the focal name ("TSMC ▾"). With no names yet, What's new, Filter and More are disabled and the empty Map offers Ask in Chat and Add source.
 Search, filters, a list fallback and Fit support navigation; camera/selection and
 Library state are retained per Loupist. Use in Chat attaches a draft reference;
 opening a reader does not itself deliver evidence to the model. Sources can be

@@ -21,7 +21,7 @@ it("shows each source as not imported, then imports a Kraken file with quantitie
   expect(within(sheet).getAllByText("not imported")).toHaveLength(2);
   expect(within(sheet).getByText("not connected")).toBeVisible();
   expect(within(sheet).getByRole("button", { name: "Import" })).toBeDisabled();
-  expect(within(sheet).getByText("Connect Korea Investment in Settings > Connections")).toBeVisible();
+  expect(within(sheet).getByText("Connect Korea Investment in Settings › Data connections")).toBeVisible();
 
   const crypto = within(sheet).getAllByRole("button", { name: "Import file" })[1]!;
   await user.click(crypto);

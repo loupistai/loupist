@@ -1,20 +1,20 @@
 {
   "chatView": {
-    "chatThreadIsUnavailable": "Chat thread is unavailable.",
+    "chatThreadIsUnavailable": "This chat is unavailable.",
     "stoppingTheRecoveredResponse": "Stopping the recovered response.",
     "refreshingTheCompletedResponse": "Refreshing the completed response.",
     "loupistIsContinuingAResponseStartedBeforeReload": "Loupist is continuing a response started before reload.",
-    "connectTheQueuedMessageSModelProviderBeforeSending": "Connect the queued message's model provider before sending.",
+    "connectTheQueuedMessageSModelProviderBeforeSending": "Connect an AI account for the queued message's model before sending.",
     "reconnectTheWorkspaceFolderBeforeSendingQueuedMessagesWere": "Reconnect the workspace folder before sending. Queued messages were kept.",
-    "chooseAnAvailableModelInChatOrSettingsChat": "Choose an available model in Chat or Loupist settings → Chat preferences.",
+    "chooseAnAvailableModelInChatOrSettingsChat": "Choose an available model in Chat or Loupist settings → Chat defaults.",
     "couldNotReadConfigurationBeforeSending": "Could not read configuration before sending.",
     "chatWithLoupist": "Chat with Loupist",
     "openWorkspaceFiles": "Open workspace files",
-    "chatPreferencesForThisLoupist": "Chat preferences for this Loupist",
+    "chatPreferencesForThisLoupist": "Chat defaults for this Loupist",
     "stopping": "Stopping",
     "updatingTheAnswer": "Updating the answer",
     "stillWorking": "Still working",
-    "iDLikeToChangeTheWorkingNote": "I'd like to change the working note: ",
+    "iDLikeToChangeTheWorkingNote": "I'd like to change the research note: ",
     "modelSetup": "Model setup",
     "openSettings": "Open Settings",
     "reconnectTheWorkspaceFolderToSendMessages": "Reconnect the workspace folder to send messages",
@@ -23,7 +23,7 @@
     "chartRange": "Selected chart range: {{start}} to {{end}}.",
     "withChartRange": "{{text}}\n\nSelected chart range: {{start}} to {{end}}.",
     "retainedRequestError": "{{error}} The request was kept. Check the conversation before sending it again.",
-    "appendWorkingNoteRequest": "{{prompt}}\n\nI'd like to change the working note: "
+    "appendWorkingNoteRequest": "{{prompt}}\n\nI'd like to change the research note: "
   },
   "answerFeedback": {
     "availableWhenTheReplyFinishes": "Available when the reply finishes",
@@ -103,7 +103,7 @@
     "selectedWork": "Selected work",
     "addedToThisMessage": "Added to this message",
     "pinnedKnowledge": "Pinned knowledge",
-    "connectAModelProvider": "Connect a model provider",
+    "connectAModelProvider": "Connect an AI account",
     "chooseAThinkingLevel": "Choose a thinking level",
     "chooseAModel": "Choose a model",
     "sendNextWaitsForThisReplyGuideThisResponse": "Send next waits for this reply. Guide this response adds instructions now.",
@@ -327,8 +327,8 @@
     "inspectResult": "Inspect result {{value1}}"
   },
   "chatWorkingContext": {
-    "couldNotLoadTheWorkingNote": "Could not load the working note.",
-    "workingNote": "Working note",
+    "couldNotLoadTheWorkingNote": "Could not load the research note.",
+    "workingNote": "Research note",
     "tryAgain": "Try again",
     "theCurrentResearchNoteForThisConversation": "The current research note for this conversation.",
     "noteEvidence": "Note evidence",
@@ -863,7 +863,7 @@
     "couldNotStopTheResponse": "Could not stop the response.",
     "theAttachedFilesFromThatRequestCouldNotBe": "The attached files from that request could not be read.",
     "couldNotTryThatResponseAgain": "Could not try that response again.",
-    "chatThreadIsUnavailable": "Chat thread is unavailable.",
+    "chatThreadIsUnavailable": "This chat is unavailable.",
     "theReplyDidNotStartCheckTheConversationBeforeTryingAgain": "The reply did not start. Check the conversation before trying again."
   },
   "runRegistry": {
@@ -930,7 +930,7 @@
   },
   "aiSdk": {
     "attachmentDataIsUnavailable": "Attachment data is unavailable.",
-    "loupistAndThreadAreRequiredForANativeChat": "Loupist and thread are required for a native chat run.",
+    "loupistAndThreadAreRequiredForANativeChat": "A Loupist and a chat are required to run a chat in the app.",
     "aMessageOrAttachmentIsRequired": "A message or attachment is required.",
     "thisReplyGotOutOfStepWithTheConversation": "This reply got out of step with the conversation. Check the chat before trying again.",
     "couldNotStartTheResponse": "Could not start the response.",
@@ -1182,8 +1182,8 @@
       "done": "Remembered for this conversation"
     },
     "note_save": {
-      "running": "Saving a working note",
-      "done": "Saved a working note"
+      "running": "Saving a research note",
+      "done": "Saved a research note"
     },
     "journal_save": {
       "running": "Saving your journal",
@@ -1238,8 +1238,8 @@
       "done": "Asked you a question"
     },
     "research_open": {
-      "running": "Opening a research session",
-      "done": "Opened a research session"
+      "running": "Opening a new chat",
+      "done": "Opened a new chat"
     },
     "worldbank_series": {
       "running": "Reading macro data",
@@ -1499,7 +1499,7 @@
       "pins_other": "{{formattedCount}} added",
       "kind": {
         "pin": "Added",
-        "principle": "Rule",
+        "principle": "Principle",
         "method": "Method",
         "connection": "Connection"
       }
@@ -1577,20 +1577,19 @@
     "comparison": "Compare companies or assets side by side",
     "data-analysis": "Analyze a dataset and explain what it shows",
     "dividend-income": "Check how safe a dividend looks",
-    "documents": "Write or edit a Word document",
+    "word-documents": "Write or edit a Word document",
     "events-stats": "See how prices moved around past events",
     "filings": "Read and compare company filings",
     "fund-compare": "Compare ETFs or funds side by side",
     "goal-math": "Do the math for a savings goal",
     "journal": "Record a judgment and when to check it",
     "lens": "Teach or correct how your Loupist works",
-    "pdf": "Read, fill in or make a PDF",
+    "pdf": "Read, combine or make a text PDF",
     "portfolio-risk": "Look at concentration and risk in what you hold",
     "presentations": "Make a slide deck",
     "research": "Research a question with sources",
     "rule-test": "Test a rule against history",
     "skill-creator": "Create a new Skill",
-    "skill-installer": "Install a Skill from a link",
     "spreadsheets": "Build or edit a spreadsheet",
     "valuation": "Estimate what a company is worth",
     "visualize": "Draw a chart from data",

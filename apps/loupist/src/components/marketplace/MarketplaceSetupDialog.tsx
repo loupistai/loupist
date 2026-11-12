@@ -342,7 +342,11 @@ export function MarketplaceSetupDialog({
         }}
       >
         {entry && (
-          <DialogContent className="marketplace-setup-dialog">
+          <DialogContent className="marketplace-setup-dialog" onOpenAutoFocus={(event) => {
+            // Start in the key field (direction T4), not on the "Get a key" link above it.
+            const field = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLInputElement>('input[type="password"]:not(:disabled), input:not([type="hidden"]):not(:disabled)');
+            if (field) { event.preventDefault(); field.focus(); }
+          }}>
             <form
               className="dialog-form marketplace-setup-form"
               onSubmit={(event) => {

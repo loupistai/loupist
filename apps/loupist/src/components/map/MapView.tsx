@@ -13,7 +13,7 @@ import { MapToolbar, defaultFilters, filtersActive, type MapFilters } from "./Ma
 import { MapClaimInspector } from "./MapClaimInspector";
 import { MapInspector } from "./MapInspector";
 import { isNewMethod, useLearningState } from "./learningState";
-import { libraryState } from "./libraryState";
+import { libraryState, useLibraryRequests } from "./libraryState";
 import { MapLibrary } from "./MapLibrary";
 import { MapReader } from "./MapReader";
 import { MapReplayBar } from "./MapReplayBar";
@@ -106,6 +106,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
     return () => observer.disconnect();
   }, []);
   useEffect(() => { libraryState(bridge, location.loupistId).open = libraryOpen; }, [bridge, location.loupistId, libraryOpen]);
+  useLibraryRequests(bridge, location.loupistId, () => setLibraryOpen(true));
   const [overlayId, setOverlayId] = useState<string>();
   const reading = readerLocation && (readerLocation.recordId || readerLocation.selection) ? readerLocation : undefined;
   const [debounced, setDebounced] = useState("");

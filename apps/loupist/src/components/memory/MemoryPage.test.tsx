@@ -145,7 +145,7 @@ it("returns to the page after opening a Source from its basis chip", async () =>
   render(view("lens-subject-tcp"));
   await screen.findByRole("heading", { name: "TCP" });
   const overview = (await screen.findByRole("heading", { name: "Overview" })).closest("section")!;
-  await user.click(within(overview).getByRole("button", { name: "Source" }));
+  await user.click(within(overview).getByRole("button", { name: /^Source · / }));
   expect(await screen.findByRole("button", { name: "Back to page" })).toBeVisible();
   expect(handlers.onOpenKnowledge).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Back to page" }));

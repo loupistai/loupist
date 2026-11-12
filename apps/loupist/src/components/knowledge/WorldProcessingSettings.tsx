@@ -290,9 +290,9 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
     {note ? <p role="status">{note}</p> : null}
   </form>;
   const keepAwake = <KeepAwakeSetting bridge={bridge} active={active} />;
-  return collapsible ? <details className="knowledge-advanced world-processing-panel">
-    <summary><span>{t("worldProcessingSettings.worldProcessing")}</span><Badge variant="outline">{readinessLabel}</Badge>{view.readiness.modelName ? <span>{view.readiness.modelName}</span> : <span className="knowledge-hint">{t("worldProcessingSettings.chooseModel")}</span>}</summary>
+  return collapsible ? <Disclosure className="knowledge-advanced world-processing-panel"
+    title={<span className="world-processing-summary"><span>{t("worldProcessingSettings.worldProcessing")}</span><Badge variant="outline">{readinessLabel}</Badge>{view.readiness.modelName ? <span>{view.readiness.modelName}</span> : <span className="knowledge-hint">{t("worldProcessingSettings.chooseModel")}</span>}</span>}>
     {form}
     {keepAwake}
-  </details> : <>{form}{keepAwake}</>;
+  </Disclosure> : <>{form}{keepAwake}</>;
 }

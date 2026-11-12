@@ -20,7 +20,7 @@ function merge(target: ObjectValue, patch: ObjectValue, source?: ConfigSource, s
 const defaults = (): EffectiveConfig => ({
   appearance: { theme: "system", language: "system" }, models: { hidden_model_profile_ids: [] }, connectors: {},
   chat: { model_profile_id: null, thinking_level: null, run_options: {}, use_memory: true, update_memory: true },
-  skills: Object.fromEntries(DEFAULT_AGENT_SKILL_IDS.map((id) => [id, { enabled: id !== "skill-creator" && id !== "skill-installer" }])),
+  skills: Object.fromEntries(DEFAULT_AGENT_SKILL_IDS.map((id) => [id, { enabled: id !== "skill-creator" }])),
   pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 20000 }, retry: { enabled: true, max_retries: 3, base_delay_ms: 2000, max_agent_delay_ms: 60000 } },
 });
 

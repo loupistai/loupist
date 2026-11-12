@@ -7,6 +7,7 @@ import type { GrowthEvent, JournalRecord, KnowledgeMap } from "../../contracts/k
 import type { BriefingSettings, InboxItem } from "../../contracts/scheduled";
 import type { WatchlistEntry } from "../../contracts/userContext";
 import { lastSeenAt } from "../../app/loupistVisit";
+import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { firstSentence, localDayMs, morningMessage, sinceDayOptions, type CheckBullet, type FollowedBullet, type MorningQuestion } from "../../chat/morningMessage";
 import type { AssetDelta, AssetEvidence, UpcomingAsset, UpcomingEvent } from "../../contracts/assets";
 import type { OpenAssetPage } from "../assets/assetOpener";
@@ -109,7 +110,7 @@ export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "
   const [opened] = useState(() => ({ nowMs: Date.now(), lastSeenAtMs: lastSeenAt(loupistId) }));
   const { nowMs, lastSeenAtMs } = opened;
 
-  const map = useLoad<KnowledgeMap>(() => bridge.knowledgeMap({ loupistId, maxNodes: 1000 }), `map:${loupistId}`);
+  const map = useLoad<KnowledgeMap>(() => readKnowledgeMap(bridge, loupistId), `map:${loupistId}`);
   const events = useLoad<GrowthEvent[]>(async () => {
     const all: GrowthEvent[] = [];
     let cursor: string | undefined;

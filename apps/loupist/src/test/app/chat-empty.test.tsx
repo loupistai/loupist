@@ -78,10 +78,10 @@ describe("Loupist · New Chat", () => {
     await openApp();
     await user.type(composer(), "Keep this question");
     await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
-    await user.click(screen.getByRole("menuitem", { name: "Manage models & providers" }));
+    await user.click(screen.getByRole("menuitem", { name: "Manage AI accounts" }));
     expect(await screen.findByRole("heading", { name: "AI accounts", level: 1 })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back" }));
-    expect(screen.queryByRole("button", { name: "Chat preferences for this Loupist" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Chat defaults for this Loupist" })).toBeNull();
     await user.click(headerAction("Loupist settings"));
     expect(await screen.findByRole("textbox", { name: "Name" })).toHaveValue("Quality Compounder");
     await user.click(screen.getByRole("button", { name: "Chat defaults" }));

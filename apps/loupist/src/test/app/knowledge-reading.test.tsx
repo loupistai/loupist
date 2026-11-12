@@ -82,7 +82,7 @@ describe("Loupist · Memory reading", () => {
     const view = render(<ResearchReader bridge={bridge} location={journal("journal-a")} onOpen={vi.fn()} />);
     await user.click(await screen.findByRole("button", { name: "Read saved source" }));
     view.rerender(<ResearchReader bridge={bridge} location={{ loupistId: "loupist-quality", surface: "note", selection: { kind: "research", recordId: "note-b" } }} onOpen={vi.fn()} />);
-    expect(await screen.findByRole("article", { name: "Saved working note" })).toHaveTextContent("Cash flow stayed positive in the annual filing.");
+    expect(await screen.findByRole("article", { name: "Saved research note" })).toHaveTextContent("Cash flow stayed positive in the annual filing.");
     await act(async () => release({ mediaType: "text/plain", byteLength: 13, text: "STALE PASSAGE", pinned }));
     expect(screen.queryByText("STALE PASSAGE")).not.toBeInTheDocument();
   });

@@ -36,6 +36,14 @@ export function ResearchLibrary({ bridge, location, query, onQueryChange, refres
   const readerRef = useRef<HTMLDivElement>(null);
   const restoreLibraryFocus = useRef(false);
   const patchView = (view: NonNullable<KnowledgeLocation["view"]>) => onPatch({ ...location, view: { ...location.view, ...view } });
+  // "New Journal entry" from the palette: open the form once, then clear the request so it can come again.
+  const journalNew = Boolean(location.view?.journalNew);
+  useEffect(() => {
+    if (!journalNew) return;
+    setCreating(true);
+    onPatch({ ...location, view: { ...location.view, journalNew: false } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a request arrives, not on every location change
+  }, [journalNew]);
   const selectedId = location.selection?.kind === "research" ? location.selection.recordId : location.selection?.kind === "journal" ? location.selection.journalId : undefined;
   const onLibraryScroll = useSettledScroll(top => patchView({ researchLibraryScrollTop: top }), location.loupistId);
   const onReaderScroll = useSettledScroll(top => patchView({ readerScrollTop: top }), `${location.loupistId}:${selectedId ?? ""}`);

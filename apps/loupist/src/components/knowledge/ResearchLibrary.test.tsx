@@ -18,7 +18,7 @@ it("keeps the research selection while filtering and returns keyboard focus when
   vi.spyOn(bridge, "knowledgeWorkingNoteRead").mockResolvedValue({ researchId: record.id, chatId: "chat", title: record.title, markdown: "Saved comparison body", changeSummary: "", recordedAtMs: 1, previousNoteIds: [] });
   render(<Harness bridge={bridge} />);
   fireEvent.click(await screen.findByRole("button", { name: /Scope comparison/ }));
-  await screen.findByRole("article", { name: "Saved working note" });
+  await screen.findByRole("article", { name: "Saved research note" });
   expect(screen.getByRole("button", { name: /Scope comparison/ })).toHaveAttribute("aria-current", "true");
   fireEvent.change(screen.getByRole("textbox", { name: "Search notes" }), { target: { value: "missing" } });
   await screen.findByText("No matching research");

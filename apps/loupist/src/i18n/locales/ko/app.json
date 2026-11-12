@@ -16,9 +16,9 @@
     "discussThisLensWhatShouldWeRevise": "이 렌즈에 대해 이야기해 봐요: {{label}}. 어떤 내용을 수정해야 할지, 근거는 무엇인지 살펴봐 주세요.",
     "skillCreatorTurnedOnForThisLoupist": "이 루피스트에서 스킬 만들기를 켰어요.",
     "skillCreatorTurnedOnForAllLoupists": "모든 루피스트에서 스킬 만들기를 켰어요.",
-    "correctTheConfigurationFileInSettingsChat": "새로 실행하려면 루피스트 설정 → 대화 설정에서 설정 파일을 수정해 주세요.",
+    "correctTheConfigurationFileInSettingsChat": "새로 실행하려면 루피스트 설정 → 대화 기본값에서 설정 파일을 수정해 주세요.",
     "theConfiguredChatDefaultsAreUnavailableFor": "현재 모델에서 대화 기본값을 사용할 수 없어요. 루피스트 설정 → 대화 기본값을 확인하거나 대화에서 모델을 선택해 주세요.",
-    "correctTheConfigurationFileBeforeSending": "메시지를 보내기 전에 루피스트 설정 → 대화 설정에서 설정 파일을 수정해 주세요.",
+    "correctTheConfigurationFileBeforeSending": "메시지를 보내기 전에 루피스트 설정 → 대화 기본값에서 설정 파일을 수정해 주세요.",
     "showOrLoadAModelInSettings": "메시지를 보내려면 설정에서 모델을 표시하거나 불러와 주세요. 저장된 대화, 지도, 렌즈는 사용할 수 있어요.",
     "pleaseLookAtWorkspaceFile": "작업 폴더의 {{path}} 파일을 살펴봐 주세요. ",
     "source": "자료",
@@ -110,7 +110,6 @@
     "skills": "스킬",
     "skillsCreatorInstallerInstructionsWorkflowsCreateInstallZip": "스킬 만들기 설치 지침 작업 흐름 생성 ZIP GitHub",
     "addAndManageReusableWorkflowsForYourLoupists": "모든 루피스트가 함께 쓰는 스킬과 기본값을 관리해요. 개별 변경은 루피스트 설정에서 할 수 있어요.",
-    "skillsCaption": "문서·차트 같은 추가 기능",
     "worldProcessing": "지도 구성",
     "memorySourcesRelationshipsProcessingModelLimits": "기억 자료 관계 처리 모델 제한",
     "chooseHowEachLoupistConnectsWhatItLearns": "각 루피스트가 저장된 자료에서 배운 내용을 어떻게 연결할지 선택해 주세요.",
@@ -336,6 +335,7 @@
       "openLens": "렌즈 열기",
       "openSchedule": "예약 열기",
       "importHoldings": "보유 자산 가져오기…",
+      "newJournalEntry": "새 저널 항목",
       "allChats": "모든 대화",
       "togglePanel": "패널 보이기/숨기기",
       "settings": "설정",
@@ -343,9 +343,5 @@
       "exportChat": "이 대화를 마크다운 파일로 내보내기",
       "printChat": "이 대화를 인쇄하거나 PDF로 저장"
     }
-  },
-  "following": {
-    "intro": "관심 자산은 모든 루피스트가 함께 써요. 무엇을 지켜볼지는 루피스트마다 정해요.",
-    "empty": "관심 있는 기업, 펀드, 코인을 추가해 보세요. 관심 자산은 보유나 거래가 아니에요."
   }
 }
