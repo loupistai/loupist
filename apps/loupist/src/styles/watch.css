@@ -112,3 +112,4 @@
   .following-page { padding-inline: var(--gg-space-4); }
   .following-body { grid-template-columns: minmax(0, 1fr); }
 }
+.following-main .watching-reader.briefings-reader { padding: 0; margin: 0; max-width: none; }

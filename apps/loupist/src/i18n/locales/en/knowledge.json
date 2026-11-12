@@ -525,7 +525,6 @@
     "changedOn": "Changed {{date}}: {{rationale}}"
   },
   "journal": {
-    "notes": "Journal & notes",
     "yourJournal": "Your journal",
     "researchNotes": "Research notes",
     "entry": "Journal entry",
@@ -651,12 +650,10 @@
     "saved": "Saved",
     "cancel": "Cancel",
     "tabs": {
-      "about": "About you",
       "history": "History",
       "pages": "Pages"
     },
     "tabsShort": {
-      "about": "About",
       "history": "History",
       "pages": "Pages"
     },
@@ -718,7 +715,6 @@
       "kindCount_one": "{{formattedCount}} asset · {{date}}",
       "kindCount_other": "{{formattedCount}} assets · {{date}}",
       "kindNone": "none",
-      "update": "Update holdings",
       "reset": "Reset what it learned…"
     },
     "history": {

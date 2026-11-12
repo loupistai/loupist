@@ -145,7 +145,7 @@
     "recordDate": "{{name}}: {{date}} 기준 주주가 주당 {{amount}} 배당을 받게 돼요"
   },
   "watch": {
-    "title": "지켜보는 중",
+    "title": "지켜보기",
     "summary_other": "관심 자산 {{formattedCount}}개 · 매시간",
     "statusSetup": "설정 필요",
     "cadence": "{{loupist}}가 열려 있는 동안 매시간 · 마지막 확인 {{time}}",

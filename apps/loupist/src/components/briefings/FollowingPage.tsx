@@ -16,6 +16,8 @@ import { useWatchSettings } from "../assets/WatchFor";
 import { HoldingsSheet } from "../holdings/HoldingsSheet";
 import { WatchingReader } from "./Watching";
 import "@/styles/watch.css";
+// Chips, the add form and meta lines share the Lens page's styles.
+import "@/styles/memory-page.css";
 
 const t = i18n.getFixedT(null, "briefings");
 const tk = i18n.getFixedT(null, "knowledge");

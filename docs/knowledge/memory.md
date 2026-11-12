@@ -4,16 +4,19 @@ Memory reads and saves are Rust transactions. Delivery counts are not influence 
 
 ## What the Loupist knows
 
-About you is a centered 720px reading column and shares its edges with the header and tabs in the memory pane. Other tabs collapse from a list/reader split based on the pane's width, at 972px. The tabs and search stay whole above an open method, including in the side panel. A narrow tab row scrolls instead of painting past the pane. The page title wraps instead of being cut off. An open method fills the card: its title stays inside the reader, and pause and archive follow the document. Focusing a row or a reader action below the fold scrolls it into the pane. Model-provider cards fill their own 800px settings column.
+The tabs collapse from a list/reader split based on the pane's width, at 972px; below it an open page hides the heading, tabs and search, which return with Back. A narrow tab row scrolls instead of painting past the pane. The page title wraps instead of being cut off. An open method fills the card: its title stays inside the reader, and pause and archive follow the document. Focusing a row or a reader action below the fold scrolls it into the pane. Model-provider cards fill their own 800px settings column.
 
 "What {Loupist} knows" opens from the Loupist's name in the header as a page over the
-current tab, with three tabs. **About you**: followed assets, each opening its
-[asset page](asset-pages.md#asset-pages), with remove and add, holdings as a count and
-date per kind (stocks and funds, crypto) from `holdings_summary` with Update opening
-[Your holdings](../runtime/storage-authority.md#where-data-lives). The shared Loupists
-list is hidden [in this release](sharing.md#this-release).
+current tab, with two tabs, Pages and History. What the user follows, holdings and
+Watching live on the [Following page](follow.md#what-you-follow) (`components/briefings/FollowingPage.tsx`):
+followed assets in one table per class with a Watch-for checkbox per kind, add (a bare
+six-digit code is a KRX listing), remove, a quiet "Adding to the map…" line while
+`knowledge_followed_status` reports queued or running work, holdings as a count and date
+per kind from `holdings_summary` with Import holdings, Watch all through
+`watch_defaults_apply`, Check now and Pause. Schedule's Watching row opens it. The shared
+Loupists list sits under Pages and is hidden [in this release](sharing.md#this-release).
 **Pages**: every active Lens page in one list grouped as Topics (`subject`), Ideas
-(`idea`), Methods (`method`), Your principles (`principle`) and Outlook (`perspective`);
+(`idea`), Methods (`method`), Your principles (`principle`) and Perspective (`perspective`);
 the groups are 주제, 아이디어, 분석 방법, 내 원칙 and 관점 in Korean. Search waits for a
 pause in typing, then runs `knowledge_lens_search` for pages and matches a principle
 on its own words. Paused pages remain in this inspection search so the user can

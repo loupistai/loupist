@@ -517,7 +517,6 @@
     "changedOn": "{{date}}에 바뀜: {{rationale}}"
   },
   "journal": {
-    "notes": "저널·노트",
     "yourJournal": "내 저널",
     "researchNotes": "리서치 노트",
     "entry": "저널 항목",
@@ -643,12 +642,10 @@
     "saved": "저장됨",
     "cancel": "취소",
     "tabs": {
-      "about": "나에 대해",
       "history": "기록",
       "pages": "페이지"
     },
     "tabsShort": {
-      "about": "나에 대해",
       "history": "기록",
       "pages": "페이지"
     },
@@ -707,7 +704,6 @@
       "holdingsByKind": "주식·펀드: {{stocks}} · 크립토: {{crypto}}",
       "kindCount_other": "{{formattedCount}}개 · {{date}}",
       "kindNone": "없음",
-      "update": "보유 자산 업데이트",
       "reset": "학습 내용 초기화…"
     },
     "history": {
