@@ -43,6 +43,27 @@ export const chatScenarios: PreviewScenario[] = [
     const answer = select("article.message.assistant.complete");
     return answer && answer.querySelectorAll(".message-content p").length >= 2 && answer.querySelector(".chat-receipt") && answer.querySelector("button.loupist-citation") ? answer : null;
   }), setup: (bridge) => prepareFixture(bridge, "answer") },
+  // Chat design 33: the first answer that followed assets offers to watch them all.
+  { ...base("chat-follow-watch-offer", "A first follow offers Watch all", () => select('[data-watch-all="offer"] button')), setup: async (bridge) => {
+    await prepareFixture(bridge, "answer");
+    for (const entry of [{ symbol: "005930", market: "KRX", displayName: "Samsung Electronics" }, { symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }]) await bridge.watchlistAdd(entry);
+    // A new install watches nothing yet: both followed names are offered.
+    const listed = bridge.watchSettingsList.bind(bridge);
+    bridge.watchSettingsList = async (request) => {
+      const settings = await listed(request);
+      return { ...settings, watched: [], notWatched: [...settings.watched, ...settings.notWatched].slice(0, 2) };
+    };
+    const original = bridge.loupistSelect.bind(bridge);
+    bridge.loupistSelect = async (loupistId) => {
+      const workspace = await original(loupistId);
+      const message = workspace.threads[0].messages.find((item) => item.id === "preview-answer")!;
+      message.memory_update = { status: "applied", commitId: "preview-follow", changes: [], setup: [
+        { change: "followed", symbol: "005930", market: "KRX", name: "Samsung Electronics" },
+        { change: "followed", symbol: "AAPL", market: "NASDAQ", name: "Apple" },
+      ] };
+      return workspace;
+    };
+  } },
   { ...base("chat-no-account", "Saved answer after the last AI account is removed", () => {
     const connect = select("button.composer-model-menu:not([aria-label])");
     return connect && select("article.message.assistant.complete");

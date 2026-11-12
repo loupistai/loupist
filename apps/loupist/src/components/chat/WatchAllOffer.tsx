@@ -15,17 +15,17 @@ const t = i18n.getFixedT(null, "chat");
  */
 export function WatchAllOffer({ bridge, loupistId, refreshKey, onOpenFollowing }: { bridge?: LoupistBridge; loupistId: string; refreshKey?: unknown; onOpenFollowing?: () => void }) {
   useTranslation("chat");
-  const apply = bridge?.watchDefaultsApply?.bind(bridge);
+  const canApply = Boolean(bridge?.watchDefaultsApply);
   const [settings, setSettings] = useState<WatchSettings | null>(null);
   const [state, setState] = useState<"idle" | "busy" | "done" | "failed">("idle");
   const [watched, setWatched] = useState(0);
   useEffect(() => {
-    if (!bridge || !apply) return;
+    if (!bridge || !canApply) return;
     let current = true;
     void bridge.watchSettingsList({ loupistId }).then(next => { if (current) setSettings(next); }).catch(() => {});
     return () => { current = false; };
-  }, [bridge, apply, loupistId, refreshKey]);
-  if (!apply || !settings) return null;
+  }, [bridge, canApply, loupistId, refreshKey]);
+  if (!bridge?.watchDefaultsApply || !settings) return null;
   if (state === "done") return <p className="watch-all-offer" role="status" data-watch-all="done">
     <Trans ns="chat" i18nKey="watchAll.done" values={{ count: watched, formattedCount: formatNumber(watched) }}
       components={[onOpenFollowing ? <button type="button" className="morning-link" onClick={onOpenFollowing} /> : <span />]} />
@@ -34,7 +34,7 @@ export function WatchAllOffer({ bridge, loupistId, refreshKey, onOpenFollowing }
   if (settings.watched.length > 0 || count === 0) return null;
   const run = async () => {
     setState("busy");
-    try { setWatched((await apply({ loupistId })).watchedAssets); setState("done"); }
+    try { setWatched((await bridge.watchDefaultsApply!({ loupistId })).watchedAssets); setState("done"); }
     catch { setState("failed"); }
   };
   return <div className="watch-all-offer follow-watch-offer" data-watch-all="offer">
