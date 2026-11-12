@@ -1,5 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
-import { WorkspaceEvidence } from "./WorkspaceEvidence";
+import { WorkspaceEvidence, LivePageButton } from "./WorkspaceEvidence";
 import { WorkspaceFiles } from "./WorkspaceFiles";
 import {
   useCallback,
@@ -521,6 +521,7 @@ function ScopedChatWorkspacePanel({
         <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceEvidence.back")} title={t("workspaceEvidence.back")} disabled={activeEvidenceTab.index <= 0} onClick={() => moveEvidence(-1)}><ChevronLeftIcon /></Button>
         <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceEvidence.forward")} title={t("workspaceEvidence.forward")} disabled={activeEvidenceTab.index >= activeEvidenceTab.entries.length - 1} onClick={() => moveEvidence(1)}><ChevronRightIcon /></Button>
         <span className="workspace-status-text">{evidenceStatus(evidenceEntryShown, loupistName)}</span>
+        {evidenceEntryShown.kind === "evidence" ? <LivePageButton evidence={evidenceEntryShown.evidence} /> : null}
       </div> : null}
       {!evidenceEntryShown ? <div className="artifact-empty workspace-empty"><p>{t("chatWorkspacePanel.evidenceEmpty")}</p></div>
       : evidenceEntryShown.kind === "evidence" ? <WorkspaceEvidence key={evidenceEntryShown.key} evidence={evidenceEntryShown.evidence} step={evidenceEntryShown.step} onRevealStep={onRevealProgress} />

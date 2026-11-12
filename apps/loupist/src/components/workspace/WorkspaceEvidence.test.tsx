@@ -1,12 +1,16 @@
 import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { evidenceFixture } from "../../test/evidenceFixtures";
-import { WorkspaceEvidence } from "./WorkspaceEvidence";
+import { LivePageButton, WorkspaceEvidence } from "./WorkspaceEvidence";
+import type { ChatEvidenceRef } from "../../types";
+
+/** The reader with the live-page button from the panel status row beside it, as the panel draws them. */
+const Reader = ({ evidence }: { evidence: ChatEvidenceRef }) => <><LivePageButton evidence={evidence} /><WorkspaceEvidence evidence={evidence} /></>;
 import { renderWithOpen, destinations } from "../../test/open";
 
 it("shows a saved source excerpt with its original URL and retrieval context", async () => {
   const evidence = evidenceFixture();
-  const { open } = renderWithOpen(<WorkspaceEvidence evidence={evidence} />);
+  const { open } = renderWithOpen(<Reader evidence={evidence} />);
   expect(screen.getByText(evidence.excerpt)).toBeVisible();
   expect(screen.getByText("FY2025 · USD millions")).toBeVisible();
   const live = screen.getByRole("button", { name: "Open live page" });
@@ -19,7 +23,7 @@ it("shows a saved source excerpt with its original URL and retrieval context", a
 });
 
 it("says a retained source is gone and still offers the live page", () => {
-  renderWithOpen(<WorkspaceEvidence evidence={evidenceFixture({ excerpt: "" })} />);
+  renderWithOpen(<Reader evidence={evidenceFixture({ excerpt: "" })} />);
   expect(screen.getByRole("alert")).toHaveTextContent("This source is no longer retained.");
   expect(screen.getByRole("button", { name: "Open live page" })).toBeVisible();
   expect(screen.queryByText("Saved excerpt")).toBeNull();
@@ -71,7 +75,7 @@ it("reads a partial Memory search without routing metadata and clears it when sw
 
 it("names the host only in the panel's status row, never again on the button or in the details", () => {
   const evidence = evidenceFixture();
-  renderWithOpen(<WorkspaceEvidence evidence={evidence} />);
+  renderWithOpen(<Reader evidence={evidence} />);
   const host = new URL(evidence.url!).hostname;
   expect(screen.getByRole("button", { name: "Open live page" })).toHaveAttribute("title", evidence.url);
   expect(screen.getByRole("article").textContent).not.toContain(host);
