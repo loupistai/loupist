@@ -688,6 +688,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     openScheduledTask,
     showBriefing: (loupistId, runId) => { setInboxFocus({ loupistId, runId }); setTab("schedule"); },
     openSettings,
+    openFollowing: () => setTab("following"),
   });
   // Surfaces outside chat still take a plain link opener.
   const openLink = useCallback((url: string) => { void appOpen({ kind: "link", url }); }, [appOpen]);

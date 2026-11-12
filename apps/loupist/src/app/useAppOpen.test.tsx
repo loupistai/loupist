@@ -15,6 +15,7 @@ const shell = (): AppOpenShell => ({
   openScheduledTask: vi.fn(),
   showBriefing: vi.fn(),
   openSettings: vi.fn(),
+  openFollowing: vi.fn(),
 });
 
 function router(targets = shell()) {

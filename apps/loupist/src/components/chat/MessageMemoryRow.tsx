@@ -122,7 +122,7 @@ export function MessageMemoryRow({
         onOpenThesis={go ? move => go({ kind: "asset", target: { loupistId, assetId: move.assetId, name: move.name, section: "history" } }) : undefined}
         onCheckNumbers={() => revealFirstNumberToCheck(message.id)}
       />
-      {receipt.setup.some(change => change.change === "followed") ? <WatchAllOffer bridge={bridge} loupistId={loupistId} refreshKey={message.id} /> : null}
+      {receipt.setup.some(change => change.change === "followed") ? <WatchAllOffer bridge={bridge} loupistId={loupistId} refreshKey={message.id} onOpenFollowing={go ? () => go({ kind: "following" }) : undefined} /> : null}
       {learnedExpanded && digest ? <LearnedCard id={learnedId} bridge={bridge} loupistId={loupistId} digest={digest}
         onChanged={onWorldChanged} /> : null}
       {usedExpanded ? <UsedMemory id={usedId} bridge={bridge} loupistId={loupistId} refreshKey={chatMap?.map} pages={receipt.usedPages}

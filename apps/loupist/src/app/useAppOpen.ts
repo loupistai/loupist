@@ -31,6 +31,7 @@ export type AppOpenShell = {
   openScheduledTask: (taskId: string) => void;
   showBriefing: (loupistId: string, runId: string) => void;
   openSettings: (section: SettingsSection) => void;
+  openFollowing: () => void;
 };
 
 export type PanelAnnouncement = { text: string; key: number };
@@ -138,6 +139,9 @@ async function route(shell: AppOpenShell, host: PanelHost, to: ChatDestination, 
       return;
     case "settings":
       shell.openSettings(to.section);
+      return;
+    case "following":
+      shell.openFollowing();
       return;
   }
 }
