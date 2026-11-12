@@ -277,3 +277,4 @@
 .keyboard-table th { padding: var(--gg-space-2) 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); text-align: left; }
 .keyboard-table td { padding: var(--gg-space-2) var(--gg-space-3) var(--gg-space-2) 0; border-top: 1px solid var(--gg-color-border-subtle); color: var(--gg-color-text-primary); }
 .keyboard-table kbd { display: inline-block; min-width: 20px; padding: 1px var(--gg-space-2); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-caption); text-align: center; }
+.settings-privacy-list dd::first-letter { text-transform: uppercase; }

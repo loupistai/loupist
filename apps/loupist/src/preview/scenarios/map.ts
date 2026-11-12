@@ -4,7 +4,7 @@ import { rememberScope } from "../../components/map/mapVisit";
 import type { GrowthEvent, KnowledgeMapNode } from "../../contracts/knowledge";
 import { workspaceOverlayMedia } from "../../components/workspace/useWorkspacePanelResize";
 import { MIN_VISIT_MS, recordVisit } from "../../app/loupistVisit";
-import { base, click, clickMapAction, enterMap, hasLayout, localViewMap, mapCanvas, navigate, pressMenu, rememberPreviewMap, select, until, type PreviewScenario } from "./kit";
+import { base, click, clickMapAction, enterMap, localViewMap, mapCanvas, navigate, pressMenu, rememberPreviewMap, select, until, type PreviewScenario } from "./kit";
 
 /** Last visit two days ago and five changes since: two names, a relationship, conflicting evidence and a learned method. */
 function whatsNewFixture(bridge: PreviewBridge, withChanges: boolean) {
@@ -23,11 +23,10 @@ function whatsNewFixture(bridge: PreviewBridge, withChanges: boolean) {
   bridge.knowledgeGrowthEvents = async request => ({ events: events.filter(item => request.sinceMs === undefined || item.atMs >= request.sinceMs), nextCursor: null });
 }
 
-/** On a first visit the legend opens on a wide Map and starts collapsed on a narrow one. */
+/** On a first visit the key strip is open at every size. */
 function legendAtFirstVisit() {
   const legend = select("details.map-legend");
-  const width = select(".map-view")?.clientWidth ?? 0;
-  return legend instanceof HTMLDetailsElement && legend.open === (!hasLayout() || width >= 900);
+  return legend instanceof HTMLDetailsElement && legend.open;
 }
 
 /** The Map: overview, selection, local views, what's new, sources and Lens pages. */
@@ -117,7 +116,7 @@ export const mapScenarios: PreviewScenario[] = [
       };
     },
   })),
-  { ...base("map-local-1hop", "A large Map opens around one company, legend open on a first visit (collapsed below 900 px)", () => select("[data-map-around]") && mapCanvas() && legendAtFirstVisit() ? select(".map-stats") : null, async root => { await enterMap(root); }),
+  { ...base("map-local-1hop", "A large Map opens around one company, with the key strip open on a first visit", () => select("[data-map-around]") && mapCanvas() && legendAtFirstVisit() ? select(".map-stats") : null, async root => { await enterMap(root); }),
     setup: async bridge => { await prepareFixture(bridge); localViewMap(bridge); rememberPreviewMap({ scope: "1" }); } },
   { ...base("map-local-2hops-bounded", "Two hops stop at 150 names around the company", () => select("[data-map-around]") && mapCanvas() ? select(".map-stats") : null, async root => { await enterMap(root); }),
     setup: async bridge => { await prepareFixture(bridge); localViewMap(bridge); rememberPreviewMap({ scope: "2" }); } },
