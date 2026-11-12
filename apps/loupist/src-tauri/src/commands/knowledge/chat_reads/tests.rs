@@ -619,7 +619,9 @@ fn methods_stay_in_a_sixty_line_index_crowded_by_eighty_subject_pages() {
                 let text = format!(
                     "Method {index} summary: {}",
                     "Preserve this method context. ".repeat(7)
-                );
+                )
+                .trim()
+                .to_owned();
                 write.file(
                     "loupist-a",
                     &origin,
