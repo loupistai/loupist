@@ -31,9 +31,12 @@ summary into authority ([context delivery](../agent/context-delivery.md#memory-a
 
 ## Path classes
 
-Targets are canonicalized first (symlinks of the existing ancestor resolved, `..`
-removed, a dangling symlink followed to where it points, up to 40 hops), then
-matched in this order; the first match wins. A link chain that loops or cannot
+A target declared under the bundled `skills/` root is checked for escape before
+resolved-path matching: if `..` or a symlink resolves outside that root, it is Outside, even
+when the destination would otherwise be admitted Workspace. Targets are resolved
+(symlinks of the existing ancestor followed, `..` removed, a dangling symlink
+followed to where it points, up to 40 hops), then matched in this order; the first
+match wins. A link chain that loops or cannot
 be read is refused for every tool. The extension's `canonicalTargetPath` resolves
 the same way, so its write pin agrees with Rust. A root is found among the
 target's ancestors by exact spelling or by the filesystem identity (`(dev,
@@ -56,32 +59,37 @@ counts at whatever depth it spells the root, while on a case-sensitive volume
    file or folder itself and everything in it, a nested repository's too) and
    the `hooks/**` and `config` of a bare `*.git` or a submodule's
    `.git/modules/<path>`. Another repository's git directory is Outside.
-3. Instructions: workspace `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`,
+3. BundledSkill: the sealed agent `skills/` root, including `SKILL.md` and
+   supporting references. Native file tools may read, list and search it, never
+   write or edit it. The adjacent prompt, extension and catalog are AppPrivate,
+   even when the agent resources sit inside the workspace.
+4. Instructions: workspace `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`,
    `.loupist/AGENTS.md`, `.loupist/config.toml`, Skill entries under `.loupist`,
    `.agents` and `.pi`, the global `AGENTS.md` and everything under the global
    `skills` folder.
-4. Scratch: this run's `TMPDIR` (`<app data>/loupists/<id>/pi-runtime/<chat>/temp`).
-5. Attachments: this Chat's attachment folder, which the host asks the model to read.
-6. AppPrivate: anything else under the app data root (credentials, other Chats'
+5. Scratch: this run's `TMPDIR` (`<app data>/loupists/<id>/pi-runtime/<chat>/temp`).
+6. Attachments: this Chat's attachment folder, which the host asks the model to read.
+7. AppPrivate: anything else under the app data root (credentials, other Chats'
    runtime folders, `.pi/settings.json`) or under the Loupist's data folder
    `<workspace>/.loupist` (the database, other Chats' attachments, the activity
    log), except its `skills` folder.
-7. Workspace: inside the selected workspace, the Loupist folder. A default
+8. Workspace: inside the selected workspace, the Loupist folder. A default
    Loupist is created inside the app-data namespace: its strictly nested selected
    workspace counts as Workspace, while its own `.loupist` store, other Loupists,
    runtime folders and the rest of app data remain private. Selecting the app-data
    root itself or a parent never grants access to its private contents.
-8. Outside: everything else.
+9. Outside: everything else.
 
 ## Policy table
 
 | Tool | Class | Clean | ThisTurn, Custom |
 | --- | --- | --- | --- |
-| read, ls | Instructions, Scratch, Attachments, Workspace | Allow | Allow |
+| read, ls | BundledSkill, Instructions, Scratch, Attachments, Workspace | Allow | Allow |
 | read, ls | AppPrivate, Credentials, GitDir | Refuse `protected_path` | Refuse `protected_path` |
 | read, ls | Outside | Refuse `outside_workspace` | Refuse `outside_workspace` |
 | find, grep | root contains the app data root | Refuse `protected_path` | Refuse `protected_path` |
 | find, grep | otherwise | as read | as read |
+| write, edit | BundledSkill | Refuse `bundled_skill` | Refuse `bundled_skill` |
 | write, edit | Scratch, Workspace | Allow | Allow |
 | write, edit | Scratch, Workspace: an existing file with another hard link | Refuse `protected_path` | Refuse `untrusted_text_paused` |
 | write, edit | Instructions | Allow | Refuse `untrusted_text_paused` |

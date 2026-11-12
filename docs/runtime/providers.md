@@ -24,7 +24,7 @@ holds the file to the pinned Pi catalog: each provider exists, its host variable
 is the one Pi reads, a sign-in or key matches Pi's auth, isolated inference has
 a guarded API, and the native-search adapters are exactly the `native_search`
 providers. `support_bootstrap` is the startup model of every provider support
-launch (`gemini-2.5-flash` on `google`); the extension answers each support
+launch (`gemini-3.5-flash-lite` on `google`); the extension answers each support
 command before any model request, so it is never called, and its key variable
 gets a non-secret placeholder.
 
@@ -84,6 +84,14 @@ Removing a custom endpoint always deletes its card and status row, even when sav
 Startup also removes status rows left by older builds for custom endpoints absent from `models.json`.
 Once sign-in is stored, a closed renderer event channel does not fail the completed connection.
 Progress and completion messages use host copy, never provider-supplied prose that might contain a credential.
+An API-key change sends the key only over Pi's private stdin RPC answer, once,
+after the extension's secret-login callback requests `ctx.ui.input` with the exact
+title `loupist-provider/1:api_key`. Rust checks the request type, method, title and
+bounded id before answering. Unexpected prompts receive no key; cancellation,
+the 10-second input timeout or the support-operation timeout discard pending
+answers. The key is absent from launch arguments, environment, transfer files,
+results and diagnostics; Pi persists a successful login in its private credential
+store as before. Provider exceptions during key login become fixed host text.
 Pi persists rotated OAuth credentials before returning them; model discovery adopts that durable generation
 under its support lease so rotation does not reject or immediately invalidate the new catalog.
 Private support request and result files are removed on every normal exit, including errors; startup removes
@@ -112,7 +120,7 @@ model from [`chat-model-defaults.json`](../../apps/loupist/chat-model-defaults.j
 reasoning model with at least 20,000 tokens of context; failing all, any visible
 connected model. "Newest" is the catalog order: each provider's highest numeric
 version first, then, within one version, the higher family tier that file
-declares in `family_tiers` (3 for Opus, Pro or Sol, 1 for Haiku, Mini or Luna). A
+declares in `family_tiers` (3 for Opus, Pro, Sol or Astra, 1 for Haiku, Mini or Luna). A
 family matches a whole word of the model's name or ID, the highest declared tier
 wins (`flash-lite` is Flash), and an undeclared family takes the `unknown` tier,
 2. A new family is ranked by adding it there. With nothing connected, admission fails with a pointer to
@@ -120,6 +128,15 @@ Settings. An empty choice keeps the requested reasoning and run options only whe
 the resolved model supports them. Rust remembers each provider's last Auto model;
 when Auto changes because that model is gone, or an explicit Chat default leaves
 the catalog, a line above the composer says so once (`model_notice_ack`).
+
+The 2026-11-12 defaults review keeps Pi pinned at 1.5.0. World recommendations
+drop retiring `gpt-5-mini`, `gpt-4.1-mini`, `claude-sonnet-4-5` and Groq's
+`llama-3.3-70b-versatile`, and prefer `gpt-6.1-terra` before `gpt-5.6-terra`
+when the earlier Luna choices are unavailable. Every remaining recommendation
+and the support bootstrap model exists in that pinned catalog. These choices
+apply to new Loupists; saved World choices and manual model availability keep
+their existing behavior. Astra's family tier affects catalog ordering and Auto's
+fallback only; it is not added to the reviewed Chat defaults.
 
 A ChatGPT sign-in lists the models its plan offers (`GET /v1/models`, redirects
 refused). The list reader retains at most one MiB of response bytes and cancels

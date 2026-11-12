@@ -130,27 +130,49 @@ pub(crate) fn private_context_with_finance(
         crate::finance_credentials::FinanceCredentialError,
     >,
 ) -> Result<PrivateContext, CommandError> {
+    private_context_with_credentials(state, get, || {
+        crate::custom_connections::service::protected_values_for_state(state)
+    })
+}
+
+fn credential_scan_unavailable(_: impl std::fmt::Debug) -> CommandError {
+    CommandError::new(
+        "credential_store_unavailable",
+        "The scan could not check your saved credentials. Unlock the Keychain or reconnect and try again.",
+    )
+}
+
+fn private_context_with_credentials(
+    state: &AppState,
+    get: impl Fn(
+        &str,
+        &str,
+    ) -> Result<
+        Option<crate::finance_credentials::ActiveCredentialBundle>,
+        crate::finance_credentials::FinanceCredentialError,
+    >,
+    connections: impl FnOnce() -> Result<Vec<String>, crate::custom_connections::ConnectionError>,
+) -> Result<PrivateContext, CommandError> {
     let mut context = PrivateContext::default();
     let environment = state.credential_environment.to_string();
     if let Some(token) = github::load_token(&environment) {
         context.secrets.push(token);
     }
     let directory = state.pi_agent_data_dir()?;
+    context.secrets.extend(
+        crate::providers::catalog::saved_credential_values(&directory)
+            .map_err(credential_scan_unavailable)?,
+    );
     context
         .secrets
-        .extend(crate::providers::catalog::saved_credential_values(
-            &directory,
-        ));
-    context
-        .secrets
-        .extend(crate::custom_connections::service::protected_values_for_state(state));
+        .extend(connections().map_err(credential_scan_unavailable)?);
     let catalog = crate::marketplace::bundled_catalog().map_err(internal)?;
     for entry in catalog
         .entries
         .iter()
         .filter(|entry| !entry.runtime.credential_mapping.is_empty())
     {
-        if let Some(bundle) = get(&environment, &entry.id).map_err(internal)? {
+        if let Some(bundle) = get(&environment, &entry.id).map_err(credential_scan_unavailable)? {
             for field in entry.runtime.credential_mapping.keys() {
                 if let Some(value) = bundle.get(field).filter(|value| value.len() >= 8) {
                     context.secrets.push(value.to_owned());
@@ -220,6 +242,72 @@ fn personal_names() -> Vec<String> {
             names
         })
         .clone()
+}
+
+#[cfg(test)]
+mod credential_scan_tests {
+    use super::*;
+    use crate::custom_connections::ConnectionError;
+    use crate::fs::artifact_trust::ensure_private_regular_file;
+    use crate::sharing::scan::{scan_private, PrivateClass};
+
+    fn assert_recoverable(result: Result<PrivateContext, CommandError>) {
+        let error = result.unwrap_err();
+        assert_eq!(error.code, "credential_store_unavailable");
+        assert_eq!(error.message, "The scan could not check your saved credentials. Unlock the Keychain or reconnect and try again.");
+    }
+
+    #[test]
+    fn credential_load_and_connection_file_failures_block_the_share_context() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_folder_test(root.path().to_path_buf());
+        assert_recoverable(private_context_with_credentials(
+            &state,
+            |_, _| Ok(None),
+            || Err(ConnectionError::CredentialStore),
+        ));
+        let directory = state.artifacts.app_data_dir.join("custom-connections");
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("connections.json");
+        ensure_private_regular_file(&path).unwrap();
+        std::fs::write(&path, "invalid connection file").unwrap();
+        assert_recoverable(private_context_with_finance(&state, |_, _| Ok(None)));
+    }
+
+    #[test]
+    fn provider_read_failure_blocks_the_share_context_and_short_keys_are_scanned() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_folder_test(root.path().to_path_buf());
+        let path = state.pi_agent_data_dir().unwrap().join("auth.json");
+        ensure_private_regular_file(&path).unwrap();
+        std::fs::write(&path, "invalid auth file").unwrap();
+        assert_recoverable(private_context_with_finance(&state, |_, _| Ok(None)));
+        std::fs::write(&path, serde_json::json!({
+            "custom-fixture": {"type":"api_key", "key":"pine", "port":"3000", "locale":"en-US", "mode":"fast", "enabled":"true"}
+        }).to_string()).unwrap();
+        let context = private_context_with_finance(&state, |_, _| Ok(None)).unwrap();
+        assert_eq!(context.secrets, ["pine"]);
+        for text in ["pine", "key=pine", "(pine)", "pine-tree"] {
+            assert!(
+                scan_private(text, &context)
+                    .iter()
+                    .any(|hit| hit.class == PrivateClass::Credential),
+                "{text}"
+            );
+        }
+        for text in [
+            "pineapple",
+            "spine",
+            "alpine",
+            "3000",
+            "en-US",
+            "fast",
+            "true",
+            "api_key",
+        ] {
+            assert!(scan_private(text, &context).is_empty(), "{text}");
+        }
+    }
 }
 
 pub(crate) struct Gathered {

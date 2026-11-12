@@ -129,6 +129,9 @@ pub enum FinanceDataError {
     NoData(&'static str),
     #[error("finance data provider rejected the request: {0}")]
     Provider(String),
+    #[cfg(feature = "eval-harness")]
+    #[error("{0}")]
+    Replay(String),
     #[error("finance data provider returned an invalid response")]
     InvalidResponse,
     #[error("KIS response contract mismatch for {operation}: {detail}")]
@@ -371,11 +374,11 @@ impl FinanceDataService {
         };
         #[cfg(feature = "eval-harness")]
         if let Some(response) = crate::eval_harness::replay::lookup(provider, &replay_key) {
-            let response = response.map_err(FinanceDataError::Provider)?;
-            let bytes = response.bytes().map_err(FinanceDataError::Provider)?;
+            let response = response.map_err(FinanceDataError::Replay)?;
+            let bytes = response.bytes().map_err(FinanceDataError::Replay)?;
             if bytes.len() > maximum_bytes {
-                return Err(FinanceDataError::Provider(
-                    "replay response exceeds provider limit".into(),
+                return Err(FinanceDataError::Replay(
+                    "eval_replay_invalid: replay response exceeds provider limit".into(),
                 ));
             }
             return Ok((

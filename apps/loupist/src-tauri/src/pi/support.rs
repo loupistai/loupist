@@ -30,13 +30,35 @@ pub(crate) struct SupportOutcome<E> {
 /// One answer to an extension UI request: its id and the validated value.
 pub(crate) type UiAnswer = (String, String);
 
+const API_KEY_TITLE: &str = "loupist-provider/1:api_key";
+
+/// A support mutation may answer exactly one, specifically titled input.
+/// No secret is copied into the launch environment or forwarded as an event.
+struct ApiKeyAnswer(Option<String>);
+
+impl ApiKeyAnswer {
+    fn for_prompt(&mut self, payload: &Value) -> Option<UiAnswer> {
+        if payload.get("type").and_then(Value::as_str) != Some("extension_ui_request")
+            || payload.get("method").and_then(Value::as_str) != Some("input")
+            || payload.get("title").and_then(Value::as_str) != Some(API_KEY_TITLE)
+        {
+            return None;
+        }
+        let id = payload.get("id")?.as_str()?;
+        if id.is_empty() || id.len() > 128 || id.chars().any(char::is_control) {
+            return None;
+        }
+        self.0.take().map(|value| (id.to_owned(), value))
+    }
+}
+
 pub(crate) async fn run<E>(
     launch: PiSupportLaunchConfig,
     command: &str,
     budget: Duration,
     cancel: impl Future<Output = ()>,
-    mut on_event: impl FnMut(&Value) -> Result<(), E>,
-    mut ready: impl FnMut() -> Result<bool, E>,
+    on_event: impl FnMut(&Value) -> Result<(), E>,
+    ready: impl FnMut() -> Result<bool, E>,
     answers: Option<tokio::sync::mpsc::UnboundedReceiver<UiAnswer>>,
 ) -> SupportOutcome<E> {
     tokio::pin!(cancel);
@@ -46,6 +68,9 @@ pub(crate) async fn run<E>(
             shutdown: Ok(()),
         };
     }
+    // Retain the mutation only in this lifecycle; spawn_support validates it,
+    // and the launch environment deliberately never includes it.
+    let api_key = launch.mutation_api_key.clone();
     let process = match PiProcess::spawn_support(launch).await {
         Ok(process) => process,
         Err(error) => {
@@ -64,34 +89,73 @@ pub(crate) async fn run<E>(
         match process.prompt(command).await {
             Err(error) => Err(SupportFailure::Dispatch(error)),
             Ok(id) => {
-                // A sign-in's pasted address or code reaches Pi's waiting prompt
-                // while this command runs; Rust validated each value first.
-                let forward = async {
-                    if let Some(mut answers) = answers {
-                        while let Some((request_id, value)) = answers.recv().await {
-                            let _ = process.respond_extension_ui(&request_id, &value).await;
-                        }
-                    }
-                    std::future::pending::<()>().await
-                };
-                tokio::select! {
-                    result = timeout(
-                        budget,
-                        wait_for_result(
-                            &mut receiver,
-                            id,
-                            cancel.as_mut(),
-                            &mut on_event,
-                            &mut ready,
-                        ),
-                    ) => result.unwrap_or(Err(SupportFailure::Timeout)),
-                    _ = forward => Err(SupportFailure::Stopped),
-                }
+                let process = &process;
+                timeout(
+                    budget,
+                    wait_with_answers(
+                        &mut receiver,
+                        id,
+                        cancel.as_mut(),
+                        on_event,
+                        ready,
+                        api_key,
+                        answers,
+                        |(request_id, value)| async move {
+                            process.respond_extension_ui(&request_id, &value).await
+                        },
+                    ),
+                )
+                .await
+                .unwrap_or(Err(SupportFailure::Timeout))
             }
         }
     };
     let shutdown = process.shutdown(Duration::from_secs(1)).await;
     SupportOutcome { result, shutdown }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn wait_with_answers<E, F: Future<Output = Result<(), PiError>>>(
+    receiver: &mut broadcast::Receiver<PiEvent>,
+    request_id: u64,
+    cancel: impl Future<Output = ()>,
+    mut on_event: impl FnMut(&Value) -> Result<(), E>,
+    mut ready: impl FnMut() -> Result<bool, E>,
+    api_key: Option<String>,
+    mut answers: Option<tokio::sync::mpsc::UnboundedReceiver<UiAnswer>>,
+    mut respond: impl FnMut(UiAnswer) -> F,
+) -> Result<(), SupportFailure<E>> {
+    let mut api_key = ApiKeyAnswer(api_key);
+    let (private_tx, mut private_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut event = |payload: &Value| {
+        if let Some(answer) = api_key.for_prompt(payload) {
+            let _ = private_tx.send(answer);
+            Ok(())
+        } else {
+            on_event(payload)
+        }
+    };
+    let forward = async {
+        loop {
+            let answer = tokio::select! {
+                Some(answer) = private_rx.recv() => answer,
+                Some(answer) = async {
+                    match answers.as_mut() {
+                        Some(receiver) => receiver.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => answer,
+            };
+            respond(answer).await.map_err(SupportFailure::Dispatch)?;
+        }
+    };
+    // Completion/cancellation wins over a queued answer. Dropping this scope
+    // also drops the unused key and any answers on timeout or cancellation.
+    tokio::select! {
+        biased;
+        result = wait_for_result(receiver, request_id, cancel, &mut event, &mut ready) => result,
+        result = forward => result,
+    }
 }
 
 async fn wait_for_result<E>(
@@ -171,6 +235,129 @@ mod tests {
     fn ack(id: u64, success: bool) -> PiEvent {
         PiEvent::Rpc {
             payload: json!({"type":"response","id":id,"success":success}),
+        }
+    }
+
+    fn key_prompt(title: &str) -> Value {
+        json!({"type":"extension_ui_request", "method":"input", "title":title, "id":"key-prompt"})
+    }
+
+    #[test]
+    fn an_api_key_answers_only_the_expected_valid_prompt_once() {
+        let expected = key_prompt(API_KEY_TITLE);
+        let mut key = ApiKeyAnswer(Some("private-key-fixture".into()));
+        for payload in [
+            key_prompt("loupist-provider/1:manual_code"),
+            key_prompt("API key"),
+            json!({"type":"extension_ui_request", "method":"confirm", "title":API_KEY_TITLE, "id":"prompt"}),
+            json!({"type":"response", "method":"input", "title":API_KEY_TITLE, "id":"prompt"}),
+            json!({"type":"extension_ui_request", "method":"input", "title":API_KEY_TITLE, "id":""}),
+            json!({"type":"extension_ui_request", "method":"input", "title":API_KEY_TITLE, "id":"bad\n"}),
+            json!({"type":"extension_ui_request", "method":"input", "title":API_KEY_TITLE, "id":"x".repeat(129)}),
+        ] {
+            assert!(key.for_prompt(&payload).is_none());
+        }
+        assert_eq!(
+            key.for_prompt(&expected),
+            Some(("key-prompt".into(), "private-key-fixture".into()))
+        );
+        assert!(key.for_prompt(&expected).is_none());
+        assert!(key.0.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn support_keys_and_manual_answers_use_the_same_private_answer_path() {
+        let (tx, mut rx) = broadcast::channel(8);
+        let (answers, inbox) = tokio::sync::mpsc::unbounded_channel();
+        let sent = std::sync::Mutex::new(Vec::new());
+        let result = wait_with_answers(
+            &mut rx,
+            7,
+            std::future::pending(),
+            |_| Ok::<_, ()>(()),
+            || Ok(false),
+            Some("private-key-fixture".into()),
+            Some(inbox),
+            |answer| {
+                sent.lock().unwrap().push(answer);
+                async { Ok(()) }
+            },
+        );
+        tokio::pin!(result);
+        assert!(futures_util::poll!(&mut result).is_pending());
+        tx.send(PiEvent::Rpc {
+            payload: key_prompt("unexpected"),
+        })
+        .unwrap();
+        assert!(futures_util::poll!(&mut result).is_pending());
+        assert!(sent.lock().unwrap().is_empty());
+        tx.send(PiEvent::Rpc {
+            payload: key_prompt(API_KEY_TITLE),
+        })
+        .unwrap();
+        assert!(futures_util::poll!(&mut result).is_pending());
+        assert_eq!(
+            *sent.lock().unwrap(),
+            [("key-prompt".into(), "private-key-fixture".into())]
+        );
+        tx.send(PiEvent::Rpc {
+            payload: key_prompt(API_KEY_TITLE),
+        })
+        .unwrap();
+        answers
+            .send(("manual-prompt".into(), "validated-code".into()))
+            .unwrap();
+        assert!(futures_util::poll!(&mut result).is_pending());
+        assert_eq!(sent.lock().unwrap().len(), 2);
+        assert_eq!(
+            sent.lock().unwrap()[1],
+            ("manual-prompt".into(), "validated-code".into())
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancellation_and_timeout_discard_pending_keys_and_queued_answers() {
+        for cancel_now in [true, false] {
+            let (tx, mut rx) = broadcast::channel(8);
+            let (cancel, cancelled) = tokio::sync::oneshot::channel();
+            let sent = std::sync::Mutex::new(Vec::new());
+            let result = timeout(
+                Duration::from_secs(1),
+                wait_with_answers(
+                    &mut rx,
+                    7,
+                    async {
+                        let _ = cancelled.await;
+                    },
+                    |_| Ok::<_, ()>(()),
+                    || Ok(false),
+                    Some("private-key-fixture".into()),
+                    None,
+                    |answer| {
+                        sent.lock().unwrap().push(answer);
+                        async { Ok(()) }
+                    },
+                ),
+            );
+            tokio::pin!(result);
+            assert!(futures_util::poll!(&mut result).is_pending());
+            if cancel_now {
+                tx.send(PiEvent::Rpc {
+                    payload: key_prompt(API_KEY_TITLE),
+                })
+                .unwrap();
+                cancel.send(()).unwrap();
+                assert!(matches!(result.await, Ok(Err(SupportFailure::Cancelled))));
+            } else {
+                tokio::time::advance(Duration::from_secs(1)).await;
+                assert!(result.await.is_err());
+                drop(cancel);
+            }
+            tx.send(PiEvent::Rpc {
+                payload: key_prompt(API_KEY_TITLE),
+            })
+            .unwrap();
+            assert!(sent.lock().unwrap().is_empty());
         }
     }
 

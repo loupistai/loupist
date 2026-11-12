@@ -667,6 +667,10 @@ mod tests {
         assert_eq!(tiers.tier("Gemini Flash-Lite", "gemini-3-flash-lite"), 2);
         // The bundled table keeps today's families.
         let bundled = family_tiers();
+        assert_eq!(bundled.tier("GPT-6 Astra", "gpt-6-astra"), 3);
+        for model in ["gpt-6-astral", "gpt-6-castra", "gpt-6-astrasol"] {
+            assert_eq!(bundled.tier(model, model), 2, "{model}: whole words only");
+        }
         for (model, tier) in [
             ("claude-opus-5", 3),
             ("gpt-6.1-sol", 3),

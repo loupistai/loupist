@@ -4,6 +4,19 @@ use crate::fs::artifact_trust::ArtifactTrustError;
 use crate::store::STORE_SCHEMA_VERSION;
 use rusqlite::Connection;
 
+#[test]
+fn linked_sqlite_includes_the_crafted_wal_memory_disclosure_fix() {
+    let version = rusqlite::version();
+    let parts: Vec<u32> = version
+        .split('.')
+        .map(|part| part.parse().unwrap())
+        .collect();
+    assert!(
+        parts.as_slice() >= [3, 54, 0].as_slice(),
+        "SQLite {version} must be at least 3.54.0 (RUSTSEC-2026-0459)"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn file_backed_store_hardens_database_and_rejects_side_symlinks() {

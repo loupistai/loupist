@@ -1,22 +1,33 @@
 # Onboarding
 
-Creating or importing a Loupist finishes on that Loupist's Chat. A save failure is reported and does not block Chat. Onboarding opens when there is no Loupist, or a new profile has no AI account and has not finished onboarding. Once the notice has been acknowledged, losing or removing the last AI account keeps saved Chats and research readable. The composer offers account connection for new answers.
+Creating or importing a Loupist finishes in Home. Failed creation stays on Create; a failed notice save leaves the shell notice gate available to retry. Onboarding opens with no Loupist, or for a new profile with neither an AI account nor an acknowledged notice. Removing the last AI account leaves saved Chats and research readable; new answers need an account.
 
-A new user acknowledges the notice and connects an AI provider. The welcome title uses the display size. The connect step (`onboarding/ConnectStep.tsx`)
-shows Continue with ChatGPT as the primary button and Continue with SuperGrok as a
-secondary button under it. On a short window the other ways scroll inside the step so those buttons stay above the fold, and focusing a way below that list scrolls it into the list. Other ways to connect lists API keys
-for Anthropic (the only way to connect Claude), OpenAI, Gemini, xAI, Upstage Solar and
-OpenRouter; a model on this Mac; and a custom endpoint. A browser sign-in shows a
-waiting card with Open again and Cancel (Escape also cancels), plus Copy the
-sign-in link when the browser could not open. Once Pi waits for manual entry,
-"Browser didn't come back?" offers a paste field 20 s after the browser opened (at
-once if it did not). Rust validates the pasted value (`providers/support.rs`)
-before Pi sees it: for ChatGPT only the exact `http://127.0.0.1:1455/auth/callback`
-address with one `code` and `state`; for the debug Codex client its
-`http://localhost` or `http://127.0.0.1` callback address, or `code#state`.
-SuperGrok shows a device code to copy. Failures are typed (declined plan
-permission, an ineligible plan with Use an API key, a busy port, a timeout,
-offline) and offer Retry. An existing connection skips the step. After connecting, onboarding shows the New Loupist preset picker (`LoupistTemplateFields`) with My portfolio preselected and one Create Loupist button, so the first Loupist starts from the preset the user chose. With a Loupist already present, onboarding skips the picker and opens it. A profile with a connected provider skips sign-in. Assets and tone can be configured later. The welcome screen also offers the existing trusted folder import. Onboarding creates no schedule.
+Welcome requires acknowledgment of the AI notice and offers trusted folder import.
+Connect offers an AI account or Look around first. Back returns to the previous
+step, skipping Connect when already connected. `onboarding/ConnectStep.tsx` shows
+Continue with ChatGPT first, then Continue with SuperGrok. Other ways to connect
+scrolls inside the step and offers Anthropic (Claude requires an API key), OpenAI,
+Gemini, xAI, Upstage Solar and OpenRouter keys, a model on this Mac and a custom
+endpoint. Sign-in shows Open again and Cancel (also Escape), plus Copy the sign-in
+link if the browser could not open. When Pi awaits manual entry, "Browser didn't
+come back?" offers a paste field after 20 s, immediately if opening failed.
+Rust validates it (`providers/support.rs`): ChatGPT accepts only
+`http://127.0.0.1:1455/auth/callback` with one `code` and `state`; the debug Codex
+client accepts its localhost callback or `code#state`. SuperGrok shows a device
+code. Typed failures offer Retry or Use an API key for an ineligible plan.
+
+Create shows My portfolio preselected in the template grid (`LoupistTemplateFields`),
+Name and Create Loupist. Custom also asks for Focus. Avatar, preset focus and tone
+use defaults and can be changed later in Loupist settings. Crypto, Macro and
+Commodities offer follow chips; Real assets is absent. The notice explains that
+background source reading builds the Map and learns methods using the AI account,
+and can be turned off in Loupist settings. An existing Loupist skips Create;
+an existing AI account skips Connect. Onboarding creates no schedule.
+
+Home shows a checklist: follow something, teach a principle, get a morning
+briefing, plus Import holdings (CSV). Steps complete independently; it stays until
+all three are done or hidden. Buttons fill the composer without sending. Without
+an AI account, Connect leads, Follow opens Following, and the other steps wait.
 
 ## Code
 
