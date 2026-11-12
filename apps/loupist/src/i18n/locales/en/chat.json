@@ -414,7 +414,8 @@
     "discarded": "Discarded",
     "nextRun": "Next run {{date}}",
     "couldNotChange": "Couldn't change it. Try again.",
-    "proposalHint": "Nothing runs until you turn it on. Scheduled tasks use your AI account each run."
+    "proposalHint": "Nothing runs until you turn it on.",
+    "spending": "Scheduled tasks use your AI account each run."
   },
   "worldProcessingStatus": {
     "sourceSavedCouldNotRefreshWorldStatus": "Source saved · Could not refresh the Map status",
@@ -1905,7 +1906,8 @@
     "action_one": "Watch it",
     "action_other": "Watch all {{formattedCount}}",
     "note": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",
-    "done": "Watching what you follow",
+    "done_one": "Watching {{formattedCount}} name. Change it in <0>Following</0>.",
+    "done_other": "Watching {{formattedCount}} names. Change it in <0>Following</0>.",
     "failed": "Couldn’t turn on watching. Try again."
   }
 }

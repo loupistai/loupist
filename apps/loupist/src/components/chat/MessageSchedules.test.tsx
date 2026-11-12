@@ -29,7 +29,7 @@ it("keeps a routine set up from a sentence paused until the user turns it on", a
   render(view());
   const card = await screen.findByRole("article", { name: "Scheduled task: Compare inventory days" });
   expect(await within(card).findByText("Waiting for your OK")).toBeVisible();
-  expect(within(card).getByText("Nothing runs until you turn it on. Scheduled tasks use your AI account each run.")).toBeVisible();
+  expect(within(card).getByText("Nothing runs until you turn it on.")).toBeVisible();
   await user.click(within(card).getByRole("button", { name: "Turn on" }));
   expect(await within(card).findByText("Active")).toBeVisible();
   expect(within(card).getByText(/^Next run /)).toBeVisible();

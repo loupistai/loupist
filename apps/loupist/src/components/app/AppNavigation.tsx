@@ -2,7 +2,7 @@ import i18n, { useTranslation } from "@/i18n";
 import { chatSessionKey } from "../../chat/sessionRegistry";
 import { useState } from "react";
 import {
-  ArrowLeftIcon, BookmarkIcon, BookOpenIcon, CalendarClockIcon, NetworkIcon, PlusIcon, SearchIcon, Settings2Icon, XIcon, type LucideIcon,
+  ApertureIcon, ArrowLeftIcon, CalendarClockIcon, NetworkIcon, PlusIcon, SearchIcon, SettingsIcon, StarIcon, XIcon, type LucideIcon,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
@@ -69,17 +69,20 @@ export function AppNavigation({
   const iconOnly = !isMobile && state === "collapsed";
   const openDestination = (id: AppDestinationId) => { onDestination?.(id); closeMobile(); };
   /** Home, Following, Map, Lens and Schedule: one row each, with the ⌘ key where the destination has one. */
-  const placeRow = ({ id, icon: Icon, active, onClick, unread = 0 }: { id: "following" | AppDestinationId; icon: LucideIcon; active: boolean; onClick: () => void; unread?: number }) => {
+  // Map and Lens open a panel beside the chat, so they are pressed rather than the current page.
+  const placeRow = ({ id, icon: Icon, active, onClick, unread = 0, panel = false }: { id: "following" | AppDestinationId; icon: LucideIcon; active: boolean; onClick: () => void; unread?: number; panel?: boolean }) => {
     const label = i18n.t(`app:shell.tabs.${id}`);
     const index = APP_DESTINATIONS.findIndex(item => item.id === id);
     const unreadId = `sidebar-${id}-unread`;
     return <SidebarMenuItem key={id} className="loupist-chat-row loupist-place-row" data-sidebar-place={id}>
-      <SidebarMenuButton type="button" className="loupist-chat-button" data-sidebar-schedule={id === "schedule" || undefined} isActive={active} aria-current={active ? "page" : undefined}
+      <SidebarMenuButton type="button" className="loupist-chat-button" data-sidebar-schedule={id === "schedule" || undefined} data-panel-open={panel && active ? "" : undefined}
+        isActive={!panel && active} aria-current={!panel && active ? "page" : undefined} aria-pressed={panel ? active : undefined}
         aria-label={iconOnly ? label : undefined} aria-describedby={unread > 0 ? unreadId : undefined}
         title={index >= 0 ? `${label} ${tabShortcut(index + 1)}` : label} onClick={onClick}>
         <Icon className="loupist-home-icon" aria-hidden="true" />
         {iconOnly ? null : <span className="loupist-chat-title">{label}</span>}
-        {unread > 0 ? <><span className="shell-unread" aria-hidden="true">{unread}</span><span className="sr-only" id={unreadId}>{i18n.t("app:shell.unreadBriefings", { count: unread })}</span></> : null}
+        {unread > 0 ? <><span className="shell-unread" aria-hidden="true">{unread}</span><span className="sr-only" id={unreadId}>{i18n.t("app:shell.unreadBriefings", { count: unread })}</span></>
+          : !iconOnly && index >= 0 ? <kbd className="loupist-place-key" aria-hidden="true">{tabShortcut(index + 1)}</kbd> : null}
       </SidebarMenuButton>
     </SidebarMenuItem>;
   };
@@ -149,9 +152,9 @@ export function AppNavigation({
       <SidebarContent>{onOpenAttention ? <NeedsAttention items={attention} onOpen={(item) => { onOpenAttention(item); closeMobile(); }} onMore={onMoreAttention ? () => { onMoreAttention(); closeMobile(); } : undefined} /> : null}<SidebarGroup className="loupist-navigation" data-testid="loupist-navigation">
         <SidebarMenu>{recent.filter(thread => thread.home).map(row)}
           {selectedLoupist ? <>
-            {placeRow({ id: "following", icon: BookmarkIcon, active: tab === "following", onClick: () => navigate("following") })}
-            {placeRow({ id: "map", icon: NetworkIcon, active: tab === "chat" && activePanel === "world", onClick: () => openDestination("map") })}
-            {placeRow({ id: "lens", icon: BookOpenIcon, active: tab === "chat" && activePanel === "lens", onClick: () => openDestination("lens") })}
+            {placeRow({ id: "following", icon: StarIcon, active: tab === "following", onClick: () => navigate("following") })}
+            {placeRow({ id: "map", icon: NetworkIcon, active: tab === "chat" && activePanel === "world", panel: true, onClick: () => openDestination("map") })}
+            {placeRow({ id: "lens", icon: ApertureIcon, active: tab === "chat" && activePanel === "lens", panel: true, onClick: () => openDestination("lens") })}
             {placeRow({ id: "schedule", icon: CalendarClockIcon, active: tab === "schedule", onClick: () => navigate("schedule"), unread: scheduleUnread })}
           </> : null}
         </SidebarMenu>
@@ -161,7 +164,7 @@ export function AppNavigation({
       </SidebarGroup></SidebarContent>
       <SidebarFooter className="navigation-footer">
 
-        <SidebarMenu><SidebarMenuItem><SidebarMenuButton id="main-tab-settings" aria-label={i18n.t("app:shell.settings")} title={i18n.t("app:shell.settings")} onClick={() => navigate("settings")}><Settings2Icon /><span>{i18n.t("app:shell.settings")}</span>{updateAvailable ? <span className="shell-update-dot" aria-label={i18n.t("app:shell.updateAvailable")}><span className="sr-only">{i18n.t("app:shell.updateAvailable")}</span></span> : null}</SidebarMenuButton></SidebarMenuItem></SidebarMenu></SidebarFooter>
+        <SidebarMenu><SidebarMenuItem><SidebarMenuButton id="main-tab-settings" aria-label={i18n.t("app:shell.settings")} title={i18n.t("app:shell.settings")} onClick={() => navigate("settings")}><SettingsIcon /><span>{i18n.t("app:shell.settings")}</span>{updateAvailable ? <span className="shell-update-dot" aria-label={i18n.t("app:shell.updateAvailable")}><span className="sr-only">{i18n.t("app:shell.updateAvailable")}</span></span> : null}</SidebarMenuButton></SidebarMenuItem></SidebarMenu></SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );

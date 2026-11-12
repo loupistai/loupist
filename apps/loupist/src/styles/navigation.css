@@ -15,14 +15,12 @@
 .loupist-chat-button { height: var(--gg-size-control-md); border-radius: var(--gg-radius-md); padding: 0 var(--gg-space-7) 0 var(--gg-space-2); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); color: var(--gg-color-text-secondary); }
 .loupist-chat-button:hover { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
 .loupist-chat-button[data-selected="true"] { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); background: var(--gg-color-bg-selected); }
-.loupist-chat-row[data-home] .loupist-chat-button { height: auto; min-height: calc(var(--gg-size-control-md) + var(--gg-space-3)); align-items: center; padding-block: var(--gg-space-1); background: color-mix(in srgb, var(--gg-color-bg-selected) 72%, transparent); color: var(--gg-color-text-primary); }
-.loupist-chat-row[data-home] .loupist-chat-button:hover { background: var(--gg-color-bg-hover); }
-.loupist-chat-row[data-home] .loupist-chat-button[data-selected="true"] { background: var(--gg-color-bg-selected); }
 .loupist-home-icon { flex: none; width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); }
-.loupist-home-copy { display: flex; flex: 1; flex-direction: column; min-width: 0; }
-.loupist-chat-button > .loupist-home-copy { flex: 1; min-width: 0; }
-.loupist-home-copy .loupist-chat-title { overflow: hidden; color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-.loupist-home-copy small { overflow: hidden; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); text-overflow: ellipsis; white-space: nowrap; }
+/* Destination rows: the ⌘ key shows on hover or keyboard focus only (chat design change 16). */
+.loupist-place-key { margin-left: auto; color: var(--gg-color-text-tertiary); font: inherit; font-size: var(--gg-text-caption); opacity: 0; }
+.loupist-chat-button:is(:hover, :focus-visible) .loupist-place-key { opacity: 1; }
+.loupist-chat-button[data-panel-open] { color: var(--gg-color-text-primary); }
+.loupist-chat-button[data-panel-open] .loupist-home-icon { color: var(--gg-color-text-primary); }
 /* Only the title stretches; the draft dot, status dot and private mark keep their own size at the row's end. */
 .loupist-chat-button > .loupist-chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-running { width: calc(var(--gg-space-2) + var(--gg-space-1) / 2); height: calc(var(--gg-space-2) + var(--gg-space-1) / 2); }
@@ -95,7 +93,7 @@ button.needs-attention-more:hover { color: var(--gg-color-text-primary); }
   justify-content: center;
   padding: 0;
 }
-[data-collapsible="icon"] :is(.loupist-home-copy, #main-tab-settings > span) { display: none; }
+[data-collapsible="icon"] :is(.loupist-place-key, #main-tab-settings > span) { display: none; }
 [data-collapsible="icon"] :is(.loupist-navigation, .navigation-footer) [data-slot="sidebar-menu"] {
   width: fit-content;
   align-self: center;

@@ -388,7 +388,8 @@
     "discarded": "취소됨",
     "nextRun": "다음 실행 {{date}}",
     "couldNotChange": "바꾸지 못했어요. 다시 시도해 주세요.",
-    "proposalHint": "켜기 전에는 실행되지 않아요. 예약 작업은 실행할 때마다 AI 계정을 사용해요."
+    "proposalHint": "켜기 전에는 실행되지 않아요.",
+    "spending": "예약 작업은 실행할 때마다 AI 계정을 사용해요."
   },
   "worldProcessingStatus": {
     "sourceSavedCouldNotRefreshWorldStatus": "자료 저장됨 · 지도 상태를 새로고침하지 못했어요",
@@ -1844,7 +1845,7 @@
   "watchAll": {
     "action_other": "관심 자산 {{formattedCount}}개 모두 지켜보기",
     "note": "관심 자산의 공시, 실적 발표일, 배당을 루피스트가 열려 있는 동안 매시간 확인해요. AI 사용량은 들지 않고, 데이터 제공처에는 이름만 보내요.",
-    "done": "관심 자산을 지켜보고 있어요",
+    "done_other": "관심 자산 {{formattedCount}}개를 지켜보고 있어요. <0>관심 자산</0>에서 바꿀 수 있어요.",
     "failed": "지켜보기를 켜지 못했어요. 다시 시도해 주세요."
   }
 }

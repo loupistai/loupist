@@ -4,8 +4,7 @@
  * events and mirrors the revision check on each switch.
  */
 import type {
-  WatchAsset, WatchBridge, WatchEvent, WatchEventsListRequest, WatchKind, WatchSettingSetRequest, WatchSettings,
-} from "../../contracts/watch";
+  WatchAsset, WatchBridge, WatchEvent, WatchEventsListRequest, WatchKind, WatchSettingSetRequest, WatchSettings, WatchDefaultsApplyResult } from "../../contracts/watch";
 import type { WatchlistEntry } from "../../contracts/userContext";
 import { mockAssetId } from "./assets";
 import { commandError } from "./commandError";
@@ -107,9 +106,10 @@ export class MockWatch implements WatchBridge {
   }
 
   /** Turns on the default kinds for every followed asset that has no kind on. */
-  async watchDefaultsApply({ loupistId }: { loupistId: string }): Promise<WatchSettings> {
+  async watchDefaultsApply({ loupistId }: { loupistId: string }): Promise<WatchDefaultsApplyResult> {
     const settings = await this.current(loupistId);
     settings.consentOff = false;
+    let watchedAssets = 0;
     for (const asset of [...settings.notWatched]) {
       const defaults = asset.kinds.filter(kind => WATCH_DEFAULT_KINDS.has(kind.kind) && !kind.needsConnection);
       if (!defaults.length) continue;
@@ -117,9 +117,10 @@ export class MockWatch implements WatchBridge {
       asset.revision += 1;
       settings.notWatched = settings.notWatched.filter(item => item !== asset);
       settings.watched.push(asset);
+      watchedAssets += 1;
     }
     this.emit(loupistId);
-    return this.watchSettingsList({ loupistId });
+    return { watchedAssets, needsConnections: [] };
   }
 
   async watchCheckNow({ loupistId }: { loupistId: string }): Promise<{ newAlerts: number; settings: WatchSettings }> {

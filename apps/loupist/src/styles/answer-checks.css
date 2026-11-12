@@ -74,7 +74,8 @@ td .number-chip { display: inline-block; min-height: 28px; line-height: 28px; fo
 .number-chip-caption:lang(ko) { letter-spacing: 0; text-transform: none; }
 .number-chip-here { letter-spacing: normal; text-transform: none; }
 .number-chip-inputs { display: grid; gap: var(--gg-space-1); margin: 0; }
-.number-chip-inputs > div { display: grid; grid-template-columns: 128px auto minmax(0, 1fr); align-items: baseline; gap: var(--gg-space-2); }
+.number-chip-inputs > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; gap: var(--gg-space-2); }
+.number-chip-inputs > div > :last-child { white-space: nowrap; }
 .number-chip-inputs dt { overflow: hidden; color: var(--gg-color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
 .number-chip-inputs dd { margin: 0; }
 .number-chip-source { min-width: 0; text-align: end; }

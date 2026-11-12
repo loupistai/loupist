@@ -88,17 +88,23 @@ export type WatchEvent = {
 export type WatchSettingSetRequest = Wire.WatchSettingSetRequest;
 export type WatchEventsListRequest = { loupistId: string; sinceMs?: number; limit: number };
 
+export type WatchDefaultsApplyRequest = { loupistId: string };
+export type WatchDefaultsApplyResult = {
+  watchedAssets: number;
+  needsConnections: Array<{ kind: WatchKind; connection: { id: string; name: string }; assetIds: string[] }>;
+};
+
 export interface WatchBridge {
   watchSettingsList(request: { loupistId: string }): Promise<WatchSettings>;
   /** One switch or matrix checkbox. "Watch" on a not-watched row sets each default kind in turn. */
   watchSettingSet(request: WatchSettingSetRequest): Promise<WatchSettings>;
   watchPauseSet(request: { loupistId: string; paused: boolean }): Promise<WatchSettings>;
   /**
-   * Watch all (product direction F5): records consent and turns on the class defaults
+   * Watch all (`watch_defaults_apply`): records consent and turns on the class defaults
    * (filings, results and dividends) for followed assets with no decision yet.
-   * Optional until the host command ships; the renderer hides the action without it.
+   * Optional on this branch until the host command and its generated contract merge.
    */
-  watchDefaultsApply?(request: { loupistId: string }): Promise<WatchSettings>;
+  watchDefaultsApply?(request: WatchDefaultsApplyRequest): Promise<WatchDefaultsApplyResult>;
   /** Runs every enabled kind once for this Loupist; resolves when the check finished. */
   watchCheckNow(request: { loupistId: string }): Promise<{ newAlerts: number; settings: WatchSettings }>;
   /** Newest first. */

@@ -7,7 +7,10 @@
 .loupist-settings-heading h1 { font-size: var(--gg-text-title); font-weight: var(--gg-weight-semibold); line-height: var(--gg-leading-heading); }
 .loupist-settings-heading p { color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); }
 .loupist-settings-heading h1:focus { outline: none !important; }
-.loupist-settings-sections { display: flex; flex-wrap: wrap; gap: var(--gg-space-1); padding-bottom: var(--gg-space-4); margin-bottom: var(--gg-space-5); border-bottom: 1px solid var(--gg-color-border-subtle); }
+.loupist-settings-sections { display: flex; flex-wrap: wrap; gap: var(--gg-space-1) var(--gg-space-3); margin-bottom: var(--gg-space-5); }
+/* A jump list of links, not tabs (chat design change 29). */
+.loupist-settings-sections button { height: auto; min-height: var(--gg-size-control-sm); padding-inline: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); }
+.loupist-settings-sections button:hover { background: transparent; color: var(--gg-color-text-primary); text-decoration: underline; }
 .loupist-settings-body [data-loupist-section] { scroll-margin-top: var(--gg-space-5); }
 .loupist-learning-switch small { display: block; }
 .agent-profile-card, .agent-workspace-card, .agent-section, .agent-removal-card { min-width: 0; background: transparent; }

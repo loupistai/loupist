@@ -59,7 +59,7 @@
 .chat-model-setup-notice {
   flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
   width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); margin: 0 auto 10px; padding: var(--gg-space-3) 14px;
-  border: 1px solid var(--gg-color-border-subtle); border-radius: 10px; background: var(--gg-color-bg-hover);
+  border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover);
   color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: 1.5;
 }
 .chat-model-setup-notice > svg { flex: none; width: var(--gg-space-4); height: var(--gg-space-4); }
@@ -72,7 +72,7 @@
 .message { margin: 0; }
 .message.user { width: fit-content; max-width: min(82%, 660px); margin-left: auto; padding: 0; }
 .message.user .message-meta { display: none; }
-.message.user .message-content { border: 1px solid var(--gg-color-border-subtle); border-radius: 14px; background: var(--gg-color-bg-hover); }
+.message.user .message-content { border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-hover); }
 /* The row is as tall as its details trigger from the start, so a finished answer adds nothing above its text. */
 .message-meta { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-size-control-xs); margin-bottom: 10px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
 .message-meta > span:first-child { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-semibold); }
@@ -1697,8 +1697,10 @@ div.message-action-bar > .message-actions { margin-top: 0; }
   .chat-artifact-block-shimmer { display: none; }
   .chat-artifact-block-skeleton > span { animation: none; }
 }
-.message-run-state { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.message-run-state { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .message-run-state p { flex: 1 1 240px; margin: 0; }
+.message-run-state p:first-child { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); font-weight: var(--gg-weight-medium); }
+.message-run-state .message-run-hint { color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); }
 .message-run-state button { padding: 5px 10px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); color: var(--gg-color-text-primary); }
 .message-run-state button:hover { background: var(--gg-color-bg-hover); }
 .message-run-state button[data-primary] { border-color: var(--gg-color-action); background: var(--gg-color-action); color: var(--gg-color-action-ink); }
@@ -2177,8 +2179,21 @@ button.sent-image { cursor: zoom-in; }
 .composer-chip button::after, .composer-inline-reference-controls button::after, .execution-copy-button::after { content: ""; position: absolute; top: 50%; left: 50%; width: max(100%, var(--gg-size-control-sm)); height: max(100%, var(--gg-size-control-sm)); transform: translate(-50%, -50%); }
 
 /* Watch all n: one press watches what you follow with its class defaults. */
-.watch-all-offer { display: grid; justify-items: start; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
-.watch-all-offer p { margin: 0; }
+.watch-all-offer { margin: var(--gg-space-3) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); }
+/* An offer, not "waiting on you": a neutral bordered block with one filled button (chat design change 33). */
+.follow-watch-offer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-3); padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.follow-watch-offer p { flex: 1 1 320px; max-width: 62ch; margin: 0; }
+.follow-watch-offer .inline-error { flex-basis: 100%; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
 
 /* The recommended answer is an outlined option with a primary edge, not a filled slab (chat design change 12). */
 .question-card .question-card-option[data-recommended] { border-color: var(--gg-color-text-primary); }
+
+/* 34. Scheduled work says it uses the AI account, before its buttons. */
+.message-schedule-spending { margin: 0; padding: 0 var(--gg-space-4); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+/* 27. A long Loupist name does not take over the answer's meta row. */
+.message-meta > span:first-child { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 28. Edit shows under the newest question; earlier ones reveal it on hover or focus, in reserved space. */
+.message.user:not(:last-of-type) .message-action-bar { opacity: 0; }
+.message.user:not(:last-of-type):is(:hover, :focus-within) .message-action-bar { opacity: 1; }
+/* 19. A thin caret instead of Streamdown's block while an answer streams. */
+.message.assistant .message-content [class*="streamdown-caret"] > *:last-child:not([data-sd-caret-hidden])::after { content: ""; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -0.15em; border-radius: 1px; background: var(--gg-color-text-tertiary); }

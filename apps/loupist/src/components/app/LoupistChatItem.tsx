@@ -1,7 +1,8 @@
 import { chatTitle } from "@/app/chatTitle";
 import i18n, { useTranslation } from "@/i18n";
 import { useId } from "react";
-import { MoreHorizontalIcon, DownloadIcon, EyeOffIcon, HomeIcon, PencilIcon, PrinterIcon, Trash2Icon } from "lucide-react";
+import { tabShortcut } from "../../app/shortcuts";
+import { MoreHorizontalIcon, DownloadIcon, EyeOffIcon, HouseIcon, PencilIcon, PrinterIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
@@ -49,8 +50,8 @@ export function LoupistChatItem({ iconOnly = false, thread, active, running, fin
         aria-current={active ? "page" : undefined}
         onClick={() => onSelect(thread)}
       >
-        {thread.home ? <HomeIcon className="loupist-home-icon" aria-hidden="true" /> : null}
-        {iconOnly ? null : thread.home ? <span className="loupist-home-copy"><span className="loupist-chat-title" data-testid="loupist-chat-title">{title}</span><small id={homeDescId} aria-hidden="true">{homeDescriptor}</small></span>
+        {thread.home ? <HouseIcon className="loupist-home-icon" aria-hidden="true" /> : null}
+        {iconOnly ? null : thread.home ? <><span className="loupist-chat-title" data-testid="loupist-chat-title">{title}</span><span id={homeDescId} hidden>{homeDescriptor}</span><kbd className="loupist-place-key" aria-hidden="true">{tabShortcut(1)}</kbd></>
           : <span className="loupist-chat-title" data-testid="loupist-chat-title">{title}</span>}
         {draft ? <span className="loupist-draft-dot" role="img" aria-label={i18n.t("app:loupistChatItem.unsentDraft")} title={i18n.t("app:loupistChatItem.unsentDraft")} /> : null}
         {running ? <Spinner className="thread-running" aria-label={i18n.t("app:loupistChatItem.isRunning", { title: chatTitle(thread) })} />

@@ -58,7 +58,7 @@ composer: a count, one short row each, and Edit, reorder, Remove, and Send now i
 row's menu. The list can fold. It keeps queue order and the queued payload. Up to three
 next-step chips after the latest answer come from the conflicts and names it
 found and fill the composer without sending. Leaving a view or switching Loupist does not cancel an admitted
-Chat. The composer has one private-chat switch, described under
+Chat. Private chat is a checkbox in the composer's + menu; while it is on, a "Private · memory off" chip with an off button sits above the composer. Without an AI account, Connect an AI account takes the send slot and the placeholder says so. Private chat is described under
 [Memory permissions](../knowledge/memory.md#memory-permissions-and-retrieval).
 Focusing a control below the fold scrolls it into the conversation. When the reader scrolls away from the bottom, the live status or Jump to latest control
 occupies its own row between the scroll viewport and composer. It shares the
