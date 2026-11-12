@@ -52,6 +52,8 @@ Lens contains Pages and History. The Map toolbar opens Library with Sources, Jou
 and Notes tabs. Custom data connections are behind the Custom connections disclosure.
 Every non-print shell capture checks the titlebar, body, frame, navigation footer,
 header controls and composer against their rendered boundaries (`shell-layout.mjs`).
+The collapsed sidebar also checks all eight actions, including Following, Map,
+Lens and Schedule, for clipping and horizontal centering.
 `shell-titlebar-grown` raises the titlebar to 72px to catch a sidebar that still
 subtracts the default height. It runs in both `preview:layout` and the native
 geometry suite. Chat captures also check the responsive title and reading gutters.

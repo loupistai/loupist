@@ -1,4 +1,64 @@
 use super::*;
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn workspace_skill_copy_is_traced_with_host_workspace_authority() {
+    let root = tempfile::Builder::new()
+        .prefix("eval-skill-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let workspace = root.path().join("workspace");
+    let copy = workspace.join("skills/data-analysis/SKILL.md");
+    fs::create_dir_all(copy.parent().unwrap()).unwrap();
+    fs::write(&copy, "This workspace file is not the bundled Skill.").unwrap();
+    let mut state = AppState::for_eval(root.path().join("app"));
+    scripted(&mut state, root.path());
+    fs::write(
+        root.path().join("replay-case.json"),
+        json!({"name":"read", "method":"native.authorize",
+        "args":{"name":"read", "path":copy}})
+        .to_string(),
+    )
+    .unwrap();
+    let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
+        .await
+        .unwrap();
+    let chat = new_chat(&state, &loupist.id, "workspace Skill copy").unwrap();
+    let session = Session {
+        id: "probe".into(),
+        role: "probe".into(),
+        memory: "off".into(),
+        turns: vec![],
+    };
+    let result = run_turn(
+        &state,
+        &chat,
+        &session,
+        &Turn {
+            user: "REPLAY_CASE_EVAL: read the workspace file".into(),
+            ..Default::default()
+        },
+        "fixture",
+        "medium",
+        60_000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result["status"], "completed", "{result}");
+    let read = result["tool_calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|call| call["name"] == "read")
+        .unwrap();
+    assert_eq!(read["outcome"], "ok");
+    assert_eq!(
+        read["native_authorization"],
+        json!({"class":"Workspace", "skill_id":null})
+    );
+    state.shutdown().await.unwrap();
+}
+
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 #[tokio::test]
 async fn invalid_pi_agent_directory_is_rejected_before_chat_side_effects() {

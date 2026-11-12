@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import vm from "node:vm";
 import { JSDOM } from "jsdom";
-import { measureShellLayout } from "./shell-layout.mjs";
+import { assertShellLayout, measureShellLayout } from "./shell-layout.mjs";
 import { assertChatLayout, measureChatLayout } from "./native-layout.mjs";
 
 function measure(callback, html) {
   const { window } = new JSDOM(html);
-  window.HTMLElement.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, width: 100, height: 40, right: 100, bottom: 40 });
+  window.HTMLElement.prototype.getBoundingClientRect = function () {
+    const [x, y, width, height] = this.getAttribute("data-rect")?.split(",").map(Number) ?? [0, 0, 100, 40];
+    return { x, y, width, height, right: x + width, bottom: y + height };
+  };
   window.HTMLCanvasElement.prototype.getContext = () => ({ measureText: () => ({ width: 10 }) });
   try {
     return vm.runInNewContext(`(${callback})()`, {
@@ -17,7 +20,7 @@ function measure(callback, html) {
   } finally { window.close(); }
 }
 
-test("collapsed shell measures the Home control once alongside the other rail actions", () => {
+test("collapsed shell measures all eight rail actions once", () => {
   const layout = measure(measureShellLayout, `<main data-testid="app-shell">
     <div data-collapsible="icon"><nav data-slot="sidebar-container">
       <button class="navigation-search"></button>
@@ -26,8 +29,23 @@ test("collapsed shell measures the Home control once alongside the other rail ac
       <button data-testid="navigation-new"></button><button id="main-tab-settings"></button>
     </nav></div><header class="workspace-heading"><div class="workspace-chat-title"><div class="thread-statuses"></div></div></header>
   </main>`);
-  assert.equal(layout.navigation[0].railButtons.length, 4);
+  assert.equal(layout.navigation[0].railButtons.length, 8);
   assert.equal(layout.headingItems.length, 1);
+});
+
+test("collapsed shell rejects an off-center or clipped destination in each new sidebar row", () => {
+  const places = ["following", "map", "lens", "schedule"];
+  const html = (broken, x) => `<main data-testid="app-shell" data-rect="0,0,700,820">
+    <div class="app-titlebar" data-rect="0,0,700,40"></div>
+    <div class="app-body" data-rect="0,40,700,780"><div class="app-frame" data-rect="64,40,636,780"></div>
+      <div data-collapsible="icon"><nav data-slot="sidebar-container" data-rect="0,40,64,780">
+        ${places.map((id, index) => `<div data-sidebar-place="${id}"><button data-rect="${id === broken ? x : 12},${100 + 48 * index},40,40"></button></div>`).join("")}
+      </nav></div>
+    </div></main>`;
+  assert.doesNotThrow(() => assertShellLayout(measure(measureShellLayout, html())));
+  for (const place of places) for (const x of [0, 30]) {
+    assert.throws(() => assertShellLayout(measure(measureShellLayout, html(place, x))), /collapsed sidebar control is off-center/, `${place} at ${x}`);
+  }
 });
 
 test("chart toolbar measures native range selects and its More button", () => {

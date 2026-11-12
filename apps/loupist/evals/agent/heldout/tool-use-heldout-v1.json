@@ -200,7 +200,8 @@
                       "capability_load",
                       "krx_daily_quote"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "krx"
                   },
                   {
                     "assert": "tool_not_called",
@@ -270,7 +271,8 @@
                       "capability_load",
                       "kis_operation_search"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "koreainvestment"
                   },
                   {
                     "assert": "tool_not_called",
@@ -338,7 +340,8 @@
                       "capability_load",
                       "note_save"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "memory-save"
                   }
                 ],
                 "memory": [

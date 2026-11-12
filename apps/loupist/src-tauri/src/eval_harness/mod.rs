@@ -936,6 +936,13 @@ async fn run_turn(
     sink.eval_pi_event = Some(Arc::new(move |event| {
         callback.lock().unwrap().observe(event)
     }));
+    let native_reads = captured.clone();
+    sink.eval_native_read = Some(Arc::new(move |call_id, authorization| {
+        native_reads
+            .lock()
+            .unwrap()
+            .native_read_authorized(call_id, authorization);
+    }));
     let run_id = format!("eval-{}", uuid::Uuid::new_v4());
     let started = chrono::Utc::now().to_rfc3339();
     let clock = Instant::now();

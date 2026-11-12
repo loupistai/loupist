@@ -60,6 +60,8 @@ node apps/loupist/evals/agent/cli.mjs calibrate --suite <suite.json> --traces <t
 Runners receive `--suite`, `--out` and `--trials`; arguments after `--` go to the
 runner unchanged. Unknown or duplicate options are rejected. Commands write under
 `evals/output/<timestamp>/` unless `--output` is set.
+Suite `maxTurns` caps count turns across trials; the security and Lens suites allow
+all turns in the default three trials. Increase the cap explicitly for more trials.
 
 **Judging.** `judge` scores one binary criterion per call (`--concurrency N`,
 default 1, keeps output order) and caches by the SHA-256 of judge input, criterion,
@@ -127,6 +129,12 @@ conservative lower bounds over all expected checks.
 prove two failures identical (`repeated_failures_unknown`), and calls without a
 final outcome are `unknown_outcomes`; both leave the goals unmeasured.
 
+`capability_loaded` requires a successful load of the named pack. A
+`tool_called_before` starting with `capability_load` also names that pack with
+`id` and requires its successful load before the pack's first attempted tool use.
+A failed or different-pack load cannot establish activation; a missing load
+outcome stays unmeasured.
+
 Traces redact credential fields and credential-shaped text. Ordinary Lens section
 `key` labels stay visible; a bare `key` value is hidden if it looks like a
 credential, a JWT, or an unbroken base64/hex string of at least 20 characters.
@@ -143,6 +151,11 @@ An optional absolute `tolerance` accepts the rounding a scenario allows (for exa
 from a direct denial such as “No order was placed.” A denial does not hide a later
 affirmative claim or an embedded double negation; `security-claims.test.mjs`
 exercises those cases through the grader.
+
+**Save claims.** `no_false_save_claim` checks bounded completed English and Korean
+claims, including passive saves, against actual Memory commits. Indirect questions,
+refusals, future intent, quotes and ordinary output-file saves do not claim a Memory
+commit. A question or refusal in one clause does not excuse a later save claim.
 
 **Citations and cutoffs.** `cites_result` passes when an answer paragraph contains
 an inline or resolved reference Markdown link whose complete destination equals a
@@ -404,9 +417,12 @@ An empty or whitespace-only completed reply fails; an absent answer remains
 unknown unless other evidence already establishes a failure. This applies to forbidden content/calls, save restraint, unchanged Lens
 state, tool-count ceilings and empty scheduled-task state.
 
-`skill_read` takes an `id` and requires an `outcome: "ok"` native `read` whose
-path ends exactly in `skills/<id>/SKILL.md`; a failed read, reference file or
-similarly named path does not count. `tool_called` with `successful: true`
+`skill_read` takes an `id` and requires an `outcome: "ok"` native `read` with
+host-recorded `native_authorization.class: "BundledSkill"` and that `skill_id`.
+The host identifies the exact entrypoint under its sealed Skill root; a workspace
+copy, reference file, failed read or different Skill does not count. This evidence
+is eval-only and joined by tool-call ID; Pi cannot supply it. Old traces containing
+only a matching path suffix stay unmeasured. `tool_called` with `successful: true`
 requires an observed successful call; scheduling turns use this alongside saved
 state so a refusal or unchanged snapshot cannot masquerade as completed work.
 

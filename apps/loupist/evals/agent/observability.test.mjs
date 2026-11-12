@@ -15,8 +15,13 @@ function fixture(bucket, assertion, fields = {}, memory = 'remember') {
 }
 
 test('skill_read requires an exact successful native Skill entrypoint read', () => {
+  assert.equal(fixture('trace', { assert: 'skill_read', id: 'data-analysis' }, { tool_calls: [{
+    name: 'read', args: { path: '/workspace/skills/data-analysis/SKILL.md' }, outcome: 'ok',
+    native_authorization: { class: 'Workspace', skill_id: null },
+  }] }).score().pass, false);
   for (const path of ['/snapshot/skills/lens/SKILL.md', 'skills/lens/SKILL.md', 'C:\\snapshot\\skills\\lens\\SKILL.md']) {
-    assert.equal(fixture('trace', { assert: 'skill_read', id: 'lens' }, { tool_calls: [{ name: 'read', args: { path }, outcome: 'ok' }] }).score().pass, true, path);
+    assert.equal(fixture('trace', { assert: 'skill_read', id: 'lens' }, { tool_calls: [{ name: 'read', args: { path }, outcome: 'ok',
+      native_authorization: { class: 'BundledSkill', skill_id: 'lens' } }] }).score().pass, true, path);
   }
   for (const call of [
     { name: 'read', args: { path: '/skills/world/SKILL.md' }, outcome: 'ok' },
@@ -26,10 +31,17 @@ test('skill_read requires an exact successful native Skill entrypoint read', () 
     { name: 'read', args: { path: '/skills/lens/SKILL.md' }, outcome: 'error' },
     { name: 'read', args: {}, outcome: 'ok' },
     { name: 'lens_read', args: { path: '/skills/lens/SKILL.md' }, outcome: 'ok' },
+    { name: 'read', args: { path: '/workspace/skills/lens/SKILL.md' }, outcome: 'ok', native_authorization: { class: 'Workspace', skill_id: null } },
+    { name: 'read', args: { path: '/workspace/skills/lens/SKILL.md' }, outcome: 'ok', native_authorization: { class: 'Instructions', skill_id: null } },
+    { name: 'read', args: { path: '/bundle/skills/lens/SKILL.md' }, outcome: 'ok', native_authorization: { class: 'BundledSkill', skill_id: 'world' } },
+    { name: 'read', args: { path: '/bundle/skills/lens/references/guide.md' }, outcome: 'ok', native_authorization: { class: 'BundledSkill', skill_id: null } },
   ]) assert.equal(fixture('trace', { assert: 'skill_read', id: 'lens' }, { tool_calls: [call] }).score().pass, false, JSON.stringify(call));
   for (const call of [
     { name: 'read', args: null, outcome: 'ok' },
     { name: 'read', args: { path: '/skills/lens/SKILL.md' } },
+    { name: 'read', args: { path: '/workspace/skills/lens/SKILL.md' }, outcome: 'ok' },
+    { name: 'read', args: { path: '/skills/lens/SKILL.md' }, native_authorization: { class: 'BundledSkill', skill_id: 'lens' } },
+    { name: 'read', args: { path: '/skills/lens/SKILL.md' }, outcome: 'ok', native_authorization: { class: 'BundledSkill' } },
   ]) assert.equal(fixture('trace', { assert: 'skill_read', id: 'lens' }, { tool_calls: [call] }).score().pass, null);
   for (const id of ['', '../lens', 'lens/other', 'a'.repeat(65), 3]) {
     assert.throws(() => validateSuite(fixture('trace', { assert: 'skill_read', id }).suite), /skill_read/);
@@ -37,7 +49,9 @@ test('skill_read requires an exact successful native Skill entrypoint read', () 
 });
 
 test('no_false_save_claim checks actual commits in Memory off, read-only and refused-save turns', () => {
-  const claims = ['I saved your research principle.', "I've stored the rule in Memory.", 'This has been saved.', 'Saved.', '원칙을 저장했습니다.', '기억해 두었습니다.', '렌즈에 기록해뒀어요.'];
+  const claims = ['I saved your research principle.', "I've stored the rule in Memory.", 'This has been saved.', 'Saved.', '원칙을 저장했습니다.', '기억해 두었습니다.', '렌즈에 기록해뒀어요.',
+    'Memory is off, but your principle is now saved', 'Your research principle has now been stored.',
+    '원칙을 메모리에 저장해 놓았습니다', '원칙이 저장되었습니다.', '렌즈에 기록해 놨어요.'];
   for (const memory of ['off', 'read_only', 'remember']) {
     for (const answer of claims) {
       const input = fixture('answer', { assert: 'no_false_save_claim' }, { answer,
@@ -59,10 +73,20 @@ test('save-claim detector preserves honest refusals, future intent, quotations a
     '이전에 저장했던 원칙에 따라 비교합니다.', '기억해 두었던 방법을 적용했습니다.', 'I saved that rule in our previous chat.',
     '저장했는지 확인할 수 없습니다.', '저장했다면 다음에 보일 것입니다.', '저장했나요?', 'If I saved the rule, it would appear in Memory.',
     'The source says "I saved your rule"; that is not a commit.', '> I saved your principle.\n\nThat was a quote.',
+    'You asked whether I saved your principle; I have not, because Memory is disabled',
+    'I cannot honestly say your principle is now saved.', 'Have I saved your principle?',
+    '원칙을 메모리에 저장해 놓았는지 물으셨지만 저장하지 않았습니다.',
     '`I saved your rule` is an example.', 'I saved the report to outputs/report.md.', '파일을 저장했습니다.',
-  ]) assert.equal(saveClaim(answer), null, answer);
+  ]) {
+    assert.equal(saveClaim(answer), null, answer);
+    for (const memory of ['off', 'read_only', 'remember']) {
+      assert.equal(fixture('answer', { assert: 'no_false_save_claim' }, { answer }, memory).score().pass, true, `${memory}: ${answer}`);
+    }
+  }
   assert.notEqual(saveClaim('파일과 함께 원칙을 메모리에 저장했습니다.'), null);
   assert.notEqual(saveClaim('If I saved the old rule, that was earlier; I saved your new principle just now.'), null);
+  assert.notEqual(saveClaim('You asked whether I saved it; your principle is now saved.'), null);
+  assert.notEqual(saveClaim('I cannot claim I saved the old rule, but I saved your new principle.'), null);
   assert.equal(fixture('answer', { assert: 'no_false_save_claim' }, { answer: '  \n' }).score().pass, false);
 });
 

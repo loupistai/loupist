@@ -5,7 +5,7 @@
   "description": "Fictional product regression and private-context capability scenarios; deterministic checks precede independent binary rubrics.",
   "budget": {
     "maxInputTokensPerTurn": 500000,
-    "maxTurns": 20
+    "maxTurns": 27
   },
   "scenarios": [
     {

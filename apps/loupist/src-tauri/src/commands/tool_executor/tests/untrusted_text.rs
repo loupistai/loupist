@@ -1402,3 +1402,67 @@ async fn native_authorize_reads_bundled_skills_but_never_writes_or_opens_the_pro
     assert_eq!(prompt["ok"], false, "{prompt}");
     broker.shutdown().await.unwrap();
 }
+
+#[cfg(feature = "eval-harness")]
+#[tokio::test]
+async fn eval_skill_read_evidence_comes_from_the_native_authorization_class() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let roots = native_roots(&temporary);
+    let skills = temporary.path().join("agent/skills");
+    let bundled = skills.join("data-analysis/SKILL.md");
+    let copied = roots.workspace.join("skills/data-analysis/SKILL.md");
+    let reference = skills.join("data-analysis/references/guide.md");
+    for path in [&bundled, &copied, &reference] {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "fixture instructions").unwrap();
+    }
+    let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = observed.clone();
+    let capture = Arc::new(ToolCapture {
+        native: NativeGate::for_turn(roots.with_agent_skills(&skills)),
+        eval_native_read: Some(Arc::new(move |id, authorization| {
+            recorded
+                .lock()
+                .unwrap()
+                .push((id.to_owned(), authorization));
+        })),
+        ..ToolCapture::for_chat(new_id("reply"))
+    });
+    let executor = executor_for(&state, capture);
+    for (id, path) in [
+        ("bundle", bundled),
+        ("workspace", copied),
+        ("reference", reference),
+    ] {
+        let response = executor.execute_attributed(&policy(true, true), ToolMethod::NativeAuthorize,
+            json!({"name":"read", "path":path, "input":{"class":"BundledSkill", "skill_id":"data-analysis"}}),
+            id, Some(id.into())).await.unwrap();
+        assert!(
+            response.get("native_authorization").is_none(),
+            "eval evidence stays out of the agent response"
+        );
+    }
+    let reads = observed.lock().unwrap();
+    assert_eq!(
+        reads[0],
+        (
+            "bundle".into(),
+            json!({"class":"BundledSkill", "skill_id":"data-analysis"})
+        )
+    );
+    assert_eq!(
+        reads[1],
+        (
+            "workspace".into(),
+            json!({"class":"Workspace", "skill_id":null})
+        )
+    );
+    assert_eq!(
+        reads[2],
+        (
+            "reference".into(),
+            json!({"class":"BundledSkill", "skill_id":null})
+        )
+    );
+}

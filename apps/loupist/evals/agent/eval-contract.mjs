@@ -85,6 +85,15 @@ export function skillReadAssertion(assertion) {
   return { id: assertion.id };
 }
 
+export function toolOrderAssertion(assertion) {
+  const { tools, id } = assertion;
+  if (!Array.isArray(tools) || tools.length < 2 || tools.some(tool => typeof tool !== 'string' || !tool)) throw new Error('tool_called_before requires at least two tools');
+  if (tools[0] === 'capability_load') {
+    if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(id)) throw new Error('tool_called_before capability_load requires a pack id');
+  } else if (id !== undefined) throw new Error('tool_called_before id requires capability_load first');
+  return { tools, id };
+}
+
 const NEGATIVE_ASSERTS = new Set(['tool_not_called', 'tool_args_not_matching', 'max_tool_calls', 'max_tool_errors',
   'no_repeated_failed_call', 'not_committed', 'lens_unchanged', 'lens_not_read', 'not_contains',
   'answer_not_matching', 'no_false_save_claim']);
@@ -375,6 +384,7 @@ export function validateSuite(suite) {
           if (assertion.assert === 'sensitivity_card') sensitivityCardAssertion(assertion);
           if (assertion.assert === 'plan_progress') planProgressAssertion(assertion);
           if (assertion.assert === 'skill_read') skillReadAssertion(assertion);
+          if (assertion.assert === 'tool_called_before') toolOrderAssertion(assertion);
         }
         for (const assertion of turn.expect?.memory ?? []) {
           if (assertion.count !== undefined && (!Number.isSafeInteger(assertion.count) || assertion.count < 0)) throw new Error('Memory count must be a non-negative integer');

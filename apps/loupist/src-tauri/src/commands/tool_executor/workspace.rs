@@ -185,6 +185,34 @@ impl AppToolExecutor {
                     crate::custom_connections::taint::native_read_delimiters();
             }
         }
+        #[cfg(feature = "eval-harness")]
+        if request.tool == NativeTool::Read {
+            if let (Some(capture), Some(call_id), Some(roots), Some(path)) = (
+                &self.capture.eval_native_read,
+                current_tool_call_id(),
+                self.capture.native.roots(),
+                result["resolved"].as_str(),
+            ) {
+                let admitted = native_policy::classify(std::path::Path::new(path), roots);
+                let skill_id = (admitted.class == native_policy::PathClass::BundledSkill)
+                    .then(|| {
+                        let root =
+                            native_policy::classify(roots.agent_skills.as_ref()?, roots).path;
+                        let relative = admitted.path.strip_prefix(root).ok()?;
+                        let parts = relative.iter().collect::<Vec<_>>();
+                        (parts.len() == 2 && parts[1] == "SKILL.md")
+                            .then(|| parts[0].to_str().map(str::to_owned))
+                            .flatten()
+                    })
+                    .flatten();
+                // This host-only sink is separate from Pi events and never
+                // changes the native authorization response sent to the agent.
+                capture(
+                    &call_id,
+                    json!({"class":format!("{:?}", admitted.class), "skill_id":skill_id}),
+                );
+            }
+        }
         Ok(result)
     }
 

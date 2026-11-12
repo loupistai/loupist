@@ -127,7 +127,8 @@
                       "capability_load",
                       "chart_publish"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "charts"
                   }
                 ]
               }
@@ -173,7 +174,8 @@
                       "capability_load",
                       "chart_publish"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "charts"
                   }
                 ]
               }
@@ -724,7 +726,8 @@
                       "capability_load",
                       "dart_company_lookup"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "opendart"
                   },
                   {
                     "assert": "tool_called_before",
@@ -732,7 +735,8 @@
                       "capability_load",
                       "dart_financials"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "opendart"
                   },
                   {
                     "assert": "tool_not_called",
@@ -807,7 +811,8 @@
                       "capability_load",
                       "dart_filing_search"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "opendart"
                   },
                   {
                     "assert": "tool_called_before",
@@ -815,7 +820,8 @@
                       "capability_load",
                       "dart_filing_read"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "opendart"
                   },
                   {
                     "assert": "tool_not_called",
@@ -890,7 +896,8 @@
                       "capability_load",
                       "krx_daily_quote"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "krx"
                   },
                   {
                     "assert": "tool_not_called",
@@ -969,7 +976,8 @@
                       "capability_load",
                       "kis_operation_search"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "koreainvestment"
                   },
                   {
                     "assert": "tool_called_before",
@@ -977,7 +985,8 @@
                       "capability_load",
                       "kis_read"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "koreainvestment"
                   },
                   {
                     "assert": "tool_not_called",
@@ -1056,7 +1065,8 @@
                       "capability_load",
                       "worldbank_series"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "world-bank"
                   },
                   {
                     "assert": "tool_not_called",
@@ -1134,7 +1144,8 @@
                       "capability_load",
                       "worldbank_series"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "world-bank"
                   },
                   {
                     "assert": "tool_not_called",
@@ -1213,7 +1224,8 @@
                       "capability_load",
                       "dart_company_lookup"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "opendart"
                   },
                   {
                     "assert": "tool_not_called",
@@ -1283,7 +1295,8 @@
                       "capability_load",
                       "dart_financials"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "opendart"
                   },
                   {
                     "assert": "tool_not_called",
@@ -1418,7 +1431,8 @@
                       "capability_load",
                       "chart_publish"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "charts"
                   },
                   {
                     "assert": "tool_called",
@@ -1686,7 +1700,8 @@
                       "capability_load",
                       "krx_daily_quote"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "krx"
                   },
                   {
                     "assert": "tool_not_called",
@@ -1952,7 +1967,8 @@
                       "capability_load",
                       "dart_financials"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "opendart"
                   },
                   {
                     "assert": "calculate_inputs_cited",
@@ -2402,7 +2418,8 @@
                       "capability_load",
                       "dart_financials"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "opendart"
                   },
                   {
                     "assert": "grid_cells_linked",
@@ -2549,7 +2566,8 @@
                       "capability_load",
                       "dart_major_report"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "opendart"
                   },
                   {
                     "assert": "tool_called",
@@ -2648,7 +2666,8 @@
                       "capability_load",
                       "kis_read"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "koreainvestment"
                   },
                   {
                     "assert": "tool_called",
@@ -2808,7 +2827,8 @@
                       "capability_load",
                       "dart_dividends"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "opendart"
                   },
                   {
                     "assert": "calculate_inputs_cited",
@@ -3253,7 +3273,8 @@
                       "capability_load",
                       "chart_publish"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "charts"
                   },
                   {
                     "assert": "plan_progress",

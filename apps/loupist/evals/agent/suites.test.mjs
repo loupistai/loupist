@@ -732,6 +732,7 @@ test('on-demand pack checks require a matching load before first use without dem
         const order = checks.find(item => item.assert === 'tool_called_before' && item.tools?.[0] === 'capability_load'
           && (load.id === 'charts' ? ['chart_publish', 'grid_publish'].includes(item.tools[1]) : item.tools[1].startsWith('schedule_')));
         assert.ok(order, `${scenario.id}: missing load order`);
+        assert.equal(order.id, load.id, `${scenario.id}: order must name the same pack`);
         const only = structuredClone(suite);
         only.scenarios.find(s => s.id === scenario.id).sessions.find(s => s.id === session.id).turns[index].expect = { trace: [load, order] };
         const call = name => ({ name, args: {}, outcome: 'ok' });
@@ -740,11 +741,24 @@ test('on-demand pack checks require a matching load before first use without dem
           [[call(order.tools[1])], false],
           [[activate('memory-save'), call(order.tools[1])], false],
           [[call(order.tools[1]), activate(load.id)], false],
+          [[{ ...activate(load.id), outcome: 'error' }, { ...call(order.tools[1]), outcome: 'error', error_code: 'tool_not_found' }], false],
+          [[activate(load.id === 'charts' ? 'schedules' : 'charts'), { ...call(order.tools[1]), outcome: 'error' }, activate(load.id), call(order.tools[1])], false],
           [[activate(load.id), call(order.tools[1])], true],
         ]) {
           const rows = grade(only, [observedTurn(suite, scenario, session, index, { tool_calls })]).results;
           assert.equal(rows.every(row => row.pass === true), pass, `${scenario.id}: ${JSON.stringify(tool_calls)}`);
         }
+        for (const args of [{ id: load.id }, null]) {
+          const rows = grade(only, [observedTurn(suite, scenario, session, index, {
+            tool_calls: [{ name: 'capability_load', args }, call(order.tools[1])],
+          })]).results;
+          assert.ok(rows.every(row => row.pass === null), `${scenario.id}: missing load outcome stays unknown`);
+        }
+        const earlyUse = load.id === 'charts' ? 'grid_publish' : 'schedule_list';
+        const earlyRows = grade(only, [observedTurn(suite, scenario, session, index, {
+          tool_calls: [call(earlyUse), activate(load.id), call(order.tools[1])],
+        })]).results;
+        assert.equal(earlyRows.find(row => row.assert === 'tool_called_before').pass, false, 'first use includes other tools in the same pack');
         checked++;
       }
     });
@@ -757,6 +771,15 @@ test('on-demand pack checks require a matching load before first use without dem
 test('multi-step research budgets include the accumulated preloaded context', () => {
   for (const name of ['learning-v1.json', 'personalization-v1.json', 'principles-v1.json', 'security-v1.json']) {
     assert.equal(loaded.find(file => file.name === name).json.budget.maxInputTokensPerTurn, 500000, name);
+  }
+});
+
+test('security and Lens suite turn caps cover the default three complete trials', () => {
+  for (const name of ['security-v1.json', 'lens-lifecycle-v1.json', 'lens-behavior-heldout-v1.json']) {
+    const suite = loaded.find(file => file.name === name).json;
+    const perTrial = suite.scenarios.reduce((total, scenario) => total
+      + scenario.sessions.reduce((count, session) => count + session.turns.length, 0), 0);
+    assert.ok(suite.budget.maxTurns >= 3 * perTrial, `${name}: cap ${suite.budget.maxTurns} truncates ${3 * perTrial} turns`);
   }
 });
 
