@@ -281,8 +281,10 @@ When `APPLE_SIGNING_IDENTITY` is set, `--ensure` reapplies that identity even wh
 the runtime was previously cached with an ad-hoc signature. Distribution checks
 also require the Python worker's signature to chain to Apple.
 
-The release resource map lists production agent files explicitly and excludes
-`*.test.mjs`. `test_agent_resources.py` stages that map into a disposable folder;
+The release and package-smoke resource maps list the same production agent files
+explicitly and exclude `*.test.mjs`. Tauri reads both overlays directly, so their
+JSON maps are kept equal by `test_agent_resources.py`, which stages each map into a
+disposable folder.
 `check_agent_resources.py` verifies exact production bytes and rejects tests, extras,
 missing files and symbolic links. The macOS app-bundle check uses the same verifier. The renderer has no notification
 plugin capability or `asset:` image CSP source: notification permission and delivery

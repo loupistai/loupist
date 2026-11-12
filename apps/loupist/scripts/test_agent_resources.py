@@ -1,4 +1,4 @@
-"""Exercise the exact release resource list without building an app."""
+"""Exercise both exact production resource lists without building an app."""
 import json
 import shutil
 import tempfile
@@ -17,8 +17,21 @@ class AgentResourcesTest(unittest.TestCase):
         config = json.loads((APP / "src-tauri/tauri.conf.json").read_text())
         self.assertNotIn("asset:", config["app"]["security"]["csp"].split())
 
-    def test_release_resources_stage_exactly_production_agent_files(self):
-        mappings = json.loads((APP / "src-tauri/tauri.release.conf.json").read_text())["bundle"]["resources"]
+    def test_package_smoke_uses_the_same_production_resources_as_release(self):
+        configs = [
+            json.loads((APP / "src-tauri" / name).read_text())
+            for name in ("tauri.release.conf.json", "tauri.package-smoke.conf.json")
+        ]
+        self.assertEqual(configs[0]["bundle"]["resources"], configs[1]["bundle"]["resources"])
+        self.assertIs(configs[1]["bundle"]["createUpdaterArtifacts"], False)
+
+    def test_packaged_resources_stage_exactly_production_agent_files(self):
+        for name in ("tauri.release.conf.json", "tauri.package-smoke.conf.json"):
+            with self.subTest(config=name):
+                self.check_staged_resources(name)
+
+    def check_staged_resources(self, config):
+        mappings = json.loads((APP / "src-tauri" / config).read_text())["bundle"]["resources"]
         with tempfile.TemporaryDirectory() as temporary:
             resources = Path(temporary)
             for source, destination in mappings.items():
