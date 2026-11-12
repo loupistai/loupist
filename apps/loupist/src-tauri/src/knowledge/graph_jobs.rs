@@ -158,6 +158,9 @@ pub struct GraphJobView {
     pub status: String,
     pub payload_digest: String,
     pub created_at_ms: i64,
+    // Host-only extraction state; polling exposes the receipt, not Source text.
+    #[serde(skip_serializing)]
+    #[cfg_attr(test, ts(skip))]
     pub document: JobDocument,
     pub host_may_redrive: bool,
 }
@@ -815,8 +818,13 @@ pub fn accept_episode(
         let episode_key = format!("ep_{}", &dedup_key[..16]);
         let mut chunk_extraction = extraction.clone();
         if chunks.len() > 1 {
-            chunk_extraction.max_llm_calls =
-                share_budget(extraction.max_llm_calls, chunks.len(), index);
+            // One Source allowance, carried forward as each episode settles.
+            // Later chunks own no model calls until their predecessor finishes.
+            chunk_extraction.max_llm_calls = if index == 0 {
+                extraction.max_llm_calls
+            } else {
+                0
+            };
             chunk_extraction.max_embedding_calls =
                 share_budget(extraction.max_embedding_calls, chunks.len(), index);
         }
@@ -1486,6 +1494,47 @@ pub(crate) fn recover_interrupted(tx: &Transaction<'_>) -> KnowledgeResult<u32> 
     Ok(changed)
 }
 
+/// Reclaim abandoned attempts during normal scheduling. A live host worker is
+/// excluded even if queueing or sleep took it past its wall-clock lease.
+pub(super) fn recover_expired(
+    tx: &Transaction<'_>,
+    now_ms: i64,
+    live_loupists: &std::collections::HashSet<String>,
+) -> KnowledgeResult<Vec<String>> {
+    let mut reclaimed = Vec::new();
+    for job in list_running(tx)? {
+        if live_loupists.contains(&job.loupist_id)
+            || job
+                .document
+                .lease_expires_at_ms
+                .is_some_and(|expiry| expiry > now_ms)
+        {
+            continue;
+        }
+        let mut settings = load_settings(tx, &job.loupist_id)?;
+        let mut document = job.document.clone();
+        if document.attempt_id.is_none() {
+            document.attempt_id = Some(mint_id("atm"));
+            write_status(tx, &job.job_id, JOB_RUNNING, JOB_RUNNING, &document)?;
+        }
+        finish_unpublished(
+            tx,
+            &mut settings,
+            &job.job_id,
+            document.attempt_id.as_deref().unwrap_or_default(),
+            Unpublished {
+                paid: job.document.inference_attempted,
+                uncertain: job.document.usage_uncertain,
+                suspended: false,
+            },
+            now_ms,
+        )?;
+        store_settings(tx, &job.loupist_id, &settings)?;
+        reclaimed.push(job.job_id);
+    }
+    Ok(reclaimed)
+}
+
 /// Only the caller that changes QUEUED to RUNNING owns dispatch authority.
 /// Observing an existing attempt never grants permission to invoke its worker.
 pub(super) fn claim_running(
@@ -1501,36 +1550,70 @@ pub(super) fn claim_running(
     if !ready_to_run(settings, &job) {
         return Ok(GraphJobClaim::Existing(job));
     }
-    // Graphiti must extract entities and relationships separately. A shard
-    // with fewer than two model calls cannot finish even that minimum path.
-    // Preserve its frozen allowance and defer it before starting a paid attempt;
-    // it must not quarantine the generation and block unrelated Sources.
-    // Learning counts a paused chunk as read, so the pages citing its Source
-    // are rechecked when a Source's every chunk pauses here.
-    let paused = tx.execute(
-        "UPDATE knowledge_graph_outbox SET status = ?1
-         WHERE loupist_id = ?2 AND status = ?3
-           AND json_extract(payload_json, '$.episodeKind') = 'source_span'
-           AND (json_extract(payload_json, '$.extraction.maxLlmCalls') < 2
-             OR json_extract(payload_json, '$.extraction.maxEmbeddingCalls') = 0)
-           AND json_extract(payload_json, '$.mutationSent') = 0
-           AND json_extract(payload_json, '$.inferenceAttempted') = 0
-           AND json_extract(payload_json, '$.usageUncertain') = 0
-           AND json_extract(payload_json, '$.attemptId') IS NULL
-           AND json_extract(payload_json, '$.leaseExpiresAtMs') IS NULL",
-        params![JOB_PAUSED, job.loupist_id, JOB_QUEUED],
-    )?;
-    if paused > 0 {
-        super::learning::world_job_settled(tx, &job.loupist_id, now_ms)?;
+    if world_processing_busy(tx, &job.world_record_id, &job.job_id)? {
+        return Ok(GraphJobClaim::Existing(job));
     }
+    if let Some(previous_key) = &job.document.previous_episode_key {
+        let previous = tx.query_row(
+            "SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
+                    payload_digest, created_at_ms
+             FROM knowledge_graph_outbox WHERE loupist_id = ?1
+               AND json_extract(payload_json, '$.episodeKey') = ?2",
+            params![job.loupist_id, previous_key], row_to_job,
+        ).optional()?;
+        if let Some(mut previous) = previous {
+            if !final_status(&previous.status) {
+                return Ok(GraphJobClaim::Existing(job));
+            }
+            let remaining = previous.document.extraction.max_llm_calls;
+            // Old queued documents keep their positive per-chunk allowances.
+            // New followers start at zero; an old zero-funded tail can only
+            // follow a shard with fewer than two calls, which cannot run.
+            if job.document.extraction.max_llm_calls == 0
+                && remaining >= 2
+                && !job.document.mutation_sent
+                && !job.document.inference_attempted
+                && !job.document.usage_uncertain
+                && job.document.attempt_id.is_none()
+                && job.document.lease_expires_at_ms.is_none()
+                && job.document.interrupted_attempts == 0
+                && job.document.host_interruptions == 0
+                && job.document.unsent_attempts == 0
+            {
+                job.document.extraction.max_llm_calls = job
+                    .document
+                    .extraction
+                    .max_llm_calls
+                    .saturating_add(remaining);
+                previous.document.extraction.max_llm_calls = 0;
+                write_status(
+                    tx,
+                    &previous.job_id,
+                    &previous.status,
+                    &previous.status,
+                    &previous.document,
+                )?;
+                write_status(tx, job_id, JOB_QUEUED, JOB_QUEUED, &job.document)?;
+            }
+        }
+    }
+    // Even the minimum extraction needs entities and relationships. Park the
+    // exhausted tail together so method learning can settle its Source.
     if job.document.episode_kind == EPISODE_SPAN
         && (job.document.extraction.max_llm_calls < 2
             || job.document.extraction.max_embedding_calls == 0)
     {
+        if !job.document.mutation_sent
+            && !job.document.inference_attempted
+            && !job.document.usage_uncertain
+            && job.document.attempt_id.is_none()
+            && job.document.lease_expires_at_ms.is_none()
+        {
+            write_status(tx, job_id, JOB_QUEUED, JOB_PAUSED, &job.document)?;
+            pause_unfunded_followers(tx, &job)?;
+            source_job_settled(tx, &job, now_ms)?;
+        }
         return load_job(tx, job_id).map(GraphJobClaim::Existing);
-    }
-    if world_processing_busy(tx, &job.world_record_id, &job.job_id)? {
-        return Ok(GraphJobClaim::Existing(job));
     }
     if job.document.episode_kind == EPISODE_SPAN
         && (settings
@@ -1626,6 +1709,40 @@ pub fn note_inference_attempted(
             "graph job attempt is no longer active",
         ));
     }
+    Ok(())
+}
+
+/// Reserve a model call durably before dispatch. Refused calls return it; a
+/// crash or uncertain reply keeps it spent, so retries cannot refill the pool.
+pub(super) fn reserve_model_call(
+    tx: &Transaction<'_>,
+    job_id: &str,
+    attempt_id: &str,
+) -> KnowledgeResult<()> {
+    let job = active_attempt(tx, job_id, attempt_id)?;
+    let mut document = job.document;
+    document.extraction.max_llm_calls =
+        document
+            .extraction
+            .max_llm_calls
+            .checked_sub(1)
+            .ok_or(KnowledgeError::Invalid(
+                "World model call budget is exhausted",
+            ))?;
+    document.inference_attempted = true;
+    write_status(tx, job_id, JOB_RUNNING, JOB_RUNNING, &document)?;
+    Ok(())
+}
+
+pub(super) fn refund_model_call(
+    tx: &Transaction<'_>,
+    job_id: &str,
+    attempt_id: &str,
+) -> KnowledgeResult<()> {
+    let job = active_attempt(tx, job_id, attempt_id)?;
+    let mut document = job.document;
+    document.extraction.max_llm_calls = document.extraction.max_llm_calls.saturating_add(1);
+    write_status(tx, job_id, JOB_RUNNING, JOB_RUNNING, &document)?;
     Ok(())
 }
 
@@ -1755,6 +1872,36 @@ pub fn finish_unpublished(
     )
 }
 
+/// Followers without their own allowance cannot run after an exhausted chunk.
+fn pause_unfunded_followers(tx: &Transaction<'_>, job: &GraphJobView) -> KnowledgeResult<()> {
+    tx.execute(
+        "WITH RECURSIVE tail(episode_key) AS (
+           SELECT ?1 UNION
+           SELECT json_extract(payload_json, '$.episodeKey')
+           FROM knowledge_graph_outbox JOIN tail
+             ON json_extract(payload_json, '$.previousEpisodeKey') = tail.episode_key
+           WHERE loupist_id = ?2
+         )
+         UPDATE knowledge_graph_outbox SET status = ?3
+         WHERE loupist_id = ?2 AND status = ?4
+           AND json_extract(payload_json, '$.episodeKey') IN (SELECT episode_key FROM tail)
+           AND (json_extract(payload_json, '$.extraction.maxLlmCalls') < 2
+             OR json_extract(payload_json, '$.extraction.maxEmbeddingCalls') = 0)
+           AND json_extract(payload_json, '$.mutationSent') = 0
+           AND json_extract(payload_json, '$.inferenceAttempted') = 0
+           AND json_extract(payload_json, '$.usageUncertain') = 0
+           AND json_extract(payload_json, '$.attemptId') IS NULL
+           AND json_extract(payload_json, '$.leaseExpiresAtMs') IS NULL",
+        params![
+            job.document.episode_key,
+            job.loupist_id,
+            JOB_PAUSED,
+            JOB_QUEUED
+        ],
+    )?;
+    Ok(())
+}
+
 /// The frozen allowance cannot finish this episode. Repeating the paid calls
 /// cannot increase it, and no publication took place, so leave the episode
 /// paused without quarantining the rest of the World.
@@ -1768,6 +1915,7 @@ pub(super) fn pause_exhausted_attempt(
     let mut document = job.document.clone();
     clear_lease(&mut document);
     write_status(tx, job_id, JOB_RUNNING, JOB_PAUSED, &document)?;
+    pause_unfunded_followers(tx, &job)?;
     source_job_settled(tx, &job, now_ms)?;
     load_job(tx, job_id)
 }

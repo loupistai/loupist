@@ -2324,11 +2324,10 @@ fn run_dispatchable_chunks(store: &KnowledgeStore, mut at: i64) -> usize {
 
 #[test]
 fn chunks_a_frozen_allowance_cannot_fund_do_not_hold_the_pages_citing_their_report() {
-    // Two Chats cite two long reports. Under the default 16 model calls each
-    // report's nine chunks get [2, 2, 2, 2, 2, 2, 2, 1, 1]; the first claim
-    // parks the two tail chunks of each, which no resume can run. Once the
-    // chunks that can run are through, both pages are cases, with no model
-    // call and no new filing.
+    // Two Chats cite two long reports. The first episode of each spends 15
+    // of its Source's 16 calls, leaving an unfunded eight-episode tail. The
+    // pages stay held until both tails park, then become cases without a new
+    // filing. Reservations simulate spend without contacting a provider.
     let (_dir, store) = setup();
     let (a, b) = (
         long_source(&store, "Halvorsen annual report", 9),
@@ -2341,8 +2340,8 @@ fn chunks_a_frozen_allowance_cannot_fund_do_not_hold_the_pages_citing_their_repo
     let ferroluz = named("Ferroluz ramp", "Ferroluz Componentes");
     let b_only = std::slice::from_ref(&b);
     assert!(put_in(&store, "chat-2", "m2", ferroluz, text, b_only, AT + 3).is_none());
-    world_job(&store, &a, AT + 4);
-    world_job(&store, &b, AT + 4);
+    let first_a = world_job(&store, &a, AT + 4);
+    let first_b = world_job(&store, &b, AT + 4);
     let jobs = store.graph_jobs(LOUPIST).unwrap();
     assert_eq!(jobs.len(), 18);
     let underfunded = |jobs: &[GraphJobView]| {
@@ -2350,18 +2349,46 @@ fn chunks_a_frozen_allowance_cannot_fund_do_not_hold_the_pages_citing_their_repo
             .filter(|j| j.document.extraction.max_llm_calls < 2)
             .count()
     };
-    assert_eq!(underfunded(&jobs), 4);
-    assert_eq!(run_dispatchable_chunks(&store, AT + 5), 14);
+    assert_eq!(underfunded(&jobs), 16);
+    for first in [&first_a, &first_b] {
+        let running = store
+            .graph_mark_running(&config(), &first.job_id, AT + 5)
+            .unwrap();
+        let attempt = running.document.attempt_id.as_deref().unwrap();
+        for _ in 0..15 {
+            store
+                .transact(|write| {
+                    super::super::graph_jobs::reserve_model_call(write.tx, &first.job_id, attempt)
+                })
+                .unwrap();
+        }
+        store
+            .graph_finish(
+                &mut config(),
+                &first.job_id,
+                attempt,
+                super::super::graph_jobs::JOB_COMPLETED,
+                false,
+                true,
+                AT + 6,
+            )
+            .unwrap();
+        assert!(
+            review_states(&store).is_empty(),
+            "the tails still hold their pages"
+        );
+    }
+    assert_eq!(run_dispatchable_chunks(&store, AT + 7), 0);
     let jobs = store.graph_jobs(LOUPIST).unwrap();
     let paused: Vec<_> = jobs
         .iter()
         .filter(|j| j.status == super::super::graph_jobs::JOB_PAUSED)
         .collect();
-    assert_eq!(paused.len(), 4);
+    assert_eq!(paused.len(), 16);
     assert!(paused
         .iter()
         .all(|j| j.document.extraction.max_llm_calls < 2));
-    assert!(jobs.iter().all(|j| !j.document.inference_attempted));
+    assert!(paused.iter().all(|j| !j.document.inference_attempted));
     assert_eq!(review_states(&store), ["queued"]);
     assert_eq!(
         pages(&begin(&store, AT + 40)),
@@ -2372,9 +2399,9 @@ fn chunks_a_frozen_allowance_cannot_fund_do_not_hold_the_pages_citing_their_repo
 
 #[test]
 fn a_report_whose_every_chunk_is_underfunded_is_read_when_the_claim_parks_it() {
-    // Seventeen chunks of a 16-call allowance leave every chunk under two
-    // calls. The first claim parks them all and nothing ever finishes, so the
-    // claim itself rechecks the pages citing the report.
+    // A Source with only one call left cannot fund even its first episode.
+    // The first claim parks all seventeen chunks and nothing ever finishes,
+    // so the claim itself rechecks the pages citing the report.
     let (_dir, store) = setup();
     let report = long_source(&store, "Halvorsen annual report", 17);
     let other = source(&store, "Filing C");
@@ -2386,17 +2413,44 @@ fn a_report_whose_every_chunk_is_underfunded_is_read_when_the_claim_parks_it() {
     assert!(turn(&store, "chat-2", "m2", 0, other_only, AT + 3).is_none());
     world_read(&store, &[&other], AT + 4);
     let first = world_job(&store, &report, AT + 5);
+    store
+        .transact(|write| {
+            write.tx.execute(
+                "UPDATE knowledge_graph_outbox SET payload_json = json_set(payload_json,
+             '$.extraction.maxLlmCalls', 1) WHERE job_id = ?1",
+                [&first.job_id],
+            )?;
+            Ok(())
+        })
+        .unwrap();
     assert!(review_states(&store).is_empty(), "the report is queued");
     let claimed = store
         .graph_mark_running(&config(), &first.job_id, AT + 6)
         .unwrap();
     assert_eq!(claimed.status, super::super::graph_jobs::JOB_PAUSED);
-    assert!(store
+    let source_id = &first
+        .document
+        .source_binding
+        .as_ref()
+        .unwrap()
+        .source_record_id;
+    let report_jobs: Vec<_> = store
         .graph_jobs(LOUPIST)
         .unwrap()
+        .into_iter()
+        .filter(|job| {
+            job.document
+                .source_binding
+                .as_ref()
+                .is_some_and(|binding| &binding.source_record_id == source_id)
+        })
+        .collect();
+    assert_eq!(report_jobs.len(), 17);
+    assert!(report_jobs
         .iter()
-        .filter(|j| j.document.extraction.max_llm_calls < 2)
-        .all(|j| j.status == super::super::graph_jobs::JOB_PAUSED));
+        .all(|job| job.document.extraction.max_llm_calls < 2
+            && job.status == super::super::graph_jobs::JOB_PAUSED
+            && !job.document.inference_attempted));
     assert_eq!(review_states(&store), ["queued"]);
     assert_eq!(
         pages(&begin(&store, AT + 7)),

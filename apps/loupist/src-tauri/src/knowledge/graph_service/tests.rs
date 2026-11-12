@@ -697,3 +697,82 @@ async fn the_mac_stays_awake_while_world_jobs_run_and_sleeps_when_they_stop() {
     supervisor.shutdown().await.unwrap();
     assert!(!supervisor.keep_awake().status().active);
 }
+
+#[test]
+fn scheduling_reclaims_an_expired_job_without_restarting_the_supervisor() {
+    let directory = tempfile::tempdir().unwrap();
+    let (supervisor, knowledge) = supervised(directory.path(), None);
+    let settings = fixture_settings();
+    store_settings(
+        &supervisor.inner.store.lock().unwrap(),
+        "loupist-a",
+        &settings,
+    )
+    .unwrap();
+    let jobs = queued_jobs(&knowledge, "loupist-a", 1, 1_700_000_000_000);
+    knowledge
+        .graph_mark_running(&settings, &jobs[0], 1_700_000_000_000)
+        .unwrap();
+    supervisor
+        .inner
+        .stalled
+        .lock()
+        .unwrap()
+        .insert(jobs[0].clone());
+    let selected = select(&supervisor).unwrap();
+    assert_eq!(selected.1, jobs[0]);
+    assert!(!supervisor.inner.stalled.lock().unwrap().contains(&jobs[0]));
+    assert_eq!(
+        knowledge.graph_job("loupist-a", &jobs[0]).unwrap().status,
+        "queued"
+    );
+}
+
+#[test]
+fn reclaiming_a_paid_attempt_wakes_the_recovery_pump_even_without_a_candidate() {
+    let directory = tempfile::tempdir().unwrap();
+    let (supervisor, knowledge) = supervised(directory.path(), None);
+    let mut settings = fixture_settings();
+    store_settings(
+        &supervisor.inner.store.lock().unwrap(),
+        "loupist-a",
+        &settings,
+    )
+    .unwrap();
+    let jobs = queued_jobs(&knowledge, "loupist-a", 1, 1_700_000_000_000);
+    let running = knowledge
+        .graph_mark_running(&settings, &jobs[0], 1_700_000_000_000)
+        .unwrap();
+    let attempt = running.document.attempt_id.as_deref().unwrap();
+    knowledge.graph_note_inference(&jobs[0], attempt).unwrap();
+    knowledge
+        .graph_finish(
+            &mut settings,
+            &jobs[0],
+            attempt,
+            super::super::graph_jobs::JOB_FAILED_BEFORE,
+            true,
+            false,
+            1_700_000_000_001,
+        )
+        .unwrap();
+    let running = knowledge
+        .graph_mark_running(&settings, &jobs[0], 1_700_000_000_002)
+        .unwrap();
+    knowledge
+        .graph_note_inference(&jobs[0], running.document.attempt_id.as_deref().unwrap())
+        .unwrap();
+    let _ = futures_util::FutureExt::now_or_never(supervisor.inner.notify.notified());
+    assert!(
+        select(&supervisor).is_none(),
+        "quarantine leaves no extraction candidate"
+    );
+    assert_eq!(
+        knowledge.graph_job("loupist-a", &jobs[0]).unwrap().status,
+        "reconcile_required"
+    );
+    assert!(
+        futures_util::FutureExt::now_or_never(supervisor.inner.notify.notified()).is_some(),
+        "the newly quarantined attempt must wake the recovery controls"
+    );
+}
