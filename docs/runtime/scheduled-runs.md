@@ -58,21 +58,21 @@ Run now attempts admission immediately; it is not a durable manual-run queue.
 Pause prevents future starts; Stop cancels the current run separately. Run now also
 starts a paused task without turning on its future weekday schedule. The user
 asks the Bot to run a task now; Schedule shows its definition and run history.
-
 The scheduler sleeps until the next due occurrence or a schedule-change signal,
 with a 60-second maximum to recheck folders and wall-clock changes; an overdue
-occurrence blocked on admission retries after five seconds.
-
-Task lists batch profile and Chat ownership checks, preserving per-row corruption
-isolation.
+occurrence blocked on admission retries after five seconds. Task lists batch
+profile and Chat ownership checks, preserving per-row corruption isolation.
 
 Missed recurring occurrences coalesce into one due run. Startup marks unfinished
 runs interrupted; a failure in one Loupist's recovery is skipped so other
 Loupists can still run. An undecodable running receipt is skipped individually,
 and its run id is logged once per app process; other orphans in that Loupist still
 recover. Recovery opens a write transaction only when it finds an
-orphaned run. Failed/interrupted recurring tasks pause unless a newer edit
-superseded the run's definition. History records status, timing, error and target
+orphaned run. A failed/interrupted recurring task stays active for its next
+scheduled occurrence; three consecutive non-successes pause it, and a success
+resets that streak. Missing model/account credentials pause immediately. The
+streak is derived from terminal receipts, so no counter field or schema step is
+needed. A newer edit still prevents an old completion from changing the definition. History records status, timing, error and target
 Chat, where the reply and its evidence remain. Renderer discovery polls every two
 seconds while the window is visible and every 30 seconds while hidden, and reads
 immediately when the window becomes visible or regains focus. A finished run is also
@@ -138,7 +138,8 @@ proactive consent, and on each watch tick. It starts active when the briefing is
 targets the home Thread and is stored as an hourly interval; after each look Rust moves
 its next run to the next capture due, at most six hours away, and a look with nothing
 due records no run. Rust refuses Edit and Delete. Pause, Resume and Run now work,
-turning it on needs no model, and a failed run does not pause it.
+turning it on needs no model, and one failed run does not pause it (the same
+three-consecutive-failure rule applies).
 
 A run is claimed through scheduler admission (`claim_host_run`, which keeps it out of
 interrupted-run recovery) but makes no model call and no Chat turn. It keeps

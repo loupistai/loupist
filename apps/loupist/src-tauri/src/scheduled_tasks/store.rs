@@ -939,19 +939,37 @@ fn finish_run(
     if run.task_revision.checked_add(1) == Some(task.revision) {
         let expected = task.revision;
         task.last_error = run.error.clone();
-        // A failed capture keeps the automatic earnings task on: its card
-        // keeps the last good state and offers Try again.
         if status != RunStatus::Succeeded
+            && task.status == TaskStatus::Active
             && !matches!(task.schedule, Schedule::Once { .. })
-            && task.kind != TaskKind::Earnings
         {
-            task.status = TaskStatus::Paused;
-            task.next_run_at_ms = None;
+            let failures = connection.prepare(
+                "SELECT status FROM scheduled_task_runs WHERE task_id=?1 AND status<>'running' ORDER BY rowid DESC LIMIT 3",
+            )?.query_map([&task.id], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter().take_while(|status| status != "succeeded").count();
+            if failures >= 3 || run.error.as_deref().is_some_and(requires_setup) {
+                task.status = TaskStatus::Paused;
+                task.next_run_at_ms = None;
+            } else {
+                task.next_run_at_ms = next_run_after(&task.schedule, now)?;
+            }
         }
         touch(&mut task, now)?;
         update_task(connection, &task, expected)?;
     }
     Ok(run)
+}
+
+fn requires_setup(error: &str) -> bool {
+    matches!(
+        error,
+        crate::pi::provider_failure::NEEDS_RECONNECT
+            | crate::pi::provider_failure::MODEL_GONE
+            | "Pi model was not found"
+            | "the selected Pi model is hidden from Chat"
+            | "Connect an AI account in Settings › Models & providers before chatting."
+    )
 }
 
 fn require_loupist(connection: &Connection, loupist_id: &str) -> StoreResult<()> {

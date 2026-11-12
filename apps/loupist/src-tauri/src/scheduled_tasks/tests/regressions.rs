@@ -212,7 +212,7 @@ async fn returning_folder_recovers_orphans_without_interrupting_live_runs() {
         .scheduled_task_get(&loupist.id, &task.id)
         .unwrap()
         .unwrap();
-    assert_eq!(recovered.status, TaskStatus::Paused);
+    assert_eq!(recovered.status, TaskStatus::Active);
     state
         .store
         .scheduled_task_delete(&loupist.id, &task.id, recovered.revision)
@@ -719,5 +719,134 @@ fn task_lists_batch_reference_queries_independently_of_task_count() {
     assert!(
         queries.take() <= 4,
         "latest-run list issued per-row reference queries"
+    );
+}
+
+#[test]
+fn recurring_failures_retry_until_three_consecutive_non_successes_and_success_resets() {
+    for statuses in [
+        vec![RunStatus::Failed, RunStatus::Interrupted, RunStatus::Failed],
+        vec![
+            RunStatus::Failed,
+            RunStatus::Failed,
+            RunStatus::Succeeded,
+            RunStatus::Failed,
+            RunStatus::Failed,
+            RunStatus::Failed,
+        ],
+    ] {
+        let store = fixture();
+        let task = store
+            .scheduled_task_create("loupist-a", draft(), 1_000)
+            .unwrap();
+        let mut consecutive = 0;
+        for (index, status) in statuses.into_iter().enumerate() {
+            let now = 2_000 + index as i64 * 1_000;
+            let run = claim_task(&store, "loupist-a", &task.id, now, true)
+                .unwrap()
+                .unwrap()
+                .run;
+            store
+                .scheduled_task_finish(
+                    "loupist-a",
+                    &run.run_id,
+                    status,
+                    Some("Temporary network outage"),
+                    now + 1,
+                )
+                .unwrap();
+            consecutive = if status == RunStatus::Succeeded {
+                0
+            } else {
+                consecutive + 1
+            };
+            let saved = store
+                .scheduled_task_get("loupist-a", &task.id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(saved.status == TaskStatus::Paused, consecutive >= 3);
+            if saved.status == TaskStatus::Active {
+                assert!(saved.next_run_at_ms.unwrap() > now);
+            }
+            if status == RunStatus::Succeeded {
+                assert!(saved.last_error.is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn model_or_credential_setup_pauses_immediately_but_transient_text_does_not() {
+    for (error, paused) in [
+        (crate::pi::provider_failure::NEEDS_RECONNECT, true),
+        (crate::pi::provider_failure::MODEL_GONE, true),
+        (
+            "Connect an AI account in Settings › Models & providers before chatting.",
+            true,
+        ),
+        ("Pi model was not found", true),
+        ("Temporary network outage", false),
+        ("The model response was malformed", false),
+        (
+            "Credential lookup service is temporarily unavailable",
+            false,
+        ),
+        (crate::pi::provider_failure::RATE_LIMITED, false),
+        (crate::pi::provider_failure::UNAVAILABLE, false),
+    ] {
+        let store = fixture();
+        let task = store
+            .scheduled_task_create("loupist-a", draft(), 1_000)
+            .unwrap();
+        let run = claim_task(&store, "loupist-a", &task.id, 2_000, true)
+            .unwrap()
+            .unwrap()
+            .run;
+        store
+            .scheduled_task_finish(
+                "loupist-a",
+                &run.run_id,
+                RunStatus::Failed,
+                Some(error),
+                3_000,
+            )
+            .unwrap();
+        let saved = store
+            .scheduled_task_get("loupist-a", &task.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.status == TaskStatus::Paused, paused, "{error}");
+    }
+    let store = fixture();
+    let task = store
+        .scheduled_task_create(
+            "loupist-a",
+            TaskDraft {
+                status: TaskStatus::Paused,
+                ..draft()
+            },
+            1_000,
+        )
+        .unwrap();
+    let run = claim_task(&store, "loupist-a", &task.id, 2_000, true)
+        .unwrap()
+        .unwrap()
+        .run;
+    store
+        .scheduled_task_finish(
+            "loupist-a",
+            &run.run_id,
+            RunStatus::Failed,
+            Some("Temporary"),
+            3_000,
+        )
+        .unwrap();
+    assert_eq!(
+        store
+            .scheduled_task_get("loupist-a", &task.id)
+            .unwrap()
+            .unwrap()
+            .status,
+        TaskStatus::Paused
     );
 }
