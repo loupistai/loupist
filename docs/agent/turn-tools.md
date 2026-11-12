@@ -35,7 +35,11 @@ The general `schedules` tools are independent of Memory. `schedule_watch` and
 `schedule_briefing` read and save Memory settings, so their executor guards require
 both Memory access and Save learning; a Private chat or either missing grant
 refuses them before any read or write, even though their catalog permission is
-`always`. Other schedule tools keep their existing permission classes. Their run
+`always`. Generic `schedule_set_status` and `schedule_run_now` also require both
+grants when their saved target is a Briefing task, before any status mutation or
+run admission; custom tasks remain independent of Memory. Generic update and
+delete already refuse host-authored Briefing tasks. Other schedule tools keep
+their existing permission classes. Their run
 receipts expose control metadata (IDs, status, times and a fixed failure notice);
 briefing context and answer summaries stay in the run's Chat, because they can
 contain Memory and third-party text. Read current IDs/revisions
@@ -199,14 +203,19 @@ stopping. The result is `{answered: true, choice: "<label>"}` or
 `{answered: true, text}`; with no answer it is `{answered: false, assumed: "<recommended
 label>" | null, next}`, not an error, and `next` tells the model to continue with the
 research or presentation default and say which one it used. The `assumed` label
-is only the recommendation: silence never authorizes deleting, overwriting,
-cancelling, scheduling, sending or saving. If the choice controls an action,
-finish the reply and say what needs answering. An unanswered card raises a
-reply-local guard against schedule deletion/stopping/pausing, watch or briefing
-disables, and Bot memory forget/resolve;
-ordinary reads, research, calculations and saves keep their existing authority.
-The current schedule-update schema cannot pause or remove a schedule, and null
-means no change. There are no Chat or artifact delete tools. A later answer does not clear the
+is only the recommendation. Before publishing the card, Rust raises a reply-local
+pending-question counter; while any question is waiting, and after any question
+ends unanswered, it refuses schedule deletion, stopping, editing and pausing;
+watch or briefing disables; Lens section retirement; unfollowing an asset or
+replacing the research focus; and Bot memory update, resolve and forget. The
+returned `next` and tool description name this same list. Ordinary reads,
+research, calculations, other saves and work products (artifact revision,
+native write/edit and Python) keep their existing authority. A supplied `focus`
+replaces the focus, so it is guarded even when the old focus is empty. There are
+no Chat or artifact delete tools. Pi registers `ask_user` as sequential, which the
+pinned runtime applies to its whole tool batch. Answering a card drops only its
+pending count; dropping the call without an answer preserves the guard. A later
+answer does not clear the
 guard in the same reply; a new reply starts fresh. A text answer's URLs count as typed by the user for
 the untrusted-text rule, and the answer joins the private text no URL may carry after
 third-party text. The description tells the model to ask only when the answer
@@ -223,8 +232,10 @@ Chart/data contracts are owned by [Financial analysis](../analysis.md).
 
 Native file calls follow the [path policy](../runtime/permissions.md) without
 permission cards. Both native reads and grep check exported-file trust; grep
-checks every admitted file candidate before the extension searches it. A tagged
-candidate raises the turn's third-party-text tier and delimits the grep response;
+checks every admitted file candidate before the extension searches it. The trust
+scan shares a 32 MiB byte budget and 500 ms deadline per call and checks run
+cancellation between bounded reads. A tagged candidate or an incomplete scan
+raises the turn's third-party-text tier and delimits the grep response;
 ordinary user files keep their existing tier. Path refusals name the applicable
 boundary, including read-only attachments, Git metadata and hard-linked aliases.
 Memory saves distinguish disabled Memory reads from disabled saving.

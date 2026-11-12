@@ -998,7 +998,7 @@ function catalogResearchContext(preloadAll = false) {
   });
 }
 
-async function promptNativeSession(t, context, responses, prompt) {
+async function promptNativeSession(t, context, responses, prompt, observe = () => {}) {
   const { temporary: root, path } = useHostContext(t, context);
   context.workspace = emptyWorkspace(root);
   writeFileSync(path, JSON.stringify(context), { mode: 0o600 });
@@ -1016,6 +1016,7 @@ async function promptNativeSession(t, context, responses, prompt) {
     settingsManager, resourceLoader: loader, sessionManager: SessionManager.inMemory(root), noTools: "builtin" });
   try {
     await session.bindExtensions({ mode: "rpc" });
+    observe(session);
     await session.prompt(prompt);
     assert.notEqual(session.messages.at(-1)?.stopReason, "error", JSON.stringify(session.messages.at(-1)));
     return session.messages;
@@ -1023,6 +1024,25 @@ async function promptNativeSession(t, context, responses, prompt) {
     session.dispose();
   }
 }
+
+test("ask_user settles before a destructive call in the same pinned Pi tool batch starts", async (t) => {
+  await startToolBroker(t, () => ({ answered: false, assumed: "Both" }));
+  const events = [];
+  await promptNativeSession(t, catalogResearchContext(true), [
+    fauxAssistantMessage([
+      fauxToolCall("ask_user", { question: "Which review?", options: [{ label: "Both" }, { label: "First" }], recommended: 0 }),
+      fauxToolCall("schedule_delete", { task_id: "task-1", expected_revision: 1 }),
+    ], { stopReason: "toolUse" }),
+    fauxAssistantMessage("I need your answer before deleting."),
+  ], "Delete the daily review", session => session.subscribe(event => {
+    if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
+      events.push(`${event.type}:${event.toolName}`);
+    }
+  }));
+  const settled = events.indexOf("tool_execution_end:ask_user");
+  const deletion = events.indexOf("tool_execution_start:schedule_delete");
+  assert(settled >= 0 && deletion > settled, JSON.stringify(events));
+});
 
 test("first provider request omits on-demand schemas and measures the active tool JSON", async (t) => {
   const measurements = {};

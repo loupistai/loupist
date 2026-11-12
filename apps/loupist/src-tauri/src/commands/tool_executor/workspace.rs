@@ -168,13 +168,9 @@ impl AppToolExecutor {
         };
         if !paths.is_empty() {
             let state = self.state.clone();
+            let cancel = self.capture.search_cancel.clone();
             let untrusted = tokio::task::spawn_blocking(move || {
-                for path in paths {
-                    if crate::commands::export_trust::tagged_file(&state, &path)? {
-                        return Ok::<_, crate::app::CommandError>(true);
-                    }
-                }
-                Ok(false)
+                crate::commands::export_trust::tagged_files(&state, &paths, &cancel)
             })
             .await
             .map_err(|_| BrokerError::Execution("File trust could not be checked.".into()))?

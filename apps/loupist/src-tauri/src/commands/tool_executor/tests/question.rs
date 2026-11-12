@@ -141,7 +141,7 @@ async fn the_wait_running_out_recommends_research_without_authorizing_changes() 
     assert_eq!(result["answered"], false);
     assert_eq!(result["assumed"], "Last 4 quarters");
     let next = result["next"].as_str().unwrap();
-    assert_eq!(next, "The user did not answer. If the choice only affects how you research or present this answer, continue with the recommended option and say which one you used. If it decides whether to delete, change, cancel, schedule or save something, do not do it: finish the reply and say what you need answered.");
+    assert_eq!(next, "The user did not answer. For a research or presentation choice, use the recommended option and say which one you used. Do not delete, stop, edit or pause a schedule; disable a watch or briefing; retire a Lens section; unfollow an asset or replace the research focus; or update, resolve or forget Bot memory. Finish the reply and say what you need answered before making any of those changes. Other research, saves and work products may continue.");
     let (_, waiting) = cards.recv().await.unwrap();
     assert_eq!(waiting.state, QuestionState::Waiting);
     let (_, settled) = cards.recv().await.unwrap();
@@ -172,7 +172,7 @@ async fn stopping_the_run_ends_the_wait_without_an_error_and_assumes_nothing_wit
     assert!(result["next"]
         .as_str()
         .unwrap()
-        .contains("do not do it: finish the reply"));
+        .contains("Finish the reply and say what you need answered"));
     let (_, settled) = cards.recv().await.unwrap();
     assert_eq!(settled.state, QuestionState::Expired);
 }
@@ -333,6 +333,23 @@ async fn an_unanswered_question_preserves_both_schedules_and_blocks_the_rest_of_
     let south = saved_schedule(&executor, "South daily review");
     let pending = spawn_ask(&executor, deletion_question());
     let (_, waiting) = cards.recv().await.unwrap();
+    // A second call in the same tool batch must not delete while the card waits.
+    let error = executor
+        .execute(
+            &policy(false, false),
+            ToolMethod::ScheduleDelete,
+            json!({"task_id":north.id,"expected_revision":north.revision}),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, BrokerError::WithNext { source, .. }
+        if matches!(*source, BrokerError::InvalidArguments { ref field, .. } if field.is_empty())));
+    assert!(executor
+        .state
+        .store
+        .scheduled_task_get("loupist-a", &north.id)
+        .unwrap()
+        .is_some());
     questions::forget(&waiting.request_id); // Same immediate no-answer path used by evals.
     let unanswered = pending.await.unwrap().unwrap();
     assert_eq!(unanswered["answered"], false);
