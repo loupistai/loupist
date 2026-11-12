@@ -1637,23 +1637,21 @@ fn template_class(state: &AppState, loupist_id: &str) -> Option<AssetClass> {
         .and_then(crate::domain::LoupistTemplate::asset_class)
 }
 
-/// A Loupist gives proactive consent: followed assets with no decision get
-/// the default kinds (`watch::class_defaults`), and an untouched earnings task
-/// turns on.
-#[cfg(any(test, feature = "eval-harness"))]
+/// Consent enables an untouched Results task. Earlier briefing opt-ins keep
+/// their defaults; a new explicit watch choice leaves every other kind alone.
 pub(crate) fn on_consent(state: &AppState, loupist_id: &str) -> Result<(), CommandError> {
-    let pages = followed_pages(state, loupist_id)?;
-    let template = template_class(state, loupist_id);
-    with_assets(state, loupist_id, true, |tx| {
-        for page in pages.iter().filter(|page| watchable(page)) {
-            let defaults = watch::class_defaults(page.class, template);
-            watch::apply_defaults(tx, loupist_id, &page.asset_id, &defaults, now_ms())?;
-        }
-        Ok(())
-    })?;
-    super::earnings::ensure_task(state, loupist_id, true)?;
-    changed(loupist_id);
-    Ok(())
+    if consent_mode(state, loupist_id)? == "legacy" {
+        let pages = followed_pages(state, loupist_id)?;
+        let template = template_class(state, loupist_id);
+        with_assets(state, loupist_id, true, |tx| {
+            for page in pages.iter().filter(|page| watchable(page)) {
+                let defaults = watch::class_defaults(page.class, template);
+                watch::apply_defaults(tx, loupist_id, &page.asset_id, &defaults, now_ms())?;
+            }
+            Ok(())
+        })?;
+    }
+    super::earnings::ensure_task(state, loupist_id, true)
 }
 
 /// A newly followed asset gets the default kinds in the Loupist that was open
@@ -1945,6 +1943,9 @@ pub(crate) fn update_setting(
                 [&loupist],
             )
             .map_err(super::map_internal)?;
+    }
+    if request.enabled {
+        on_consent(state, &loupist)?;
     }
     changed(&loupist);
     settings_view(state, &state.scheduled.watch_runtime(), &loupist)

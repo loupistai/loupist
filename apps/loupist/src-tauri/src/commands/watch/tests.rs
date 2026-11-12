@@ -1376,3 +1376,62 @@ async fn failed_routes_back_off_and_success_resets_the_retry_delay() {
     .unwrap();
     assert_eq!(reader.calls_to("equity_calendar_earnings"), calls + 1);
 }
+
+#[test]
+fn explicit_watch_consent_enables_untouched_results_without_enabling_other_kinds() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", &temporary.path().join("workspace"), 1),
+    );
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    super::super::earnings::ensure_task(&state, "loupist-a", false).unwrap();
+    let set = || WatchSettingSetRequest {
+        loupist_id: "loupist-a".into(),
+        asset_id: page_id("MORR", "NASDAQ"),
+        kind: WatchKind::Filings,
+        enabled: true,
+        expected_revision: 1,
+    };
+    update_setting(&state, set()).unwrap();
+    let task = state
+        .store
+        .scheduled_tasks_list("loupist-a")
+        .unwrap()
+        .into_iter()
+        .find(|task| task.kind == TaskKind::Earnings)
+        .unwrap();
+    assert_eq!(task.status, TaskStatus::Active);
+    let switches = with_assets(&state, "loupist-a", false, |tx| {
+        watch::switches(tx, "loupist-a")
+    })
+    .unwrap();
+    let switch = &switches[&page_id("MORR", "NASDAQ")];
+    assert!(switch.enabled(WatchKind::Filings));
+    assert!(!switch.enabled(WatchKind::Results));
+    state
+        .store
+        .scheduled_task_set_status(
+            "loupist-a",
+            &task.id,
+            task.revision,
+            TaskStatus::Paused,
+            now_ms(),
+        )
+        .unwrap();
+    let mut request = set();
+    request.expected_revision = switch.revision;
+    update_setting(&state, request).unwrap();
+    assert_eq!(
+        state
+            .store
+            .scheduled_tasks_list("loupist-a")
+            .unwrap()
+            .into_iter()
+            .find(|task| task.kind == TaskKind::Earnings)
+            .unwrap()
+            .status,
+        TaskStatus::Paused
+    );
+}

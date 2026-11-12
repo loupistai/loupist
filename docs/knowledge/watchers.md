@@ -49,7 +49,9 @@ the asset tables.
 While the app runs, `commands/watch.rs` checks what each Loupist follows against data
 sources only, with no model call; nothing runs while the app is closed. A loop started
 with the scheduler ticks every minute, and the first scheduled check waits two minutes
-after launch. A Loupist is checked after watch consent and while its watchers are running. Existing active briefings retain their earlier opt-in on first access. New explicit watch requests enable the chosen asset and kind. Creating a new briefing leaves watch consent unchanged.
+after launch. A Loupist is checked after watch consent and while its watchers are running. Existing active briefings retain their earlier opt-in on first access. New explicit watch requests enable the chosen asset and kind and turn on an untouched
+Results before and after task; a task the user paused stays paused. Other watch kinds
+keep their choices. Creating a new briefing leaves watch consent unchanged.
 [Watch kinds](watchers.md#watchers) map to routes: filings (holders, and every
 Korean kind except flows; OpenDART, or SEC filings through OpenBB), insider trades
 (`sec`, `fmp` or `intrinio` only), the earnings calendar (`nasdaq`, `fmp` or `tmx`; one
