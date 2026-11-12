@@ -17,10 +17,14 @@ export function AnswerOutline({ messageId, markdown }: { messageId: string; mark
   const jumped = useRef(false);
   const rows = useMemo(() => answerOutline(markdown), [markdown]);
   if (!rows.length) return null;
-  const jump = (text: string) => {
+  const jump = (index: number) => {
+    const { text } = rows[index]!;
     const article = [...document.querySelectorAll("[data-message-id]")].find((element) => element.getAttribute("data-message-id") === messageId);
-    const answer = article?.querySelector(".message-content");
-    const heading = [...(answer?.querySelectorAll<HTMLElement>("h2, h3") ?? [])].find((element) => element.textContent?.trim() === text);
+    // The answer's prose may be split around cards and follow a narration preamble; the
+    // second heading of the same name is the second one rendered with that name.
+    const occurrence = rows.slice(0, index).filter((row) => row.text === text).length;
+    const headings = [...(article?.querySelectorAll<HTMLElement>(".message-content:not(.message-narration) :is(h2, h3)") ?? [])];
+    const heading = headings.filter((element) => element.textContent?.trim() === text)[occurrence];
     jumped.current = Boolean(heading);
     setOpen(false);
     if (!heading) return;
@@ -36,7 +40,7 @@ export function AnswerOutline({ messageId, markdown }: { messageId: string; mark
     <PopoverContent className="answer-outline" align="end" aria-label={t("chatOutline.title")} onCloseAutoFocus={(event) => { if (jumped.current) event.preventDefault(); jumped.current = false; }}>
       <ol>
         {rows.map((row, index) => <li key={`${index}:${row.text}`} data-level={row.level}>
-          <button type="button" onClick={() => jump(row.text)}>{row.text}</button>
+          <button type="button" onClick={() => jump(index)}>{row.text}</button>
         </li>)}
       </ol>
     </PopoverContent>
