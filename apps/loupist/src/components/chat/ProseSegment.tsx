@@ -7,10 +7,6 @@ import { usePacedText } from "../../chat/usePacedText";
 import type { ChatMessage } from "../../types";
 import { SafeMessageResponse } from "./SafeMessageResponse";
 
-/** A numbered citation never starts a line on its own: the space before it does not break. */
-const CITATION_GAP = /[ \t]+(\[\d{1,3}\]\(#evidence-)/gu;
-const bindCitations = (text: string) => text.replace(CITATION_GAP, "\u00a0$1");
-
 /**
  * Marks a Markdown table wrapper that scrolls sideways (`data-overflows`), so its right
  * edge fades. One observer per segment, only while a table is rendered.
@@ -56,7 +52,7 @@ export const ProseSegment = memo(function ProseSegment({ text, streaming, tone, 
   return (
     <Message from="assistant" className="max-w-full">
       <MessageContent ref={content} className={`message-content overflow-visible${tone === "narration" ? " message-narration" : ""}`}>
-        <SafeMessageResponse text={bindCitations(visible)} isAnimating={streaming} caret={caret} numberChecks={checks} workspacePath={workspacePath} />
+        <SafeMessageResponse text={visible} isAnimating={streaming} caret={caret} numberChecks={checks} workspacePath={workspacePath} />
       </MessageContent>
     </Message>
   );
