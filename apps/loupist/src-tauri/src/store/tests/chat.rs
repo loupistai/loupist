@@ -764,3 +764,96 @@ fn artifact_history_seeds_existing_current_content_and_rolls_back_with_the_answe
         matches!(original.revision.payload, ChatArtifactPayload::Markdown { markdown, .. } if markdown == "Before history")
     );
 }
+
+#[test]
+fn review_storage_unavailable_bound_folder_does_not_break_other_records() {
+    let root = tempfile::tempdir().unwrap();
+    let store = SqliteStore::open_catalog(root.path().join("catalog.sqlite3")).unwrap();
+    for id in ["first", "second"] {
+        let workspace = root.path().join(id);
+        std::fs::create_dir(&workspace).unwrap();
+        let mut profile = crate::test_fixtures::loupist_profile(id);
+        profile.workspace_root = workspace.to_str().unwrap().into();
+        profile.root_filesystem_identity =
+            crate::fs::loupist_root::BoundLoupistRoot::open_unbound(workspace)
+                .unwrap()
+                .identity();
+        store.create_loupist(&profile).unwrap();
+        drop(store.lock_loupist(id).unwrap());
+    }
+    // Choose the first bound entry to break, rather than depending on a
+    // randomized HashMap order. No binding is added or removed afterwards.
+    let order: Vec<_> = store.folders.lock().unwrap().keys().cloned().collect();
+    let (unavailable_id, owner) = (&order[0], &order[1]);
+    let mut chat = chat_session("reachable-chat", owner);
+    store.create_chat(&chat).unwrap();
+    let commit = chart_commit(&chat, 1, 1);
+    let artifact = commit.artifact.clone();
+    let revision = commit.revision.clone();
+    let dataset = commit.datasets[0].clone();
+    publish(&store, &mut chat, "answer-1", vec![commit]);
+
+    // A second SQLite handle holds an exclusive lock on the unrelated folder.
+    // A zero busy timeout makes its bound handle fail deterministically, with
+    // no process, sleep or timing-dependent failure injection.
+    store
+        .lock_loupist(unavailable_id)
+        .unwrap()
+        .busy_timeout(std::time::Duration::ZERO)
+        .unwrap();
+    let unavailable = rusqlite::Connection::open(
+        store
+            .loupist_data_dir(unavailable_id)
+            .unwrap()
+            .join("loupist.sqlite3"),
+    )
+    .unwrap();
+    unavailable.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    let error = store
+        .lock_loupist(unavailable_id)
+        .unwrap()
+        .query_row("SELECT count(*) FROM chat_sessions", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap_err();
+    assert_eq!(
+        error.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::DatabaseBusy)
+    );
+    assert_eq!(
+        store.folders.lock().unwrap().keys().next(),
+        Some(unavailable_id)
+    );
+
+    assert_eq!(store.get_chat(&chat.id).unwrap(), Some(chat.clone()));
+    assert_eq!(
+        store.get_chat_artifact(&artifact.id).unwrap(),
+        Some(artifact.clone())
+    );
+    assert_eq!(
+        store.list_chat_artifacts(&chat.id).unwrap().as_slice(),
+        std::slice::from_ref(&artifact)
+    );
+    assert_eq!(
+        store.get_chat_artifact_current(&artifact.id).unwrap(),
+        Some(revision.clone())
+    );
+    assert_eq!(
+        store.get_chart_dataset(&dataset.id).unwrap(),
+        Some(dataset.clone())
+    );
+    let snapshot = store
+        .read_chat_artifact(&artifact.id, Some(1))
+        .unwrap()
+        .unwrap();
+    assert_eq!(snapshot.revision, revision);
+    assert_eq!(snapshot.chart_dataset, Some(dataset));
+    assert_eq!(
+        store
+            .list_chat_artifact_versions(&artifact.id)
+            .unwrap()
+            .len(),
+        1
+    );
+    unavailable.execute_batch("ROLLBACK").unwrap();
+}

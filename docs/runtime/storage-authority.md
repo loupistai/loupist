@@ -163,7 +163,9 @@ several records; the normal backup and one-step transaction rules apply.
 
 Folder connections start in DELETE journal mode and leave it there on reopen;
 the catalog uses WAL. Record reads check already bound folders for ownership before
-opening other registrations, while still checking the owning folder's identity.
+opening other registrations. A failed ownership probe is skipped so an unavailable
+folder cannot block records in another folder; a located owner still passes the
+folder and database identity checks.
 
 Store 5 also restores the `piSessionCache` key that builds before it removed from
 stored Chats on reconnect and import. Chat writes compare the stored text with the
