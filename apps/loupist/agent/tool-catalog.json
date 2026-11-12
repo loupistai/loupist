@@ -2206,7 +2206,7 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 3,
-            "description": "Index into options of the one you would pick. An unanswered question permits only a research or presentation default, never permission to change anything."
+            "description": "Index into options of the one you would pick. With no answer this is only a research or presentation recommendation; the tool description lists the changes the host refuses."
           }
         }
       },
