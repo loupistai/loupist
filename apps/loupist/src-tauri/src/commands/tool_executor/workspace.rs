@@ -43,6 +43,10 @@ impl NativeGate {
 
 fn refusal_error(refusal: NativeRefusal) -> BrokerError {
     match refusal {
+        NativeRefusal::BundledSkill => BrokerError::Execution(
+            "Bundled Skills are read-only. Write a Skill under this Loupist's skills folder."
+                .into(),
+        ),
         NativeRefusal::AppPrivate => BrokerError::ProtectedPath,
         NativeRefusal::Credentials => BrokerError::ProtectedPath.with_next(CREDENTIALS_NEXT),
         NativeRefusal::GitDir => BrokerError::ProtectedPath.with_next(GIT_DIR_NEXT),

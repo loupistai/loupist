@@ -59,6 +59,7 @@ const BUNDLED_RUNTIME_NOTE = " Loading activates common price, fundamentals, div
 const OTHER_SOURCES_NOTE = "Other data sources (for example FRED, SEC EDGAR, OpenDART, KRX) can be added: call connection_setup and the user finishes setup in a card.";
 
 function formatCapabilityLine(component) {
+  if (component.id === "web-research") return `- \`${component.id}\` — ${component.name}: loaded.`;
   const description = String(component.description ?? "").replace(/\s+/gu, " ").trim();
   const tools = (component.tool_names ?? []).filter(Boolean);
   const toolNote = tools.length > 0 ? ` Tools: ${tools.join(", ")}.` : "";
@@ -72,24 +73,18 @@ export function formatRuntimeIndex(runtime) {
     `memory_access_enabled: ${runtime.memory_access_enabled === true}`,
     `memory_update_enabled: ${runtime.memory_update_enabled === true}`,
     "",
-    "# Capabilities",
-    "Load an id with capability_load before calling its tools. @mentioned connections are already loaded.",
+    "# Data connections",
+    "Load a connection by id with capability_load before the first use of its tools in this Chat. A connection marked loaded, and any the user @mentioned, needs no load. Every other tool in your tool list is already active.",
   ];
   const components = [...(runtime.components ?? [])].sort((left, right) =>
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
   const connections = components.filter((component) => component.connection);
-  const builtin = components.filter((component) => !component.connection);
-  lines.push("Connections:");
   if (connections.length === 0) {
-    lines.push("No connections are enabled for this turn.");
+    lines.push("No data connection is enabled for this turn.");
   } else {
     for (const component of connections) lines.push(formatCapabilityLine(component));
   }
   if ((runtime.core_tool_names ?? []).includes("connection_setup")) lines.push(OTHER_SOURCES_NOTE);
-  if (builtin.length > 0) {
-    lines.push("Built-in:");
-    for (const component of builtin) lines.push(formatCapabilityLine(component));
-  }
   return lines.join("\n");
 }
 

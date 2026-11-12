@@ -71,7 +71,7 @@ fn e2e_provider_failures_emit_only_fixed_categories_and_details() {
     for (message, category, detail) in [
         (
             "No API key for provider: private-token-never-emit",
-            "missing_auth",
+            "auth_rejected",
             "unclassified",
         ),
         (
@@ -115,6 +115,20 @@ fn e2e_provider_failures_emit_only_fixed_categories_and_details() {
             "{message}"
         );
         assert!(!diagnostic.to_string().contains(private_marker));
+    }
+    for ordinary in [
+        "Read the credential setup instructions",
+        "Cannot find module /local/runtime.mjs",
+        "Cannot read properties of undefined",
+        "The model comparison is complete",
+        "retry-after: 20",
+        "HTTP 200 OK",
+    ] {
+        assert_eq!(
+            e2e_provider_failure_category(ordinary),
+            "unknown",
+            "{ordinary}"
+        );
     }
     let oversized = format!("{}invalid token", "x".repeat(8192));
     assert_eq!(e2e_provider_failure_category(&oversized), "unknown");
@@ -325,7 +339,14 @@ fn launch_is_offline_and_exposes_only_explicit_extension_tools() {
         .iter()
         .position(|arg| arg == "--system-prompt")
         .expect("system prompt flag");
-    assert_eq!(args[system_prompt_index + 1], LOUPIST_SYSTEM_PROMPT);
+    assert_eq!(
+        args[system_prompt_index + 1],
+        LOUPIST_SYSTEM_PROMPT
+            .replace("<!-- safety:locked -->", "")
+            .replace("<!-- /safety:locked -->", "")
+    );
+    assert!(!args[system_prompt_index + 1].contains("safety:locked"));
+    assert!(args[system_prompt_index + 1].contains("The current user defines the task."));
     assert_ne!(args[system_prompt_index + 1], "SYSTEM.md");
     let thinking_index = args
         .iter()

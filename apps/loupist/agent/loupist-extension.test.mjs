@@ -909,7 +909,7 @@ test("catalog schemas survive provider adapters and never ask the model for cred
     ],
   };
   const index = formatRuntimeIndex(runtime);
-  assert.match(index, /Connections:\n- `charts`|Connections:\n- `custom/);
+  assert.match(index, /# Data connections/);
   assert.match(index, /Tools: dart_filing_search/);
   const line = (id) => index.split("\n").find((text) => text.startsWith(`- \`${id}\``));
   // Only the bundled runtime activates a default set; a custom server exposes all its approved tools.
@@ -920,7 +920,7 @@ test("catalog schemas survive provider adapters and never ask the model for cred
   assert.doesNotMatch(index, /World Bank/);
   assert.match(index, /Other data sources .* call connection_setup/);
   assert.doesNotMatch(formatRuntimeIndex({ ...runtime, core_tool_names: ["capability_load"] }), /connection_setup/);
-  assert.match(index, /Built-in:\n- `charts`/);
+  assert.doesNotMatch(index, /Built-in:|`charts`/);
 });
 
 test("capability resolution uses only unambiguous run ids and gives bounded repairs", () => {
@@ -953,4 +953,20 @@ test("capability resolution uses only unambiguous run ids and gives bounded repa
   const ambiguous = new Map([["krx", { id: "krx" }], ["KRX", { id: "KRX" }]]);
   assert.throws(() => resolveCapability("krx", ambiguous), /Available capability ids/);
   assert.throws(() => resolveCapability("KRX", new Map(), disabled), /Available capability ids: none/);
+});
+
+test("preloaded builtins are active on the first request and absent from the connection index", async (t) => {
+  const components = BUNDLED_COMPONENTS.filter((c) => !c.connection);
+  const context = runtimeContext("chat", ["capability_load"], components, {
+    preload_component_ids: components.map((c) => c.id),
+  });
+  useHostContext(t, context);
+  const { handlers, active } = loadExtension();
+  const event = promptEvent();
+  await handlers.get("before_agent_start")(event);
+  assert(active().includes("calculate"));
+  assert(active().includes("lens_file"));
+  const index = event.systemPromptOptions.sections.loupist_runtime;
+  assert.match(index, /No data connection is enabled/);
+  for (const component of components) assert(!index.includes(`- \`${component.id}\``));
 });

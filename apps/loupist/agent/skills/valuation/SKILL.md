@@ -30,5 +30,6 @@ present one cell as the answer or as a target price.
 
 Otherwise keep a rerunnable local model, recompute each sensitivity case
 through it, and reconcile its base case with the reported result. Create a
-workbook when useful or requested, and verify its formulas with an available
-spreadsheet engine before claiming they recalculate.
+workbook when useful or requested (see the spreadsheets Skill). Nothing here
+recalculates a workbook: check the base case in Python and say the formulas
+calculate when the file is opened.

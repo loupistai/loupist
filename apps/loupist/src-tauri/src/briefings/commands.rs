@@ -313,6 +313,7 @@ pub(crate) fn settings_set(
     if request.enabled {
         super::desktop::enable(state)?;
     }
+    state.scheduled.changed();
     super::desktop::changed(&request.loupist_id);
     settings_get(state, &request.loupist_id)
 }
@@ -380,6 +381,7 @@ pub(crate) fn inbox_mark_read(
         .store
         .inbox_mark_read(&request.loupist_id, &request.run_ids, now_ms())
         .map_err(map_store)?;
+    state.scheduled.changed();
     super::desktop::changed(&request.loupist_id);
     Ok(())
 }

@@ -212,7 +212,7 @@ async fn returning_folder_recovers_orphans_without_interrupting_live_runs() {
         .scheduled_task_get(&loupist.id, &task.id)
         .unwrap()
         .unwrap();
-    assert_eq!(recovered.status, TaskStatus::Paused);
+    assert_eq!(recovered.status, TaskStatus::Active);
     state
         .store
         .scheduled_task_delete(&loupist.id, &task.id, recovered.revision)
@@ -426,4 +426,427 @@ fn repeated_recovery_warnings_report_each_skipped_run_only_once() {
         warnings.report_once(id, || reported.push(id));
     }
     assert_eq!(reported, ["bad-run-a", "bad-run-b"]);
+}
+
+#[test]
+fn scheduler_sleep_tracks_due_time_and_bounds_idle_and_blocked_retries() {
+    use crate::scheduled_tasks::{poll_delay, MAX_POLL_SLEEP, RETRY_POLL_SLEEP};
+    use std::time::Duration;
+    assert_eq!(poll_delay(None, 1_000), MAX_POLL_SLEEP);
+    assert_eq!(poll_delay(Some(i64::MAX), 1_000), MAX_POLL_SLEEP);
+    assert_eq!(poll_delay(Some(1_250), 1_000), Duration::from_millis(250));
+    assert_eq!(poll_delay(Some(1_000), 1_000), RETRY_POLL_SLEEP);
+    assert_eq!(poll_delay(Some(0), 1_000), RETRY_POLL_SLEEP);
+    let store = fixture();
+    let task = store
+        .scheduled_task_create("loupist-a", draft(), 1_000)
+        .unwrap();
+    assert_eq!(
+        store.scheduled_tasks_next_due().unwrap(),
+        task.next_run_at_ms
+    );
+    let claim = claim_task(&store, "loupist-a", &task.id, 2_000, true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.scheduled_tasks_next_due().unwrap(), None);
+    store
+        .scheduled_task_finish(
+            "loupist-a",
+            &claim.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            3_000,
+        )
+        .unwrap();
+    assert!(store.scheduled_tasks_next_due().unwrap().is_some());
+}
+
+#[tokio::test]
+async fn schedule_change_wakes_a_waiter_and_retains_an_early_notification() {
+    use std::future::Future;
+    let supervisor = crate::scheduled_tasks::ScheduledSupervisor::default();
+    supervisor.changed();
+    // A stored permit proves an edit between the due lookup and wait is not lost.
+    let early = supervisor.inner.changed.notified();
+    tokio::pin!(early);
+    assert!(matches!(
+        std::future::poll_fn(|cx| std::task::Poll::Ready(early.as_mut().poll(cx))).await,
+        std::task::Poll::Ready(())
+    ));
+    let wait = supervisor.inner.changed.notified();
+    tokio::pin!(wait);
+    assert!(matches!(
+        std::future::poll_fn(|cx| std::task::Poll::Ready(wait.as_mut().poll(cx))).await,
+        std::task::Poll::Pending
+    ));
+    supervisor.changed();
+    assert!(matches!(
+        std::future::poll_fn(|cx| std::task::Poll::Ready(wait.as_mut().poll(cx))).await,
+        std::task::Poll::Ready(())
+    ));
+}
+
+#[tokio::test]
+async fn briefing_refresh_requires_a_new_admitted_occurrence() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    state.store.create_loupist(&loupist("loupist-a")).unwrap();
+    let task = state
+        .store
+        .scheduled_task_create_kind(
+            "loupist-a",
+            "briefing-a",
+            TaskDraft {
+                target: TaskTarget::Dedicated,
+                update_memory: true,
+                ..draft()
+            },
+            TaskKind::Briefing,
+            1_000,
+        )
+        .unwrap();
+    let claim = claim_task(&state.store, "loupist-a", &task.id, 2_000, true)
+        .unwrap()
+        .unwrap();
+    assert!(state
+        .scheduled
+        .dispatch(&state, "loupist-a", &task.id, true)
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        state
+            .scheduled
+            .inner
+            .briefing_refreshes
+            .load(Ordering::SeqCst),
+        0
+    );
+    state
+        .store
+        .scheduled_task_finish(
+            "loupist-a",
+            &claim.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            3_000,
+        )
+        .unwrap();
+    // The missing Pi runtime fails after admission, without a provider call.
+    let run = state
+        .scheduled
+        .dispatch(&state, "loupist-a", &task.id, true)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(run.status, RunStatus::Failed);
+    assert_eq!(
+        state
+            .scheduled
+            .inner
+            .briefing_refreshes
+            .load(Ordering::SeqCst),
+        1
+    );
+    assert!(state
+        .scheduled
+        .dispatch(&state, "loupist-a", &task.id, false)
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        state
+            .scheduled
+            .inner
+            .briefing_refreshes
+            .load(Ordering::SeqCst),
+        1
+    );
+}
+
+#[test]
+fn batched_lists_preserve_missing_and_foreign_chat_rejection() {
+    for status in [TaskStatus::Active, TaskStatus::Paused] {
+        for owner in [Some("loupist-a"), Some("loupist-b"), None] {
+            let store = fixture();
+            store
+                .create_chat(&crate::test_fixtures::chat_session("target", "loupist-a"))
+                .unwrap();
+            let task = store
+                .scheduled_task_create(
+                    "loupist-a",
+                    TaskDraft {
+                        target: TaskTarget::ExistingChat {
+                            thread_id: "target".into(),
+                        },
+                        status,
+                        ..draft()
+                    },
+                    1_000,
+                )
+                .unwrap();
+            match owner {
+                Some(owner) => {
+                    store
+                        .lock()
+                        .unwrap()
+                        .execute(
+                            "UPDATE chat_sessions SET loupist_id=?1 WHERE id='target'",
+                            [owner],
+                        )
+                        .unwrap();
+                }
+                None => {
+                    store
+                        .lock()
+                        .unwrap()
+                        .execute("DELETE FROM chat_sessions WHERE id='target'", [])
+                        .unwrap();
+                }
+            }
+            let readable =
+                owner == Some("loupist-a") || (owner.is_none() && status != TaskStatus::Active);
+            assert_eq!(
+                store.scheduled_task_get("loupist-a", &task.id).is_ok(),
+                readable
+            );
+            assert_eq!(
+                store.scheduled_tasks_list("loupist-a").unwrap().len(),
+                usize::from(readable)
+            );
+            assert_eq!(
+                store
+                    .scheduled_tasks_list_with_latest("loupist-a")
+                    .unwrap()
+                    .len(),
+                usize::from(readable)
+            );
+        }
+    }
+}
+
+#[test]
+fn task_lists_batch_reference_queries_independently_of_task_count() {
+    use std::{ffi::c_void, sync::atomic::AtomicUsize};
+
+    // Trace the real SQLite connection. The callback borrows a stable boxed
+    // counter, and the guard unregisters it before freeing that counter.
+    struct QueryCounter<'a> {
+        store: &'a SqliteStore,
+        statements: Box<AtomicUsize>,
+    }
+    unsafe extern "C" fn count_statement(
+        _: u32,
+        context: *mut c_void,
+        _: *mut c_void,
+        _: *mut c_void,
+    ) -> i32 {
+        // SAFETY: QueryCounter keeps this box alive until the trace is removed.
+        unsafe { &*context.cast::<AtomicUsize>() }.fetch_add(1, Ordering::SeqCst);
+        0
+    }
+    impl<'a> QueryCounter<'a> {
+        fn new(store: &'a SqliteStore) -> Self {
+            let mut counter = Self {
+                store,
+                statements: Box::default(),
+            };
+            let connection = store.lock().unwrap();
+            // SAFETY: the connection is locked and the boxed callback context
+            // stays at this address until Drop unregisters the callback.
+            let result = unsafe {
+                rusqlite::ffi::sqlite3_trace_v2(
+                    connection.handle(),
+                    rusqlite::ffi::SQLITE_TRACE_STMT,
+                    Some(count_statement),
+                    (&mut *counter.statements as *mut AtomicUsize).cast(),
+                )
+            };
+            assert_eq!(result, rusqlite::ffi::SQLITE_OK);
+            counter
+        }
+        fn take(&self) -> usize {
+            self.statements.swap(0, Ordering::SeqCst)
+        }
+    }
+    impl Drop for QueryCounter<'_> {
+        fn drop(&mut self) {
+            let connection = self.store.lock().unwrap();
+            // SAFETY: the connection is locked; no callback retains the box
+            // after sqlite3_trace_v2 removes this registration.
+            unsafe {
+                rusqlite::ffi::sqlite3_trace_v2(connection.handle(), 0, None, std::ptr::null_mut())
+            };
+        }
+    }
+    let store = fixture();
+    for index in 0..12 {
+        let thread_id = format!("batch-target-{index}");
+        store
+            .create_chat(&crate::test_fixtures::chat_session(&thread_id, "loupist-a"))
+            .unwrap();
+        let task = store
+            .scheduled_task_create(
+                "loupist-a",
+                TaskDraft {
+                    target: TaskTarget::ExistingChat { thread_id },
+                    ..draft()
+                },
+                1_000,
+            )
+            .unwrap();
+        let run = claim_task(&store, "loupist-a", &task.id, 2_000, true)
+            .unwrap()
+            .unwrap()
+            .run;
+        store
+            .scheduled_task_finish("loupist-a", &run.run_id, RunStatus::Succeeded, None, 3_000)
+            .unwrap();
+    }
+    let queries = QueryCounter::new(&store);
+    assert_eq!(store.scheduled_tasks_list("loupist-a").unwrap().len(), 12);
+    assert!(
+        queries.take() <= 4,
+        "task list issued per-row reference queries"
+    );
+    assert_eq!(
+        store
+            .scheduled_tasks_list_with_latest("loupist-a")
+            .unwrap()
+            .len(),
+        12
+    );
+    assert!(
+        queries.take() <= 4,
+        "latest-run list issued per-row reference queries"
+    );
+}
+
+#[test]
+fn recurring_failures_retry_until_three_consecutive_non_successes_and_success_resets() {
+    for statuses in [
+        vec![RunStatus::Failed, RunStatus::Interrupted, RunStatus::Failed],
+        vec![
+            RunStatus::Failed,
+            RunStatus::Failed,
+            RunStatus::Succeeded,
+            RunStatus::Failed,
+            RunStatus::Failed,
+            RunStatus::Failed,
+        ],
+    ] {
+        let store = fixture();
+        let task = store
+            .scheduled_task_create("loupist-a", draft(), 1_000)
+            .unwrap();
+        let mut consecutive = 0;
+        for (index, status) in statuses.into_iter().enumerate() {
+            let now = 2_000 + index as i64 * 1_000;
+            let run = claim_task(&store, "loupist-a", &task.id, now, true)
+                .unwrap()
+                .unwrap()
+                .run;
+            store
+                .scheduled_task_finish(
+                    "loupist-a",
+                    &run.run_id,
+                    status,
+                    Some("Temporary network outage"),
+                    now + 1,
+                )
+                .unwrap();
+            consecutive = if status == RunStatus::Succeeded {
+                0
+            } else {
+                consecutive + 1
+            };
+            let saved = store
+                .scheduled_task_get("loupist-a", &task.id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(saved.status == TaskStatus::Paused, consecutive >= 3);
+            if saved.status == TaskStatus::Active {
+                assert!(saved.next_run_at_ms.unwrap() > now);
+            }
+            if status == RunStatus::Succeeded {
+                assert!(saved.last_error.is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn model_or_credential_setup_pauses_immediately_but_transient_text_does_not() {
+    for (error, paused) in [
+        (crate::pi::provider_failure::NEEDS_RECONNECT, true),
+        (crate::pi::provider_failure::MODEL_GONE, true),
+        (
+            "Connect an AI account in Settings › Models & providers before chatting.",
+            true,
+        ),
+        ("Pi model was not found", true),
+        ("Temporary network outage", false),
+        ("The model response was malformed", false),
+        (
+            "Credential lookup service is temporarily unavailable",
+            false,
+        ),
+        (crate::pi::provider_failure::RATE_LIMITED, false),
+        (crate::pi::provider_failure::UNAVAILABLE, false),
+    ] {
+        let store = fixture();
+        let task = store
+            .scheduled_task_create("loupist-a", draft(), 1_000)
+            .unwrap();
+        let run = claim_task(&store, "loupist-a", &task.id, 2_000, true)
+            .unwrap()
+            .unwrap()
+            .run;
+        store
+            .scheduled_task_finish(
+                "loupist-a",
+                &run.run_id,
+                RunStatus::Failed,
+                Some(error),
+                3_000,
+            )
+            .unwrap();
+        let saved = store
+            .scheduled_task_get("loupist-a", &task.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.status == TaskStatus::Paused, paused, "{error}");
+    }
+    let store = fixture();
+    let task = store
+        .scheduled_task_create(
+            "loupist-a",
+            TaskDraft {
+                status: TaskStatus::Paused,
+                ..draft()
+            },
+            1_000,
+        )
+        .unwrap();
+    let run = claim_task(&store, "loupist-a", &task.id, 2_000, true)
+        .unwrap()
+        .unwrap()
+        .run;
+    store
+        .scheduled_task_finish(
+            "loupist-a",
+            &run.run_id,
+            RunStatus::Failed,
+            Some("Temporary"),
+            3_000,
+        )
+        .unwrap();
+    assert_eq!(
+        store
+            .scheduled_task_get("loupist-a", &task.id)
+            .unwrap()
+            .unwrap()
+            .status,
+        TaskStatus::Paused
+    );
 }

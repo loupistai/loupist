@@ -1,25 +1,24 @@
 ---
 name: presentations
-description: Read, create, or edit PowerPoint decks and templates (.pptx/.potx), including financial charts, tables, speaker notes, and slide layouts. Use for a deck deliverable or an existing presentation.
+description: Read, create or edit .pptx slides with the offline Python runtime, using editable text, tables and shapes.
 ---
-
 # Presentation files
 
-Inspect the existing deck or reference template before creating or editing.
-Read [deck workflow](references/deck-workflow.md) for masters, layouts,
-content extraction, charts/tables, and rendered slide checks.
+Use `run_python` with `from pptx import Presentation` for `.pptx` files.
+Inspect slide sizes, layouts, placeholders, text and tables before editing a
+supplied deck. Use its actual layouts, preserve unrelated slides and write a
+separate file under `/workspace/outputs/`. Keep units and source labels beside data.
+Legacy `.ppt`, rendering, conversion to PDF and lossless preservation of animations
+or specialized embedded content are outside this workflow.
 
-`run_python` cannot install packages and does not include slide libraries such
-as python-pptx. Use the file tools, and say so when a named library is
-unavailable. Preserve the
-requested template, slide dimensions, editable content, notes, and unrelated
-slides. Choose the slide sequence for the audience and question; follow the
-requested slide count instead of imposing a pitch-deck template.
+Reopen with `Presentation(path)` and check slide count and changed text/tables.
+There is no slide renderer: valid slide XML does not prove good visual layout.
+Report the visual check as missing and link the saved file.
 
-Reopen the saved deck to validate structure. `run_python` cannot render slides.
-State that the visual check is missing. Deliver a real
-workspace file and do not claim a native slide editor opened inside the app.
+On the last slide of decks made for others, include this line in their language:
+"Made with AI in Loupist. AI can be wrong. Not a licensed financial adviser."
 
-End a deck you write for others with this line, in the deck's language, on its
-last slide: "Made with AI in Loupist. AI can be wrong. Not a licensed financial
-adviser."
+To cite figures from an input file, ask the user to attach it to Chat. Python extraction is working material, not citable Source evidence.
+
+Bundled PDF/chart fonts do not cover Korean, Japanese or Chinese; use Latin labels
+or offer Word or Markdown for such content. No renderer checks font fallback.

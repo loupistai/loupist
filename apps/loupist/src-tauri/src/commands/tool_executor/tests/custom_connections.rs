@@ -226,15 +226,18 @@ async fn custom_connection_broker_records_refusals_blocks_injection_and_captures
         &authority.capability_ids,
     )
     .unwrap();
-    assert_eq!(
-        crate::agent_harness::preload_component_ids_for_mentions(
-            std::slice::from_ref(&connection.id),
-            &authority.capability_ids,
-            &runtime
-        )
-        .unwrap(),
-        vec![connection.id.clone()]
-    );
+    let preload = crate::agent_harness::preload_component_ids_for_mentions(
+        std::slice::from_ref(&connection.id),
+        &authority.capability_ids,
+        &runtime,
+    )
+    .unwrap();
+    assert!(preload.contains(&connection.id));
+    assert!(runtime
+        .components
+        .iter()
+        .filter(|component| component.connection.is_none())
+        .all(|component| preload.contains(&component.id)));
     for dont_save in [true, false] {
         manager
             .lock()

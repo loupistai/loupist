@@ -17,10 +17,6 @@ webdriver = ["dep:tauri-plugin-wdio-webdriver"]
 e2e = ["webdriver"]
 
 [[example]]
-name = "briefing_eval"
-required-features = ["eval-harness"]
-
-[[example]]
 name = "agent_eval"
 required-features = ["eval-harness"]
 

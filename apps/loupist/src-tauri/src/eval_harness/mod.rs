@@ -1,7 +1,6 @@
 //! Opt-in headless evaluations; production turn authority remains in Rust Chat.
 pub(crate) mod artifacts;
 mod batch;
-pub mod briefing;
 #[cfg(test)]
 mod citations;
 pub mod concurrent;

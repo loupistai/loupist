@@ -15,8 +15,14 @@ Linux verifies the boot ID, process start ticks and executable identity through
 procfs and requires the process group to remain verifiable. Other Unix hosts
 fail closed with `UnsupportedPlatform`.
 
-Keep running in the menu bar for briefings defaults on, and turning a briefing on
-sets it again. Closing the main window hides it while that setting is on.
+Keep running in the menu bar starts off. With no explicit choice, enabling the
+first briefing or Watching turns it on automatically and leaves it on when those
+features are later turned off. Once the user sets the toggle, neither enabling nor
+disabling a briefing or watcher overrides that choice. The settings response carries
+`keepRunningChoice: null` for the automatic default, or the user's explicit boolean;
+`keepRunning` is the effective value. Old files without the choice field retain their
+stored boolean as an explicit choice, because its origin cannot be recovered.
+Closing the main window hides it while the effective setting is on.
 Menu Quit and Cmd+Q exit. The tray menu opens the app, selects a Loupist's Schedule
 tab, or quits. A finished briefing posts an OS notification when permission is
 granted. That notification does not open the item. Tray selection emits the
@@ -58,15 +64,22 @@ Run now attempts admission immediately; it is not a durable manual-run queue.
 Pause prevents future starts; Stop cancels the current run separately. Run now also
 starts a paused task without turning on its future weekday schedule. The user
 asks the Bot to run a task now; Schedule shows its definition and run history.
+The scheduler sleeps until the next due occurrence or a schedule-change signal,
+with a 60-second maximum to recheck folders and wall-clock changes; an overdue
+occurrence blocked on admission retries after five seconds. Task lists batch
+profile and Chat ownership checks, preserving per-row corruption isolation.
 
 Missed recurring occurrences coalesce into one due run. Startup marks unfinished
 runs interrupted; a failure in one Loupist's recovery is skipped so other
 Loupists can still run. An undecodable running receipt is skipped individually,
 and its run id is logged once per app process; other orphans in that Loupist still
 recover. Recovery opens a write transaction only when it finds an
-orphaned run. Failed/interrupted recurring tasks pause unless a newer edit
-superseded the run's definition. History records status, timing, error and target
-Chat, where the reply and its evidence remain. Renderer discovery polls every two
+orphaned run. A failed/interrupted recurring task stays active for its next
+scheduled occurrence; three consecutive non-successes pause it, and a success
+resets that streak. Missing model/account credentials pause immediately. The
+streak is derived from terminal receipts, so no counter field or schema step is
+needed. A newer edit still prevents an old completion from changing the definition.
+History records status, timing, error and target Chat, where the reply and its evidence remain. Renderer discovery polls every two
 seconds while the window is visible and every 30 seconds while hidden, and reads
 immediately when the window becomes visible or regains focus. A finished run is also
 announced in the Loupist's [home Thread](../ui/home-thread.md). Desktop notifications
@@ -80,9 +93,8 @@ Each scheduled task is `custom`, `briefing` or `earnings` (the automatic
 Loupist has at most one briefing,
 with a continuing Memory-enabled Chat titled Briefings. The default briefing is
 08:00 Monday through Friday in the device time zone. Rust builds that prompt at
-run time from the date, elapsed time since the previous run, followed symbol and
-market identities, at most 40 World growth summaries of 240 characters (never a "What you follow" Source), at most
-30 principles inside the ordinary 6,000-character budget, at most five due
+run time from the date, elapsed time since the previous run, at most 40 World
+growth summaries of 240 characters (never a "What you follow" Source), and at most five due
 Journal pointers, and `assetDeltas`: up to 24 followed assets with a material
 asset-page change since the previous run (or seven days), three rows each, which
 also fill `BriefingContext.assets`; `earnings`: at most eight results events, those
@@ -96,9 +108,21 @@ that touch a followed company or its one-hop neighbors. The reader can open the
 Map with the conflicting-evidence filter. Omitted referenced nodes are recovered
 with bounded exact World reads.
 
-Before admission, a briefing (scheduled or Run now) [refreshes](../knowledge/asset-pages.md#asset-pages)
-followed assets without a model call, so Run now, other schedules and maintenance
-never wait behind its reads: at most 24 assets (watched, then held), skipping assets
+The briefing JSON does not repeat the envelope's instructions, tone, followed
+companies, holdings or principles. A coverage block names up to 60 followed
+assets without a check in the last 30 minutes (including assets the refresh did
+not reach) and up to 60 watcher routes whose latest status is failed or needs a
+connection, with omitted counts. A failed coverage read is explicit; missing
+evidence never means no change. The prompt directs factual deltas, results,
+principle/judgment conflicts, bounded open questions and supported unattended
+Memory saves; a refusal names the unavailable tool and asks the run to continue.
+
+After its durable claim and Chat admission, a briefing (scheduled or Run now)
+[refreshes](../knowledge/asset-pages.md#asset-pages) followed assets once for that
+occurrence without a model call. Its prompt cutoff is captured after those reads,
+so newly refreshed evidence is included. Busy, not-yet-due and already-running tasks make
+no refresh reads. The refresh releases the scheduler admission lock, so other
+schedules can attempt admission: at most 24 assets (watched, then held), skipping assets
 checked in the last 30 minutes, one at a time under a Memory-mutation activity,
 within 90 seconds, and abandoned when the scheduler stops. Assets not reached stay
 unchecked for that run. Wallet balances are then read for the held flags, within 30
@@ -128,7 +152,8 @@ proactive consent, and on each watch tick. It starts active when the briefing is
 targets the home Thread and is stored as an hourly interval; after each look Rust moves
 its next run to the next capture due, at most six hours away, and a look with nothing
 due records no run. Rust refuses Edit and Delete. Pause, Resume and Run now work,
-turning it on needs no model, and a failed run does not pause it.
+turning it on needs no model, and one failed run does not pause it (the same
+three-consecutive-failure rule applies).
 
 A run is claimed through scheduler admission (`claim_host_run`, which keeps it out of
 interrupted-run recovery) but makes no model call and no Chat turn. It keeps

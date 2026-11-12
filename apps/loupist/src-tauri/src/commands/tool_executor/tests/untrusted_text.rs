@@ -1354,3 +1354,51 @@ async fn an_allowed_read_names_the_file_and_its_identity() {
     }
     broker.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn native_authorize_reads_bundled_skills_but_never_writes_or_opens_the_prompt() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let agent = temporary.path().join("agent");
+    let skills = agent.join("skills");
+    fs::create_dir_all(skills.join("lens")).unwrap();
+    let entry = skills.join("lens/SKILL.md");
+    fs::write(&entry, "bundled instructions").unwrap();
+    fs::write(agent.join("SYSTEM.md"), "private prompt").unwrap();
+    let capture = Arc::new(ToolCapture {
+        native: NativeGate::for_turn(native_roots(&temporary).with_agent_skills(&skills)),
+        ..ToolCapture::for_chat(new_id("reply"))
+    });
+    let (broker, socket) = start_turn(&state, &temporary, "bundled-skills", capture).await;
+    let allowed = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        json!({"name":"read","path":entry}),
+    )
+    .await;
+    assert_eq!(allowed["ok"], true, "{allowed}");
+    let refused = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        json!({"name":"write","path":entry}),
+    )
+    .await;
+    assert_eq!(refused["ok"], false, "{refused}");
+    assert!(
+        refused
+            .to_string()
+            .contains("Bundled Skills are read-only."),
+        "{refused}"
+    );
+    let prompt = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        json!({"name":"read","path":agent.join("SYSTEM.md")}),
+    )
+    .await;
+    assert_eq!(prompt["ok"], false, "{prompt}");
+    broker.shutdown().await.unwrap();
+}

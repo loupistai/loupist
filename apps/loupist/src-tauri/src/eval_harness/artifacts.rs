@@ -185,8 +185,7 @@ const FILES: &[(&str, &[u8])] = &[
     asset!("skills/data-analysis/references/validation.md"),
     asset!("skills/dividend-income/SKILL.md"),
     asset!("skills/dividend-income/references/dividend-checks.md"),
-    asset!("skills/documents/SKILL.md"),
-    asset!("skills/documents/references/docx-workflow.md"),
+    asset!("skills/word-documents/SKILL.md"),
     asset!("skills/events-stats/SKILL.md"),
     asset!("skills/events-stats/references/inference.md"),
     asset!("skills/filings/SKILL.md"),
@@ -203,21 +202,16 @@ const FILES: &[(&str, &[u8])] = &[
     asset!("skills/licenses/MIT-qlib.txt"),
     asset!("skills/licenses/MIT-scientific-agent-skills.txt"),
     asset!("skills/pdf/SKILL.md"),
-    asset!("skills/pdf/references/pdf-workflow.md"),
     asset!("skills/portfolio-risk/SKILL.md"),
     asset!("skills/portfolio-risk/references/risk-review.md"),
     asset!("skills/presentations/SKILL.md"),
-    asset!("skills/presentations/references/deck-workflow.md"),
     asset!("skills/research/SKILL.md"),
     asset!("skills/research/references/thesis-review.md"),
     asset!("skills/rule-test/SKILL.md"),
     asset!("skills/rule-test/references/backtest-design.md"),
     asset!("skills/skill-creator/LICENSE.txt"),
     asset!("skills/skill-creator/SKILL.md"),
-    asset!("skills/skill-installer/LICENSE.txt"),
-    asset!("skills/skill-installer/SKILL.md"),
     asset!("skills/spreadsheets/SKILL.md"),
-    asset!("skills/spreadsheets/references/workbook-workflow.md"),
     asset!("skills/valuation/SKILL.md"),
     asset!("skills/valuation/references/dcf.md"),
     asset!("skills/visualize/SKILL.md"),
@@ -449,10 +443,21 @@ mod tests {
             .iter()
             .position(|arg| arg == "--system-prompt")
             .unwrap();
-        assert_eq!(args[index + 1], prompt);
+        let sent_prompt = |text: &str| {
+            text.replace("<!-- safety:locked -->", "")
+                .replace("<!-- /safety:locked -->", "")
+        };
+        assert_eq!(args[index + 1], sent_prompt(&prompt));
+        assert_eq!(
+            fs::read_to_string(&frozen.pi.system_prompt).unwrap(),
+            prompt
+        );
         let mut unrelated = config;
         unrelated.system_prompt = input.path().join("SYSTEM.md");
         let args = unrelated.rpc_arguments();
-        assert_eq!(args[index + 1], include_str!("../../../agent/SYSTEM.md"));
+        assert_eq!(
+            args[index + 1],
+            sent_prompt(include_str!("../../../agent/SYSTEM.md"))
+        );
     }
 }

@@ -1852,6 +1852,9 @@ pub(crate) fn update_setting(
             )
             .map_err(super::map_internal)?;
     }
+    if request.enabled {
+        crate::briefings::desktop::enable_for_watching(state)?;
+    }
     changed(&loupist);
     settings_view(state, &state.scheduled.watch_runtime(), &loupist)
 }

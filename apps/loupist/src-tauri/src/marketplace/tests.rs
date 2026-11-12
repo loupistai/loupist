@@ -769,6 +769,61 @@ fn concurrent_enable_and_delete_never_leave_enabled_without_an_active_key() {
     }
 }
 
+#[tokio::test]
+async fn offline_folder_does_not_prevent_revoking_reachable_bindings() {
+    let temporary = tempfile::tempdir().unwrap();
+    let app = temporary.path().join("app");
+    let state = AppState::for_folder_test(app.clone());
+    let entry_id = "krx.market-data";
+    let mut folders = Vec::new();
+    for name in ["offline", "reachable"] {
+        let path = temporary.path().join(name);
+        std::fs::create_dir(&path).unwrap();
+        let profile = crate::commands::loupist::create_folder_loupist(&state, &path)
+            .await
+            .unwrap();
+        folders.push((path, profile));
+    }
+    promote_test_credential(&state, entry_id, "test-only-secret", 10);
+    for (_, profile) in &folders {
+        set_binding(&state, &profile.id, entry_id, true).unwrap();
+    }
+    // Put the unavailable folder first without relying on creation clock order.
+    let mut offline = state.store.get_loupist(&folders[0].1.id).unwrap().unwrap();
+    offline.updated_at_ms = state
+        .store
+        .list_loupists()
+        .unwrap()
+        .iter()
+        .map(|profile| profile.updated_at_ms)
+        .max()
+        .unwrap()
+        + 1;
+    state.store.save_loupist(&offline).unwrap();
+    assert_eq!(state.store.list_loupists().unwrap()[0].id, folders[0].1.id);
+    drop(state);
+    let removed = temporary.path().join("unmounted");
+    std::fs::rename(&folders[0].0, &removed).unwrap();
+    let state = AppState::for_folder_test(app);
+    let request = || MarketplaceCredentialRequest {
+        entry_id: entry_id.into(),
+    };
+    let error = delete_credential_for_state(request(), &state).unwrap_err();
+    assert!(error.message.contains(&folders[0].1.name), "{error:?}");
+    assert!(
+        error.message.contains(folders[0].0.to_str().unwrap()),
+        "{error:?}"
+    );
+    let reachable = binding(&state, &folders[1].1.id, entry_id);
+    assert!(!reachable.enabled);
+    assert!(reachable.granted_permissions.is_empty());
+    assert!(has_active_credential(&state, entry_id));
+    std::fs::rename(removed, &folders[0].0).unwrap();
+    delete_credential_for_state(request(), &state).unwrap();
+    assert!(!binding(&state, &folders[0].1.id, entry_id).enabled);
+    assert!(!has_active_credential(&state, entry_id));
+}
+
 #[test]
 fn concurrent_configure_and_disable_never_reenable_a_stale_binding() {
     let temporary = tempfile::tempdir().unwrap();
@@ -819,4 +874,70 @@ fn concurrent_configure_and_disable_never_reenable_a_stale_binding() {
         assert!(!binding.enabled);
         assert!(binding.granted_permissions.is_empty());
     }
+}
+
+#[test]
+fn unfinished_or_failed_setup_never_configures_or_grants_a_connector() {
+    use crate::finance_credentials::{self, VerificationOutcome};
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    seed_loupist(&state, "setup-owner");
+    let entry_id = "krx.market-data";
+    let installed = marketplace_snapshot_for_state(&state).unwrap().installed;
+    let ids = installed
+        .iter()
+        .map(|item| item.entry_id.clone())
+        .collect::<Vec<_>>();
+    for outcome in [
+        None,
+        Some(VerificationOutcome::Rejected),
+        Some(VerificationOutcome::TemporarilyUnavailable),
+    ] {
+        finance_credentials::stage(
+            &state.credential_environment,
+            entry_id,
+            &BTreeMap::from([("api_key".into(), "unverified-test-secret".into())]),
+        )
+        .unwrap();
+        // No finish models cancellation after staging, before verification commits.
+        if let Some(outcome) = outcome {
+            let candidate = finance_credentials::candidate(&state.credential_environment, entry_id)
+                .unwrap()
+                .unwrap();
+            finance_credentials::finish_verification(
+                &state.credential_environment,
+                entry_id,
+                candidate.revision(),
+                outcome,
+                10,
+                None,
+            )
+            .unwrap();
+        }
+        let snapshot = marketplace_snapshot_for_state(&state).unwrap();
+        assert_eq!(
+            snapshot
+                .installed
+                .iter()
+                .map(|item| item.entry_id.clone())
+                .collect::<Vec<_>>(),
+            ids
+        );
+        assert!(
+            !snapshot
+                .installed
+                .iter()
+                .find(|item| item.entry_id == entry_id)
+                .unwrap()
+                .configured
+        );
+        assert!(!has_active_credential(&state, entry_id));
+        assert!(set_binding(&state, "setup-owner", entry_id, true).is_err());
+        assert!(!execute_ids(&state, "setup-owner").contains(&entry_id.into()));
+        finance_credentials::delete(&state.credential_environment, entry_id).unwrap();
+    }
+    assert!(configure(&state, "sec.edgar", "contact_email", "not-an-email").is_err());
+    assert!(connector_config::read_connector_config(&state, "sec.edgar")
+        .unwrap()
+        .is_empty());
 }

@@ -3,7 +3,7 @@
 //! product catalog does not grant unattended access by itself.
 use crate::broker::{tool_class::Unattended, ToolMethod};
 
-pub(crate) const REFUSAL: &str = "Unavailable in unattended runs; only pre-approved read-only tools and Memory reads/saves are allowed";
+pub(crate) const REFUSAL: &str = "This tool is not available in an unattended run. Continue without it and name what was skipped.";
 
 /// A model-facing tool name. Capability loading has no broker method.
 pub(crate) fn allowed_name(name: &str) -> bool {
