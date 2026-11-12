@@ -97,6 +97,7 @@ pub async fn share_publish(
             }
             // Validate everything before anything is created on GitHub.
             let checked = build_pack(state, &share, None)?;
+            let created = matches!(target, PublishTarget::Repo { .. });
             let repo = match target {
                 PublishTarget::Repo { name } => {
                     if !github::valid_repo_name(&name) {
@@ -143,30 +144,47 @@ pub async fn share_publish(
                     }
                 }
             };
-            let mut built = build_pack(state, &share, Some(repo.html_url.clone()))?;
-            let _ = on_event.send(PublishEvent::Uploading {
-                files: built.files.len() as u32,
-            });
-            let commit = api
-                .commit_files(
-                    &token,
-                    &repo.full_name,
-                    &repo.default_branch,
-                    &built.files,
-                    &format!("Loupist pack v{}", built.version),
-                )
-                .await
-                .map_err(|error| api_error(error, &environment, state))?;
-            built.identity.repo = Some(repo.full_name.clone());
-            built.identity.repo_url = Some(repo.html_url.clone());
-            built.identity.repo_commit = Some(commit.clone());
-            record_identity(state, &share.loupist_id, &built)?;
-            Ok(serde_json::json!({
-                "url": repo.html_url,
-                "fullName": repo.full_name,
-                "version": built.version,
-                "commit": commit,
-            }))
+            let result: Result<Value, CommandError> = async {
+                let mut built = build_pack(state, &share, Some(repo.html_url.clone()))?;
+                let _ = on_event.send(PublishEvent::Uploading {
+                    files: built.files.len() as u32,
+                });
+                let commit = api
+                    .commit_files(
+                        &token,
+                        &repo.full_name,
+                        &repo.default_branch,
+                        &built.files,
+                        &format!("Loupist pack v{}", built.version),
+                    )
+                    .await
+                    .map_err(|error| api_error(error, &environment, state))?;
+                built.identity.repo = Some(repo.full_name.clone());
+                built.identity.repo_url = Some(repo.html_url.clone());
+                built.identity.repo_commit = Some(commit.clone());
+                record_identity(state, &share.loupist_id, &built)?;
+                Ok(serde_json::json!({
+                    "url": repo.html_url,
+                    "fullName": repo.full_name,
+                    "version": built.version,
+                    "commit": commit,
+                }))
+            }
+            .await;
+            match result {
+                Ok(value) => Ok(value),
+                Err(mut error) => {
+                    let removed = api
+                        .remove_empty_created_repo(&token, &repo.full_name, created)
+                        .await;
+                    error.message.push_str(if removed {
+                        " The empty repository created for this attempt was removed."
+                    } else {
+                        " The repository was left on GitHub; check it before trying again."
+                    });
+                    Err(error)
+                }
+            }
         }
     }
 }
