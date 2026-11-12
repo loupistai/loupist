@@ -21,15 +21,15 @@ use super::super::graph_inference::{self, InferenceDisposition, InferenceReply};
 use super::super::graph_jobs::{
     self, GraphJobView, GraphProcessingSettings, JobDocument, StoredSourceBinding, Unpublished,
 };
-use super::super::model::{GraphNode, TimePoint, TimePrecision, WorldSnapshotBody};
+use super::super::model::{GraphNode, TimePoint, TimePrecision};
 use super::super::KnowledgeStore;
 use super::bridge::{Answered, Bridge, BridgeConfig, StageRecord, Stop};
-use super::hints::{extraction_hints, observed_relation_names, FollowedInstrument};
+use super::hints::{extraction_hints, FollowedInstrument};
 use super::ontology::{extraction_instructions, merged_schema, Hints, Schema};
 use super::pipeline::{self, Edge, Episode, Graph, Node, PreviousEpisode};
 use super::projection::{self, Binding, Context};
 use super::search::MemoryClaimText;
-use super::{index, text};
+use super::{index, load_body, text};
 use crate::util::sha256;
 
 const LABEL: fn(&str) -> bool = |kind| {
@@ -452,14 +452,6 @@ fn reindex_and_complete(
     })
 }
 
-fn load_body(
-    tx: &rusqlite::Transaction<'_>,
-    revision_id: &str,
-) -> KnowledgeResult<WorldSnapshotBody> {
-    let stored = super::super::revision::load_revision(tx, revision_id)?;
-    Ok(serde_json::from_str(&stored.payload_json)?)
-}
-
 /// Vectors the index would need for `revision`, computed outside any lock.
 fn precompute(
     store: &KnowledgeStore,
@@ -617,7 +609,13 @@ fn prepare(
         .ok_or(KnowledgeError::Invalid(
             "graph episode has no source binding",
         ))?;
-    let observed = observed_relation_names(store, &job.loupist_id);
+    let body = store.read(|read| load_body(read.tx, &job.world_revision_id))?;
+    let observed = body
+        .relation_vocabulary
+        .iter()
+        .take(16)
+        .map(|item| item.relation.clone())
+        .collect::<Vec<_>>();
     let hints = Hints::from_value(&extraction_hints(
         settings,
         &document.body,
@@ -635,14 +633,13 @@ fn prepare(
         &job.world_revision_id,
         assets,
     )?;
-    let (body, vectors, previous) = store.read(|read| {
-        let body = load_body(read.tx, &job.world_revision_id)?;
+    let (vectors, previous) = store.read(|read| {
         let vectors = index::load_vectors(read.tx, &job.loupist_id, &job.world_record_id)?;
         let previous = match &document.previous_episode_key {
             Some(key) => previous_episode(read.tx, &job.loupist_id, key)?,
             None => Vec::new(),
         };
-        Ok((body, vectors, previous))
+        Ok((vectors, previous))
     })?;
     let mut graph = Graph::default();
     for node in &body.nodes {

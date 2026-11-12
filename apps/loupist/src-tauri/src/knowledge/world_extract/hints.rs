@@ -1,33 +1,5 @@
 use crate::knowledge::graph_jobs::GraphProcessingSettings;
 use serde_json::{json, Value};
-pub(crate) fn observed_relation_names(
-    store: &crate::knowledge::KnowledgeStore,
-    loupist_id: &str,
-) -> Vec<String> {
-    store
-        .read(|write| {
-            let records = write.list_records(loupist_id)?;
-            let Some(world) = records
-                .into_iter()
-                .find(|record| record.kind == crate::knowledge::model::RecordKind::World)
-            else {
-                return Ok(Vec::new());
-            };
-            let Some(revision_id) = world.revision_id else {
-                return Ok(Vec::new());
-            };
-            let stored = crate::knowledge::revision::load_revision(write.tx, &revision_id)?;
-            let body: crate::knowledge::model::WorldSnapshotBody =
-                serde_json::from_str(&stored.payload_json)?;
-            Ok(body
-                .relation_vocabulary
-                .into_iter()
-                .take(16)
-                .map(|item| item.relation)
-                .collect())
-        })
-        .unwrap_or_default()
-}
 
 #[derive(Debug, Clone)]
 pub struct FollowedInstrument {
