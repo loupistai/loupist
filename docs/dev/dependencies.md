@@ -13,6 +13,12 @@ the fix. A library test checks `rusqlite::version()` against the 3.54.0 security
 floor. The separate, hash-pinned Python worker and the vendored WebDriver plugin
 have no rusqlite dependency and are unchanged.
 
+The same review updates only wry's lock entry from 0.57.1 to 0.57.2. Its
+[macOS fixes](https://github.com/tauri-apps/wry/releases/tag/wry-v0.57.2)
+handle a nil `WKWebView.URL()` and cancel a file upload when `NSOpenPanel`
+cannot be created after the running app's bundle is replaced. Keep native
+macOS acceptance coverage for both cases before release.
+
 The November 2026 review covered the 58 open Dependabot alerts:
 
 | Lockfile | Alerts | Resolution |
