@@ -657,7 +657,7 @@ fn task_lists_batch_reference_queries_independently_of_task_count() {
             let result = unsafe {
                 rusqlite::ffi::sqlite3_trace_v2(
                     connection.handle(),
-                    rusqlite::ffi::SQLITE_TRACE_STMT as u32,
+                    rusqlite::ffi::SQLITE_TRACE_STMT,
                     Some(count_statement),
                     (&mut *counter.statements as *mut AtomicUsize).cast(),
                 )
