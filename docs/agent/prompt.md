@@ -46,6 +46,10 @@ documents, presentations and PDF Skills end work made for others with the
 AI-produced line ("Made with AI in Loupist. AI can be wrong. Not a licensed
 financial adviser.") in its language; a deck puts it on the last slide.
 
+Followed-company context makes research relevant without narrowing investment
+judgment. It supplies identities and follow flags, never position size, cost or
+value; the agent neither infers nor asks for those private fields.
+
 When at least one saved principle is relevant, the answer ends with a short
 section titled “Checked against your principles” (Korean: “내 원칙 점검”). Each
 line is a `lens:` link, the dated fact that was checked, and meets, conflicts,

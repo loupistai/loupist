@@ -1294,7 +1294,7 @@ pub(crate) fn loupist_instructions(instructions: &str) -> String {
     instructions.trim().chars().take(4_000).collect()
 }
 
-pub(crate) const FOLLOWED_COMPANIES_HINT: &str = "These are companies the user holds (holding: true) or watches (watching: true); a company can be both. Use them to make answers relevant; never infer position sizes or give personalized buy, sell, or hold advice.";
+pub(crate) const FOLLOWED_COMPANIES_HINT: &str = "These are companies the user holds (holding: true) or watches (watching: true); a company can be both. Use them to make answers relevant. Position sizes, cost and value are not available to you: never infer or ask for them.";
 
 /// Only the identity projection can enter this function: financial position
 /// fields cannot accidentally be serialized. One row per identity carries both
@@ -1331,7 +1331,7 @@ pub(crate) fn followed_companies(mut context: crate::store::user_context::MapCon
     json!({"hint": FOLLOWED_COMPANIES_HINT, "symbols": rows})
 }
 
-pub(crate) const FOLLOWED_INTERESTS_HINT: &str = "These are companies the user watches. This answer looks back to an earlier date, so what the user holds today is left out. Use them only to make answers relevant; never give personalized buy, sell, or hold advice.";
+pub(crate) const FOLLOWED_INTERESTS_HINT: &str = "These are companies the user watches. This answer looks back to an earlier date, so what the user holds today is left out. Use them only to make answers relevant.";
 
 /// Under an as-of date the user's interests stay but holdings never reach the
 /// model (finance-point-in-time.md §3.2): watched companies only, by symbol,
@@ -1631,6 +1631,14 @@ mod tests {
 
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn followed_hints_keep_position_privacy_without_banning_research_judgment() {
+        let live = followed_companies(Default::default());
+        assert_eq!(live["hint"], "These are companies the user holds (holding: true) or watches (watching: true); a company can be both. Use them to make answers relevant. Position sizes, cost and value are not available to you: never infer or ask for them.");
+        let historical = followed_interests(Default::default());
+        assert_eq!(historical["hint"], "These are companies the user watches. This answer looks back to an earlier date, so what the user holds today is left out. Use them only to make answers relevant.");
+    }
 
     #[test]
     fn scheduled_runtime_has_no_native_or_schedule_management_tools() {
