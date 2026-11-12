@@ -185,7 +185,7 @@
   },
   "worldProcessingSettings": {
     "readyToProcess": "자료 정리 준비됨",
-    "automaticProcessingIsOff": "자료 자동 정리가 꺼져 있어요",
+    "automaticProcessingIsOff": "지도 구성이 꺼져 있어요",
     "processingIsPaused": "자료 정리를 잠시 멈췄어요",
     "chooseAModel": "AI 모델을 선택해 주세요",
     "reconnectProvider": "AI 계정을 다시 연결해 주세요",
@@ -214,7 +214,7 @@
     "recoverWorldProcessing": "지도 구성 복구",
     "refreshRecoveryStatus": "복구 상태 새로고침",
     "processingPreferencesForThisLoupist": "이 루피스트의 처리 설정",
-    "automaticallyProcessSavedSources": "저장된 자료 자동 처리",
+    "automaticallyProcessSavedSources": "저장된 자료로 지도 자동 구성",
     "processingModel": "처리 모델",
     "worldProcessingModel": "지도 구성 모델",
     "thisChoiceIsSeparateFromTheModelSelectedInChat": "대화에서 선택한 모델과 별도로 설정해요.",

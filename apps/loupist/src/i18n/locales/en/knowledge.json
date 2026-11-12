@@ -184,7 +184,7 @@
   },
   "worldProcessingSettings": {
     "readyToProcess": "Ready to review sources",
-    "automaticProcessingIsOff": "Automatic source review is off",
+    "automaticProcessingIsOff": "Map building is off",
     "processingIsPaused": "Source review is paused",
     "chooseAModel": "Choose an AI model",
     "reconnectProvider": "Reconnect your AI account",
@@ -213,7 +213,7 @@
     "recoverWorldProcessing": "Recover map building",
     "refreshRecoveryStatus": "Refresh recovery status",
     "processingPreferencesForThisLoupist": "Processing preferences for this Loupist",
-    "automaticallyProcessSavedSources": "Automatically process saved sources",
+    "automaticallyProcessSavedSources": "Build the Map from saved sources automatically",
     "processingModel": "Processing model",
     "worldProcessingModel": "Map building model",
     "thisChoiceIsSeparateFromTheModelSelectedInChat": "This choice is separate from the model selected in Chat.",

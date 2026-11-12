@@ -48,7 +48,7 @@
     "auth": "AI 계정에 다시 로그인해야 해요.",
     "budget": "사용 한도에 도달했어요.",
     "generic": "이 브리핑을 끝내지 못했어요.",
-    "models": "설정 → 모델",
+    "models": "설정 › AI 계정",
     "details": "세부 정보"
   },
   "schedule": {
@@ -158,7 +158,7 @@
     "pauseFailed": "지켜보기 설정을 바꾸지 못했어요. 다시 시도해 주세요.",
     "checkFailed": "지금 확인하지 못했어요. 잠시 후 다시 시도해 주세요.",
     "resume": "다시 시작",
-    "statusPaused": "일시 중지",
+    "statusPaused": "일시정지",
     "pausedDetail": "{{loupist}}가 확인하지 않아요",
     "recent": "최근 알림",
     "empty": "아직 알림이 없어요. 첫 확인으로 기준을 잡아요.",

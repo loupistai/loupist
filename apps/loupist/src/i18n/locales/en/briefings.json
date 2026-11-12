@@ -49,7 +49,7 @@
     "auth": "Your AI account needs to sign in again.",
     "budget": "The usage limit was reached.",
     "generic": "Couldn't finish this briefing.",
-    "models": "Settings → Models",
+    "models": "Settings › AI accounts",
     "details": "Details"
   },
   "schedule": {
