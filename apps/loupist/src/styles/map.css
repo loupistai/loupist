@@ -4,7 +4,7 @@
 .map-toolbar-button[aria-pressed=true] { background:var(--gg-color-bg-selected); box-shadow:inset 0 0 0 1px var(--gg-color-border-strong); }
 .map-toolbar-spacer { flex:1; }
 /* The search box shrinks only to its minimum; past that, Scope becomes its menu (toolbarOverflow.ts reads this min-width). */
-.map-search { position:relative; flex:0 1 clamp(200px,32%,420px); min-width:200px; }
+.map-search { position:relative; flex:0 1 clamp(200px,32%,420px); min-width:120px; }
 .map-search > svg { position:absolute; width:16px; height:16px; left:10px; top:8px; color:var(--gg-color-text-secondary); pointer-events:none; }
 .map-search > input { height:32px; padding-left:32px; border-radius:var(--gg-radius-sm); text-overflow:ellipsis; }
 /* A folded action stays mounted for its state and width, out of the row and out of sight. */
@@ -117,7 +117,7 @@
 .map-list { position:absolute; inset:56px 0 0; overflow:auto; padding:12px; }.map-list table { width:100%; text-align:left; font-size:var(--gg-text-meta); }.map-list caption { text-align:left; padding:8px; }.map-list th,.map-list td { padding:4px 8px; border-bottom:1px solid var(--gg-color-border-subtle); }.map-list button { white-space:normal; text-align:left; height:auto; }
 .map-probe { position:absolute; bottom:8px; right:8px; padding:4px; background:var(--gg-color-bg-raised); font-size:var(--gg-text-caption); pointer-events:none; }
 .map-view :focus-visible { outline:2px solid var(--gg-color-focus); outline-offset:2px; }
-@container map (max-width:900px) { .map-control-label { display:none; }.map-toolbar { gap:4px; }.map-toolbar-button { width:var(--gg-size-control-md); padding:var(--gg-space-1); }.map-inspector { position:absolute; inset:auto 0 0; height:60%; width:auto; z-index:var(--gg-z-panel); border-left:0; border-top:1px solid var(--gg-color-border-subtle); box-shadow:var(--gg-shadow-sm); }.map-search { flex:1; width:auto; min-width:160px; max-width:420px; }.map-toolbar-spacer { flex:0; } }
+@container map (max-width:900px) { .map-control-label { display:none; }.map-toolbar { gap:4px; }.map-toolbar-button { width:var(--gg-size-control-md); padding:var(--gg-space-1); }.map-inspector { position:absolute; inset:auto 0 0; height:60%; width:auto; z-index:var(--gg-z-panel); border-left:0; border-top:1px solid var(--gg-color-border-subtle); box-shadow:var(--gg-shadow-sm); }.map-search { flex:1; width:auto; min-width:120px; max-width:420px; }.map-toolbar-spacer { flex:0; } }
 @keyframes map-inspector-in { from { opacity:0; } to { opacity:1; } }
 @keyframes map-spin { to { transform:rotate(360deg); } } @keyframes map-shimmer { to { opacity:.02; } }
 @media (prefers-reduced-motion:reduce) { .map-inspector,.map-skeleton { animation:none; } .map-updating i { display:none; } }
@@ -319,7 +319,7 @@
 .map-around-menu h3 { margin:var(--gg-space-2) var(--gg-space-2) var(--gg-space-1); color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); font-weight:var(--gg-weight-medium); }
 .map-around-menu section + button { margin-top:var(--gg-space-1); border-top:1px solid var(--gg-color-border-subtle); border-radius:0; }
 @container map (max-width:900px) {
-  .map-toolbar-button.map-around { max-width:120px; }
+  .map-toolbar-button.map-around { width:auto; max-width:120px; padding:0 var(--gg-space-2); }
   .map-toolbar-button.map-around .map-around-label, .map-scope-segment { display:none; }
   .map-toolbar-button.map-around .map-around-name { display:inline; }
   .map-toolbar-button[data-map-whats-new] { position:relative; }

@@ -45,18 +45,20 @@
 .settings-row strong { display: block; font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); }
 .settings-row-description { margin: var(--gg-space-1) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); }
 /* Settings › General: two blocks under caption labels; the privacy card lists where things go as a definition list. */
-.settings-general { display: grid; gap: var(--gg-space-6); }
-.settings-general-block { display: grid; gap: var(--gg-space-3); }
+.settings-general { display: grid; gap: var(--gg-space-3); }
+.settings-general-block { display: grid; gap: var(--gg-space-2); }
 .settings-general .settings-row > div { flex: 1 1 18rem; min-width: 0; }
+/* Compact rows so the whole page fits a 1280×820 window (direction T11). */
+.settings-general .settings-row { padding-block: var(--gg-space-3); }
 .settings-caption-label { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
 .settings-caption-label:lang(ko) { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); letter-spacing: 0; text-transform: none; }
-.settings-privacy { padding: var(--gg-space-5); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); container: settings-privacy / inline-size; }
-.settings-privacy h3 { margin: 0 0 var(--gg-space-2); font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
+.settings-privacy { padding: var(--gg-space-3) var(--gg-space-5); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); container: settings-privacy / inline-size; }
+.settings-privacy h3 { margin: 0 0 var(--gg-space-1); font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
 .settings-privacy-list { margin: 0; }
-.settings-privacy-list > div { display: grid; gap: var(--gg-space-1); padding-block: var(--gg-space-3); }
+.settings-privacy-list > div { display: grid; gap: var(--gg-space-1); padding-block: var(--gg-space-2); }
 .settings-privacy-list > div + div { border-top: 1px solid var(--gg-color-border-subtle); }
 .settings-privacy-list dt { font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); color: var(--gg-color-text-primary); }
-.settings-privacy-list dd { margin: 0; font-size: var(--gg-text-body); line-height: 22px; color: var(--gg-color-text-secondary); }
+.settings-privacy-list dd { margin: 0; font-size: var(--gg-text-body); line-height: 20px; color: var(--gg-color-text-secondary); }
 @container settings-privacy (min-width: 720px) {
   .settings-privacy-list > div { grid-template-columns: 180px minmax(0, 1fr); column-gap: var(--gg-space-4); }
   .settings-privacy-list:lang(ko) > div { grid-template-columns: 160px minmax(0, 1fr); }
