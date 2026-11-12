@@ -2192,8 +2192,5 @@ button.sent-image { cursor: zoom-in; }
 .message-schedule-spending { margin: 0; padding: 0 var(--gg-space-4); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 /* 27. A long Loupist name does not take over the answer's meta row. */
 .message-meta > span:first-child { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 28. Edit shows under the newest question; earlier ones reveal it on hover or focus, in reserved space. */
-.message.user:not(:last-of-type) .message-action-bar { opacity: 0; }
-.message.user:not(:last-of-type):is(:hover, :focus-within) .message-action-bar { opacity: 1; }
 /* 19. A thin caret instead of Streamdown's block while an answer streams. */
 .message.assistant .message-content [class*="streamdown-caret"] > *:last-child:not([data-sd-caret-hidden])::after { content: ""; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -0.15em; border-radius: 1px; background: var(--gg-color-text-tertiary); }
