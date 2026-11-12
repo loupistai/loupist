@@ -18,7 +18,7 @@ description: Explain why a stock, fund or index moved on a day or over a period,
 4. Answer in four short sections, titled in the user's language:
    - "Moved {x} while the market moved {y}"
    - "Reported reasons": only what a dated source says, cited
-   - "{your Loupist's name}'s reading": your inference, labelled as inference
+   - "My reading": your inference, labelled as inference
    - "What isn't explained"
 
 Never invent a cause. Something published after the move did not cause it, and

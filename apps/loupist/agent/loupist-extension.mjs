@@ -101,7 +101,9 @@ export function formatRuntimeIndex(runtime) {
     lines.push("", "# On-demand tool packs");
     for (const component of onDemand) {
       const loaded = component.loaded === true ? " (loaded)" : "";
-      lines.push(`- \`${component.id}\`${loaded}: ${component.tool_names.join(", ")}. ${COMPONENT_SPECS.get(component.id).description}`);
+      const publicationOffered = component.tool_names.some((name) => name === "chart_publish" || name === "grid_publish");
+      const hint = component.id === "charts" && !publicationOffered ? "" : ` ${COMPONENT_SPECS.get(component.id).description}`;
+      lines.push(`- \`${component.id}\`${loaded}: ${component.tool_names.join(", ")}.${hint}`);
     }
   }
   return lines.join("\n");

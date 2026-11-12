@@ -14,7 +14,7 @@ with every figure from `calculate`: `dividend-income` (history, payout, cuts, gr
 dated yield and record dates; Korea through `dart_dividends`), `fund-compare` (cost,
 size, age, `holdings_overlap` and returns over one shared window; KRX ETFs by price
 only), `why-it-moved` (the measured move beside the market, reported reasons, the
-Loupist's labelled reading and what isn't explained) and `goal-math` (`goal_grid` over
+assistant's labelled reading and what isn't explained) and `goal-math` (`goal_grid` over
 several rates or `dca_history`, using only the numbers the user gives). The `filings`
 Skill's `references/korea-statements.md` sets statement basis, periods and the Korean
 disclosure and flow reads for KRX companies. Skill Creator starts off in every
@@ -32,8 +32,9 @@ pandas. `pdf` extracts/copies pages with pypdf, extracts tables with pdfplumber,
 and creates text PDFs with reportlab. Worker round-trip tests cover these operations.
 They do not provide an office renderer, OCR, format conversion or spreadsheet
 formula recalculation; bundled figure/PDF fonts do not cover Korean, Japanese or
-Chinese. Citable input-file figures require an attachment/capture, rather than
-Python extraction. The Word Skill id differs from `documents`, the Markdown
+Chinese. Python and attachment extraction provide file/page/sheet/slide locators, not
+citation links. UTF-8 text/CSV up to 256 KiB can use `workspace_capture`; PDF and
+Office originals need Add source and an exact saved Source read. The Word Skill id differs from `documents`, the Markdown
 publishing capability. Settings owns imports; no model Skill downloads or installs
 instructions.
 

@@ -18,7 +18,10 @@ Report the visual check as missing and link the saved file.
 On the last slide of decks made for others, include this line in their language:
 "Made with AI in Loupist. AI can be wrong. Not a licensed financial adviser."
 
-To cite figures from an input file, ask the user to attach it to Chat. Python extraction is working material, not citable Source evidence.
+Figures read with Python or from an attachment's extracted text carry no citation
+link: name the file and page, sheet or slide beside each. A UTF-8 text or CSV file up
+to 256 KiB can be cited with `workspace_capture`; for a PDF or Office original, ask the
+user to add it with Add source, then read the saved Source.
 
 Bundled PDF/chart fonts do not cover Korean, Japanese or Chinese; use Latin labels
 or offer Word or Markdown for such content. No renderer checks font fallback.

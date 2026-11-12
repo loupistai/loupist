@@ -12,7 +12,7 @@ description: Create or revise an in-app chart, Mermaid diagram, or image export 
 | Prices, volume, indicators, or drawings | `chart_publish` with `view.kind: "candlestick"`; real OHLC columns, time, symbol, and interval are required. |
 | Trends, categories, or numeric relationships | `chart_publish` with `line`, `area`, `bar`, or `scatter`. |
 | A compact process or relationship diagram | A fenced Mermaid block in the reply. |
-| Recompute assumptions | `run_python` with matplotlib, save a PNG under `/workspace/outputs/`, then revise the chart with `chart_publish`. |
+| Recompute assumptions | `run_python` writing the recomputed rows as JSON under `/workspace/outputs/`, `dataset_import` that file, then revise the chart with `chart_publish` `from_dataset`. |
 | Unsupported forms or requested exports | `run_python` writing a file under `/workspace/outputs/`. |
 
 App charts do not execute arbitrary HTML, JavaScript, Vega specifications or

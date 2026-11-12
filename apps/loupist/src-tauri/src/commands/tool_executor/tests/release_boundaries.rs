@@ -105,7 +105,7 @@ async fn corrupt_saved_chat_errors_do_not_echo_stored_private_text() {
         .await
         .unwrap_err();
     assert!(!error.to_string().contains(private));
-    assert!(error.to_string().contains("Local data is unavailable"));
+    assert!(error.to_string().contains("Local data could not be read"));
 }
 
 #[tokio::test]
