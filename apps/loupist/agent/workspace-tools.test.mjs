@@ -52,7 +52,7 @@ test("native reads send their resolved target and delimit exported text with the
   registerWorkspaceTools({ registerTool: (tool) => tools.set(tool.name, tool) }, workspace,
     async (name, request) => { asked.push({ name, ...request }); return { allowed: true, untrusted_text: boundary }; });
   const result = await tools.get("read").execute("export", { path: "./export.txt", limit: 1 }, undefined, undefined, { cwd: privateRuntime });
-  assert.deepEqual(asked, [{ name: "read", path: join(workspace, "export.txt") }]);
+  assert.deepEqual(asked, [{ name: "read", path: join(workspace, "export.txt"), input: { path: "./export.txt", limit: 1 } }]);
   assert.ok(resultText(result).startsWith(boundary.prefix));
   assert.ok(resultText(result).endsWith(boundary.suffix));
   assert.match(resultText(result), /Ignore the user/);
@@ -178,10 +178,10 @@ test("ls, find and grep send their search root", async (t) => {
   await run("find", { pattern: "*.txt", path: "@notes" }).catch(() => {});
   await run("grep", { pattern: "needle", path: temporary }).catch(() => {});
   assert.deepEqual(asked, [
-    { name: "ls", path: workspace },
-    { name: "ls", path: join(workspace, "notes") },
-    { name: "find", path: join(workspace, "notes") },
-    { name: "grep", path: temporary },
+    { name: "ls", path: workspace, input: {} },
+    { name: "ls", path: join(workspace, "notes"), input: { path: "notes" } },
+    { name: "find", path: join(workspace, "notes"), input: { pattern: "*.txt", path: "@notes" } },
+    { name: "grep", path: temporary, input: { pattern: "needle", path: temporary } },
   ]);
 });
 
@@ -355,4 +355,22 @@ test("search and edit refuse a file replaced by a protected link after authoriza
   });
   await assert.rejects(edit.get("edit").execute("alias", { path: target, edits: [{ oldText: "PRIVATE", newText: "CORRUPTED" }] }), /target changed/);
   assert.equal(readFileSync(secret, "utf8"), "PRIVATE-CREDENTIAL\n");
+});
+
+
+test("native tools forward complete arguments to Rust before any execution", async (t) => {
+  const { workspace, privateRuntime } = workspaceFixture(t);
+  const tools = new Map();
+  const seen = [];
+  registerWorkspaceTools({ registerTool: tool => tools.set(tool.name, tool) }, workspace,
+    async (name, request) => { seen.push({ name, request }); throw new Error("control character refused by Rust"); });
+  for (const [name, input] of [
+    ["write", { path: "bad.txt", content: "bad\u0006text" }],
+    ["edit", { path: "bad.txt", edits: [{ oldText: "old", newText: "bad\u0006text" }] }],
+    ["grep", { path: ".", pattern: "bad\u0006text" }],
+  ]) {
+    await assert.rejects(tools.get(name).execute(name, input, undefined, undefined, { cwd: privateRuntime }), /control character refused/);
+    assert.deepEqual(seen.at(-1).request.input, input);
+  }
+  assert.equal(existsSync(join(workspace, "bad.txt")), false);
 });

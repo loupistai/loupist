@@ -1,0 +1,595 @@
+[
+  {
+    "name": "dataset_import",
+    "method": "dataset.import",
+    "args": {
+      "path": "notes/report.csv"
+    }
+  },
+  {
+    "name": "chat_history",
+    "method": "chat.history",
+    "args": {}
+  },
+  {
+    "name": "workspace_capture",
+    "method": "workspace.capture",
+    "args": {
+      "path": "notes/report.csv"
+    }
+  },
+  {
+    "name": "run_python",
+    "method": "python.run",
+    "args": {
+      "code": "print(\"한국어 日本語 🙂\")\n"
+    }
+  },
+  {
+    "name": "connection_setup",
+    "method": "connection.setup",
+    "args": {
+      "id": "research"
+    }
+  },
+  {
+    "name": "world_search",
+    "method": "world.search",
+    "args": {
+      "query": "research"
+    }
+  },
+  {
+    "name": "world_read",
+    "method": "world.read",
+    "args": {
+      "scope": "source",
+      "recordId": "rec_00000000000000000000000000000000"
+    }
+  },
+  {
+    "name": "source_save",
+    "method": "source.save",
+    "args": {
+      "result_ref": "result:00000000000000000000000000000000",
+      "title": "한국어 日本語 🙂",
+      "coverage": "included_full"
+    }
+  },
+  {
+    "name": "note_save",
+    "method": "note.save",
+    "args": {
+      "workingNote": {
+        "title": "한국어 日本語 🙂",
+        "markdown": "research",
+        "changeSummary": "research",
+        "expectedResearchId": "research"
+      }
+    }
+  },
+  {
+    "name": "journal_save",
+    "method": "journal.save",
+    "args": {
+      "judgment": "research"
+    }
+  },
+  {
+    "name": "journal_review",
+    "method": "journal.review",
+    "args": {
+      "readRef": "rdg_00000000000000000000000000000000",
+      "outcome": {
+        "observed": 1,
+        "observedAt": "2026-10-21"
+      },
+      "sourceReads": []
+    }
+  },
+  {
+    "name": "principle_save",
+    "method": "principle.save",
+    "args": {
+      "statement": "research"
+    }
+  },
+  {
+    "name": "lens_file",
+    "method": "lens.file",
+    "args": {
+      "pages": [
+        {
+          "page": {
+            "recordId": "rec_00000000000000000000000000000000"
+          },
+          "ops": [
+            {
+              "op": "put",
+              "key": "facts",
+              "heading": "research",
+              "markdown": "research"
+            }
+          ]
+        }
+      ],
+      "rationale": "research"
+    }
+  },
+  {
+    "name": "world_schema_update",
+    "method": "world_schema.update",
+    "args": {}
+  },
+  {
+    "name": "loupist_setup",
+    "method": "loupist.setup",
+    "args": {
+      "focus": "Research companies"
+    }
+  },
+  {
+    "name": "lens_search",
+    "method": "lens.search",
+    "args": {
+      "query": "research"
+    }
+  },
+  {
+    "name": "lens_read",
+    "method": "lens.read",
+    "args": {
+      "recordId": "rec_00000000000000000000000000000000"
+    }
+  },
+  {
+    "name": "world_job",
+    "method": "world.job",
+    "args": {}
+  },
+  {
+    "name": "conversation_memory",
+    "method": "conversation.memory",
+    "args": {
+      "action": "search"
+    }
+  },
+  {
+    "name": "asset_page_read",
+    "method": "asset.page_read",
+    "args": {
+      "symbol": "AAPL",
+      "market": "NASDAQ"
+    }
+  },
+  {
+    "name": "thesis_update",
+    "method": "thesis.update",
+    "args": {
+      "assetId": "ast_0000000000000000",
+      "evidence": [
+        "research"
+      ]
+    }
+  },
+  {
+    "name": "earnings_snapshot_save",
+    "method": "earnings.snapshot_save",
+    "args": {
+      "assetId": "ast_0000000000000000",
+      "side": "expected"
+    }
+  },
+  {
+    "name": "run_results_list",
+    "method": "run.results.list",
+    "args": {}
+  },
+  {
+    "name": "plan_update",
+    "method": "run.plan.update",
+    "args": {
+      "items": [
+        {
+          "id": "research",
+          "label": "Example 1",
+          "status": "pending"
+        },
+        {
+          "id": "research",
+          "label": "Example 1",
+          "status": "pending"
+        }
+      ]
+    }
+  },
+  {
+    "name": "ask_user",
+    "method": "user.ask",
+    "args": {
+      "question": "Which period?",
+      "options": [
+        {
+          "label": "Example 1"
+        },
+        {
+          "label": "Example 1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "research_open",
+    "method": "research.open",
+    "args": {
+      "title": "한국어 日本語 🙂",
+      "question": "Which period?",
+      "requestKey": "research"
+    }
+  },
+  {
+    "name": "bot_memory",
+    "method": "bot.memory",
+    "args": {
+      "changes": [
+        {
+          "action": "remember"
+        }
+      ]
+    }
+  },
+  {
+    "name": "worldbank_series",
+    "method": "worldbank.series",
+    "args": {
+      "economy": "res",
+      "indicator": "research",
+      "start_year": 1900,
+      "end_year": 1900
+    }
+  },
+  {
+    "name": "defillama_read",
+    "method": "defillama.read",
+    "args": {
+      "route": "protocol",
+      "id": "research"
+    }
+  },
+  {
+    "name": "krx_daily_quote",
+    "method": "krx.daily_quote",
+    "args": {
+      "symbol": "005930"
+    }
+  },
+  {
+    "name": "kis_operation_search",
+    "method": "kis.operation_search",
+    "args": {
+      "query": "research"
+    }
+  },
+  {
+    "name": "kis_read",
+    "method": "kis.read",
+    "args": {
+      "operation_id": "domestic_stock.inquire_price",
+      "params": {
+        "FID_COND_MRKT_DIV_CODE": "J",
+        "FID_INPUT_ISCD": "005930"
+      }
+    }
+  },
+  {
+    "name": "dart_company_lookup",
+    "method": "dart.company_lookup",
+    "args": {
+      "query": "research"
+    }
+  },
+  {
+    "name": "dart_filing_search",
+    "method": "dart.filing_search",
+    "args": {
+      "company": "005930",
+      "start": "2025-01-01",
+      "end": "2025-12-31",
+      "limit": 1
+    }
+  },
+  {
+    "name": "dart_filing_read",
+    "method": "dart.filing_read",
+    "args": {
+      "rcept_no": "20260318000001"
+    }
+  },
+  {
+    "name": "dart_major_report",
+    "method": "dart.major_report",
+    "args": {
+      "company": "005930",
+      "kind": "rights_offering",
+      "start": "2025-01-01",
+      "end": "2025-12-31"
+    }
+  },
+  {
+    "name": "dart_ownership",
+    "method": "dart.ownership",
+    "args": {
+      "company": "005930",
+      "kind": "major_holders"
+    }
+  },
+  {
+    "name": "dart_dividends",
+    "method": "dart.dividends",
+    "args": {
+      "company": "005930",
+      "year": 2015
+    }
+  },
+  {
+    "name": "dart_financials",
+    "method": "dart.financials",
+    "args": {
+      "company": "005930",
+      "fiscal_year": 1994,
+      "report_period": "annual",
+      "basis": "consolidated"
+    }
+  },
+  {
+    "name": "web_search",
+    "method": "web.search",
+    "args": {
+      "query": "research"
+    }
+  },
+  {
+    "name": "web_fetch",
+    "method": "web.fetch",
+    "args": {
+      "url": "https://example.com/report"
+    }
+  },
+  {
+    "name": "artifact_list",
+    "method": "artifact.list",
+    "args": {}
+  },
+  {
+    "name": "artifact_read",
+    "method": "artifact.read",
+    "args": {
+      "artifact_id": "artifact-1"
+    }
+  },
+  {
+    "name": "artifact_publish",
+    "method": "artifact.publish",
+    "args": {
+      "mode": "create",
+      "title": "한국어 日本語 🙂",
+      "payload": {
+        "kind": "markdown",
+        "schema": "loupist-markdown/1",
+        "markdown": "A note.\n\tSecond line."
+      }
+    }
+  },
+  {
+    "name": "chart_query",
+    "method": "chart.query",
+    "args": {
+      "artifact_id": "artifact-1",
+      "revision": 1
+    }
+  },
+  {
+    "name": "chart_publish",
+    "method": "chart.publish",
+    "args": {
+      "mode": "create",
+      "title": "Prices",
+      "view": {
+        "kind": "line",
+        "x": "date",
+        "y": "close"
+      },
+      "dataset": {
+        "from_dataset": {
+          "dataset_id": "dataset-1",
+          "revision": 1,
+          "rows_pointer": "/data/rows",
+          "columns": [
+            {
+              "id": "date",
+              "label": "Date",
+              "kind": "date",
+              "pointer": "/date"
+            },
+            {
+              "id": "close",
+              "label": "Close",
+              "kind": "number",
+              "pointer": "/close"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "grid_publish",
+    "method": "grid.publish",
+    "args": {
+      "mode": "create",
+      "layout": "assets",
+      "title": "한국어 日本語 🙂",
+      "rows": [
+        {
+          "symbol": "AAPL",
+          "market": "NASDAQ",
+          "label": "Apple"
+        },
+        {
+          "symbol": "MSFT",
+          "market": "NASDAQ",
+          "label": "Microsoft"
+        }
+      ],
+      "columns": [
+        {
+          "id": "revenue",
+          "label": "Revenue",
+          "unit": "amount"
+        }
+      ],
+      "cells": [
+        [
+          {
+            "empty": "not_checked"
+          }
+        ],
+        [
+          {
+            "empty": "not_checked"
+          }
+        ]
+      ]
+    }
+  },
+  {
+    "name": "dataset_describe",
+    "method": "dataset.describe",
+    "args": {
+      "dataset_id": "dataset-1",
+      "revision": 1
+    }
+  },
+  {
+    "name": "dataset_query",
+    "method": "dataset.query",
+    "args": {
+      "dataset_id": "dataset-1",
+      "revision": 1
+    }
+  },
+  {
+    "name": "dataset_export",
+    "method": "dataset.export",
+    "args": {
+      "dataset_id": "dataset-1",
+      "revision": 1,
+      "path": "notes/report.csv",
+      "format": "json"
+    }
+  },
+  {
+    "name": "calculate",
+    "method": "calculation.run",
+    "args": {
+      "operation": "percent_change",
+      "inputs": {
+        "start": 100,
+        "end": 110
+      }
+    }
+  },
+  {
+    "name": "schedule_list",
+    "method": "schedule.list",
+    "args": {}
+  },
+  {
+    "name": "schedule_read",
+    "method": "schedule.read",
+    "args": {
+      "task_id": "task-1"
+    }
+  },
+  {
+    "name": "schedule_create",
+    "method": "schedule.create",
+    "args": {
+      "request_key": "review",
+      "title": "한국어 日本語 🙂",
+      "prompt": "research",
+      "schedule": {
+        "kind": "once",
+        "at": "research"
+      },
+      "session_mode": "fresh",
+      "status": "active"
+    }
+  },
+  {
+    "name": "schedule_handoff",
+    "method": "schedule.handoff",
+    "args": {
+      "request_key": "review",
+      "title": "한국어 日本語 🙂",
+      "prompt": "research"
+    }
+  },
+  {
+    "name": "schedule_watch",
+    "method": "schedule.watch",
+    "args": {}
+  },
+  {
+    "name": "schedule_briefing",
+    "method": "schedule.briefing",
+    "args": {
+      "schedule": {
+        "kind": "once",
+        "at": "research"
+      },
+      "enabled": true
+    }
+  },
+  {
+    "name": "schedule_update",
+    "method": "schedule.update",
+    "args": {
+      "task_id": "task-1",
+      "expected_revision": 1,
+      "title": "New title"
+    }
+  },
+  {
+    "name": "schedule_set_status",
+    "method": "schedule.set_status",
+    "args": {
+      "task_id": "task-1",
+      "expected_revision": 1,
+      "status": "active"
+    }
+  },
+  {
+    "name": "schedule_delete",
+    "method": "schedule.delete",
+    "args": {
+      "task_id": "task-1",
+      "expected_revision": 1
+    }
+  },
+  {
+    "name": "schedule_run_now",
+    "method": "schedule.run_now",
+    "args": {
+      "task_id": "task-1"
+    }
+  },
+  {
+    "name": "schedule_stop",
+    "method": "schedule.stop",
+    "args": {
+      "task_id": "task-1",
+      "run_id": "run-1"
+    }
+  }
+]

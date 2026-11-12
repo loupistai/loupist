@@ -1125,3 +1125,153 @@ fn a_reply_level_argument_refusal_has_no_parameter_prefix() {
     assert_eq!(body["retryable"], false);
     assert!(body["next"].as_str().unwrap().contains("Finish the reply"));
 }
+
+#[test]
+fn argument_controls_are_refused_without_echoing_text_or_bad_keys() {
+    for code in (0_u8..=31).chain([127]) {
+        let text = format!("private-text{}tail", char::from(code));
+        let args = json!({"drawings":[{"label":text}]});
+        if matches!(code, 9 | 10 | 13) {
+            validate_argument_text(&args).unwrap();
+            continue;
+        }
+        let error = validate_argument_text(&args).unwrap_err();
+        assert!(
+            matches!(&error,BrokerError::WithNext { source,.. } if matches!(source.as_ref(),BrokerError::InvalidArguments { field,.. } if field=="drawings[0].label"))
+        );
+        let body = error_body(&error);
+        assert_eq!(
+            body["next"],
+            "Remove control characters and write the text again as plain UTF-8."
+        );
+        assert!(!body.to_string().contains("private-text"));
+        let key = format!("private-key{}tail", char::from(code));
+        let error = validate_argument_text(&json!({"metadata":{key:"value"}})).unwrap_err();
+        assert!(error.to_string().starts_with("metadata:"));
+        assert!(!error_body(&error).to_string().contains("private-key"));
+    }
+    for text in [
+        "한국어",
+        "日本語",
+        "🙂🚀",
+        "e\u{301}",
+        "line 1\nline 2\r\n\tindent",
+        r#"print("\x0c")"#,
+    ] {
+        let args = json!({text:[text,{"nested":text}],"code":text});
+        validate_argument_text(&args).unwrap();
+    }
+    let bad = json!({"metadata":{"dotted.key":["bad\u{6}"]}});
+    let error = validate_argument_text(&bad).unwrap_err();
+    assert!(error
+        .to_string()
+        .starts_with("metadata[\"dotted.key\"][0]:"));
+}
+
+#[tokio::test]
+async fn every_broker_tool_keeps_its_control_free_arguments_unchanged() {
+    struct Echo;
+    #[async_trait]
+    impl ToolExecutor for Echo {
+        async fn execute(
+            &self,
+            _: &ToolPolicy,
+            _: ToolMethod,
+            params: Value,
+        ) -> Result<Value, BrokerError> {
+            Ok(params)
+        }
+    }
+    let cases: Vec<Value> = serde_json::from_str(include_str!("tool-arguments.json")).unwrap();
+    let routes: std::collections::BTreeSet<_> = cases
+        .iter()
+        .map(|case| case["method"].as_str().unwrap())
+        .collect();
+    let catalog: std::collections::BTreeSet<_> = tools::TOOL_CATALOG
+        .tools
+        .iter()
+        .filter_map(|tool| tool.method.as_deref())
+        .collect();
+    assert_eq!(
+        routes, catalog,
+        "one schema-valid sample per catalog broker route"
+    );
+    assert_eq!(routes.len(), cases.len());
+    for case in cases.into_iter().chain([
+        json!({"method":"native.authorize","args":{"name":"read","path":"notes.txt","input":{"path":"notes.txt","limit":10}}}),
+        json!({"method":"mcp.connect","args":{"server_id":"openbb"}}),
+        json!({"method":"mcp.call","args":{"server_id":"openbb","tool_name":"equity_quote","arguments":{"symbol":"AAPL"}}}),
+    ]) {
+        let request=serde_json::from_value(json!({"protocol":PROTOCOL,"id":"control-free","token":"fixture-token","method":case["method"],"params":case["args"]})).unwrap();
+        let mut policy = policy();
+        policy.use_memory = true;
+        policy.propose_memory_updates = true;
+        policy.memory_proposal_budget = MAX_MEMORY_PROPOSALS;
+        let result=execute_request(request,"fixture-token",&policy,Arc::new(StdMutex::new(TransactionCardinality::default())),Arc::new(Echo),"delivery").await
+            .unwrap_or_else(|(_,error)|panic!("{}: {error}",case["method"]));
+        assert_eq!(result.result,case["args"]);
+    }
+}
+
+#[tokio::test]
+async fn invalid_control_text_never_reaches_execution() {
+    struct Never;
+    #[async_trait]
+    impl ToolExecutor for Never {
+        async fn execute(
+            &self,
+            _: &ToolPolicy,
+            _: ToolMethod,
+            _: Value,
+        ) -> Result<Value, BrokerError> {
+            panic!("invalid text executed")
+        }
+    }
+    for (method, params, field) in [
+        (
+            "chart.publish",
+            json!({"drawings":[{"label":"\u{6}1".repeat(40)}]}),
+            "drawings[0].label",
+        ),
+        (
+            "lens.file",
+            json!({"pages":[{"ops":[{"markdown":"bad\u{b}text"}]}]}),
+            "pages[0].ops[0].markdown",
+        ),
+        (
+            "journal.save",
+            json!({"judgment":"bad\u{1b}text"}),
+            "judgment",
+        ),
+        (
+            "schedule.create",
+            json!({"prompt":"bad\u{7f}text"}),
+            "prompt",
+        ),
+        ("python.run", json!({"code":"print(1)\u{c}"}), "code"),
+        (
+            "native.authorize",
+            json!({"name":"write","path":"notes.txt","input":{"path":"notes.txt","content":"bad\u{6}text"}}),
+            "input.content",
+        ),
+    ] {
+        let request=serde_json::from_value(json!({"protocol":PROTOCOL,"id":"invalid-controls","token":"fixture-token","method":method,"params":params})).unwrap();
+        let error = match execute_request(
+            request,
+            "fixture-token",
+            &policy(),
+            Arc::new(StdMutex::new(TransactionCardinality::default())),
+            Arc::new(Never),
+            "delivery",
+        )
+        .await
+        {
+            Err((_, error)) => error,
+            Ok(_) => panic!("bad arguments executed"),
+        };
+        assert!(
+            error.to_string().starts_with(&format!("{field}:")),
+            "{error}"
+        );
+    }
+}

@@ -1074,3 +1074,14 @@ test("Home's weekday morning briefing chip loads schedules and submits within on
   assert.equal(messages.filter((message) => message.role === "user").length, 1);
   assert.deepEqual(frames.map(({ method, params }) => ({ method, params })), [{ method: "schedule.briefing", params: { enabled: true, schedule } }]);
 });
+
+
+test("broker control-character corpus keeps one schema-valid call per routed tool", () => {
+  const cases = JSON.parse(readFileSync(new URL("../src-tauri/src/broker/tool-arguments.json", import.meta.url), "utf8"));
+  assert.deepEqual(cases.map(item => item.method).sort(), CATALOG.tools.filter(tool => tool.method).map(tool => tool.method).sort());
+  for (const item of cases) {
+    const tool = CATALOG.tools.find(tool => tool.name === item.name);
+    assert.equal(tool.method, item.method);
+    assert.doesNotThrow(() => validateToolArguments(tool, { type: "toolCall", id: "corpus", name: item.name, arguments: item.args }), item.name);
+  }
+});

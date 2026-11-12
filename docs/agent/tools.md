@@ -28,6 +28,16 @@ An active tool with a stale source, wrong Chat or artifact kind, or missing host
 context names the field and a repair, rather than suggesting a capability load.
 Missing provider setup names that provider. Web refusals distinguish URL policy
 from a scanned document with no text layer.
+Before dispatch, the broker scans argument string values and object keys once
+within its existing frame limit. It refuses C0 controls other than tab, LF and CR,
+and DEL, naming the first field path without echoing its text. A bad object key
+names its enclosing object (`$` for the root), so the key itself is not echoed.
+The repair asks for plain UTF-8 text; Unicode letters, emoji and combining marks
+stay valid. Python code has no exception; escaped characters in source remain
+ordinary source text. This applies to model arguments, not fetched tool results
+or already saved artifacts. Native file calls forward their complete `input`
+through authorization for this same check; only the resolved `path` controls
+file authority. Thus write/edit text and search patterns receive the check too.
 Internal storage failures and free-form finance diagnostics return host-owned
 repair messages rather than raw errors, URLs or private paths. Native finance
 results refuse an echoed API key before capture or retention; bundled MCP also
