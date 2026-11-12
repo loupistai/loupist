@@ -858,25 +858,39 @@ fn valid_saved_credential(value: &Value) -> bool {
 /// Every saved provider credential value (API keys and sign-in tokens) in
 /// Pi's private `auth.json`, for the sharing private-string scan. Values are
 /// compared in Rust only; they are never returned to the renderer or logged.
-pub(crate) fn saved_credential_values(agent_data_dir: &Path) -> Vec<String> {
-    fn collect(value: &Value, out: &mut Vec<String>) {
+pub(crate) fn saved_credential_values(agent_data_dir: &Path) -> Result<Vec<String>, CommandError> {
+    fn collect(value: &Value, credential: bool, out: &mut Vec<String>) {
         match value {
-            Value::String(text) if text.len() >= 12 => out.push(text.clone()),
-            Value::Array(items) => items.iter().for_each(|item| collect(item, out)),
+            Value::String(text) if !text.is_empty() && (credential || text.len() >= 12) => {
+                out.push(text.clone());
+            }
+            Value::Array(items) => items.iter().for_each(|item| collect(item, credential, out)),
             Value::Object(map) => map
                 .iter()
                 .filter(|(key, _)| key.as_str() != "type")
-                .for_each(|(_, item)| collect(item, out)),
+                .for_each(|(key, item)| {
+                    let secret = matches!(
+                        key.as_str(),
+                        "key"
+                            | "apiKey"
+                            | "api_key"
+                            | "access"
+                            | "refresh"
+                            | "access_token"
+                            | "refresh_token"
+                            | "id_token"
+                            | "client_secret"
+                    );
+                    collect(item, credential || secret, out);
+                }),
             _ => {}
         }
     }
     let mut values = Vec::new();
-    if let Ok(auth) = read_auth_map(&agent_data_dir.join("auth.json")) {
-        for entry in auth.values() {
-            collect(entry, &mut values);
-        }
+    for entry in read_auth_map(&agent_data_dir.join("auth.json"))?.values() {
+        collect(entry, false, &mut values);
     }
-    values
+    Ok(values)
 }
 
 /// Removes one provider's saved sign-in grant (`type: "oauth"`) from Pi's
@@ -951,6 +965,30 @@ mod tests {
         ensure_private_regular_file(&path).unwrap();
         std::fs::write(&path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
         ensure_private_regular_file(&path).unwrap();
+    }
+
+    #[test]
+    fn saved_secret_collection_preserves_short_credentials_only_and_propagates_read_errors() {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(saved_credential_values(directory.path())
+            .unwrap()
+            .is_empty());
+        write_auth_fixture(
+            directory.path(),
+            serde_json::json!({
+                "custom-fixture": {"type":"api_key", "key":"pine", "port":"3000", "locale":"en-US", "mode":"fast", "enabled":"true"},
+                "oauth-fixture": {"type":"oauth", "access":"a", "refresh":"r", "expires":1234, "accountId":"user"}
+            }),
+        );
+        assert_eq!(
+            saved_credential_values(directory.path()).unwrap(),
+            ["pine", "a", "r"]
+        );
+        std::fs::write(directory.path().join("auth.json"), "invalid auth").unwrap();
+        assert!(saved_credential_values(directory.path()).is_err());
+        std::fs::remove_file(directory.path().join("auth.json")).unwrap();
+        std::fs::create_dir(directory.path().join("auth.json")).unwrap();
+        assert!(saved_credential_values(directory.path()).is_err());
     }
 
     fn model(provider: &str, name: &str, thinking_levels: &[&str]) -> ConfiguredModel {

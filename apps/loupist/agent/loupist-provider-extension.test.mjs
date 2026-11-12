@@ -123,16 +123,14 @@ test("persists credentials through Pi storage without returning secrets", async 
   writeFileSync(resultPath, "stale result".repeat(8_192), { mode: 0o600 });
   process.env.PI_CODING_AGENT_DIR = temporary;
   process.env.LOUPIST_PROVIDER_RESULT_FILE = resultPath;
-  process.env.LOUPIST_PROVIDER_API_KEY = "api-key-secret";
   t.after(() => {
     delete process.env.PI_CODING_AGENT_DIR;
     delete process.env.LOUPIST_PROVIDER_RESULT_FILE;
-    delete process.env.LOUPIST_PROVIDER_API_KEY;
     rmSync(temporary, { recursive: true, force: true });
   });
 
   const moduleUrl = `${pathToFileURL(join(import.meta.dirname, "loupist-provider-extension.mjs"))}?test=${Date.now()}`;
-  const { default: extension } = await import(moduleUrl);
+  const { default: extension, API_KEY_TITLE } = await import(moduleUrl);
   const commands = new Map();
   extension({
     registerCommand: (name, command) => commands.set(name, command),
@@ -147,7 +145,6 @@ test("persists credentials through Pi storage without returning secrets", async 
   ]);
   assert.equal(process.env.LOUPIST_PROVIDER_RESULT_FILE, undefined);
   assert.equal(process.env.LOUPIST_PROVIDER_REQUEST_FILE, undefined);
-  assert.equal(process.env.LOUPIST_PROVIDER_API_KEY, undefined);
 
   const notices = [];
   const models = [
@@ -269,6 +266,13 @@ test("persists credentials through Pi storage without returning secrets", async 
     },
     ui: {
       notify: (message) => notices.push(message),
+      input: async (title, placeholder, options) => {
+        if (title === "loupist-provider/1:manual_code") return undefined;
+        assert.equal(title, API_KEY_TITLE);
+        assert.equal(placeholder, "");
+        assert.equal(options.timeout, 10_000);
+        return "api-key-secret";
+      },
     },
   };
 
@@ -487,6 +491,98 @@ async function loadExtension(t, name) {
   module.default({ registerCommand: (commandName, command) => commands.set(commandName, command) });
   return { module, commands, temporary, resultPath };
 }
+
+test("API-key input uses only the fixed secret prompt and sanitizes provider errors", async (t) => {
+  const { module, commands, temporary, resultPath } = await loadExtension(t, "key-input");
+  const notices = [];
+  const prompts = [];
+  const secret = "private-input-fixture";
+  let promptType = "secret";
+  let failAfterInput = false;
+  const provider = {
+    id: "anthropic", name: "Anthropic",
+    auth: { apiKey: {
+      login: async (interaction) => {
+        const key = await interaction.prompt({ type: promptType, message: "untrusted title" });
+        interaction.notify({ type: "info", message: key });
+        if (failAfterInput) throw new Error(key);
+        return { type: "api_key", key };
+      },
+      resolve: async ({ credential }) => credential ? { auth: { apiKey: credential.key } } : undefined,
+    } },
+    getModels: () => [],
+  };
+  const context = {
+    modelRegistry: { getProvider: () => provider },
+    ui: {
+      notify: (message) => notices.push(message),
+      input: async (title, placeholder, options) => {
+        prompts.push(title);
+        assert.equal(title, module.API_KEY_TITLE);
+        assert.equal(title, "loupist-provider/1:api_key");
+        assert.equal(placeholder, "");
+        assert.equal(options.timeout, 10_000);
+        return secret;
+      },
+    },
+  };
+  const command = commands.get("loupist-provider-api-key");
+  for (const type of ["text", "select", "manual_code"]) {
+    promptType = type;
+    await assert.rejects(() => command.handler("anthropic set", context), { message: "Provider API key could not be saved" });
+  }
+  assert.deepEqual(prompts, []);
+  assert.equal(readFileSync(resultPath, "utf8"), "");
+  promptType = "secret";
+  failAfterInput = true;
+  await assert.rejects(() => command.handler("anthropic set", context), { message: "Provider API key could not be saved" });
+  assert.equal(readFileSync(resultPath, "utf8"), "");
+  const authAfterFailure = JSON.parse(readFileSync(join(temporary, "auth.json"), "utf8"));
+  assert.equal(authAfterFailure.anthropic, undefined);
+  failAfterInput = false;
+  await command.handler("anthropic set", context);
+  assert.equal(JSON.parse(readFileSync(join(temporary, "auth.json"), "utf8")).anthropic.key, secret);
+  assert.equal(readFileSync(resultPath, "utf8").includes(secret), false);
+  assert.deepEqual(notices, []);
+});
+
+test("cancelled or timed out API-key prompts save no credential and retain no previous answer", async (t) => {
+  const { commands, temporary, resultPath } = await loadExtension(t, "cancelled-key");
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let promptCount = 0;
+  let expire;
+  const provider = {
+    id: "anthropic", name: "Anthropic",
+    auth: { apiKey: {
+      login: async (interaction) => ({ type: "api_key", key: await interaction.prompt({ type: "secret" }) }),
+      resolve: async () => undefined,
+    } },
+    getModels: () => [],
+  };
+  const context = {
+    modelRegistry: { getProvider: () => provider },
+    ui: { input: async (_title, _placeholder, options) => {
+      promptCount++;
+      if (promptCount === 1) return undefined; // Pi's cancelled answer.
+      return new Promise((resolve) => {
+        setTimeout(() => resolve(undefined), options.timeout);
+        expire();
+      });
+    } },
+  };
+  const command = commands.get("loupist-provider-api-key");
+  await assert.rejects(() => command.handler("anthropic set", context), { message: "Provider API key could not be saved" });
+  const prompted = new Promise((resolve) => { expire = resolve; });
+  const timedOut = assert.rejects(() => command.handler("anthropic set", context), { message: "Provider API key could not be saved" });
+  await prompted;
+  t.mock.timers.tick(10_000);
+  await timedOut;
+  assert.equal(promptCount, 2);
+  assert.equal(JSON.parse(readFileSync(join(temporary, "auth.json"), "utf8")).anthropic, undefined);
+  assert.equal(readFileSync(resultPath, "utf8"), "");
+  await command.handler("anthropic clear", context);
+  assert.equal(promptCount, 2, "clearing a credential never requests a key");
+});
 
 function oauthOnlyProvider(id, login) {
   return {

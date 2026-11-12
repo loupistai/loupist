@@ -180,15 +180,19 @@ pub fn views_for_state(
 /// Every stored secret of every custom connection (headers, environment,
 /// client secrets and tokens), for the sharing private-string scan. Values
 /// stay in Rust.
-pub(crate) fn protected_values_for_state(state: &AppState) -> Vec<String> {
-    let Ok(records) = records_for_state(state) else {
-        return Vec::new();
-    };
-    records
-        .iter()
-        .filter_map(|record| credentials::load(&state.credential_environment, &record.id).ok())
-        .flat_map(|secrets| secrets.protected_values())
-        .collect()
+pub(crate) fn protected_values_for_state(state: &AppState) -> Result<Vec<String>, ConnectionError> {
+    protected_values_with_loader(state, credentials::load)
+}
+
+fn protected_values_with_loader(
+    state: &AppState,
+    mut load: impl FnMut(&str, &str) -> Result<Secrets, ConnectionError>,
+) -> Result<Vec<String>, ConnectionError> {
+    let mut values = Vec::new();
+    for record in records_for_state(state)? {
+        values.extend(load(&state.credential_environment, &record.id)?.protected_values());
+    }
+    Ok(values)
 }
 
 pub fn valid_id(id: &str) -> bool {

@@ -39,7 +39,15 @@ capture says `publisher`. A relationship leaves with eligible Sources only; one 
 every Source is private or restricted is left out and counted. A name leaves only with
 a relationship.
 
-Before a save or publish, Rust scans every string that would leave. A store, SQL, row-decoding or finance-credential read error blocks sharing; an absent credential stays empty. Credentials
+Before a save or publish, Rust scans every string that would leave. A store, SQL,
+row-decoding, provider-auth-file, custom-connection-file or credential read error
+blocks sharing; an absent credential stays empty. If saved credentials cannot be
+checked, sharing asks the person to unlock the Keychain or reconnect and try again;
+it never scans with a partial credential list. Saved credentials of eight or more
+characters match substrings. Credentials of four to seven characters match only
+whole tokens, bounded by non-alphanumeric characters or the string ends. Values
+shorter than four characters are not matched and do not block sharing. Ordinary
+short settings such as ports, locales and modes are not credential substrings. Credentials
 (including every stored provider key or sign-in token, custom-connection secret,
 connector credential and the GitHub token), account numbers and a holding's exact amount
 next to its name block until that item is left out; an email, phone number, the macOS

@@ -131,9 +131,20 @@ fn credential(text: &str, secrets: &[String]) -> bool {
         }
     });
     high_entropy
-        || secrets
-            .iter()
-            .any(|secret| secret.len() >= 8 && text.contains(secret.as_str()))
+        || secrets.iter().any(|secret| match secret.chars().count() {
+            0..=3 => false,
+            4..=7 => text.match_indices(secret.as_str()).any(|(start, matched)| {
+                text[..start]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|c| !c.is_alphanumeric())
+                    && text[start + matched.len()..]
+                        .chars()
+                        .next()
+                        .is_none_or(|c| !c.is_alphanumeric())
+            }),
+            _ => text.contains(secret.as_str()),
+        })
 }
 
 /// Digit runs that may be grouped by single spaces or dashes ("1234-5678").
@@ -933,6 +944,57 @@ pub(crate) fn clean_and_scan(text: &str) -> (String, Vec<ItemFinding>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_short_credentials_require_whole_tokens_and_four_characters() {
+        for key in ["pine", "abc12", "abcdefg", "한국어키"] {
+            let context = PrivateContext {
+                secrets: vec![key.into()],
+                ..Default::default()
+            };
+            for text in [
+                key.to_owned(),
+                format!("key={key}"),
+                format!("({key})"),
+                format!("{key}-suffix"),
+            ] {
+                assert!(
+                    scan_private(&text, &context)
+                        .iter()
+                        .any(|hit| hit.class == PrivateClass::Credential),
+                    "{text}"
+                );
+            }
+            for text in [
+                format!("x{key}"),
+                format!("{key}x"),
+                format!("가{key}나"),
+                format!("3{key}4"),
+            ] {
+                assert!(scan_private(&text, &context).is_empty(), "{text}");
+            }
+        }
+        for key in ["", "a", "ab", "abc", "한글키"] {
+            assert!(!credential(key, &[key.into()]));
+        }
+        assert!(credential("xabcdefghx", &["abcdefgh".into()]));
+        for text in [
+            "pineapple",
+            "spine",
+            "alpine",
+            "3000",
+            "8080",
+            "en-US",
+            "ko-KR",
+            "fast",
+            "true",
+            "false",
+            "debug",
+            "json",
+        ] {
+            assert!(!credential(text, &["pine".into()]), "{text}");
+        }
+    }
 
     fn context() -> PrivateContext {
         PrivateContext {
