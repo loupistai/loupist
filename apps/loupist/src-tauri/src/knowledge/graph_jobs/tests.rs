@@ -1689,3 +1689,65 @@ fn parking_an_unfunded_queue_preserves_legacy_attempt_and_uncertainty_markers() 
         }
     }
 }
+
+#[test]
+fn a_spent_legacy_slice_cannot_borrow_a_completed_slices_unknown_allowance() {
+    type Case = (&'static str, fn(&mut JobDocument));
+    let cases: &[Case] = &[
+        ("retry", |doc| doc.interrupted_attempts = 1),
+        ("host interruption", |doc| doc.host_interruptions = 1),
+        ("unsent attempt", |doc| doc.unsent_attempts = 1),
+    ];
+    for (name, mark) in cases {
+        let (_dir, store) = open();
+        let settings = GraphProcessingSettings {
+            max_llm_calls: 17,
+            ..enabled()
+        };
+        let first = queued(
+            &store,
+            &settings,
+            "loupist-a",
+            "A".repeat(EPISODE_CHUNK_CHARS * 2).as_bytes(),
+        );
+        let second = store
+            .graph_jobs("loupist-a")
+            .unwrap()
+            .into_iter()
+            .find(|job| job.job_id != first.job_id)
+            .unwrap();
+        // Old slices were [9, 8]. A completed receipt's 9 may already have
+        // been spent, and the second slice has used its 8 in an earlier attempt.
+        store
+            .transact(|write| {
+                let mut document = first.document.clone();
+                document.extraction.max_llm_calls = 9;
+                document.inference_attempted = true;
+                write_status(
+                    write.tx,
+                    &first.job_id,
+                    JOB_QUEUED,
+                    JOB_COMPLETED,
+                    &document,
+                )?;
+                let mut document = second.document.clone();
+                mark(&mut document);
+                write_status(write.tx, &second.job_id, JOB_QUEUED, JOB_QUEUED, &document)?;
+                Ok(())
+            })
+            .unwrap();
+        let observed = claim(&store, &settings, &second.job_id, T + 1);
+        assert_eq!(observed.status, JOB_PAUSED, "{name}");
+        assert_eq!(observed.document.extraction.max_llm_calls, 0, "{name}");
+        assert_eq!(
+            store
+                .graph_job("loupist-a", &first.job_id)
+                .unwrap()
+                .document
+                .extraction
+                .max_llm_calls,
+            9,
+            "old paid credit must stay untouched"
+        );
+    }
+}

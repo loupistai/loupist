@@ -1576,6 +1576,9 @@ pub(super) fn claim_running(
                 && !job.document.usage_uncertain
                 && job.document.attempt_id.is_none()
                 && job.document.lease_expires_at_ms.is_none()
+                && job.document.interrupted_attempts == 0
+                && job.document.host_interruptions == 0
+                && job.document.unsent_attempts == 0
             {
                 job.document.extraction.max_llm_calls = job
                     .document
