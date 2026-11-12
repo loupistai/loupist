@@ -105,8 +105,8 @@
 .morning-name-chip { display: inline-flex; align-items: center; gap: 6px; min-height: var(--gg-size-control-sm); padding: 0 var(--gg-space-3); border: 0; border-radius: var(--gg-radius-full); color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); font: inherit; font-size: var(--gg-text-control); line-height: 1.2; cursor: pointer; }
 .morning-name-chip:hover { background: var(--gg-color-bg-selected); }
 .morning-name-chip .map-swatch { width: 8px; height: 8px; }
-.morning-link { display: inline; min-height: var(--gg-size-control-sm); padding: 0; border: 0; color: var(--gg-color-accent-ink); background: transparent; font: inherit; cursor: pointer; }
-.morning-link:hover { text-decoration: underline; }
+.morning-link { display: inline; min-height: var(--gg-size-control-sm); padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
+.morning-link:hover { text-decoration-color: currentColor; }
 /* "See all in Map" closes the list of names on a line of its own, wherever the chips wrap. */
 .morning-link[data-line] { display: block; width: fit-content; margin-top: var(--gg-space-1); }
 .morning-skeleton { display: inline-block; width: min(320px, 70%); height: 10px; border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover); vertical-align: middle; }
@@ -1974,8 +1974,8 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .chat-rail-card[data-card="using"] .chat-rail-row-label { white-space: normal; overflow-wrap: anywhere; }
 .chat-rail-row-kind { flex: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .chat-rail-row small { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
-.chat-rail-row .chat-rail-from-loupist { color: var(--gg-color-accent-ink); font-size: var(--gg-text-caption); }
-.chat-rail-more { justify-self: start; padding: 0; border: 0; background: transparent; color: var(--gg-color-accent-ink); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
+.chat-rail-row .chat-rail-from-loupist { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+.chat-rail-more { justify-self: start; padding: 0; border: 0; background: transparent; font: inherit; font-size: var(--gg-text-meta); cursor: pointer; color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
 .chat-rail-map-link { display: inline-flex; align-items: center; gap: var(--gg-space-1); justify-self: start; min-height: var(--gg-size-control-sm); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .chat-rail-map-link:hover { color: var(--gg-color-text-primary); text-decoration: underline; }
 .chat-rail-map-link svg { width: var(--gg-space-3); height: var(--gg-space-3); }
@@ -1997,8 +1997,8 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 /* The composer tray (context-rail.md R2): square thumbnails and compact file chips, then the count and Clear all. */
 .composer-attachments { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); width: 100%; padding: 10px var(--gg-space-3) 0; }
 .composer-attachments-meta { display: inline-flex; align-items: center; gap: var(--gg-space-2); margin-left: auto; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
-.composer-attachments-meta button { padding: 0; border: 0; background: transparent; color: var(--gg-color-accent-ink); font: inherit; cursor: pointer; }
-.composer-attachments-meta button:hover { text-decoration: underline; }
+.composer-attachments-meta button { padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
+.composer-attachments-meta button:hover { text-decoration-color: currentColor; }
 .composer-thumb { position: relative; flex: none; width: 56px; height: 56px; margin: 0; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); overflow: visible; }
 .composer-thumb img { width: 100%; height: 100%; border-radius: var(--gg-radius-sm); object-fit: cover; }
 .composer-thumb button, .composer-file-chip button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 4px; border: 0; background: transparent; color: var(--gg-color-text-secondary); cursor: pointer; }

@@ -279,7 +279,12 @@
   overflow-x: auto;
   scrollbar-width: thin;
   column-gap: 2px;
+  scroll-padding-inline: var(--gg-space-4);
 }
+
+.workspace-tabs[data-overflow-end] { mask-image: linear-gradient(to right, var(--gg-color-text-primary) calc(100% - 16px), transparent); }
+.workspace-tabs[data-overflow-start] { mask-image: linear-gradient(to right, transparent, var(--gg-color-text-primary) 16px); }
+.workspace-tabs[data-overflow-start][data-overflow-end] { mask-image: linear-gradient(to right, transparent, var(--gg-color-text-primary) 16px, var(--gg-color-text-primary) calc(100% - 16px), transparent); }
 
 .workspace-tab-list, .workspace-tab-actions { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; grid-row: 1; }
 .workspace-tab-actions { pointer-events: none; }
@@ -899,8 +904,9 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
     position: absolute;
     inset: 0 0 0 auto;
     z-index: var(--gg-z-dialog);
-    /* The narrow overlay leaves a strip of the chat visible (side-panel spec P1). */
-    width: min(480px, calc(100% - 64px));
+    /* Above 840px of stage the overlay leaves a strip of the chat visible (side-panel spec P1); below it
+       the sheet covers the whole stage, since a strip that narrow cannot be read (chat design change 13). */
+    width: max(min(480px, calc(100% - 64px)), min(100%, calc((840px - 100%) * 9999)));
     min-width: 0;
     height: auto;
     padding-left: 0;
@@ -925,7 +931,7 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 
   /* The sheet covers the right side. The chat wraps into the strip that stays visible, so a line is not sliced. */
   .app-stage:has(.artifact-panel:not([data-placement="bottom"])) .app-stage-view {
-    padding-right: min(480px, calc(100% - 64px));
+    padding-right: clamp(0px, calc((100% - 840px) * 9999), min(480px, calc(100% - 64px)));
   }
 }
 
