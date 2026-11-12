@@ -238,7 +238,13 @@ pub(super) fn save_research(
             });
         }
     }
-    let research_id = mint_id("rsh");
+    // Working-note links name the current note, so replacing its body keeps
+    // its identity. The expected id above still guards creation vs replacement.
+    let research_id = request
+        .working_note
+        .as_ref()
+        .and_then(|note| note.expected_research_id.clone())
+        .unwrap_or_else(|| mint_id("rsh"));
     let journal = match &request.journal {
         None => None,
         Some(draft) => {
@@ -291,8 +297,8 @@ pub(super) fn save_research(
         })
         .transpose()?
         .flatten();
-    // A note has one retained body per Chat. Keep the expected identity only
-    // for optimistic concurrency; it is not a link to a historical version.
+    // A note has one retained body and one stable identity per Chat. The
+    // expected identity is a write precondition, not part of the retained body.
     let replaces_note = request.working_note.is_some();
     let working_note = request.working_note.map(|mut note| {
         note.expected_research_id = None;
@@ -424,15 +430,16 @@ fn later_notes(
         return Ok(BTreeMap::new());
     }
     // Batch all anchors in two statements, independent of table size and hits.
-    // Primary-key lookups preserve same-Loupist and strictly-later authority.
+    // References were checked when saved. Replacement advances a note's rowid,
+    // so rowid order cannot decide whether an existing link still applies.
     let mut anchors = tx.prepare(
-        "SELECT research_id, rowid FROM knowledge_research_records
+        "SELECT research_id, origin_chat_id FROM knowledge_research_records
          WHERE research_id IN (SELECT value FROM json_each(?2)) AND loupist_id = ?1",
     )?;
     let anchors = anchors
         .query_map(
             params![loupist_id, serde_json::to_string(research_ids)?],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         )?
         .collect::<rusqlite::Result<BTreeMap<_, _>>>()?;
     let mut statement = tx.prepare(LATER_NOTE_CANDIDATES_SQL)?;
@@ -461,9 +468,9 @@ fn later_notes(
             .then_with(|| right_row.cmp(left_row))
     });
     let mut result: BTreeMap<String, Vec<LaterNote>> = BTreeMap::new();
-    for (rowid, note) in candidates {
+    for (_, note) in candidates {
         for id in &note.previous_note_ids {
-            if !anchors.get(id).is_some_and(|anchor| *anchor < rowid) {
+            if !anchors.get(id).is_some_and(|chat| *chat != note.chat_id) {
                 continue;
             }
             let later = result.entry(id.clone()).or_default();
@@ -1480,6 +1487,52 @@ mod search_tests {
             .is_err());
     }
 
+    #[test]
+    fn working_note_links_keep_resolving_after_a_body_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = KnowledgeStore::open(dir.path().join("knowledge.sqlite")).unwrap();
+        let id = store
+            .transact(|w| Ok(save_note(w, "original", "Old premise", 1)))
+            .unwrap();
+        store
+            .transact(|w| {
+                insert_later_note(w.tx, &id, "loupist-a", 2);
+                let saved = w.save_research(SaveResearch {
+                    loupist_id: "loupist-a".into(),
+                    turn_id: "original".into(),
+                    at_ms: 3,
+                    observations: String::new(),
+                    interpretation: String::new(),
+                    assumptions: String::new(),
+                    evaluation: String::new(),
+                    journal: None,
+                    note_inputs: None,
+                    working_note: Some(WorkingNoteDraft {
+                        title: "Original".into(),
+                        markdown: "New premise".into(),
+                        change_summary: "Corrected premise".into(),
+                        expected_research_id: Some(id.clone()),
+                    }),
+                })?;
+                assert_eq!(saved.research_id, id);
+                Ok(())
+            })
+            .unwrap();
+        let note = store
+            .read(|w| read_working_note(w.tx, "loupist-a", &id))
+            .unwrap();
+        assert_eq!(note.markdown, "New premise");
+        assert_eq!(note.later_notes.len(), 1);
+        assert_eq!(
+            store
+                .research_history("loupist-a", "New premise", None, Some(20))
+                .unwrap()
+                .hits[0]
+                .research_id,
+            id
+        );
+    }
+
     fn insert_later_note(
         tx: &Transaction<'_>,
         anchor: &str,
@@ -1507,6 +1560,25 @@ mod search_tests {
         )
         .unwrap();
         id
+    }
+
+    #[test]
+    fn later_note_discovery_requires_the_same_owner_and_an_explicit_reference() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = KnowledgeStore::open(dir.path().join("knowledge.sqlite")).unwrap();
+        let id = store
+            .transact(|w| {
+                let id = save_note(w, "original", "Original premise", 1);
+                let other = save_note(w, "unrelated", "Unrelated premise", 2);
+                insert_later_note(w.tx, &id, "loupist-b", 3);
+                insert_later_note(w.tx, &other, "loupist-a", 4);
+                Ok(id)
+            })
+            .unwrap();
+        let note = store
+            .read(|w| read_working_note(w.tx, "loupist-a", &id))
+            .unwrap();
+        assert!(note.later_notes.is_empty());
     }
 
     #[test]
