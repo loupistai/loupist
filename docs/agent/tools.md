@@ -17,6 +17,8 @@ service handlers independently validate arguments, ownership and evidence.
 Host-handled `as_of` treats null as absent and rejects other non-string values;
 non-null optional `world_read` revision, span and center-node IDs must be bounded
 strings.
+The runtime profile advertises a native finance tool only when its vendor's exact
+capability is enabled: enabling public wallets alone does not expose DefiLlama.
 Journal saves and reviews share one per-turn reservation, released for an
 undelivered call. Acknowledged web pages preserve all issued pagination offsets
 even when deliveries finish out of order.
