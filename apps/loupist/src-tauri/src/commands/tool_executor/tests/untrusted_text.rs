@@ -273,6 +273,18 @@ async fn untrusted_text_receipt_survives_reply_storage_and_both_history_tools() 
             true,
         ),
         (
+            "conversation.memory",
+            json!({"action":"search","query":"Ignore","role":"assistant"}),
+            "/messages/0/title",
+            true,
+        ),
+        (
+            "conversation.memory",
+            json!({"action":"search","query":"Clean","role":"assistant"}),
+            "/messages/0/title",
+            false,
+        ),
+        (
             "chat.history",
             json!({"message_id":"original-user"}),
             "/content",

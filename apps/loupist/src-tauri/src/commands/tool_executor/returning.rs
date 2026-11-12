@@ -16,6 +16,7 @@ impl AppToolExecutor {
         result: &Value,
     ) -> Result<Option<Returning>, BrokerError> {
         match method {
+            ToolMethod::ArtifactList => self.returning_artifact_titles(result),
             ToolMethod::RunResultsList => {
                 // The registry stores warnings before presentation delimiters.
                 // Listing receipts must not promote provider prose to host advice.
@@ -224,6 +225,62 @@ impl AppToolExecutor {
         )
     }
 
+    fn returning_artifact_titles(&self, result: &Value) -> Result<Option<Returning>, BrokerError> {
+        let mut fields = BTreeMap::new();
+        // Every item normally belongs to one Chat; load that transcript once.
+        let mut messages: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (index, entry) in result["artifacts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let Some(id) = entry["artifact_id"].as_str() else {
+                continue;
+            };
+            let Some(artifact) = self
+                .state
+                .store
+                .get_chat_artifact(id)
+                .map_err(store_error)?
+            else {
+                continue;
+            };
+            if let std::collections::btree_map::Entry::Vacant(slot) =
+                messages.entry(artifact.chat_session_id.clone())
+            {
+                let chat = self
+                    .state
+                    .store
+                    .get_chat(&artifact.chat_session_id)
+                    .map_err(store_error)?;
+                let untrusted = chat
+                    .filter(|chat| chat.loupist_id == self.loupist_id)
+                    .into_iter()
+                    .flat_map(|chat| chat.messages)
+                    .filter(crate::domain::ChatMessage::has_untrusted_text)
+                    .map(|message| message.id)
+                    .collect();
+                slot.insert(untrusted);
+            }
+            let Some(revision) = self
+                .state
+                .store
+                .get_chat_artifact_current(id)
+                .map_err(store_error)?
+            else {
+                continue;
+            };
+            if messages[&artifact.chat_session_id].contains(&revision.source_message_id) {
+                fields.insert(
+                    format!("/artifacts/{index}/title"),
+                    "saved artifact from third-party text".into(),
+                );
+            }
+        }
+        Ok((!fields.is_empty()).then_some(Returning::Fields(fields)))
+    }
+
     fn returning_artifact(
         &self,
         method: ToolMethod,
@@ -340,7 +397,7 @@ impl AppToolExecutor {
                 (
                     entry.get("chatId").and_then(Value::as_str),
                     entry.get("messageId").and_then(Value::as_str),
-                    &["text", "snippet"][..],
+                    &["text", "snippet", "title"][..],
                 )
             };
             if let (Some(chat), Some(message)) = (chat, message) {

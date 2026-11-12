@@ -34,7 +34,8 @@ report that a run failed without copying its stored diagnostic. Third-party resu
 warnings, exported dataset column names and saved results quotes retain the
 third-party-text boundary; receipt IDs and citation URLs remain host fields.
 Warning receipts keep the producer's existing trust class, including trusted
-workspace and reviewed numeric results.
+workspace and reviewed numeric results. Artifact-list and conversation-search
+titles inherit the saved reply's third-party-text marker, as their bodies do.
 Journal saves and reviews share one per-turn reservation, released for an
 undelivered call. Acknowledged web pages preserve all issued pagination offsets
 even when deliveries finish out of order.
