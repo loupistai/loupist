@@ -15,6 +15,7 @@ export const shellScenarios: PreviewScenario[] = [
   { ...base("loupist-settings-tracking", "What the map tracks", () => select(".loupist-tracking-changes"), async () => {
     await openLoupistSettings();
     await click('[data-loupist-section="world"] > summary');
+    await click("[data-loupist-tracking-advanced] > summary");
     await until(() => select(".loupist-tracking-list"), "Tracking list did not load");
     select(".loupist-tracking")?.scrollIntoView({ block: "start" });
   }), setup: async bridge => { await prepareFixture(bridge); bridge.installWorldSchema("loupist-quality", semiconductorTrackingView()); } },

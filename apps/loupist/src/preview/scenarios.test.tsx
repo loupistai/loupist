@@ -31,7 +31,7 @@ describe("design preview scenarios", () => {
       }
       if (scenario.id === "chat-empty") expect(scenario.landmark()!.querySelectorAll("button").length).toBeGreaterThanOrEqual(3);
       if (scenario.id === "thread-morning") {
-        expect(scenario.landmark()!.querySelectorAll(".morning-question")).toHaveLength(3);
+        expect(scenario.landmark()!.querySelectorAll(".morning-question")).toHaveLength(4);
         expect(document.querySelectorAll(".morning-bullets > li")).toHaveLength(4);
       }
       // The strip's check is not repeated as a bullet: the overdue check and the later one remain.
