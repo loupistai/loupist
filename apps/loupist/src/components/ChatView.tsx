@@ -252,6 +252,19 @@ export function ChatView({
   const workspaceAvailable = loupist.availability.status === "available";
   const selectedThinkingLevel = modelSelection.thinking_level;
   const selectedRunOptions = modelSelection.run_options;
+  // The composer's model menu is memoized: keep its inputs stable across streaming ticks.
+  const composerModels = useMemo(() => visibleCatalogModels(modelCatalog), [modelCatalog]);
+  const composerProviders = useMemo(() => modelCatalog?.providers ?? [], [modelCatalog]);
+  const runOptionsKey = JSON.stringify(selectedRunOptions);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run options compare by value
+  const composerSelection = useMemo(() => modelSelection, [selectedModelProfileId, selectedThinkingLevel, runOptionsKey]);
+  const latest = useRef({ onModelResetToAuto, onOpenModelSettings, bridge });
+  latest.current = { onModelResetToAuto, onOpenModelSettings, bridge };
+  const resetModelToAuto = useCallback(() => latest.current.onModelResetToAuto(), []);
+  const openModelSettings = useCallback(() => latest.current.onOpenModelSettings?.(), []);
+  const openUsage = useCallback((provider: string) => {
+    void latest.current.bridge.providerOpenUsage({ provider }).catch((cause) => setConfigurationReadError(errorMessage(cause, t("chatError.manageUsage"))));
+  }, []);
   const activeThread = useMemo<ChatThread | undefined>(() => {
     if (isEmptyChatThreadId(activeThreadId)) {
       return emptyChatThread(loupist.id);
@@ -980,9 +993,9 @@ export function ChatView({
           error={error}
           sendDisabledReason={workspaceAvailable ? undefined : t("chatView.reconnectTheWorkspaceFolderToSendMessages")}
           streamAnnouncement={streamAnnouncement}
-          models={visibleCatalogModels(modelCatalog)}
-          providers={modelCatalog?.providers ?? []}
-          modelSelection={modelSelection}
+          models={composerModels}
+          providers={composerProviders}
+          modelSelection={composerSelection}
           skills={composerSkills}
           plugins={composerPlugins}
           selectedArtifact={selectedArtifact}
@@ -1007,12 +1020,12 @@ export function ChatView({
           onPrivateChatChange={(value) => { memoryChoices.current.privateChat = value; setPrivateChat(value); }}
           onModelSelectionChange={onModelSelectionChange}
           modelAuto={modelAuto}
-          onModelResetToAuto={onModelResetToAuto}
+          onModelResetToAuto={resetModelToAuto}
           onSend={(next, files, draftText) => send(next, files, { draftText })}
           onFollowUp={enqueueFollowUp}
           onAbort={abortActiveRun}
-          onOpenModelSettings={onOpenModelSettings ? () => onOpenModelSettings() : undefined}
-          onOpenUsage={(provider) => { void bridge.providerOpenUsage({ provider }).catch((cause) => setConfigurationReadError(errorMessage(cause, t("chatError.manageUsage")))); }}
+          onOpenModelSettings={onOpenModelSettings ? openModelSettings : undefined}
+          onOpenUsage={openUsage}
           openModelMenuSignal={modelMenuRequest}
           asOf={draft?.asOf}
           onAsOfChange={onAsOfChange}
