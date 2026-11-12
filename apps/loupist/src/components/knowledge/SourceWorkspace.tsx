@@ -59,6 +59,8 @@ const sourceProcessingLabel = (status?: string) => {
     default: return i18n.t("knowledge:sourceWorkspace.sourceSaved");
   }
 };
+/** A row shows its Map status only when it says more than "Source saved": a finished or unprocessed source stays quiet. */
+const quietStatus = (status?: string) => status === "completed" || sourceProcessingLabel(status) === sourceProcessingLabel();
 
 type Props = { bridge: LoupistBridge; catalog: KnowledgeCatalog; location: KnowledgeLocation; query?: string; onQueryChange?: (query: string) => void; onManageProcessing?: () => void; onAddSource?: () => void; readerOnly?: boolean; compact?: boolean; onOpen: (location: KnowledgeLocation) => void; onPatch?: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin) => void; onChanged: () => void; onOpenLink?: (url: string) => void | Promise<void> };
 
@@ -197,7 +199,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
           <Button variant="ghost" className="source-library-row" data-testid="source-library-row" data-source-id={item.id} aria-current={item.id === selected?.sourceId} onClick={() => onOpen({ loupistId: location.loupistId, surface: "source", recordId: record.recordId, revisionId: record.revisionId, objectId: item.id, view: { ...location.view, readerScrollTop: 0, focusSourceId: item.id }, selection: { kind: "source", sourceId: item.id } })}>
             <span className="memory-rail-copy"><strong>{sourceTitle(item)}</strong>{item.summary ? <span className="source-summary">{item.summary}</span> : null}
               <small className="source-row-meta"><ConnectionOrigin origin={item.origin} /><span className="source-row-origin" title={sourceOrigin(item)}>{compactOrigin(sourceOrigin(item))}</span>{item.publicationTime?.value ?? item.acquiredAt?.value ? <time title={item.publicationTime?.value ?? item.acquiredAt?.value}>{sourceDate(item.publicationTime?.value ?? item.acquiredAt?.value)}</time> : null}
-              {item.processing?.status === "completed" ? null : <span className="source-row-status" data-attention={needsAttention(item.processing?.status) || undefined}>{isProcessing(item.processing?.status) ? <Spinner /> : item.processing?.status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceProcessingLabel(item.processing?.status)}</span>}</small>
+              {quietStatus(item.processing?.status) ? null : <span className="source-row-status" data-attention={needsAttention(item.processing?.status) || undefined}>{isProcessing(item.processing?.status) ? <Spinner /> : item.processing?.status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceProcessingLabel(item.processing?.status)}</span>}</small>
             </span>
           </Button>
         </li>)}

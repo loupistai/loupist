@@ -164,6 +164,17 @@ it("filters source processing independently of successful source storage", async
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(4);
 });
 
+it("leaves the default Source saved status off a library row and shows any other status", async () => {
+  const props = await fixture();
+  const statuses = [undefined, "completed", "queued"];
+  const catalog = { ...props.catalog, sources: statuses.map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: status ? { jobId: null, status, error: null } : undefined }] })) };
+  render(<SourceWorkspace {...props} catalog={catalog} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+  const rows = await screen.findAllByRole("button", { name: /Report \d/ });
+  expect(rows).toHaveLength(3);
+  for (const row of rows) expect(row).not.toHaveTextContent("Source saved");
+  expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("Map is updating");
+});
+
 it("opens an exact World relationship from its original source", async () => {
   const props = await fixture();
   render(<SourceWorkspace {...props} />);
