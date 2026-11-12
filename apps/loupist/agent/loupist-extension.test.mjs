@@ -917,9 +917,12 @@ test("catalog schemas survive provider adapters and never ask the model for cred
   assert.match(line("openbb"), /Loading activates common price/);
   assert.doesNotMatch(line("custom.abc123"), /activates|available_tools/);
   assert.doesNotMatch(index, /Providers:/);
-  // Off connections cost one fixed sentence, never a per-entry list, and only when the model can act on it.
-  assert.doesNotMatch(index, /World Bank/);
-  assert.match(index, /Other data sources .* call connection_setup/);
+  // Off connections cost one sentence of display names (no descriptions), and only when the model can act on it.
+  assert.match(index, /Not enabled for this Loupist: World Bank\. .* call connection_setup with that name/);
+  assert.doesNotMatch(index, /Country indicators/);
+  assert.match(formatRuntimeIndex({ ...runtime, unavailable_connections: [] }), /Other data sources .* call connection_setup/);
+  const many = Array.from({ length: 40 }, (_, at) => ({ id: `c${at}`, name: `Source ${at}`, description: "x" }));
+  assert.doesNotMatch(formatRuntimeIndex({ ...runtime, unavailable_connections: many }), /Source 24\b/);
   assert.doesNotMatch(formatRuntimeIndex({ ...runtime, core_tool_names: ["capability_load"] }), /connection_setup/);
   assert.doesNotMatch(index, /Built-in:/);
   assert.match(index, /# On-demand tool packs/);

@@ -59,6 +59,16 @@ const BUNDLED_RUNTIME_NOTE = " Loading activates common price, fundamentals, div
 /** One fixed sentence, so the index stays cache-stable however many connections are off. */
 const OTHER_SOURCES_NOTE = "Other data sources (for example FRED, SEC EDGAR, OpenDART, KRX) can be added: call connection_setup and the user finishes setup in a card.";
 
+// Host-owned display names of bundled connections this Loupist has not enabled, so
+// the model can name the right one instead of guessing.
+function otherSourcesNote(unavailable) {
+  const names = [...new Set((unavailable ?? [])
+    .map((item) => String(item?.name ?? "").replace(/\s+/gu, " ").trim().slice(0, 60))
+    .filter(Boolean))].slice(0, 24);
+  if (names.length === 0) return OTHER_SOURCES_NOTE;
+  return `Not enabled for this Loupist: ${names.join(", ")}. When one of them would answer the question, name it and call connection_setup with that name; the user finishes setup in a card and it works from their next message.`;
+}
+
 function formatCapabilityLine(component) {
   if (component.id === "web-research") return `- \`${component.id}\` — ${component.name}: loaded.`;
   const description = String(component.description ?? "").replace(/\s+/gu, " ").trim();
@@ -85,7 +95,7 @@ export function formatRuntimeIndex(runtime) {
   } else {
     for (const component of connections) lines.push(formatCapabilityLine(component));
   }
-  if ((runtime.core_tool_names ?? []).includes("connection_setup")) lines.push(OTHER_SOURCES_NOTE);
+  if ((runtime.core_tool_names ?? []).includes("connection_setup")) lines.push(otherSourcesNote(runtime.unavailable_connections));
   const onDemand = components.filter((component) => !component.connection && COMPONENT_SPECS.get(component.id)?.preload === false);
   if (onDemand.length > 0) {
     lines.push("", "# On-demand tool packs");
