@@ -95,20 +95,23 @@ export async function clickControl(browser, selector) {
   }
 }
 
-/** The toolbar keeps a folded inert Library button while its action moves to More. */
+/** Library is a persistent toolbar action at every Map width. */
 export async function openMapLibrary(browser, timeout = 15_000) {
   const library = await browser.$("[data-testid=map-view] aside[data-testid=map-library]");
   if (await library.isDisplayed().catch(() => false)) return library;
-  const direct = await browser.$("[data-testid=map-view] button[data-map-library]:not([inert])");
-  if (await direct.isDisplayed().catch(() => false)) await direct.click();
-  else {
-    await clickControl(browser, "[data-testid=map-view] [data-map-more]");
-    const item = await browser.$('[role="menuitemcheckbox"][data-map-library]');
-    await item.waitForDisplayed({ timeout, timeoutMsg: "Map Library action did not appear in More" });
-    await item.click();
-  }
+  const button = await browser.$("[data-testid=map-view] button[data-map-library]");
+  await button.waitForDisplayed({ timeout });
+  await button.click();
   await library.waitForDisplayed({ timeout, timeoutMsg: "Map Library did not open" });
   return library;
+}
+
+/** Custom connections start collapsed; preserve an already open disclosure. */
+export async function openCustomConnections(browser) {
+  const disclosure = await browser.$("[data-custom-connections]");
+  if (await disclosure.getAttribute("open") === null) {
+    await (await disclosure.$(":scope > summary")).click();
+  }
 }
 
 /** The settings sheet is also role=dialog, so the first dialog is not the confirmation. */
@@ -170,7 +173,7 @@ export async function preferEnglish(browser) {
       failure = state.language.error;
       return true;
     }
-    return state.lang === "en" && /Get started|New Loupist|My Bot|Research sessions|\bChat\b/.test(state.text);
+    return state.lang === "en" && /Get started|Connect your AI account|Create your first Loupist|New Loupist|Home|Following|\bChats\b/.test(state.text);
   }, {
     timeout: 20_000,
     interval: 150,
@@ -186,11 +189,11 @@ export async function selectedLoupistTitle(browser) {
 }
 
 /**
- * Open Chat, Map, Briefings or Settings. Settings replaces the header tabs, so
+ * Open Home, Following, Map, Lens, Schedule or Settings. Settings replaces the header tabs, so
  * it is left through its sidebar footer first.
  */
 export async function openMainTab(browser, tab, timeout = 15_000) {
-  if (!["chat", "map", "lens", "schedule", "briefings", "settings"].includes(tab)) throw new Error(`Unknown main tab: ${tab}`);
+  if (!["chat", "following", "map", "lens", "schedule", "briefings", "settings"].includes(tab)) throw new Error(`Unknown main tab: ${tab}`);
   const visible = (selector) => browser.$(selector).isDisplayed().catch(() => false);
   if (await visible("[data-loupist-settings-back]")) await (await browser.$("[data-loupist-settings-back]")).click();
   const inSettings = await visible("#main-panel-settings");
@@ -212,19 +215,16 @@ export async function openMainTab(browser, tab, timeout = 15_000) {
     // Picking the current workspace pane toggles it closed. Opening a
     // destination must be idempotent for successive reader checks.
     if (await visible(tab === "map" ? "[data-testid=map-view]" : "[data-testid=memory-page]")) return;
-    await clickControl(browser, "[data-testid=header-panel-toggle]");
-    const item = await browser.$(`[data-workspace-kind="${tab === "map" ? "world" : "lens"}"]`);
-    await item.waitForDisplayed({ timeout });
-    await item.click();
+    await clickControl(browser, `[data-sidebar-place="${tab}"] button`);
     await browser.$(tab === "map" ? "[data-testid=map-view]" : "[data-testid=memory-page]").waitForDisplayed({ timeout });
   } else if (tab === "chat") {
     if (!await visible("#main-panel-chat")) await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
     if (await visible("[data-workspace-close]")) await clickControl(browser, "[data-workspace-close]");
     await browser.$("#main-panel-chat").waitForDisplayed({ timeout });
   } else {
-    await clickControl(browser, "[data-bot-menu]");
-    await clickControl(browser, "[data-bot-schedule]");
-    await browser.$("#main-panel-schedule").waitForDisplayed({ timeout });
+    const place = tab === "following" ? "following" : "schedule";
+    await clickControl(browser, `[data-sidebar-place="${place}"] button`);
+    await browser.$(`#main-panel-${place}`).waitForDisplayed({ timeout });
   }
 }
 

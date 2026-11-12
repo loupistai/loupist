@@ -23,6 +23,7 @@ import {
   clickControl,
   dialogByTitle,
   openMainTab,
+  openMapLibrary,
   preferEnglish,
   readVisibleMapStats,
   scrub,
@@ -247,13 +248,7 @@ async function closeLibrary() {
 async function openLibrary(tabLabel) {
   await openMainTab(browser, "map");
   await mapStats();
-  const direct = await browser.$("[data-testid=map-view] button[data-map-library]");
-  if (await direct.isDisplayed().catch(() => false)) await direct.click();
-  else {
-    await clickControl(browser, "[data-testid=map-view] [data-map-more]");
-    await (await displayed('[role="menuitemcheckbox"][data-map-library]')).click();
-  }
-  const library = await displayed("[data-testid=map-view] aside[data-testid=map-library]");
+  const library = await openMapLibrary(browser);
   const tab = await childWithText(library, '[role="tab"]', tabLabel);
   if ((await tab.getAttribute("aria-selected")) !== "true") {
     await tab.click();
@@ -269,9 +264,13 @@ async function openLibrary(tabLabel) {
 }
 
 async function openMemorySegment(segment) {
+  if (segment === "about") {
+    await openMainTab(browser, "following");
+    return displayed("[data-testid=memory-about]");
+  }
   await openMainTab(browser, "lens");
   const page = await displayed('section[data-testid=memory-page]');
-  const tabIndex = { about: 1, pages: 2, history: 3 }[segment];
+  const tabIndex = { pages: 1, history: 2 }[segment];
   assert.ok(tabIndex, `Unknown What it knows segment: ${segment}`);
   await (await displayed(`section[data-testid=memory-page] [role="tablist"] [role="tab"]:nth-child(${tabIndex})`)).click();
   await browser.waitUntil(async () => (await page.getAttribute('data-segment')) === segment, {
@@ -383,7 +382,7 @@ async function followAndImportHoldings() {
 }
 
 async function addJournalEntry() {
-  const library = await openLibrary("Journal & notes");
+  const library = await openLibrary("Journal");
   await clickButton("New entry", library);
   const form = await displayed("[data-testid=map-view] aside[data-testid=map-library] form[data-testid=journal-form]");
   const [judgment, reasoning] = await form.$$("textarea");
@@ -394,27 +393,27 @@ async function addJournalEntry() {
   const reader = await displayed("[data-testid=map-view] aside[data-testid=map-reader] article[data-testid=knowledge-journal]");
   await waitForText(reader, JOURNAL.judgment);
   await waitForText(reader, JOURNAL.reasoning);
-  await openLibrary("Journal & notes");
+  await openLibrary("Journal");
   const row = await visibleWithText("[data-testid=map-view] aside[data-testid=map-library] button[data-testid=journal-library-row]", JOURNAL.judgment);
   return row.getAttribute("data-research-id");
 }
 
 async function verifyJournal(id) {
-  const library = await openLibrary("Journal & notes");
+  const library = await openLibrary("Journal");
   await waitForText(library, FIXTURE.journal);
-  await waitForText(library, FIXTURE.note);
   const row = await displayed(`[data-testid=map-view] aside[data-testid=map-library] button[data-testid=journal-library-row][data-research-id="${id}"]`);
   await waitForText(row, JOURNAL.judgment);
   await row.click();
   const reader = await displayed('[data-testid=map-view] aside[data-testid=map-reader] article[aria-label]');
   await waitForText(reader, JOURNAL.judgment);
   await waitForText(reader, JOURNAL.reasoning);
-  await openLibrary("Journal & notes");
+  await openLibrary("Journal");
   await (await visibleWithText("[data-testid=map-view] button[data-testid=journal-library-row]", FIXTURE.journal)).click();
   const frozen = await displayed("[data-testid=knowledge-journal]");
   await waitForText(frozen, "Metric will exceed the threshold");
   await clickButton("Read saved source", frozen);
   await waitForText(await displayed("[data-testid=knowledge-journal-source] [data-testid=knowledge-passage]"), "sealed-world-anchor sentence");
+  await waitForText(await openLibrary("Notes"), FIXTURE.note);
 }
 
 async function replayMap() {
@@ -473,7 +472,7 @@ async function expand(selector) {
   await browser.waitUntil(async () => (await details.getAttribute("open")) !== null, { timeout: 5_000, timeoutMsg: `${selector} did not open` });
 }
 
-/** Chat preferences for the global defaults or the folder Loupist, with the file it edits. */
+/** Chat defaults for the global defaults or the folder Loupist, with the file it edits. */
 async function chatPreferences(scope) {
   if (scope === "global") await settingsSection("agent");
   else {
@@ -487,7 +486,7 @@ async function chatPreferences(scope) {
   await browser.waitUntil(async () => {
     observed = (await browser.$("[data-testid=agent-config-file] button[title]").getAttribute("title").catch(() => "")) ?? "";
     return Boolean(observed) && (await realFile(observed)) === expected;
-  }, { timeout: 10_000, timeoutMsg: `Chat preferences did not switch to ${scope}` }).catch((error) => {
+  }, { timeout: 10_000, timeoutMsg: `Chat defaults did not switch to ${scope}` }).catch((error) => {
     throw new Error(`${error.message}; actual=${observed}; expected=${expected}`);
   });
   await expand("[data-testid=agent-config-advanced]");
@@ -600,14 +599,14 @@ async function seed() {
   await step("save a Source from the Map Library", async () => {
     record.sourceId = await addSource();
   });
-  await step("save a rule in What it knows", addPrinciple);
+  await step("save a principle in Lens", addPrinciple);
   await step("follow and unfollow assets; validate, preview and commit holdings", followAndImportHoldings);
   await step("save a Journal entry in the Library", async () => {
     record.journalId = await addJournalEntry();
     assert.ok(record.journalId, "The Journal entry has no identity");
   });
   await step("save Loupist instructions", saveInstructions);
-  await step("save global and Loupist Chat preferences and the theme", seedSettings);
+  await step("save global and Loupist Chat defaults and the theme", seedSettings);
   await step("record the Map with the World and the new Journal entry", async () => {
     await selectLoupist(FOLDER_LOUPIST);
     record.mapStats = await settledMapStats();
@@ -645,7 +644,7 @@ async function verify(record, { copied }) {
     assert.equal(await settledMapStats(), record.mapStats);
   });
   await step("the Library keeps the Source", () => verifySource(record.sourceId));
-  await step("What it knows keeps the rule and learned method", verifyPrinciple);
+  await step("Lens keeps the principle and learned method", verifyPrinciple);
   await step(copied ? "global followed assets and holdings stay with the original app" : "followed assets and committed holdings survive restart", () => verifyFollowedAndHoldings({ copied }));
   await step("the Library keeps the Journal entry", () => verifyJournal(record.journalId));
   await step("Loupist instructions", verifyInstructions);

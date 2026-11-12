@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
-import { measureMapDrawProbe, measureMapProbe, openMapLibrary, readVisibleMapStats, selectLoupistTemplate } from "./native-shell.mjs";
+import { measureMapDrawProbe, measureMapProbe, openMapLibrary, openCustomConnections, openMainTab, readVisibleMapStats, selectLoupistTemplate } from "./native-shell.mjs";
 
 test("map counts come from the visible map after routing, never a retained hidden view", async () => {
   const span = (textContent, { hidden = false, width = 200, visibility = "visible" } = {}) => ({
@@ -173,40 +173,68 @@ test("a stuck model menu moves focus to the current Chat before retrying dismiss
   assert(clicked.includes("#main-panel-chat"));
 });
 
-for (const mode of ["folded", "direct", "open"]) {
-  test(`Map Library uses the visible ${mode} toolbar state`, async () => {
-    let libraryOpen = mode === "open";
-    let menuOpen = false;
+for (const initiallyOpen of [false, true]) {
+  test(`Map Library ${initiallyOpen ? "keeps its open state" : "opens from the persistent toolbar button"}`, async () => {
+    let libraryOpen = initiallyOpen;
     const clicks = [];
     const librarySelector = "[data-testid=map-view] aside[data-testid=map-library]";
-    const directSelector = "[data-testid=map-view] button[data-map-library]:not([inert])";
-    const moreSelector = "[data-testid=map-view] [data-map-more]";
-    const itemSelector = '[role="menuitemcheckbox"][data-map-library]';
-    const displayed = (selector) => selector === librarySelector ? libraryOpen
-      : selector === directSelector ? mode === "direct"
-        : selector === itemSelector ? menuOpen : selector === moreSelector;
-    const elements = new Map([librarySelector, directSelector, moreSelector, itemSelector].map((selector) => [selector, {
-      isDisplayed: async () => displayed(selector),
-      getAttribute: async (name) => name === "aria-haspopup" && selector === moreSelector ? "menu"
-        : name === "aria-expanded" && menuOpen ? "true" : null,
-      waitForDisplayed: async () => assert(displayed(selector), `Still hidden: ${selector}`),
-      click: async () => {
-        assert(displayed(selector), `Clicked a hidden duplicate: ${selector}`);
-        clicks.push(selector);
-        if (selector === moreSelector) menuOpen = true;
-        else libraryOpen = true;
-      },
+    const buttonSelector = "[data-testid=map-view] button[data-map-library]";
+    const elements = new Map([librarySelector, buttonSelector].map(selector => [selector, {
+      isDisplayed: async () => selector === buttonSelector || libraryOpen,
+      waitForDisplayed: async () => assert(selector === buttonSelector || libraryOpen),
+      click: async () => { clicks.push(selector); libraryOpen = true; },
     }]));
-    const browser = {
-      $: async (selector) => {
-        assert(elements.has(selector), `Unexpected selector: ${selector}`);
-        return elements.get(selector);
-      },
-      execute: async () => "ready",
-      waitUntil: async (condition) => { assert(await condition()); return true; },
-    };
+    const browser = { $: async selector => {
+      assert(elements.has(selector), `Unexpected selector: ${selector}`);
+      return elements.get(selector);
+    } };
     assert.equal(await openMapLibrary(browser), elements.get(librarySelector));
-    assert.equal(libraryOpen, true);
-    assert.deepEqual(clicks, mode === "open" ? [] : mode === "direct" ? [directSelector] : [moreSelector, itemSelector]);
+    assert.deepEqual(clicks, initiallyOpen ? [] : [buttonSelector]);
+  });
+
+  test(`Custom connections ${initiallyOpen ? "stays open" : "opens its disclosure"}`, async () => {
+    let open = initiallyOpen;
+    let clicks = 0;
+    const browser = { $: async selector => {
+      assert.equal(selector, "[data-custom-connections]");
+      return {
+        getAttribute: async name => { assert.equal(name, "open"); return open ? "" : null; },
+        $: async child => {
+          assert.equal(child, ":scope > summary");
+          return { click: async () => { open = !open; clicks++; } };
+        },
+      };
+    } };
+    await openCustomConnections(browser);
+    assert(open);
+    assert.equal(clicks, initiallyOpen ? 0 : 1);
   });
 }
+
+for (const place of ["following", "map", "lens", "schedule"]) {
+  test(`sidebar navigation opens ${place} through its destination row`, async () => {
+    let opened = false;
+    const selected = `[data-sidebar-place="${place}"] button`;
+    const destination = place === "map" ? "[data-testid=map-view]" : place === "lens" ? "[data-testid=memory-page]" : `#main-panel-${place}`;
+    const clicks = [];
+    const browser = {
+      execute: async (_callback, selector) => { assert.equal(selector, selected); return "ready"; },
+      $: selector => ({
+        isDisplayed: async () => selector === selected || (selector === destination && opened),
+        getAttribute: async () => null,
+        click: async () => { clicks.push(selector); opened = true; },
+        waitForDisplayed: async () => { assert.equal(selector, destination); assert(opened); },
+      }),
+    };
+    await openMainTab(browser, place);
+    assert.deepEqual(clicks, [selected]);
+    if (place === "map" || place === "lens") {
+      await openMainTab(browser, place);
+      assert.deepEqual(clicks, [selected], "Opening the current panel must not toggle it closed");
+    }
+  });
+}
+
+test("sidebar navigation rejects an unknown destination before interacting", async () => {
+  await assert.rejects(openMainTab({}, "world"), /Unknown main tab/);
+});

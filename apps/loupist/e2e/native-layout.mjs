@@ -56,7 +56,7 @@ export function measureChatLayout() {
     const toolbars = [...card.querySelectorAll(".chat-artifact-block-header, .chart-local-toolbar, .grid-card-header")]
       .flatMap((toolbar) => {
         const bounds = box(toolbar);
-        return bounds ? [{ bounds, controls: [...toolbar.querySelectorAll("button, [role='combobox']")].map(box).filter(Boolean) }] : [];
+        return bounds ? [{ bounds, controls: [...toolbar.querySelectorAll("button, select, [role='combobox']")].map(box).filter(Boolean) }] : [];
       });
     return [{ bounds: cardBox, toolbars, failedBody: card.querySelector(".chat-artifact-block-state[role='alert']")
       ? box(card.querySelector(".chat-artifact-block-body")) : null }];
@@ -91,6 +91,10 @@ export function assertChatLayout(layout, { scenario = "", label = scenario, tole
   check(near(layout.reading.center, layout.readingPane.center), "reading column is off its reserved space's center",
     { reading: layout.reading, pane: layout.readingPane, rail: layout.rail });
   check(layout.chat.overflow <= tolerance, "conversation overflows internally", layout.chat);
+  if (layout.panel && layout.panelPlacement === "side" && layout.panelOverlay && layout.stage.width < 840) {
+    check(near(layout.panel.x, layout.stage.x) && near(layout.panel.right, layout.stage.right),
+      "narrow panel sheet does not cover the full stage", { panel: layout.panel, stage: layout.stage });
+  }
   if (layout.panel && layout.panelPlacement === "side" && !layout.panelOverlay) {
     check(layout.chat.width >= 420 - tolerance, "docked panel leaves less than 420 px for chat", layout.chat);
   }
