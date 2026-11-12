@@ -531,8 +531,8 @@ pub fn share_summary(
         Ok(licenses) => (licenses, None),
         Err(conflict) => (Vec::new(), Some(conflict)),
     };
-    let default_license = allowed_licenses.first().copied().unwrap_or_default();
-    let meta = PackMeta {
+    let mut default_license = allowed_licenses.first().copied().unwrap_or_default();
+    let mut meta = PackMeta {
         pack_id: identity.pack_id.clone(),
         version: identity.version,
         created_at: identity.created_at.clone(),
@@ -544,6 +544,18 @@ pub fn share_summary(
         app: String::new(),
         origin: gathered.origin,
     };
+    // The existing identity stores the license inside its content hash. Recover
+    // it from the allowed choices without adding a stored field or schema step.
+    if let Some(hash) = &identity.content_hash {
+        for license in &allowed_licenses {
+            meta.license = *license;
+            if *hash == export::content_hash_for(&selected, &choice, &meta) {
+                default_license = *license;
+                break;
+            }
+        }
+        meta.license = default_license;
+    }
     let next_version = match &identity.content_hash {
         Some(hash) if *hash == export::content_hash_for(&selected, &choice, &meta) => {
             identity.version
