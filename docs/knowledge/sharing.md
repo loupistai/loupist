@@ -45,7 +45,11 @@ blocks sharing; an absent credential stays empty. If saved credentials cannot be
 checked, sharing asks the person to unlock the Keychain or reconnect and try again;
 it never scans with a partial credential list. Saved credentials of eight or more
 characters match substrings. Credentials of four to seven characters match only
-whole tokens, bounded by non-alphanumeric characters or the string ends. Values
+whole tokens or the string ends. For an ASCII credential, only ASCII letters and
+digits join it into a longer token; attached Korean particles and escaped control
+characters such as `\n` are separators. Non-ASCII credentials retain Unicode
+alphanumeric boundaries. The credential scan checks the original text and one
+percent-decoded form, so URL-encoded separators cannot hide a saved key. Values
 shorter than four characters are not matched and do not block sharing. Ordinary
 short settings such as ports, locales and modes are not credential substrings. Credentials
 (including every stored provider key or sign-in token, custom-connection secret,
