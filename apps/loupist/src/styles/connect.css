@@ -4,6 +4,8 @@
 .connect-ways { display: grid; min-width: 0; }
 .connect-group-label { margin: var(--gg-space-4) 0 var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); }
 .connect-ways > .connect-group-label:first-child { margin-top: 0; }
+/* Onboarding zeroes paragraph margins (.onboarding-step p); a later group still opens with space above it. */
+.connect-ways > .connect-group-label:not(:first-child) { margin-top: var(--gg-space-4); }
 .connect-row { display: flex; align-items: center; gap: var(--gg-space-3); width: 100%; min-height: 44px; padding: 0 var(--gg-space-3); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); text-align: left; cursor: pointer; transition: background-color var(--gg-motion-instant) var(--gg-ease-out); }
 .connect-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .connect-row:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
