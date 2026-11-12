@@ -89,6 +89,16 @@ describe("Loupist shell navigation", () => {
     expect(await screen.findByRole("textbox", { name:"Message Loupist" })).toBeEnabled();
   });
 
+  it("opens Home with ⌘1 from a topic Chat", async () => {
+    const user = userEvent.setup();
+    await openApp();
+    await user.click(screen.getByRole("button", { name: "Capital allocation checklist" }));
+    await screen.findByRole("heading", { name: "Capital allocation checklist" });
+    fireEvent.keyDown(window, { key: "1", metaKey: true });
+    await waitFor(() => expect(document.querySelector('[data-testid="loupist-chat-row"][data-home] [data-testid="loupist-chat-button"]')).toHaveAttribute("aria-current", "page"));
+    expect(screen.getByRole("button", { name: "Capital allocation checklist" })).not.toHaveAttribute("aria-current");
+  });
+
   it("opens a name found on another Loupist's Map in that Loupist", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });

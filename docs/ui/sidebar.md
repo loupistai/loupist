@@ -40,7 +40,8 @@ Native menu events reach React through the typed bridge's `onMenuAction` subscri
 Keyboard shortcuts come from one table (`src/app/shortcuts.ts`) that both the global
 handler and Settings › Keyboard read. Top-level destinations come from
 `APP_DESTINATIONS` in `src/app/navigation.ts`: ⌘1–⌘4 in the header, the palette's
-open rows, the native View menu ids and the test helpers read it. Chat and Scheduled
+open rows, the native View menu ids and the test helpers read it. The first one, Home,
+also selects the Loupist's home Thread, so ⌘1 from a topic Chat goes Home. Chat and Scheduled
 tasks are pages (`APP_PAGES`, which also names each page's location heading); Map
 and Lens open their panel beside the Chat. A new page adds one destination row and
 one page entry. `src/app/useAppSurface.ts` holds the page and the layers over it
