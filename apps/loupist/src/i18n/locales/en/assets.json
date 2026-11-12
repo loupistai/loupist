@@ -160,6 +160,7 @@
     "asReported": "{{value}} (as reported)",
     "netPosition": "Net position",
     "level": "Level",
+    "tenYearYield": "10-year Treasury yield",
     "exDate": "ex {{date}}",
     "asOf": "as of {{date}}",
     "dueBy": "Due by {{date}} (filing deadline)",

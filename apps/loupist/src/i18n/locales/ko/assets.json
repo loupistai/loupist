@@ -160,6 +160,7 @@
     "asReported": "{{value}} (제공처 표기 그대로)",
     "netPosition": "순포지션",
     "level": "수준",
+    "tenYearYield": "미국채 10년물 금리",
     "exDate": "배당락 {{date}}",
     "asOf": "{{date}} 기준",
     "dueBy": "{{date}}까지 공시 (법정 기한)",

@@ -260,6 +260,14 @@ export const GLANCE_KIND: Record<AssetGlanceRow["key"], string> = {
   price: "price", drawdown: "price", expenseRatio: "fees", level: "level",
 };
 
+/** The label of an "At a glance" row: a rates level names its series ("10-year Treasury yield"); FX and others keep the generic label. */
+const SERIES_NAMES: Record<string, string> = { "10-year Treasury yield": "glance.tenYearYield" };
+export function glanceLabel(row: AssetGlanceRow) {
+  const name = row.key === "level" ? text(row.facts.name) : "";
+  if (!name) return tDynamic(`glance.${row.key}`);
+  return SERIES_NAMES[name] ? tDynamic(SERIES_NAMES[name]) : name;
+}
+
 /** The value column of an "At a glance" row. */
 export function glanceValue(row: AssetGlanceRow) {
   const facts = row.facts;
