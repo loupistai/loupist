@@ -1400,7 +1400,7 @@
     "oilInventoryDown": "{{name}}: {{date}}까지 한 주 동안 미국 상업용 원유 재고가 {{amount}} 배럴 줄었어요 (EIA).",
     "oilInventory": "{{name}}: EIA 주간 석유 보고서가 나왔어요 ({{date}}까지 한 주).",
     "prepare": "전후 비교 준비",
-    "from": "출처: 지켜보기 · 예약에서 열기",
+    "from": "출처: 지켜보기 · 관심 자산에서 열기",
     "more": "+{{formattedCount}}개 더",
     "label": "지켜보기 알림"
   },

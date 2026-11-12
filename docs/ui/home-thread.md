@@ -25,7 +25,7 @@ Review thesis and Undo (by move id, while it is the latest move); there is no OS
 notification.
 [Watcher](../knowledge/watchers.md#local-watchers) alerts the morning message did not take post through the same
 path as one host message per check (`watch` record: up to five dated alerts with their
-sources, then "+n more", built from stored alerts only); an alert on screen for a second
+sources, then "+n more", built from stored alerts only; "+n more" and the source line open Following); an alert on screen for a second
 while the window is visible counts as seen. The [results task](../runtime/scheduled-runs.md#results-before-and-after)
 posts one message (`earnings` record) when reported figures first arrive ("{name} reported
 {period} results." with the two most material measures and See before and after) or when

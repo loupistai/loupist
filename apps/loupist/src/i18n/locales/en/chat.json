@@ -1442,7 +1442,7 @@
     "oilInventoryDown": "{{name}}: U.S. commercial crude stocks fell {{amount}} barrels in the week to {{date}} (EIA).",
     "oilInventory": "{{name}}: new EIA weekly petroleum report (week to {{date}}).",
     "prepare": "Prepare before and after",
-    "from": "From: Watching · Open in Schedule",
+    "from": "From: Watching · Open Following",
     "more": "+{{formattedCount}} more",
     "label": "Alerts from Watching"
   },
