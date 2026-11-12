@@ -2,6 +2,41 @@ use super::*;
 use crate::custom_connections::fixture::{Response, Server};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+#[test]
+fn protected_values_fail_closed_on_a_credential_load_error() {
+    let root = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(root.path().to_path_buf());
+    let mut service = Service::open(
+        state.artifacts.app_data_dir.join("custom-connections"),
+        state.credential_environment.to_string(),
+    )
+    .unwrap();
+    for name in ["First", "Second"] {
+        service
+            .add_pending(ParsedConnection {
+                name: name.into(),
+                transport: TransportConfig::Http {
+                    url: "https://fixture.example/mcp".into(),
+                },
+                secrets: Secrets::default(),
+            })
+            .unwrap();
+    }
+    let mut loads = 0;
+    let result = protected_values_with_loader(&state, |_, _| {
+        loads += 1;
+        if loads == 2 {
+            return Err(ConnectionError::CredentialStore);
+        }
+        Ok(Secrets {
+            env: BTreeMap::from([("API_KEY".into(), "first-secret".into())]),
+            ..Default::default()
+        })
+    });
+    assert!(matches!(result, Err(ConnectionError::CredentialStore)));
+    assert_eq!(loads, 2, "a partial list must never reach the scan");
+}
+
 fn read_tool(description: &str) -> Value {
     json!({"name":"read_prices", "description":description, "inputSchema":{"type":"object"}, "annotations":{"readOnlyHint":true}})
 }

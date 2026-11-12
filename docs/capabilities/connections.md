@@ -60,6 +60,8 @@ Users can add their own MCP data sources under Settings → Connections → Your
   Header and environment values shorter than eight characters are ordinary settings unless their name contains
   token, key, secret, password, auth, cookie or credential (case-insensitive). OAuth tokens and client secrets
   remain protected at every length. Numeric and boolean echoes in structured results are checked too.
+  Sharing must load every connection record and its saved credentials before scanning;
+  a file or Keychain read failure blocks sharing with an unlock-or-reconnect retry message.
   Remote connections cannot discover loopback or unspecified-address OAuth URLs; explicitly local connections may use local authorization.
   A supplied client ID takes precedence over dynamic registration, and browser preconnects or unrelated callback
   requests do not consume the sign-in attempt; an unused preconnect closes without an HTTP reply.
