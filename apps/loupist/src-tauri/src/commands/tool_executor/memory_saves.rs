@@ -496,6 +496,25 @@ impl AppToolExecutor {
         } else {
             parse_research_journal(&params, now_ms())?
         };
+        // Shape validation alone cannot authorize World links. Use the same
+        // complete-World check as the canonical writer before reserving a save
+        // slot, so an unknown name/id can be repaired in this reply.
+        if !journal.entities.is_empty() {
+            let mut connection = self
+                .state
+                .store
+                .lock_loupist(&policy.loupist_id)
+                .map_err(store_error)?;
+            let tx = connection
+                .transaction()
+                .map_err(|error| knowledge_error(error.into()))?;
+            crate::knowledge::journal::validate_entities(
+                &tx,
+                &policy.loupist_id,
+                &journal.entities,
+            )
+            .map_err(journal_argument_error)?;
+        }
         let research = StagedResearch {
             journal: Some(journal),
             working_note: None,

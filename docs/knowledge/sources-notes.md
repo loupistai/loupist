@@ -65,8 +65,11 @@ evidence nor standing instructions. Research readers expose the Source excerpts,
 World view and Lens documents captured with the saved work.
 
 A Journal entry records the user's own judgment, with optional reasoning, linked
-World entities and a dated check. Entity links are validated against the complete
-current World, including entities outside the Map's display limit. The Loupist’s
+World entities and a dated check. Entity links use current World node ids, not
+names or ticker labels. Chat validates them against the complete current World
+before staging, including entities outside the Map's display limit; an unknown
+link is refused at `journal.entities` so the same turn can omit or repair it. The
+completed-turn transaction checks the links again. The Loupist’s
 own view belongs in research notes, not in the user’s Journal.
 Map → Library → Notes lists Your journal before Research notes. Focusing a field in that form scrolls it clear of the sticky search. The user can
 create, edit and archive entries there through `journal_create`, `journal_update`,
