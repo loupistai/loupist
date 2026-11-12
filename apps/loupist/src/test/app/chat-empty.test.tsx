@@ -39,7 +39,10 @@ describe("Loupist · New Chat", () => {
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByText("Response complete.");
     expect(create).not.toHaveBeenCalled();
-    expect(screen.queryByRole("article", { name: "Message from Quality Compounder" })).not.toBeInTheDocument();
+    // The first message replaces the morning message; the setup steps still open stay below the conversation.
+    expect(screen.queryByText(/^(One thing|\d+ things) to look at\.$/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "You could ask" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("article", { name: "Message from Quality Compounder" })).getByRole("region", { name: "Get set up" })).toBeVisible();
 
     await user.click(newChatButton());
     const questions = await screen.findByRole("region", { name: "You could ask" });
