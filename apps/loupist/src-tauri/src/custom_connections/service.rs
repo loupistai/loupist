@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use super::{
     auth,
     config::{self, ParsedConnection, TransportConfig},
-    credentials::{self, Secrets},
+    credentials::{self, contains_protected_value, Secrets},
     http::{self, HttpTransport, Reply},
     policy::{self, ApprovalChoice, Approvals, ToolEligibility},
     ConnectionError,
@@ -20,9 +20,7 @@ use super::{
 use crate::{
     app::AppState,
     fs::artifact_trust::{ensure_private_directory, ensure_private_regular_file},
-    mcp::{
-        contains_protected_value, McpCallResult, McpError, McpLaunchConfig, McpSession, McpTool,
-    },
+    mcp::{McpCallResult, McpError, McpLaunchConfig, McpSession, McpTool},
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -547,7 +545,7 @@ impl Service {
             return Err(ConnectionError::Configuration);
         }
         let mut secrets = credentials::load(&self.credential_environment, id)?;
-        secrets.registration = Some(auth::Registration {
+        secrets.replace_registration(auth::Registration {
             issuer: issuer.into(),
             client_id,
             token_endpoint_auth_method: if client_secret.is_some() {
@@ -1020,7 +1018,7 @@ async fn authorized_request(
             secrets.registration.as_ref(),
         )
         .await?;
-        secrets.registration = Some(registration);
+        secrets.replace_registration(registration);
         secrets.metadata = Some(found.metadata);
         secrets.replace_tokens(tokens);
         credentials::save(environment, id, secrets)?;
