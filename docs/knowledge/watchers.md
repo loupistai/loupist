@@ -73,7 +73,9 @@ the last good state and names the connection that did not answer. Check now
 not the budget, one check at a time.
 
 A check records dated observations on the asset pages and turns new ones of the kinds
-that are on into alerts; a route's first check only sets its starting point. The first
+that are on into alerts; a route's first check only sets its starting point. That starting point is saved
+with the observations, so skipping the later alert/delivery phase cannot make a
+first read alert on the next pass. The first
 check after launch, or the day's first check, hands its alerts to the morning message;
 later ones post in the [home Thread](../ui/home-thread.md). No OS notification is sent for a watch
 event. Schedule › Watching fades the right edge of a class table only when that table is wider than the pane. Watch for on the asset page and Schedule › Watching use `watch_settings_list`,

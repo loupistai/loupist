@@ -1008,3 +1008,171 @@ async fn class_kinds_start_off_outside_their_template_and_turn_on_one_by_one() {
     assert!(kind_state(&view, &btc, WatchKind::Drawdown).enabled);
     assert!(!kind_state(&view, &btc, WatchKind::CryptoMove).enabled);
 }
+
+#[tokio::test]
+async fn first_read_stays_a_baseline_when_delivery_was_skipped() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    defaults(&state, "loupist-a");
+    let page = followed_pages(&state, "loupist-a").unwrap().remove(0);
+    let at = Utc::now() + Duration::seconds(10);
+    let read = route_read(Route::Filings, &page, at.date_naive()).unwrap();
+    let mut reader = Scripted::default();
+    reader.ensure(&state, "loupist-a");
+    // Earlier manual research already knew this observation kind.
+    for (offset, accession) in [(0, "earlier"), (1, "first-watch-read")] {
+        reader.script(
+            "equity_fundamental_filings",
+            Some("MORR"),
+            sec(vec![sec_row(
+                "10-Q",
+                day(-1),
+                accession,
+                "Quarterly report",
+            )]),
+        );
+        let ReadOutcome::Ok { payload, provider } =
+            reader.read(&state, "loupist-a", &read, None).await
+        else {
+            panic!("scripted read")
+        };
+        with_assets(&state, "loupist-a", true, |tx| {
+            apply_read(
+                tx,
+                "loupist-a",
+                &page,
+                Route::Filings,
+                &read,
+                &payload,
+                provider.as_deref(),
+                at.date_naive(),
+                at + Duration::seconds(offset),
+                offset == 1,
+            )?;
+            if offset == 1 {
+                // Research already retained this exact row as new. The first
+                // watch read sees it again and must save its own starting point.
+                apply_read(
+                    tx,
+                    "loupist-a",
+                    &page,
+                    Route::Filings,
+                    &read,
+                    &payload,
+                    provider.as_deref(),
+                    at.date_naive(),
+                    at + Duration::seconds(offset),
+                    false,
+                )?;
+                // Phase 1 committed; maintenance/cancellation skipped phase 2.
+                watch::record_route(
+                    tx,
+                    "loupist-a",
+                    &page.asset_id,
+                    Route::Filings,
+                    "ok",
+                    OPENBB_CONNECTION,
+                    at.timestamp_millis(),
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    }
+    let result = run_pass_with(
+        &state,
+        &Runtime::default(),
+        Scope::Loupist("loupist-a".into()),
+        at + Duration::hours(1),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result["loupist-a"], 0);
+    assert!(events(&state, "loupist-a").is_empty());
+    // A later genuinely new filing still alerts.
+    reader.script(
+        "equity_fundamental_filings",
+        Some("MORR"),
+        sec(vec![sec_row("8-K", day(0), "later", "Current report")]),
+    );
+    let result = run_pass_with(
+        &state,
+        &Runtime::default(),
+        Scope::Loupist("loupist-a".into()),
+        at + Duration::hours(2),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result["loupist-a"], 1);
+}
+
+#[tokio::test]
+async fn class_starting_points_survive_a_skipped_delivery_phase() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = class_fixture(
+        &temporary,
+        "loupist-crypto",
+        crate::domain::LoupistTemplate::Crypto,
+    );
+    follow(&state, "ETH", "CRYPTO", "Ethereum");
+    defaults(&state, "loupist-crypto");
+    let page = followed_pages(&state, "loupist-crypto").unwrap().remove(0);
+    let at = Utc::now();
+    let read = route_read(Route::Price, &page, at.date_naive()).unwrap();
+    let mut reader = Scripted::default();
+    reader.ensure(&state, "loupist-crypto");
+    reader.script(
+        "crypto_price_historical",
+        Some("ETHUSD"),
+        coin_bars(
+            -1,
+            &[
+                2000.0, 2010.0, 2020.0, 2030.0, 2040.0, 2050.0, 2060.0, 2070.0, 1760.0,
+            ],
+        ),
+    );
+    let ReadOutcome::Ok { payload, provider } =
+        reader.read(&state, "loupist-crypto", &read, None).await
+    else {
+        panic!("scripted read")
+    };
+    with_assets(&state, "loupist-crypto", true, |tx| {
+        let signals = apply_read(
+            tx,
+            "loupist-crypto",
+            &page,
+            Route::Price,
+            &read,
+            &payload,
+            provider.as_deref(),
+            at.date_naive(),
+            at,
+            false,
+        )?;
+        assert!(!signals.is_empty());
+        watch::record_route(
+            tx,
+            "loupist-crypto",
+            &page.asset_id,
+            Route::Price,
+            "ok",
+            OPENBB_CONNECTION,
+            at.timestamp_millis(),
+        )
+    })
+    .unwrap();
+    let alerts = run_pass_with(
+        &state,
+        &Runtime::default(),
+        Scope::Loupist("loupist-crypto".into()),
+        at + Duration::hours(1),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(alerts["loupist-crypto"], 0);
+    assert!(events(&state, "loupist-crypto").is_empty());
+}

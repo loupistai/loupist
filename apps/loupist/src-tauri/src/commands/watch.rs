@@ -1192,11 +1192,16 @@ fn apply_read(
             .collect(),
         _ => Vec::new(),
     };
-    let events = signals
+    let events: Vec<NewWatchEvent> = signals
         .into_iter()
         .filter(|signal| class_kinds.contains(&signal.kind))
         .map(|signal| signal_event(page, &tool_read, signal, baseline_done))
         .collect();
+    // Save class starting points in the same transaction as the route. Later
+    // delivery may be skipped, but re-reading the same signal must stay silent.
+    for event in events.iter().filter(|event| event.baseline) {
+        watch::insert_event(tx, loupist_id, event, now.timestamp_millis())?;
+    }
     let found: Vec<NewObservation> = match route {
         // A price read also keeps the page's closes (its price row and the
         // crypto fall from the high).
@@ -1212,8 +1217,11 @@ fn apply_read(
             .collect(),
     };
     let override_baseline = match route {
-        // A cluster or a turn seen by the route's first check is its starting point.
-        Route::Insiders | Route::Flows => Some(!baseline_done),
+        // Persist the first read's starting point with its observations, so a
+        // skipped alert/delivery phase cannot later announce those rows as new.
+        Route::Filings | Route::Calendar | Route::Dividends | Route::Insiders | Route::Flows => {
+            Some(!baseline_done)
+        }
         _ => None,
     };
     assets::record_observations_with(
@@ -1226,6 +1234,21 @@ fn apply_read(
         now.timestamp_millis(),
         override_baseline,
     )?;
+    if !baseline_done && page.class == AssetClass::Equity {
+        // Earlier research may already have retained these rows as new. Their
+        // observation flags stay intact; the watch's own starting-point events
+        // are saved before recording that the route has completed its baseline.
+        for mut event in
+            detect_events(tx, loupist_id, page, today, now.timestamp_millis(), &|_| {
+                true
+            })?
+        {
+            if kind_route(event.kind, is_korean_market(&page.market)) == route {
+                event.baseline = true;
+                watch::insert_event(tx, loupist_id, &event, now.timestamp_millis())?;
+            }
+        }
+    }
     Ok(events)
 }
 
@@ -1448,7 +1471,7 @@ pub(crate) fn detect_events(
             &source.fact_date,
             json!({"date": date, "period": event_record.period, "eventId": event_record.event_id}),
             &source.evidence,
-            baseline(results_route),
+            source.baseline || baseline(results_route),
         ));
     }
     // A dividend record date within 7 days.
@@ -1472,7 +1495,7 @@ pub(crate) fn detect_events(
             &item.fact_date,
             json!({"amount": item.facts["amount"], "currency": item.facts["currency"], "exDate": item.facts["exDate"], "recordDate": record.to_string()}),
             &item.evidence,
-            baseline(Route::Dividends),
+            item.baseline || baseline(Route::Dividends),
         ));
     }
     let _ = now_ms;
