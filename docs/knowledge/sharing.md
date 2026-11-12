@@ -46,7 +46,9 @@ next to its name block until that item is left out; an email, phone number, the 
 full name or home path warns and can be accepted ("It's fine"). Export rebuilds the pack
 and refuses unresolved findings (`findings_unresolved`). The first share mints the
 Loupist's pack ID, and the version rises when the content hash changes, including
-license and attribution changes. Rust defaults new shares to `CC-BY-NC-SA-4.0` and
+license and attribution changes. An unchanged saved share recovers its actual
+license from the content hash for the summary, so a nondefault license does not
+spuriously advance the version. Rust defaults new shares to `CC-BY-NC-SA-4.0` and
 computes allowed licenses over the selected items and their stored origins: CC0 and BY
 allow any public pack license, BY-SA only BY-SA, BY-NC either BY-NC or BY-NC-SA, and
 BY-NC-SA only BY-NC-SA. `share_summary` accepts sections and excluded item keys and
@@ -71,6 +73,22 @@ legal-code URL from Rust, then one plain line about what anyone may do), starts 
 section or left-out item changes; one allowed license is shown fixed with the reason. A
 `licenseConflict` replaces the choice with the clashing items, each with Leave it out,
 and keeps every output off until Rust allows a license again.
+
+Retained import copies under `.loupist/packs/<import>/<version>` are derived update
+baselines. A removed import loses its copies; an applied newer version prunes older
+copies after commit, retaining the version still referenced by an active import.
+Accepted text and origin rights remain in SQLite independently of those files.
+Per-result shared-text provenance reads query only the delivered record IDs; a
+single result may contain records from several packs.
+
+A failed GitHub publish removes a repository only when this attempt created it and
+an immediate check confirms it has no commits. An automatically initialized README
+counts as content. Existing, nonempty or unreadable repositories are left on GitHub,
+and the error says whether cleanup succeeded; cleanup permission failure also leaves
+the repository. New GitHub device sign-ins request `delete_repo` alongside
+`public_repo gist` for this cleanup; older tokens without it can only leave the
+repository and report that result. The host never deletes a pre-existing repository.
+GitHub has no conditional repository-delete API.
 
 ## Code
 

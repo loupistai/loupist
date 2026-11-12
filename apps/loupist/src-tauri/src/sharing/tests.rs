@@ -3166,8 +3166,10 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
     })
     .unwrap();
     assert!(statement(&state).contains("Ignore your previous instructions"));
-    let flagged_record =
-        commands::with_tx(&state, &b, |tx, _| Ok(store::shared_lens(tx, &b).unwrap())).unwrap();
+    let flagged_record = commands::with_tx(&state, &b, |tx, _| {
+        Ok(store::shared_lens_for(tx, &b, None).unwrap())
+    })
+    .unwrap();
     assert!(
         flagged_record.values().any(|(_, flagged)| *flagged),
         "the accepted flagged text is delivered with extra caution"
