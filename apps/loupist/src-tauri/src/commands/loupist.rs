@@ -7,7 +7,7 @@ use tauri::State;
 
 use crate::{
     agent_harness::AgentSkillSummary,
-    app::{AppState, CommandError, LoupistAccess, LoupistRecoveryAction, QuarantineSource},
+    app::{AppState, CommandError, LoupistAccess, QuarantineSource},
     domain::{workspace_folder_name, LoupistProfile},
     fs::loupist_root::BoundLoupistRoot,
     runs::maintenance::MaintenanceActivityKind,
@@ -20,44 +20,13 @@ use super::{
     profile_summary_with_availability,
     types::{
         chat_dto, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest,
-        LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistRecoverRequest,
-        LoupistSummary, LoupistWorkspace,
+        LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistSummary, LoupistWorkspace,
     },
 };
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn loupist_list(state: State<'_, AppState>) -> Result<Vec<LoupistSummary>, CommandError> {
     list_available_loupists(&state).await
-}
-
-pub(super) async fn recover_loupist_inner(
-    state: &AppState,
-    request: &LoupistRecoverRequest,
-) -> Result<LoupistSummary, CommandError> {
-    let _recovery = state.register_loupist_recovery(
-        new_id("loupist-recovery"),
-        request.loupist_id.clone(),
-        request.action,
-    )?;
-    match request.action {
-        LoupistRecoveryAction::RecoverMemory => {
-            state.clear_loupist_quarantine(&request.loupist_id, QuarantineSource::MemoryWrite);
-        }
-    }
-    let profile = state
-        .store
-        .get_loupist(&request.loupist_id)
-        .map_err(map_store)?
-        .ok_or_else(|| CommandError::not_found("Loupist"))?;
-    profile_summary(state, &profile).await
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub async fn loupist_recover(
-    request: LoupistRecoverRequest,
-    state: State<'_, AppState>,
-) -> Result<LoupistSummary, CommandError> {
-    recover_loupist_inner(&state, &request).await
 }
 
 #[tauri::command(rename_all = "snake_case")]

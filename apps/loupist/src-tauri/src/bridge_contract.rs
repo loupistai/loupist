@@ -147,7 +147,6 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::types::LoupistImportRequest,
         crate::commands::types::LoupistProfileUpdateRequest,
         crate::commands::types::LoupistReconnectRequest,
-        crate::commands::types::LoupistRecoverRequest,
         crate::commands::types::LoupistSummary,
         crate::commands::types::LoupistWorkspace,
         crate::commands::types::RunStarted,
@@ -405,7 +404,6 @@ commands! {
         loupist_list: () => Vec<crate::commands::types::LoupistSummary>;
         loupist_profile_update: crate::commands::types::LoupistProfileUpdateRequest => crate::commands::types::LoupistSummary;
         loupist_reconnect: crate::commands::types::LoupistReconnectRequest => crate::commands::types::LoupistSummary;
-        loupist_recover: crate::commands::types::LoupistRecoverRequest => crate::commands::types::LoupistSummary;
         loupist_select: () => crate::commands::types::LoupistWorkspace;
         chat_question_answer: crate::commands::questions::QuestionAnswerRequest => ();
         artifact_restore: crate::commands::types::ChatArtifactRestoreRequest => crate::commands::types::ChatArtifactViewDto;
@@ -977,12 +975,6 @@ async fn command_signatures() {
     let _: Result<crate::commands::types::LoupistSummary, CommandError> =
         crate::commands::loupist::loupist_reconnect(
             any::<crate::commands::types::LoupistReconnectRequest>(),
-            any(),
-        )
-        .await;
-    let _: Result<crate::commands::types::LoupistSummary, CommandError> =
-        crate::commands::loupist::loupist_recover(
-            any::<crate::commands::types::LoupistRecoverRequest>(),
             any(),
         )
         .await;

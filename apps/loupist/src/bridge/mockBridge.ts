@@ -715,20 +715,6 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return loupistChat.loupistSelect(this.state, loupist_id);
   }
 
-  async loupistRecover(
-    request: Contract.LoupistRecoverRequest,
-  ): Promise<Contract.LoupistSummary> {
-    const loupist = this.state.loupists.find(
-      (candidate) => candidate.id === request.loupist_id,
-    );
-    if (!loupist) throw new Error("Loupist not found");
-    if (request.action !== "recover_memory") {
-      throw new Error("Unsupported Loupist recovery action");
-    }
-    loupist.availability = { status: "available" };
-    return structuredClone(loupist);
-  }
-
   async loupistChooseFolder(): Promise<string | null> { return "/Users/research/new-research"; }
   async loupistReconnect(request: Contract.LoupistReconnectRequest) {
     const loupist = this.state.loupists.find((item) => item.id === request.loupist_id);

@@ -65,9 +65,6 @@ type Props = {
   selectedAgent: LoupistSummary | null;
   mutationBusy: boolean;
   mutationError: string | null;
-  recoveryBusy: boolean;
-  recoveryError: string | null;
-  onRecover: () => void;
   onReconnect?: () => void;
   catalog: ModelCatalog | null;
   onChanged: () => void;
@@ -86,9 +83,6 @@ export function LoupistSettings({
   selectedAgent,
   mutationBusy,
   mutationError,
-  recoveryBusy,
-  recoveryError,
-  onRecover,
   onReconnect,
   catalog,
   onChanged,
@@ -388,7 +382,7 @@ export function LoupistSettings({
                 <MemoryResetDialog bridge={bridge} loupistId={selectedAgent.id} name={selectedAgent.name} open={resetOpen} onOpenChange={setResetOpen} onChanged={onChanged} />
               </Disclosure>
             </> : null}
-            {!available ? <LoupistAvailabilityBoundary availability={selectedAgent.availability} busy={recoveryBusy || mutationBusy} error={recoveryError} onRecover={onRecover} onReconnect={onReconnect} onRemove={() => setDeleteOpen(true)} className="agent-workspace-recovery" compact /> : null}
+            {!available ? <LoupistAvailabilityBoundary availability={selectedAgent.availability} busy={mutationBusy} error={mutationError} onReconnect={onReconnect} onRemove={() => setDeleteOpen(true)} className="agent-workspace-recovery" compact /> : null}
             {available ? <Disclosure title={i18n.t("settings:loupistSettings.skillsConnections")} data-loupist-section="capabilities">
               <div className="agent-capabilities-toolbar">
                 <div className="agent-capabilities-heading"><span role="status" className="agent-save-status">{savedMessage ? <><CheckIcon aria-hidden="true" />{savedMessage}</> : i18n.t("settings:loupistSettings.changesSaveAutomaticallyForThisLoupist")}</span></div>
@@ -416,7 +410,7 @@ export function LoupistSettings({
             </section>
 
             </Disclosure>
-            <section className="agent-removal-card" aria-labelledby="agent-removal-heading"><div><h2 id="agent-removal-heading">{i18n.t("settings:loupistSettings.removeFromThisApp")}</h2><p>{i18n.t("settings:loupistSettings.yourWorkspaceFolderChatsAndMemoryStayOn")}</p>{!removable ? <p>{i18n.t("settings:loupistSettings.reconnectOrRecoverThisLoupistBeforeRemovingIt")}</p> : null}</div><Button type="button" size="sm" variant="outline" disabled={mutationBusy || !removable} onClick={() => setDeleteOpen(true)}><Trash2Icon /> {i18n.t("settings:loupistSettings.removeLoupist")}</Button></section>
+            <section className="agent-removal-card" aria-labelledby="agent-removal-heading"><div><h2 id="agent-removal-heading">{i18n.t("settings:loupistSettings.removeFromThisApp")}</h2><p>{i18n.t("settings:loupistSettings.yourWorkspaceFolderChatsAndMemoryStayOn")}</p>{!removable ? <p>{i18n.t("settings:loupistSettings.reconnectThisLoupistBeforeRemovingIt")}</p> : null}</div><Button type="button" size="sm" variant="outline" disabled={mutationBusy || !removable} onClick={() => setDeleteOpen(true)}><Trash2Icon /> {i18n.t("settings:loupistSettings.removeLoupist")}</Button></section>
           </div>
         ) : <div className="agent-editor-empty"><p>{i18n.t("settings:loupistSettings.selectALoupistToEditIt")}</p></div>}
       </div>

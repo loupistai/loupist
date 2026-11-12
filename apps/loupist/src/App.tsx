@@ -193,7 +193,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   const openLoupistSettingsFor = async (id: string, remove = false, section?: LoupistSettingsSection) => {
     loupistSettingsReturnFocus.current = document.activeElement?.closest("[role=menu]") ? document.querySelector(".loupist-header-identity") : document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (id !== selectedLoupist?.id || loupist.loading) {
-      const opened = await loupist.selectLoupist(id, loupists.find(item => item.id === id));
+      const opened = await loupist.selectLoupist(id);
       if (!opened) return;
     }
     dispatchSurface({ type: "openLoupistSettings", loupistId: id, section, remove });
@@ -233,7 +233,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   const [inboxFocus, setInboxFocus] = useState<{ loupistId: string; runId: string | null } | null>(null);
   useEffect(() => bridge.onInboxOpen(event => {
     void (async () => {
-      if (event.loupistId !== selectedLoupist?.id && !await selectLoupist(event.loupistId, loupists.find(item => item.id === event.loupistId))) return;
+      if (event.loupistId !== selectedLoupist?.id && !await selectLoupist(event.loupistId)) return;
       setInboxFocus(event); setTab("schedule");
     })();
   }), [bridge, selectLoupist, loupists, selectedLoupist?.id, setTab]);
@@ -474,7 +474,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     setPendingLearningLocation(undefined);
   }, [pendingLearningLocation, selectedLoupistId, openMemory, openLens]);
   const openLearnedMethod = async (loupistId: string, recordId: string) => {
-    if (loupistId !== selectedLoupistId && !await loupist.selectLoupist(loupistId, loupists.find(item => item.id === loupistId))) throw new Error("Loupist unavailable");
+    if (loupistId !== selectedLoupistId && !await loupist.selectLoupist(loupistId)) throw new Error("Loupist unavailable");
     setNoteReaderOpen(false); setMemoryPage(null); dispatchSurface({ type: "closeAssetPage" });
     setPendingLearningLocation({ loupistId, surface: "lens", recordId });
     showPanel("lens");
@@ -645,7 +645,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   ];
   const openAttention = async (item: AttentionItem) => {
     if (item.kind === "lineCrossed" && item.recordId) {
-      if (item.loupistId !== selectedLoupistId && !await loupist.selectLoupist(item.loupistId, loupists.find(candidate => candidate.id === item.loupistId))) return;
+      if (item.loupistId !== selectedLoupistId && !await loupist.selectLoupist(item.loupistId)) return;
       setMemoryPage(null);
       dispatchSurface({ type: "openAssetPage", page: { loupistId: item.loupistId, assetId: item.recordId, name: item.title, key: Date.now() } });
       return;
@@ -665,7 +665,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       return;
     }
     if (item.kind === "checkDue" && item.recordId) {
-      if (item.loupistId !== selectedLoupistId && !await loupist.selectLoupist(item.loupistId, loupists.find(candidate => candidate.id === item.loupistId))) return;
+      if (item.loupistId !== selectedLoupistId && !await loupist.selectLoupist(item.loupistId)) return;
       setPendingLearningLocation({ loupistId: item.loupistId, surface: "note", objectId: item.recordId, selection: { kind: "journal", journalId: item.recordId } });
       showPanel("world");
       return;
@@ -701,7 +701,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       if (threadId) chat.setActiveThreadForLoupist(loupistId, threadId);
       return;
     }
-    void loupist.selectLoupist(loupistId, loupists.find((item) => item.id === loupistId), threadId);
+    void loupist.selectLoupist(loupistId, threadId);
   };
 
   // The palette finds names and principles in every Loupist (shell spec X7); another Loupist's
@@ -894,9 +894,6 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                       selectedAgent={selectedLoupist}
                       mutationBusy={loupist.mutationBusy}
                       mutationError={dialogs.createLoupistOpen || dialogs.reconnectLoupistOpen ? null : loupist.mutationError}
-                      recoveryBusy={loupist.recoveryBusy}
-                      recoveryError={loupist.recoveryError}
-                      onRecover={() => void loupist.recoverSelectedLoupist()}
                       onReconnect={dialogs.openReconnectLoupist}
                       onOpenMarketplace={(entryId) => openSettings("connections", { entryId: entryId ?? null })}
                       onDelete={loupist.deleteLoupist}
@@ -976,13 +973,12 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   >
                     {i18n.t("app:app.tryAgain")}</button>
                 </main>
-              ) : selectedLoupist && (selectedLoupist.availability.status === "earlier_version" || selectedLoupist.availability.status === "newer_version" || (selectedLoupist.availability.status === "recovery_required" && tab !== "schedule")) ? (
+              ) : selectedLoupist && (selectedLoupist.availability.status === "earlier_version" || selectedLoupist.availability.status === "newer_version") ? (
                 <LoupistAvailabilityBoundary
                   availability={selectedLoupist.availability}
-                  busy={loupist.recoveryBusy}
-                  error={loupist.recoveryError}
-                  onRecover={() => void loupist.recoverSelectedLoupist()}
-                      onReconnect={dialogs.openReconnectLoupist}
+                  busy={loupist.mutationBusy}
+                  error={loupist.mutationError}
+                  onReconnect={dialogs.openReconnectLoupist}
                   onRemove={() => void openLoupistSettingsFor(selectedLoupist.id, true)}
                 />
               ) : selectedLoupist ? (
@@ -1027,7 +1023,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
               </ViewBoundary>
               </div>
             </div>
-            {selectedLoupist && selectedLoupist.availability.status !== "recovery_required" &&
+            {selectedLoupist &&
               workspaceThreadId && (
                 <ChatWorkspacePanel
                   bridge={bridge}

@@ -355,7 +355,7 @@
     "connectAServiceToGiveThisLoupistMore": "서비스를 연결해 이 루피스트가 사용할 자료 제공처를 늘려 보세요.",
     "removeFromThisApp": "앱에서 제거",
     "yourWorkspaceFolderChatsAndMemoryStayOn": "작업 폴더, 대화, 기억은 디스크에 남아 있어요. 폴더를 루피스트로 다시 열 수 있어요.",
-    "reconnectOrRecoverThisLoupistBeforeRemovingIt": "제거하기 전에 이 루피스트를 다시 연결하거나 복구해 주세요.",
+    "reconnectThisLoupistBeforeRemovingIt": "제거하기 전에 이 루피스트를 다시 연결해 주세요.",
     "removeLoupist": "루피스트 제거",
     "selectALoupistToEditIt": "편집할 루피스트를 선택해 주세요.",
     "removeNameFromThisApp": "앱에서 “{{name}}” 루피스트를 제거해요.",

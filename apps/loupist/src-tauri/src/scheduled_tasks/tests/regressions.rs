@@ -263,8 +263,8 @@ async fn unavailable_loupist_backlog_does_not_starve_healthy_schedules() {
         .unwrap();
     state.quarantine_loupist(
         &blocked.id,
-        crate::app::QuarantineSource::MemoryWrite,
-        "recover first",
+        crate::app::QuarantineSource::Deletion,
+        "pending deletion",
     );
     state.scheduled.poll(&state).await.unwrap();
     // No configured model: a durable failure proves this Loupist reached admission.

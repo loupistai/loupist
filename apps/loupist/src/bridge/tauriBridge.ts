@@ -156,7 +156,6 @@ const bridge = (): StrictBridge => ({
 
   loupistList: () => call("loupist_list"),
   loupistSelect: (loupist_id) => call("loupist_select", { loupist_id }),
-  loupistRecover: request("loupist_recover"),
   loupistProfileUpdate: request("loupist_profile_update"),
   loupistImport: request("loupist_import"),
   loupistCreate: request("loupist_create"),

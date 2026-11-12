@@ -342,12 +342,12 @@ async fn scheduled_dispatch_requires_current_loupist_binding_and_shutdown_admiss
         .is_empty());
 }
 
-#[test]
-fn scheduled_pause_and_history_remain_available_during_memory_recovery() {
+#[tokio::test]
+async fn deletion_quarantine_blocks_scheduled_commands_and_runs_until_cleared() {
     let directory = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
     let state = AppState::for_test(directory.path().join("app"));
-    let loupist = profile("loupist-scheduled-recovery", workspace.path(), 1);
+    let loupist = profile("loupist-scheduled-quarantine", workspace.path(), 1);
     seed_profile(state.store.as_ref(), &loupist);
     let task = state
         .store
@@ -355,9 +355,42 @@ fn scheduled_pause_and_history_remain_available_during_memory_recovery() {
         .unwrap();
     state.quarantine_loupist(
         &loupist.id,
-        crate::app::QuarantineSource::MemoryWrite,
-        "recovery fixture",
+        crate::app::QuarantineSource::Deletion,
+        "pending deletion",
     );
+    assert_eq!(
+        service::list(&state, &loupist.id).unwrap_err().code,
+        "loupist_storage_unavailable"
+    );
+    for status in [TaskStatus::Paused, TaskStatus::Active] {
+        assert_eq!(
+            service::set_status(&state, &loupist.id, &task.id, task.revision, status)
+                .unwrap_err()
+                .code,
+            "loupist_storage_unavailable"
+        );
+    }
+    assert_eq!(
+        service::delete(&state, &loupist.id, &task.id, task.revision)
+            .unwrap_err()
+            .code,
+        "loupist_storage_unavailable"
+    );
+    assert_eq!(
+        state
+            .scheduled
+            .dispatch(&state, &loupist.id, &task.id, true)
+            .await
+            .unwrap_err()
+            .code,
+        "loupist_storage_unavailable"
+    );
+    assert!(state
+        .store
+        .scheduled_task_runs(&loupist.id, &task.id)
+        .unwrap()
+        .is_empty());
+    state.clear_loupist_quarantine(&loupist.id, crate::app::QuarantineSource::Deletion);
     assert_eq!(service::list(&state, &loupist.id).unwrap().len(), 1);
     let paused = service::set_status(
         &state,
@@ -368,18 +401,6 @@ fn scheduled_pause_and_history_remain_available_during_memory_recovery() {
     )
     .unwrap();
     assert_eq!(paused.status, TaskStatus::Paused);
-    assert_eq!(
-        service::set_status(
-            &state,
-            &loupist.id,
-            &task.id,
-            paused.revision,
-            TaskStatus::Active
-        )
-        .unwrap_err()
-        .code,
-        "loupist_recovery_required"
-    );
     service::delete(&state, &loupist.id, &task.id, paused.revision).unwrap();
 }
 
