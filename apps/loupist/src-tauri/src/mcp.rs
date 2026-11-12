@@ -724,7 +724,13 @@ impl McpSession {
         }
         validate_server_id(&config.server_id)?;
         let _verified_executable = if bundled {
-            Some(verify_executable(&config.executable).map_err(|_| McpError::UntrustedExecutable)?)
+            let executable = config.executable.clone();
+            Some(
+                tokio::task::spawn_blocking(move || verify_executable(&executable))
+                    .await
+                    .map_err(|_| McpError::UntrustedExecutable)?
+                    .map_err(|_| McpError::UntrustedExecutable)?,
+            )
         } else {
             None
         };
