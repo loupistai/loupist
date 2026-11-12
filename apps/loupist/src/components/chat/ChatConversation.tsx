@@ -13,7 +13,7 @@ import { revealFocused } from "../../lib/revealFocused";
 import { ChatMessageCard } from "./ChatMessageCard";
 import type { ProviderErrorAction } from "./ChatErrorState";
 import { QuoteAsk } from "./QuoteAsk";
-import { MorningMessage } from "./MorningMessage";
+import { HomeSetup, MorningMessage } from "./MorningMessage";
 import { ThreadDelivery } from "./ThreadDelivery";
 import { ThreadHandoff } from "./ThreadHandoff";
 import { ThreadAlert } from "./ThreadAlert";
@@ -204,6 +204,13 @@ export function ChatConversation({
     return () => window.clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the joined run ids are the key, so the same deliveries are marked once.
   }, [home, active, bridge, loupistId, deliveredRunIds.join(",")]);
+  // Home shown again (back from Following, Settings…): the checklist reads its steps again.
+  const [wasActive, setWasActive] = useState(active);
+  const [homeRevision, setHomeRevision] = useState(0);
+  if (active !== wasActive) {
+    setWasActive(active);
+    if (active) setHomeRevision(homeRevision + 1);
+  }
   // The morning message loads after the Thread first scrolls; its arrival is part of the scroll revision.
   const [morningSettled, setMorningSettled] = useState(false);
   const morning = (mode: "full" | "news" | "questions") => bridge ? <MorningMessage
@@ -216,6 +223,7 @@ export function ChatConversation({
     accountConnected={accountConnected}
     onConnectAccount={onConnectAccount}
     onOpenFollowing={onOpenFollowing}
+    refreshRevision={homeRevision}
     deliveredRunIds={home ? deliveredRunIds : undefined}
     onSettled={() => setMorningSettled(true)}
     asOf={asOf}
@@ -318,6 +326,9 @@ export function ChatConversation({
           )}
           </Fragment>)}
           {home && !hasUserMessage ? morning("full") : home && !repliedThisVisit ? morning("news") : null}
+          {/* The first message replaces the morning message, not the steps still open. */}
+          {home && hasUserMessage && bridge && !asOf ? <HomeSetup key={loupistId} bridge={bridge} loupistId={loupistId} loupistName={loupistName}
+            onAsk={onSuggestion} accountConnected={accountConnected} onConnectAccount={onConnectAccount} onOpenFollowing={onOpenFollowing} refreshRevision={homeRevision} /> : null}
         </>)}
       </ConversationContent>
     </Conversation>
