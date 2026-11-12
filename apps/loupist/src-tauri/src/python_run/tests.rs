@@ -491,6 +491,10 @@ fn snapshot_file_selection_is_deterministic_with_outputs_then_recency_then_path(
 
 #[test]
 fn python_runs_large_folders_and_reports_both_file_and_byte_omissions() {
+    // Real worker runs are serialized: a second worker compiling at the same time
+    // skews the cold/warm cache timing test.
+    let _lock = lock_worker();
+    require_runtime();
     for files in [true, false] {
         let fixture = sample();
         if files {
