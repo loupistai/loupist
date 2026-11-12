@@ -274,7 +274,7 @@
         "running": "Preparing a research tool",
         "done": "Prepared a research tool"
       },
-      "description": "Load one data connection from the runtime section by its exact id before the first use of its tools in this Chat. Every other tool in your list is already active and never needs loading. Load the same id again only when a tool result says the connection stopped or tells you to reconnect. Loading cannot grant permissions."
+      "description": "Load a data connection or an on-demand tool pack from the runtime section by its exact id before the first use of its tools in this Chat. Every other tool in your list is already active and never needs loading. Load the same id again only when a tool result says the connection stopped or tells you to reconnect. Loading cannot grant permissions."
     },
     {
       "name": "connection_setup",
@@ -5801,8 +5801,9 @@
     },
     {
       "id": "charts",
+      "preload": false,
       "name": "Chart authoring",
-      "description": "Publish charts with indicators and drawings, and tables whose cells are checked against their sources."
+      "description": "Load before publishing a chart or a comparison table."
     },
     {
       "id": "opendart",
@@ -5842,8 +5843,9 @@
     },
     {
       "id": "schedules",
+      "preload": false,
       "name": "Scheduled tasks",
-      "description": "Create, inspect, edit, pause, resume and remove local scheduled work; choose fresh runs or a task’s own continuing Chat."
+      "description": "Load when the user asks to schedule, change or cancel recurring work, a briefing or watching."
     }
   ]
 }

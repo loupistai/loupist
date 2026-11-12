@@ -64,9 +64,16 @@ pub struct ComponentSpec {
     pub id: String,
     pub name: String,
     pub description: String,
+    /// Ordinary built-ins start active unless the catalog makes them on-demand.
+    #[serde(default = "preload_by_default")]
+    pub preload: bool,
     /// Plugin name when this component is one connection. Built-in packs omit it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connection: Option<String>,
+}
+
+fn preload_by_default() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]

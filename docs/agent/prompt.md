@@ -30,9 +30,10 @@ opened directly. The Journal Skill routes durable
 assistant research to `lens_file`, while `note_save` keeps Chat progress and facts
 the user stated.
 
-Built-in capability packs and enabled web research preload on every surface;
-unattended profiles still expose only their fixed allowlist. The runtime index
-lists data connections only, and only connections need `capability_load`.
+Ordinary research packs and enabled web research preload on every surface. The
+catalog marks charts and schedules with `preload: false`: they remain registered
+and listed in the runtime index, and need `capability_load` when requested. Data
+connections also load by id; unattended profiles retain their fixed allowlist.
 `run_python`'s tool description is the single sandbox/package reference. Journal
 covers user saves/reviews; Lens covers methods/library maintenance. The source
 prompt retains `safety:locked` annotations for review, but launch strips those

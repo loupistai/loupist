@@ -8,10 +8,11 @@ seal: transcript, Memory, model/runtime, credentials, configuration and resource
 hashes. A Skill mention does not change Memory access. Invalid host context must
 fail startup rather than become model text.
 
-Built-in tools allowed for the turn are preloaded, including enabled web research;
-they need no `capability_load`. The compact index lists data connections only. Use
-`capability_load` with an exact connection ID to expose its tools; mentioned enabled
-connections preload too. Reuse loaded connection tools, and load again only when the
+Ordinary research tools allowed for the turn preload, including enabled web
+research. The catalog marks charts and schedules on-demand (`preload: false`);
+the index names their tools and when to load them, and marks loaded packs on
+subsequent turns. Use `capability_load` with an exact pack or connection ID to
+expose its tools; mentioned enabled connections preload too. Reuse loaded connection tools, and load again only when the
 host says they are unavailable or asks for reconnection. Repeated loads return a short receipt.
 Unavailable bundled entries retain enough purpose/context
 to name the connection the user needs to configure. Loading cannot grant access.

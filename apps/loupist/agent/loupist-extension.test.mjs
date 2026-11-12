@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { fauxAssistantMessage, fauxProvider, fauxToolCall, InMemoryCredentialStore, validateToolArguments } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall, getCurrentTools, InMemoryCredentialStore, validateToolArguments } from "@earendil-works/pi-ai";
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { convertResponsesMessages, convertResponsesTools } from "@earendil-works/pi-ai/api/openai-responses-shared";
 
@@ -33,7 +33,8 @@ const BUNDLED_COMPONENTS = [
   tool("calculations", "Calculations", ["calculate"]),
   tool("documents", "Markdown artifact publishing", ["artifact_publish"]),
   tool("memory-save", "Source retention and journals", ["source_save", "note_save", "lens_file", "principle_save"]),
-  tool("charts", "Chart authoring", ["chart_query", "chart_publish"]),
+  tool("charts", "Chart authoring", ["chart_query", "chart_publish", "grid_publish"]),
+  tool("schedules", "Scheduled tasks", CATALOG.tools.filter((item) => item.component === "schedules").map((item) => item.name)),
   tool("world-bank", "World Bank", ["worldbank_series"], { connection: "world-bank" }),
   tool("krx", "KRX", ["krx_daily_quote"], { connection: "krx" }),
   tool("koreainvestment", "Korea Investment", ["kis_operation_search", "kis_read"], { connection: "koreainvestment" }),
@@ -920,7 +921,9 @@ test("catalog schemas survive provider adapters and never ask the model for cred
   assert.doesNotMatch(index, /World Bank/);
   assert.match(index, /Other data sources .* call connection_setup/);
   assert.doesNotMatch(formatRuntimeIndex({ ...runtime, core_tool_names: ["capability_load"] }), /connection_setup/);
-  assert.doesNotMatch(index, /Built-in:|`charts`/);
+  assert.doesNotMatch(index, /Built-in:/);
+  assert.match(index, /# On-demand tool packs/);
+  assert.match(line("charts"), /chart_publish.*Load before publishing a chart or a comparison table/);
 });
 
 test("capability resolution uses only unambiguous run ids and gives bounded repairs", () => {
@@ -955,18 +958,116 @@ test("capability resolution uses only unambiguous run ids and gives bounded repa
   assert.throws(() => resolveCapability("KRX", new Map(), disabled), /Available capability ids: none/);
 });
 
-test("preloaded builtins are active on the first request and absent from the connection index", async (t) => {
+test("ordinary builtins start active while on-demand packs stay listed and loadable", async (t) => {
   const components = BUNDLED_COMPONENTS.filter((c) => !c.connection);
   const context = runtimeContext("chat", ["capability_load"], components, {
-    preload_component_ids: components.map((c) => c.id),
+    preload_component_ids: components.filter((c) => CATALOG.components.find((spec) => spec.id === c.id).preload !== false).map((c) => c.id),
   });
   useHostContext(t, context);
-  const { handlers, active } = loadExtension();
+  const { registered, handlers, active } = loadExtension();
   const event = promptEvent();
   await handlers.get("before_agent_start")(event);
   assert(active().includes("calculate"));
   assert(active().includes("lens_file"));
+  assert(!active().includes("chart_publish"));
+  assert(!active().includes("schedule_create"));
   const index = event.systemPromptOptions.sections.loupist_runtime;
   assert.match(index, /No data connection is enabled/);
-  for (const component of components) assert(!index.includes(`- \`${component.id}\``));
+  assert.match(index, /Every other tool in your tool list is already active/);
+  for (const id of ["charts", "schedules"]) {
+    assert(index.includes("- `" + id + "`:"));
+    await registered.get("capability_load").execute(`load-${id}`, { id });
+  }
+  assert(active().includes("chart_publish"));
+  assert(active().includes("schedule_create"));
+  const next = promptEvent();
+  await handlers.get("before_agent_start")(next);
+  for (const id of ["charts", "schedules"]) assert(next.systemPromptOptions.sections.loupist_runtime.includes(`- \`${id}\` (loaded):`));
+  for (const c of components.filter((c) => !["charts", "schedules"].includes(c.id))) assert(!index.includes(`- \`${c.id}\``));
+});
+
+function catalogResearchContext(preloadAll = false) {
+  const components = CATALOG.components.filter((c) => !c.connection || c.id === "web-research")
+    .map((c) => tool(c.id, c.name, CATALOG.tools.filter((spec) => spec.component === c.id).map((spec) => spec.name),
+      { description: c.description, ...(c.connection ? { connection: c.connection } : {}) }));
+  return runtimeContext("chat", CATALOG.tools.filter((spec) => !spec.component).map((spec) => spec.name), components, {
+    preload_component_ids: components.filter((c) => preloadAll || CATALOG.components.find((spec) => spec.id === c.id).preload !== false).map((c) => c.id),
+  });
+}
+
+async function promptNativeSession(t, context, responses, prompt) {
+  const { temporary: root, path } = useHostContext(t, context);
+  context.workspace = emptyWorkspace(root);
+  writeFileSync(path, JSON.stringify(context), { mode: 0o600 });
+  const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false } });
+  const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, settingsManager,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    extensionFactories: [loupistTerminalExtension] });
+  await loader.reload();
+  assert.deepEqual(loader.getExtensions().errors, []);
+  const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false });
+  const faux = fauxProvider();
+  modelRuntime.registerNativeProvider(faux.provider);
+  faux.setResponses(responses);
+  const { session } = await createAgentSession({ cwd: root, agentDir: root, modelRuntime, model: faux.getModel(),
+    settingsManager, resourceLoader: loader, sessionManager: SessionManager.inMemory(root), noTools: "builtin" });
+  try {
+    await session.bindExtensions({ mode: "rpc" });
+    await session.prompt(prompt);
+    assert.notEqual(session.messages.at(-1)?.stopReason, "error", JSON.stringify(session.messages.at(-1)));
+    return session.messages;
+  } finally {
+    session.dispose();
+  }
+}
+
+test("first provider request omits on-demand schemas and measures the active tool JSON", async (t) => {
+  const measurements = {};
+  for (const [label, preloadAll] of [["before", true], ["after", false]]) {
+    let requests = 0;
+    await promptNativeSession(t, catalogResearchContext(preloadAll), [(context) => {
+      requests++;
+      const tools = getCurrentTools(context.messages);
+      const names = tools.map((tool) => tool.name);
+      assert(names.includes("calculate"));
+      assert(names.includes("lens_file"));
+      assert(names.includes("web_fetch"));
+      assert.equal(names.includes("chart_publish"), preloadAll);
+      assert.equal(names.includes("grid_publish"), preloadAll);
+      assert.equal(names.includes("schedule_create"), preloadAll);
+      measurements[label] = { tools: names.length, json_chars: JSON.stringify(tools).length,
+        responses_json_chars: JSON.stringify(convertResponsesTools(tools)).length };
+      return fauxAssistantMessage("Ready for research.");
+    }], "Give a brief research checklist; no chart or scheduling is needed.");
+    assert.equal(requests, 1);
+  }
+  assert(measurements.after.json_chars < measurements.before.json_chars);
+  t.diagnostic(`first-provider-tools ${JSON.stringify(measurements)}`);
+});
+
+test("Home's weekday morning briefing chip loads schedules and submits within one user turn", async (t) => {
+  const schedule = { kind: "weekly", days: [1, 2, 3, 4, 5], hour: 8, minute: 0, timezone: "Asia/Seoul" };
+  const frames = await startToolBroker(t, () => ({ enabled: true, schedule }));
+  const call = (name, args) => fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });
+  let requests = 0;
+  const messages = await promptNativeSession(t, catalogResearchContext(), [
+    (context) => {
+      requests++;
+      assert(!getCurrentTools(context.messages).some((tool) => tool.name === "schedule_briefing"));
+      return call("capability_load", { id: "schedules" });
+    },
+    (context) => {
+      requests++;
+      assert(getCurrentTools(context.messages).some((tool) => tool.name === "schedule_briefing"));
+      return call("schedule_briefing", { enabled: true, schedule });
+    },
+    (context) => {
+      requests++;
+      assert.equal(context.messages.findLast((message) => message.role === "toolResult").isError, false);
+      return fauxAssistantMessage("The weekday briefing is set for 08:00 Asia/Seoul.");
+    },
+  ], "Turn on a weekday morning briefing at 8");
+  assert.equal(requests, 3);
+  assert.equal(messages.filter((message) => message.role === "user").length, 1);
+  assert.deepEqual(frames.map(({ method, params }) => ({ method, params })), [{ method: "schedule.briefing", params: { enabled: true, schedule } }]);
 });

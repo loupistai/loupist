@@ -236,7 +236,7 @@ async fn custom_connection_broker_records_refusals_blocks_injection_and_captures
     assert!(runtime
         .components
         .iter()
-        .filter(|component| component.connection.is_none())
+        .filter(|component| component.preloads())
         .all(|component| preload.contains(&component.id)));
     for dont_save in [true, false] {
         manager
