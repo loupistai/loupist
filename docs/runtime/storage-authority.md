@@ -87,8 +87,11 @@ identities do not establish that two folders are the same. Copy/reopen rules are
 [Folder portability](../knowledge/growth.md#folder-portability). Versions, upgrades
 and refusals are in [Schema versions and upgrades](#schema-versions-and-upgrades).
 Workspace tabs retain their saved references while a registered folder is unavailable;
-only an available folder can establish that a Chat was deleted. Shared store-error
-mapping and Memory transaction setup keep raw SQLite diagnostics out of renderer messages.
+only an available folder can establish that a Chat was deleted. Draft writes recheck
+the Chat in its canonical database and hold that database lock through the
+profile-local write, serializing with deletion. The empty-Chat composer remains a
+separate draft identity with no Chat row. Shared store-error mapping and Memory
+transaction setup keep raw SQLite diagnostics out of renderer messages.
 
 An interrupted Memory transaction rolls back through the current transaction entry
 points; it does not create a folder recovery state or require a renderer recovery

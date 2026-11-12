@@ -132,8 +132,10 @@ rates. No key passes through Chat, and the connection works from the next messag
 Preview scenarios `chat-connection-setup-needs-setup` and `chat-connection-setup-ready`
 show it. A chat with both Memory flags off shows a
 private mark; the chat title in the sub-header renames in place; a Loupist row shows a
-draft dot while unsent text exists. Deleting a Chat also removes its unsent prompt,
-context and attachment drafts from the app profile; drafts for other Chats stay.
+draft dot while unsent text exists. After a Chat is successfully deleted, Rust
+removes its unsent prompt, context and attachment drafts from the app profile; a
+failed deletion keeps them. A draft write
+that arrives after deletion cannot recreate them. Drafts for other Chats stay.
 
 Selected workspace files, connections, quoted text, knowledge and work are inserted inline at the current cursor or selection. The editor uses a native textarea with a synchronized highlight layer; reference styling has the same text metrics, so wrapping, scrolling, selection and IME remain native. The draft retains bounded UTF-16 ranges alongside its existing typed pins, selected artifact and chip metadata. Typing before a reference shifts its range; editing inside it detaches the structured reference and leaves ordinary text. Backspace immediately after a reference, or Delete immediately before one, removes that occurrence atomically. Repeated references keep distinct offsets and serialize at each position; their shared typed context stays until the last occurrence is removed. The named removal action removes every occurrence of that context. Named removal controls are available to screen readers and reveal themselves when reached with Tab. Inserting or removing one reference preserves the surrounding question and other references. External draft restoration waits for the textarea to adopt the saved text before anchoring its references.
 
