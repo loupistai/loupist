@@ -85,6 +85,13 @@ per criterion and per metric; groups under 10 labels are `insufficient_labels`).
 
 **Metrics.** A trial passes a metric when every check with that metric passes.
 
+`contains_any` checks literal substrings. Retailer ranking checks accept English
+and Korean conclusions, including an emphasized company name or a comparison of
+established-store growth; repeating the supplied figures alone does not pass.
+Trace-derived answer regressions keep correct phrasings and counterexamples
+together. These lexical checks supplement the semantic rubric, which still judges
+the reasoning and whether the conclusion follows the saved method.
+
 | Metric | Meaning | Aggregation |
 | --- | --- | --- |
 | `carry_forward` | A taught procedure is applied in a later session | scenario majority-of-3 |
