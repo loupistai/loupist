@@ -6,9 +6,7 @@ import { LoupistTemplateFields, templateDraft, type LoupistDraft } from "./Loupi
 
 function Harness({ onFollow }: { onFollow?: (entry: WatchlistAddRequest) => Promise<void> }) {
   const [draft, setDraft] = useState<LoupistDraft>(() => templateDraft("portfolio"));
-  const [followed, setFollowed] = useState<WatchlistAddRequest[]>([]);
-  return <LoupistTemplateFields draft={draft} onChange={setDraft} followed={followed}
-    onFollow={onFollow && (async entry => { await onFollow(entry); setFollowed(current => [...current, entry]); })} />;
+  return <LoupistTemplateFields draft={draft} onChange={setDraft} onFollow={onFollow} />;
 }
 
 it("offers nine templates in order, with no icons on the cards", () => {
@@ -38,4 +36,13 @@ it("fills a class template's persona and offers starters that are added only whe
   await user.click(screen.getByRole("button", { name: /^Real assets/ }));
   expect(screen.queryByRole("button", { name: /^Follow / })).toBeNull();
   expect(screen.getByText("Add a source about a property or fund")).toBeVisible();
+});
+
+it("leaves a starter unfollowed and says so when following fails", async () => {
+  const user = userEvent.setup();
+  render(<Harness onFollow={vi.fn(async () => { throw new Error("offline"); })} />);
+  await user.click(screen.getByRole("button", { name: /^Crypto/ }));
+  await user.click(screen.getByRole("button", { name: "Follow Bitcoin" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn’t follow that. Try again.");
+  expect(screen.getByRole("button", { name: "Follow Bitcoin" })).toHaveAttribute("aria-pressed", "false");
 });

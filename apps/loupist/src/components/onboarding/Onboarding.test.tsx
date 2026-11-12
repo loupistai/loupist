@@ -118,3 +118,32 @@ it("keeps acknowledgment required if saving at onboarding completion fails", asy
   expect(await bridge.noticeSettingsGet()).toEqual({ notice_acknowledged_version: 1 });
   expect(create).toHaveBeenCalledTimes(1);
 });
+
+it("lets a user without an AI account look around first, and goes back between steps", async () => {
+  const bridge = await fresh(false);
+  const acknowledge = vi.spyOn(bridge, "noticeAcknowledge");
+  const user = await start(bridge);
+  expect(screen.getByRole("heading", { name: "Connect your AI account" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Back" }));
+  expect(screen.getByRole("checkbox", { name: "I understand" })).toBeChecked();
+  await user.click(screen.getByRole("button", { name: "Get started" }));
+  await user.click(screen.getByRole("button", { name: "Look around first" }));
+  expect(screen.getByRole("heading", { name: "Create your first Loupist" })).toBeVisible();
+  expect(screen.getByText(/reads new sources in the background using your AI account/)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Back" }));
+  expect(screen.getByRole("heading", { name: "Connect your AI account" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Look around first" }));
+  await createLoupist(user);
+  expect(await screen.findByRole("button", { name: "Connect an AI account" })).toBeVisible();
+  await waitFor(() => expect(acknowledge).toHaveBeenCalledTimes(1));
+});
+
+it("follows a template's starter from the first Loupist step", async () => {
+  const bridge = await fresh();
+  const follow = vi.spyOn(bridge, "watchlistAdd");
+  const user = await start(bridge);
+  await user.click(screen.getByRole("button", { name: /^Crypto/ }));
+  await user.click(screen.getByRole("button", { name: "Follow Bitcoin" }));
+  await waitFor(() => expect(follow).toHaveBeenCalledWith({ symbol: "BTC", market: "CRYPTO", displayName: "Bitcoin" }));
+  expect(screen.getByRole("button", { name: "Follow Bitcoin" })).toHaveAttribute("aria-pressed", "true");
+});

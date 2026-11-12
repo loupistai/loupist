@@ -746,6 +746,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
 
   const appDialogs = <AppDialogs
           dialogs={dialogs}
+          onFollowStarter={async (entry) => { await bridge.watchlistAdd(entry); }}
           selectedLoupistName={selectedLoupist?.name}
           currentWorkspacePath={selectedLoupist?.workspace_path}
           loupistMutationBusy={loupist.mutationBusy}

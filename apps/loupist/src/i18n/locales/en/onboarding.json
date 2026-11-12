@@ -31,19 +31,19 @@
     "delete": "Delete",
     "andItsMessagesDocumentsAndChartsWill": "“{{title}}” and its messages, documents, and charts will be permanently deleted.",
     "importLoupistFolder": "Open a Loupist folder",
-    "importLoupistFolderDescription": "Choose a folder that contains a Loupist saved by Loupist. Its chats, sources, map and journal come with it.",
+    "importLoupistFolderDescription": "Choose a Loupist folder from this app or a copy of one.",
     "couldNotImportThisFolder": "Couldn't import this folder",
     "import": "Import",
     "importing": "Importing…",
-    "workspaceTrust": "<0>I trust this folder.</0> Loupist can run commands and edit files using my local user permissions, including files outside this folder."
+    "workspaceTrust": "<0>I trust this folder.</0> Loupist reads its instructions and Skills and edits files only inside it."
   },
   "wizard": {
     "back": "Back",
-    "step": "Step {{current}} of 5",
     "welcomeTitle": "A research companion that learns what you care about",
     "welcomeLoupist": "Each research companion you create is a Loupist.",
-    "reads": "It reads sources with you and remembers what matters.",
-    "maps": "It builds a map of the companies and ideas you follow.",
+    "watches": "It watches the companies and markets you follow.",
+    "reads": "It reads sources with you and remembers how you think.",
+    "explains": "It explains what changed, with the evidence attached.",
     "start": "Get started",
     "connectTitle": "Connect your AI account",
     "connectBody": "Loupist runs on your own AI account. Your sign-in stays on this Mac, and requests go straight to your provider.",
@@ -55,6 +55,8 @@
     "connectError": "Could not connect your account.",
     "connected": "Connected to {{provider}}",
     "continue": "Continue",
+    "skipConnect": "Look around first",
+    "skipConnectNote": "You can connect an account later from the message box or Settings.",
     "createTitle": "Create your first Loupist",
     "loupistDefinition": "A Loupist is a research companion for one topic. It remembers what you read together and learns how you like to research.",
     "newLoupist": "New Loupist",
@@ -65,6 +67,7 @@
     "focusPlaceholder": "Describe your own focus",
     "create": "Create Loupist",
     "creating": "Creating…",
+    "backgroundReading": "Your Loupist reads new sources in the background using your AI account. You can change this in Loupist settings › Learning.",
     "templates": {
       "portfolio": {
         "title": "My portfolio",
@@ -111,7 +114,6 @@
         "focus": "Describe your own focus"
       }
     },
-    "briefingsFailed": "Briefings couldn’t be turned on. Try again in Briefings.",
     "importLoupist": "Already have a Loupist folder? Import it",
     "chatgptNote": "Uses your ChatGPT plan's usage. Loupist doesn't charge you.",
     "supergrok": "Continue with SuperGrok",
@@ -148,7 +150,7 @@
     "starters": "Click to follow:",
     "realAssetsSource": "Add a source about a property or fund",
     "followStarter": "Follow {{name}}",
-    "cryptoHoldings": "Crypto holdings",
+    "followFailed": "Couldn’t follow that. Try again.",
     "starter": {
       "BTC": "Bitcoin",
       "ETH": "Ethereum",

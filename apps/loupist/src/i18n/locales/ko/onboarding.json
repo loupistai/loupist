@@ -32,19 +32,19 @@
     "delete": "삭제",
     "andItsMessagesDocumentsAndChartsWill": "“{{title}}” 대화와 메시지, 문서, 차트가 영구적으로 삭제돼요.",
     "importLoupistFolder": "루피스트 폴더 열기",
-    "importLoupistFolderDescription": "루피스트로 저장한 루피스트가 들어 있는 폴더를 선택해 주세요. 대화, 자료, 지도, 저널도 함께 가져와요.",
+    "importLoupistFolderDescription": "Loupist 앱으로 만든 루피스트 폴더를 선택해 주세요.",
     "couldNotImportThisFolder": "이 폴더를 가져오지 못했어요",
     "import": "가져오기",
     "importing": "가져오는 중…",
-    "workspaceTrust": "<0>이 폴더를 신뢰해요.</0> 루피스트는 내 로컬 사용자 권한으로 명령을 실행하고 파일을 수정할 수 있어요. 이 폴더 밖의 파일도 포함돼요."
+    "workspaceTrust": "<0>이 폴더를 신뢰해요.</0> 루피스트는 이 폴더 안에서만 지침과 스킬을 읽고 파일을 수정해요."
   },
   "wizard": {
     "back": "뒤로",
-    "step": "5단계 중 {{current}}단계",
     "welcomeTitle": "관심사를 함께 배워 가는 리서치 동료",
     "welcomeLoupist": "만드는 리서치 동료 하나하나가 루피스트예요.",
-    "reads": "함께 읽은 자료에서 중요한 내용을 기억해요.",
-    "maps": "관심 있는 기업과 아이디어를 지도로 엮어 가요.",
+    "watches": "관심 있는 기업과 시장을 지켜봐요.",
+    "reads": "자료를 함께 읽고, 내가 어떻게 생각하는지 기억해요.",
+    "explains": "무엇이 바뀌었는지 근거와 함께 설명해요.",
     "start": "시작하기",
     "connectTitle": "AI 계정 연결",
     "connectBody": "루피스트는 내 AI 계정으로 동작해요. 로그인 정보는 이 Mac에만 남고, 요청은 AI 서비스로 바로 가요.",
@@ -56,6 +56,8 @@
     "connectError": "계정을 연결하지 못했어요.",
     "connected": "{{provider}}에 연결됐어요",
     "continue": "계속",
+    "skipConnect": "먼저 둘러보기",
+    "skipConnectNote": "계정은 나중에 메시지 입력란이나 설정에서 연결할 수 있어요.",
     "createTitle": "첫 루피스트 만들기",
     "loupistDefinition": "루피스트는 한 가지 주제를 함께 조사하는 리서치 동료예요. 함께 읽은 내용을 기억하고 조사 방식을 배워 가요.",
     "newLoupist": "새 루피스트",
@@ -66,6 +68,7 @@
     "focusPlaceholder": "예: 국내 2차전지 소재 기업",
     "create": "루피스트 만들기",
     "creating": "만드는 중…",
+    "backgroundReading": "루피스트는 연결한 AI 계정으로 새 자료를 백그라운드에서 읽어요. 루피스트 설정 › 학습에서 바꿀 수 있어요.",
     "templates": {
       "portfolio": {
         "title": "내 포트폴리오",
@@ -105,14 +108,13 @@
       "realAssets": {
         "title": "실물 자산",
         "focus": "부동산·인프라·토지의 소유자, 임차인, 자금 조달",
-        "suggestedName": "부동산 루피스트"
+        "suggestedName": "실물자산 루피스트"
       },
       "custom": {
         "title": "직접 만들기",
         "focus": "관심 분야를 직접 적어요"
       }
     },
-    "briefingsFailed": "브리핑을 켜지 못했어요. 브리핑 탭에서 다시 시도해 주세요.",
     "importLoupist": "이미 루피스트 폴더가 있나요? 가져오기",
     "chatgptNote": "ChatGPT 요금제 사용량을 써요. 루피스트는 따로 요금을 받지 않아요.",
     "supergrok": "SuperGrok으로 계속하기",
@@ -143,13 +145,13 @@
     "openrouterNote": "키 하나로 여러 모델",
     "local": "이 Mac의 모델 사용",
     "localNote": "무료이고 외부로 보내지 않아요. Ollama, LM Studio, llama.cpp 중 하나가 필요해요.",
-    "custom": "직접 입력한 주소",
+    "custom": "사용자 지정 엔드포인트(고급)",
     "keyStays": "키는 이 기기에만 저장돼요. 요청은 AI 서비스로 바로 가요.",
     "waitingBodyOther": "끝나면 이 화면이 저절로 넘어가요.",
     "starters": "눌러서 팔로우:",
     "realAssetsSource": "부동산이나 펀드에 관한 자료 추가",
     "followStarter": "{{name}} 관심 자산에 추가",
-    "cryptoHoldings": "크립토 보유 자산",
+    "followFailed": "팔로우하지 못했어요. 다시 시도해 주세요.",
     "starter": {
       "BTC": "비트코인",
       "ETH": "이더리움",
