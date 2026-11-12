@@ -307,7 +307,22 @@
                       "Hearthlane Grocery > Larkspur",
                       "Hearthlane Grocery ahead of Larkspur",
                       "Hearthlane Grocery above Larkspur",
-                      "Hearthlane Grocery should come first"
+                      "Hearthlane Grocery should come first",
+                      "**Hearthlane Grocery** first",
+                      "__Hearthlane Grocery__ first",
+                      "Hearthlane Grocery grew more in its established stores",
+                      "Hearthlane Grocery has higher same-store growth",
+                      "Hearthlane Grocery had higher same-store growth",
+                      "Hearthlane Grocery’s same-store growth is higher",
+                      "Hearthlane Grocery's same-store growth is higher",
+                      "Hearthlane Grocery를 먼저",
+                      "Hearthlane Grocery가 먼저",
+                      "Hearthlane Grocery를 우선",
+                      "Hearthlane Grocery가 1위",
+                      "Hearthlane Grocery의 동일점포 매출 성장률이 더 높",
+                      "Hearthlane Grocery의 기존 점포 매출 성장률이 더 높",
+                      "**Hearthlane Grocery**를 먼저",
+                      "**Hearthlane Grocery**가 1위"
                     ],
                     "metric": "task_success"
                   }
@@ -1601,7 +1616,22 @@
                       "Hearthlane Grocery > Larkspur",
                       "Hearthlane Grocery ahead of Larkspur",
                       "Hearthlane Grocery above Larkspur",
-                      "Hearthlane Grocery should come first"
+                      "Hearthlane Grocery should come first",
+                      "**Hearthlane Grocery** first",
+                      "__Hearthlane Grocery__ first",
+                      "Hearthlane Grocery grew more in its established stores",
+                      "Hearthlane Grocery has higher same-store growth",
+                      "Hearthlane Grocery had higher same-store growth",
+                      "Hearthlane Grocery’s same-store growth is higher",
+                      "Hearthlane Grocery's same-store growth is higher",
+                      "Hearthlane Grocery를 먼저",
+                      "Hearthlane Grocery가 먼저",
+                      "Hearthlane Grocery를 우선",
+                      "Hearthlane Grocery가 1위",
+                      "Hearthlane Grocery의 동일점포 매출 성장률이 더 높",
+                      "Hearthlane Grocery의 기존 점포 매출 성장률이 더 높",
+                      "**Hearthlane Grocery**를 먼저",
+                      "**Hearthlane Grocery**가 1위"
                     ],
                     "metric": "task_success"
                   }

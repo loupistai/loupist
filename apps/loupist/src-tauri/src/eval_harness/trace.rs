@@ -183,10 +183,11 @@ fn redact(value: &Value) -> Value {
             map.iter()
                 .map(|(key, value)| {
                     let lower = key.to_lowercase();
+                    let compound: String =
+                        lower.chars().filter(char::is_ascii_alphanumeric).collect();
                     let sensitive = [
                         "secret",
                         "token",
-                        "key",
                         "password",
                         "passwd",
                         "authorization",
@@ -194,7 +195,40 @@ fn redact(value: &Value) -> Value {
                         "cookie",
                     ]
                     .iter()
-                    .any(|word| lower.contains(word));
+                    .any(|word| lower.contains(word))
+                        || [
+                            "apikey",
+                            "accesskey",
+                            "privatekey",
+                            "clientkey",
+                            "sessionkey",
+                            "authkey",
+                            "signingkey",
+                            "appkey",
+                            "crtfckey",
+                        ]
+                        .iter()
+                        .any(|word| compound.contains(word))
+                        || (lower == "key"
+                            && value.as_str().is_some_and(|text| {
+                                let encoded = text.len() >= 20
+                                    && text
+                                        .bytes()
+                                        .all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b));
+                                // A bare JWT has three base64url segments; the
+                                // text detector also handles prefixed Bearer tokens.
+                                let parts: Vec<_> = text.split('.').collect();
+                                let jwt = text.len() >= 20
+                                    && text.starts_with("eyJ")
+                                    && parts.len() == 3
+                                    && parts.iter().all(|part| {
+                                        !part.is_empty()
+                                            && part.bytes().all(|b| {
+                                                b.is_ascii_alphanumeric() || b"-_=".contains(&b)
+                                            })
+                                    });
+                                encoded || jwt
+                            }));
                     (
                         key.clone(),
                         if sensitive {
@@ -471,6 +505,150 @@ fn content_excerpt(title: &str, content: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credential_field_names_are_redacted_without_hiding_section_metadata() {
+        for name in [
+            "secret",
+            "token",
+            "password",
+            "passwd",
+            "authorization",
+            "credential",
+            "cookie",
+            "api_key",
+            "apiKey",
+            "API-KEY",
+            "access_key",
+            "private_key",
+            "secret_key",
+            "client_key",
+            "session_key",
+            "auth_key",
+            "signing_key",
+            "signingKey",
+            "appKey",
+            "crtfc_key",
+        ] {
+            let input = json!({"nested": [{name: "synthetic fixture"}]});
+            assert_eq!(redact(&input)["nested"][0][name], "[redacted]", "{name}");
+        }
+        let metadata = json!({
+            "key": "overview", "keyword": "cash", "monkey": "x".repeat(40),
+            "key_points": ["basic shares", "token usage is not revenue"],
+            "ops": [{"key": "use-when"}, {"key": "user-judgment"}],
+        });
+        assert_eq!(redact(&metadata), metadata);
+    }
+
+    #[test]
+    fn bare_keys_keep_labels_but_redact_credential_values() {
+        for value in [
+            "overview",
+            "use-when",
+            "user-judgment",
+            "key_points",
+            "keyword",
+            "monkey",
+            "abcdefghijklmnopqrs",
+            "long section label with spaces",
+            "operating-margin-review",
+        ] {
+            let input = json!({"key": value});
+            assert_eq!(redact(&input), input, "{value}");
+        }
+        for value in [
+            "api_key=synthetic-fixture",
+            "Authorization: Bearer synthetic-fixture",
+            "sk-fixture",
+            "abcdefghijklmnopqrst",
+            "YWJjZGVmZ2hpamtsbW5vcA==",
+            "0123456789abcdef0123456789abcdef01234567",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.c3ludGhldGlj",
+        ] {
+            for name in ["key", "Key", "KEY"] {
+                assert_eq!(
+                    redact(&json!({name: value}))[name],
+                    "[redacted]",
+                    "{name}: {value}"
+                );
+            }
+        }
+        // Non-string section metadata is traversed, not hidden wholesale.
+        assert_eq!(redact(&json!({"key": null})), json!({"key": null}));
+        assert_eq!(
+            redact(&json!({"key": {"apiKey": "fixture"}})),
+            json!({"key": {"apiKey": "[redacted]"}})
+        );
+    }
+
+    #[test]
+    fn host_only_lens_arguments_remain_visible() {
+        let args = json!({"pages":[{"ops":[{"op":"put", "key":"user-judgment",
+            "markdown":"The user recorded a judgment, not a credential."}]}]});
+        let stored: ChatToolTrace = serde_json::from_value(json!({"entries":[{
+            "call_id":"host-lens", "name":"lens_file", "component":null, "args":args,
+            "start_offset_ms":0, "duration_ms":0, "outcome":"ok", "error":null, "result_bytes":null
+        }], "truncated":false}))
+        .unwrap();
+        let calls = json!(tool_calls(Some(&stored), &PiTrace::default()));
+        assert_eq!(calls[0]["args"], args);
+    }
+
+    #[test]
+    fn scripted_security_turns_keep_comparable_tool_arguments() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../evals/agent/fixtures/security-tool-args.json"
+        ))
+        .unwrap();
+        let turns = fixture["turns"].as_array().unwrap();
+        assert_eq!(turns.len(), 5);
+        for turn in turns {
+            // The old trace lost one S-R05 basis key. Exercise every section in
+            // its referenced page; none is presented as a recovered observation.
+            let variants = turn["valid_section_keys"]
+                .as_array()
+                .cloned()
+                .unwrap_or_else(|| vec![Value::Null]);
+            for variant in variants {
+                let mut scripted = turn.clone();
+                if let Some(pointer) = turn["unrecoverable_key_pointer"].as_str() {
+                    *scripted.pointer_mut(pointer).unwrap() = variant.clone();
+                }
+                let calls = scripted["calls"].as_array().unwrap();
+                let mut pi = PiTrace::default();
+                for (index, call) in calls.iter().enumerate() {
+                    let id = format!("scripted-{index}");
+                    pi.observe(&json!({"type":"tool_execution_start", "toolCallId":id,
+                        "toolName":call["name"], "args":call["args"]}));
+                    pi.observe(&json!({"type":"tool_execution_end", "toolCallId":id,
+                        "isError":call["outcome"] == "error", "result":{"error_code":call["error_code"]}}));
+                }
+                let message = crate::test_fixtures::chat_message(
+                    "scripted-security",
+                    crate::domain::ChatRole::Assistant,
+                    "Scripted turn complete.",
+                );
+                let built = persisted(&message, &pi);
+                let rebuilt = built["tool_calls"].as_array().unwrap();
+                assert_eq!(rebuilt.len(), calls.len());
+                for (actual, expected) in rebuilt.iter().zip(calls) {
+                    assert_eq!(actual["args"], expected["args"], "{}", turn["scenario_id"]);
+                    assert_eq!(actual["outcome"], expected["outcome"]);
+                }
+                // --nocapture exposes these fictional scripted records for an
+                // offline check with the JS grader, without calling a model.
+                println!(
+                    "REBUILT_SECURITY_TRACE {}",
+                    json!({
+                        "scenario_id":turn["scenario_id"], "section_key_variant":variant,
+                        "tool_calls":built["tool_calls"],
+                    })
+                );
+            }
+        }
+    }
+
     #[test]
     fn saved_excerpts_cover_content_and_bound_sensitive_text() {
         for (content, expected) in [

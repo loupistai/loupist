@@ -85,6 +85,13 @@ per criterion and per metric; groups under 10 labels are `insufficient_labels`).
 
 **Metrics.** A trial passes a metric when every check with that metric passes.
 
+`contains_any` checks literal substrings. Retailer ranking checks accept English
+and Korean conclusions, including an emphasized company name or a comparison of
+established-store growth; repeating the supplied figures alone does not pass.
+Trace-derived answer regressions keep correct phrasings and counterexamples
+together. These lexical checks supplement the semantic rubric, which still judges
+the reasoning and whether the conclusion follows the saved method.
+
 | Metric | Meaning | Aggregation |
 | --- | --- | --- |
 | `carry_forward` | A taught procedure is applied in a later session | scenario majority-of-3 |
@@ -119,6 +126,12 @@ conservative lower bounds over all expected checks.
 `execution_failed` or `interrupted` are not. Redacted or truncated arguments cannot
 prove two failures identical (`repeated_failures_unknown`), and calls without a
 final outcome are `unknown_outcomes`; both leave the goals unmeasured.
+
+Traces redact credential fields and credential-shaped text. Ordinary Lens section
+`key` labels stay visible; a bare `key` value is hidden if it looks like a
+credential, a JWT, or an unbroken base64/hex string of at least 20 characters.
+Old redacted values cannot be recovered from their placeholders. Scripted trace
+replays must identify any reconstructed values and keep the original trace intact.
 
 **Numbers.** `metrics` assertions use relative tolerance 0.001% with an absolute
 floor of 1e-7. Optional `scales` accept the expected value times a listed factor

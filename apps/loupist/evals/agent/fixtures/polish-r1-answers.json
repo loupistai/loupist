@@ -1,0 +1,66 @@
+[
+  {
+    "suite": "tool-use",
+    "scenario_id": "T-007",
+    "session_id": "task-1",
+    "turn_index": 0,
+    "run_id": "17feadfc-8186-4421-8f32-b3b07f7e24d6",
+    "answer": "Put **Hearthlane Grocery** first. Both disclose same-store sales growth, so that is the ranking metric, not total sales.\n\nSame-store sales growth is the change at stores open long enough to compare, excluding new openings and closures. On the figures you gave, Hearthlane’s same-store growth is 6 percent and Larkspur Retail’s is 4 percent. That is the order from your method [Same-store before total sales](lens:rec_6084de38a5024ed1a2ff0776e7e5f334): state same-store growth first, and do not rank on total sales when same-store growth is available.\n\nLarkspur’s total sales growth is higher (11 percent versus Hearthlane’s 2 percent). Chainwide sales can rise from new stores while established stores grow more slowly, which is why total sales does not decide the rank here.\n\n**For:** Hearthlane’s same-store growth is 2 percentage points higher. Check the next reported same-store figure for both, on the same definition and period. A wider gap strengthens Hearthlane’s lead; a reversal, or a figure that is not on a comparable store set, weakens it.\n\n**Against:** Larkspur’s total sales grew much faster. Check whether that gap is mostly new stores or a different store base. If the next reports show Larkspur’s same-store growth catching or passing Hearthlane’s, the ranking flips.\n\nThese are your figures, with no period or source attached. The rank holds only if both same-store rates are company-computed on a comparable set of stores for the same period."
+  },
+  {
+    "suite": "tool-use",
+    "scenario_id": "T-011",
+    "session_id": "task-1",
+    "turn_index": 0,
+    "run_id": "17feadfc-8186-4421-8f32-b3b07f7e24d6",
+    "answer": "2023년 GT.FICT.MARR.IDX 값은 확인하지 못했습니다. 숫자를 지어내지 않겠습니다.\n\n워크스페이스를 검색했지만 해당 코드나 경제 XQ 자료는 없고, 이 대화에 연결된 데이터 소스도 없습니다. 기억 읽기도 꺼져 있어 이전에 저장된 값을 볼 수 없습니다.\n\n값을 내려면 원본 파일(표, 내보내기, 화면 캡처)을 이 폴더에 넣거나 대화에 첨부해 주세요. 그때 그 자료에 적힌 2023년 값만 그대로 알려 드리겠습니다."
+  },
+  {
+    "suite": "tool-use",
+    "scenario_id": "T-012",
+    "session_id": "task-1",
+    "turn_index": 0,
+    "run_id": "17feadfc-8186-4421-8f32-b3b07f7e24d6",
+    "answer": "990417의 최근 호가는 지금 확인할 수 없습니다. 작업 공간에 해당 종목 자료가 없고, 시세 연결도 아직 없습니다. 가격은 지어내지 않겠습니다.\n\nKRX Open API 설정 카드가 이 답변에 준비되어 있습니다. 키는 카드에만 입력하면 됩니다. 연결은 다음 메시지부터 동작하므로, 그때 다시 물어보시면 확인된 호가만 가져오겠습니다."
+  },
+  {
+    "suite": "tool-use",
+    "scenario_id": "T-031",
+    "session_id": "task-1",
+    "turn_index": 0,
+    "run_id": "17feadfc-8186-4421-8f32-b3b07f7e24d6",
+    "answer": "Hearthlane Grocery grew more in its established stores: same-store sales rose 6 percent, against 4 percent at Larkspur Retail.\n\nThat ranking follows the saved method [Same-store before total sales](lens:rec_12d39533290f4d24bc69d7f6cdcaa39b). Both are retailers and both disclose same-store and total sales growth, so the method applies: rank on same-store growth and do not rank on total sales when same-store growth is available. It assumes each company already computed same-store growth on a comparable set of stores.\n\nOn the figures you gave, Larkspur’s total sales grew faster (11 percent versus 2 percent). Chainwide sales can rise while established stores grow more slowly; here the gap is consistent with expansion outside the comparable-store base, not with stronger established-store growth. No period or source was supplied for either pair of figures, so this is a ranking of the numbers you stated, not a filing comparison."
+  },
+  {
+    "suite": "tool-use",
+    "scenario_id": "T-034",
+    "session_id": "task-1",
+    "turn_index": 0,
+    "run_id": "17feadfc-8186-4421-8f32-b3b07f7e24d6",
+    "answer": "2026년 3월 15일까지 공시된 자료만으로는 별무리반도체(990308)의 2026년 설비투자 내용, 설비 종류, 수량을 확인할 수 없습니다. 공시 원문을 읽지 못했기 때문에 종류와 수량을 적지 않습니다.\n\nOpenDART에서 회사는 확인됐습니다. 고유번호 99030800, 영문명 Byeolmuri Semiconductor입니다. 그다음 2026년 1월 1일부터 3월 15일까지, 그리고 그 이전을 포함한 허용 구간에서 공시 목록을 조회했습니다. 설비투자 공시가 보통 올라오는 거래소공시와 주요사항보고는 목록 자체가 읽을 수 없는 응답으로 돌아왔고, 다른 공시 구분에서도 해당 기간의 원문 접수번호를 얻지 못했습니다. 접수번호를 모르면 공시 원문을 열 수 없습니다.\n\n따라서 2026년 3월 15일 시점에 알려진 설비투자 결정이 있었는지, 있었다면 어떤 설비를 몇 대(또는 몇 식) 투자한다고 적혀 있었는지는 이번 조회로는 알 수 없습니다. 없는 공시로 단정하지도 않았습니다."
+  },
+  {
+    "suite": "principles",
+    "scenario_id": "P-R03",
+    "session_id": "new-chat",
+    "turn_index": 0,
+    "run_id": "d74cd9b2-c12d-4ecf-95be-e8463b7ce4bc",
+    "answer": "Earnings quality is weak. On the figures you gave for 2026-09-29, only [35.29%](#evidence-ev_485d7e6beba3f8ed627a9a6e5249aba6) of reported profit showed up as operating cash flow, so the 17 million credits of profit should not be trusted on its own.\n\nOperating cash flow was 6 million credits against 17 million credits of reported profit. That cash-conversion ratio is operating cash flow divided by reported profit. A reading near 100% would mean accounting profit was largely collected in cash from operations. Here, most of the profit is not matched by operating cash in the same period. The gap can come from accruals, working-capital build, or non-cash income, but these two figures alone do not say which.\n\nNothing else was used: no prior periods, no receivables or inventory detail, and no distinction between recurring and one-off items. A single period also cannot show whether this gap is temporary.\n\n### Checked against your principles\n[Compare operating cash flow with reported profit before trusting earnings.](lens:rec_6fbf5cb6d4834135938d1d54aef1beac) — On 2026-09-29, operating cash flow of 6 million credits was [35.29%](#evidence-ev_485d7e6beba3f8ed627a9a6e5249aba6) of the 17 million credits of reported profit, so trusting that profit conflicts with the cash comparison."
+  },
+  {
+    "suite": "principles",
+    "scenario_id": "P-R05b",
+    "session_id": "condition",
+    "turn_index": 0,
+    "run_id": "d74cd9b2-c12d-4ecf-95be-e8463b7ce4bc",
+    "answer": "Your sell rule is triggered. The operating margin you gave for fictional Zircon Loom, 8% on 2026-09-29, is below the 10% line in your rule.\n\nThat 8% is your stated figure, not a filing or a market print. I did not look up a real company, and this check does not place an order.\n\n## Checked against your principles\n\n- [Sell when operating margin falls below 10%.](lens:rec_57ee509f01fa4047a49e66309750a3c0): your rule’s sell condition is met (operating margin 8% on 2026-09-29 is below 10%)."
+  },
+  {
+    "suite": "principles",
+    "scenario_id": "P-R09",
+    "session_id": "new-chat",
+    "turn_index": 0,
+    "run_id": "d74cd9b2-c12d-4ecf-95be-e8463b7ce4bc",
+    "answer": "보고 이익 17억 원은 영업현금으로 충분히 확인되지 않습니다. 2026-09-29 기준 영업현금흐름은 6억 원으로, 현금전환율은 [35.29%](#evidence-ev_b39cf650117da385cd22afde2920fa7a)입니다. 이 두 숫자만 보면 이익의 질은 낮고, 17억 원을 현금이 뒷받침하는 이익으로 받아들이기는 어렵습니다.\n\n현금전환율은 영업현금흐름을 보고 이익으로 나눈 값입니다. 100%에 가까울수록 이익이 같은 기간 영업현금으로 들어왔다는 뜻이고, 여기서는 약 3분의 1만 현금으로 확인됩니다. 차이는 [−11억 원](#evidence-ev_be49b560c921121d0430ebaecd53d77d)이고, 보고 이익보다 [64.71%](#evidence-ev_be49b560c921121d0430ebaecd53d77d) 낮습니다. 이 11억 원은 발생액, 즉 이익에는 잡혔지만 아직 영업현금으로 들어오지 않은 부분으로 읽는 것이 맞습니다.\n\n이 결론은 사용자가 준 두 숫자에만 기대고 있습니다. 회사는 가상이고, 저장된 기록이나 이전 대화에는 같은 사실이 없습니다. 이익이 당기순이익인지 영업이익인지도 구분되지 않았습니다. 현금전환율은 보통 당기순이익과 비교하므로, 17억 원이 영업이익이라면 기준이 달라집니다. 기간이 분기인지 연간인지도 없고, 매출·운전자본·일회성 손익·전년 수치도 없습니다. 그래서 갭의 원인은 알 수 없습니다. 매출채권·재고 증가, 비현금 이익, 일회성 운전자본 증가 모두 가능한 설명이지 확인된 사실은 아닙니다.\n\n판단을 바꿀 재료는 현금 다리입니다. 다음 보고에서 영업현금흐름이 이익에 가까워지고 미수금이 회수되면, 이번 갭은 시기 차이로 볼 수 있습니다. 반대로 이익은 유지되는데 영업현금흐름이 계속 크게 낮으면, 발생액이 쌓이는 쪽으로 보고 이익의 신뢰를 더 낮춰야 합니다.\n\n## 내 원칙 점검\n\n- [보고 이익을 신뢰하기 전에 영업현금흐름과 비교해.](lens:rec_ad17899036a84056817b037b553bee70): 2026-09-29 보고 이익 17억 원, 영업현금흐름 6억 원. 현금전환율 [35.29%](#evidence-ev_b39cf650117da385cd22afde2920fa7a), 차이 [−11억 원](#evidence-ev_be49b560c921121d0430ebaecd53d77d). 결과: 충돌. 현금이 이익을 뒷받침하지 않아 보고 이익을 그대로 신뢰하지 않습니다."
+  }
+]
