@@ -114,6 +114,21 @@
                     "criterion": "The answer publishes one line chart of Brindle quarterly revenue for 2025Q1 through 2025Q4 using 12, 15, 14, and 18.",
                     "metric": "task_success"
                   }
+                ],
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "charts",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "chart_publish"
+                    ],
+                    "metric": "tool_validity"
+                  }
                 ]
               }
             }
@@ -144,6 +159,21 @@
                     "id": "publishes-bars",
                     "criterion": "The answer publishes one bar chart comparing Larkspur Retail 11, Hearthlane Grocery 7, and Vellum Press 16, and no other company.",
                     "metric": "task_success"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "charts",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "chart_publish"
+                    ],
+                    "metric": "tool_validity"
                   }
                 ]
               }
@@ -1362,6 +1392,19 @@
               "user": "Use chart_publish to publish one line chart titled Brindle quarterly revenue from these rows: 2025Q1 12, 2025Q2 15, 2025Q3 14, 2025Q4 18. The units are USD millions.",
               "expect": {
                 "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "charts",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "chart_publish"
+                    ],
+                    "metric": "tool_validity"
+                  },
                   {
                     "assert": "tool_called",
                     "tool": "chart_publish",
@@ -3169,6 +3212,19 @@
               "user": "Prepare a research brief comparing Solsup Foods, Iseul Logistics and Hanbit Chem for FY2025. First establish which statement basis is available for each company. Next reconcile their revenue and operating income on that basis. Then compute operating margins and rank the companies. Next build a comparison chart of the margins. Finally write a short conclusion explaining the ranking and the limitation of comparing different statement bases. Complete all five parts and cite the filings behind the figures.",
               "expect": {
                 "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "charts",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "chart_publish"
+                    ],
+                    "metric": "tool_validity"
+                  },
                   {
                     "assert": "plan_progress",
                     "metric": "task_success"

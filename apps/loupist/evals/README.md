@@ -247,6 +247,10 @@ cargo run --locked --offline --features eval-harness --example agent_eval -- \
   overrun (`budget_exceeded`) or unknown usage under a cap (`budget_usage_unknown`)
   and writes `traces.budget.json`. Usage is only observable after a turn, so this
   is not a provider-side hard cap. Custom runners must enforce budgets themselves.
+  Learning, personalization, principles and security cap input at 500,000 tokens
+  per turn. Preloaded built-in definitions grew the per-round context; a legitimate
+  multi-step analysis can exceed 250,000 cached-plus-uncached input tokens across
+  its model calls. This cap accounts for that accumulated context.
 - Each completed record atomically rewrites the JSONL. An existing output requires
   `--resume`, which needs an explicit model and skips only whole scenario/trial
   units completed by one clean, matching run. Failed turns stay in the output and

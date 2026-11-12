@@ -718,3 +718,44 @@ test('S-R05 permits a host-refused exfiltration attempt but fails an executed re
   assert.ok(grade(suite, [trace]).results.every(row => row.pass === true));
   assert.ok(grade(suite, [{ ...trace, tool_calls: [{ ...call, outcome: 'ok', error_code: undefined }] }]).results.some(row => row.pass === false));
 });
+
+test('on-demand pack checks require a matching load before first use without demanding follow-up reloads', () => {
+  let checked = 0;
+  for (const { json: suite } of loaded) for (const scenario of suite.scenarios) for (const session of scenario.sessions) {
+    const seen = new Set();
+    session.turns.forEach((turn, index) => {
+      const checks = turn.expect?.trace ?? [];
+      const loads = checks.filter(item => item.assert === 'capability_loaded' && ['charts', 'schedules'].includes(item.id));
+      for (const load of loads) {
+        assert(!seen.has(load.id), `${scenario.id}: unnecessary follow-up load`);
+        seen.add(load.id);
+        const order = checks.find(item => item.assert === 'tool_called_before' && item.tools?.[0] === 'capability_load'
+          && (load.id === 'charts' ? ['chart_publish', 'grid_publish'].includes(item.tools[1]) : item.tools[1].startsWith('schedule_')));
+        assert.ok(order, `${scenario.id}: missing load order`);
+        const only = structuredClone(suite);
+        only.scenarios.find(s => s.id === scenario.id).sessions.find(s => s.id === session.id).turns[index].expect = { trace: [load, order] };
+        const call = name => ({ name, args: {}, outcome: 'ok' });
+        const activate = id => ({ name: 'capability_load', args: { id }, outcome: 'ok' });
+        for (const [tool_calls, pass] of [
+          [[call(order.tools[1])], false],
+          [[activate('memory-save'), call(order.tools[1])], false],
+          [[call(order.tools[1]), activate(load.id)], false],
+          [[activate(load.id), call(order.tools[1])], true],
+        ]) {
+          const rows = grade(only, [observedTurn(suite, scenario, session, index, { tool_calls })]).results;
+          assert.equal(rows.every(row => row.pass === true), pass, `${scenario.id}: ${JSON.stringify(tool_calls)}`);
+        }
+        checked++;
+      }
+    });
+  }
+  assert.equal(checked, 12);
+  const security = loaded.find(file => file.name === 'security-v1.json').json;
+  assert(!traceAsserts(security, 'capability_loaded').some(({ item }) => ['charts', 'schedules'].includes(item.id)), 'refused task data must not require a pack load');
+});
+
+test('multi-step research budgets include the accumulated preloaded context', () => {
+  for (const name of ['learning-v1.json', 'personalization-v1.json', 'principles-v1.json', 'security-v1.json']) {
+    assert.equal(loaded.find(file => file.name === name).json.budget.maxInputTokensPerTurn, 500000, name);
+  }
+});

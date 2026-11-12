@@ -377,9 +377,8 @@ pub struct AgentHarnessSnapshot {
     pub digest: String,
 }
 
-/// The exact Pi surface for one Chat run. Core tools start active. Bundled
-/// component tools are registered with Pi but remain inactive until the agent
-/// discovers and loads that component through the capability tools. Rust derives
+/// The exact Pi surface for one Chat run. Core and ordinary built-in tools start
+/// active; on-demand packs and unmentioned connections need capability_load. Rust derives
 /// both sets from this Chat run and the Loupist's sealed authority snapshot.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -429,6 +428,18 @@ pub struct AgentRuntimeComponent {
     /// never prints them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entry_ids: Vec<String>,
+}
+
+impl AgentRuntimeComponent {
+    pub(crate) fn preloads(&self) -> bool {
+        (self.connection.is_none()
+            && crate::broker::tools::TOOL_CATALOG
+                .components
+                .iter()
+                .find(|entry| entry.id == self.id)
+                .is_none_or(|entry| entry.preload))
+            || self.id == "web-research"
+    }
 }
 
 const MAX_PURPOSE_CHARS: usize = 160;
@@ -998,7 +1009,7 @@ impl AgentHostContext {
     }
 }
 
-/// Built-ins and enabled web research are active on every surface. Composer
+/// Ordinary built-ins and enabled web research start active. Composer
 /// mentions additionally preload enabled data connections; unknown ids are ignored.
 pub fn preload_component_ids_for_mentions(
     mentioned_entry_ids: &[String],
@@ -1018,7 +1029,7 @@ pub fn preload_component_ids_for_mentions(
     let mut preload = profile
         .components
         .iter()
-        .filter(|component| component.connection.is_none() || component.id == "web-research")
+        .filter(|component| component.preloads())
         .map(|component| component.id.clone())
         .collect::<std::collections::BTreeSet<_>>();
     for entry_id in mentioned_entry_ids {
@@ -2168,7 +2179,7 @@ mod tests {
         assert!(profile
             .components
             .iter()
-            .filter(|component| component.connection.is_none())
+            .filter(|component| component.preloads())
             .all(|component| preload.contains(&component.id)));
         let mentioned = mentioned_connections(&["fred.macro".into(), "missing".into()], &profile);
         assert_eq!(mentioned.len(), 1);
@@ -2177,7 +2188,7 @@ mod tests {
     }
 
     #[test]
-    fn every_surface_preloads_builtins_but_unattended_tools_stay_allowlisted() {
+    fn every_surface_preloads_ordinary_builtins_but_unattended_tools_stay_allowlisted() {
         let profile =
             AgentRuntimeProfile::new("chat", true, true, &["community.web-research".into()])
                 .unwrap();
@@ -2187,8 +2198,10 @@ mod tests {
             assert!(profile
                 .components
                 .iter()
-                .filter(|c| c.connection.is_none() || c.id == "web-research")
+                .filter(|c| c.preloads())
                 .all(|c| preload.contains(&c.id)));
+            assert!(!preload.contains(&"charts".into()));
+            assert!(!preload.contains(&"schedules".into()));
             for tool in profile
                 .core_tool_names
                 .iter()
@@ -2198,6 +2211,42 @@ mod tests {
                     assert!(crate::briefings::policy::allowed_name(tool), "{tool}");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn on_demand_catalog_packs_remain_listed_and_loadable_without_preloading() {
+        use crate::broker::tools::{ComponentSpec, TOOL_CATALOG};
+        let ordinary: ComponentSpec = serde_json::from_value(json!({
+            "id":"future-pack", "name":"Future pack", "description":"Ordinary research."
+        }))
+        .unwrap();
+        assert!(ordinary.preload);
+        assert!(serde_json::from_value::<ComponentSpec>(json!({
+            "id":"future-pack", "name":"Future pack", "description":"Invalid flag.", "preload":"false"
+        })).is_err());
+        let on_demand: Vec<_> = TOOL_CATALOG
+            .components
+            .iter()
+            .filter(|entry| !entry.preload)
+            .map(|entry| entry.id.as_str())
+            .collect();
+        assert_eq!(on_demand, ["charts", "schedules"]);
+        for (reads, saves) in [(false, false), (true, false), (true, true)] {
+            let profile = AgentRuntimeProfile::new("chat", reads, saves, &[]).unwrap();
+            let preload = preload_component_ids_for_mentions(&[], &[], &profile).unwrap();
+            assert!(profile.core_tool_names.contains(&"capability_load".into()));
+            for id in &on_demand {
+                let component = profile.components.iter().find(|c| c.id == *id).unwrap();
+                assert!(!component.tool_names.is_empty());
+                assert!(!preload.contains(&component.id));
+                assert!(component.description.starts_with("Load "));
+            }
+            for id in ["calculations", "datasets", "documents", "file-capture"] {
+                assert!(preload.contains(&id.into()), "{id}");
+            }
+            assert_eq!(preload.contains(&"memory-save".into()), saves);
+            assert!(!preload.contains(&"web-research".into()));
         }
     }
 

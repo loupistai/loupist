@@ -23,6 +23,19 @@
               "expect": {
                 "trace": [
                   {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
                     "assert": "scheduled_tasks",
                     "count": 2,
                     "tasks": [
@@ -392,6 +405,19 @@
               "expect": {
                 "trace": [
                   {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_list"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
                     "assert": "scheduled_tasks",
                     "count": 0,
                     "tasks": [],
@@ -432,6 +458,19 @@
               "user": "Create a one-time task titled Archive check for January 15, 2027 at 9:30 AM in Seoul. At that time read archive.md in my workspace and summarize unresolved questions. Start with fresh chat history and activate it now. Do not read the file yet.",
               "expect": {
                 "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_handoff"
+                    ],
+                    "metric": "tool_validity"
+                  },
                   {
                     "assert": "scheduled_tasks",
                     "count": 1,
@@ -491,6 +530,19 @@
               "user": "Create two paused schedules, North review and South review. Each should summarize its matching file north.md or south.md every 120 minutes. Each schedule should continue in its own dedicated conversation. Do not execute the work now.",
               "expect": {
                 "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity"
+                  },
                   {
                     "assert": "scheduled_tasks",
                     "count": 2,
@@ -598,6 +650,19 @@
               "expect": {
                 "trace": [
                   {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
                     "assert": "scheduled_tasks",
                     "count": 2,
                     "tasks": [
@@ -691,6 +756,19 @@
               "user": "Create two paused daily tasks for 08:00 Europe/London, both starting a fresh conversation on every run: River audit summarizes river.md; Harbor audit summarizes harbor.md. Do not inspect the files now.",
               "expect": {
                 "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity"
+                  },
                   {
                     "assert": "scheduled_tasks",
                     "count": 2,
@@ -786,6 +864,19 @@
               "expect": {
                 "trace": [
                   {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_handoff"
+                    ],
+                    "metric": "tool_validity"
+                  },
+                  {
                     "assert": "tool_called",
                     "tool": "schedule_handoff",
                     "metric": "task_success",
@@ -811,6 +902,19 @@
               "user": "For the weekly archive digest you asked about, every Monday at 08:00 Asia/Seoul. Please start the schedule.",
               "expect": {
                 "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity"
+                  },
                   {
                     "assert": "scheduled_tasks",
                     "count": 1,
