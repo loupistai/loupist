@@ -118,9 +118,6 @@ td .number-chip { display: inline-block; min-height: 28px; line-height: 28px; fo
 .composer-asof-panel { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-4); animation: number-chip-in var(--gg-motion-fast) var(--gg-ease-out); }
 .composer-asof-panel p { margin: 0; }
 .composer-asof-title { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
-.composer-asof-field { height: var(--gg-size-field); padding: 0 var(--gg-space-3); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-app); color: var(--gg-color-text-primary); font: inherit; }
-.composer-asof-field:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; }
-.composer-asof-field[aria-invalid="true"] { border-color: var(--gg-color-negative); }
 .composer-asof-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
 .composer-asof-quick { display: flex; flex-wrap: wrap; gap: var(--gg-space-1); }
 .composer-asof-explain { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }

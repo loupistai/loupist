@@ -45,7 +45,6 @@ html[data-desktop-platform="macos"] .app-shell {
   overflow: hidden;
 }
 
-
 /*
  * Selection is opt-in so a drag that starts on layout chrome cannot create a
  * document-wide selection. Keep authored prose and editable fields selectable.
@@ -149,32 +148,7 @@ html[data-desktop-platform="macos"] .app-shell {
   }
 }
 
-.context-title,
 .app-brand {
-  display: flex;
-  align-items: center;
-}
-
-.context-title {
-  gap: 9px;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.context-title strong {
-  display: block;
-  overflow: hidden;
-  color: var(--gg-color-text-primary);
-  font-size: var(--gg-text-body);
-  font-weight: var(--gg-weight-semibold);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.loupist-header-tools {
-  flex: 0 0 auto;
-  position: relative;
   display: flex;
   align-items: center;
 }
@@ -200,7 +174,6 @@ html[data-desktop-platform="macos"] .app-shell {
 .macos-titlebar-controls {
   display: none;
 }
-
 
 /* token-exception: breakpoint; vars unsupported in query conditions */
 
@@ -281,7 +254,6 @@ html[data-desktop-platform="macos"] .app-shell {
   gap: 14px;
 }
 
-
 .fatal-error h1,
 .fatal-error p {
   margin: 0;
@@ -347,10 +319,6 @@ html[data-desktop-platform="macos"] .app-shell {
 .loupist-header-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
 .loupist-header-new, .app-header [data-header-loupist-settings] { flex: none; }
 .loupist-header-identity .shell-unread { flex: none; }
-.shell-tabs { display: flex; flex: 0 0 auto; margin-left: var(--gg-space-6); height: var(--gg-size-control-md); padding: calc(var(--gg-space-1) / 2); gap: calc(var(--gg-space-1) / 2); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover); }
-.shell-tabs button { white-space: nowrap; padding: 0 var(--gg-space-4); border-radius: var(--gg-radius-xs); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
-.shell-tabs button[aria-selected="true"] { color: var(--gg-color-text-primary); background: var(--gg-color-bg-raised); box-shadow: var(--gg-shadow-xs); font-weight: var(--gg-weight-semibold); }
-.loupist-header-tools { margin-left: auto; gap: var(--gg-space-1); }
 /* Market status sits in the free space before the panel tools and yields when that space runs out. */
 .header-market-slot { display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; min-width: 0; }
 .market-status { display: flex; align-items: center; justify-content: flex-end; gap: var(--gg-space-2); min-width: 0; max-width: 100%; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); white-space: nowrap; overflow: hidden; }
@@ -368,7 +336,6 @@ html[data-desktop-platform="macos"] .app-shell {
 .app-header-sidebar-trigger { display: none; }
 .chat-tab-panel { position: relative; display: flex; min-width: 0; }
 .loupist-settings-body .agent-editor { display: flex; flex-direction: column; gap: var(--gg-space-5); }
-.loupist-memory-defaults > label { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-4); margin-block: var(--gg-space-3); }
 .loupist-settings-body h2 { font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); }
 .settings-loupists ul { list-style: none; padding: 0; }
 .settings-loupists li { display: flex; align-items: center; gap: var(--gg-space-3); padding-block: var(--gg-space-4); border-bottom: 1px solid var(--gg-color-border-subtle); }
@@ -389,11 +356,9 @@ html[data-desktop-platform="macos"] .app-shell {
     min-width: 0;
     max-width: min(240px, 100%);
   }
-  .shell-tabs { margin-left: 0; }
   .app-header { gap: var(--gg-space-2); padding-inline: var(--gg-space-2); }
 }
 @media (max-width: 700px) {
-  .shell-tabs button { padding-inline: var(--gg-space-2); }
   .loupist-header-identity { gap: var(--gg-space-2); }
 }
 .chat-tab-panel > .chat-layout { flex: 1 1 0; min-width: 0; width: 0; }

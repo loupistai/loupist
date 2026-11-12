@@ -36,7 +36,7 @@ export function AsOfDatePanel({ initial, onSet, onCancel, onBack }: {
   };
   return <div className="composer-assist composer-asof-panel" role="group" aria-labelledby={headingId} onKeyDown={onKeyDown}>
     <p id={headingId} className="composer-asof-title">{t("asOf.panelTitle")}</p>
-    <AppDateField autoFocus grouped={false} className="composer-asof-fields" value={value} min={EARLIEST_AS_OF} max={todayIso()} aria-label={t("asOf.panelTitle")}
+    <AppDateField autoFocus grouped={false} value={value} min={EARLIEST_AS_OF} max={todayIso()} aria-label={t("asOf.panelTitle")}
       aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}
       onChange={setValue}
       onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); set(); } }} />

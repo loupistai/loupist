@@ -133,17 +133,6 @@
   min-width: 180px;
 }
 
-.workspace-header-controls {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.workspace-header-controls [data-slot="button"][aria-pressed="true"] {
-  color: var(--gg-color-text-primary);
-  background: var(--gg-color-bg-selected);
-}
-
 .workspace-tabpanel,
 .workspace-artifact-view {
   min-width: 0;
@@ -173,11 +162,6 @@
   margin: 0;
   font-size: var(--gg-text-meta);
 }
-
-
-
-
-
 
 .artifact-empty h2 {
   margin: 0;
@@ -261,7 +245,6 @@
   max-width: 820px;
   margin-inline: auto;
 }
-
 
 .artifact-source {
   overflow: auto;
@@ -505,12 +488,6 @@
   font-size: var(--gg-text-caption);
 }
 
-.workspace-add-error {
-  margin: var(--gg-space-1) 9px var(--gg-space-2);
-  color: var(--gg-color-text-secondary);
-  font-size: var(--gg-text-caption);
-}
-
 /* Evidence: a status row (history and source line) above one reader. */
 .workspace-evidence-tab > :not(.workspace-status) {
   height: auto;
@@ -720,7 +697,6 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
   color: var(--gg-color-text-secondary);
   text-align: center;
 }
-
 
 .browser-start h2,
 .browser-start p {
@@ -987,12 +963,6 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .artifact-data td[data-kind="number"] { text-align: right; font-variant-numeric: tabular-nums; }
 .artifact-data-pagination { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1); padding: var(--gg-space-2); border-top: 1px solid var(--gg-color-border-subtle); }
 .artifact-data-pagination > span { margin-left: auto; font-size: var(--gg-text-caption); color: var(--gg-color-text-secondary); }
-.composer-artifact-context { display: flex; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-2) var(--gg-space-3) 0; padding: var(--gg-space-2) 10px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); font-size: var(--gg-text-caption); }
-.composer-artifact-context > svg, .composer-artifact-context button svg { width: var(--gg-space-4); height: var(--gg-space-4); flex-shrink: 0; }
-.composer-artifact-context > span { display: flex; flex: 1; min-width: 0; gap: var(--gg-space-2); align-items: baseline; }
-.composer-artifact-context strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-artifact-context small { color: var(--gg-color-text-secondary); white-space: nowrap; }
-.composer-artifact-context button { padding: var(--gg-space-1); background: transparent; color: var(--gg-color-text-secondary); border: 0; cursor: pointer; }
 .artifact-action-error { margin: 0; padding: var(--gg-space-2) var(--gg-space-3); border-bottom: 1px solid var(--gg-color-border-subtle); color: var(--gg-color-negative); font-size: var(--gg-text-caption); overflow-wrap: anywhere; }
 .artifact-panel-state p { overflow-wrap: anywhere; }
 

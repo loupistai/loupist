@@ -203,12 +203,6 @@ svg foreignObject .katex:has(> math) {
   min-height: var(--gg-size-control-sm);
 }
 
-.chat-pending-badge {
-  color: var(--gg-color-text-secondary);
-  font-size: var(--gg-text-caption);
-  font-weight: var(--gg-weight-medium);
-}
-
 .chat-pending-text,
 .chat-pending-editor {
   margin: 0;
@@ -1059,23 +1053,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
   text-decoration-color: currentColor;
 }
 
-.memory-proposal {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gg-space-2);
-}
-
-.memory-proposal button {
-  min-height: var(--gg-size-control-sm);
-  padding: 2px var(--gg-space-2);
-  border: 1px solid var(--gg-color-border-subtle);
-  border-radius: var(--gg-radius-xs);
-  text-decoration: none;
-}
-
-.memory-proposal button:disabled { opacity: 0.6; cursor: default; }
-
 .memory-update-changes {
   display: flex;
   flex-direction: column;
@@ -1113,7 +1090,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .memory-update-change > small {
   color: var(--gg-color-text-secondary);
 }
-
 
 .composer-assist {
   position: absolute;
@@ -1463,9 +1439,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .message-details-trigger:hover { background: var(--gg-color-bg-hover); }
 
 .workspace-chat-title { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 0; width: min(100%, calc(var(--gg-size-chat-column) + 2 * var(--chat-gutter, var(--gg-space-5)))); padding-inline: var(--chat-gutter, var(--gg-space-5)); box-sizing: border-box; }
-.workspace-chat-folder { flex: 0 1 auto; min-width: 0; max-width: 300px; color: var(--gg-color-text-secondary); }
-.workspace-chat-folder > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
 
 .chat-progress-row.failed .chat-progress-status { color: var(--gg-color-negative); }
 /* A step paused by a security rule is not a failure: its glyph stays quiet (B92). */
@@ -1844,7 +1817,6 @@ div.message-action-bar > .answer-correction { order: 1; }
 /* A proposed routine: the one-tap OK sits under the card, outside its open button. */
 .message-schedule-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin-top: var(--gg-space-2); }
 .message-schedule-actions [role="alert"] { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
-
 
 .answer-correction .message-actions { flex-wrap:wrap; }
 .answer-correction .message-actions button { white-space:normal; height:auto; min-height:var(--gg-size-control-sm); text-align:start; }
