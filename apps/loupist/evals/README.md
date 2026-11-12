@@ -127,6 +127,12 @@ conservative lower bounds over all expected checks.
 prove two failures identical (`repeated_failures_unknown`), and calls without a
 final outcome are `unknown_outcomes`; both leave the goals unmeasured.
 
+Traces redact credential fields and credential-shaped text. Ordinary Lens section
+`key` labels stay visible; a bare `key` value is hidden if it looks like a
+credential, a JWT, or an unbroken base64/hex string of at least 20 characters.
+Old redacted values cannot be recovered from their placeholders. Scripted trace
+replays must identify any reconstructed values and keep the original trace intact.
+
 **Numbers.** `metrics` assertions use relative tolerance 0.001% with an absolute
 floor of 1e-7. Optional `scales` accept the expected value times a listed factor
 (for example `33` or `0.33` for 33 percent) where the unit is not what the scenario teaches.
