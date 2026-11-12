@@ -443,10 +443,21 @@ mod tests {
             .iter()
             .position(|arg| arg == "--system-prompt")
             .unwrap();
-        assert_eq!(args[index + 1], prompt);
+        let sent_prompt = |text: &str| {
+            text.replace("<!-- safety:locked -->", "")
+                .replace("<!-- /safety:locked -->", "")
+        };
+        assert_eq!(args[index + 1], sent_prompt(&prompt));
+        assert_eq!(
+            fs::read_to_string(&frozen.pi.system_prompt).unwrap(),
+            prompt
+        );
         let mut unrelated = config;
         unrelated.system_prompt = input.path().join("SYSTEM.md");
         let args = unrelated.rpc_arguments();
-        assert_eq!(args[index + 1], include_str!("../../../agent/SYSTEM.md"));
+        assert_eq!(
+            args[index + 1],
+            sent_prompt(include_str!("../../../agent/SYSTEM.md"))
+        );
     }
 }
