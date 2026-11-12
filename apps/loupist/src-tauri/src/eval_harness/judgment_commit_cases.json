@@ -1,0 +1,130 @@
+{
+  "calls": [
+    {
+      "name": "lens_read",
+      "method": "lens.read",
+      "args": {
+        "recordId": "$record",
+        "revisionId": "$revision"
+      }
+    },
+    {
+      "name": "journal_save",
+      "method": "journal.save",
+      "args": {
+        "entities": [
+          "Hush Orchard"
+        ],
+        "judgment": "I will hold my existing shares while I investigate customer concentration, and review my judgment on 2026-12-15. This is my decision, not a request for a recommendation.",
+        "lensReads": [
+          "$lensRead"
+        ],
+        "reasoning": "Reasons I gave: the 2026-09-30 report shows operating cash flow of 9 million credits versus profit of 8 million; the 2026-10-18 customer schedule says one customer accounts for 55% of sales. Review date: 2026-12-15."
+      }
+    },
+    {
+      "name": "world_search",
+      "method": "world.search",
+      "args": {
+        "query": "Hush Orchard"
+      }
+    },
+    {
+      "name": "conversation_memory",
+      "method": "conversation.memory",
+      "args": {
+        "action": "search",
+        "query": "Hush Orchard"
+      }
+    },
+    {
+      "name": "lens_file",
+      "method": "lens.file",
+      "args": {
+        "pages": [
+          {
+            "ops": [
+              {
+                "op": "summary",
+                "text": "Fictional company. User-stated 2026-09-30 figures: operating cash flow 9 million credits versus profit 8 million. User-stated 2026-10-18 customer schedule: one customer 55% of sales. User will hold existing shares while investigating concentration and review on 2026-12-15."
+              },
+              {
+                "basis": {
+                  "refs": [
+                    {
+                      "said": true
+                    }
+                  ],
+                  "uncertainty": "User-stated exercise figures only; not checked against a filing. A later original report could revise either number."
+                },
+                "heading": "Stated figures",
+                "key": "stated-figures",
+                "markdown": "The user stated these figures for fictional Hush Orchard on 2026-11-12. The 2026-09-30 report shows operating cash flow of 9 million credits versus profit of 8 million credits. The 2026-10-18 customer schedule says one customer accounts for 55% of sales. No filing or other original was supplied, and World search returned no prior record.",
+                "op": "put"
+              },
+              {
+                "basis": {
+                  "refs": [
+                    {
+                      "said": true
+                    }
+                  ]
+                },
+                "heading": "User judgment",
+                "key": "user-judgment",
+                "markdown": "On 2026-11-12 the user decided to hold existing shares while investigating customer concentration, and to review that judgment on 2026-12-15. They said this is their decision, not a request for a recommendation. The Journal entry records that judgment.",
+                "op": "put"
+              }
+            ],
+            "page": {
+              "create": {
+                "about": [
+                  {
+                    "name": "Hush Orchard"
+                  }
+                ],
+                "kind": "subject",
+                "title": "Hush Orchard"
+              }
+            }
+          }
+        ],
+        "rationale": "The user stated dated cash-flow, profit and customer-concentration figures for fictional Hush Orchard and a hold-while-investigating judgment with a 2026-12-15 review date."
+      }
+    },
+    {
+      "name": "note_save",
+      "method": "note.save",
+      "args": {
+        "lensReads": [
+          "$lensRead"
+        ],
+        "workingNote": {
+          "changeSummary": "Recorded the user's Hush Orchard hold-and-review judgment and the two dated figures they stated.",
+          "expectedResearchId": null,
+          "markdown": "# Hush Orchard\n\nOn 2026-11-12 the user stated their own judgment, not a request for a recommendation: hold existing shares while investigating customer concentration, and review that judgment on 2026-12-15.\n\nFacts they stated:\n- 2026-09-30 report: operating cash flow 9 million credits versus profit 8 million credits.\n- 2026-10-18 customer schedule: one customer accounts for 55% of sales.\n\nJournal save was staged this turn. No World record and no prior conversation matched Hush Orchard. No metric threshold was stated, so no automatic check was saved.\n",
+          "title": "Hush Orchard judgment recorded"
+        }
+      }
+    }
+  ],
+  "check": {
+    "check": {
+      "byDate": "2026-12-15",
+      "claim": "The largest customer's share of sales will stay below 60% through 2026-12-15.",
+      "confidence": 70,
+      "direction": "below",
+      "metric": "largest customer's share of sales",
+      "threshold": 60,
+      "unit": "%"
+    },
+    "entities": [
+      "Hush Orchard"
+    ],
+    "judgment": "The largest customer's share of sales will stay below 60% through 2026-12-15.",
+    "lensReads": [
+      "$lensRead"
+    ],
+    "reasoning": "The user stated this as their own judgment and asked that it be recorded as a journal check. They said they are 70% confident. Direction is below 60% of sales; review date is 2026-12-15. This is the user's check, not a recommendation."
+  }
+}

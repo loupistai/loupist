@@ -116,12 +116,17 @@ for line in sys.stdin:
         provider_replay = "DART_EVAL" in request["message"]
         cite_note = "CITE_NOTE_EVAL" in request["message"]
         replay_case = None
+        judgment_case = None
         if cite_note:
             path = "northwind-loom.md"
             if "<user_attachments>" in request["message"]:
                 attachments = json.loads(request["message"].split("<user_attachments>\n", 1)[1].split("\n</user_attachments>", 1)[0])
                 path = str(pathlib.Path(attachments[0]["path"]).resolve().relative_to((fixture_root / "workspace").resolve()))
             name, method, args = "workspace_capture", "workspace.capture", {"path": path}
+        elif "JUDGMENT_COMMIT_EVAL" in request["message"]:
+            judgment_case = json.loads((fixture_root / "judgment-case.json").read_text())
+            first = judgment_case["calls"][0]
+            name, method, args = first["name"], first["method"], first["args"]
         elif "REPLAY_CASE_EVAL" in request["message"]:
             replay_case = json.loads((fixture_root / "replay-case.json").read_text())
             name, method, args = replay_case["name"], replay_case["method"], replay_case["args"]
@@ -166,6 +171,25 @@ for line in sys.stdin:
             assert "pages[0].ops[0].markdown" in json.dumps(reply), str(reply)
         else:
             assert reply["ok"], str(reply.get("error"))
+        if judgment_case:
+            lens_read_ref = reply["result"]["readRef"]
+            def resolve(value):
+                if value == "$lensRead":
+                    return lens_read_ref
+                if isinstance(value, list):
+                    return [resolve(item) for item in value]
+                if isinstance(value, dict):
+                    return {key: resolve(item) for key, item in value.items()}
+                return value
+            for step in judgment_case["calls"][1:]:
+                step_args = resolve(step["args"])
+                staged = call_tool(step["name"], step["method"], step_args)
+                if step["name"] == "journal_save" and judgment_case.get("repair_entities"):
+                    assert not staged["ok"], "unknown World entity labels must be refused before staging"
+                    assert "journal.entities" in json.dumps(staged), str(staged)
+                    step_args.pop("entities", None)
+                    staged = call_tool(step["name"], step["method"], step_args)
+                assert staged["ok"], str(staged)
         if provider_replay:
             assert "result_ref" in json.dumps(reply["result"]), "host did not create result reference"
             assert "citation_url" in json.dumps(reply["result"]), "host did not create citation"
@@ -177,6 +201,8 @@ for line in sys.stdin:
             answer = "Read the fictional Hanbit filing through provider replay."
         if replay_case:
             answer = json.dumps(reply.get("result", reply.get("error")), ensure_ascii=False)
+        if judgment_case:
+            answer = "Recorded your stated judgment and its research context."
         if cite_note:
             captured = reply["result"]
             assert "18420" in captured["content"]

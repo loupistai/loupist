@@ -640,3 +640,84 @@ async fn a_saved_source_records_at_save_whether_it_may_ever_be_shared() {
         assert_eq!(saved.authorship, expected, "{label}");
     }
 }
+
+#[tokio::test]
+async fn journal_world_links_and_checks_are_refused_before_a_save_slot_is_reserved() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let capture = bound_capture(Some("user-message"), "chat-a");
+    let executor = executor_for(&state, capture.clone());
+    let turn = policy(true, true);
+    let lens = crate::commands::knowledge::ensure_perspective(&state, "loupist-a", "Base")
+        .unwrap()
+        .unwrap();
+    let read = executor
+        .lens_read(&turn, json!({"recordId":lens}), "lens")
+        .await
+        .unwrap();
+    capture.commit_delivery("lens").await;
+    let valid = json!({"judgment":"The largest customer will stay below 60% of sales.",
+        "lensReads":[read["readRef"]], "check":{"claim":"Concentration stays below 60%", "metric":"largest customer's share of sales",
+        "threshold":60, "direction":"below", "unit":"%", "confidence":70, "byDate":"2026-12-15"}});
+    let mut corpus = Vec::new();
+    for value in [
+        json!(["Hush Orchard"]),
+        json!(["Zircon Loom", "ZQLM"]),
+        json!(["unknown-node"]),
+        json!(["/private/do-not-echo"]),
+        json!(["api_key=do-not-echo"]),
+        json!(["duplicate", "duplicate"]),
+    ] {
+        let mut args = valid.clone();
+        args["entities"] = value;
+        corpus.push(args);
+    }
+    for (field, value) in [
+        ("threshold", Value::Null),
+        ("direction", json!("at most")),
+        ("unit", json!("")),
+        ("unit", json!("x".repeat(81))),
+        ("confidence", json!(75)),
+        ("byDate", json!("2026-02-30")),
+        ("byDate", Value::Null),
+    ] {
+        let mut args = valid.clone();
+        args["check"][field] = value;
+        corpus.push(args);
+    }
+    for args in corpus {
+        let error = executor
+            .stage_journal(&turn, args, "invalid-journal", false)
+            .await
+            .unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("journal"), "{message}");
+        assert!(!message.contains("do-not-echo"), "{message}");
+        assert!(capture.journal_delivery.lock().await.is_none());
+        assert!(capture.staged_research.lock().await.is_none());
+        assert!(!capture
+            .pending_deliveries
+            .lock()
+            .await
+            .contains_key("invalid-journal"));
+    }
+    // A refusal must leave the same turn able to repair and stage the judgment.
+    // Actual ids from this Loupist's complete World remain valid.
+    let source = knowledge_seam::retain_publisher_source(&state, b"Ada described the engine.");
+    knowledge_seam::seal_world(&state, &source, &["Ada described the engine."]);
+    let mut valid = valid;
+    valid["entities"] = json!(["ada", "engine"]);
+    executor
+        .stage_journal(&turn, valid, "repaired-journal", false)
+        .await
+        .unwrap();
+    capture.commit_delivery("repaired-journal").await;
+    assert!(capture
+        .staged_research
+        .lock()
+        .await
+        .as_ref()
+        .unwrap()
+        .journal
+        .is_some());
+}

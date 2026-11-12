@@ -14,6 +14,8 @@ mod followed;
 mod growth;
 #[cfg(test)]
 mod holdings_tests;
+#[cfg(all(test, target_os = "macos", target_arch = "aarch64", debug_assertions))]
+mod judgment_commit_tests;
 pub(crate) mod replay;
 #[cfg(all(test, target_os = "macos", target_arch = "aarch64", debug_assertions))]
 mod replay_scenarios;
@@ -1009,6 +1011,18 @@ async fn run_turn(
     if let Some(error) = failure {
         result["status"] = json!("failed");
         result["error"] = trace::bounded_json(&json!(error));
+    }
+    if message.is_some_and(|message| message.status == crate::domain::ChatMessageStatus::Error) {
+        let profile = state
+            .store
+            .get_loupist(&chat.loupist_id)?
+            .ok_or("eval Loupist missing")?;
+        if let Ok(Some(failure)) = crate::runs::log::memory_commit_failure(
+            &Path::new(&profile.workspace_root).join(".loupist"),
+            &run_id,
+        ) {
+            result["memory_commit_failure"] = serde_json::to_value(failure)?;
+        }
     }
     // Observe canonical state independently of tool output or the assistant’s claim.
     result["lens"] = trace::lens_state(state, chat, message.map(|m| m.id.as_str()))?;

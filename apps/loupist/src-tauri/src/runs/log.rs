@@ -16,6 +16,66 @@ use std::{
 const DAILY_BYTES: usize = 20 * 1024 * 1024;
 const DAY_MS: i64 = 86_400_000;
 
+/// Fixed host commit phases and reasons; never serialize an error body here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CommitStage {
+    Research,
+    Principles,
+    Lens,
+    Deliveries,
+    Citations,
+    Assets,
+    Earnings,
+    Vocabulary,
+    Setup,
+    Handoff,
+    BotMemory,
+    Chat,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CommitReason {
+    JournalEntity,
+    JournalCheck,
+    InvalidInput,
+    Unauthorized,
+    Conflict,
+    DigestMismatch,
+    MissingReference,
+    Storage,
+    Other,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MemoryCommitFailure {
+    pub stage: CommitStage,
+    pub reason: CommitReason,
+}
+impl MemoryCommitFailure {
+    pub fn from_code(stage: CommitStage, code: &str) -> Self {
+        let reason = match code {
+            "journal_entity" | "journal_entities" => CommitReason::JournalEntity,
+            "journal_check"
+            | "journal_check_direction"
+            | "journal_check_threshold"
+            | "journal_check_confidence"
+            | "journal_check_date" => CommitReason::JournalCheck,
+            "invalid" | "invalid_argument" | "journal_field" | "journal_date"
+            | "journal_thesis" => CommitReason::InvalidInput,
+            "unauthorized" | "inspection_receipt_not_citable" => CommitReason::Unauthorized,
+            "conflict" | "revision_conflict" | "cursor_stale" => CommitReason::Conflict,
+            "digest_mismatch" => CommitReason::DigestMismatch,
+            "not_found" | "missing_bytes" => CommitReason::MissingReference,
+            "internal" | "sqlite" | "json" | "io" | "private_storage" | "lock_poisoned" => {
+                CommitReason::Storage
+            }
+            _ => CommitReason::Other,
+        };
+        Self { stage, reason }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RunLog {
@@ -29,6 +89,8 @@ pub(crate) struct RunLog {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_commit_failure: Option<MemoryCommitFailure>,
     pub model: Option<String>,
     pub effort: Option<String>,
     pub usage: Option<Usage>,
@@ -119,6 +181,7 @@ impl RunLog {
             duration_ms: 0,
             status: "ok".into(),
             failure_kind: None,
+            memory_commit_failure: None,
             model: None,
             effort: None,
             usage: None,
@@ -139,6 +202,9 @@ impl RunLog {
             .max(0) as u64;
         self.status = status.into();
         self.failure_kind = failure.map(str::to_owned);
+        if status != "failed" {
+            self.memory_commit_failure = None;
+        }
     }
     pub fn model(&mut self, model: &crate::providers::catalog::ExecutionModelLock) {
         self.model = Some(format!("{}/{}", model.provider, model.model));
@@ -549,6 +615,35 @@ pub fn run_logs_last_error(
 ) -> Result<Option<String>, CommandError> {
     last_error(&diagnostics_root(&state, request.loupist_id.as_deref())?)
 }
+/// The eval trace reads the host's terminal log, never a Pi-authored diagnostic.
+/// A run id selects the exact turn even when another Chat finishes beside it.
+#[cfg(feature = "eval-harness")]
+pub(crate) fn memory_commit_failure(
+    root: &Path,
+    run_id: &str,
+) -> Result<Option<MemoryCommitFailure>, CommandError> {
+    let (path, guard) = directory(root)?;
+    let lock = file(&guard, &path, ".lock", true)?;
+    fs2::FileExt::lock_shared(&lock).map_err(io_error)?;
+    let mut logs = names(&guard, &path)?;
+    logs.sort();
+    for name in logs.into_iter().rev() {
+        let mut text = String::new();
+        file(&guard, &path, &name, false)?
+            .take(DAILY_BYTES as u64)
+            .read_to_string(&mut text)
+            .map_err(io_error)?;
+        for line in text.lines().rev() {
+            if let Ok(record) = serde_json::from_str::<RunLog>(line) {
+                if record.run_id == run_id {
+                    return Ok(record.memory_commit_failure);
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
 fn last_error(root: &Path) -> Result<Option<String>, CommandError> {
     let (path, guard) = directory(root)?;
     let lock = file(&guard, &path, ".lock", true)?;
@@ -577,6 +672,69 @@ fn last_error(root: &Path) -> Result<Option<String>, CommandError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn memory_commit_categories_never_serialize_error_text_or_unknown_codes() {
+        for private in [
+            "/private/user/workspace",
+            "api_key=fixture-secret",
+            "private user judgment",
+        ] {
+            let cause = MemoryCommitFailure::from_code(CommitStage::Research, private);
+            assert_eq!(cause.reason, CommitReason::Other);
+            assert_eq!(
+                serde_json::to_value(cause).unwrap(),
+                serde_json::json!({"stage":"research","reason":"other"})
+            );
+            assert!(serde_json::from_value::<MemoryCommitFailure>(
+                serde_json::json!({"stage":"research","reason":private})
+            )
+            .is_err());
+        }
+        assert_eq!(
+            MemoryCommitFailure::from_code(CommitStage::Research, "journal_entity").reason,
+            CommitReason::JournalEntity
+        );
+    }
+
+    #[test]
+    fn recovered_completion_keeps_no_commit_failure_category() {
+        let mut record = RunLog::new("chat", "loupist", "run", crate::commands::now_ms());
+        record.memory_commit_failure = Some(MemoryCommitFailure::from_code(
+            CommitStage::Chat,
+            "internal",
+        ));
+        record.finish("ok", None);
+        assert!(record.memory_commit_failure.is_none());
+    }
+
+    #[cfg(feature = "eval-harness")]
+    #[test]
+    fn commit_diagnostics_select_the_exact_run_and_old_logs_still_read() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().canonicalize().unwrap();
+        let now = crate::commands::now_ms();
+        let mut first = RunLog::new("chat", "loupist", "failed-run", now);
+        first.memory_commit_failure = Some(MemoryCommitFailure::from_code(
+            CommitStage::Research,
+            "journal_entity",
+        ));
+        first.finish("failed", Some("memory_commit_failed"));
+        append(&root, &first, now, DAILY_BYTES).unwrap();
+        let second = RunLog::new("chat", "loupist", "other-run", now);
+        append(&root, &second, now, DAILY_BYTES).unwrap();
+        assert_eq!(
+            memory_commit_failure(&root, "failed-run").unwrap(),
+            first.memory_commit_failure
+        );
+        assert_eq!(memory_commit_failure(&root, "other-run").unwrap(), None);
+        let mut old = serde_json::to_value(first).unwrap();
+        old.as_object_mut().unwrap().remove("memoryCommitFailure");
+        assert!(serde_json::from_value::<RunLog>(old)
+            .unwrap()
+            .memory_commit_failure
+            .is_none());
+    }
+
     #[test]
     fn daily_rotation_retention_and_size_keep_complete_recent_lines() {
         let temporary = tempfile::tempdir().unwrap();

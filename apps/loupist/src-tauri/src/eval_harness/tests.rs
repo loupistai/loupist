@@ -548,6 +548,39 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
         .unwrap();
         assert_eq!(result["status"], expected, "{mode}: {result}");
         assert_eq!(result["failureKind"], json!(failure), "{result}");
+        if mode == "COMMIT_FAILURE_EVAL" {
+            assert_eq!(
+                result["memory_commit_failure"],
+                json!({"stage":"lens","reason":"storage"}),
+                "{result}"
+            );
+        }
+        let local_logs: Vec<Value> = fs::read_dir(workspace.join(".loupist/logs"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "jsonl")
+            })
+            .flat_map(|path| {
+                fs::read_to_string(path)
+                    .unwrap()
+                    .lines()
+                    .map(|line| serde_json::from_str::<Value>(line).unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let local_chat = local_logs
+            .iter()
+            .find(|record| record["kind"] == "chat")
+            .unwrap();
+        assert_eq!(
+            local_chat["memoryCommitFailure"],
+            result["memory_commit_failure"]
+        );
+        let serialized = format!("{result} {local_chat}");
+        assert!(!serialized.contains("private fixture commit detail"));
+        assert!(!serialized.contains("private fixture store detail"));
         if mode != "EMPTY_NO_WRITE_EVAL" {
             assert!(
                 result["tool_calls"]
