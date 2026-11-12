@@ -561,7 +561,12 @@ async fn python_preserves_exported_text_trust_through_results_and_derived_files(
         fs::read_to_string(&derived).unwrap(),
         format!("Excerpt: {text}")
     );
-    assert!(crate::commands::export_trust::tagged_file(&state, &derived).unwrap());
+    assert!(crate::commands::export_trust::tagged_files(
+        &state,
+        &[derived],
+        &crate::web::SearchCancel::never(),
+    )
+    .unwrap());
     broker.shutdown().await.unwrap();
 }
 

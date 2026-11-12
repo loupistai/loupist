@@ -232,8 +232,10 @@ Chart/data contracts are owned by [Financial analysis](../analysis.md).
 
 Native file calls follow the [path policy](../runtime/permissions.md) without
 permission cards. Both native reads and grep check exported-file trust; grep
-checks every admitted file candidate before the extension searches it. A tagged
-candidate raises the turn's third-party-text tier and delimits the grep response;
+checks every admitted file candidate before the extension searches it. The trust
+scan shares a 32 MiB byte budget and 500 ms deadline per call and checks run
+cancellation between bounded reads. A tagged candidate or an incomplete scan
+raises the turn's third-party-text tier and delimits the grep response;
 ordinary user files keep their existing tier. Path refusals name the applicable
 boundary, including read-only attachments, Git metadata and hard-linked aliases.
 Memory saves distinguish disabled Memory reads from disabled saving.

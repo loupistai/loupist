@@ -619,7 +619,7 @@ pub(crate) fn delimit_asset_deltas(value: &mut Value) -> bool {
 pub(crate) fn native_read_delimiters() -> Value {
     let id = fresh_id();
     serde_json::json!({
-        "prefix": format!("<<untrusted id={id} source=\"app-exported text\">>\n"),
+        "prefix": format!("<<untrusted id={id} source=\"file text\">>\n"),
         "suffix": format!("\n<<end untrusted id={id}>>"),
     })
 }

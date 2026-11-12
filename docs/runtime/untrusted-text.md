@@ -64,6 +64,17 @@ externally changed bytes and derived files without declared lineage remain
 unclassified local files. These tags do not make the host filesystem a sandbox
 ([datasets](../analysis/datasets.md#data-and-provenance)).
 
+Native `grep` checks every admitted file candidate before searching, including
+ones the extension may later omit by glob. Once export tags exist, `read` and
+`grep` share a per-call SHA-256 scan budget of 32 MiB across all candidates and a
+500 ms deadline. Files already larger than the remaining budget are not read;
+each read is at most 64 KiB, and the scan checks the run's cancellation and
+deadline between files and reads. A file growing during hashing cannot escape
+the byte budget. Budget exhaustion, deadline expiry or cancellation leaves trust
+unresolved, so the native result is conservatively delimited as file text and
+raises the untrusted-text tier. It never becomes a trusted result merely because
+the scan stopped. Small ordinary user files keep their existing tier.
+
 The web site rule below is unchanged: redirect hops, short private values on
 already-seen sites and `web_search` queries are not checked for exfiltration.
 
