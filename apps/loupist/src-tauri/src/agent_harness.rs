@@ -7,6 +7,8 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub(crate) mod native_policy;
+#[cfg(test)]
+mod runtime_formats;
 mod skill_mentions;
 pub(crate) mod workspace;
 pub use skill_mentions::explicit_skill_names;
@@ -30,7 +32,7 @@ pub const WHY_IT_MOVED_SKILL_ID: &str = "why-it-moved";
 pub const GOAL_MATH_SKILL_ID: &str = "goal-math";
 
 pub const PDF_SKILL_ID: &str = "pdf";
-pub const DOCUMENTS_SKILL_ID: &str = "documents";
+pub const DOCUMENTS_SKILL_ID: &str = "word-documents";
 pub const SPREADSHEETS_SKILL_ID: &str = "spreadsheets";
 pub const PRESENTATIONS_SKILL_ID: &str = "presentations";
 
@@ -276,21 +278,15 @@ const SELECTABLE_SKILLS: &[BundledSkill] = &[
         default_enabled: true,
         relative_path: "skills/pdf/SKILL.md",
         content: include_bytes!("../../agent/skills/pdf/SKILL.md"),
-        support_files: &[(
-            "skills/pdf/references/pdf-workflow.md",
-            include_bytes!("../../agent/skills/pdf/references/pdf-workflow.md"),
-        )],
+        support_files: &[],
     },
     BundledSkill {
         id: DOCUMENTS_SKILL_ID,
         name: "Word documents",
         default_enabled: true,
-        relative_path: "skills/documents/SKILL.md",
-        content: include_bytes!("../../agent/skills/documents/SKILL.md"),
-        support_files: &[(
-            "skills/documents/references/docx-workflow.md",
-            include_bytes!("../../agent/skills/documents/references/docx-workflow.md"),
-        )],
+        relative_path: "skills/word-documents/SKILL.md",
+        content: include_bytes!("../../agent/skills/word-documents/SKILL.md"),
+        support_files: &[],
     },
     BundledSkill {
         id: SPREADSHEETS_SKILL_ID,
@@ -298,10 +294,7 @@ const SELECTABLE_SKILLS: &[BundledSkill] = &[
         default_enabled: true,
         relative_path: "skills/spreadsheets/SKILL.md",
         content: include_bytes!("../../agent/skills/spreadsheets/SKILL.md"),
-        support_files: &[(
-            "skills/spreadsheets/references/workbook-workflow.md",
-            include_bytes!("../../agent/skills/spreadsheets/references/workbook-workflow.md"),
-        )],
+        support_files: &[],
     },
     BundledSkill {
         id: PRESENTATIONS_SKILL_ID,
@@ -309,10 +302,7 @@ const SELECTABLE_SKILLS: &[BundledSkill] = &[
         default_enabled: true,
         relative_path: "skills/presentations/SKILL.md",
         content: include_bytes!("../../agent/skills/presentations/SKILL.md"),
-        support_files: &[(
-            "skills/presentations/references/deck-workflow.md",
-            include_bytes!("../../agent/skills/presentations/references/deck-workflow.md"),
-        )],
+        support_files: &[],
     },
 ];
 
@@ -1638,6 +1628,23 @@ mod tests {
         assert_eq!(live["hint"], "These are companies the user holds (holding: true) or watches (watching: true); a company can be both. Use them to make answers relevant. Position sizes, cost and value are not available to you: never infer or ask for them.");
         let historical = followed_interests(Default::default());
         assert_eq!(historical["hint"], "These are companies the user watches. This answer looks back to an earlier date, so what the user holds today is left out. Use them only to make answers relevant.");
+    }
+
+    #[test]
+    fn word_skill_name_does_not_overlap_markdown_capability() {
+        let runtime = AgentRuntimeProfile::new("chat", false, false, &[]).unwrap();
+        let component_ids = runtime
+            .components
+            .iter()
+            .map(|component| component.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        // Some app procedures intentionally share a tool-pack name; Word authoring
+        // must not resolve to Markdown publishing's `documents` capability.
+        assert!(component_ids.contains("documents"));
+        assert_eq!(DOCUMENTS_SKILL_ID, "word-documents");
+        assert!(!component_ids.contains(DOCUMENTS_SKILL_ID));
+        assert!(bundled_skill(DOCUMENTS_SKILL_ID).is_ok());
+        assert!(bundled_skill("documents").is_err());
     }
 
     #[test]

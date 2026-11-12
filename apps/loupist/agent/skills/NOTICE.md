@@ -21,8 +21,10 @@ ordering or replace undefined ratios with zero. The original DCF workbook valida
 was reviewed but is not bundled: its label heuristics and cached-value checks do
 not establish fresh recalculation or model correctness.
 
-The PDF, Word, spreadsheet, and presentation workflows are original Loupist
-instructions grounded in these official library documents:
+The PDF, Word (`word-documents`), spreadsheet, and presentation workflows are
+original Loupist instructions limited to verified offline WASI file operations.
+They do not include an office renderer, OCR or spreadsheet recalculation.
+The following official library documents informed the supported operations:
 
 - [pypdf: PDF text extraction and scanned pages](https://pypdf.readthedocs.io/en/stable/user/extract-text.html)
 - [python-docx: paragraphs, runs, and styles](https://python-docx.readthedocs.io/en/latest/user/text.html)

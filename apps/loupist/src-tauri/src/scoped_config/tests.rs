@@ -405,7 +405,7 @@ fn skill_authoring_is_off_by_default_and_an_explicit_enable_wins_until_reset() {
     );
     let eval = resolve(global.path(), Some(project.path())).unwrap();
     assert_eq!(authoring(&eval), [false, false]);
-    assert!(eval.enabled_skill_ids().contains(&"documents".into()));
+    assert!(eval.enabled_skill_ids().contains(&"word-documents".into()));
 
     write(
         global.path(),

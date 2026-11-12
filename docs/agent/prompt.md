@@ -42,7 +42,7 @@ including when a chart also shows it. It cannot place orders or trade. The
 [Journal Skill](../../apps/loupist/agent/skills/journal/SKILL.md) supports evidence
 and principle checks; a request for a view does not authorize saving it as the
 user's judgment. Product disclosures belong to [Positioning](../positioning.md). The
-documents, presentations and PDF Skills end work made for others with the
+`word-documents`, presentations and PDF Skills end work made for others with the
 AI-produced line ("Made with AI in Loupist. AI can be wrong. Not a licensed
 financial adviser.") in its language; a deck puts it on the last slide.
 

@@ -1,25 +1,27 @@
 ---
 name: pdf
-description: Read, extract, edit, assemble, fill, or generate PDF files, including scanned pages and financial tables. Use when PDF structure, OCR, forms, or page layout matter.
+description: Extract text, assemble pages or generate text PDFs with the offline Python runtime. Scans and visual PDF editing are outside this workflow.
 ---
-
 # PDF files
 
-Inspect the actual document and requested page range before choosing an
-extraction or editing route. Read [PDF workflow](references/pdf-workflow.md)
-for text/table extraction, OCR, forms, assembly, or generation.
+Use `run_python` with `pypdf.PdfReader` for page counts and text extraction,
+`pypdf.PdfWriter` for page selection, copying, merging and rotation, pdfplumber
+for tables and positioned text (verify row/column alignment), and
+`reportlab.pdfgen.canvas.Canvas` for new text PDFs. Preserve page locators with
+extracted figures. Empty text does not prove an empty page; scans need OCR,
+which this runtime cannot perform. Extracted whitespace does not establish table cells.
 
-`run_python` cannot install packages and does not include PDF libraries such as
-pypdf. Use the file tools, and say so when a named library is unavailable.
-Preserve the
-original and write requested changes to a distinct output unless replacing it
-is part of the task. Verify text and page coverage; an empty extraction is not
-proof of an empty document. Keep page locators with extracted financial values.
+Keep the original and write a distinct file under `/workspace/outputs/`. Reopen
+with `PdfReader` and check page count and searchable text. There is no page
+renderer: report that visual layout, image content and glyph appearance were not
+verified. Use only fonts already available and suitable for the requested language;
+do not claim arbitrary form editing, signature preservation or PDF-to-Word conversion.
 
-For a generated or edited PDF, check the resulting page count and content.
-`run_python` cannot render pages. Report any unresolved extraction or layout
-limitation accurately. A file write
-alone does not establish a valid or visually checked PDF.
-
-End a PDF you generate for others with this line in the document's language:
+Link the saved file. End PDFs made for others with this line in their language:
 "Made with AI in Loupist. AI can be wrong. Not a licensed financial adviser."
+
+To cite figures from an input file, ask the user to attach it to Chat (or fetch
+a PDF URL). Python extraction is working material, not citable Source evidence.
+
+Bundled PDF/chart fonts do not cover Korean, Japanese or Chinese; use Latin labels
+or offer Word or Markdown for such content. No renderer checks font fallback.

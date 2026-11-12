@@ -19,6 +19,19 @@ off in every scope until the user turns them on. The included catalog in
 `src-tauri/src/agent_harness.rs` is authoritative. Optional/custom Skills use scoped TOML enablement; see
 [Scoped configuration](../runtime/storage-authority.md#scoped-configuration).
 
+The bundled file workflows use only `run_python` in the pinned offline WASI
+worker: `word-documents` reads/writes `.docx` with python-docx, `presentations`
+reads/writes `.pptx` with python-pptx, `spreadsheets` reads/writes `.xlsx` with
+openpyxl, creates new workbooks with XlsxWriter, reads legacy `.xls` with xlrd
+(`use_mmap=False` because WASI has no memory mapping), and handles CSV/TSV with
+pandas. `pdf` extracts/copies pages with pypdf, extracts tables with pdfplumber,
+and creates text PDFs with reportlab. Worker round-trip tests cover these operations.
+They do not provide an office renderer, OCR, format conversion or spreadsheet
+formula recalculation; bundled figure/PDF fonts do not cover Korean, Japanese or
+Chinese. Citable input-file figures require an attachment/capture, rather than
+Python extraction. The Word Skill id differs from `documents`, the Markdown
+publishing capability.
+
 Settings → Skills offers search/filter, instruction/file details, toggles, reset,
 owned-skill create/edit/delete and import. Personal Skills live at global
 `skills/<id>/`; Loupist Skills at `<workspace>/.loupist/skills/<id>/`. Each has `SKILL.md`
@@ -42,3 +55,9 @@ Skills cannot grant connection access or Memory permissions. Their bodies/refere
 requested operation; they do not install upstream plugins or office runtimes.
 [Bundled provenance](../../apps/loupist/agent/skills/NOTICE.md) owns licenses and
 adaptations. [Prompt and judgment](../agent/prompt.md) owns prompt/cache behavior.
+
+Bundled Skill files and references are readable through the native file tools
+under the sealed agent `skills/` root, including search/listing. They are always
+read-only; the adjacent system prompt, extension and catalog remain private,
+and a symlink or `..` cannot escape that root. User-owned instruction and Skill
+writes are allowed only before third-party text in the current reply.

@@ -189,14 +189,24 @@
       "permission": "always",
       "component": null,
       "label": "Run Python",
-      "description": "Run Python for analysis and charts. Pass the program as code (at most 64 KiB of UTF-8). timeout_seconds is optional, defaults to 60, and cannot exceed 120. The working directory is /workspace (this Loupist folder). Top-level files there are read-only. /attachments is this Chat's attachments, read-only. /scratch is writable for this call only. Write new files under /workspace/outputs/ or an existing non-dot folder. Save charts as PNG files in outputs/ so the app can show them. /usr/local/lib is the read-only runtime. numpy, pandas, scipy, matplotlib, statsmodels, and scikit-learn are already installed. Do not install packages. There is no network and no way to start another program. The result is bounded stdout, stderr, a status, changed files, and any chart or file the app registered. This tool stays available after web pages and in unattended runs.",
+      "description": "Run Python for analysis, charts and file work. Pass the program as code (at most 64 KiB of UTF-8). timeout_seconds is optional, defaults to 60 and cannot exceed 120. The working directory is /workspace, a private copy of this Loupist folder made for the call: dot folders are left out, and so is any file over 8 MiB. Files at its top level are read-only. /attachments is this Chat's attachments, read-only. /scratch is writable and discarded when the call ends. Create or change files under /workspace/outputs/ or inside an existing top-level folder; those changes are copied back to the Loupist folder, including ones made before a timeout. There is no network, no shell, no other program and no package install. Installed: numpy, pandas, scipy, statsmodels, scikit-learn, matplotlib, seaborn, sympy, networkx, xarray, openpyxl, XlsxWriter, xlrd, python-docx, python-pptx, pypdf, pdfplumber, reportlab, Pillow, lxml, BeautifulSoup, PyYAML, tabulate and Jinja2. Fonts cover Latin text only, so Korean, Japanese or Chinese labels in a figure or PDF show as empty boxes. Save a chart as a PNG under outputs/ and the app shows it. The result has status (completed, failed, timed_out or cancelled), exit_code, stdout and stderr (64 KiB each; printing more ends the run), changed_files, and conflicts listing writes that were not copied back. Output is a calculation, not a Source. Available after web pages and in unattended runs.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["code"],
+        "required": [
+          "code"
+        ],
         "properties": {
-          "code": { "type": "string", "minLength": 1, "maxLength": 65536 },
-          "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 120 }
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 65536
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          }
         }
       },
       "progress": {
