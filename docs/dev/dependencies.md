@@ -4,6 +4,15 @@ Review dependency updates through a task branch and the ordinary source, native
 interaction and package gates. Lockfile changes do not authorize a release.
 Do not suppress alerts merely because an automatic update cannot resolve them.
 
+The 2026-11-12 release review updates rusqlite to 0.41.1 and its bundled
+libsqlite3-sys to 0.39.1 (SQLite 3.54.1). SQLite before 3.54.0 can disclose
+uninitialised process memory when a database is opened beside a crafted `-wal`
+file ([RUSTSEC-2026-0459](https://rustsec.org/advisories/RUSTSEC-2026-0459.html)).
+Loupist opens databases in user-chosen folders, so the bundled library must carry
+the fix. A library test checks `rusqlite::version()` against the 3.54.0 security
+floor. The separate, hash-pinned Python worker and the vendored WebDriver plugin
+have no rusqlite dependency and are unchanged.
+
 The November 2026 review covered the 58 open Dependabot alerts:
 
 | Lockfile | Alerts | Resolution |
