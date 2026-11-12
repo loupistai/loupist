@@ -389,6 +389,11 @@ svg foreignObject .katex:has(> math) {
   overflow-x: auto;
 }
 
+/* A table that scrolls sideways fades at its right edge (chat design change 10). */
+.message.assistant .message-content [data-streamdown="table-wrapper"][data-overflows] {
+  mask-image: linear-gradient(to right, var(--gg-color-text-primary) calc(100% - 24px), transparent);
+}
+
 .message.assistant .message-content [data-streamdown="table-wrapper"] {
   max-width: 100%;
   margin: 1em 0;
