@@ -48,9 +48,8 @@ analytics Tools and maps direct provider Tools to their one implicit provider.
 Unknown providerless routes are omitted. For example, the `imf_utils` surface is
 not discoverable unless the Loupist has enabled the `imf` provider.
 
-The source manifest names the executable `loupist-openbb`. Windows staging
-rewrites only the public bundle manifest to `loupist-openbb.exe`; the
-package-internal manifest remains platform-neutral for wrapper authorization.
+The source manifest names the executable `loupist-openbb`. Windows is not
+supported in this release.
 
 ## Development
 
