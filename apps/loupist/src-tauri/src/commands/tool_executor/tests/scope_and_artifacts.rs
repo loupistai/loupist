@@ -849,3 +849,46 @@ async fn under_an_as_of_date_reports_written_later_and_charts_of_later_data_are_
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn broker_refuses_broken_drawing_labels_before_publication_and_accepts_plain_unicode() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let capture = Arc::new(ToolCapture::for_chat("assistant-controls".into()));
+    let result_ref = delivered(
+        &capture,
+        provider_result(),
+        json!({"data":{"rows":[
+            {"date":"2026-10-21","open":48,"high":52,"low":44,"close":50}
+        ]}}),
+    )
+    .await;
+    let executor = Arc::new(executor_for(&state, capture.clone()));
+    let socket = tool_broker_endpoint(temporary.path().join("controls.sock"));
+    let broker = start_tool_broker(socket.clone(), policy(true, true), executor)
+        .await
+        .unwrap();
+    let columns: Vec<Value> = ["date","open","high","low","close"].into_iter().map(|id|
+        json!({"id":id,"label":id,"kind":if id=="date" {"date"} else {"number"},"pointer":format!("/{id}")})).collect();
+    let mut chart = json!({"mode":"create","title":"가격 日本語 🙂 e\u{301}",
+        "dataset":{"from_result":{"result_ref":result_ref,"rows_pointer":"/data/rows","columns":columns}},
+        "view":{"kind":"candlestick","symbol":"TEST","interval":"1d","time":"date","open":"open","high":"high","low":"low","close":"close"},
+        "drawings":[{"kind":"price_line","points":[{"timestamp":"2026-10-21","value":50}],"label":"\u{6}1".repeat(40)}]});
+    let refused = broker_request(&socket, broker.token(), "chart.publish", chart.clone()).await;
+    assert_eq!(refused["ok"], false);
+    assert_eq!(refused["error"]["code"], "malformed_request");
+    assert!(refused["error"]["message"]
+        .as_str()
+        .unwrap()
+        .starts_with("drawings[0].label:"));
+    assert_eq!(
+        refused["error"]["next"],
+        "Remove control characters and write the text again as plain UTF-8."
+    );
+    assert!(capture.artifacts.lock().await.is_empty());
+    chart["drawings"][0]["label"] = json!("제안 진입 日本語 🙂 e\u{301}");
+    let accepted = broker_request(&socket, broker.token(), "chart.publish", chart).await;
+    assert_eq!(accepted["ok"], true, "{accepted}");
+    assert_eq!(capture.artifacts.lock().await.len(), 1);
+    broker.shutdown().await.unwrap();
+}

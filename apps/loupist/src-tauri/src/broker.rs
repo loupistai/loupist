@@ -1264,6 +1264,85 @@ fn new_broker_token() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
 
+/// Scan the bounded broker arguments once, before authority reservation or any
+/// executor side effect. Keep paths as borrowed segments and format only on error.
+fn validate_argument_text(arguments: &Value) -> Result<(), BrokerError> {
+    enum Part<'a> {
+        Key(&'a str),
+        Index(usize),
+    }
+    fn forbidden(text: &str) -> bool {
+        text.bytes()
+            .any(|byte| matches!(byte, 0..=8 | 11 | 12 | 14..=31 | 127))
+    }
+    fn refusal(parts: &[Part<'_>], key: bool) -> BrokerError {
+        let mut field = String::new();
+        for part in parts {
+            match part {
+                Part::Index(index) => {
+                    field.push('[');
+                    field.push_str(&index.to_string());
+                    field.push(']');
+                }
+                Part::Key(name) => {
+                    if name.chars().enumerate().all(|(index, ch)| {
+                        ch == '_' || ch.is_alphabetic() || (index > 0 && ch.is_numeric())
+                    }) && !name.is_empty()
+                    {
+                        if !field.is_empty() {
+                            field.push('.');
+                        }
+                        field.push_str(name);
+                    } else {
+                        field.push('[');
+                        field
+                            .push_str(&serde_json::to_string(name).expect("a JSON key serializes"));
+                        field.push(']');
+                    }
+                }
+            }
+        }
+        if field.is_empty() {
+            field.push('$');
+        }
+        BrokerError::invalid(
+            field,
+            if key {
+                "An object key contains a disallowed control character."
+            } else {
+                "Text contains a disallowed control character."
+            },
+        )
+        .with_next("Remove control characters and write the text again as plain UTF-8.")
+    }
+    fn visit<'a>(value: &'a Value, path: &mut Vec<Part<'a>>) -> Result<(), BrokerError> {
+        match value {
+            Value::String(text) if forbidden(text) => return Err(refusal(path, false)),
+            Value::Array(items) => {
+                for (index, item) in items.iter().enumerate() {
+                    path.push(Part::Index(index));
+                    visit(item, path)?;
+                    path.pop();
+                }
+            }
+            Value::Object(object) => {
+                for (key, item) in object {
+                    // Name the enclosing object, never echo the offending key.
+                    if forbidden(key) {
+                        return Err(refusal(path, true));
+                    }
+                    path.push(Part::Key(key));
+                    visit(item, path)?;
+                    path.pop();
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    visit(arguments, &mut Vec::new())
+}
+
 async fn execute_request(
     request: BrokerRequest,
     expected_token: &str,
@@ -1286,6 +1365,7 @@ async fn execute_request(
         let error = BrokerError::MethodDenied;
         (id.clone(), error)
     })?;
+    validate_argument_text(&request.params).map_err(|error| (id.clone(), error))?;
     executor
         .enforce_turn_policy(method, &request.params)
         .map_err(|error| (id.clone(), error))?;

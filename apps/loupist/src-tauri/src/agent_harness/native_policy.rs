@@ -53,14 +53,18 @@ pub struct NativeRequest {
 }
 
 impl NativeRequest {
-    /// `{name, path}`; an unknown name, a missing or oversized field, a NUL
-    /// byte or an extra field is malformed.
+    /// `{name, path, input?}`; `input` forwards model arguments for the broker's
+    /// text check and never determines path authority. Unknown fields, a bad
+    /// name, missing or oversized path, or a NUL byte are malformed.
     pub fn parse(params: &Value) -> Option<Self> {
         let object = params.as_object()?;
         if object
             .keys()
-            .any(|key| !matches!(key.as_str(), "name" | "path"))
+            .any(|key| !matches!(key.as_str(), "name" | "path" | "input"))
         {
+            return None;
+        }
+        if object.get("input").is_some_and(|input| !input.is_object()) {
             return None;
         }
         let tool = NativeTool::parse(object.get("name")?.as_str()?)?;
@@ -1485,7 +1489,17 @@ mod tests {
                 target: Some("/tmp/a".into()),
             })
         );
+        assert_eq!(
+            NativeRequest::parse(
+                &json!({"name":"read","path":"/tmp/a","input":{"path":"/private/other","limit":1}})
+            ),
+            NativeRequest::parse(&json!({"name":"read","path":"/tmp/a"})),
+            "the forwarded model input never determines path authority"
+        );
         for malformed in [
+            json!({"name":"read","path":"/tmp/a","input":null}),
+            json!({"name":"read","path":"/tmp/a","input":"text"}),
+            json!({"name":"read","path":"/tmp/a","input":[]}),
             json!({"name":"browser","path":"/tmp/a"}),
             json!({"name":"bash","command":"ls"}),
             json!({"name":"read"}),
