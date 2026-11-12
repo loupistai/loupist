@@ -60,6 +60,8 @@ node apps/loupist/evals/agent/cli.mjs calibrate --suite <suite.json> --traces <t
 Runners receive `--suite`, `--out` and `--trials`; arguments after `--` go to the
 runner unchanged. Unknown or duplicate options are rejected. Commands write under
 `evals/output/<timestamp>/` unless `--output` is set.
+Suite `maxTurns` caps count turns across trials; the security and Lens suites allow
+all turns in the default three trials. Increase the cap explicitly for more trials.
 
 **Judging.** `judge` scores one binary criterion per call (`--concurrency N`,
 default 1, keeps output order) and caches by the SHA-256 of judge input, criterion,

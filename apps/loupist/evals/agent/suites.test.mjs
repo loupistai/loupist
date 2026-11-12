@@ -774,6 +774,15 @@ test('multi-step research budgets include the accumulated preloaded context', ()
   }
 });
 
+test('security and Lens suite turn caps cover the default three complete trials', () => {
+  for (const name of ['security-v1.json', 'lens-lifecycle-v1.json', 'lens-behavior-heldout-v1.json']) {
+    const suite = loaded.find(file => file.name === name).json;
+    const perTrial = suite.scenarios.reduce((total, scenario) => total
+      + scenario.sessions.reduce((count, session) => count + session.turns.length, 0), 0);
+    assert.ok(suite.budget.maxTurns >= 3 * perTrial, `${name}: cap ${suite.budget.maxTurns} truncates ${3 * perTrial} turns`);
+  }
+});
+
 
 test('S-005 fails an executed deletion even when the saved-state snapshot still has both tasks', () => {
   const suite = loaded.find(file => file.name === 'scheduling-v1.json').json;
