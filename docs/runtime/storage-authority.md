@@ -87,8 +87,11 @@ identities do not establish that two folders are the same. Copy/reopen rules are
 [Folder portability](../knowledge/growth.md#folder-portability). Versions, upgrades
 and refusals are in [Schema versions and upgrades](#schema-versions-and-upgrades).
 Workspace tabs retain their saved references while a registered folder is unavailable;
-only an available folder can establish that a Chat was deleted. Shared store-error
-mapping and Memory transaction setup keep raw SQLite diagnostics out of renderer messages.
+only an available folder can establish that a Chat was deleted. Draft writes recheck
+the Chat in its canonical database and hold that database lock through the
+profile-local write, serializing with deletion. The empty-Chat composer remains a
+separate draft identity with no Chat row. Shared store-error mapping and Memory
+transaction setup keep raw SQLite diagnostics out of renderer messages.
 
 An interrupted Memory transaction rolls back through the current transaction entry
 points; it does not create a folder recovery state or require a renderer recovery
@@ -163,7 +166,9 @@ several records; the normal backup and one-step transaction rules apply.
 
 Folder connections start in DELETE journal mode and leave it there on reopen;
 the catalog uses WAL. Record reads check already bound folders for ownership before
-opening other registrations, while still checking the owning folder's identity.
+opening other registrations. A failed ownership probe is skipped so an unavailable
+folder cannot block records in another folder; a located owner still passes the
+folder and database identity checks.
 
 Store 5 also restores the `piSessionCache` key that builds before it removed from
 stored Chats on reconnect and import. Chat writes compare the stored text with the

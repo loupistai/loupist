@@ -146,11 +146,14 @@ impl SqliteStore {
             let mut owner = None;
             for (loupist, folder) in folders.iter() {
                 opened.insert(loupist.clone());
-                let found: bool = folder.connection.query_row(
+                let found: bool = match folder.connection.query_row(
                     &format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?1)"),
                     [id],
                     |row| row.get(0),
-                )?;
+                ) {
+                    Ok(found) => found,
+                    Err(_) => continue,
+                };
                 if found {
                     owner = Some(loupist.clone());
                     break;
@@ -171,11 +174,14 @@ impl SqliteStore {
                 Ok(c) => c,
                 Err(_) => continue,
             };
-            let found: bool = connection.query_row(
+            let found: bool = match connection.query_row(
                 &format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?1)"),
                 [id],
                 |r| r.get(0),
-            )?;
+            ) {
+                Ok(found) => found,
+                Err(_) => continue,
+            };
             if found {
                 return Ok(connection);
             }
