@@ -382,7 +382,7 @@ fn support_launch_starts_on_the_manifest_bootstrap_with_only_a_placeholder_key()
     // `agent/provider-manifest.test.mjs` checks this model in the pinned Pi catalog.
     assert_eq!(
         (value("--provider"), value("--model")),
-        ("google".to_owned(), "gemini-2.5-flash".to_owned())
+        ("google".to_owned(), "gemini-3.5-flash-lite".to_owned())
     );
     let env = config.environment();
     assert_eq!(

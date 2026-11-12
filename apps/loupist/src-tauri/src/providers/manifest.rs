@@ -418,7 +418,7 @@ mod tests {
             support_bootstrap(),
             SupportBootstrap {
                 provider: "google",
-                model: "gemini-2.5-flash",
+                model: "gemini-3.5-flash-lite",
                 environment: "GEMINI_API_KEY",
             }
         );
