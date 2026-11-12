@@ -127,6 +127,9 @@
 .loupist-tracking-intro { margin:var(--gg-space-3) 0 0; font-size:var(--gg-text-body); line-height:var(--gg-leading-body); }
 .loupist-tracking-list { list-style:none; padding:0; margin:var(--gg-space-2) 0 0; display:grid; gap:var(--gg-space-2); }
 .loupist-tracking-list li { display:grid; grid-template-columns:auto 1fr auto; column-gap:var(--gg-space-2); align-items:start; }
+/* A change row has no swatch: its text takes the free track and Undo lines up at the right edge. */
+.loupist-tracking-changes li { grid-template-columns:minmax(0, 1fr) auto; }
+.loupist-tracking-recent { margin-top:var(--gg-space-4); }
 .loupist-tracking-list .map-swatch { width:10px; height:10px; margin-top:6px; }
 .loupist-tracking-copy { min-width:0; }
 .loupist-tracking-copy strong { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; font-size:var(--gg-text-body); font-weight:var(--gg-weight-semibold); line-height:var(--gg-leading-body); }
