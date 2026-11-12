@@ -111,7 +111,7 @@ it("distinguishes Loupists with matching folder names and opens the intended one
   expect(selectedLoupistButton()).toHaveTextContent("research");
 });
 
-it("keeps what the map tracks in World processing, not Learning", async () => {
+it("keeps what the map tracks in Map building, not Learning", async () => {
   const user = userEvent.setup();
   await openApp();
   await user.click(headerAction("Loupist settings"));
@@ -130,7 +130,7 @@ it("opens the current Loupist's Skills & connections from the Connections page a
   try {
     await openApp();
     await user.click(await mainTab(/Connections/));
-    expect(document.querySelector('.settings-navigation [aria-current="page"]')).toHaveTextContent("Connections");
+    expect(document.querySelector('.settings-navigation [aria-current="page"]')).toHaveTextContent("Data connections");
     await user.click(await screen.findByRole("button", { name: "Choose which Loupists can use them" }));
     const page = await screen.findByRole("region", { name: "Loupist settings" });
     await waitFor(() => expect(page.querySelector<HTMLDetailsElement>('[data-loupist-section="capabilities"]')!.open).toBe(true));

@@ -44,6 +44,11 @@
 .settings-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-4); padding: var(--gg-space-5); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .settings-row strong { display: block; font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); }
 .settings-row-description { margin: var(--gg-space-1) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); }
+.settings-general, .settings-about { display: grid; gap: var(--gg-space-4); }
+.settings-about { margin-top: var(--gg-space-6); }
+.settings-general .settings-row > div { flex: 1 1 18rem; min-width: 0; }
+.settings-section-title { margin: 0; font-size: var(--gg-text-heading); line-height: var(--gg-leading-heading); font-weight: var(--gg-weight-semibold); }
+.settings-privacy-list { margin: var(--gg-space-2) 0 0; padding-left: var(--gg-space-5); list-style: disc; display: grid; gap: var(--gg-space-1); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); }
 .settings-section-heading { margin-bottom: var(--gg-space-2); }
 .settings-section-heading:has(> button) { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: var(--gg-space-4); }
 .settings-section-heading h3, .agent-config-group h4 { margin: 0; font-size: var(--gg-text-reading); font-weight: var(--gg-weight-semibold); }

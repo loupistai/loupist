@@ -1,4 +1,4 @@
-import { NoticeSettingsRow } from "./onboarding/Notice";
+import { ApplicationSettings } from "./settings/ApplicationSettings";
 import { MarketplaceView } from "./marketplace/MarketplaceView";
 import { LoupistAvatar } from "./app/AppHeader";
 import i18n, { useTranslation } from "../i18n";
@@ -96,7 +96,8 @@ export function SettingsView({
         {section === "keyboard" ? <KeyboardSettings /> : null}
         {section === "skills" ? <SkillsSettings bridge={bridge} loupists={loupists} scope={{ kind: "global" }} onDraftSkill={onDraftSkill} /> : null}
 
-        {section === "agent" ? <><NoticeSettingsRow /><AgentSettings bridge={bridge} loupists={loupists} catalog={catalog} scope={{ kind: "global" }} /></> : null}
+        {section === "agent" ? <AgentSettings bridge={bridge} loupists={loupists} catalog={catalog} scope={{ kind: "global" }} /> : null}
+        {section === "general" ? <ApplicationSettings bridge={bridge} /> : null}
 
         {section === "updates" ? (
           <UpdateSettingsCard status={update.status} phase={update.phase} error={update.error} onCheck={update.checkForUpdates} onInstall={(offer_id) => update.installUpdate({ offer_id })} />

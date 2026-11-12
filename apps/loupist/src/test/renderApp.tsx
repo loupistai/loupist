@@ -52,7 +52,7 @@ export const mainTab = async (name: RegExp) => {
   if (label === "Connections") {
     const settings = document.getElementById("main-tab-settings");
     if (settings) fireEvent.click(settings);
-    return await screen.findByRole("button", { name: "Connections" });
+    return await screen.findByRole("button", { name: "Data connections" });
   }
   if (!document.querySelector(".header-workspace-controls")) fireEvent.click(screen.getByRole("button", { name: "Back" }));
   if (label === "Map" || label === "Lens") {

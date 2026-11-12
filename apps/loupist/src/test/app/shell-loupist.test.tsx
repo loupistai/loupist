@@ -13,7 +13,7 @@ const recovering = (loupist: LoupistSummary): LoupistSummary => ({
 
 const openModelSettings = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(await mainTab(/Settings/));
-  await user.click(screen.getByRole("button", { name: "Models & providers" }));
+  await user.click(screen.getByRole("button", { name: "AI accounts" }));
 };
 
 /** Settings › Models & providers › Add a provider, then one of its ways to connect. */

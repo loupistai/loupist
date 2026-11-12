@@ -79,7 +79,7 @@ describe("Loupist · New Chat", () => {
     await user.type(composer(), "Keep this question");
     await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
     await user.click(screen.getByRole("menuitem", { name: "Manage models & providers" }));
-    expect(await screen.findByRole("heading", { name: "Models & providers", level: 1 })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "AI accounts", level: 1 })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.queryByRole("button", { name: "Chat preferences for this Loupist" })).toBeNull();
     await user.click(headerAction("Loupist settings"));
