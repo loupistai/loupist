@@ -1,6 +1,7 @@
 # Knowledge and Memory
 
-This page owns retained records, Map, retrieval, World processing and sharing. Host authority and
+This page owns Memory: retained Sources, Map, Lens, research notes and Journal,
+plus retrieval, Map building (the internal World model) and sharing. Host authority and
 storage locations are in [Architecture](architecture.md).
 
 ## Find a topic
@@ -18,7 +19,7 @@ storage locations are in [Architecture](architecture.md).
 - [Thesis and the read](knowledge/thesis.md#thesis-and-the-read)
 - [What changed](knowledge/what-changed.md#what-changed)
 - [Results events](analysis/results.md#results-events)
-- [Watchers](knowledge/watchers.md#watchers)
+- [Watching](knowledge/watchers.md#watchers)
 - [Lens](knowledge/lens.md#lens)
 - [Method learning](knowledge/lens.md#method-learning)
 - [Using and correcting Memory in a Chat](knowledge/memory.md#using-and-correcting-memory-in-a-chat)

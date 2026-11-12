@@ -1,6 +1,7 @@
 # Scheduled runs
 
-Scheduled work reuses ordinary Chat admission. The process has to be running, including while the window is hidden. The Schedule tab is [Schedule](../ui/schedule.md).
+Scheduled work reuses ordinary Chat admission. Scheduled chats and briefings use the AI account each run; Watching uses none.
+The process has to be running, including while the window is hidden. The Schedule page is [Schedule](../ui/schedule.md).
 
 ## Process lifetime
 
@@ -24,7 +25,7 @@ disabling a briefing or watcher overrides that choice. The settings response car
 stored boolean as an explicit choice, because its origin cannot be recovered.
 Closing the main window hides it while the effective setting is on.
 Menu Quit and Cmd+Q exit. The tray menu opens the app, selects a Loupist's Schedule
-tab, or quits. A finished briefing posts an OS notification when permission is
+page, or quits. A finished briefing posts an OS notification when permission is
 granted. That notification does not open the item. Tray selection emits the
 typed `inbox-open` event. Schedules run only while the app process is running,
 including while the window is hidden.
@@ -40,7 +41,7 @@ Memory writes and Loupist registration: admitted work and installation exclude e
 other. World jobs run sequentially per Loupist; their recovery is owned by
 [Knowledge and Memory](../knowledge/worlds.md#worlds-and-graph-processing), including
 completed-job receipts and disposal of derived extraction copies. A queued or
-running World load (Recover World processing, or the load after a shared pack's Add or
+running World load (Recover map building, or the load after a shared pack's Add or
 Remove) runs before any extraction; the load after Add or Remove cancels an earlier
 load still waiting.
 
@@ -50,11 +51,11 @@ Scheduled work reuses ordinary Chat admission, execution and persistence. A save
 definition has title, prompt, schedule, target, model/reasoning options and separate
 Memory read/save flags. Supported schedules are once, interval, daily and weekly;
 daily/weekly use IANA time zones. A run can target a new Chat per run, the task's
-own continuing Chat, or an existing Chat. Bot manages schedules. A research session can submit a typed schedule handoff with its own model and Memory flags. The host registers the task idempotently and posts a receipt in the same Loupist’s Bot. A busy Bot receives pending receipts on the next delivery pass or workspace load. Unattended runs cannot manage or hand off schedules. A research hand-off from the Bot
-(`chat_handoffs`, [Home Thread](../ui/home-thread.md#home-thread)) is a delegated run on
+own continuing Chat, or an existing Chat. Your Loupist manages schedules in Home. A separate Chat can submit a typed schedule handoff with its own model and Memory flags. The host registers the task idempotently and posts a receipt in the same Loupist’s Home. When Home is busy, receipts wait for the next delivery pass or workspace load. Unattended runs cannot manage or hand off schedules. A research hand-off from Home
+(`chat_handoffs`, [Home](../ui/home-thread.md#home-thread)) is a delegated run on
 the same admission path with the same unattended allowlist, without a scheduled task: a
-`created` row with no run is sent once by the Bot's next delivery pass, a `running` row
-whose run is gone is marked stopped, and a run that started is never sent again. Legacy confirmation-pending tasks remain paused. The Bot’s briefing and watch tools handle explicit requests separately. Existing briefing-based watcher consent is captured on first access.
+`created` row with no run is sent once by the next delivery pass in Home, a `running` row
+whose run is gone is marked stopped, and a run that started is never sent again. Legacy confirmation-pending tasks remain paused. The briefing and watch tools in Home handle explicit requests separately. Existing briefing-based watcher consent is captured on first access.
 
 The shared Rust service handles create/edit, pause/resume, delete, Run now and
 Stop. Edits check definition revisions; Chat creation keys prevent duplicate
@@ -62,8 +63,12 @@ schedule creation. Schedule writes commit immediately, including if the creating
 reply later fails. A task cannot overlap itself and shares ordinary Chat capacity.
 Run now attempts admission immediately; it is not a durable manual-run queue.
 Pause prevents future starts; Stop cancels the current run separately. Run now also
-starts a paused task without turning on its future weekday schedule. The user
-asks the Bot to run a task now; Schedule shows its definition and run history.
+starts a paused task without turning on its future weekday schedule. Task detail offers Run now and Pause/Resume; a completed one-time task needs an
+edit before it can resume. Custom tasks have Delete under More, with confirmation,
+disabled while running. Briefing and results tasks are paused rather than deleted.
+Time and prompt changes stay conversational in Home. Schedule also shows a
+Watching row that opens Following, where Pause/Resume and Check now control
+automatic checks without a model call.
 The scheduler sleeps until the next due occurrence or a schedule-change signal,
 with a 60-second maximum to recheck folders and wall-clock changes; an overdue
 occurrence blocked on admission retries after five seconds. Task lists batch
@@ -82,7 +87,7 @@ needed. A newer edit still prevents an old completion from changing the definiti
 History records status, timing, error and target Chat, where the reply and its evidence remain. Renderer discovery polls every two
 seconds while the window is visible and every 30 seconds while hidden, and reads
 immediately when the window becomes visible or regains focus. A finished run is also
-announced in the Loupist's [home Thread](../ui/home-thread.md). Desktop notifications
+announced in the Loupist's [Home](../ui/home-thread.md). Desktop notifications
 identify custom and earnings tasks by title and distinguish stopped runs from
 failures. Only a user-stopped run says "stopped"; crash recovery and other
 interruptions say "couldn't finish". There is no meaningful-change filter, saved
@@ -146,10 +151,10 @@ failed and interrupted receipts share one unread state.
 
 Each Loupist that follows an equity has one automatic task of kind `earnings` (id
 `earnings-{loupist}`, "Results before and after", `commands/earnings.rs`). Rust creates it
-when the Schedule tab lists tasks, when the open Loupist follows an asset or gets
+when Schedule lists tasks, when the open Loupist follows an asset or gets
 proactive consent, and on each watch tick. It starts active when the briefing is active
 (proactive consent) and paused otherwise; consent turns an untouched paused task on. It
-targets the home Thread and is stored as an hourly interval; after each look Rust moves
+targets Home and is stored as an hourly interval; after each look Rust moves
 its next run to the next capture due, at most six hours away, and a look with nothing
 due records no run. Rust refuses Edit and Delete. Pause, Resume and Run now work,
 turning it on needs no model, and one failed run does not pause it (the same
@@ -162,8 +167,8 @@ observations, runs at most eight due captures under a Memory-mutation activity,
 schedules due captures it did not attempt for the next minute, and records
 what each capture did as structured summary items (`RunSummaryItem`: expected or
 reported values with the asset name, period and count, a failed capture, or nothing due)
-that the Schedule tab words in the reader's language, keeps a failure's reason in the
-run's error, and posts what the Thread is owed. A successful before-capture posts
+that Schedule words in the reader's language, keeps a failure's reason in the
+run's error, and posts what Home is owed. A successful before-capture posts
 nothing. Captures read
 through each Loupist's host executor, as the watchers do. Statement rows match the
 event's period-end date first; fiscal labels are used only when the payload has no

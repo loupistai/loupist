@@ -4,7 +4,10 @@ Skills are procedures the model can load. They do not grant Memory permission or
 
 ## Skills management
 
-Fixed app procedures are `world`, `lens`, `journal` and `visualize`. Optional
+Fixed app procedures are Map (Skill id `world`), Lens (`lens`), Journal (`journal`)
+and visualization (`visualize`). Built-in tools allowed for the turn are ready
+without `capability_load`; data connections still load their tool inventories and
+keep their grants and Memory permissions. Optional
 workflows include research, financial analysis, file authoring and Skill
 creation/installation. Four retail workflows, on by default, answer everyday questions
 with every figure from `calculate`: `dividend-income` (history, payout, cuts, growth,
