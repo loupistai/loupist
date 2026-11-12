@@ -36,8 +36,13 @@ the facts); without that series the level is absent.
 The Loupist database holds `knowledge_asset_pages` (identity, class and its source,
 matched entity, the read and the move that set it, per-check refresh status,
 revision), `knowledge_asset_observations` (kind, fact date, typed facts of at most
-4 KiB, evidence, origin `refresh`, `chat` or `briefing`, baseline flag; unique per
-dedupe key), `knowledge_asset_moves` and `knowledge_asset_section_deltas`.
+4,096 Unicode scalar values in serialized JSON, evidence, origin `refresh`, `chat`
+or `briefing`, baseline flag; unique per
+dedupe key). Oversized rows retain their evidence and structured facts with a
+`truncated: true` marker: long text ends with `… [truncated]`, and large containers
+retain a prefix; non-object JSON is retained under `preview` with the same marker.
+The host never silently drops the row. The database also holds
+`knowledge_asset_moves` and `knowledge_asset_section_deltas`.
 Unknown stored classes, class sources or verdicts and malformed refresh state
 fail exact reads and writes instead of being presented as default values. Page
 and move listings skip unreadable rows and log once without their contents, so

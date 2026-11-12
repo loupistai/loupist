@@ -38,7 +38,7 @@ pub(crate) fn asset_error(code: &'static str, expected: &'static str) -> Knowled
 
 pub const MAX_REASON_CHARS: usize = 280;
 pub const MAX_EVIDENCE: usize = 3;
-const MAX_FACTS_BYTES: usize = 4096;
+const MAX_FACTS_CHARS: usize = 4096;
 /// The page lists 50 change rows, then "Show earlier".
 pub const MAX_CHANGE_ROWS: usize = 200;
 const DAY_MS: i64 = 86_400_000;
@@ -570,10 +570,7 @@ pub fn record_observations_with(
                 holdings_changes(&mut observation.facts, &prior);
             }
         }
-        let facts = serde_json::to_string(&observation.facts)?;
-        if facts.len() > MAX_FACTS_BYTES {
-            continue;
-        }
+        let facts = bounded_facts(&mut observation.facts)?;
         let dedupe_key = bounded_text(&observation.dedupe_key, 400);
         let evidence = serde_json::to_string(&observation.evidence)?;
         let inserted = tx.execute(
@@ -655,6 +652,58 @@ fn holdings_changes(facts: &mut Value, prior: &Value) {
         object.insert("entered".into(), json!(entered));
         object.insert("left".into(), json!(left));
         object.insert("moved".into(), json!(moved));
+    }
+}
+
+/// SQLite's length(TEXT) cap counts scalar values. Keep structured facts valid
+/// and retain evidence even when an upstream row exceeds that cap.
+fn bounded_facts(facts: &mut Value) -> KnowledgeResult<String> {
+    let mut text = serde_json::to_string(facts)?;
+    if text.chars().count() <= MAX_FACTS_CHARS {
+        return Ok(text);
+    }
+    if !facts.is_object() {
+        *facts = json!({"preview": facts.take()});
+    }
+    let object = facts.as_object_mut().expect("facts wrapped as an object");
+    object.insert("truncated".into(), Value::Bool(true));
+    loop {
+        text = serde_json::to_string(object)?;
+        if text.chars().count() <= MAX_FACTS_CHARS {
+            return Ok(text);
+        }
+        // Bound the largest field first, leaving small typed facts usable. A
+        // shortened string ends on a character boundary; containers retain a
+        // prefix of their entries. The row's marker records either kind of loss.
+        let key = object
+            .iter()
+            .filter(|(key, _)| key.as_str() != "truncated")
+            .max_by_key(|(_, value)| value.to_string().len())
+            .map(|(key, _)| key.clone())
+            .ok_or(KnowledgeError::Invalid(
+                "observation facts cannot be bounded",
+            ))?;
+        let value = object.get_mut(&key).expect("selected field");
+        match value {
+            Value::String(value) if value.chars().count() > 32 => {
+                let keep = value.chars().count() / 2;
+                *value = format!(
+                    "{}… [truncated]",
+                    value.chars().take(keep).collect::<String>()
+                );
+            }
+            Value::Array(values) if !values.is_empty() => {
+                values.truncate(values.len() / 2);
+            }
+            Value::Object(values) if !values.is_empty() => {
+                if let Some(last) = values.keys().next_back().cloned() {
+                    values.remove(&last);
+                }
+            }
+            _ => {
+                object.remove(&key);
+            }
+        }
     }
 }
 
