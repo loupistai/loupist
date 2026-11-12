@@ -8,7 +8,7 @@ export const LENS_ASSERTS = new Set(['lens_pages', 'lens_unchanged', 'lens_read'
 export const MEMORY_ASSERTS = new Set(['committed', 'not_committed', ...LENS_ASSERTS]);
 const LENS_KINDS = new Set(['principle', 'perspective', 'method', 'subject', 'idea']);
 const BASIS_KINDS = new Set(['span', 'claim', 'said', 'page']);
-export const MEMORY_KINDS = new Set(['source', 'note', 'lens', 'lens_proposal', 'principle', 'journal']);
+export const MEMORY_KINDS = new Set(['source', 'note', 'lens', 'principle', 'journal']);
 export const ANSWER_ASSERTS = new Set(['metrics', 'contains_any', 'not_contains', 'answer_not_matching', 'prediction', 'cites_result', 'numbers_linked', 'calculation_chip']);
 /** Saved Memory an as-of answer left out, as Rust counts it in `as_of_report.left_out`. */
 export const AS_OF_LEFT_OUT_KINDS = new Set(['facts', 'sources', 'notes', 'methods']);
@@ -126,7 +126,7 @@ export function calculateInputsAssertion(assertion) {
   return { inputs, operation: assertion.operation ?? null };
 }
 
-/** Reasons a grid cell may stay empty (finance-grid-answers.md §3.2). */
+/** Reasons a grid cell may stay empty (docs/analysis/grids.md). */
 export const GRID_EMPTY_REASONS = new Set(['not_reported', 'not_applicable', 'unavailable', 'not_checked']);
 const GRID_LAYOUTS = new Set(['assets', 'conflict']);
 
@@ -359,6 +359,13 @@ export function validateSuite(suite) {
         for (const assertion of turn.expect?.memory ?? []) {
           if (assertion.count !== undefined && (!Number.isSafeInteger(assertion.count) || assertion.count < 0)) throw new Error('Memory count must be a non-negative integer');
           if (LENS_ASSERTS.has(assertion.assert)) lensAssertion(assertion);
+          else {
+            const kinds = Array.isArray(assertion.kind) ? assertion.kind : [assertion.kind];
+            if (!MEMORY_ASSERTS.has(assertion.assert)) throw new Error(`Unknown memory assertion ${assertion.assert}`);
+            if (kinds.length === 0 || kinds.some((kind) => !MEMORY_KINDS.has(kind))) {
+              throw new Error(`Unknown memory kind ${assertion.kind}`);
+            }
+          }
         }
         const criteria = new Set();
         for (const rubric of turn.expect?.rubric ?? []) {

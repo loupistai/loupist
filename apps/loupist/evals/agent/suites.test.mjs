@@ -555,3 +555,29 @@ test('connection replay scenarios accept the enabled DefiLlama capability', () =
   scenario.connections = ['unknown-connection'];
   assert.throws(() => assertScenarioContract(scenario, { suite: file.json.suite, filePath: file.filePath }));
 });
+
+test('memory precision checks reject retired kinds and fail on actual Lens writes', () => {
+  const suite = { schema: 'loupist-agent-suite/1', suite: 'memory-precision', scenarios: [{
+    id: 'one-off', sessions: [{ id: 'chat', role: 'probe', memory: 'remember', turns: [{
+      user: 'Use this assumption only here.', expect: { memory: [
+        { assert: 'not_committed', kind: 'lens', metric: 'save_precision' },
+      ] },
+    }] }],
+  }] };
+  const trace = { schema: 'loupist-agent-trace/1', run_id: 'fixture', suite: suite.suite,
+    scenario_id: 'one-off', session_id: 'chat', turn_index: 0, trial: 0,
+    status: 'completed', session_role: 'probe', memory_mode: 'remember',
+    user: suite.scenarios[0].sessions[0].turns[0].user, answer: 'Done.', tool_calls: [] };
+  for (const [commits, pass] of [
+    [[], true], [[{ kind: 'lens', title: 'Unexpected standing method' }], false],
+    [[{ kind: 'note', title: 'Working note' }], true],
+    [[{ kind: 'source', title: 'Retained source' }], true],
+  ]) {
+    assert.equal(grade(suite, [{ ...trace, memory_commits: commits }]).results[0].pass, pass);
+  }
+  for (const kind of ['lens_proposal', [], ['lens', 'lens_proposal'], 'unknown']) {
+    const invalid = structuredClone(suite);
+    invalid.scenarios[0].sessions[0].turns[0].expect.memory[0].kind = kind;
+    assert.throws(() => validateSuite(invalid), /Unknown memory kind/);
+  }
+});

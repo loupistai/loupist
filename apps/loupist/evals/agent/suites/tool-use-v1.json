@@ -181,11 +181,6 @@
                     "assert": "not_committed",
                     "kind": "lens",
                     "metric": "save_precision"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
-                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [

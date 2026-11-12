@@ -570,56 +570,17 @@ This is paid. `--trial-index 0|1|2` runs one isolated trial while keeping the
 three-trial denominator. The adjacent `.pending.jsonl` records started attempts;
 failed checks exit nonzero.
 
-## Learned Lens outcome comparison
+## Method learning from research
 
-`lens/` compares answer quality with and without learned method Lenses around the
-production runner. Keep three questions separate: did Memory save and retrieve a
-teaching, did a later answer follow it, and did learning improve the answer?
-
-Each test question starts in a fresh Loupist and Chat with only its declared seeds:
-A Memory off; B training Sources; C the same Sources plus an independently curated
-Lens; D the same Sources plus the canonical Lens produced by the product's own
-research and correction conversation (exported unedited, without importing training
-Chats, notes, Journals or workspace files). B/C/D use read-only Memory. The primary
-effect is D−B; also report C−B, B−A and D−C. Repeat from independent training
-conversations. Hold model, reasoning, tools and execution settings constant.
-
-```sh
-python3 apps/loupist/evals/lens/prepare-experiment.py --root <experiment> \
-  --repo . --prior <prior-experiment> --pi-agent-dir <existing-connection-directory>
-python3 apps/loupist/evals/lens/prepare-candidate.py <experiment> --version <candidate>
-python3 apps/loupist/evals/lens/isolate-snapshot.py --snapshot <ignored-snapshot> \
-  --context-output <dir> --prior-context-output <previous-context-dir>
-python3 apps/loupist/evals/lens/run-matrix.py <plan.json>
-python3 apps/loupist/evals/lens/quality.py packets --root <experiment> \
-  --plan <baseline-plan.json> --plan <candidate-plan.json> \
-  --cases <cases-with-oracles.json> --out <new-grade-directory>
-python3 apps/loupist/evals/lens/quality.py judge --out <grade-directory> \
-  --runtime <absolute-pi-runtime> --extension <absolute-provider-extension> \
-  --pi-agent-dir <existing-connection-directory>
-python3 apps/loupist/evals/lens/quality.py report --out <grade-directory> --report <new-report.json>
-python3 apps/loupist/evals/lens/state-audit.py --plan <test-plan.json> --output <new-state-audit.json>
-python3 apps/loupist/evals/lens/context-metrics.py --contexts <captured-requests> --output <new-context-report.json>
-python3 -m unittest discover -s apps/loupist/evals/lens -p 'test_*.py'
-```
-
-Only `run-matrix.py` (via `run-cell.py`, which journals command and input/binary
-hashes) and `quality.py judge` make paid calls; neither retries silently. The
-isolation helper applies only to an ignored snapshot under `evals/output/`, never the
-product checkout: native tools keep the clean workspace and bundled Skills while
-private Memory files, other profiles, grader files and shell network are unavailable.
-Validate that boundary before collecting outcomes. `quality.py` sends full
-question/answer packets to a tool-free judge with condition metadata withheld and a
-0/1/2 rubric (accuracy, evidence, method, inappropriate transfer, correction); the
-report includes scenario/trial deltas, difference-in-differences and crossed
-bootstrap intervals. A zero interval at a ceiling is not proof of equivalence.
-`state-audit.py` verifies exact Source bytes, complete Lens documents and absence of
-training history in the retained profiles. Context captures must omit headers.
+The retired causal-comparison scripts relied on an obsolete Lens document format
+and execution sandbox and have been removed. The current agent suites and
+the native research fixture exercise canonical Lens pages. Removing the obsolete
+`lens_proposal` assertions changes the grading denominator; collect a new baseline
+before comparing scores with earlier reports. No replacement paid baseline has
+been collected as part of this cleanup.
 
 `knowledge-lens-eval-v1.json` holds 40 frozen held-out Lens cases. Record its digest
 with any run; changing it starts a new comparison. Never copy its cases into suites.
-
-### Method learning from research
 
 `lens/research-v1.json` drives [method learning](../../../docs/knowledge/lens.md#method-learning)
 end to end with a real model. Each arm is a fresh Loupist with World processing and
