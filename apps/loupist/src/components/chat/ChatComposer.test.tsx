@@ -147,6 +147,9 @@ describe("ChatComposer input", () => {
     await user.click(await screen.findByRole("menuitemcheckbox", { name: /Private chat/ }));
     const off = await screen.findByRole("button", { name: "Turn off private chat" });
     expect(screen.getByText("Private · memory off")).toBeVisible();
+    // Focus goes back to the message, so the "+" tooltip does not reopen over the chip.
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveFocus());
+    expect(screen.queryByRole("tooltip")).toBeNull();
     expect(screen.getByText("Private · memory off").parentElement).toHaveAccessibleDescription("Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.");
     await user.click(off);
     expect(screen.queryByText("Private · memory off")).toBeNull();

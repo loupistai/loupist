@@ -391,7 +391,14 @@ function ComposerPromptTools({
         >
           <PlusIcon />
         </PromptInputActionMenuTrigger>
-        <PromptInputActionMenuContent className="composer-add-menu" data-input={modality} side="top" align="start" sideOffset={addMenuOffset.side} alignOffset={addMenuOffset.align}>
+        {/* Closing returns to the message, not the "+" button: its tooltip would cover the Private chip just turned on. */}
+        <PromptInputActionMenuContent className="composer-add-menu" data-input={modality} side="top" align="start" sideOffset={addMenuOffset.side} alignOffset={addMenuOffset.align}
+          onCloseAutoFocus={(event) => {
+            const textarea = addTrigger.current?.closest("form")?.querySelector("textarea");
+            if (!textarea) return;
+            event.preventDefault();
+            textarea.focus();
+          }}>
           <DropdownMenuLabel>{t("chatComposer.addToThisMessage")}</DropdownMenuLabel>
           <PromptInputActionAddAttachments label={t("chatComposer.attach.files")} />
           <ClipboardAttachmentAction onError={onAttachmentError} />
