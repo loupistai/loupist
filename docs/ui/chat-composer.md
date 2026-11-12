@@ -109,8 +109,9 @@ a new site after third-party text is refused the same way
 
 An [`ask_user`](../agent/turn-tools.md#turn-tools) call waits on a question card the same
 way: Rust records it on `ChatProgress.questions` (at most four per reply), under the step
-that asked, and the card offers one button per option (the recommended one primary, tagged
-Recommended, with its description under each label), an "Or answer in your own words"
+that asked, and the card offers one outlined button per option (the recommended one with a primary edge, tagged
+Recommended, with its description under each label; it takes focus, so Enter chooses it, only when the card
+arrives after the reply stopped streaming and nothing editable has focus; while the reply streams, focus stays put), an "Or answer in your own words"
 field up to 500 characters and the waiting clock. Answers go through
 `chat_question_answer {loupist_id, request_id, choice | text}` (exactly one; Rust checks the
 Loupist, the option index and the length). The settled line reads "You answered: …" or,

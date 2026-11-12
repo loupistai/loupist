@@ -351,7 +351,7 @@ function ChatMessageCardComponent({
         transcript.push(<ActivityRow key={segment.key} segment={segment} focusItemId={progressFocus} asOf={message.as_of}
           revealedResult={segment.evidence.some(e => e.id === revealedResult?.id) ? revealedResult : undefined}
           renderApprovals={bridge ? approvals => <ApprovalCards approvals={approvals} refusals={[]} bridge={bridge} loupistId={loupistId} /> : undefined}
-          renderQuestions={bridge ? questions => <QuestionCards questions={questions} bridge={bridge} loupistId={loupistId} /> : undefined} />);
+          renderQuestions={bridge ? questions => <QuestionCards questions={questions} bridge={bridge} loupistId={loupistId} streaming={message.status === "streaming"} /> : undefined} />);
         continue;
       }
       // The settled answer alone splits around its cards; the first piece keeps the answer's key.
