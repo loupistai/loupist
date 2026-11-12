@@ -198,3 +198,19 @@ it("debounces Lens search while the user types and cancels a cleared query", asy
     rendered.unmount();
   } finally { vi.useRealTimers(); }
 });
+
+it("offers + Add principle on an empty Lens and opens the principle it saves", async () => {
+  const { bridge, loupist, view, user } = await fixture();
+  // A new Loupist: no methods or pages yet.
+  const catalog = bridge.knowledgeCatalog.bind(bridge);
+  vi.spyOn(bridge, "knowledgeCatalog").mockImplementation(async request => ({ ...await catalog(request), lenses: [] }));
+  for (const principle of await bridge.principleList({ loupistId: loupist.id })) await bridge.principleArchive({ loupistId: loupist.id, recordId: principle.recordId, archived: true });
+  render(view());
+  const page = await screen.findByRole("region", { name: /What .* knows/ });
+  await within(page).findByText(/Nothing here yet/);
+  await user.click(within(page).getByRole("button", { name: "+ Add principle" }));
+  await user.type(within(page).getByRole("textbox", { name: "Statement" }), "Check capacity costs before trusting a margin recovery.");
+  await user.click(within(page).getByRole("button", { name: "Save" }));
+  expect(await within(page).findByRole("complementary", { name: /Check capacity costs before trusting a margin recovery/ })).toBeVisible();
+  expect((await bridge.principleList({ loupistId: loupist.id })).map(item => item.statement)).toContain("Check capacity costs before trusting a margin recovery.");
+});

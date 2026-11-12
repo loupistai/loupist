@@ -38,6 +38,8 @@
 .memory-marker.is-idea { border: 2px solid var(--gg-color-map-idea); }
 
 .memory-empty { margin: var(--gg-space-2) 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); }
+.memory-empty-state { display: grid; justify-items: start; gap: var(--gg-space-2); }
+.memory-empty-state .principle-form { justify-self: stretch; padding-inline: 0; }
 
 .memory-reader-error { margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
 .memory-reader { min-height: 240px; padding: var(--gg-space-6); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
