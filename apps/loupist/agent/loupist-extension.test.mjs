@@ -1085,3 +1085,19 @@ test("broker control-character corpus keeps one schema-valid call per routed too
     assert.doesNotThrow(() => validateToolArguments(tool, { type: "toolCall", id: "corpus", name: item.name, arguments: item.args }), item.name);
   }
 });
+
+test("an unattended chart-query pack never advertises missing publishing tools", () => {
+  const runtime = {
+    memory_access_enabled: true, memory_update_enabled: false,
+    core_tool_names: ["capability_load"],
+    components: [tool("charts", "Charts", ["chart_query"])],
+  };
+  const readOnly = formatRuntimeIndex(runtime);
+  assert.match(readOnly, /chart_query/);
+  assert.doesNotMatch(readOnly, /chart_publish|grid_publish|Load before publishing/);
+  for (const publisher of ["chart_publish", "grid_publish"]) {
+    const offered = formatRuntimeIndex({ ...runtime, components: [tool("charts", "Charts", ["chart_query", publisher])] });
+    assert(offered.includes(publisher));
+    assert.match(offered, /Load before publishing/);
+  }
+});

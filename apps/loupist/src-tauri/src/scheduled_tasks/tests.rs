@@ -567,7 +567,7 @@ fn restart_records_interruption_and_schedules_the_next_occurrence() {
 }
 
 #[test]
-fn missing_credentials_pause_work_and_duplicate_completion_is_idempotent() {
+fn prelaunch_setup_failure_pauses_and_duplicate_completion_is_idempotent() {
     let store = fixture();
     let task = store
         .scheduled_task_create("loupist-a", draft(), 1)
@@ -581,7 +581,7 @@ fn missing_credentials_pause_work_and_duplicate_completion_is_idempotent() {
             "loupist-a",
             &run.run_id,
             RunStatus::Failed,
-            Some(crate::pi::provider_failure::NEEDS_RECONNECT),
+            Some("the selected Pi model is hidden from Chat"),
             300_002,
         )
         .unwrap();

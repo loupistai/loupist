@@ -377,7 +377,7 @@ impl AppToolExecutor {
                     }
                     let _ = crate::chat::home::deliver_finished_runs(state, loupist);
                     return Ok(
-                        json!({"handed_off":true,"scheduled":false,"notice":"Bot will ask for the missing details. Keep the user in this session and do not repeat the question here."}),
+                        json!({"handed_off":true,"scheduled":false,"notice":"Home will ask for the missing details. Keep the user in this session and do not repeat the question here."}),
                     );
                 }
                 let origin = if let Some(ref key) = request.handoff_id {
@@ -409,13 +409,23 @@ impl AppToolExecutor {
                             )
                         })?
                         .resolve()?,
-                    target: request.session_mode.ok_or(BrokerError::Malformed)?.target(),
+                    target: request
+                        .session_mode
+                        .ok_or_else(|| {
+                            BrokerError::invalid(
+                                "session_mode",
+                                "fresh or continue; required with a schedule",
+                            )
+                        })?
+                        .target(),
                     model_profile_id: context.model_profile_id.clone(),
                     thinking_level: context.thinking_level.clone(),
                     run_options: context.run_options.clone(),
                     use_memory: context.use_memory,
                     update_memory: context.update_memory,
-                    status: request.status.ok_or(BrokerError::Malformed)?,
+                    status: request.status.ok_or_else(|| {
+                        BrokerError::invalid("status", "active or paused; required with a schedule")
+                    })?,
                 };
                 if let Some(q) = &origin {
                     draft.model_profile_id.clone_from(&q.model_profile_id);
@@ -629,6 +639,28 @@ mod tests {
     }
     fn create(key: &str, mode: &str) -> Value {
         json!({"request_key":key,"title":format!("Review {key}"),"prompt":"Summarize the local report.","schedule":{"kind":"weekly","days":[1,2,3,4,5],"hour":9,"minute":0,"timezone":"Asia/Seoul"},"session_mode":mode,"status":"active"})
+    }
+
+    #[tokio::test]
+    async fn resolved_handoffs_name_missing_mode_and_status_without_creating_a_task() {
+        let temp = tempfile::tempdir().unwrap();
+        let (executor, policy) = fixture(&temp, true, "chat-a");
+        for field in ["session_mode", "status"] {
+            let mut args = create(field, "fresh");
+            args.as_object_mut().unwrap().remove(field);
+            let failure = executor
+                .execute(&policy, ToolMethod::ScheduleHandoff, args)
+                .await
+                .unwrap_err();
+            assert!(failure.to_string().contains(field), "{failure}");
+            assert!(
+                failure.to_string().contains("required with a schedule"),
+                "{failure}"
+            );
+            assert!(service::list(&executor.state, "loupist-a")
+                .unwrap()
+                .is_empty());
+        }
     }
 
     #[tokio::test]
@@ -922,6 +954,10 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(result["scheduled"], false);
+            assert!(result["notice"]
+                .as_str()
+                .unwrap()
+                .starts_with("Home will ask"));
         }
         assert!(service::list(&topic.state, "loupist-a").unwrap().is_empty());
         let home = crate::chat::home::ensure_home_thread(&topic.state, "loupist-a").unwrap();

@@ -11,7 +11,7 @@ pub(super) fn command_message(error: crate::app::CommandError) -> String {
         error.code.as_str(),
         "internal" | "sqlite" | "json" | "io" | "private_storage" | "lock_poisoned"
     ) {
-        "Local data is unavailable. Try again or restart Loupist.".into()
+        "Local data could not be read. Do not repeat this call; tell the user it failed and that restarting Loupist may help.".into()
     } else {
         error.message
     }
@@ -25,7 +25,7 @@ pub(super) fn store_error(error: crate::store::StoreError) -> BrokerError {
         | crate::store::StoreError::Upgrade(_)
         | crate::store::StoreError::Invalid(_)
         | crate::store::StoreError::LockPoisoned => BrokerError::Execution(
-            "Local data is unavailable. Try again or restart Loupist.".into(),
+            "Local data could not be read. Do not repeat this call; tell the user it failed and that restarting Loupist may help.".into(),
         ),
         error => BrokerError::Execution(error.to_string()),
     }
@@ -62,7 +62,9 @@ mod tests {
             )),
         ] {
             assert!(!error.to_string().contains(private));
-            assert!(error.to_string().contains("restart Loupist"));
+            assert!(error.to_string().contains("restarting Loupist"));
+            assert!(error.to_string().contains("Do not repeat this call"));
+            assert!(!error.to_string().contains("Try again"));
         }
         for code in [
             "internal",

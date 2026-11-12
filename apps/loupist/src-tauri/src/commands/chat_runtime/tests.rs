@@ -812,3 +812,152 @@ fn terminal_replies_keep_acknowledged_records_across_reopen_without_a_renderer()
         assert_eq!(trace.entries[1].outcome, ToolTraceOutcome::Error);
     }
 }
+
+#[test]
+fn scheduled_provider_failures_pause_from_the_real_terminal_sink_kind() {
+    use crate::scheduled_tasks::types::{RunStatus, Schedule, TaskDraft, TaskStatus, TaskTarget};
+    for (kind, paused) in [
+        (ChatFailureKind::NeedsReconnect, true),
+        (ChatFailureKind::ModelGone, true),
+        (ChatFailureKind::RateLimited, false),
+        (ChatFailureKind::Offline, false),
+        (ChatFailureKind::ProviderUnavailable, false),
+        (ChatFailureKind::ProviderError, false),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        let profile = crate::commands::tests::profile("scheduled-kind", workspace.path(), 1);
+        crate::commands::tests::seed_profile(&state.store, &profile);
+        let task = state
+            .store
+            .scheduled_task_create(
+                &profile.id,
+                TaskDraft {
+                    title: "Provider test".into(),
+                    prompt: "Read the local report.".into(),
+                    schedule: Schedule::Interval { every_minutes: 5 },
+                    target: TaskTarget::NewChat,
+                    model_profile_id: "fixture".into(),
+                    thinking_level: "off".into(),
+                    run_options: Default::default(),
+                    use_memory: false,
+                    update_memory: false,
+                    status: TaskStatus::Active,
+                },
+                1_000,
+            )
+            .unwrap();
+        let (claim, ()) = state
+            .store
+            .scheduled_task_claim_with(&profile.id, &task.id, 2_000, true, |_| Ok(()))
+            .unwrap()
+            .unwrap();
+        let scheduled = state.scheduled.chat_event_sink(&state, &claim.run);
+        let sink = ChatEventSink::new(move |event| {
+            if let ChatStreamEvent::Error {
+                message,
+                failure_kind,
+                ..
+            } = &event
+            {
+                assert_eq!(message, FAILED_CHAT_CONTENT);
+                assert_eq!(*failure_kind, kind);
+            }
+            scheduled.send(event)
+        });
+        sink.set_failure_kind(kind);
+        persist_and_emit_failed_chat(
+            &state.store,
+            &sink,
+            &claim.run.run_id,
+            claim.run.thread_id.as_deref().unwrap(),
+            "provider-failed",
+            None,
+            execution_model(),
+            crate::agent_harness::snapshot("chat", &[], &[]).unwrap(),
+            None,
+        )
+        .unwrap();
+        let run = state
+            .store
+            .scheduled_task_run_get(&profile.id, &claim.run.run_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(run.status, RunStatus::Failed);
+        let saved = state
+            .store
+            .scheduled_task_get(&profile.id, &task.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.status == TaskStatus::Paused, paused, "{kind:?}");
+    }
+}
+
+#[test]
+fn scheduled_abort_sink_distinguishes_a_user_stop_from_app_quit_without_counting_either() {
+    use crate::scheduled_tasks::types::{RunStatus, Schedule, TaskDraft, TaskStatus, TaskTarget};
+    for quitting in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        let profile = crate::commands::tests::profile("scheduled-stop", workspace.path(), 1);
+        crate::commands::tests::seed_profile(&state.store, &profile);
+        let task = state
+            .store
+            .scheduled_task_create(
+                &profile.id,
+                TaskDraft {
+                    title: "Stop test".into(),
+                    prompt: "Read the local report.".into(),
+                    schedule: Schedule::Interval { every_minutes: 5 },
+                    target: TaskTarget::NewChat,
+                    model_profile_id: "fixture".into(),
+                    thinking_level: "off".into(),
+                    run_options: Default::default(),
+                    use_memory: false,
+                    update_memory: false,
+                    status: TaskStatus::Active,
+                },
+                1_000,
+            )
+            .unwrap();
+        for at in [2_000, 3_000, 4_000] {
+            let (claim, ()) = state
+                .store
+                .scheduled_task_claim_with(&profile.id, &task.id, at, true, |_| Ok(()))
+                .unwrap()
+                .unwrap();
+            if quitting {
+                state.scheduled.stop();
+            }
+            state
+                .scheduled
+                .chat_event_sink(&state, &claim.run)
+                .send(ChatStreamEvent::Aborted {
+                    run_id: claim.run.run_id.clone(),
+                })
+                .unwrap();
+            let saved = state
+                .store
+                .scheduled_task_get(&profile.id, &task.id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(saved.status, TaskStatus::Active);
+            let run = state
+                .store
+                .scheduled_task_run_get(&profile.id, &claim.run.run_id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(run.status, RunStatus::Interrupted);
+            assert_eq!(
+                run.error.as_deref(),
+                Some(if quitting {
+                    crate::scheduled_tasks::APP_QUIT
+                } else {
+                    crate::scheduled_tasks::USER_STOPPED
+                })
+            );
+        }
+    }
+}
