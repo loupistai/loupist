@@ -30,7 +30,11 @@ growth: a `reverse_dcf` over the last annual cash-flow, balance and income state
 report and at most a week older. A before-capture that starts on or after the report
 date runs under `as_of` = report date − 1 and leaves consensus out ("Consensus wasn't
 captured before the report"). Each capture before the report date replaces the host's
-earlier expected rows; after it, expected rows are locked. After: 30 minutes after the
+earlier expected rows; after it, expected rows are locked. When every attempted
+before-capture read fails, Rust records the failure and allows at most six attempts
+for that event, waiting 1, 2, 4, 8 and 16 hours between failures. The counter and next
+retry time survive restart; after the sixth failure the event stops retrying. A new
+earnings event starts a new budget. After: 30 minutes after the
 release is seen, reported revenue, operating income, net income and EPS from a statement
 read once a provider has the quarter (`fmp`, `intrinio`, `polygon`, `tiingo`, `tmx` or
 `sec`; Korea `dart_financials`), retried hourly up to six times; the same runs with stage

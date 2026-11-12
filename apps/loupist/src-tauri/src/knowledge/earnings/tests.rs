@@ -1012,3 +1012,171 @@ fn captures_are_due_the_evening_before_late_after_the_date_and_half_an_hour_afte
     let (due_now, _) = due(std::slice::from_ref(&deadline), "KRX", seoul);
     assert_eq!(due_now.len(), 1);
 }
+
+#[test]
+fn before_capture_failures_back_off_persist_and_stop_at_the_event_budget() {
+    let (root, store) = store();
+    let page = page(&store, "QUAYX", "NASDAQ");
+    let mut now = Utc.with_ymd_and_hms(2026, 10, 30, 12, 0, 0).unwrap();
+    let event = store
+        .transact(|w| {
+            upsert_event(
+                w.tx,
+                LOUPIST,
+                &page.asset_id,
+                "Q3 2026",
+                Some(day("2026-09-30")),
+                day("2026-10-30"),
+                DateSource::Calendar,
+                now.timestamp_millis(),
+            )
+        })
+        .unwrap()
+        .0;
+    for attempt in 1..=MAX_ATTEMPTS {
+        let current = store
+            .read(|w| get_event(w.tx, LOUPIST, &event.event_id))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            due(&[current], "NASDAQ", now).0[0].side,
+            CaptureSide::Before
+        );
+        store
+            .transact(|w| {
+                edit_flags(
+                    w.tx,
+                    LOUPIST,
+                    &event.event_id,
+                    now.timestamp_millis(),
+                    |flags| {
+                        flags.failed = Some(Failure {
+                            side: "before".into(),
+                            at_ms: now.timestamp_millis(),
+                        });
+                    },
+                )
+            })
+            .unwrap();
+        let current = store
+            .read(|w| get_event(w.tx, LOUPIST, &event.event_id))
+            .unwrap()
+            .unwrap();
+        assert_eq!(current.flags.before_attempts, attempt);
+        let (ready, next) = due(std::slice::from_ref(&current), "NASDAQ", now);
+        assert!(ready.is_empty());
+        if attempt < MAX_ATTEMPTS {
+            let wait = RETRY_MS * (1_i64 << (attempt - 1));
+            assert_eq!(next, Some(now.timestamp_millis() + wait));
+            assert!(due(
+                std::slice::from_ref(&current),
+                "NASDAQ",
+                now + Duration::milliseconds(wait - 1)
+            )
+            .0
+            .is_empty());
+            now += Duration::milliseconds(wait);
+        } else {
+            assert_eq!(next, None);
+            assert!(due(&[current], "NASDAQ", now + Duration::days(1))
+                .0
+                .is_empty());
+        }
+    }
+    drop(store);
+    let store = KnowledgeStore::open(root.path().join("knowledge.sqlite")).unwrap();
+    let current = store
+        .read(|w| get_event(w.tx, LOUPIST, &event.event_id))
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.flags.before_attempts, MAX_ATTEMPTS);
+    assert_eq!(current.flags.failed.unwrap().side, "before");
+    let next_event = store
+        .transact(|w| {
+            upsert_event(
+                w.tx,
+                LOUPIST,
+                &page.asset_id,
+                "Q4 2026",
+                Some(day("2026-12-31")),
+                day("2027-01-30"),
+                DateSource::Calendar,
+                now.timestamp_millis(),
+            )
+        })
+        .unwrap()
+        .0;
+    let next_now = Utc.with_ymd_and_hms(2027, 1, 30, 12, 0, 0).unwrap();
+    assert_eq!(
+        due(&[next_event], "NASDAQ", next_now).0[0].side,
+        CaptureSide::Before
+    );
+}
+
+#[test]
+fn old_before_failures_and_other_flag_edits_keep_the_before_retry_budget() {
+    let (_root, store) = store();
+    let page = page(&store, "QUAYX", "NASDAQ");
+    let at = Utc.with_ymd_and_hms(2026, 10, 30, 12, 0, 0).unwrap();
+    let mut event = store
+        .transact(|w| {
+            upsert_event(
+                w.tx,
+                LOUPIST,
+                &page.asset_id,
+                "Q3 2026",
+                None,
+                day("2026-10-30"),
+                DateSource::Calendar,
+                at.timestamp_millis(),
+            )
+        })
+        .unwrap()
+        .0;
+    event.flags =
+        serde_json::from_value(json!({"failed":{"side":"before","atMs":at.timestamp_millis()}}))
+            .unwrap();
+    assert_eq!(
+        due(std::slice::from_ref(&event), "NASDAQ", at).1,
+        Some(at.timestamp_millis() + RETRY_MS)
+    );
+    store
+        .transact(|w| {
+            update_flags(
+                w.tx,
+                LOUPIST,
+                &event.event_id,
+                &event.flags,
+                at.timestamp_millis(),
+            )?;
+            edit_flags(
+                w.tx,
+                LOUPIST,
+                &event.event_id,
+                at.timestamp_millis() + RETRY_MS,
+                |flags| {
+                    flags.failed = Some(Failure {
+                        side: "before".into(),
+                        at_ms: at.timestamp_millis() + RETRY_MS,
+                    });
+                },
+            )?;
+            edit_flags(
+                w.tx,
+                LOUPIST,
+                &event.event_id,
+                at.timestamp_millis() + RETRY_MS,
+                |flags| {
+                    flags.notified = true;
+                },
+            )?;
+            let current = get_event(w.tx, LOUPIST, &event.event_id)?.unwrap();
+            assert_eq!(current.flags.before_attempts, 2);
+            assert_eq!(
+                due(&[current], "NASDAQ", at + Duration::milliseconds(RETRY_MS)).1,
+                Some(at.timestamp_millis() + 3 * RETRY_MS)
+            );
+            Ok(())
+        })
+        .unwrap();
+}
