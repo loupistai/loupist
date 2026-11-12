@@ -84,6 +84,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -154,6 +160,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_update",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -223,6 +235,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_set_status",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -292,6 +310,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_set_status",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -335,6 +359,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_delete",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -358,7 +388,7 @@
           "memory": "off",
           "turns": [
             {
-              "user": "매일 보고서 요약을 예약하면 편할까? 아직 등록하지 말고 장단점만 짧게 말해 줘.",
+              "user": "먼저 지금 등록된 예약을 확인해 줘. 매일 보고서 요약을 예약하면 편할까? 아직 등록하지 말고 장단점만 짧게 말해 줘.",
               "expect": {
                 "trace": [
                   {
@@ -370,6 +400,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_list",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -423,6 +459,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_handoff",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -479,6 +521,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -517,6 +565,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_update",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -567,6 +621,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -599,6 +659,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_list",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -649,6 +715,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -681,6 +753,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_list",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -710,7 +788,8 @@
                   {
                     "assert": "tool_called",
                     "tool": "schedule_handoff",
-                    "metric": "task_success"
+                    "metric": "task_success",
+                    "successful": true
                   },
                   {
                     "assert": "scheduled_tasks",
@@ -751,6 +830,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }

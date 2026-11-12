@@ -3,13 +3,13 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 
 export const TRACE_SCHEMA = 'loupist-agent-trace/1';
 export const SUITE_SCHEMA = 'loupist-agent-suite/1';
-export const TRACE_ASSERTS = new Set(['tool_called', 'tool_not_called', 'tool_called_before', 'max_tool_calls', 'max_tool_errors', 'no_repeated_failed_call', 'capability_loaded', 'scheduled_tasks', 'tool_args_not_matching', 'calculate_inputs_cited', 'as_of_left_out', 'as_of_refused', 'grid_cells_linked', 'sensitivity_card', 'plan_progress']);
+export const TRACE_ASSERTS = new Set(['tool_called', 'tool_not_called', 'tool_called_before', 'max_tool_calls', 'max_tool_errors', 'no_repeated_failed_call', 'capability_loaded', 'scheduled_tasks', 'tool_args_not_matching', 'calculate_inputs_cited', 'as_of_left_out', 'as_of_refused', 'grid_cells_linked', 'sensitivity_card', 'plan_progress', 'skill_read']);
 export const LENS_ASSERTS = new Set(['lens_pages', 'lens_unchanged', 'lens_read', 'lens_not_read']);
 export const MEMORY_ASSERTS = new Set(['committed', 'not_committed', ...LENS_ASSERTS]);
 const LENS_KINDS = new Set(['principle', 'perspective', 'method', 'subject', 'idea']);
 const BASIS_KINDS = new Set(['span', 'claim', 'said', 'page']);
 export const MEMORY_KINDS = new Set(['source', 'note', 'lens', 'principle', 'journal']);
-export const ANSWER_ASSERTS = new Set(['metrics', 'contains_any', 'not_contains', 'answer_not_matching', 'prediction', 'cites_result', 'numbers_linked', 'calculation_chip']);
+export const ANSWER_ASSERTS = new Set(['metrics', 'contains_any', 'not_contains', 'answer_not_matching', 'prediction', 'cites_result', 'numbers_linked', 'calculation_chip', 'no_false_save_claim']);
 /** Saved Memory an as-of answer left out, as Rust counts it in `as_of_report.left_out`. */
 export const AS_OF_LEFT_OUT_KINDS = new Set(['facts', 'sources', 'notes', 'methods']);
 const NUMBER_CHECK_STATUSES = new Set(['matched', 'rounded', 'not_found', 'differs']);
@@ -75,7 +75,26 @@ export function toolCalledAssertion(assertion) {
   if (args !== undefined && (!isRecord(args) || Object.keys(args).length === 0)) {
     throw new Error('tool_called args must be a nonempty object of expected argument fields');
   }
-  return { tool: assertion.tool, args: args ?? null };
+  if (assertion.successful !== undefined && typeof assertion.successful !== 'boolean') throw new Error('tool_called successful must be a boolean');
+  return { tool: assertion.tool, args: args ?? null, successful: assertion.successful === true };
+}
+
+/** A successful native read of the named Skill's entrypoint. */
+export function skillReadAssertion(assertion) {
+  if (typeof assertion.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(assertion.id)) throw new Error('skill_read requires a bounded skill id');
+  return { id: assertion.id };
+}
+
+const NEGATIVE_ASSERTS = new Set(['tool_not_called', 'tool_args_not_matching', 'max_tool_calls', 'max_tool_errors',
+  'no_repeated_failed_call', 'not_committed', 'lens_unchanged', 'lens_not_read', 'not_contains',
+  'answer_not_matching', 'no_false_save_claim']);
+
+/** Negative evidence cannot turn a silent completed turn into a passing answer. */
+export function isNegativeAssertion(assertion) {
+  const pageMinimum = assertion.count ?? assertion.min ?? (assertion.max === undefined ? 1 : 0);
+  return NEGATIVE_ASSERTS.has(assertion.assert)
+    || assertion.assert === 'lens_pages' && (pageMinimum === 0 || assertion.unchanged === true)
+    || assertion.assert === 'scheduled_tasks' && assertion.count === 0;
 }
 
 /** Whether `actual` carries every field of `expected`; arrays match item by item. */
@@ -355,6 +374,7 @@ export function validateSuite(suite) {
           if (assertion.assert === 'tool_called') toolCalledAssertion(assertion);
           if (assertion.assert === 'sensitivity_card') sensitivityCardAssertion(assertion);
           if (assertion.assert === 'plan_progress') planProgressAssertion(assertion);
+          if (assertion.assert === 'skill_read') skillReadAssertion(assertion);
         }
         for (const assertion of turn.expect?.memory ?? []) {
           if (assertion.count !== undefined && (!Number.isSafeInteger(assertion.count) || assertion.count < 0)) throw new Error('Memory count must be a non-negative integer');

@@ -44,12 +44,12 @@ test('answer_not_matching fails on any matching pattern and passes on no match',
     ['비밀 유출.', false],
     ['Cash flow was 3 million on 2026-09-30.', true],
     ['공개된 근거를 검토했습니다.', true],
-    ['', true],
+    ['', false],
   ]) {
     const [result] = grade(checked, [{ ...traces[1], answer }]).results;
     assert.equal(result.pass, pass, answer);
     assert.equal(result.metric, 'boundary');
-    assert.match(result.detail, pass ? /matches none/ : /matches forbidden pattern/);
+    assert.match(result.detail, !answer.trim() ? /non-empty answer/ : pass ? /matches none/ : /matches forbidden pattern/);
   }
 });
 

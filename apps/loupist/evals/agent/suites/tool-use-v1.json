@@ -181,6 +181,12 @@
                     "assert": "not_committed",
                     "kind": "lens",
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "note",
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -209,12 +215,39 @@
         "lens": [
           {
             "title": "Same-store before total sales",
-            "markdown": "Rank retailers on same-store sales growth before total sales growth.",
-            "applicability": "Retailers that disclose both same-store sales growth and total sales growth.",
-            "assumptions": "The company already computed same-store growth on a comparable set of stores.",
-            "procedure": "State same-store sales growth first. Do not rank on total sales when same-store growth is available.",
-            "principles": "Chainwide sales can rise while established stores shrink.",
-            "limitations": "Do not apply the method when same-store growth is absent, or to companies that are not retailers."
+            "summary": "Rank retailers on same-store sales growth before total sales growth.",
+            "sections": [
+              {
+                "key": "overview",
+                "heading": "Overview",
+                "markdown": "Rank retailers on same-store sales growth before total sales growth."
+              },
+              {
+                "key": "use-when",
+                "heading": "Use when",
+                "markdown": "Retailers that disclose both same-store sales growth and total sales growth."
+              },
+              {
+                "key": "assumptions",
+                "heading": "Assumptions",
+                "markdown": "The company already computed same-store growth on a comparable set of stores."
+              },
+              {
+                "key": "steps",
+                "heading": "Steps",
+                "markdown": "State same-store sales growth first. Do not rank on total sales when same-store growth is available."
+              },
+              {
+                "key": "principles",
+                "heading": "Principles",
+                "markdown": "Chainwide sales can rise while established stores shrink."
+              },
+              {
+                "key": "limits",
+                "heading": "Limits",
+                "markdown": "Do not apply the method when same-store growth is absent, or to companies that are not retailers."
+              }
+            ]
           }
         ]
       },
@@ -231,7 +264,20 @@
                   {
                     "assert": "contains_any",
                     "values": [
-                      "Hearthlane"
+                      "Hearthlane Grocery first",
+                      "Hearthlane first",
+                      "Hearthlane Grocery ranks first",
+                      "Hearthlane ranks first",
+                      "First: Hearthlane",
+                      "first: Hearthlane",
+                      "1. Hearthlane",
+                      "1) Hearthlane",
+                      "1. **Hearthlane",
+                      "1) **Hearthlane",
+                      "Hearthlane Grocery > Larkspur",
+                      "Hearthlane Grocery ahead of Larkspur",
+                      "Hearthlane Grocery above Larkspur",
+                      "Hearthlane Grocery should come first"
                     ],
                     "metric": "task_success"
                   }
@@ -1412,6 +1458,13 @@
                     "metric": "save_recall",
                     "min": 1,
                     "title_contains": "Sable harvest note"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "title_contains": "Sable harvest note"
                   }
                 ],
                 "rubric": [
@@ -1441,12 +1494,39 @@
         "lens": [
           {
             "title": "Same-store before total sales",
-            "markdown": "Rank retailers on same-store sales growth before total sales growth.",
-            "applicability": "Retailers that disclose both same-store sales growth and total sales growth.",
-            "assumptions": "The company already computed same-store growth on a comparable set of stores.",
-            "procedure": "State same-store sales growth first. Do not rank on total sales when same-store growth is available.",
-            "principles": "Chainwide sales can rise while established stores shrink.",
-            "limitations": "Do not apply the method when same-store growth is absent, or to companies that are not retailers."
+            "summary": "Rank retailers on same-store sales growth before total sales growth.",
+            "sections": [
+              {
+                "key": "overview",
+                "heading": "Overview",
+                "markdown": "Rank retailers on same-store sales growth before total sales growth."
+              },
+              {
+                "key": "use-when",
+                "heading": "Use when",
+                "markdown": "Retailers that disclose both same-store sales growth and total sales growth."
+              },
+              {
+                "key": "assumptions",
+                "heading": "Assumptions",
+                "markdown": "The company already computed same-store growth on a comparable set of stores."
+              },
+              {
+                "key": "steps",
+                "heading": "Steps",
+                "markdown": "State same-store sales growth first. Do not rank on total sales when same-store growth is available."
+              },
+              {
+                "key": "principles",
+                "heading": "Principles",
+                "markdown": "Chainwide sales can rise while established stores shrink."
+              },
+              {
+                "key": "limits",
+                "heading": "Limits",
+                "markdown": "Do not apply the method when same-store growth is absent, or to companies that are not retailers."
+              }
+            ]
           }
         ]
       },
@@ -1483,7 +1563,20 @@
                   {
                     "assert": "contains_any",
                     "values": [
-                      "Hearthlane"
+                      "Hearthlane Grocery first",
+                      "Hearthlane first",
+                      "Hearthlane Grocery ranks first",
+                      "Hearthlane ranks first",
+                      "First: Hearthlane",
+                      "first: Hearthlane",
+                      "1. Hearthlane",
+                      "1) Hearthlane",
+                      "1. **Hearthlane",
+                      "1) **Hearthlane",
+                      "Hearthlane Grocery > Larkspur",
+                      "Hearthlane Grocery ahead of Larkspur",
+                      "Hearthlane Grocery above Larkspur",
+                      "Hearthlane Grocery should come first"
                     ],
                     "metric": "task_success"
                   }
@@ -1974,6 +2067,12 @@
                     "kind": "source",
                     "min": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -2096,6 +2195,12 @@
                     "kind": "source",
                     "min": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [

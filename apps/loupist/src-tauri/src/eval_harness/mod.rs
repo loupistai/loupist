@@ -215,12 +215,14 @@ struct WatchSeed {
     display_name: Option<String>,
 }
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct LensSeedSection {
     pub key: String,
     pub heading: String,
     pub markdown: String,
 }
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct LensSeed {
     pub title: String,
     #[serde(default)]

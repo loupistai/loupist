@@ -8,7 +8,7 @@ const catalogPath = join(here, '../../agent/tool-catalog.json');
 
 import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, LENS_ASSERTS, lensAssertion, ANSWER_ASSERTS, answerPatterns, citationAssertion, validDate,
   numbersLinkedAssertion, asOfLeftOutAssertion, asOfRefusedAssertion, calculateInputsAssertion, gridCellsAssertion, metricTolerance,
-  toolCalledAssertion, sensitivityCardAssertion, planProgressAssertion, calculationChipAssertion } from './eval-contract.mjs';
+  toolCalledAssertion, sensitivityCardAssertion, planProgressAssertion, calculationChipAssertion, skillReadAssertion } from './eval-contract.mjs';
 const METRICS = new Set([
   'carry_forward',
   'negative_transfer',
@@ -129,6 +129,14 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
       assert.equal(path.split('/').includes('..'), false, path);
     }
   }
+  for (const page of scenario.seed?.lens ?? []) {
+    assert.ok(Object.keys(page).every(key => ['title', 'summary', 'sections'].includes(key)), `${scenario.id} unknown Lens seed field`);
+    assert.ok(typeof page.title === 'string' && page.title.trim(), `${scenario.id} Lens seed title`);
+    for (const section of page.sections ?? []) {
+      assert.deepEqual(Object.keys(section).sort(), ['heading', 'key', 'markdown'], `${scenario.id} Lens seed section fields`);
+      assert.ok(['key', 'heading', 'markdown'].every(key => typeof section[key] === 'string' && section[key].trim()), `${scenario.id} Lens seed section text`);
+    }
+  }
   assert.ok(Array.isArray(scenario.sessions) && scenario.sessions.length > 0, scenario.id);
   const sessionIds = new Set();
   for (const session of scenario.sessions) {
@@ -194,6 +202,8 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
             gridCellsAssertion(item);
           } else if (item.assert === 'sensitivity_card') {
             sensitivityCardAssertion(item);
+          } else if (item.assert === 'skill_read') {
+            skillReadAssertion(item);
           } else if (item.assert === 'plan_progress') {
             planProgressAssertion(item);
           }
@@ -218,6 +228,8 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
               assert.equal(numberPresent(turn.user, item.values[key]), false, `${where} gold ${key}=${item.values[key]} is already in the user turn`);
             }
             metricTolerance(item);
+          } else if (item.assert === 'no_false_save_claim') {
+            assert.equal(item.values, undefined, where);
           } else if (item.assert === 'prediction') {
             assert.equal(item.values, undefined, where);
           } else if (item.assert === 'answer_not_matching') {

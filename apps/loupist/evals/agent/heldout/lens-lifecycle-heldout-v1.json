@@ -56,6 +56,21 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "vellam",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
                   }
                 ]
               }
@@ -83,6 +98,14 @@
                     "kind": "subject",
                     "title_matches": "vellam",
                     "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "miss|endpoint|failed"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "vellam",
+                    "metric": "save_precision",
                     "count": 1,
                     "section_matches": "miss|endpoint|failed"
                   }
@@ -114,7 +137,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -178,6 +201,21 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "동진|dongjin",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
                   }
                 ]
               }
@@ -205,6 +243,14 @@
                     "kind": "subject",
                     "title_matches": "동진|dongjin",
                     "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "(?<![\\d.,])14(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "동진|dongjin",
+                    "metric": "save_precision",
                     "count": 1,
                     "section_matches": "(?<![\\d.,])14(?![\\d])"
                   }
@@ -236,7 +282,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "answer": [
@@ -296,6 +342,15 @@
                     "title_matches": ".",
                     "metric": "save_precision",
                     "max": 0
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "pinecrest",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
                   }
                 ]
               }
@@ -363,6 +418,14 @@
                     "metric": "save_recall",
                     "min": 1,
                     "max": 1
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": "리츠|reit",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1
                   }
                 ]
               }
@@ -385,7 +448,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [

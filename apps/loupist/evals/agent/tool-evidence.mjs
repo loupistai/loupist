@@ -1,5 +1,5 @@
 /** Tool evidence classification shared by deterministic checks and reports. */
-import { canonicalJson, toolCalls } from './eval-contract.mjs';
+import { canonicalJson, toolCalls, skillReadAssertion } from './eval-contract.mjs';
 const INVALID_CODES = new Set(['malformed_request', 'method_denied', 'tool_not_found', 'tool_validation_failed']);
 const INVALID_MESSAGE = /Tool (?:"[^"]+"|\S+) not found|Validation failed for tool "[^"]+":/u;
 
@@ -12,6 +12,35 @@ export function isInvalidToolCall(call) {
   if (call?.outcome !== 'error') return false;
   if (INVALID_CODES.has(normCode(call.error_code))) return true;
   return INVALID_MESSAGE.test(String(call.error_message ?? ''));
+}
+
+// These codes establish a pre-execution host refusal. Execution, offline and
+// authentication errors do not prove a request was stopped before execution.
+const REFUSED_CODES = new Set(['permission_denied', 'outbound_paused', 'untrusted_text_paused',
+  'protected_path', 'outside_workspace', 'needs_approval', 'memory_disabled', 'proposal_disabled',
+  'frame_too_large']);
+
+export function toolExecutionState(call) {
+  if (call.outcome === 'ok') return true;
+  if (call.outcome !== 'error') return null;
+  return !(isInvalidToolCall(call) || REFUSED_CODES.has(normCode(call.error_code)));
+}
+
+export function skillReadEvidence(assertion, calls) {
+  const { id } = skillReadAssertion(assertion);
+  let unknown = false;
+  for (const call of calls.filter(call => call.name === 'read')) {
+    if (call.outcome === 'error') continue;
+    if (comparableArgs(call.args) === null) { unknown = true; continue; }
+    const path = call.args.path;
+    if (typeof path !== 'string') continue;
+    const parts = path.replaceAll('\\', '/').split('/');
+    const matches = !parts.includes('..') && parts.slice(-3).join('/') === `skills/${id}/SKILL.md`;
+    if (!matches) continue;
+    if (call.outcome === 'ok') return { pass: true, detail: `read skills/${id}/SKILL.md` };
+    unknown = true;
+  }
+  return { pass: unknown ? null : false, detail: unknown ? 'Skill read evidence unavailable' : `no successful read of skills/${id}/SKILL.md` };
 }
 
 export function comparableArgs(args) {

@@ -41,6 +41,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -162,6 +171,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -240,6 +258,15 @@
                       "lens"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -327,6 +354,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -403,6 +439,15 @@
                       "lens"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -497,6 +542,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -578,6 +632,15 @@
                       "lens"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -664,6 +727,15 @@
                       "lens"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -766,6 +838,11 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -874,6 +951,11 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -985,6 +1067,11 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1069,6 +1156,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -1147,6 +1243,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -1221,6 +1326,15 @@
                       "note"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -1300,6 +1414,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -1370,6 +1493,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1399,6 +1530,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1473,6 +1612,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1502,6 +1649,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1572,6 +1727,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1601,6 +1764,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1672,6 +1843,15 @@
                       "note"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -1747,6 +1927,15 @@
                       "note"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -1842,6 +2031,12 @@
                     "kind": "lens",
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -1932,6 +2127,12 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -2027,6 +2228,12 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -2143,6 +2350,13 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Headline share count"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
                     "min": 1,
                     "title_contains": "Headline share count"
                   }
@@ -2263,6 +2477,12 @@
                     "kind": "lens",
                     "metric": "save_recall",
                     "title_contains": "Unspecified growth method"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
+                    "title_contains": "Unspecified growth method"
                   }
                 ],
                 "rubric": [
@@ -2369,6 +2589,13 @@
                     "metric": "save_recall",
                     "min": 1,
                     "title_contains": "Solsup backlog"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "title_contains": "Solsup backlog"
                   }
                 ],
                 "rubric": [
@@ -2449,6 +2676,20 @@
                     "metric": "save_recall",
                     "min": 1,
                     "title_contains": "Marrow margin view"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "title_contains": "Marrow margin original"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "title_contains": "Marrow margin view"
                   }
                 ],
                 "rubric": [
@@ -2482,6 +2723,19 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "title_contains": "Marrow margin restatement"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -2597,6 +2851,13 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Headline EPS correction"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
                     "min": 1,
                     "title_contains": "Headline EPS correction"
                   }
