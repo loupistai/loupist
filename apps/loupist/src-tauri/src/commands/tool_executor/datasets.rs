@@ -101,7 +101,10 @@ impl AppToolExecutor {
     ) -> Result<Value, BrokerError> {
         let object = params.as_object().ok_or(BrokerError::Malformed)?;
         if object.contains_key("loupist_id") {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid(
+                "loupist_id",
+                "Omit this field; datasets belong to this Chat's Loupist.",
+            ));
         }
         fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, BrokerError> {
             serde_json::from_value(v).map_err(|_| BrokerError::Malformed)

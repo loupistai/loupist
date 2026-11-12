@@ -52,10 +52,7 @@ impl AppToolExecutor {
                     },
                 )
                 .map_err(|error| {
-                    BrokerError::invalid(
-                        "journal.earlier.readRef",
-                        command_error(error).to_string(),
-                    )
+                    BrokerError::invalid("journal.earlier.readRef", command_message(error))
                 })?;
                 if let Some(outcome) = journal
                     .outcome
@@ -160,9 +157,7 @@ impl AppToolExecutor {
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         if !policy.propose_memory_updates {
-            return Err(BrokerError::Execution(
-                "Save learning is off, so this turn cannot retain a Source".into(),
-            ));
+            return Err(BrokerError::ProposalDisabled);
         }
         let object = exact_object(
             &params,
@@ -398,8 +393,11 @@ impl AppToolExecutor {
         delivery_id: &str,
         review: bool,
     ) -> Result<Value, BrokerError> {
-        if !policy.propose_memory_updates || !policy.use_memory {
+        if !policy.use_memory {
             return Err(BrokerError::MemoryDisabled);
+        }
+        if !policy.propose_memory_updates {
+            return Err(BrokerError::ProposalDisabled);
         }
         if !review
             && (self
@@ -534,9 +532,7 @@ impl AppToolExecutor {
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         if !policy.propose_memory_updates {
-            return Err(BrokerError::Execution(
-                "Save learning is off, so this turn cannot save research".into(),
-            ));
+            return Err(BrokerError::ProposalDisabled);
         }
         let object = exact_object(
             &params,

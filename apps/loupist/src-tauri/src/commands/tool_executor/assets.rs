@@ -235,7 +235,7 @@ impl AppToolExecutor {
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         if !policy.use_memory {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::MemoryDisabled);
         }
         let object = exact_object(&params, &[], &["assetId", "symbol", "market"])?;
         let asset_id = match (
@@ -592,7 +592,13 @@ impl AppToolExecutor {
         let checked = crate::commands::assets::with_assets(&self.state, &loupist, false, |tx| {
             assets::check_update(tx, &loupist, &update)
         })
-        .map_err(|error| BrokerError::invalid("thesis_update", command_error(error).to_string()))?;
+        .map_err(|error| {
+            let code = error.code.clone();
+            BrokerError::invalid(
+                "thesis_update",
+                format!("{code}: {}", command_message(error)),
+            )
+        })?;
         Ok((update, checked))
     }
 }

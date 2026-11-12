@@ -29,7 +29,7 @@ mod dataset_tests;
 mod datasets;
 mod errors;
 mod evidence;
-use errors::{command_error, knowledge_error, store_error};
+use errors::{command_error, command_message, knowledge_error, store_error};
 mod finance;
 mod grid;
 #[cfg(test)]
@@ -790,7 +790,7 @@ impl ToolCapture {
         let context = self
             .schedule_context
             .as_ref()
-            .ok_or(BrokerError::MethodDenied)?;
+            .ok_or_else(|| BrokerError::invalid("research_open", "This reply has no research-session context. Continue in this Chat and tell the user no session was opened."))?;
         let staged = crate::chat::handoff::StagedHandoff {
             request,
             run: crate::chat::handoff::HandoffRun {

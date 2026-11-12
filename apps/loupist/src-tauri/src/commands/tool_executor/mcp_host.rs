@@ -753,7 +753,7 @@ impl AppToolExecutor {
         cutoff: Option<chrono::NaiveDate>,
     ) -> Result<McpCallPlan, BrokerError> {
         let Some(tool) = server.tools.get(&request.tool_name) else {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid("tool_name", "Not in this connection's active tool list. Use an active tool, or load this connection again if it stopped."));
         };
         if let Err(error) =
             validate_provider_argument(tool, &request.arguments, &server.enabled_provider_ids)
@@ -950,8 +950,12 @@ impl AppToolExecutor {
             .get(&request.server_id)
             .and_then(|runtime| runtime.provider_config_fields.get(provider))
             .is_some_and(|fields| !fields.is_empty());
-        if matches!(error, BrokerError::MethodDenied) && needs_setup {
-            return error.with_next(PROVIDER_SETUP_NEXT);
+        if matches!(
+            error,
+            BrokerError::MethodDenied | BrokerError::InvalidArguments { .. }
+        ) && needs_setup
+        {
+            return BrokerError::invalid("provider", format!("Provider {provider} needs setup. If connection_setup is available, call it with this provider's connection name so the user finishes setup in a card; otherwise tell the user to check this provider in Connections."));
         }
         error
     }
@@ -1117,7 +1121,7 @@ fn setup_notices<'a>(
         .collect()
 }
 
-const PROVIDER_SETUP_NEXT: &str = "This provider needs setup before it can run (SEC EDGAR needs a contact email). If connection_setup is available, call it with the provider's connection id or name so the user finishes it in a card (otherwise point them to Connections), or use another provider listed in the tool schema and name it when citing.";
+const PROVIDER_SETUP_NEXT: &str = "The providers named above need setup before they can run. If connection_setup is available, call it with the named connection id so the user finishes setup in a card; otherwise tell the user to check that provider in Connections. Use another provider only when its tool schema lists it, and name it when citing.";
 
 fn connect_response(server_id: &str, tools: Vec<Value>, notices: &[String]) -> Value {
     let mut response = json!({ "server_id": server_id, "tools": tools });
@@ -1400,7 +1404,10 @@ fn validate_provider_argument(
         });
     let provider = arguments.get("provider").and_then(Value::as_str);
     if required && provider.is_none() {
-        return Err(BrokerError::Malformed);
+        return Err(BrokerError::invalid(
+            "provider",
+            "Choose a provider listed in this active tool's schema.",
+        ));
     }
     if let Some(provider) = provider {
         let schema_allows = provider_schema
@@ -1408,7 +1415,7 @@ fn validate_provider_argument(
             .and_then(Value::as_array)
             .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(provider)));
         if !enabled_provider_ids.contains(provider) || !schema_allows {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid("provider", "Not enabled for this tool in this run. Choose a provider listed in the active tool schema, or use connection_setup for the provider you need."));
         }
     }
     Ok(())
@@ -1955,11 +1962,11 @@ done
         assert!(!tool_names(&connected_b).contains(&"equity_quote".to_owned()));
         assert!(matches!(
             call(&executor_b, "equity_quote", quote("fmp")).await,
-            Err(BrokerError::MethodDenied)
+            Err(BrokerError::InvalidArguments { .. })
         ));
         assert!(matches!(
             call(&executor_a, "equity_quote", quote("fmp")).await,
-            Err(BrokerError::MethodDenied)
+            Err(BrokerError::InvalidArguments { .. })
         ));
         call(&executor_a, "equity_quote", quote("yfinance"))
             .await
@@ -2039,7 +2046,7 @@ done
                 json!({"symbol": "TEST", "provider": "yfinance"})
             )
             .await,
-            Err(BrokerError::MethodDenied)
+            Err(BrokerError::InvalidArguments { .. })
         ));
         assert_eq!(
             fs::read_to_string(&spawned.transcript)

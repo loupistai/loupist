@@ -197,14 +197,17 @@ impl AppToolExecutor {
                     .map_or("host", crate::chat::surface::ChatSurface::name)
             )));
         }
-        if !policy.propose_memory_updates || !policy.use_memory {
+        if !policy.use_memory {
             return Err(BrokerError::MemoryDisabled);
+        }
+        if !policy.propose_memory_updates {
+            return Err(BrokerError::ProposalDisabled);
         }
         let (Some(reply_id), Some(current_message)) = (
             self.capture.source_message_id.as_deref(),
             self.capture.principle_user_message_id.as_deref(),
         ) else {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid("bot_memory", "This reply has no current Bot message to save from. Continue without saving and tell the user it was not saved."));
         };
         let staged = parse(params, current_message)?;
         let saves = staged.iter().any(|change| {
@@ -224,7 +227,7 @@ impl AppToolExecutor {
             .get_chat(&policy.session_id)
             .map_err(store_error)?
             .filter(|chat| chat.loupist_id == self.loupist_id && crate::chat::home::is_home(chat))
-            .ok_or(BrokerError::MethodDenied)?;
+            .ok_or_else(|| BrokerError::invalid("bot_memory", "Not the bound Bot Chat for this Loupist. Continue without saving and tell the user it was not saved."))?;
         // Check against every call this reply has reserved, delivered or not,
         // and reserve under the same lock.
         let mut reservations = self.capture.staged_bot_memory.lock().await;

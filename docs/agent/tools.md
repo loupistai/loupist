@@ -24,6 +24,10 @@ transcript. Dataset file/query work and Lens search run on blocking workers;
 captured results reuse their measured byte size through reservation and delivery.
 Native finance and bundled MCP reads share one dataset-retention writer, keeping
 their existing provenance metadata and reuse rules.
+An active tool with a stale source, wrong Chat or artifact kind, or missing host
+context names the field and a repair, rather than suggesting a capability load.
+Missing provider setup names that provider. Web refusals distinguish URL policy
+from a scanned document with no text layer.
 Internal storage failures and free-form finance diagnostics return host-owned
 repair messages rather than raw errors, URLs or private paths. Native finance
 results refuse an echoed API key before capture or retention; bundled MCP also

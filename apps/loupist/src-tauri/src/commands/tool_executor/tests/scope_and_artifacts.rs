@@ -246,7 +246,7 @@ async fn artifact_revisions_need_an_exact_read_stay_in_their_chat_and_are_bounde
         next_executor
             .execute(&other_chat, ToolMethod::ArtifactRead, read)
             .await,
-        Err(BrokerError::MethodDenied)
+        Err(BrokerError::InvalidArguments { ref field, .. }) if field == "artifact_id"
     ));
 }
 

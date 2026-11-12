@@ -228,7 +228,10 @@ impl AppToolExecutor {
             .map_err(store_error)?
             .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
         if artifact.chat_session_id != policy.session_id {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid(
+                "artifact_id",
+                "Not an artifact in this Chat; list artifacts and use an ID from this Chat.",
+            ));
         }
         let revision_id = object
             .get("revision_id")
@@ -357,7 +360,7 @@ impl AppToolExecutor {
             .capture
             .source_message_id
             .clone()
-            .ok_or(BrokerError::MethodDenied)?;
+            .ok_or_else(|| BrokerError::invalid("artifact_publish", "This reply has no artifact publishing context. Continue without publishing and tell the user it was not saved."))?;
         let timestamp = now_ms();
 
         let commit = match mode {
@@ -417,7 +420,7 @@ impl AppToolExecutor {
                     .map_err(store_error)?
                     .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
                 if artifact.chat_session_id != policy.session_id {
-                    return Err(BrokerError::MethodDenied);
+                    return Err(BrokerError::invalid("artifact_id", "Not an artifact in this Chat; list artifacts and use an ID from this Chat."));
                 }
                 if artifact.current_revision != expected_revision {
                     return Err(BrokerError::Execution(
@@ -480,7 +483,10 @@ impl AppToolExecutor {
             .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
         if artifact.chat_session_id != policy.session_id || artifact.kind != ChatArtifactKind::Chart
         {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid(
+                "artifact_id",
+                "Not a chart in this Chat; list artifacts and use a chart ID from this Chat.",
+            ));
         }
         if !self
             .capture
@@ -693,7 +699,7 @@ impl AppToolExecutor {
             .capture
             .source_message_id
             .clone()
-            .ok_or(BrokerError::MethodDenied)?;
+            .ok_or_else(|| BrokerError::invalid("chart_publish", "This reply has no chart publishing context. Continue without publishing and tell the user it was not saved."))?;
         let commit = match request.mode {
             ChartPublishMode::Create => {
                 if request.artifact_id.is_some() || request.edit_token.is_some() {
@@ -769,7 +775,7 @@ impl AppToolExecutor {
                 if artifact.chat_session_id != policy.session_id
                     || artifact.kind != ChatArtifactKind::Chart
                 {
-                    return Err(BrokerError::MethodDenied);
+                    return Err(BrokerError::invalid("artifact_id", "Not a chart in this Chat; list artifacts and use a chart ID from this Chat."));
                 }
                 let current = self
                     .state

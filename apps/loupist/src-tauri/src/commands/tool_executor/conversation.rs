@@ -208,7 +208,7 @@ impl AppToolExecutor {
             .get_chat(&chat_id)
             .map_err(store_error)?
             .filter(|chat| chat.loupist_id == policy.loupist_id)
-            .ok_or(BrokerError::MethodDenied)?;
+            .ok_or_else(|| BrokerError::invalid("chatId", "Not a Chat in this Loupist. Search conversation_memory and copy the returned readArgs."))?;
         let message = completed_conversation_messages(&chat)
             .into_iter()
             .find(|message| message.id == message_id)

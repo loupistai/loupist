@@ -65,8 +65,11 @@ impl AppToolExecutor {
         params: Value,
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
-        if !policy.propose_memory_updates || !policy.use_memory {
+        if !policy.use_memory {
             return Err(BrokerError::MemoryDisabled);
+        }
+        if !policy.propose_memory_updates {
+            return Err(BrokerError::ProposalDisabled);
         }
         let invalid = || BrokerError::InvalidArguments {
             field: "world_schema_update".into(),

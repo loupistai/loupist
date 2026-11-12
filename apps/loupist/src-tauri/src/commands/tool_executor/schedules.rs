@@ -129,6 +129,14 @@ fn decode<T: serde::de::DeserializeOwned>(params: Value) -> Result<T, BrokerErro
 fn error(error: crate::app::CommandError) -> BrokerError {
     command_error(error)
 }
+
+fn memory_schedule_refusal() -> BrokerError {
+    BrokerError::invalid("memory", "This needs Memory reads and saving, which are off for this Chat. Tell the user it was not changed.")
+}
+
+fn schedule_context_refusal() -> BrokerError {
+    BrokerError::invalid("schedule", "This reply has no scheduling context. Continue without scheduling and tell the user it was not changed; they can ask again in their next message.")
+}
 fn revision_error(error: crate::app::CommandError) -> BrokerError {
     if error.code == "conflict" {
         self::error(error).with_next("Read the saved task before retrying. Keep its current revision and change only the requested fields; do not create a replacement.")
@@ -170,7 +178,7 @@ impl AppToolExecutor {
     ) -> Result<Value, BrokerError> {
         self.ensure_scope(policy)?;
         if self.capture.bound_chat_id.as_deref() != Some(policy.session_id.as_str()) {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid("schedule", "This request is not bound to the current Chat. Continue in this Chat and tell the user the schedule was not changed."));
         }
         let read_only = matches!(method, ToolMethod::ScheduleList | ToolMethod::ScheduleRead);
         let surface = self.capture.surface.as_ref();
@@ -187,7 +195,14 @@ impl AppToolExecutor {
             _ => is_bot,
         };
         if !allowed_in_thread {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid(
+                method.tool_name(),
+                if is_bot {
+                    "Already in the Bot; use schedule_create to create the task here."
+                } else {
+                    "This tool manages schedules in the Bot. Use schedule_handoff to hand the request to the Bot."
+                },
+            ));
         }
         if self.capture.search_cancel.is_cancelled() {
             return Err(BrokerError::Execution("This Chat has stopped".into()));
@@ -196,7 +211,7 @@ impl AppToolExecutor {
         let loupist = &self.loupist_id;
         if method == ToolMethod::ScheduleWatch {
             if !policy.use_memory || !policy.propose_memory_updates {
-                return Err(BrokerError::MethodDenied);
+                return Err(memory_schedule_refusal());
             }
             #[derive(Deserialize)]
             #[serde(deny_unknown_fields)]
@@ -235,7 +250,7 @@ impl AppToolExecutor {
         let (task, action) = match method {
             ToolMethod::ScheduleBriefing => {
                 if !policy.use_memory || !policy.propose_memory_updates {
-                    return Err(BrokerError::MethodDenied);
+                    return Err(memory_schedule_refusal());
                 }
                 #[derive(Deserialize)]
                 #[serde(deny_unknown_fields)]
@@ -254,7 +269,7 @@ impl AppToolExecutor {
                 )
                 .map_err(error)?;
                 (
-                    settings.task.ok_or(BrokerError::MethodDenied)?,
+                    settings.task.ok_or_else(|| BrokerError::invalid("schedule", "No briefing task was returned. Read schedule_list before changing it again."))?,
                     ScheduleAction::Updated,
                 )
             }
@@ -306,12 +321,12 @@ impl AppToolExecutor {
                     .capture
                     .schedule_context
                     .as_ref()
-                    .ok_or(BrokerError::MethodDenied)?;
+                    .ok_or_else(schedule_context_refusal)?;
                 let message = self
                     .capture
                     .source_message_id
                     .as_deref()
-                    .ok_or(BrokerError::MethodDenied)?;
+                    .ok_or_else(schedule_context_refusal)?;
                 let prefix = if is_bot {
                     "scheduled"
                 } else {
@@ -367,7 +382,7 @@ impl AppToolExecutor {
                 }
                 let origin = if let Some(ref key) = request.handoff_id {
                     if !is_bot || !key.starts_with("bot-handoff-") {
-                        return Err(BrokerError::MethodDenied);
+                        return Err(BrokerError::invalid("handoff_id", "Use a pending handoff_id from schedule_list in the Bot, or omit this field for a new task."));
                     }
                     id = format!("scheduled-{key}");
                     let pending = questions::pending(state, loupist)
@@ -721,7 +736,7 @@ mod tests {
                 assert!(
                     matches!(
                         executor.execute(&policy, method, params.clone()).await,
-                        Err(BrokerError::MethodDenied)
+                        Err(BrokerError::InvalidArguments { ref field, ref expected }) if field == "memory" && expected == "This needs Memory reads and saving, which are off for this Chat. Tell the user it was not changed."
                     ),
                     "{method:?}, read={read}, save={save}"
                 );

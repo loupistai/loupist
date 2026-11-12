@@ -3,13 +3,17 @@
 use super::*;
 
 pub(super) fn command_error(error: crate::app::CommandError) -> BrokerError {
+    BrokerError::Execution(command_message(error))
+}
+
+pub(super) fn command_message(error: crate::app::CommandError) -> String {
     if matches!(
         error.code.as_str(),
         "internal" | "sqlite" | "json" | "io" | "private_storage" | "lock_poisoned"
     ) {
-        BrokerError::Execution("Local data is unavailable. Try again or restart Loupist.".into())
+        "Local data is unavailable. Try again or restart Loupist.".into()
     } else {
-        BrokerError::Execution(error.message)
+        error.message
     }
 }
 

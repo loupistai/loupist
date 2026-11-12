@@ -790,7 +790,7 @@ impl AppToolExecutor {
             .capture
             .source_message_id
             .clone()
-            .ok_or(BrokerError::MethodDenied)?;
+            .ok_or_else(|| BrokerError::invalid("grid_publish", "This reply has no table publishing context. Continue without publishing and tell the user it was not saved."))?;
         let timestamp = now_ms();
         let payload = ChatArtifactPayload::Grid {
             schema: GRID_SCHEMA.into(),
@@ -898,7 +898,10 @@ impl AppToolExecutor {
             .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
         if artifact.chat_session_id != policy.session_id || artifact.kind != ChatArtifactKind::Grid
         {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid(
+                "artifact_id",
+                "Not a table in this Chat; list artifacts and use a table ID from this Chat.",
+            ));
         }
         let current = self
             .state

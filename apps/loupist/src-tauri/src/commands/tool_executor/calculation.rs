@@ -25,7 +25,7 @@ impl calculations::DatasetSource for PinnedDatasets<'_> {
         let (reference, payload, metadata) = self
             .store
             .dataset(self.loupist_id, dataset_id, revision)
-            .map_err(|error| command_error(error).to_string())?;
+            .map_err(command_message)?;
         if let Err(refused) =
             super::datasets::ensure_within_cutoff(dataset_id, revision, &metadata, self.cutoff)
         {
@@ -153,7 +153,10 @@ impl AppToolExecutor {
         mut params: Value,
     ) -> Result<Value, BrokerError> {
         if params.get("loupist_id").is_some() {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid(
+                "loupist_id",
+                "Omit this field; calculate uses this Chat's Loupist.",
+            ));
         }
         let input_sources = take_input_sources(&mut params)?;
         // A cited input must name this turn's acknowledged evidence.

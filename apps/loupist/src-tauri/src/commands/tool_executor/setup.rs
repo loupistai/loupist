@@ -169,8 +169,11 @@ impl AppToolExecutor {
                 self.capture.surface.as_ref().map_or("host", ChatSurface::name)
             )));
         }
-        if !policy.propose_memory_updates || !policy.use_memory {
+        if !policy.use_memory {
             return Err(BrokerError::MemoryDisabled);
+        }
+        if !policy.propose_memory_updates {
+            return Err(BrokerError::ProposalDisabled);
         }
         let mut staged = parse(params)?;
         staged.user_message_id = self.capture.principle_user_message_id.clone();

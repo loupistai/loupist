@@ -286,10 +286,10 @@ impl AppToolExecutor {
         .map_err(|_| BrokerError::Execution("credential lookup failed".into()))?;
         credential.ok_or_else(|| {
             BrokerError::Execution(
-                "the enabled finance connection has no configured credential".into(),
+                format!("Connection {entry_id} has no verified credential. It cannot serve this read."),
             )
             .with_next(
-                "If connection_setup is available, call it with this connection's name so the user configures it in a card; it works from their next message. Otherwise tell the user to set it up in Connections.",
+                format!("If connection_setup is available, call it with {{id: \"{entry_id}\"}} so the user configures this connection in a card; it works from their next message. Otherwise tell the user to check {entry_id} in Connections."),
             )
         })
     }
