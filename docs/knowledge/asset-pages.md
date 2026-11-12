@@ -29,7 +29,9 @@ the market code (crypto venues; `CME`, `COMEX`, `NYMEX`, `ICE`; `FX`, `FOREX`,
 `PRIVATE`), a first-refresh `etf_info` lookup for a non-Korean equity (rows mean a
 fund), the class stated on the World Asset matched by name, symbol or local name,
 then equity. Real assets, prediction markets and private assets have no automatic
-reads; their rows come from Sources and the Map.
+reads; their rows come from Sources and the Map. For `RATES` and `UST`, At a
+glance's level is specifically the 10-year Treasury yield (`series: 10y`, named in
+the facts); without that series the level is absent.
 
 The Loupist database holds `knowledge_asset_pages` (identity, class and its source,
 matched entity, the read and the move that set it, per-check refresh status,

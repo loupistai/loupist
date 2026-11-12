@@ -2236,12 +2236,23 @@ fn glance(
         rows.push(row("expenseRatio", item));
     }
     if page.class == AssetClass::RatesFx {
+        let treasury = matches!(page.market.trim().to_uppercase().as_str(), "RATES" | "UST");
         let level = observed
             .iter()
             .filter(|item| item.kind == ObservationKind::Close)
+            .filter(|item| !treasury || item.facts["series"] == "10y")
             .max_by(|a, b| a.fact_date.cmp(&b.fact_date));
         if let Some(item) = level {
-            rows.push(GlanceRow { key: "level".into(), facts: json!({"value": item.facts["close"], "series": item.facts["series"], "unit": item.facts["unit"]}), date: Some(item.fact_date.clone()), evidence: vec![item.evidence.clone()] });
+            let mut facts = json!({"value": item.facts["close"], "series": item.facts["series"], "unit": item.facts["unit"]});
+            if treasury {
+                facts["name"] = json!("10-year Treasury yield");
+            }
+            rows.push(GlanceRow {
+                key: "level".into(),
+                facts,
+                date: Some(item.fact_date.clone()),
+                evidence: vec![item.evidence.clone()],
+            });
         }
     }
     rows

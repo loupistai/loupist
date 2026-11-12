@@ -1551,3 +1551,83 @@ fn match_entity_returns_none_when_two_nodes_share_the_symbol() {
         Some("n1".to_owned())
     );
 }
+
+#[test]
+fn treasury_level_selects_and_names_only_the_ten_year_series() {
+    let (_root, store) = store();
+    let mut page = store
+        .transact(|w| {
+            ensure_page(
+                w.tx,
+                LOUPIST,
+                &AssetIdentity {
+                    symbol: "UST".into(),
+                    market: "RATES".into(),
+                    name: "US Treasuries".into(),
+                },
+                None,
+                1,
+            )
+        })
+        .unwrap();
+    let observed = |series: &str, date: &str, value| StoredObservation {
+        observation_id: format!("{series}:{date}"),
+        kind: ObservationKind::Close,
+        fact_date: date.into(),
+        recorded_at_ms: 1,
+        facts: json!({"series":series,"close":value,"unit":"%"}),
+        evidence: AssetEvidence::default(),
+        baseline: false,
+        dedupe_key: series.into(),
+    };
+    let rows = vec![
+        observed("10y", "2026-10-28", 4.2),
+        observed("2y", "2026-10-29", 3.8),
+        observed("2s10s", "2026-10-29", 0.4),
+    ];
+    for market in ["RATES", "UST", " ust "] {
+        page.market = market.into();
+        let rows = glance(&page, &rows, day("2026-10-01"), day("2026-10-30"));
+        let level = rows.iter().find(|row| row.key == "level").unwrap();
+        assert_eq!(level.facts["value"], 4.2);
+        assert_eq!(level.facts["name"], "10-year Treasury yield");
+        assert_eq!(level.date.as_deref(), Some("2026-10-28"));
+        assert!(glance(
+            &page,
+            &rows_for_missing_ten_year(),
+            day("2026-10-01"),
+            day("2026-10-30")
+        )
+        .iter()
+        .all(|row| row.key != "level"));
+    }
+    // FX pages still use their own latest close, without a Treasury label.
+    page.market = "FX".into();
+    let fx = vec![observed("EURUSD", "2026-10-29", 1.1)];
+    let rows = glance(&page, &fx, day("2026-10-01"), day("2026-10-30"));
+    assert_eq!(
+        rows.iter().find(|row| row.key == "level").unwrap().facts["value"],
+        1.1
+    );
+
+    assert!(rows
+        .iter()
+        .find(|row| row.key == "level")
+        .unwrap()
+        .facts
+        .get("name")
+        .is_none());
+
+    fn rows_for_missing_ten_year() -> Vec<StoredObservation> {
+        vec![StoredObservation {
+            observation_id: "2y".into(),
+            kind: ObservationKind::Close,
+            fact_date: "2026-10-29".into(),
+            recorded_at_ms: 1,
+            facts: json!({"series":"2y","close":3.8,"unit":"%"}),
+            evidence: AssetEvidence::default(),
+            baseline: false,
+            dedupe_key: "2y".into(),
+        }]
+    }
+}
