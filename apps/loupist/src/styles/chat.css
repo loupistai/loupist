@@ -2200,3 +2200,10 @@ button.sent-image { cursor: zoom-in; }
 .message-meta > span:first-child { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 19. A thin caret instead of Streamdown's block while an answer streams. */
 .message.assistant .message-content [class*="streamdown-caret"] > *:last-child:not([data-sd-caret-hidden])::after { content: ""; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -0.15em; border-radius: 1px; background: var(--gg-color-text-tertiary); }
+
+/* 25. Chart card actions match the table card: text-only, folded into "…" at the same width. */
+.chat-artifact-block-more { display: none; flex: none; margin-left: auto; }
+@media (max-width: 720px) {
+  .chat-artifact-block-actions { display: none; }
+  .chat-artifact-block-more { display: block; }
+}
