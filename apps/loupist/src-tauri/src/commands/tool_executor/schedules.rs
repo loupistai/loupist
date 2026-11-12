@@ -147,11 +147,18 @@ fn compact(task: &Task) -> Value {
 const RUN_FAILED: &str = "The last scheduled run failed. Review the run in Chat.";
 
 fn safe_run(run: crate::scheduled_tasks::types::Run) -> Value {
-    let mut value = json!(run);
-    if run.error.is_some() {
-        value["error"] = json!(RUN_FAILED);
-    }
-    value
+    // Schedule management also works in Private chats. A run's briefing
+    // context and answer summaries can contain Memory and third-party text;
+    // they belong to the run's Chat, not this always-available control receipt.
+    json!({
+        "id": run.id, "task_id": run.task_id, "loupist_id": run.loupist_id,
+        "task_revision": run.task_revision, "task_title": run.task_title,
+        "kind": run.kind, "thread_id": run.thread_id, "run_id": run.run_id,
+        "message_id": run.message_id, "scheduled_for_ms": run.scheduled_for_ms,
+        "started_at_ms": run.started_at_ms, "finished_at_ms": run.finished_at_ms,
+        "read_at_ms": run.read_at_ms, "status": run.status,
+        "error": run.error.as_ref().map(|_| RUN_FAILED),
+    })
 }
 
 impl AppToolExecutor {
@@ -637,7 +644,7 @@ mod tests {
             briefing_context: None,
             kind: TaskKind::Custom,
             read_at_ms: None,
-            summary: String::new(),
+            summary: private.into(),
             summary_items: vec![],
             message_id: None,
             skipped_tools: vec![],
@@ -657,6 +664,14 @@ mod tests {
         let receipt = safe_run(run);
         assert_eq!(receipt["run_id"], "run-a");
         assert_eq!(receipt["error"], RUN_FAILED);
+        for field in [
+            "summary",
+            "summary_items",
+            "briefing_context",
+            "skipped_tools",
+        ] {
+            assert!(receipt.get(field).is_none(), "{field}");
+        }
         assert!(!receipt.to_string().contains(private));
         assert!(!error(crate::app::CommandError::internal(private))
             .to_string()
