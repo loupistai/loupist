@@ -548,20 +548,28 @@ fn schedule_commands_pause_resume_and_delete_with_undelivered_history() {
 #[test]
 fn resident_command_persists_the_setting_across_profile_restart() {
     use tauri::Manager;
+    const CHILD_ENV: &str = "LOUPIST_TEST_RESIDENT_COMMAND_DIR";
+    if let Some(profile) = std::env::var_os(CHILD_ENV) {
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(AppState::for_persistent_test(profile.into()));
+        let settings = crate::briefings::desktop::briefing_resident_settings_set(
+            serde_json::from_value(serde_json::json!({"keepRunning": false})).unwrap(),
+            app.state(),
+        )
+        .unwrap();
+        assert!(!settings.keep_running);
+        return;
+    }
     let directory = tempfile::tempdir().unwrap();
     let profile = directory.path().join("app");
-    let state = AppState::for_persistent_test(profile.clone());
-    let app = tauri::test::mock_builder()
-        .build(tauri::test::mock_context(tauri::test::noop_assets()))
-        .unwrap();
-    app.manage(state);
-    let settings = crate::briefings::desktop::briefing_resident_settings_set(
-        serde_json::from_value(serde_json::json!({"keepRunning": false})).unwrap(),
-        app.state(),
-    )
-    .unwrap();
-    assert!(!settings.keep_running);
-    drop(app);
+    // Tauri's mock manager can retain its AppState. A joined child establishes
+    // a real process exit and lock-release boundary without unsafe unmanage.
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "commands::scheduled_tasks::tests::resident_command_persists_the_setting_across_profile_restart"])
+        .env(CHILD_ENV, &profile).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
     let reopened = tauri::test::mock_builder()
         .build(tauri::test::mock_context(tauri::test::noop_assets()))
         .unwrap();

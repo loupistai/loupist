@@ -1213,7 +1213,7 @@ fn removed_pack_sources_are_unreadable_unless_research_independently_retained_th
         }
         // The user's research retains a further capture of the same Source.
         let own = text_source("loupist-a", "publisher", b"Own retained research");
-        write.retain_source(own.into_capture(
+        let researched = write.retain_source(own.into_capture(
             researched.record_id.clone(),
             Some(researched.revision_id.clone()),
             Some(researched.source_id.clone()),
