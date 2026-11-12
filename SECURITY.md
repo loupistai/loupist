@@ -9,6 +9,6 @@ Keep vulnerability details, credentials, personal data and private research out 
 public issues, pull requests and attachments. Share only the evidence needed to
 reproduce the issue, with sensitive values removed.
 
-Security fixes target the latest release and `main`. Earlier releases may require
-an upgrade. Acknowledgment or a proposed fix is not a publication commitment;
+Before the first public release, security fixes target `main`. After publication,
+fixes target the latest release and `main`; earlier releases may require an upgrade. Acknowledgment or a proposed fix is not a publication commitment;
 coordinate disclosure with the maintainer in the private report.

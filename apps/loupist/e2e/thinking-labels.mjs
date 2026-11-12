@@ -1,4 +1,4 @@
-// Stored thinking ids stay on the wire. Menus, chips, and E2E compare this label.
+// E2E labels for stored thinking ids; the app uses its localized settings copy.
 const THINKING_LABELS = {
   off: "Off",
   none: "Off",

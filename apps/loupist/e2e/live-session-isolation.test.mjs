@@ -18,7 +18,7 @@ try {
   // environment, receipt and failure cleanup without a window or paid call.
   await writeFile(join(root, "run-app.sh"), `#!/bin/sh
 set -eu
-printf '%s' '{"fixture":true}' > "$LOUPIST_E2E_SESSION_INFO"
+printf '%s' '{"fixture":true,"devUrl":"http://127.0.0.1:1421"}' > "$LOUPIST_E2E_SESSION_INFO"
 exec sleep 30
 `, { mode: 0o700 });
   await writeFile(join(root, "wait-session.mjs"), `
@@ -51,7 +51,7 @@ process.exit(19); // controlled scenario failure must not become a pass
   assert.equal(await readFile(sharedReceipt, "utf8"), "shared window must survive");
   const observed = JSON.parse(await readFile(join(root, "observed.json"), "utf8"));
   assert.notEqual(observed.sessionPath, sharedReceipt);
-  assert.equal(observed.content, '{"fixture":true}');
+  assert.equal(observed.content, '{"fixture":true,"devUrl":"http://127.0.0.1:1421"}');
   await assert.rejects(readFile(observed.sessionPath), { code: "ENOENT" });
 
   // Reusing the current window must not send a baseline resize behind the

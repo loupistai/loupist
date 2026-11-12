@@ -21,4 +21,4 @@ command = "npm --prefix apps/loupist run check"
 [[actions]]
 name = "Verify repository"
 icon = "test"
-command = "scripts/verify.sh"
+command = "scripts/verify.sh --affected"

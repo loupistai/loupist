@@ -2,7 +2,7 @@
 name = "loupist-desktop"
 version = "0.0.1-rc.1"
 edition = "2021"
-rust-version = "1.90"
+rust-version = "1.97"
 description = "Local native app for research with durable Loupist memory"
 license = "AGPL-3.0-only"
 publish = false

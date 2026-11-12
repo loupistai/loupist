@@ -41,6 +41,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -127,11 +136,6 @@
                     "assert": "not_committed",
                     "kind": "lens",
                     "metric": "save_precision"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
-                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -151,6 +155,11 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -169,11 +178,6 @@
                   {
                     "assert": "not_committed",
                     "kind": "lens",
-                    "metric": "save_precision"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
                     "metric": "save_precision"
                   },
                   {
@@ -211,11 +215,6 @@
                   {
                     "assert": "not_committed",
                     "kind": "lens",
-                    "metric": "negative_transfer"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
                     "metric": "negative_transfer"
                   }
                 ],
@@ -315,6 +314,15 @@
                       "note"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -425,6 +433,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -454,6 +470,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -528,6 +552,15 @@
                       "note"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -636,6 +669,13 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Bank capital method"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
                     "min": 1,
                     "title_contains": "Bank capital method"
                   }

@@ -40,6 +40,12 @@
                     "kind": "source",
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -347,6 +353,13 @@
                     "assert": "not_committed",
                     "kind": "lens",
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "note",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "title_contains": "Brindle shipment check"
                   }
                 ],
                 "rubric": [

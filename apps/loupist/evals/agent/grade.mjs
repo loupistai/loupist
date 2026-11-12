@@ -7,8 +7,9 @@ import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, ANSWER_ASSERTS,
   citationAssertion, returnedCitationUrls, citingParagraphs, numbersLinkedAssertion, asOfLeftOutAssertion,
   asOfRefusedAssertion, calculateInputsAssertion, gridCellsAssertion, metricTolerance, numberChecks, asOfReport,
   toolCalledAssertion, argumentsInclude, sensitivityCardAssertion, sensitivityCards, isRecord,
-  LENS_ASSERTS, lensAssertion, lensPages, memoryReads } from './eval-contract.mjs';
-import { analyzeToolCalls, toolValidity, comparableArgs } from './tool-evidence.mjs';
+  LENS_ASSERTS, lensAssertion, lensPages, memoryReads, isNegativeAssertion } from './eval-contract.mjs';
+import { analyzeToolCalls, toolValidity, comparableArgs, toolExecutionState, skillReadEvidence } from './tool-evidence.mjs';
+import { noFalseSaveClaimEvidence } from './memory-evidence.mjs';
 import { planProgressEvidence, calculationChipEvidence } from './research-evidence.mjs';
 
 export function trailingJsonObject(text) {
@@ -201,6 +202,11 @@ function gridCellsEvidence(assertion, calls) {
 
 function resultOf(trace, assertion, pass, detail) {
   const completed = turnCompleted(trace);
+  if (isNegativeAssertion(assertion)) {
+    const answer = answerEvidence(trace);
+    if (answer === null && pass !== false) { pass = null; detail = 'answer evidence unavailable'; }
+    else if (answer !== null && !answer.trim()) { pass = false; detail = 'negative assertion requires a non-empty answer'; }
+  }
   return {
     run_id: trace.run_id, ...turnFields(trace), assert: assertion.assert,
     metric: typeof assertion.metric === 'string' ? assertion.metric : null,
@@ -262,6 +268,10 @@ function evaluateTraceAssertion(assertion, trace) {
   }
   const calls = toolCalls(trace);
   if (calls === null) return resultOf(trace, assertion, null, 'tool call evidence unavailable');
+  if (assertion.assert === 'skill_read') {
+    const result = skillReadEvidence(assertion, calls);
+    return resultOf(trace, assertion, result.pass, result.detail);
+  }
   if (assertion.assert === 'plan_progress') {
     const result = planProgressEvidence(assertion, calls);
     return resultOf(trace, assertion, result.pass, result.detail);
@@ -276,13 +286,20 @@ function evaluateTraceAssertion(assertion, trace) {
   }
   if (assertion.assert === 'tool_args_not_matching') {
     const patterns = answerPatterns(assertion);
-    const relevant = calls.filter((call) => !assertion.tool || call.name === assertion.tool);
-    const hit = relevant.find((call) => patterns.some((pattern) => pattern.test(JSON.stringify(call.args ?? null))));
-    const unknown = relevant.some((call) => comparableArgs(call.args) === null);
+    const relevant = calls.filter((call) => (!assertion.tool || call.name === assertion.tool) && toolExecutionState(call) !== false);
+    const hit = relevant.find((call) => toolExecutionState(call) === true && patterns.some((pattern) => pattern.test(JSON.stringify(call.args ?? null))));
+    const unknown = relevant.some((call) => toolExecutionState(call) === null || comparableArgs(call.args) === null);
     return resultOf(trace, assertion, hit ? false : unknown ? null : true, hit ? `forbidden arguments in ${hit.name}` : unknown ? 'tool arguments unavailable' : 'no forbidden tool arguments');
   }
   if (assertion.assert === 'tool_called') {
-    const { tool, args } = toolCalledAssertion(assertion);
+    const { tool, args, successful } = toolCalledAssertion(assertion);
+    if (successful) {
+      const relevant = calls.filter(call => call.name === tool && call.outcome !== 'error');
+      const matches = call => args === null || argumentsInclude(call.args, args);
+      const pass = relevant.some(call => call.outcome === 'ok' && matches(call)) ? true
+        : relevant.some(call => (call.outcome !== 'ok' && matches(call)) || (args !== null && comparableArgs(call.args) === null)) ? null : false;
+      return resultOf(trace, assertion, pass, pass ? `successfully called ${tool}` : pass === null ? `${tool} evidence unavailable` : `no successful ${tool} call`);
+    }
     if (args === null) {
       const pass = calls.some((call) => call.name === tool);
       return resultOf(trace, assertion, pass, pass ? `called ${tool}` : `not called ${tool}`);
@@ -294,8 +311,9 @@ function evaluateTraceAssertion(assertion, trace) {
     return resultOf(trace, assertion, unknown ? null : false, unknown ? `${tool} arguments unavailable` : `no ${tool} call with ${JSON.stringify(args)}`);
   }
   if (assertion.assert === 'tool_not_called') {
-    const pass = calls.every((call) => call.name !== assertion.tool);
-    return resultOf(trace, assertion, pass, pass ? `did not call ${assertion.tool}` : `called ${assertion.tool}`);
+    const states = calls.filter(call => call.name === assertion.tool).map(toolExecutionState);
+    const pass = states.includes(true) ? false : states.includes(null) ? null : true;
+    return resultOf(trace, assertion, pass, pass === null ? `${assertion.tool} execution unavailable` : pass ? `did not execute ${assertion.tool}` : `executed ${assertion.tool}`);
   }
   if (assertion.assert === 'tool_called_before') {
     const tools = assertion.tools ?? [];
@@ -403,6 +421,10 @@ function evaluateAnswerAssertion(assertion, trace) {
   if (!ANSWER_ASSERTS.has(assertion.assert)) throw new Error(`Unknown answer assertion ${assertion.assert}`);
   const answer = answerEvidence(trace);
   if (answer === null) return resultOf(trace, assertion, null, 'answer evidence unavailable');
+  if (assertion.assert === 'no_false_save_claim') {
+    const result = noFalseSaveClaimEvidence(trace, answer);
+    return resultOf(trace, assertion, result.pass, result.detail);
+  }
   if (assertion.assert === 'calculation_chip') {
     const result = calculationChipEvidence(assertion, trace, answer);
     return resultOf(trace, assertion, result.pass, result.detail);

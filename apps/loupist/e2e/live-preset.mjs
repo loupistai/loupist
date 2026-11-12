@@ -1,11 +1,13 @@
 // One home for the live Chat preset. The composer trigger renders
 // "<model name> · <thinking label>". Effort stays the stored id; the menu
 // shows a localized thinking label, so accept both supported UI languages.
-import { thinkingLabel } from "../src/thinking-labels.mjs";
+import { thinkingLabel } from "./thinking-labels.mjs";
 import { readFileSync } from "node:fs";
 
 const DEFAULT_MODEL_LABEL = "GPT-6.1-Sol";
-const DEFAULT_EFFORT = "medium";
+const defaults = JSON.parse(readFileSync(new URL("../chat-model-defaults.json", import.meta.url), "utf8"));
+const defaultProvider = defaults.providers[0];
+const defaultModel = defaultProvider.models[0];
 const koreanThinking = JSON.parse(readFileSync(new URL("../src/i18n/locales/ko/settings.json", import.meta.url), "utf8")).modelSelection.thinking;
 
 export { thinkingLabel };
@@ -30,6 +32,11 @@ function requiredLabel(value, envName, fallback) {
 
 export function livePreset(env = process.env) {
   return Object.freeze({
+    modelId: requiredLabel(
+      env.LOUPIST_E2E_LIVE_MODEL_ID,
+      "LOUPIST_E2E_LIVE_MODEL_ID",
+      `${defaultProvider.provider}/${defaultModel.id}`,
+    ),
     modelLabel: requiredLabel(
       env.LOUPIST_E2E_LIVE_MODEL_LABEL,
       "LOUPIST_E2E_LIVE_MODEL_LABEL",
@@ -38,7 +45,7 @@ export function livePreset(env = process.env) {
     effort: requiredLabel(
       env.LOUPIST_E2E_LIVE_EFFORT,
       "LOUPIST_E2E_LIVE_EFFORT",
-      DEFAULT_EFFORT,
+      defaultModel.thinking_level,
     ),
   });
 }

@@ -15,7 +15,7 @@ Loupist"; ko 루피스트). It claims care, not authority: an examiner, not an a
 Loupist is for individual investors investigating companies, industries and
 markets. It combines provider-backed Chat, read-only data connections, local
 calculation and retained Memory. Each Loupist is a local folder with multiple Chats.
-Source retains material, World connects claims, Lens holds principles and methods,
+Source retains material, World connects claims, Lens holds principles and editable research pages,
 and the Journal holds the user's own judgments.
 
 [Loupist creation and import](runtime/storage-authority.md#where-data-lives) keep research in local
@@ -30,10 +30,11 @@ failures with a recovery action. Distinguish retained evidence, processing statu
 a proposed change and a committed save. Do not call a retrieval hit, record count
 or saved method proof of better analysis; evaluation must test subsequent work.
 
-Use the implemented navigation terms Loupist, Thread (ko 기본 대화), Chat, Map, Lens, Schedule and Settings. Use "what you follow" (ko 관심 자산) for the watchlist.
-World names the relationship model; [Map’s Library](ui/map-lens.md#map-and-library)
-has Sources and Notes tabs, with the Journal under Notes. Principles and methods
-are in Lens. Do not expose storage IDs, hashes, worker names, raw envelopes
+Use Loupist, Thread (ko 기본 대화), Chat and Settings. The header’s Panel kind menu
+opens Lens, World or Chat materials beside Chat. The Thread menu opens Scheduled
+tasks. Use "what you follow" (ko 관심 자산) for the watchlist. World contains the
+Map and [Library](ui/map-lens.md#map-and-library), with Sources and Notes tabs and
+the Journal under Notes. Lens holds principles, perspectives, methods, topics and ideas. Do not expose storage IDs, hashes, worker names, raw envelopes
 or byte offsets as product concepts. Put source limitations, model usage, commands,
 file access and actionable diagnostics in the appropriate details.
 
@@ -46,7 +47,7 @@ uses the same meanings.
 | --- | --- |
 | Loupist | A research companion for one topic. It remembers what you read together and learns how you like to research. |
 | World | How saved sources become the map: the companies, people and ideas the Loupist has connected. |
-| Lens | A way of looking at that map. A solid line is a stated relationship. A dashed line means a Lens was applied there. |
+| Lens | Your principles and research pages: perspectives, methods, topics and ideas, with evidence and history. |
 | Principle | A rule the user taught. The Loupist checks facts against it, and principles outrank methods. |
 | Method | A check the Loupist learned, or one saved from Chat. |
 | Journal | The user's own judgment. Research notes are the Loupist's saved analysis, listed separately. |

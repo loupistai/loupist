@@ -121,7 +121,7 @@ in either UI language. New WebDriver windows start at 1280×820 logical pixels;
 before a temporary resize and restore it afterward.
 
 Before an authorized real-model Chat action, visibly verify the requested model.
-If none was requested, select the preset (`live-preset.mjs`, `GPT-6.1-Sol · Medium`,
+If none was requested, select the preset (`live-preset.mjs`, model ID and effort from `chat-model-defaults.json`,
 shown as `GPT-6.1-Sol · 보통` in Korean)
 rather than trusting a saved selection:
 
@@ -192,8 +192,11 @@ Stage only missing runtimes the flow needs, with scripts under `apps/loupist/scr
 
 Pi staging replaces `resources/pi-runtime`: stage Pi first, then OpenBB.
 `stage-macos-arm64.sh` stages the full set. Finish staging before the final build
-so embedded digests match. Windows PowerShell scripts run only through the manual
-`windows-compatibility.yml` workflow and are outside the release gate.
+so embedded digests match. Windows is not supported in this release.
+
+Live journey reports use that same default model ID. Set
+`LOUPIST_E2E_LIVE_MODEL_ID`, `LOUPIST_E2E_LIVE_MODEL_LABEL` and
+`LOUPIST_E2E_LIVE_EFFORT` together when exercising another model.
 
 ## Native troubleshooting
 
@@ -217,8 +220,7 @@ POSIX launchers and `npm run tauri dev` hold a `flock` lease at
 across checkouts. A competing launch fails before opening a window; arrange a
 handoff instead of retrying or deleting the lock. The kernel releases the lease
 when its last inherited descriptor closes; `lsof` on the lock file identifies
-surviving holders. The Windows launcher does not use this lease. Headless tests
-can run independently; GUI suites stay serial.
+surviving holders. Headless tests can run independently; GUI suites stay serial.
 
 ## Deterministic native suites
 
@@ -232,7 +234,7 @@ temporary state, so they never rewrite a development or persistent profile.
 | `npm run test:native:full` | The core smoke plus connection filtering, appearance, updates, rejected retired commands and the minimum window |
 | `npm run test:persistence` | Three launches over one state root. **Seed**: fresh app data plus the knowledge fixture; through the UI it creates a Loupist, a Chat (`/new`, then renamed), a Source and Journal entry in the Map Library, a rule in What it knows, followed assets and a validated holdings CSV (invalid preview, cancellation and explicit commit), Loupist instructions, global and per-Loupist Chat preferences, and the theme. **Restart**: the same app data shows all of it, with the notice acknowledgment, language and theme applied without setting them again. **Copy**: a fresh app opens a copy of the Loupist folder; its Chats, Library, World, rule, revised method with Then/Now history, frozen Journal inputs, instructions and Loupist preferences follow the copy, while followed assets, holdings, the other Loupist, global settings and the notice stay with the old app data. |
 
-`test:native` calls `assertFormLegendsFit` (`native-forms.mjs`) on `[data-loupist-tone]` on New Loupist. Its later step “native browser preserves the article while blocking unsafe navigation” calls `verifyNativeBrowserNavigation` (`native-browser.mjs`). `verifyNativeToneLayoutFix` is a separate macOS WKWebView probe that reinstalls the old fieldset layout; smoke does not run it. A row above names the command. The WebKit result is that step’s finished run, recorded by the session that ran it. Preview Vitest and `preview:capture` check the React fixtures in Chrome and jsdom.
+`test:native` calls `assertFormLegendsFit` (`native-forms.mjs`) on `[data-loupist-tone]` on New Loupist. Its later step “native browser preserves the article while blocking unsafe navigation” calls `verifyNativeBrowserNavigation` (`native-browser.mjs`). A row above names the command. The WebKit result is that step’s finished run, recorded by the session that ran it. Preview Vitest and `preview:capture` check the React fixtures in Chrome and jsdom.
 
 For chat layout changes, run the separate geometry suite against an owned
 WebDriver session. From the repository root:
@@ -252,15 +254,13 @@ it is not a pass. Fixture rendering uses the mock bridge; the browser-policy
 step in `test:native` exercises the real child WebView and Rust commands.
 
 Linux runs the same commands; see [Run native suites on Linux](#run-native-suites-on-linux).
-Windows equivalents (`test:native:windows`, `test:persistence:windows`) run from
-the manual Windows workflow.
 
 | Variable | Effect |
 | --- | --- |
 | `LOUPIST_E2E_ALLOW_UNFOCUSED=1` | WebView-only pass on a locked screen: checks the live webview, disables CSS motion, and measures the map budget as 200 canvas draws at 1,000 nodes instead of frame cadence. It does not prove on-screen rendering, OS input or native dialogs. |
 | `LOUPIST_E2E_REQUIRE_STAGED_RUNTIMES=1` | CI: Market data must report Ready. |
+| `LOUPIST_E2E_DEV_PORT=<port>` | Pin the isolated Vite listener to a port other than 1420; 0 (the default) asks the OS to bind an available port and records its URL in the session receipt. |
 | `LOUPIST_E2E_REUSE_DEV_SERVER=1` | Reuse this workspace's Vite server on 1420; app data and WebDriver port stay separate. |
-| `LOUPIST_E2E_DEV_PORT` | Pin the isolated Vite port (otherwise a free port other than 1420); not combinable with reuse. |
 | `LOUPIST_E2E_STARTUP_TIMEOUT_MS` | Startup wait for isolated suites and `up.sh`/`run-dev-app.sh`, default five minutes. A failed new `up.sh` launch stops its detached process group. |
 | `LOUPIST_E2E_PROVIDER_READY=1` | Set by the credential-free smoke and persistence suites: an `e2e` build marks ChatGPT (the `openai` provider) ready without a secret or network call. No model is listed, so nothing can be sent. |
 | `LOUPIST_E2E_KNOWLEDGE_SEED=1` | Set by persistence for its first launch: on fresh app data an `e2e` build adds a sealed World, a Source, a Lens method and a saved Chat turn with its research note and Journal entry to the first Loupist. |
@@ -271,7 +271,7 @@ their session owner, then show and focus the window (on macOS retrying activatio
 for 25 seconds) before asserting. The isolated app seeds one Loupist from
 `<state>/workspace`. The smoke saves `appearance.language = "en"` and removes that
 Loupist so onboarding starts at step 1; persistence keeps it as the folder Loupist it
-copies. Isolated runners pick a free Vite port other than 1420. A Source added
+copies. Isolated runners bind Vite to port 0 and record the serving URL without releasing the listener. A Source added
 from a file needs the OS chooser (see the troubleshooting table) and is not part
 of persistence. Window checks compare the native size with
 `innerWidth`/`innerHeight`. Evidence stays under `artifacts/` (persistence:

@@ -10,11 +10,8 @@
   "scripts": {
     "test:live-journeys": "./run-native-live-journeys.sh",
     "test:native": "./run-native-smoke.sh",
-    "test:native:windows": "pwsh -NoProfile -File ./run-native-smoke.ps1",
-    "test:native:windows:full": "pwsh -NoProfile -File ./run-native-smoke.ps1 -Full",
     "test:native:full": "./run-native-smoke.sh --full",
     "test:persistence": "./run-native-persistence.sh",
-    "test:persistence:windows": "pwsh -NoProfile -File ./run-native-persistence.ps1",
     "verify-security": "node verify-security.mjs"
   },
   "devDependencies": {

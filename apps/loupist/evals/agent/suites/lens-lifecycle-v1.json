@@ -58,6 +58,22 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "halvren",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])31[.,]5(?![\\d])"
                   }
                 ]
               }
@@ -80,7 +96,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "answer": [
@@ -200,6 +216,22 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "한빛|hanbit",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])4,?200(?![\\d])"
                   }
                 ]
               }
@@ -235,6 +267,20 @@
                     "metric": "lens_update",
                     "count": 1,
                     "section_matches": "(?<![\\d.,])3,?600(?![\\d])"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "한빛|hanbit",
+                    "metric": "save_precision",
+                    "count": 1,
+                    "section_matches": "(?<![\\d.,])3,?600(?![\\d])"
                   }
                 ],
                 "rubric": [
@@ -264,7 +310,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "answer": [
@@ -339,6 +385,22 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "corvane",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])2028(?![\\d])"
                   }
                 ]
               }
@@ -366,6 +428,14 @@
                     "kind": "subject",
                     "title_matches": "corvane",
                     "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "terminat|31 December 2026|2026-12-31"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "corvane",
+                    "metric": "save_precision",
                     "count": 1,
                     "section_matches": "terminat|31 December 2026|2026-12-31"
                   }
@@ -402,7 +472,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -453,6 +523,14 @@
                     "metric": "save_recall",
                     "min": 1,
                     "max": 1
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "halvren|할브렌",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1
                   }
                 ]
               }
@@ -480,6 +558,14 @@
                     "kind": "subject",
                     "title_matches": "halvren|할브렌",
                     "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "(?<![\\d.,])71(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "halvren|할브렌",
+                    "metric": "save_precision",
                     "count": 1,
                     "section_matches": "(?<![\\d.,])71(?![\\d])"
                   }
@@ -540,6 +626,16 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])0[.,]18(?![\\d])"
                   }
                 ]
               }
@@ -583,6 +679,30 @@
                     "kind": "subject",
                     "title_matches": "marrowfield",
                     "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "packaging"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "save_precision",
+                    "count": 1,
+                    "section_matches": "(?<![\\d.,])0[.,]10(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "save_precision",
+                    "count": 1,
+                    "section_matches": "(?<![\\d.,])2[.,]6(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "save_precision",
                     "count": 1,
                     "section_matches": "packaging"
                   }
@@ -642,6 +762,15 @@
                     "title_matches": ".",
                     "metric": "save_precision",
                     "max": 0
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "ostrava",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
                   }
                 ]
               }
@@ -679,12 +808,12 @@
                 "memory": [
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   },
                   {
                     "assert": "not_committed",
                     "kind": "lens",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ]
               }
@@ -707,6 +836,32 @@
                   {
                     "assert": "not_committed",
                     "kind": "lens",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "explicit-teaching",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this research principle for future work: For regulated utilities, compare allowed return on equity with the cost of equity before drawing an investment conclusion.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
                     "metric": "save_precision"
                   }
                 ]
@@ -753,6 +908,14 @@
                     "kind": "method",
                     "title_matches": ".",
                     "max": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "Ferrox",
+                    "min": 1,
+                    "basis": "span",
                     "metric": "save_precision"
                   }
                 ],
@@ -860,6 +1023,14 @@
                     "metric": "save_recall",
                     "min": 1,
                     "max": 1
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": "channel",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1
                   }
                 ]
               }
@@ -882,7 +1053,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -941,6 +1112,16 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "ardent",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])450(?![\\d])"
                   }
                 ]
               }
@@ -963,7 +1144,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [

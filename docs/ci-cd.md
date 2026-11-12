@@ -1,6 +1,6 @@
 # CI and releases
 
-First-release target: macOS 13+ on Apple Silicon only. Windows implementation is retained for future support; Intel Macs and Linux are also outside the release scope. Repository identity is `loupistai/loupist`.
+First-release target: macOS 13+ on Apple Silicon only. Windows, Intel Macs and Linux are not supported in this release. Repository identity is `loupistai/loupist`.
 
 This page owns GitHub settings, CI and release gates. Version tags and the manual update qualification are in [Releases](release.md). Workflows and scripts in the repo are the source of truth for smoke details.
 
@@ -100,7 +100,7 @@ need a display.
 | Production Rust | Rust, native interaction and packaging |
 | OpenBB runtime | Python, Rust, native interaction and packaging |
 | Agent instructions/Skills or Marketplace assets | Web, Rust, native interaction and packaging |
-| App dependencies, toolchain files, workflows other than `windows-compatibility.yml`, staging scripts, or unknown paths | All |
+| App dependencies, toolchain files, workflows, staging scripts, or unknown paths | All |
 
 Mixed changes take the union of their scopes. Shared renderer contract fixtures
 also select Rust, and agent eval fixtures select Web and Rust. Inline Rust tests
@@ -114,8 +114,7 @@ isolation on the host used by cloud agents. Packaging runs only outside pull req
 
 Rust, uv and Ubuntu package caches are saved only by `main` runs; pull requests restore
 them without uploading branch copies. The signed build shares the package-smoke
-dependency cache. Official package CI has one explicit macOS job; experimental
-Windows packaging stays manual-only. Unselected jobs are skipped. The source gate,
+dependency cache. Official package CI has one explicit macOS job. Unselected jobs are skipped. The source gate,
 `Source and product contracts`, accepts a skip only for a scope the classifier
 deselected, a macOS job on a pull request, or the opt-in Linux native job, and
 fails on any other result,
@@ -208,19 +207,10 @@ respectively; signed package preflight has a 60 minute limit.
 Official installers and automatic-update manifests include only macOS Apple
 Silicon. Asset and qualification verifiers require this exact platform set.
 
-`windows-compatibility.yml` is manual-only and independent of `ci.yml`. It keeps
-Windows native interaction, persistence, and unsigned installer checks available.
-A change that only touches this workflow selects no CI scope. The native Windows
-job keeps its screenshots, performance file and persistence evidence for seven days.
-Its `signed` option, dispatched from the matching version tag, runs the retained
-Authenticode build and uploads workflow artifacts; it requires Windows secrets in the protected `release`
-environment and never publishes release assets or updates. Those optional
-secrets are not prerequisites for the macOS release audit.
-
 The only required check is `Source and product contracts`, owned by GitHub Actions,
 with no bypass. Pull requests never report `Native macOS interaction`,
 `Package smoke (aarch64-apple-darwin)`, `Rust lint/tests/eval (macOS)`,
-`Native Linux interaction (WebKitGTK)` or the Windows checks, so no `main` ruleset or legacy branch protection may require them. The
+`Native Linux interaction (WebKitGTK)`, so no `main` ruleset or legacy branch protection may require them. The
 read-only release audit flags them.
 
 ### Timing baseline (2026-11-09)

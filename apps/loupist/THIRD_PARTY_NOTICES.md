@@ -83,8 +83,8 @@ under the MIT License:
 ## keyring
 
 Loupist uses [keyring-rs](https://github.com/open-source-cooperative/keyring-rs)
-3.6.3 to store finance connector API keys in the native macOS and Windows
-credential stores. keyring-rs is available under either the Apache License 2.0
+3.6.3 to store finance connector API keys in the native macOS
+credential store. keyring-rs is available under either the Apache License 2.0
 or the MIT License. The applicable license texts are distributed with the
 crate; the MIT terms reproduced above also apply when that option is selected.
 
@@ -154,7 +154,11 @@ lxml 6.1.2 under BSD-3-Clause; Beautiful Soup 4.15.0 under MIT; yfinance 1.6.0
 under Apache 2.0; `pandas-ta-openbb` 0.4.24, finvizfinance 1.3.0, and Nasdaq
 Data Link 1.0.4 under MIT. The complete copyright, license, NOTICE, and
 bundled-library terms in each installed distribution's `.dist-info` metadata
-and license files remain applicable.
+and license files remain applicable. The bundled
+`THIRD_PARTY_LICENSES/python-distributions.json` enumerates every OpenBB runtime
+distribution, its exact version, metadata-reported license and retained legal
+files; [license_bundle.py](openbb/license_bundle.py) derives that inventory from
+the locked runtime closure, excluding development-only packages.
 
 ## Korea Investment Open Trading API
 
@@ -168,14 +172,22 @@ MCP server or Python examples.
 
 ## Bundled method Skills
 
-Short valuation, comparison, historical-rule-test, and filings workflow
-cards in `agent/skills/` are adapted from
-[Vibe-Trading](https://github.com/HKUDS/Vibe-Trading) skills
-`valuation-model`, `financial-statement`, `deep-company-series`,
-`factor-research`, `research-discipline`, and `edgar-sec-filings`,
-copyright (c) 2026 Vibe-Trading Contributors, under the MIT License.
-The MIT terms reproduced above apply. Loupist does not bundle
-Vibe-Trading, its brokers, Alpha Zoo, swarms, or trade execution.
+The financial and data workflow cards adapt the reviewed revisions recorded in
+[Bundled Skill provenance](agent/skills/NOTICE.md):
+
+| Upstream | Reviewed revision | License |
+| --- | --- | --- |
+| anthropics/financial-services | `574ed3624aebd0418c7e96cd101262f30210ab26` | Apache-2.0 |
+| anthropics/knowledge-work-plugins | `bc8f6922cfeea215a202cdcc9f0d299a990889a8` | Apache-2.0 |
+| K-Dense-AI/scientific-agent-skills | `593377bb048752abb0152deab9fbb1083a6087df` | MIT |
+| microsoft/qlib | `54355232463878d2eebb91fe0ee5fa7fa1f5976c` | MIT |
+
+That notice identifies the adapted files, local changes, copyright notices and
+retained license texts. Document workflows and the dividend income, fund
+comparison, why-it-moved, goal math and Korean statements guides are original
+Loupist instructions. Anthropic’s restricted document Skills are not bundled.
+Skill Creator and Skill Installer adapt OpenAI’s public Apache-2.0 workflows;
+their license texts are retained in the corresponding local skill folders.
 
 ## Oh My Pi web adapters
 
@@ -205,13 +217,109 @@ The tokenizer originates from BAAI/bge-base-en-v1.5, also MIT. The staged
 `embed_assets/NOTICE` records both. The app loads those files and does not
 download a model at runtime.
 
-The offline scientific Python closure contains NumPy 2.4.3, pandas 3.0.2,
-SciPy 1.18.0, statsmodels 0.14.6, scikit-learn 1.8.0, joblib 1.5.3,
-packaging 26.1, patsy 1.0.2, python-dateutil 2.9.0.post0, pytz 2026.1.post1,
-six 1.17.0, and threadpoolctl 3.6.0. Their BSD, MIT, Apache, PSF, Zlib, CC0,
-and other applicable license notices are retained inside the bundled wheel
-archives under their `.dist-info` metadata and license directories.
+## Offline Python runtime
 
+The pinned [WASI Python runtime v0.1.4](https://github.com/ClayGendron/wasi-python/releases/tag/v0.1.4)
+bundles CPython 3.15.2 under PSF-2.0 and its historical notices
+(`LICENSES/cpython.txt`). Its `MANIFEST` lists the following complete package and
+native-library inventory. Build helpers are included here when the manifest lists
+them, even when their Python module is not installed in the runtime.
+
+The metadata citations below are paths inside the bundled `lib/python315.zip`;
+`LICENSES/` paths are relative to the runtime directory. These files are also in
+the pinned runtime archive named in [runtime.json](python-worker/runtime.json).
+License names come from each distribution’s Core Metadata and retained license
+text; a BSD classifier alone is resolved against that package’s actual license
+text. Full copyright, historical and bundled-component terms remain in those
+files. This inventory is separate from the OpenBB sidecar closure above.
+
+| Package or library | Version | License | Bundled metadata / license source |
+| --- | --- | --- | --- |
+| numpy | 2.5.4 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | `numpy-2.5.4.dist-info/METADATA` (License-Expression); `LICENSES/numpy.txt` |
+| pandas | 3.1.0 | BSD-3-Clause | `pandas-3.1.0.dist-info/METADATA` (License-Expression); `LICENSES/pandas.txt` |
+| zlib | 1.3.2 | Zlib | `LICENSES/zlib.txt` |
+| bzip2 | 1.0.8 | bzip2 license | `LICENSES/bzip2.txt` |
+| xz | 5.8.4 | 0BSD (bundled liblzma) | `LICENSES/xz.txt` |
+| sqlite-autoconf | 3540100 | Public-domain dedication | `LICENSES/sqlite.txt` |
+| zstd | 1.5.7 | BSD-3-Clause (selected runtime terms) | `LICENSES/zstd.txt` |
+| python-dateutil | 2.9.0.post0 | Apache-2.0 and BSD-3-Clause (contribution-dependent terms) | `python_dateutil-2.9.0.post0.dist-info/METADATA` (License); `LICENSES/python-dateutil.txt` |
+| tzdata | 2026.6 | Apache-2.0 | `tzdata-2026.6.dist-info/METADATA` (License); `LICENSES/tzdata.txt` |
+| six | 1.17.0 | MIT | `six-1.17.0.dist-info/METADATA` (License); `LICENSES/six.txt` |
+| regex | 2026.9.29 | Apache-2.0 AND CNRI-Python | `regex-2026.9.29.dist-info/METADATA` (License-Expression); `LICENSES/regex.txt` |
+| matplotlib | 3.11.2 | Matplotlib license agreement (versions 1.3.0 and later, with historical terms) | `matplotlib-3.11.2.dist-info/METADATA` (License); `LICENSES/matplotlib.txt` |
+| pillow | 13.0.0 | MIT-CMU | `pillow-13.0.0.dist-info/METADATA` (License-Expression); `LICENSES/pillow.txt` |
+| kiwisolver | 1.5.1 | BSD-3-Clause | `kiwisolver-1.5.1.dist-info/METADATA` (License); `LICENSES/kiwisolver.txt` |
+| freetype | 2.14.3 | FTL OR GPL-2.0-or-later | `LICENSES/freetype.txt` |
+| harfbuzz | 14.1.0 | Old MIT (with component notices) | `LICENSES/harfbuzz.txt` |
+| sheenbidi | 3.0.0 | Apache-2.0 | `LICENSES/sheenbidi.txt` |
+| libraqm | 0.10.5 | MIT | `LICENSES/libraqm.txt` |
+| pybind11 | 3.1.0 | BSD-3-Clause | `LICENSES/pybind11.txt` |
+| cppy | 1.3.1 | BSD-3-Clause | `LICENSES/cppy.txt` |
+| cycler | 0.12.1 | BSD-3-Clause | `cycler-0.12.1.dist-info/METADATA` (License); `LICENSES/cycler.txt` |
+| pyparsing | 3.3.3 | MIT | `pyparsing-3.3.3.dist-info/METADATA` (License-Expression); `LICENSES/pyparsing.txt` |
+| packaging | 26.3 | Apache-2.0 OR BSD-2-Clause | `packaging-26.3.dist-info/METADATA` (License-Expression); `LICENSES/packaging.txt` |
+| fonttools | 4.67.0 | MIT | `fonttools-4.67.0.dist-info/METADATA` (License); `LICENSES/fonttools.txt` |
+| contourpy | 1.4.0 | BSD-3-Clause | `contourpy-1.4.0.dist-info/METADATA` (License-Expression); `LICENSES/contourpy.txt` |
+| qhull | 8.0.2 | Qhull license | `LICENSES/qhull.txt` |
+| libjpeg-turbo | 3.2.0 | IJG and BSD-3-Clause; component notices retained | `LICENSES/libjpeg-turbo.txt` |
+| libxml2 | 2.15.4 | MIT | `LICENSES/libxml2.txt` |
+| libxslt | 1.1.45 | MIT (with libexslt notices) | `LICENSES/libxslt.txt` |
+| lxml | 6.1.3 | BSD-3-Clause | `lxml-6.1.3.dist-info/METADATA` (License); `LICENSES/lxml.txt` |
+| openpyxl | 3.1.5 | MIT | `openpyxl-3.1.5.dist-info/METADATA` (License); `LICENSES/openpyxl.txt` |
+| et-xmlfile | 2.0.0 | MIT | `et_xmlfile-2.0.0.dist-info/METADATA` (License); `LICENSES/et-xmlfile.txt` |
+| xlsxwriter | 3.2.9 | BSD-2-Clause | `xlsxwriter-3.2.9.dist-info/METADATA` (License); `LICENSES/xlsxwriter.txt` |
+| xlrd | 2.0.2 | BSD-3-Clause and BSD-4-Clause (historical component) | `xlrd-2.0.2.dist-info/METADATA` (License); `LICENSES/xlrd.txt` |
+| pypdf | 6.21.4 | BSD-3-Clause | `pypdf-6.21.4.dist-info/METADATA` (License-Expression); `LICENSES/pypdf.txt` |
+| beautifulsoup4 | 4.15.0 | MIT | `beautifulsoup4-4.15.0.dist-info/METADATA` (License); `LICENSES/beautifulsoup4.txt` |
+| soupsieve | 3.0.4 | MIT | `soupsieve-3.0.4.dist-info/METADATA` (License-Expression); `LICENSES/soupsieve.txt` |
+| html5lib | 1.1 | MIT | `html5lib-1.1.dist-info/METADATA` (License); `LICENSES/html5lib.txt` |
+| webencodings | 0.6.1 | BSD-3-Clause | `webencodings-0.6.1.dist-info/METADATA` (Classifier); `LICENSES/webencodings.txt` |
+| defusedxml | 0.7.1 | PSF-2.0 | `defusedxml-0.7.1.dist-info/METADATA` (License); `LICENSES/defusedxml.txt` |
+| xmltodict | 1.0.4 | MIT | `xmltodict-1.0.4.dist-info/METADATA` (License-Expression); `LICENSES/xmltodict.txt` |
+| pyyaml | 6.0.3 | MIT | `pyyaml-6.0.3.dist-info/METADATA` (License); `LICENSES/pyyaml.txt` |
+| tomli-w | 1.2.0 | MIT | `tomli_w-1.2.0.dist-info/METADATA` (Classifier); `LICENSES/tomli-w.txt` |
+| jinja2 | 3.1.6 | BSD-3-Clause | `jinja2-3.1.6.dist-info/METADATA` (Classifier); `LICENSES/jinja2.txt` |
+| markupsafe | 3.0.4 | BSD-3-Clause | `markupsafe-3.0.4.dist-info/METADATA` (License-Expression); `LICENSES/markupsafe.txt` |
+| tabulate | 0.10.0 | MIT | `tabulate-0.10.0.dist-info/METADATA` (License-Expression); `LICENSES/tabulate.txt` |
+| charset-normalizer | 3.5.2 | MIT | `charset_normalizer-3.5.2.dist-info/METADATA` (License); `LICENSES/charset-normalizer.txt` |
+| networkx | 3.7 | BSD-3-Clause | `networkx-3.7.dist-info/METADATA` (License-Expression); `LICENSES/networkx.txt` |
+| patsy | 1.0.3 | BSD-2-Clause | `patsy-1.0.3.dist-info/METADATA` (License); `LICENSES/patsy.txt` |
+| sympy | 1.14.0 | BSD-3-Clause | `sympy-1.14.0.dist-info/METADATA` (License); `LICENSES/sympy.txt` |
+| mpmath | 1.3.0 | BSD-3-Clause | `mpmath-1.3.0.dist-info/METADATA` (License); `LICENSES/mpmath.txt` |
+| attrs | 26.1.0 | MIT | `attrs-26.1.0.dist-info/METADATA` (License-Expression); `LICENSES/attrs.txt` |
+| more-itertools | 11.2.1 | MIT | `more_itertools-11.2.1.dist-info/METADATA` (License-Expression); `LICENSES/more-itertools.txt` |
+| toolz | 1.2.0 | BSD-3-Clause | `toolz-1.2.0.dist-info/METADATA` (License-Expression); `LICENSES/toolz.txt` |
+| tqdm | 4.70.1 | MPL-2.0 AND MIT | `tqdm-4.70.1.dist-info/METADATA` (License); `LICENSES/tqdm.txt` |
+| typing-extensions | 4.16.0 | PSF-2.0 | `typing_extensions-4.16.0.dist-info/METADATA` (License-Expression); `LICENSES/typing-extensions.txt` |
+| joblib | 1.6.0 | BSD-3-Clause | `joblib-1.6.0.dist-info/METADATA` (License-Expression); `LICENSES/joblib.txt` |
+| cloudpickle | 3.1.2 | BSD-3-Clause | `cloudpickle-3.1.2.dist-info/METADATA` (License); `LICENSES/cloudpickle.txt` |
+| threadpoolctl | 3.7.0 | BSD-3-Clause | `threadpoolctl-3.7.0.dist-info/METADATA` (License-Expression); `LICENSES/threadpoolctl.txt` |
+| narwhals | 2.27.1 | MIT | `narwhals-2.27.1.dist-info/METADATA` (License-Expression); `LICENSES/narwhals.txt` |
+| scipy | 1.18.1 | BSD-3-Clause; bundled-library terms retained | `scipy-1.18.1.dist-info/METADATA` (License); `LICENSES/scipy.txt` |
+| openblas | 0.3.34 | BSD-3-Clause | `LICENSES/openblas.txt` |
+| scikit-learn | 1.9.1 | BSD-3-Clause | `scikit_learn-1.9.1.dist-info/METADATA` (License-Expression); `LICENSES/scikit-learn.txt` |
+| seaborn | 0.13.2 | BSD-3-Clause | `seaborn-0.13.2.dist-info/METADATA` (Classifier); `LICENSES/seaborn.txt` |
+| reportlab | 5.0.1 | BSD-3-Clause | `reportlab-5.0.1.dist-info/METADATA` (License); `LICENSES/reportlab.txt` |
+| statsmodels | 0.15.0 | BSD-3-Clause | `statsmodels-0.15.0.dist-info/METADATA` (License-Expression); `LICENSES/statsmodels.txt` |
+| formulaic | 1.2.2 | MIT | `formulaic-1.2.2.dist-info/METADATA` (License-Expression); `LICENSES/formulaic.txt` |
+| interface-meta | 2.0.1 | MIT | `interface_meta-2.0.1.dist-info/METADATA` (License); `LICENSES/interface-meta.txt` |
+| wrapt | 2.5.2 | BSD-2-Clause | `wrapt-2.5.2.dist-info/METADATA` (License-Expression); `LICENSES/wrapt.txt` |
+| python-docx | 1.2.0 | MIT | `python_docx-1.2.0.dist-info/METADATA` (License); `LICENSES/python-docx.txt` |
+| python-pptx | 1.0.2 | MIT | `python_pptx-1.0.2.dist-info/METADATA` (License); `LICENSES/python-pptx.txt` |
+| pdfplumber | 0.11.10 | MIT | `pdfplumber-0.11.10.dist-info/METADATA` (Classifier); `LICENSES/pdfplumber.txt` |
+| pdfminer-six | 20260107 | MIT | `pdfminer_six-20260107.dist-info/METADATA` (License-Expression); `LICENSES/pdfminer-six.txt` |
+| xarray | 2026.9.0 | Apache-2.0 | `xarray-2026.9.0.dist-info/METADATA` (License-Expression); `LICENSES/xarray.txt` |
+| drawsvg | 2.4.2 | MIT | `drawsvg-2.4.2.dist-info/METADATA` (Classifier); `LICENSES/drawsvg.txt` |
+| pixman | 0.46.4 | MIT | `LICENSES/pixman.txt` |
+| libpng | 1.6.59 | libpng-2.0 | `LICENSES/libpng.txt` |
+| cairo | 1.18.6 | MPL-1.1 (selected runtime terms) | `LICENSES/cairo.txt` |
+| cffi | 2.1.1 | MIT-0 | `LICENSES/cffi.txt` |
+| cairocffi | 1.7.1 | BSD-3-Clause | `cairocffi-1.7.1.dist-info/METADATA` (Classifier); `LICENSES/cairocffi.txt` |
+| cairosvg | 2.9.1 | LGPL-3.0-or-later | `cairosvg-2.9.1.dist-info/METADATA` (License); `LICENSES/cairosvg.txt` |
+| tinycss2 | 1.5.1 | BSD-3-Clause | `tinycss2-1.5.1.dist-info/METADATA` (Classifier); `LICENSES/tinycss2.txt` |
+| cssselect2 | 0.10.1 | BSD-3-Clause | `cssselect2-0.10.1.dist-info/METADATA` (Classifier); `LICENSES/cssselect2.txt` |
+| imageio | 2.38.1 | BSD-2-Clause | `imageio-2.38.1.dist-info/METADATA` (License-Expression); `LICENSES/imageio.txt` |
+| plotly | 7.1.0 | MIT | `plotly-7.1.0.dist-info/METADATA` (License-Expression); `LICENSES/plotly.txt` |
 
 ## Mathematical text rendering
 

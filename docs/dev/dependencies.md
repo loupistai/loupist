@@ -12,7 +12,7 @@ The November 2026 review covered the 58 open Dependabot alerts:
 | E2E npm | 13 | WebdriverIO 10.1.0 and reviewed transitive overrides remove extract-zip and update Undici/minimatch. Browser automation remains debug-only; lifecycle scripts remain disabled. |
 | OpenBB uv | 29 | Update aiohttp, Authlib, certifi, dnspython, FastMCP, joserfc, MCP, multidict, OpenTelemetry and setuptools; record compatible security floors in pyproject.toml and regenerate the manifest's lock digest. |
 | Native Cargo | 9 | ZIP 9.3.0, office_oxide 0.1.16 and rustls 0.23.46. Tauri 2.12.5/updater 2.14.1 remove the updater's separate ZIP 4 dependency, including the Windows path. |
-| Native Cargo, Linux only | 1 | glib 0.18.5 remains in Tauri's GTK closure, including Linux development and source-test builds. Neither the supported Apple Silicon build nor the future Windows target resolves it. The advisory remains unpatched; Linux is outside the release scope. |
+| Native Cargo, Linux only | 1 | glib 0.18.5 remains in Tauri's GTK closure, including Linux development and source-test builds. The supported Apple Silicon build does not resolve it. The advisory remains unpatched; Linux is outside the release scope. |
 
 The glib finding is [GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g).
 Do not force glib 0.20 into GTK 0.18: they use different native bindings. Verify
@@ -76,7 +76,7 @@ runtime checks together, then pass host isolation and native/package tests.
 
 The whole `@earendil-works/*` family moves from 1.0.1 to 1.5.0 together, along
 with `pi-security.json`, `PI_VERSION`, the stage and check scripts, and the
-macOS arm64 and Windows x64 archive digests. The digests are checked against the
+platform archive digests. The digests are checked against the
 release's `SHA256SUMS`. `@earendil-works/pi-schema` is new in the family, and
 Pi no longer depends on `chord`. Pi itself now pins undici 8.12.3, and the
 minimatch 11.0.4 override still applies.

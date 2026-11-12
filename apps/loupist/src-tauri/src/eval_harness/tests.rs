@@ -1002,3 +1002,63 @@ fn an_eval_turn_settles_a_waiting_question_at_once() {
         "the ask_user call resolves unanswered"
     );
 }
+
+#[test]
+fn lens_seed_contract_refuses_retired_fields_and_unknown_section_fields() {
+    for field in [
+        "markdown",
+        "applicability",
+        "assumptions",
+        "procedure",
+        "principles",
+        "limitations",
+    ] {
+        let mut input = json!({"title":"A method"});
+        input[field] = json!("This text must not disappear");
+        assert!(
+            serde_json::from_value::<LensSeed>(input).is_err(),
+            "{field}"
+        );
+    }
+    assert!(serde_json::from_value::<LensSeed>(json!({
+        "title":"A method", "sections":[{"key":"steps", "heading":"Steps", "markdown":"Check cash", "body":"must not disappear"}]
+    })).is_err());
+}
+
+#[test]
+fn repository_lens_seeds_decode_with_their_current_page_bodies() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../evals/agent");
+    let mut repaired = 0;
+    for folder in ["suites", "heldout"] {
+        for entry in fs::read_dir(root.join(folder)).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|ext| ext != "json") {
+                continue;
+            }
+            let suite: Suite = serde_json::from_slice(&fs::read(&path).unwrap())
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            for scenario in suite.scenarios {
+                for page in scenario.seed.lens {
+                    assert!(
+                        !page.sections.is_empty(),
+                        "{}: {}",
+                        path.display(),
+                        scenario.id
+                    );
+                    assert!(page
+                        .sections
+                        .iter()
+                        .all(|section| !section.markdown.trim().is_empty()));
+                    if scenario.id.starts_with("B-")
+                        || ["P-C02", "T-007", "T-031"].contains(&scenario.id.as_str())
+                    {
+                        assert_eq!(page.sections.len(), 6, "{}", scenario.id);
+                        assert!(!page.summary.is_empty());
+                        repaired += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(repaired, 19);
+}
