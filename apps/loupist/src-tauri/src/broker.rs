@@ -10,10 +10,7 @@ use std::{
     io,
     path::PathBuf,
     pin::Pin,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex as StdMutex,
-    },
+    sync::{Arc, Mutex as StdMutex},
     time::Duration,
 };
 use thiserror::Error;
@@ -328,11 +325,11 @@ impl ToolMethod {
 
 #[derive(Debug, Error)]
 pub enum BrokerError {
-    #[error("Outbound access is paused for this turn because it read content from a custom connection. The user can ask again in a new message.")]
+    #[error("{}", crate::custom_connections::taint::OUTBOUND_REFUSAL)]
     OutboundPaused,
-    #[error("This turn read third-party text (web pages, search results, news, filings, provider descriptions, or saved Sources and datasets holding them), so custom connections, schedule changes, new websites and instruction writes are paused for the rest of the turn.")]
+    #[error("{}", crate::custom_connections::taint::UNTRUSTED_TEXT_REFUSAL)]
     UntrustedTextPaused,
-    #[error("This path is inside the app's private data (credentials, the database, Pi runtime files), which native tools never read or write.")]
+    #[error("This path is protected and is not touched.")]
     ProtectedPath,
     #[error("This path is outside the Loupist folder, which native tools never read or write.")]
     OutsideWorkspace,
@@ -340,6 +337,12 @@ pub enum BrokerError {
     CustomApprovalRequired {
         connection_id: String,
         tool_name: String,
+    },
+    #[error("{}", .cause.message())]
+    CustomApprovalRefused {
+        connection_id: String,
+        tool_name: String,
+        cause: CustomApprovalRefusal,
     },
     /// `next` comes from the provider that approves services separately.
     #[error("{provider} needs approval for {}", .services.join(", "))]
@@ -350,13 +353,17 @@ pub enum BrokerError {
     },
     #[error("tool broker I/O failed: {0}")]
     Io(#[from] io::Error),
-    #[error("tool is not in the Loupist allowlist")]
+    #[error("This tool is not available in this run. Use another tool or name the gap.")]
     MethodDenied,
-    #[error("Loupist Memory use is disabled for this turn")]
+    #[error("Memory is off for this Chat, so this was not read. Answer without it and say so.")]
     MemoryDisabled,
-    #[error("memory proposals are disabled for this turn")]
+    #[error(
+        "Saving is off for this Chat, so this was not saved. Say so; do not promise to remember."
+    )]
     ProposalDisabled,
-    #[error("tool request is malformed")]
+    #[error("This reply read a connection the user marked Don't save, so nothing from this reply is saved. Say it was not saved and why.")]
+    ConnectionDontSave,
+    #[error("request: the tool request is malformed.")]
     Malformed,
     #[error("{field}: {expected}")]
     InvalidArguments { field: String, expected: String },
@@ -375,8 +382,33 @@ pub enum BrokerError {
     /// failing does not prove the device is offline, so the text names it.
     #[error("{0} could not be reached; the network or this provider may be unavailable")]
     Offline(String),
-    #[error("transaction cardinality for this run is exhausted")]
-    BudgetExceeded,
+    #[error("{tool} has reached its limit of {limit} per reply. Do not call it again in this reply; other tools still work.")]
+    BudgetExceeded { tool: String, limit: u8 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CustomApprovalRefusal {
+    Declined,
+    TimedOut,
+    Unattended,
+}
+
+impl CustomApprovalRefusal {
+    pub(crate) fn message(self) -> &'static str {
+        match self {
+            Self::Declined => "The user declined this tool for now. Do not call it again in this reply; continue without it and say what is missing.",
+            Self::TimedOut => "Nobody answered the approval card. Do not call it again in this reply.",
+            Self::Unattended => "This custom tool has no standing approval, so an unattended run cannot use it.",
+        }
+    }
+
+    fn reason(self) -> &'static str {
+        match self {
+            Self::Declined => "declined",
+            Self::TimedOut => "timed_out",
+            Self::Unattended => "blocked_unattended",
+        }
+    }
 }
 
 impl BrokerError {
@@ -524,78 +556,7 @@ pub struct ToolBrokerHandle {
     pub socket_path: PathBuf,
     token: String,
     shutdown: Option<watch::Sender<bool>>,
-    task: Option<JoinHandle<()>>,
-    identity_lease: Option<ToolBrokerIdentityLease>,
-}
-
-/// Process-lifetime authority for sequential, turn-scoped tool brokers.
-///
-/// The endpoint and token remain stable so a future long-lived Pi process can
-/// keep one broker identity, while each broker start still receives a fresh
-/// policy, executor, and transaction-cardinality state. This type deliberately
-/// does not implement `Debug` or serialization because its token is authority.
-#[derive(Clone)]
-pub struct ToolBrokerIdentity {
-    inner: Arc<ToolBrokerIdentityInner>,
-}
-
-struct ToolBrokerIdentityInner {
-    socket_path: PathBuf,
-    token: String,
-    leased: AtomicBool,
-}
-
-struct ToolBrokerIdentityLease {
-    identity: Arc<ToolBrokerIdentityInner>,
-}
-
-impl Drop for ToolBrokerIdentityLease {
-    fn drop(&mut self) {
-        self.identity.leased.store(false, Ordering::Release);
-    }
-}
-
-impl ToolBrokerIdentity {
-    pub fn new(socket_path: PathBuf) -> Self {
-        Self {
-            inner: Arc::new(ToolBrokerIdentityInner {
-                socket_path,
-                token: new_broker_token(),
-                leased: AtomicBool::new(false),
-            }),
-        }
-    }
-
-    pub fn socket_path(&self) -> &PathBuf {
-        &self.inner.socket_path
-    }
-
-    pub fn token(&self) -> &str {
-        &self.inner.token
-    }
-
-    pub async fn start(
-        &self,
-        policy: ToolPolicy,
-        executor: Arc<dyn ToolExecutor>,
-    ) -> Result<ToolBrokerHandle, BrokerError> {
-        start_tool_broker_with_identity(self, policy, executor).await
-    }
-
-    fn acquire(&self) -> Result<ToolBrokerIdentityLease, BrokerError> {
-        self.inner
-            .leased
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| {
-                BrokerError::Io(io::Error::new(
-                    io::ErrorKind::AddrInUse,
-                    "tool broker identity is already active",
-                ))
-            })?;
-        Ok(ToolBrokerIdentityLease {
-            identity: self.inner.clone(),
-        })
-    }
+    task: Option<JoinHandle<Result<(), BrokerError>>>,
 }
 
 #[derive(Debug, Default)]
@@ -616,38 +577,68 @@ impl TransactionCardinality {
     fn consume(&mut self, method: ToolMethod, policy: &ToolPolicy) -> Result<(), BrokerError> {
         match method {
             ToolMethod::NoteSave if self.journals >= 1 => {
-                return Err(BrokerError::BudgetExceeded);
+                return Err(BrokerError::BudgetExceeded {
+                    tool: method.tool_name(),
+                    limit: 1,
+                });
             }
             ToolMethod::SourceSave if self.evidence_creations >= MAX_CHAT_TURN_SOURCES => {
-                return Err(BrokerError::BudgetExceeded);
+                return Err(BrokerError::BudgetExceeded {
+                    tool: method.tool_name(),
+                    limit: MAX_CHAT_TURN_SOURCES,
+                });
             }
             ToolMethod::PrincipleSave if self.proposals >= policy.memory_proposal_budget => {
-                return Err(BrokerError::BudgetExceeded);
+                return Err(BrokerError::BudgetExceeded {
+                    tool: method.tool_name(),
+                    limit: policy.memory_proposal_budget,
+                });
             }
             ToolMethod::WorldSchemaUpdate if self.schema_updates >= 1 => {
-                return Err(BrokerError::BudgetExceeded);
+                return Err(BrokerError::BudgetExceeded {
+                    tool: method.tool_name(),
+                    limit: 1,
+                });
             }
             ToolMethod::LoupistSetup if self.setups >= 1 => {
-                return Err(BrokerError::BudgetExceeded);
+                return Err(BrokerError::BudgetExceeded {
+                    tool: method.tool_name(),
+                    limit: 1,
+                });
             }
             ToolMethod::ConnectionSetup
                 if self.connection_setups >= MAX_CHAT_TURN_CONNECTION_SETUPS =>
             {
-                return Err(BrokerError::BudgetExceeded);
+                return Err(BrokerError::BudgetExceeded {
+                    tool: method.tool_name(),
+                    limit: MAX_CHAT_TURN_CONNECTION_SETUPS,
+                });
             }
             ToolMethod::AskUser if self.questions >= MAX_CHAT_TURN_QUESTIONS => {
-                return Err(BrokerError::BudgetExceeded);
+                return Err(BrokerError::BudgetExceeded {
+                    tool: method.tool_name(),
+                    limit: MAX_CHAT_TURN_QUESTIONS,
+                });
             }
             ToolMethod::LensFile if self.filings >= MAX_CHAT_TURN_FILINGS => {
-                return Err(BrokerError::BudgetExceeded);
+                return Err(BrokerError::BudgetExceeded {
+                    tool: method.tool_name(),
+                    limit: MAX_CHAT_TURN_FILINGS,
+                });
             }
             ToolMethod::ArtifactPublish | ToolMethod::ChartPublish | ToolMethod::GridPublish
                 if self.artifact_publishes >= MAX_CHAT_TURN_ARTIFACTS as u8 =>
             {
-                return Err(BrokerError::BudgetExceeded);
+                return Err(BrokerError::BudgetExceeded {
+                    tool: method.tool_name(),
+                    limit: MAX_CHAT_TURN_ARTIFACTS as u8,
+                });
             }
             ToolMethod::ResearchOpen if self.research_opens >= 1 => {
-                return Err(BrokerError::BudgetExceeded);
+                return Err(BrokerError::BudgetExceeded {
+                    tool: method.tool_name(),
+                    limit: 1,
+                });
             }
             _ => {}
         }
@@ -755,7 +746,7 @@ impl ToolBrokerHandle {
         }
         let task_result = if let Some(mut task) = self.task.take() {
             match timeout(Duration::from_secs(2), &mut task).await {
-                Ok(Ok(())) => Ok(()),
+                Ok(Ok(result)) => result,
                 Ok(Err(error)) => Err(BrokerError::Io(io::Error::other(format!(
                     "tool broker task failed: {error}"
                 )))),
@@ -775,9 +766,6 @@ impl ToolBrokerHandle {
             Ok(())
         };
         let endpoint_result = remove_broker_endpoint(&self.socket_path);
-        // Keep the identity leased until both the accept task and every
-        // connection handler have drained and the accepting endpoint is gone.
-        self.identity_lease.take();
         task_result?;
         endpoint_result
     }
@@ -791,7 +779,6 @@ impl Drop for ToolBrokerHandle {
             shutdown.send_replace(true);
         }
         if let Some(mut task) = self.task.take() {
-            let identity_lease = self.identity_lease.take();
             let socket_path = self.socket_path.clone();
             if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                 runtime.spawn(async move {
@@ -800,17 +787,14 @@ impl Drop for ToolBrokerHandle {
                         let _ = task.await;
                     }
                     let _ = remove_broker_endpoint(&socket_path);
-                    drop(identity_lease);
                 });
             } else {
                 task.abort();
                 let _ = remove_broker_endpoint(&socket_path);
-                drop(identity_lease);
             }
             return;
         }
         let _ = remove_broker_endpoint(&self.socket_path);
-        self.identity_lease.take();
     }
 }
 
@@ -854,23 +838,12 @@ pub async fn start_tool_broker(
     policy: ToolPolicy,
     executor: Arc<dyn ToolExecutor>,
 ) -> Result<ToolBrokerHandle, BrokerError> {
-    ToolBrokerIdentity::new(socket_path)
-        .start(policy, executor)
-        .await
-}
-
-async fn start_tool_broker_with_identity(
-    identity: &ToolBrokerIdentity,
-    policy: ToolPolicy,
-    executor: Arc<dyn ToolExecutor>,
-) -> Result<ToolBrokerHandle, BrokerError> {
     if policy.memory_proposal_budget > MAX_MEMORY_PROPOSALS
         || (policy.propose_memory_updates && policy.memory_proposal_budget == 0)
     {
         return Err(BrokerError::Malformed);
     }
-    let identity_lease = identity.acquire()?;
-    let socket_path = identity.socket_path().clone();
+    let token = new_broker_token();
     let (shutdown, shutdown_receiver) = watch::channel(false);
     #[cfg(unix)]
     let task = {
@@ -890,7 +863,7 @@ async fn start_tool_broker_with_identity(
         }
         let listener = UnixListener::bind(&socket_path)?;
         std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))?;
-        let server_token = identity.token().to_owned();
+        let server_token = token.clone();
         let task_token = server_token.clone();
         let task_shutdown = shutdown.clone();
         let mut shutdown_receiver = shutdown_receiver;
@@ -899,10 +872,10 @@ async fn start_tool_broker_with_identity(
             let connection_slots = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
             let policy = Arc::new(policy);
             let mut handlers = FuturesUnordered::new();
-            loop {
+            let result = loop {
                 tokio::select! {
                     biased;
-                    _ = shutdown_requested(&mut shutdown_receiver) => break,
+                    _ = shutdown_requested(&mut shutdown_receiver) => break Ok(()),
                     _ = handlers.next(), if !handlers.is_empty() => {}
                     accepted = listener.accept() => match accepted {
                         Ok((stream, _)) => {
@@ -918,12 +891,16 @@ async fn start_tool_broker_with_identity(
                                 ));
                             }
                         }
-                        Err(_) => break,
+                        Err(error) => break Err(BrokerError::Io(error)),
                     },
                 }
+            };
+            if result.is_err() {
+                eprintln!("Loupist tool broker could not accept another connection");
             }
             task_shutdown.send_replace(true);
             drain_connection_handlers(&mut handlers).await;
+            result
         });
         (server_token, task)
     };
@@ -935,7 +912,7 @@ async fn start_tool_broker_with_identity(
         }
         let security = WindowsPipeSecurity::current_user_and_system()?;
         let server = create_windows_pipe_server(&socket_path, true, &security)?;
-        let server_token = identity.token().to_owned();
+        let server_token = token.clone();
         let task_token = server_token.clone();
         let task_path = socket_path.clone();
         let task_shutdown = shutdown.clone();
@@ -946,15 +923,15 @@ async fn start_tool_broker_with_identity(
             let policy = Arc::new(policy);
             let mut handlers = FuturesUnordered::new();
             let mut server = server;
-            loop {
+            let result = loop {
                 let connected = tokio::select! {
                     biased;
-                    _ = shutdown_requested(&mut shutdown_receiver) => break,
+                    _ = shutdown_requested(&mut shutdown_receiver) => break Ok(()),
                     _ = handlers.next(), if !handlers.is_empty() => continue,
                     connected = server.connect() => connected,
                 };
-                if connected.is_err() {
-                    break;
+                if let Err(error) = connected {
+                    break Err(BrokerError::Io(error));
                 }
                 let next = create_windows_pipe_server(&task_path, false, &security);
                 if let Ok(permit) = connection_slots.clone().try_acquire_owned() {
@@ -970,11 +947,15 @@ async fn start_tool_broker_with_identity(
                 }
                 match next {
                     Ok(next) => server = next,
-                    Err(_) => break,
+                    Err(error) => break Err(BrokerError::Io(error)),
                 }
+            };
+            if result.is_err() {
+                eprintln!("Loupist tool broker could not accept another connection");
             }
             task_shutdown.send_replace(true);
             drain_connection_handlers(&mut handlers).await;
+            result
         });
         (server_token, task)
     };
@@ -986,7 +967,6 @@ async fn start_tool_broker_with_identity(
         token,
         shutdown: Some(shutdown),
         task: Some(task),
-        identity_lease: Some(identity_lease),
     })
 }
 
@@ -1306,10 +1286,12 @@ async fn execute_request(
         let error = BrokerError::MethodDenied;
         (id.clone(), error)
     })?;
-    enforce_policy(policy, method).map_err(|error| (id.clone(), error))?;
     executor
         .enforce_turn_policy(method, &request.params)
         .map_err(|error| (id.clone(), error))?;
+    // A Don't-save connection explains a blocked save even when saving was
+    // already off. Both gates still run before reservation or execution.
+    enforce_policy(policy, method).map_err(|error| (id.clone(), error))?;
     let reservation = TransactionReservation::reserve(cardinality, method, policy)
         .map_err(|error| (id.clone(), error))?;
     if request.call_id.as_ref().is_some_and(|call_id| {
@@ -1354,7 +1336,7 @@ fn encode_response_or_bounded_error(
             result: None,
             error: Some(json!({
                 "code": "frame_too_large",
-                "message": "tool response exceeded the bounded broker frame",
+                "message": "The tool response exceeded the bounded broker frame.",
                 "retryable": false,
                 "next": "The result was too large. Request a smaller page or file instead of repeating this call."
             })),
@@ -1388,13 +1370,31 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 }
 
 fn error_body(error: &BrokerError) -> Value {
+    fn sentence(message: &str) -> String {
+        let message = message.trim_end();
+        if message.ends_with('.') {
+            message.to_owned()
+        } else {
+            format!("{message}.")
+        }
+    }
+    // OS errors can embed a private path. Their diagnostic details stay off
+    // the model-facing boundary.
+    let message = match error {
+        BrokerError::Io(_) => "The tool service had a temporary problem.".to_owned(),
+        _ => sentence(&error.to_string()),
+    };
+    if matches!(error, BrokerError::ConnectionDontSave) {
+        return json!({"code":"proposal_disabled", "message":message, "retryable":false,
+            "next":"", "reason":"connection_dont_save"});
+    }
     if let BrokerError::ProviderApprovalRequired {
         provider,
         services,
         next,
     } = error
     {
-        return json!({"code":"needs_approval", "message":error.to_string(), "retryable":false,
+        return json!({"code":"needs_approval", "message":message, "retryable":false,
             "next":next, "connection_id":provider, "services":services, "reason":"provider_service_approval"});
     }
     if let BrokerError::CustomApprovalRequired {
@@ -1402,24 +1402,39 @@ fn error_body(error: &BrokerError) -> Value {
         tool_name,
     } = error
     {
-        return json!({"code":"needs_approval", "message":error.to_string(), "retryable":false,
+        return json!({"code":"needs_approval", "message":message, "retryable":false,
             "next":"The user can review this connection in Settings before starting a new message.",
             "connection_id":connection_id, "tool_name":tool_name, "reason":"needs_approval"});
     }
+    if let BrokerError::CustomApprovalRefused {
+        connection_id,
+        tool_name,
+        cause,
+    } = error
+    {
+        return json!({"code":"needs_approval", "message":message, "retryable":false,
+            "next":"", "connection_id":connection_id, "tool_name":tool_name, "reason":cause.reason()});
+    }
     if let BrokerError::WithNext { source, next } = error {
         let mut body = error_body(source);
-        body["next"] = json!(next);
+        if matches!(
+            source.as_ref(),
+            BrokerError::UntrustedTextPaused | BrokerError::ProtectedPath
+        ) {
+            // A web/path refusal supplies its own cause instead of a
+            // generic pause or private-data message.
+            body["message"] = json!(sentence(next));
+            body["next"] = json!("");
+        } else {
+            body["next"] = json!(next);
+        }
         return body;
     }
     let (next, retryable) = match error {
-        BrokerError::CustomApprovalRequired { .. } | BrokerError::ProviderApprovalRequired { .. } => unreachable!("handled above"),
-        BrokerError::OutboundPaused => (crate::custom_connections::taint::OUTBOUND_REFUSAL, false),
-        BrokerError::UntrustedTextPaused => (
-            crate::custom_connections::taint::UNTRUSTED_TEXT_REFUSAL,
-            false,
-        ),
+        BrokerError::CustomApprovalRequired { .. } | BrokerError::CustomApprovalRefused { .. } | BrokerError::ProviderApprovalRequired { .. } => unreachable!("handled above"),
+        BrokerError::OutboundPaused | BrokerError::UntrustedTextPaused => ("", false),
         BrokerError::ProtectedPath => (
-            "Do not retry this path. App credentials, the database and Pi runtime files are reached only through the app's registered tools; use the workspace for files.",
+            "Use an allowed workspace file or another tool.",
             false,
         ),
         BrokerError::OutsideWorkspace => (
@@ -1427,33 +1442,20 @@ fn error_body(error: &BrokerError) -> Value {
             false,
         ),
         BrokerError::WithNext { .. } => unreachable!("handled above"),
-        BrokerError::MethodDenied => (
-            "This tool is not available. Load the capability that provides it, or use a tool that is already active.",
+        BrokerError::MethodDenied | BrokerError::MemoryDisabled | BrokerError::ProposalDisabled | BrokerError::ConnectionDontSave => ("", false),
+        BrokerError::Malformed => (
+            "Correct the request fields before calling again.",
             false,
         ),
-        BrokerError::MemoryDisabled => (
-            "Do not retry. Use the conversation and attached context, or tell the user Memory needs to be on.",
-            false,
-        ),
-        BrokerError::ProposalDisabled => (
-            "Do not retry the save. Finish from the conversation, or tell the user saving needs to be on.",
-            false,
-        ),
-        BrokerError::Malformed | BrokerError::InvalidArguments { .. } => (
-            "The arguments did not match the tool schema. Correct them before calling again.",
-            false,
-        ),
+        BrokerError::InvalidArguments { .. } => ("", false),
         BrokerError::FrameTooLarge => (
             "The result was too large. Request a smaller page or file instead of repeating this call.",
             false,
         ),
-        BrokerError::BudgetExceeded => (
-            "This turn has used its limit. Do not retry. Finish with what is already available.",
-            false,
-        ),
+        BrokerError::BudgetExceeded { .. } => ("", false),
         BrokerError::Authentication => ("The tool request was rejected. Do not retry it.", false),
         BrokerError::Io(_) => (
-            "The tool service had a temporary problem. One changed attempt is reasonable; do not loop on the same call.",
+            "One changed attempt is reasonable; do not loop on the same call.",
             true,
         ),
         BrokerError::Execution(_) => (
@@ -1467,7 +1469,7 @@ fn error_body(error: &BrokerError) -> Value {
     };
     json!({
         "code": error_code(error),
-        "message": error.to_string(),
+        "message": message,
         "retryable": retryable,
         "next": next,
     })
@@ -1497,10 +1499,12 @@ fn error_code(error: &BrokerError) -> &'static str {
         BrokerError::ProtectedPath => "protected_path",
         BrokerError::OutsideWorkspace => "outside_workspace",
         BrokerError::CustomApprovalRequired { .. } => "needs_approval",
+        BrokerError::CustomApprovalRefused { .. } => "needs_approval",
         BrokerError::ProviderApprovalRequired { .. } => "needs_approval",
         BrokerError::MethodDenied => "method_denied",
         BrokerError::MemoryDisabled => "memory_disabled",
         BrokerError::ProposalDisabled => "proposal_disabled",
+        BrokerError::ConnectionDontSave => "proposal_disabled",
         BrokerError::Authentication => "authentication_failed",
         BrokerError::FrameTooLarge => "frame_too_large",
         BrokerError::InvalidArguments { expected, .. } => {
@@ -1510,7 +1514,7 @@ fn error_code(error: &BrokerError) -> &'static str {
         BrokerError::WithNext { source, .. } => error_code(source),
         BrokerError::Execution(message) => as_of_code(message).unwrap_or("execution_failed"),
         BrokerError::Offline(_) => "offline",
-        BrokerError::BudgetExceeded => "transaction_limit",
+        BrokerError::BudgetExceeded { .. } => "transaction_limit",
         BrokerError::Io(_) => "io_failed",
     }
 }

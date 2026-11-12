@@ -56,10 +56,14 @@ Users can add their own MCP data sources under Settings → Connections → Your
   when the product client URL is configured (otherwise Dynamic Client Registration or a user-supplied client ID),
   PKCE, the `resource` parameter, exact issuer validation, refresh, and step-up. Tokens, secrets, headers and env
   values live in the OS keyring and never reach the renderer, logs, traces or the model; tool results are scrubbed of
-  protected values. Token rotation retains the newest 256 distinct retired secret values for that scan; the history never prevents refresh.
+  protected values. Token rotation and client-registration replacement retain the newest 256 distinct retired secret values for that scan; the history never prevents refresh.
+  Header and environment values shorter than eight characters are ordinary settings unless their name contains
+  token, key, secret, password, auth, cookie or credential (case-insensitive). OAuth tokens and client secrets
+  remain protected at every length. Numeric and boolean echoes in structured results are checked too.
   Remote connections cannot discover loopback or unspecified-address OAuth URLs; explicitly local connections may use local authorization.
   A supplied client ID takes precedence over dynamic registration, and browser preconnects or unrelated callback
   requests do not consume the sign-in attempt; an unused preconnect closes without an HTTP reply.
+  The callback accepts only the exact loopback listener's Host header and `/callback` path.
   Stopped, expired or failed transports are discarded so the next attempt starts a fresh transport, while live
   server rejections and result-validation failures keep the session; removing a connection also deletes its private command working files.
 - **Tools:** only tools annotated read-only and not destructive are eligible, and names or descriptions matching
@@ -67,15 +71,20 @@ Users can add their own MCP data sources under Settings → Connections → Your
   descriptions use whole English words and Korean action forms so research terms remain eligible.
   The user approves each eligible tool per Loupist when adding the
   connection (Allow or Don't allow); the approval is pinned to a hash of the tool definition, and a changed
-  definition revokes it and flags the connection for review. Unapproved calls are refused with `needs_approval` and
+  definition (including title, output schema and metadata) revokes it and flags the connection for review. Unapproved calls are refused with `needs_approval` and
   linked from the answer. The model sees host-generated, sanitized tool descriptions; the raw server description is
   shown only to the user. HTTP call results use the same strict result fields as local commands; all custom content
   and server metadata reach the model inside untrusted delimiters.
+  Expanding the definition hash requires one new review of approvals saved by builds that hashed fewer fields.
 - **Outbound block:** after a custom tool result enters a turn, Rust marks the turn tainted, and outbound-capable
   tools (web, browser, other connections, every native data read that reaches its provider, keyless World Bank and
   DefiLlama included, and schedule changes) are refused for the rest of that turn. `run_python` stays allowed.
 - **Memory:** "Don't save results to Memory" is on by default per connection. When it is on and the connection
   taints a turn, that turn writes no Memory; otherwise Sources and Map nodes carry their connection origin.
+  A refused save names that connection policy as its cause, even when Chat saving is also off; it never suggests
+  enabling saving to bypass the connection's choice. Tool refusals distinguish a declined approval card, an
+  unanswered card and missing standing approval in an unattended run. Outside-text pauses invite the user to ask
+  for the paused schedule or connection action in their next message, and outbound-pause guidance is sent once.
 - **Unattended runs:** briefings and scheduled runs may call only Always-approved read-only custom tools.
   Custom-enabled turns start a cold Pi session.
 

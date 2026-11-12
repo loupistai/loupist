@@ -661,13 +661,14 @@ async fn start_turn(
     (broker, socket)
 }
 
-fn refused_with(response: &Value, next: &str) {
+fn refused_with(response: &Value, message: &str) {
     assert_eq!(response["ok"], false, "{response}");
     assert_eq!(
         response["error"]["code"], "untrusted_text_paused",
         "{response}"
     );
-    assert_eq!(response["error"]["next"], next, "{response}");
+    assert_eq!(response["error"]["message"], message, "{response}");
+    assert_eq!(response["error"]["next"], "", "{response}");
 }
 
 #[tokio::test]

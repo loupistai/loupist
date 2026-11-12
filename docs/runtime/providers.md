@@ -80,6 +80,14 @@ returns the provider's models itself, so Settings starts no model load while the
 connect sheet is open, and a card that cannot load its models shows localized text
 (a busy load reads "Another account change is still finishing") with Reload models,
 never the backend's English error.
+Removing a custom endpoint always deletes its card and status row, even when saved model choices still name it.
+Startup also removes status rows left by older builds for custom endpoints absent from `models.json`.
+Once sign-in is stored, a closed renderer event channel does not fail the completed connection.
+Progress and completion messages use host copy, never provider-supplied prose that might contain a credential.
+Pi persists rotated OAuth credentials before returning them; model discovery adopts that durable generation
+under its support lease so rotation does not reject or immediately invalidate the new catalog.
+Private support request and result files are removed on every normal exit, including errors; startup removes
+files left by an interrupted process before another support operation starts.
 
 While a provider needs reconnect or carries a notice, World processing and method
 learning wait on it. Background inference records its outcomes too: Pi passes the
@@ -88,6 +96,9 @@ classification, and a completed call clears the hold. For a plan limit or out of
 credit, one background attempt per 30-minute window
 (`PROBE_WINDOW_MS`, claimed once in `provider_probe`) lets an account that
 recovered on its own clear; a reconnect or an ineligible plan waits for the user.
+An in-process permit excludes concurrent probes. Preparation, runtime launch failure, cancellation before
+dispatch and a confirmed `not_sent` result leave the window available; a completed or uncertain dispatch
+spends it when its outcome is consumed.
 
 The composer’s Auto tooltip describes admission-time resolution rather than displaying the last answer’s model. Its explicit per-Loupist message override is session state; a saved Chat default remains host state.
 

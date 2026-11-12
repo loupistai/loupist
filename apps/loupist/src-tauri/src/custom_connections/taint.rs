@@ -19,7 +19,7 @@ use crate::{
 };
 
 pub const OUTBOUND_REFUSAL: &str = "Outbound access is paused for this turn because it read content from a custom connection. The user can ask again in a new message.";
-pub const UNTRUSTED_TEXT_REFUSAL: &str = "This reply read third-party text, so custom connections and schedule changes stay paused for the rest of this reply. Do not retry a paused call this reply and do not ask the user to send a new message to unlock it. Keep working with reads, workspace file tools, Python, web_search, web_fetch of search results and sites this reply already read, datasets, charts, Memory and market data.";
+pub const UNTRUSTED_TEXT_REFUSAL: &str = "This reply read outside text, so schedule changes and custom connections are paused until it ends. Do not retry here. Finish the answer and tell the user they can ask for this in their next message.";
 /// A native file tool aimed outside the Loupist folder, scratch and this
 /// Chat's attachments.
 pub const OUTSIDE_WORKSPACE_REFUSAL: &str = "This path is outside the Loupist folder, so native file tools do not touch it. Ask the user to attach the file to this chat or copy it into the Loupist folder, then work with that copy. Do not retry the outside path.";
@@ -30,7 +30,7 @@ pub const WEB_FETCH_SITE_REFUSAL: &str = "After third-party text, this reply ope
 /// An instruction or Skill write after third-party text.
 pub const INSTRUCTION_WRITE_REFUSAL: &str = "This file becomes instructions on later replies, and this reply read third-party text, so it is not written. Instruction and Skill writes stay paused for the rest of this reply; other workspace writes still work. Do not retry it this reply and do not ask the user to send a new message to unlock it.";
 /// A write to a hard-linked file after third-party text.
-pub const HARD_LINK_WRITE_REFUSAL: &str = "This file has another name on disk (a hard link), which can be a file a later reply loads as instructions, and this reply read third-party text, so it is not written. Write a new file instead. Do not retry this path this reply and do not ask the user to send a new message to unlock it.";
+pub const HARD_LINK_WRITE_REFUSAL: &str = "This file has another name on disk and is not touched.";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -272,7 +272,7 @@ impl TurnTaint {
             return Err(BrokerError::UntrustedTextPaused);
         }
         if self.memory_blocked() && method.safety().memory.refused_after_dont_save() {
-            return Err(BrokerError::ProposalDisabled);
+            return Err(BrokerError::ConnectionDontSave);
         }
         Ok(())
     }
@@ -926,7 +926,7 @@ mod tests {
             .is_ok());
         assert!(matches!(
             taint.enforce(ToolMethod::SourceSave, &json!({})),
-            Err(BrokerError::ProposalDisabled)
+            Err(BrokerError::ConnectionDontSave)
         ));
         assert!(taint.memory_blocked());
         taint.mark("custom-test", "Private source", false);

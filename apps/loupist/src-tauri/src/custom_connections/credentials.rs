@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::{
     auth::{AuthorizationMetadata, Registration, Tokens},
@@ -22,9 +23,10 @@ pub(crate) struct Secrets {
 impl Secrets {
     pub fn protected_values(&self) -> Vec<String> {
         self.headers
-            .values()
-            .chain(self.env.values())
-            .cloned()
+            .iter()
+            .chain(self.env.iter())
+            .filter(|(name, value)| protected_setting(name, value))
+            .map(|(_, value)| value.clone())
             .chain(
                 self.registration
                     .iter()
@@ -54,6 +56,44 @@ impl Secrets {
             }),
         );
     }
+
+    pub fn replace_registration(&mut self, registration: Registration) {
+        let previous = self.registration.replace(registration);
+        self.retire_values(previous.into_iter().filter_map(|entry| entry.client_secret));
+    }
+}
+
+/// Ordinary short settings (ports, locales, flags) are not secret substrings.
+/// Secret-bearing names and OAuth credentials remain protected at every length.
+fn protected_setting(name: &str, value: &str) -> bool {
+    value.chars().count() >= 8
+        || [
+            "token",
+            "key",
+            "secret",
+            "password",
+            "auth",
+            "cookie",
+            "credential",
+        ]
+        .iter()
+        .any(|marker| name.to_ascii_lowercase().contains(marker))
+}
+
+/// A custom peer can echo a numeric or boolean credential as a JSON scalar.
+/// Keep the shared string/key scan and also cover those scalar representations.
+pub(super) fn contains_protected_value(value: &Value, protected: &[String]) -> bool {
+    fn scalar(value: &Value, protected: &[String]) -> bool {
+        match value {
+            Value::Number(_) | Value::Bool(_) => {
+                crate::mcp::contains_protected_value(&Value::String(value.to_string()), protected)
+            }
+            Value::Array(values) => values.iter().any(|value| scalar(value, protected)),
+            Value::Object(values) => values.values().any(|value| scalar(value, protected)),
+            _ => false,
+        }
+    }
+    crate::mcp::contains_protected_value(value, protected) || scalar(value, protected)
 }
 
 #[cfg(all(
@@ -160,6 +200,51 @@ pub(super) fn remove(environment: &str, id: &str) -> Result<(), ConnectionError>
 mod tests {
     use super::*;
 
+    #[test]
+    fn short_settings_do_not_hide_ordinary_results_but_secret_names_always_do() {
+        for name in ["PORT", "locale", "CONTENT-TYPE", "mode", "X-Request-Id"] {
+            for value in ["3000", "en-US", "true", "1234567", "한글설정값"] {
+                let secrets = Secrets {
+                    headers: BTreeMap::from([(name.into(), value.into())]),
+                    env: BTreeMap::from([(name.into(), value.into())]),
+                    ..Default::default()
+                };
+                assert!(secrets.protected_values().is_empty(), "{name}");
+            }
+            assert!(protected_setting(name, "12345678"), "{name}");
+        }
+        for name in [
+            "TOKEN",
+            "api_key",
+            "clientSecret",
+            "PASSWORD",
+            "Authorization",
+            "Cookie",
+            "X-Credential",
+            "monkey",
+            "x-auth-header",
+        ] {
+            for value in ["x", "3000", "1234567", "12345678"] {
+                assert!(protected_setting(name, value), "{name}");
+            }
+        }
+        let mut secrets = Secrets {
+            registration: Some(Registration {
+                issuer: "https://issuer.example".into(),
+                client_id: "fixture".into(),
+                client_secret: Some("c".into()),
+                token_endpoint_auth_method: "client_secret_post".into(),
+                dynamically_registered: false,
+            }),
+            ..Default::default()
+        };
+        secrets.replace_tokens(tokens(1, "r"));
+        secrets.replace_tokens(tokens(2, "s"));
+        assert!(secrets.protected_values().contains(&"r".into()));
+        assert!(secrets.protected_values().contains(&"s".into()));
+        assert!(secrets.protected_values().contains(&"c".into()));
+    }
+
     fn tokens(index: usize, refresh: &str) -> Tokens {
         Tokens {
             resource: "https://fixture.example/mcp".into(),
@@ -168,6 +253,32 @@ mod tests {
             refresh_token: Some(refresh.into()),
             scopes: Default::default(),
         }
+    }
+
+    #[test]
+    fn replacing_a_client_registration_keeps_its_retired_secret_protected() {
+        let mut secrets = Secrets::default();
+        for secret in ["old-client-secret", "new-client-secret"] {
+            secrets.replace_registration(Registration {
+                issuer: "https://issuer.example".into(),
+                client_id: "fixture-client".into(),
+                client_secret: Some(secret.into()),
+                token_endpoint_auth_method: "client_secret_post".into(),
+                dynamically_registered: false,
+            });
+        }
+        let encoded = serde_json::to_vec(&secrets).unwrap();
+        let reloaded: Secrets = serde_json::from_slice(&encoded).unwrap();
+        for secret in ["old-client-secret", "new-client-secret"] {
+            assert!(contains_protected_value(
+                &serde_json::json!({"content":secret}),
+                &reloaded.protected_values()
+            ));
+        }
+        assert_eq!(
+            reloaded.registration.unwrap().client_secret.as_deref(),
+            Some("new-client-secret")
+        );
     }
 
     #[test]

@@ -449,15 +449,7 @@ pub async fn provider_connect(
         &request.provider,
         Trigger::Connected(CredentialKind::Plan),
     );
-    send_event(
-        &on_event,
-        ProviderConnectionEvent::Connected {
-            message: format!(
-                "{} is connected. Pi's available models are ready for Loupist runs.",
-                provider.label
-            ),
-        },
-    )?;
+    notify_connected(&on_event, provider.label);
     let result = discover_provider_models(&state, &request.provider, &admission).await;
     drop(admission);
     state.graph.wake();
@@ -738,16 +730,21 @@ pub async fn provider_custom_remove(
             ));
         }
     }
-    record_status(
-        &state,
-        &request.provider,
-        Trigger::Disconnected(status::used_by(&state, &request.provider)),
-    );
-    custom::remove(&agent_dir, &request.provider)?;
-    state.replace_provider_models(&request.provider, Vec::new())?;
+    remove_custom_provider_state(&state, &request.provider)?;
     drop(admission);
     state.graph.wake();
     state.model_catalog_view()
+}
+
+fn remove_custom_provider_state(state: &AppState, provider: &str) -> Result<(), CommandError> {
+    custom::remove(&state.pi_agent_data_dir()?, provider)?;
+    // A removed endpoint has no card, even when a saved model choice still
+    // names it. Retaining a Disconnected row would resurrect a removed account.
+    state
+        .store
+        .provider_status_delete(provider)
+        .map_err(|error| CommandError::internal(error.to_string()))?;
+    state.replace_provider_models(provider, Vec::new())
 }
 
 fn provider_option(provider: &str) -> Result<ModelProviderOption, CommandError> {
@@ -788,12 +785,13 @@ async fn discover_provider_models(
     }
     // A ChatGPT sign-in lists what the plan offers (`GET /v1/models`); the
     // extension falls back to Pi's catalog when that call fails.
+    let was_oauth = crate::providers::catalog::provider_credential_kind(&agent_data_dir, provider)?
+        .as_deref()
+        == Some("oauth");
     let live = crate::providers::manifest::spec(provider)
         .and_then(|spec| spec.sign_in.as_ref())
         .is_some_and(|sign_in| sign_in.live_models)
-        && crate::providers::catalog::provider_credential_kind(&agent_data_dir, provider)?
-            .as_deref()
-            == Some("oauth");
+        && was_oauth;
     let result = run_support_command(
         state,
         format!(
@@ -817,16 +815,46 @@ async fn discover_provider_models(
         .into_iter()
         .map(|model| configured_model(provider, model))
         .collect::<Result<Vec<_>, _>>()?;
-    let current_generation = provider_credential_generation(&agent_data_dir, provider)?;
-    publish_provider_models(
+    publish_discovered_provider_models(
         state,
         provider,
         models,
         &credential_generation,
-        current_generation.as_deref(),
+        was_oauth,
         admission,
     )?;
     state.model_catalog_view()
+}
+
+fn publish_discovered_provider_models(
+    state: &AppState,
+    provider: &str,
+    models: Vec<ConfiguredModel>,
+    initial_generation: &str,
+    was_oauth: bool,
+    admission: &ProviderSupportLease,
+) -> Result<(), CommandError> {
+    let agent_data_dir = state.pi_agent_data_dir()?;
+    let current_generation = provider_credential_generation(&agent_data_dir, provider)?;
+    // The support lease excludes host credential mutations. Pi persists OAuth
+    // refresh (including a rotated refresh token) before returning auth. Adopt
+    // that durable generation so a successful discovery is usable immediately.
+    let remains_oauth =
+        crate::providers::catalog::provider_credential_kind(&agent_data_dir, provider)?.as_deref()
+            == Some("oauth");
+    let expected = if was_oauth && remains_oauth {
+        current_generation.as_deref().unwrap_or(initial_generation)
+    } else {
+        initial_generation
+    };
+    publish_provider_models(
+        state,
+        provider,
+        models,
+        expected,
+        current_generation.as_deref(),
+        admission,
+    )
 }
 
 fn publish_provider_models(
@@ -1054,14 +1082,54 @@ fn create_support_files(app_data_dir: &Path) -> Result<SupportFiles, CommandErro
     let directory = root.join(Uuid::new_v4().simple().to_string());
     create_private_directory(&directory)
         .map_err(|error| CommandError::internal(error.to_string()))?;
-    let result = directory.join("result.json");
-    ensure_private_regular_file(&result)
-        .map_err(|error| CommandError::internal(error.to_string()))?;
-    Ok(SupportFiles {
+    let files = SupportFiles {
+        result: directory.join("result.json"),
         directory,
-        result,
         request: None,
-    })
+    };
+    ensure_private_regular_file(&files.result)
+        .map_err(|error| CommandError::internal(error.to_string()))?;
+    Ok(files)
+}
+
+/// Startup recovery, before any support operation can own one of these files.
+/// Unlink only our two known files in UUID directories; never follow a symlink.
+pub(crate) fn cleanup_support_files(app_data_dir: &Path) -> std::io::Result<()> {
+    let root = app_data_dir.join("provider-support");
+    let entries = match std::fs::read_dir(&root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    // A forged root cannot redirect cleanup outside the private app directory.
+    if !std::fs::symlink_metadata(&root)?.file_type().is_dir() {
+        return Err(std::io::Error::other("invalid provider support directory"));
+    }
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if name.len() != 32
+            || !name.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || !entry.file_type()?.is_dir()
+        {
+            continue;
+        }
+        for file in ["request.json", "result.json"] {
+            match std::fs::remove_file(entry.path().join(file)) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        }
+        // Preserve unexpected contents, rather than recursively deleting them.
+        match std::fs::remove_dir(entry.path()) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn create_search_support_files(
@@ -1069,9 +1137,9 @@ pub(crate) fn create_search_support_files(
 ) -> Result<SupportFiles, CommandError> {
     let mut files = create_support_files(app_data_dir)?;
     let request = files.directory.join("request.json");
-    ensure_private_regular_file(&request)
-        .map_err(|error| CommandError::internal(error.to_string()))?;
     files.request = Some(request);
+    ensure_private_regular_file(files.request.as_ref().unwrap())
+        .map_err(|error| CommandError::internal(error.to_string()))?;
     Ok(files)
 }
 
@@ -1522,17 +1590,21 @@ fn handle_provider_event(
             Ok(())
         }
         ExtensionProviderEvent::Progress { message } => {
+            let _ = message;
             if let Some(session) = oauth {
-                send_event(session.events, ProviderConnectionEvent::Waiting { message })?;
+                send_event(
+                    session.events,
+                    ProviderConnectionEvent::Waiting {
+                        message: "Waiting for the provider to finish signing in.".into(),
+                    },
+                )?;
             }
             Ok(())
         }
         ExtensionProviderEvent::Connected { message } => {
+            let _ = message;
             if let Some(session) = oauth {
-                send_event(
-                    session.events,
-                    ProviderConnectionEvent::Connected { message },
-                )?;
+                notify_connected(session.events, provider_option(session.provider)?.label);
             }
             Ok(())
         }
@@ -1577,6 +1649,18 @@ fn send_event(
         .map_err(|_| CommandError::internal("provider setup event delivery failed"))
 }
 
+fn notify_connected(channel: &Channel<ProviderConnectionEvent>, label: &str) {
+    // The credential is already durable. A closed renderer cannot undo sign-in.
+    let _ = send_event(
+        channel,
+        ProviderConnectionEvent::Connected {
+            message: format!(
+                "{label} is connected. Pi's available models are ready for Loupist runs."
+            ),
+        },
+    );
+}
+
 /// Discover through Pi's existing provider extension; the harness never opens auth files.
 #[cfg(feature = "eval-harness")]
 pub(crate) async fn eval_models(
@@ -1610,6 +1694,79 @@ pub(crate) async fn eval_models(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stored_sign_in_does_not_fail_when_its_renderer_channel_is_closed() {
+        let channel = Channel::new(|_| Err(std::io::Error::other("renderer closed").into()));
+        notify_connected(&channel, "Fixture");
+    }
+
+    #[tokio::test]
+    async fn oauth_status_prose_cannot_leak_a_token_and_stored_sign_in_ignores_delivery_failure() {
+        let coordinator = crate::providers::support::ProviderSupportCoordinator::default();
+        let admission = coordinator.acquire_oauth().await.unwrap();
+        let (channel, events) = capture_channel();
+        let (answers, _pasted) = tokio::sync::mpsc::unbounded_channel();
+        let mut session = OAuthSession {
+            provider: "openai",
+            events: &channel,
+            answers,
+            failure: Mutex::new(None),
+        };
+        for kind in ["progress", "connected"] {
+            let event = provider_event(&notify(serde_json::json!({"type":kind,"message":"Authorization: Bearer private-fixture-token"}))).unwrap().unwrap();
+            handle_provider_event(event, Some(&session), &admission).unwrap();
+        }
+        let observed = serde_json::to_string(&*events.lock().unwrap()).unwrap();
+        assert!(!observed.contains("private-fixture-token"));
+        assert!(observed.contains("waiting"));
+        assert!(observed.contains("connected"));
+        let closed = Channel::new(|_| Err(std::io::Error::other("renderer closed").into()));
+        session.events = &closed;
+        handle_provider_event(
+            ExtensionProviderEvent::Connected {
+                message: "stored".into(),
+            },
+            Some(&session),
+            &admission,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn support_requests_are_removed_on_drop_and_recovered_after_a_crash() {
+        let root = tempfile::tempdir().unwrap();
+        let files = create_search_support_files(root.path()).unwrap();
+        let directory = files.directory.clone();
+        std::fs::write(files.request.as_ref().unwrap(), b"private request").unwrap();
+        drop(files);
+        assert!(!directory.exists());
+        let files = create_search_support_files(root.path()).unwrap();
+        let directory = files.directory.clone();
+        std::fs::write(files.request.as_ref().unwrap(), b"interrupted request").unwrap();
+        std::mem::forget(files); // Simulate a process exit that skipped destructors.
+        cleanup_support_files(root.path()).unwrap();
+        assert!(!directory.exists());
+        cleanup_support_files(root.path()).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn request_recovery_does_not_follow_directory_symlinks_or_remove_unrelated_files() {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let support = root.path().join("provider-support");
+        std::fs::create_dir(&support).unwrap();
+        let request = external.path().join("request.json");
+        std::fs::write(&request, b"keep").unwrap();
+        std::os::unix::fs::symlink(external.path(), support.join("a".repeat(32))).unwrap();
+        let unrelated = support.join("not-a-support-run");
+        std::fs::create_dir(&unrelated).unwrap();
+        std::fs::write(unrelated.join("request.json"), b"keep").unwrap();
+        cleanup_support_files(root.path()).unwrap();
+        assert_eq!(std::fs::read(&request).unwrap(), b"keep");
+        assert!(unrelated.join("request.json").exists());
+    }
 
     #[test]
     fn authorization_urls_are_locked_to_cataloged_oauth_hosts() {
@@ -1824,6 +1981,117 @@ mod tests {
         assert_eq!(
             custom_key_to_store(None, Some(old), old, false),
             Some(custom::NO_KEY)
+        );
+    }
+
+    #[test]
+    fn removing_an_endpoint_deletes_its_status_even_when_a_saved_model_still_uses_it() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        let agent = state.pi_agent_data_dir().unwrap();
+        let provider = custom::CustomProvider {
+            id: "custom-removal-fixture".into(),
+            name: "Fixture".into(),
+            base_url: "https://models.example/v1".into(),
+            api: "openai-completions".into(),
+            model_ids: vec!["fixture-model".into()],
+        };
+        custom::write(&agent, &provider).unwrap();
+        let scope = crate::scoped_config::ConfigScope::Global;
+        let snapshot =
+            crate::scoped_config::read_scope(&state.artifacts.app_data_dir, None, scope.clone())
+                .unwrap();
+        crate::scoped_config::update_scope(&state.artifacts.app_data_dir, None,
+            &crate::scoped_config::ConfigUpdateRequest {
+                scope, expected_revision: snapshot.revision,
+                set: serde_json::from_value(serde_json::json!({"chat":{"model_profile_id":format!("{}/fixture-model", provider.id)}})).unwrap(),
+                unset: vec![],
+            }).unwrap();
+        assert!(status::used_by(&state, &provider.id).chat_default);
+        status::record(
+            &state,
+            &provider.id,
+            Trigger::Connected(CredentialKind::Custom),
+        )
+        .unwrap();
+        status::record(
+            &state,
+            &provider.id,
+            Trigger::Disconnected(status::used_by(&state, &provider.id)),
+        )
+        .unwrap();
+        assert!(status::load(&state, &provider.id).unwrap().is_some());
+        remove_custom_provider_state(&state, &provider.id).unwrap();
+        assert!(status::load(&state, &provider.id).unwrap().is_none());
+        assert!(custom::find(&agent, &provider.id).unwrap().is_none());
+        assert!(!state
+            .model_catalog_view()
+            .unwrap()
+            .custom_providers
+            .iter()
+            .any(|card| card.id == provider.id));
+    }
+
+    #[tokio::test]
+    async fn discovery_accepts_a_durably_rotated_oauth_token_and_caches_the_new_generation() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        // A fixture provider has no ambient credential environment variable.
+        let provider = "custom-rotation-fixture";
+        let mut model = discovery_model("Fresh");
+        model.provider = provider.into();
+        model.id = format!("{provider}/{}", model.model);
+        let agent_dir = state.pi_agent_data_dir().unwrap();
+        let auth = agent_dir.join("auth.json");
+        ensure_private_regular_file(&auth).unwrap();
+        let save = |credential: Value| {
+            let mut saved = serde_json::json!({});
+            saved[provider] = credential;
+            std::fs::write(&auth, serde_json::to_vec(&saved).unwrap()).unwrap();
+        };
+        let oauth = |refresh: &str| serde_json::json!({"type":"oauth","access":"fixture-access","refresh":refresh,"expires":1900000000000_u64});
+        save(oauth("initial-refresh"));
+        let generation = provider_credential_generation(&agent_dir, provider)
+            .unwrap()
+            .unwrap();
+        let admission = state.provider_support.try_acquire_discovery().unwrap();
+        save(oauth("rotated-refresh")); // Pi persisted the refresh before returning its catalog.
+        publish_discovered_provider_models(
+            &state,
+            provider,
+            vec![model.clone()],
+            &generation,
+            true,
+            &admission,
+        )
+        .unwrap();
+        let rotated = provider_credential_generation(&agent_dir, provider)
+            .unwrap()
+            .unwrap();
+        assert_ne!(generation, rotated);
+        assert!(state.provider_model_cache.is_fresh(provider, &rotated));
+        let published: Vec<_> = state
+            .model_catalog()
+            .unwrap()
+            .models
+            .into_iter()
+            .filter(|entry| entry.provider == provider)
+            .collect();
+        assert_eq!(published, vec![model]);
+        // A credential type change remains a conflict.
+        save(serde_json::json!({"type":"api_key","key":"replacement-key"}));
+        assert_eq!(
+            publish_discovered_provider_models(
+                &state,
+                provider,
+                vec![],
+                &generation,
+                true,
+                &admission
+            )
+            .unwrap_err()
+            .code,
+            "conflict"
         );
     }
 
