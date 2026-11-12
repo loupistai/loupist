@@ -11,7 +11,7 @@ import { createWebdriverHelpers } from "./webdriver-helpers.mjs";
 import { collectWorkProgress } from "./work-progress.mjs";
 import { focusNativeWindow } from "./native-window-focus.mjs";
 import { assertPresetSelection, livePreset } from "./live-preset.mjs";
-import { thinkingLabel } from "../src/thinking-labels.mjs";
+import { thinkingLabel } from "./thinking-labels.mjs";
 import {
   coldStartMark,
   dialogByTitle,
@@ -84,7 +84,7 @@ const report = {
   selectedJourneys: selectedJourneys.size === 0 ? "all" : [...selectedJourneys],
   mode: process.env.LOUPIST_E2E_ALLOW_UNFOCUSED === "1" ? "webview-only" : "focused-native",
   credential: localProviderJourney ? "local-stand-in" : "pre-provisioned",
-  modelId: localProviderJourney ? "local-test-model" : "openai-codex/gpt-6.1-sol",
+  modelId: localProviderJourney ? "local-test-model" : preset.modelId,
   modelLabel: localProviderJourney ? "local-test-model" : preset.modelLabel,
   effort: localProviderJourney ? null : preset.effort,
   journeys: {},

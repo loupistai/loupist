@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 
 /**
  * Read actual legend geometry. Text presence alone misses a collapsed heading.
@@ -46,57 +45,4 @@ export async function assertFormLegendsFit(browser, { selector = "fieldset", min
       `Form heading collapsed instead of using the available width: ${JSON.stringify(legend)}`);
   }
   return legends;
-}
-
-/** Reproduce the former DOM/CSS in the actual WebKit, then reload the fixed component. */
-export async function verifyNativeToneLayoutFix(browser, devUrl, { beforePath, afterPath } = {}) {
-  const target = new URL("preview.html", `${String(devUrl).replace(/\/$/, "")}/`);
-  target.search = new URLSearchParams({ scenario: "onboarding-loupist-tone", locale: "ko", theme: "dark" }).toString();
-  const ready = async () => {
-    // A new URL prevents the previous document's ready marker from satisfying
-    // the wait while WKWebView is still scheduling its navigation.
-    target.searchParams.set("probe", randomUUID());
-    await browser.url(target.href);
-    await browser.waitUntil(() => browser.execute((expected) =>
-      location.href === expected && document.documentElement.dataset.previewReady === "true", target.href), {
-      timeout: 30_000, interval: 100, timeoutMsg: "Native tone preview did not become ready",
-    });
-    await browser.execute(() => {
-      const style = document.createElement("style");
-      style.textContent = "*,*::before,*::after{animation-duration:0s!important;transition-duration:0s!important;scroll-behavior:auto!important}";
-      document.head.append(style);
-    });
-    await browser.waitUntil(() => browser.execute(() => {
-      const field = document.querySelector('main[data-onboarding="4"] [data-loupist-tone]');
-      return field && field.getBoundingClientRect().height > 0;
-    }), { timeout: 5_000, interval: 100 });
-    await browser.pause(250);
-  };
-  await ready();
-  const fixedBefore = await assertFormLegendsFit(browser, { selector: "[data-loupist-tone]" });
-  let before;
-  try {
-    await browser.execute(() => {
-      const field = document.querySelector("[data-loupist-tone]");
-      const options = field.querySelector("[data-testid=loupist-tone-options]");
-      while (options.firstChild) field.insertBefore(options.firstChild, options);
-      options.remove();
-      field.style.display = "grid";
-      field.style.gap = "var(--gg-space-2)";
-      const legend = field.querySelector("legend");
-      legend.style.width = "auto";
-      legend.style.lineHeight = "normal";
-      legend.style.overflowWrap = "normal";
-      legend.scrollIntoView({ block: "center", behavior: "instant" });
-    });
-    before = await browser.execute(formLegendLayout, "[data-loupist-tone]");
-    if (beforePath) await browser.saveScreenshot(beforePath);
-  } finally {
-    await ready();
-  }
-  const after = await assertFormLegendsFit(browser, { selector: "[data-loupist-tone]" });
-  if (afterPath) await browser.saveScreenshot(afterPath);
-  const reproduced = before.some((legend) => legend.width + 2 < legend.requiredWidth);
-  assert.ok(reproduced, `The old layout did not reproduce a collapsed heading in this WebKit: ${JSON.stringify(before)}`);
-  return { reproduced, before, after, fixedBefore };
 }
