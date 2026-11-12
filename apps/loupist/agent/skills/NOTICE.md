@@ -43,9 +43,8 @@ the Korean statements reference are original Loupist instructions; they adapt
 no upstream material.
 
 
-The Skill Creator and Skill Installer workflows adapt OpenAI's public
-[Skill Creator](https://github.com/openai/skills/tree/main/skills/.system/skill-creator)
-and [Skill Installer](https://github.com/openai/skills/tree/main/skills/.system/skill-installer).
-Their Apache-2.0 licenses are retained in each local skill folder. Loupist
+The Skill Creator workflow adapts OpenAI's public
+[Skill Creator](https://github.com/openai/skills/tree/main/skills/.system/skill-creator).
+Its Apache-2.0 license is retained in its local skill folder. Loupist
 modifies destinations, host scope, validation, next-turn discovery, and Memory
 boundaries; Codex-specific configuration and installer helpers are not bundled.

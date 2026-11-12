@@ -14,8 +14,9 @@ only), `why-it-moved` (the measured move beside the market, reported reasons, th
 Loupist's labelled reading and what isn't explained) and `goal-math` (`goal_grid` over
 several rates or `dca_history`, using only the numbers the user gives). The `filings`
 Skill's `references/korea-statements.md` sets statement basis, periods and the Korean
-disclosure and flow reads for KRX companies. Skill Creator and Skill Installer start
-off in every scope until the user turns them on. The included catalog in
+disclosure and flow reads for KRX companies. Skill Creator starts off in every
+scope until the user turns it on. Skill Installer is not bundled: Settings imports
+Skills without a model. The included catalog in
 `src-tauri/src/agent_harness.rs` is authoritative. Optional/custom Skills use scoped TOML enablement; see
 [Scoped configuration](../runtime/storage-authority.md#scoped-configuration).
 
@@ -30,7 +31,8 @@ They do not provide an office renderer, OCR, format conversion or spreadsheet
 formula recalculation; bundled figure/PDF fonts do not cover Korean, Japanese or
 Chinese. Citable input-file figures require an attachment/capture, rather than
 Python extraction. The Word Skill id differs from `documents`, the Markdown
-publishing capability.
+publishing capability. Settings owns imports; no model Skill downloads or installs
+instructions.
 
 Settings → Skills offers search/filter, instruction/file details, toggles, reset,
 owned-skill create/edit/delete and import. Personal Skills live at global

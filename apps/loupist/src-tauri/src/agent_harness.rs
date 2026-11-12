@@ -122,17 +122,6 @@ const SELECTABLE_SKILLS: &[BundledSkill] = &[
             include_bytes!("../../agent/skills/skill-creator/LICENSE.txt"),
         )],
     },
-    BundledSkill {
-        id: "skill-installer",
-        name: "Skill Installer",
-        default_enabled: false,
-        relative_path: "skills/skill-installer/SKILL.md",
-        content: include_bytes!("../../agent/skills/skill-installer/SKILL.md"),
-        support_files: &[(
-            "skills/skill-installer/LICENSE.txt",
-            include_bytes!("../../agent/skills/skill-installer/LICENSE.txt"),
-        )],
-    },
     // Everyday questions come first so `/` lists them before the specialist workflows.
     BundledSkill {
         id: DIVIDEND_INCOME_SKILL_ID,
@@ -2124,7 +2113,11 @@ mod tests {
         let snapshot = AgentHarnessSnapshot {
             schema: HARNESS_SCHEMA.to_owned(),
             mode: "chat".into(),
-            skill_ids: vec!["finance-research".into(), "investment-postmortem".into()],
+            skill_ids: vec![
+                "finance-research".into(),
+                "investment-postmortem".into(),
+                "skill-installer".into(),
+            ],
             capability_ids: vec!["community.web-research".into()],
             digest: "a".repeat(64),
         };
@@ -2138,9 +2131,8 @@ mod tests {
 
     #[test]
     fn skill_authoring_is_opt_in_and_method_skills_are_not_selectable() {
-        for authoring in ["skill-creator", "skill-installer"] {
-            assert!(!skill_default_enabled(authoring));
-        }
+        assert!(!skill_default_enabled("skill-creator"));
+        assert!(bundled_skill("skill-installer").is_err());
         assert!(skill_default_enabled(RESEARCH_SKILL_ID));
         let always_on = always_on_skill_ids();
         assert!(!always_on.is_empty());

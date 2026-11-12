@@ -211,8 +211,6 @@ const FILES: &[(&str, &[u8])] = &[
     asset!("skills/rule-test/references/backtest-design.md"),
     asset!("skills/skill-creator/LICENSE.txt"),
     asset!("skills/skill-creator/SKILL.md"),
-    asset!("skills/skill-installer/LICENSE.txt"),
-    asset!("skills/skill-installer/SKILL.md"),
     asset!("skills/spreadsheets/SKILL.md"),
     asset!("skills/valuation/SKILL.md"),
     asset!("skills/valuation/references/dcf.md"),
