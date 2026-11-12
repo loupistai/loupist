@@ -3,6 +3,8 @@ use serde_json::Value;
 
 use super::error::{KnowledgeError, KnowledgeResult};
 
+/// Research queries are bounded by Unicode scalar values, independent of UTF-8 width.
+pub const RESEARCH_QUERY_MAX_CHARS: usize = 200;
 pub const MAX_BLOB_BYTES: usize = 8 * 1024 * 1024;
 pub const DEFAULT_NODE_LIMIT: u32 = 25;
 pub const MAX_NODE_LIMIT: u32 = 100;

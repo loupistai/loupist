@@ -656,7 +656,7 @@ fn search_research(
     include_later_notes: bool,
 ) -> KnowledgeResult<ResearchSearch> {
     validate_loupist_id(loupist_id)?;
-    if query.len() > 200 {
+    if query.chars().count() > super::RESEARCH_QUERY_MAX_CHARS {
         return Err(KnowledgeError::Invalid("research query is invalid"));
     }
     let query = query.trim();
@@ -1461,6 +1461,23 @@ mod search_tests {
             })
             .unwrap()
             .research_id
+    }
+
+    #[test]
+    fn research_queries_count_korean_characters_instead_of_utf8_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = KnowledgeStore::open(dir.path().join("knowledge.sqlite")).unwrap();
+        let query = "가".repeat(super::super::RESEARCH_QUERY_MAX_CHARS);
+        let id = store
+            .transact(|w| Ok(save_note(w, "korean", &query, 1)))
+            .unwrap();
+        let found = store
+            .research_history("loupist-a", &query, None, Some(20))
+            .unwrap();
+        assert_eq!(found.hits[0].research_id, id);
+        assert!(store
+            .research_history("loupist-a", &(query + "나"), None, Some(20))
+            .is_err());
     }
 
     fn insert_later_note(

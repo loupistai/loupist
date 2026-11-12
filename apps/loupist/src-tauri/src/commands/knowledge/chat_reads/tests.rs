@@ -579,3 +579,13 @@ fn a_new_focus_rewrites_only_the_perspective_focus_section() {
         "the same or an empty focus changes nothing"
     );
 }
+
+#[test]
+fn host_research_search_uses_the_same_korean_character_limit_as_the_store() {
+    let (_root, state) = fixture();
+    let query = "가".repeat(crate::knowledge::RESEARCH_QUERY_MAX_CHARS);
+    let id = note(&state, "loupist-a", "korean-query", "Korean note", &query);
+    let found = host_search(&state, "loupist-a", &query, "research").unwrap();
+    assert_eq!(found[0]["researchId"], id);
+    assert!(host_search(&state, "loupist-a", &(query + "나"), "research").is_err());
+}

@@ -52,7 +52,8 @@ Substantial work can have one current Working note per Chat; the Bot keeps
 [Bot memory](../ui/home-thread.md#bot-memory) instead. An update replaces its
 body in the completed-turn transaction and checks the expected identity; failed or
 cancelled turns preserve the existing note. Earlier Chats' notes can be referenced
-by a new note, and discovery can expose later corrections. Discovery reads the
+by a new note, and discovery can expose later corrections. Research search accepts
+at most 200 Unicode scalar values (characters), including Korean text. Discovery reads the
 1,000 most recently stored current candidates per Loupist, then sorts that bounded
 window by recorded time; repeated replacement of other Chats' notes does not
 consume that window. Notes remain available
