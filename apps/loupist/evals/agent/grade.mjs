@@ -7,8 +7,8 @@ import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, ANSWER_ASSERTS,
   citationAssertion, returnedCitationUrls, citingParagraphs, numbersLinkedAssertion, asOfLeftOutAssertion,
   asOfRefusedAssertion, calculateInputsAssertion, gridCellsAssertion, metricTolerance, numberChecks, asOfReport,
   toolCalledAssertion, argumentsInclude, sensitivityCardAssertion, sensitivityCards, isRecord,
-  LENS_ASSERTS, lensAssertion, lensPages, memoryReads, isNegativeAssertion } from './eval-contract.mjs';
-import { analyzeToolCalls, toolValidity, comparableArgs, toolExecutionState, skillReadEvidence } from './tool-evidence.mjs';
+  LENS_ASSERTS, lensAssertion, lensPages, memoryReads, isNegativeAssertion, toolOrderAssertion } from './eval-contract.mjs';
+import { analyzeToolCalls, toolValidity, comparableArgs, toolExecutionState, skillReadEvidence, capabilityLoadEvidence, firstPackUseEvidence } from './tool-evidence.mjs';
 import { noFalseSaveClaimEvidence } from './memory-evidence.mjs';
 import { planProgressEvidence, calculationChipEvidence } from './research-evidence.mjs';
 
@@ -316,8 +316,11 @@ function evaluateTraceAssertion(assertion, trace) {
     return resultOf(trace, assertion, pass, pass === null ? `${assertion.tool} execution unavailable` : pass ? `did not execute ${assertion.tool}` : `executed ${assertion.tool}`);
   }
   if (assertion.assert === 'tool_called_before') {
-    const tools = assertion.tools ?? [];
-    if (tools.length < 2) throw new Error('tool_called_before requires at least two tools');
+    const { tools, id } = toolOrderAssertion(assertion);
+    if (tools[0] === 'capability_load') {
+      const result = firstPackUseEvidence(id, tools, calls);
+      return resultOf(trace, assertion, result.pass, result.detail);
+    }
     const indexes = tools.map((tool) => calls.findIndex((call) => call.name === tool));
     const pass = indexes.every((index) => index >= 0) && indexes.every((index, position) => position === 0 || indexes[position - 1] < index);
     return resultOf(trace, assertion, pass, tools.map((tool, position) => `${tool}@${indexes[position]}`).join(' before '));
@@ -337,8 +340,8 @@ function evaluateTraceAssertion(assertion, trace) {
     return resultOf(trace, assertion, repeated.length ? false : unknown ? null : true,
       repeated.length ? `repeated failed calls at ${repeated.join(',')}` : unknown ? `${unknown} calls have unavailable failure evidence` : 'no repeated failed call');
   }
-  const pass = calls.some((call) => call.name === 'capability_load' && call.args?.id === assertion.id);
-  return resultOf(trace, assertion, pass, pass ? `loaded ${assertion.id}` : `${assertion.id} not loaded`);
+  const loaded = capabilityLoadEvidence(assertion.id, calls);
+  return resultOf(trace, assertion, loaded.pass, loaded.detail);
 }
 
 function memoryKinds(assertion) {

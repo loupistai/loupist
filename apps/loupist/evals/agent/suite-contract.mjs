@@ -8,7 +8,7 @@ const catalogPath = join(here, '../../agent/tool-catalog.json');
 
 import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, LENS_ASSERTS, lensAssertion, ANSWER_ASSERTS, answerPatterns, citationAssertion, validDate,
   numbersLinkedAssertion, asOfLeftOutAssertion, asOfRefusedAssertion, calculateInputsAssertion, gridCellsAssertion, metricTolerance,
-  toolCalledAssertion, sensitivityCardAssertion, planProgressAssertion, calculationChipAssertion, skillReadAssertion } from './eval-contract.mjs';
+  toolCalledAssertion, sensitivityCardAssertion, planProgressAssertion, calculationChipAssertion, skillReadAssertion, toolOrderAssertion } from './eval-contract.mjs';
 const METRICS = new Set([
   'carry_forward',
   'negative_transfer',
@@ -186,8 +186,10 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
             if (item.assert === 'tool_called') toolCalledAssertion(item);
             else assert.equal(item.args, undefined, `${where} tool_not_called takes no args`);
           } else if (item.assert === 'tool_called_before') {
+            toolOrderAssertion(item);
             assert.ok(Array.isArray(item.tools) && item.tools.length === 2, where);
             for (const tool of item.tools) assert.ok(toolNames.has(tool), `${where} ${tool}`);
+            if (item.tools[0] === 'capability_load') assert.ok(catalog.tools.some(tool => tool.name === item.tools[1] && tool.component === item.id), `${where} pack id does not own the tool`);
           } else if (item.assert === 'max_tool_calls' || item.assert === 'max_tool_errors') {
             assert.equal(Number.isInteger(item.n) && item.n >= 0, true, where);
           } else if (item.assert === 'capability_loaded') {

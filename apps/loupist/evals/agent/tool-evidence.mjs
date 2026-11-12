@@ -1,5 +1,6 @@
 /** Tool evidence classification shared by deterministic checks and reports. */
 import { canonicalJson, toolCalls, skillReadAssertion } from './eval-contract.mjs';
+import catalog from '../../agent/tool-catalog.json' with { type: 'json' };
 const INVALID_CODES = new Set(['malformed_request', 'method_denied', 'tool_not_found', 'tool_validation_failed']);
 const INVALID_MESSAGE = /Tool (?:"[^"]+"|\S+) not found|Validation failed for tool "[^"]+":/u;
 
@@ -24,6 +25,28 @@ export function toolExecutionState(call) {
   if (call.outcome === 'ok') return true;
   if (call.outcome !== 'error') return null;
   return !(isInvalidToolCall(call) || REFUSED_CODES.has(normCode(call.error_code)));
+}
+
+export function capabilityLoadEvidence(id, calls) {
+  let unknown = false;
+  for (const call of calls.filter(call => call.name === 'capability_load' && call.outcome !== 'error')) {
+    if (call.args?.id === id) {
+      if (call.outcome === 'ok') return { pass: true, detail: `loaded ${id}` };
+      unknown = true;
+    } else if (comparableArgs(call.args) === null) unknown = true;
+  }
+  return { pass: unknown ? null : false, detail: unknown ? `${id} load evidence unavailable` : `${id} not successfully loaded` };
+}
+
+export function firstPackUseEvidence(id, tools, calls) {
+  const packTools = new Set(catalog.tools.filter(tool => tool.component === id).map(tool => tool.name));
+  if (!tools.slice(1).every(tool => packTools.has(tool) && calls.some(call => call.name === tool))) {
+    return { pass: false, detail: `no requested ${id} tool use` };
+  }
+  // Every attempted use counts, including a tool_not_found before a later load.
+  const firstUse = calls.findIndex(call => packTools.has(call.name));
+  const loaded = capabilityLoadEvidence(id, calls.slice(0, firstUse));
+  return { ...loaded, detail: `${loaded.detail} before first ${id} use at ${firstUse}` };
 }
 
 export function skillReadEvidence(assertion, calls) {

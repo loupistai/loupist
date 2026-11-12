@@ -33,7 +33,8 @@
                       "capability_load",
                       "schedule_create"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "schedules"
                   },
                   {
                     "assert": "scheduled_tasks",
@@ -415,7 +416,8 @@
                       "capability_load",
                       "schedule_list"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "schedules"
                   },
                   {
                     "assert": "scheduled_tasks",
@@ -469,7 +471,8 @@
                       "capability_load",
                       "schedule_handoff"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "schedules"
                   },
                   {
                     "assert": "scheduled_tasks",
@@ -541,7 +544,8 @@
                       "capability_load",
                       "schedule_create"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "schedules"
                   },
                   {
                     "assert": "scheduled_tasks",
@@ -660,7 +664,8 @@
                       "capability_load",
                       "schedule_create"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "schedules"
                   },
                   {
                     "assert": "scheduled_tasks",
@@ -772,7 +777,8 @@
                       "capability_load",
                       "schedule_create"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "schedules"
                   },
                   {
                     "assert": "scheduled_tasks",
@@ -879,7 +885,8 @@
                       "capability_load",
                       "schedule_handoff"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "schedules"
                   },
                   {
                     "assert": "tool_called",
@@ -918,7 +925,8 @@
                       "capability_load",
                       "schedule_create"
                     ],
-                    "metric": "tool_validity"
+                    "metric": "tool_validity",
+                    "id": "schedules"
                   },
                   {
                     "assert": "scheduled_tasks",

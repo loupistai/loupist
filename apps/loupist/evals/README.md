@@ -127,6 +127,12 @@ conservative lower bounds over all expected checks.
 prove two failures identical (`repeated_failures_unknown`), and calls without a
 final outcome are `unknown_outcomes`; both leave the goals unmeasured.
 
+`capability_loaded` requires a successful load of the named pack. A
+`tool_called_before` starting with `capability_load` also names that pack with
+`id` and requires its successful load before the pack's first attempted tool use.
+A failed or different-pack load cannot establish activation; a missing load
+outcome stays unmeasured.
+
 Traces redact credential fields and credential-shaped text. Ordinary Lens section
 `key` labels stay visible; a bare `key` value is hidden if it looks like a
 credential, a JWT, or an unbroken base64/hex string of at least 20 characters.
