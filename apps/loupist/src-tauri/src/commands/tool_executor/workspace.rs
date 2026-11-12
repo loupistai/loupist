@@ -7,10 +7,10 @@ use crate::custom_connections::taint::{HARD_LINK_WRITE_REFUSAL, INSTRUCTION_WRIT
 
 const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's private data folder, so it is not searched. Search a narrower folder, such as the workspace or one of its subfolders.";
 const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
-const CREDENTIALS_NEXT: &str = "Do not retry this path. Credential stores, container runtime folders and shell startup files are never read or written by the Loupist.";
-const GIT_DIR_NEXT: &str = "Do not retry this path. Native file tools do not read or write git metadata, config or hooks. Work with research files outside `.git`.";
+const CREDENTIALS_NEXT: &str = "Credential stores, container runtime folders and shell startup files are not read or written. Do not retry this path.";
+const GIT_DIR_NEXT: &str = "Git metadata is not read or written. Work with research files outside .git; do not retry this path.";
 const ORDINARY_FILE_NEXT: &str = "This tool works on ordinary research files. Dot-folders and dotfiles (such as `.loupist` or `.git`) and instruction files are not reached through it; choose a visible path in the workspace.";
-const HARD_LINK_NEXT: &str = "This file has another name on disk and may alias protected data. Ask the user for an ordinary copy; do not retry this alias.";
+const HARD_LINK_NEXT: &str = "This file has another name on disk and is not touched. Ask the user for an ordinary copy; do not retry this alias.";
 
 /// The native policy's roots for one turn. Each decision reads the current
 /// third-party exposure from the turn's taint.
@@ -96,6 +96,17 @@ impl AppToolExecutor {
     /// it, with the file's identity for a read; a search runs on it.
     pub(super) async fn native_authorize(&self, params: &Value) -> Result<Value, BrokerError> {
         let request = NativeRequest::parse(params).ok_or(BrokerError::Malformed)?;
+        if matches!(request.tool, NativeTool::Write | NativeTool::Edit)
+            && self.capture.native.roots().is_some_and(|roots| {
+                request.target.as_ref().is_some_and(|path| {
+                    native_policy::classify(path, roots).class
+                        == native_policy::PathClass::Attachments
+                })
+            })
+        {
+            return Err(BrokerError::ProtectedPath
+                .with_next("Attachments are read-only; write a copy under outputs/."));
+        }
         let mut result = json!({"allowed": true});
         match self
             .capture
@@ -133,15 +144,41 @@ impl AppToolExecutor {
             }
             NativeDecision::Refuse(refusal) => return Err(refusal_error(refusal)),
         }
-        if request.tool == NativeTool::Read {
-            if let Some(path) = request.target.as_deref() {
-                if crate::commands::export_trust::tagged_file(&self.state, path)
-                    .map_err(command_error)?
-                {
-                    self.capture.turn_taint.mark_untrusted_text();
-                    result["untrusted_text"] =
-                        crate::custom_connections::taint::native_read_delimiters();
+        let paths: Vec<PathBuf> = match request.tool {
+            NativeTool::Read => result["resolved"]
+                .as_str()
+                .map(PathBuf::from)
+                .into_iter()
+                .collect(),
+            // Rust admits the candidates before the extension performs grep;
+            // check every admitted file so any matching export is delimited.
+            NativeTool::Grep => result
+                .pointer("/search/entries")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter(|entry| entry["directory"] != true)
+                .filter_map(|entry| entry["path"].as_str().map(PathBuf::from))
+                .collect(),
+            _ => Vec::new(),
+        };
+        if !paths.is_empty() {
+            let state = self.state.clone();
+            let untrusted = tokio::task::spawn_blocking(move || {
+                for path in paths {
+                    if crate::commands::export_trust::tagged_file(&state, &path)? {
+                        return Ok::<_, crate::app::CommandError>(true);
+                    }
                 }
+                Ok(false)
+            })
+            .await
+            .map_err(|_| BrokerError::Execution("File trust could not be checked.".into()))?
+            .map_err(command_error)?;
+            if untrusted {
+                self.capture.turn_taint.mark_untrusted_text();
+                result["untrusted_text"] =
+                    crate::custom_connections::taint::native_read_delimiters();
             }
         }
         Ok(result)

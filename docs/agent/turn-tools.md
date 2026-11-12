@@ -211,7 +211,13 @@ conflicting judgments. Test serialized schemas and Rust validation together.
 Chart/data contracts are owned by [Financial analysis](../analysis.md).
 
 Native file calls follow the [path policy](../runtime/permissions.md) without
-permission cards. `run_python` stays allowed after third-party text, after a
+permission cards. Both native reads and grep check exported-file trust; grep
+checks every admitted file candidate before the extension searches it. A tagged
+candidate raises the turn's third-party-text tier and delimits the grep response;
+ordinary user files keep their existing tier. Path refusals name the applicable
+boundary, including read-only attachments, Git metadata and hard-linked aliases.
+Memory saves distinguish disabled Memory reads from disabled saving.
+`run_python` stays allowed after third-party text, after a
 custom-connection result and in unattended runs, without a card. `ask_user` asks
 about task choices, never tool permission. Unattended runs retain their host
 allowlist, and that allowlist includes `run_python`.
