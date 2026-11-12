@@ -449,15 +449,7 @@ pub async fn provider_connect(
         &request.provider,
         Trigger::Connected(CredentialKind::Plan),
     );
-    send_event(
-        &on_event,
-        ProviderConnectionEvent::Connected {
-            message: format!(
-                "{} is connected. Pi's available models are ready for Loupist runs.",
-                provider.label
-            ),
-        },
-    )?;
+    notify_connected(&on_event, provider.label);
     let result = discover_provider_models(&state, &request.provider, &admission).await;
     drop(admission);
     state.graph.wake();
@@ -1562,17 +1554,21 @@ fn handle_provider_event(
             Ok(())
         }
         ExtensionProviderEvent::Progress { message } => {
+            let _ = message;
             if let Some(session) = oauth {
-                send_event(session.events, ProviderConnectionEvent::Waiting { message })?;
+                send_event(
+                    session.events,
+                    ProviderConnectionEvent::Waiting {
+                        message: "Waiting for the provider to finish signing in.".into(),
+                    },
+                )?;
             }
             Ok(())
         }
         ExtensionProviderEvent::Connected { message } => {
+            let _ = message;
             if let Some(session) = oauth {
-                send_event(
-                    session.events,
-                    ProviderConnectionEvent::Connected { message },
-                )?;
+                notify_connected(session.events, provider_option(session.provider)?.label);
             }
             Ok(())
         }
@@ -1617,6 +1613,18 @@ fn send_event(
         .map_err(|_| CommandError::internal("provider setup event delivery failed"))
 }
 
+fn notify_connected(channel: &Channel<ProviderConnectionEvent>, label: &str) {
+    // The credential is already durable. A closed renderer cannot undo sign-in.
+    let _ = send_event(
+        channel,
+        ProviderConnectionEvent::Connected {
+            message: format!(
+                "{label} is connected. Pi's available models are ready for Loupist runs."
+            ),
+        },
+    );
+}
+
 /// Discover through Pi's existing provider extension; the harness never opens auth files.
 #[cfg(feature = "eval-harness")]
 pub(crate) async fn eval_models(
@@ -1652,6 +1660,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn stored_sign_in_does_not_fail_when_its_renderer_channel_is_closed() {
+        let channel = Channel::new(|_| Err(std::io::Error::other("renderer closed").into()));
+        notify_connected(&channel, "Fixture");
+    }
+
+    #[tokio::test]
+    async fn oauth_status_prose_cannot_leak_a_token_and_stored_sign_in_ignores_delivery_failure() {
+        let coordinator = crate::providers::support::ProviderSupportCoordinator::default();
+        let admission = coordinator.acquire_oauth().await.unwrap();
+        let (channel, events) = capture_channel();
+        let (answers, _pasted) = tokio::sync::mpsc::unbounded_channel();
+        let mut session = OAuthSession {
+            provider: "openai",
+            events: &channel,
+            answers,
+            failure: Mutex::new(None),
+        };
+        for kind in ["progress", "connected"] {
+            let event = provider_event(&notify(serde_json::json!({"type":kind,"message":"Authorization: Bearer private-fixture-token"}))).unwrap().unwrap();
+            handle_provider_event(event, Some(&session), &admission).unwrap();
+        }
+        let observed = serde_json::to_string(&*events.lock().unwrap()).unwrap();
+        assert!(!observed.contains("private-fixture-token"));
+        assert!(observed.contains("waiting"));
+        assert!(observed.contains("connected"));
+        let closed = Channel::new(|_| Err(std::io::Error::other("renderer closed").into()));
+        session.events = &closed;
+        handle_provider_event(
+            ExtensionProviderEvent::Connected {
+                message: "stored".into(),
+            },
+            Some(&session),
+            &admission,
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn support_requests_are_removed_on_drop_and_recovered_after_a_crash() {
         let root = tempfile::tempdir().unwrap();
         let files = create_search_support_files(root.path()).unwrap();
@@ -1685,7 +1731,6 @@ mod tests {
         assert_eq!(std::fs::read(&request).unwrap(), b"keep");
         assert!(unrelated.join("request.json").exists());
     }
-
 
     #[test]
     fn authorization_urls_are_locked_to_cataloged_oauth_hosts() {
