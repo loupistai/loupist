@@ -2186,6 +2186,9 @@ button.sent-image { cursor: zoom-in; }
 /* An offer, not "waiting on you": a neutral bordered block with one filled button (chat design change 33). */
 .follow-watch-offer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-3); padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .follow-watch-offer p { flex: 1 1 320px; max-width: 62ch; margin: 0; }
+/* The memory row styles its buttons as links; the offer keeps one filled action button. */
+.memory-row .follow-watch-offer [data-slot="button"] { padding: 0 var(--gg-space-3); border-radius: var(--gg-radius-md); background: var(--gg-color-action); color: var(--gg-color-action-ink); font-weight: var(--gg-weight-medium); text-decoration: none; }
+.memory-row .follow-watch-offer [data-slot="button"]:hover { background: var(--gg-color-action); color: var(--gg-color-action-ink); opacity: .9; text-decoration: none; }
 .follow-watch-offer .inline-error { flex-basis: 100%; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
 
 /* The recommended answer is an outlined option with a primary edge, not a filled slab (chat design change 12). */

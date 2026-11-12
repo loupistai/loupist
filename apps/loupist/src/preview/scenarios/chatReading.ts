@@ -32,9 +32,11 @@ export const chatReadingScenarios: PreviewScenario[] = [
       return workspace;
     };
   } },
-  { ...base("chat-outline", "A long answer opens with its outline", () => select(".answer-outline[open]"), async () => {
-    await click(".answer-outline > summary");
-    await centerOn(".answer-outline[open]", "start")();
+  { ...base("chat-outline", "A long answer's outline opens from its first line", () => select(".answer-outline [data-level]"), async () => {
+    await centerOn("[data-answer-outline]", "start")();
+    const trigger = await until(() => select("[data-answer-outline]"), "Outline trigger did not render") as HTMLElement;
+    trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    trigger.click();
   }), setup: async (bridge) => {
     await prepareFixture(bridge, "answer");
     const ko = previewKo();

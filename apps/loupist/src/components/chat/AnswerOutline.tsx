@@ -33,7 +33,7 @@ export function AnswerOutline({ messageId, markdown }: { messageId: string; mark
       <button type="button" className="answer-outline-trigger" data-answer-outline><ListIcon aria-hidden="true" />{t("chatOutline.title")}</button>
     </PopoverTrigger>
     {/* Choosing a heading moves focus there; Escape still returns focus to the trigger. */}
-    <PopoverContent className="answer-outline" align="start" aria-label={t("chatOutline.title")} onCloseAutoFocus={(event) => { if (jumped.current) event.preventDefault(); jumped.current = false; }}>
+    <PopoverContent className="answer-outline" align="end" aria-label={t("chatOutline.title")} onCloseAutoFocus={(event) => { if (jumped.current) event.preventDefault(); jumped.current = false; }}>
       <ol>
         {rows.map((row, index) => <li key={`${index}:${row.text}`} data-level={row.level}>
           <button type="button" onClick={() => jump(row.text)}>{row.text}</button>
