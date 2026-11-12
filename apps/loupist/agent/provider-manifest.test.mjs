@@ -43,6 +43,7 @@ test("native search adapters are exactly the manifest's native-search providers"
 
 test("the support launch bootstrap model is in the pinned Pi catalog", () => {
   const { provider, model } = manifest.support_bootstrap;
+  assert.deepEqual(manifest.support_bootstrap, { provider: "google", model: "gemini-3.5-flash-lite" });
   const entry = manifest.providers.find((candidate) => candidate.id === provider);
   assert.ok(entry?.api_key && !entry.development_only, "the bootstrap provider takes an API key");
   assert.ok(getBuiltinModel(provider, model), `Pi must supply ${provider}/${model}`);
