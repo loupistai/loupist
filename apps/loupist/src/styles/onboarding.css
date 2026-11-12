@@ -9,6 +9,8 @@
 .onboarding-step > [data-slot="button"]:not([data-variant="link"]):not([data-variant="ghost"]), .onboarding-primary { min-height: var(--gg-size-field); font-size: var(--gg-text-body); }
 .onboarding-step .onboarding-import { justify-self: center; color: var(--gg-color-text-secondary); text-decoration: none; }
 .onboarding-step .onboarding-import:hover { text-decoration: underline; }
+/* Until the notice is ticked the import link is quiet, not greyed out like a broken control. */
+.onboarding-step .onboarding-import:disabled { opacity: 1; color: var(--gg-color-text-tertiary); }
 .onboarding-back { justify-self: start; margin-inline-start: calc(-1 * var(--gg-space-2)); margin-bottom: calc(-1 * var(--gg-space-3)); color: var(--gg-color-text-secondary); }
 .onboarding-skip { display: grid; gap: var(--gg-space-2); padding-top: var(--gg-space-4); border-top: 1px solid var(--gg-color-border-subtle); }
 .onboarding-skip > .onboarding-skip-button { width: 100%; min-height: var(--gg-size-field); font-size: var(--gg-text-body); }
