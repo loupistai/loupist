@@ -14,7 +14,9 @@ For Linux cloud development, source tests and browser previews, follow
 [Linux cloud development](../../docs/dev/checks.md#linux-cloud-development).
 
 ```sh
-npm ci
+sh scripts/setup.sh
+# On the supported Mac, stage the bundled runtimes before the first native build:
+sh scripts/stage-macos-arm64.sh
 npm run tauri dev
 ```
 
@@ -29,7 +31,8 @@ starting again.
 
 Global defaults live in `config.toml` under the selected app root. Each Loupist can
 override Chat defaults, optional Skills and Pi settings in its workspace
-`.loupist/config.toml`; Settings → Chat preferences and Skills edit the same files. Each Skill
+`.loupist/config.toml`. Settings → Chat defaults and Skills edit shared defaults;
+the selected Loupist’s settings edit its overrides. Each Skill
 inherits independently, and resetting a local value restores the global default.
 Chat Memory defaults apply to new Chats. Canonical Chat and Memory remain in the
 Loupist folder.
@@ -41,15 +44,15 @@ enabled = false
 
 [chat]
 use_memory = true
-update_memory = false
+update_memory = true
 ```
 
-World, Lens, Journal and Visualize are fixed app Skills. World processing
+World, Lens, Journal and visualization are always available app workflows. World processing
 settings, connection grants, Scheduled tasks and execution state remain in
 SQLite; credentials stay in the private credential stores.
 
-Settings → Skills lists included and user-added workflows, with search,
-enable/disable, scope and inheritance controls. Create a skill directly or use
+Settings → Skills lists included and user-added workflows, with search and
+shared enable/disable controls; Loupist settings manage local inheritance. Create a skill directly or use
 Skill Creator to draft one in Chat; Skill Installer helps add requested workflows.
 Folder, single-skill ZIP and public GitHub folder imports preserve supporting files.
 Personal skills use `<app-root>/skills/<id>/SKILL.md`; Loupist skills use
@@ -72,11 +75,7 @@ npm run check
 dependency before running the same checks.
 
 The first release supports macOS 13 or newer on Apple Silicon only.
-Windows runtime, staging, and signing implementations remain available for future
-support. The manual [Windows compatibility workflow](../../.github/workflows/windows-compatibility.yml)
-runs native and package checks independently of release CI. Its optional signed
-build requires a matching version tag and Windows credentials, and uploads
-workflow artifacts only; it does not publish a release or updater feed.
+Windows is not supported in this release.
 Release builds require staged sidecars and platform signing credentials; the
 [release workflow](../../.github/workflows/release.yml) defines the required
 configuration. Use the [release acceptance flow](../../LOUPIST.md) to verify
