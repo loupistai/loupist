@@ -30,9 +30,31 @@ pub(crate) fn delete_unknown_provider_state(state: &AppState) {
     if delete_with(state, &known_provider).is_err() {
         eprintln!("Loupist could not remove settings for a provider this build does not offer");
     }
+    if delete_missing_custom_status(state).is_err() {
+        eprintln!("Loupist could not remove a retired custom provider status");
+    }
     if delete_claude_sign_in(state).is_err() {
         eprintln!("Loupist could not remove a retired Claude sign-in");
     }
+}
+
+fn delete_missing_custom_status(state: &AppState) -> Result<(), CommandError> {
+    let current = super::custom::list(&state.pi_agent_data_dir()?)?;
+    for row in state
+        .store
+        .provider_status_all()
+        .map_err(|error| CommandError::internal(error.to_string()))?
+    {
+        if super::custom::is_custom_id(&row.provider)
+            && !current.iter().any(|provider| provider.id == row.provider)
+        {
+            state
+                .store
+                .provider_status_delete(&row.provider)
+                .map_err(|error| CommandError::internal(error.to_string()))?;
+        }
+    }
+    Ok(())
 }
 
 /// Deletes a saved `anthropic` OAuth grant and treats it as a disconnect: the
@@ -148,6 +170,35 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
+
+    #[test]
+    fn startup_removes_orphan_custom_status_rows_but_keeps_manifest_entries() {
+        use crate::providers::{
+            custom,
+            status::{self, CredentialKind, Trigger},
+        };
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        let provider = custom::CustomProvider {
+            id: "custom-retained-fixture".into(),
+            name: "Fixture".into(),
+            base_url: "https://models.example/v1".into(),
+            api: "openai-completions".into(),
+            model_ids: vec!["fixture-model".into()],
+        };
+        custom::write(&state.pi_agent_data_dir().unwrap(), &provider).unwrap();
+        for id in [provider.id.as_str(), "custom-retired-fixture", "openai"] {
+            status::record(&state, id, Trigger::Connected(CredentialKind::Custom)).unwrap();
+        }
+        delete_missing_custom_status(&state).unwrap();
+        assert!(status::load(&state, "custom-retired-fixture")
+            .unwrap()
+            .is_none());
+        for id in [provider.id.as_str(), "openai"] {
+            assert!(status::load(&state, id).unwrap().is_some());
+        }
+        delete_missing_custom_status(&state).unwrap();
+    }
     use crate::{
         providers::catalog::{ConfiguredModel, ModelCatalog},
         scheduled_tasks::types::{Schedule, TaskDraft, TaskStatus, TaskTarget},

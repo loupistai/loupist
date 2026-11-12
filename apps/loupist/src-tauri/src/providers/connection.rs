@@ -730,16 +730,21 @@ pub async fn provider_custom_remove(
             ));
         }
     }
-    record_status(
-        &state,
-        &request.provider,
-        Trigger::Disconnected(status::used_by(&state, &request.provider)),
-    );
-    custom::remove(&agent_dir, &request.provider)?;
-    state.replace_provider_models(&request.provider, Vec::new())?;
+    remove_custom_provider_state(&state, &request.provider)?;
     drop(admission);
     state.graph.wake();
     state.model_catalog_view()
+}
+
+fn remove_custom_provider_state(state: &AppState, provider: &str) -> Result<(), CommandError> {
+    custom::remove(&state.pi_agent_data_dir()?, provider)?;
+    // A removed endpoint has no card, even when a saved model choice still
+    // names it. Retaining a Disconnected row would resurrect a removed account.
+    state
+        .store
+        .provider_status_delete(provider)
+        .map_err(|error| CommandError::internal(error.to_string()))?;
+    state.replace_provider_models(provider, Vec::new())
 }
 
 fn provider_option(provider: &str) -> Result<ModelProviderOption, CommandError> {
@@ -1977,6 +1982,54 @@ mod tests {
             custom_key_to_store(None, Some(old), old, false),
             Some(custom::NO_KEY)
         );
+    }
+
+    #[test]
+    fn removing_an_endpoint_deletes_its_status_even_when_a_saved_model_still_uses_it() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        let agent = state.pi_agent_data_dir().unwrap();
+        let provider = custom::CustomProvider {
+            id: "custom-removal-fixture".into(),
+            name: "Fixture".into(),
+            base_url: "https://models.example/v1".into(),
+            api: "openai-completions".into(),
+            model_ids: vec!["fixture-model".into()],
+        };
+        custom::write(&agent, &provider).unwrap();
+        let scope = crate::scoped_config::ConfigScope::Global;
+        let snapshot =
+            crate::scoped_config::read_scope(&state.artifacts.app_data_dir, None, scope.clone())
+                .unwrap();
+        crate::scoped_config::update_scope(&state.artifacts.app_data_dir, None,
+            &crate::scoped_config::ConfigUpdateRequest {
+                scope, expected_revision: snapshot.revision,
+                set: serde_json::from_value(serde_json::json!({"chat":{"model_profile_id":format!("{}/fixture-model", provider.id)}})).unwrap(),
+                unset: vec![],
+            }).unwrap();
+        assert!(status::used_by(&state, &provider.id).chat_default);
+        status::record(
+            &state,
+            &provider.id,
+            Trigger::Connected(CredentialKind::Custom),
+        )
+        .unwrap();
+        status::record(
+            &state,
+            &provider.id,
+            Trigger::Disconnected(status::used_by(&state, &provider.id)),
+        )
+        .unwrap();
+        assert!(status::load(&state, &provider.id).unwrap().is_some());
+        remove_custom_provider_state(&state, &provider.id).unwrap();
+        assert!(status::load(&state, &provider.id).unwrap().is_none());
+        assert!(custom::find(&agent, &provider.id).unwrap().is_none());
+        assert!(!state
+            .model_catalog_view()
+            .unwrap()
+            .custom_providers
+            .iter()
+            .any(|card| card.id == provider.id));
     }
 
     #[tokio::test]

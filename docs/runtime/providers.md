@@ -80,6 +80,8 @@ returns the provider's models itself, so Settings starts no model load while the
 connect sheet is open, and a card that cannot load its models shows localized text
 (a busy load reads "Another account change is still finishing") with Reload models,
 never the backend's English error.
+Removing a custom endpoint always deletes its card and status row, even when saved model choices still name it.
+Startup also removes status rows left by older builds for custom endpoints absent from `models.json`.
 Once sign-in is stored, a closed renderer event channel does not fail the completed connection.
 Progress and completion messages use host copy, never provider-supplied prose that might contain a credential.
 Pi persists rotated OAuth credentials before returning them; model discovery adopts that durable generation
