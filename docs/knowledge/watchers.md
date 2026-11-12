@@ -68,7 +68,11 @@ that wants it: the first one holding the grant reads, the others get a copy in t
 dataset store, and a Loupist without the grant records `needs_connection`. The app makes
 at most 60 reads per rolling hour across all Loupists (`MAX_READS_PER_HOUR`); a pass
 reads the least recently checked routes first and defers the rest. A failed read keeps
-the last good state and names the connection that did not answer. Check now
+the last good state and names the connection that did not answer. Failed routes retry
+after 15 minutes, then one hour, four hours and daily; success resets the backoff.
+The consecutive-failure count lives in the running app: after restart, a persisted
+failure uses the 15-minute delay from its last attempt. An idle minute with no due
+route leaves the last-check timestamp and saved watch state unchanged. Check now
 (`watch_check_now`) checks every enabled kind of one Loupist once, ignoring cadence but
 not the budget, one check at a time.
 

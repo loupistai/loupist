@@ -1286,3 +1286,93 @@ async fn an_idle_minute_does_not_write_or_advance_the_last_check() {
         checked
     );
 }
+
+#[tokio::test]
+async fn failed_routes_back_off_and_success_resets_the_retry_delay() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    defaults(&state, "loupist-a");
+    let runtime = Runtime::default();
+    let mut reader = Scripted {
+        offline: true,
+        ..Default::default()
+    };
+    let mut at = Utc::now();
+    run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+        .await
+        .unwrap();
+    for (index, minutes) in [15, 60, 240, 1440].into_iter().enumerate() {
+        let calls = reader.calls_to("equity_calendar_earnings");
+        run_pass_with(
+            &state,
+            &runtime,
+            Scope::Scheduled,
+            at + Duration::minutes(minutes - 1),
+            &mut reader,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            reader.calls_to("equity_calendar_earnings"),
+            calls,
+            "retry {index} came early"
+        );
+        at += Duration::minutes(minutes);
+        run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+            .await
+            .unwrap();
+        assert_eq!(
+            reader.calls_to("equity_calendar_earnings"),
+            calls + 1,
+            "retry {index} was deferred"
+        );
+    }
+    reader.offline = false;
+    reader.script_from(
+        "equity_calendar_earnings",
+        None,
+        "nasdaq",
+        json!({"results": []}),
+    );
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Loupist("loupist-a".into()),
+        at,
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    reader.offline = true;
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Loupist("loupist-a".into()),
+        at + Duration::minutes(1),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    let calls = reader.calls_to("equity_calendar_earnings");
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        at + Duration::minutes(15),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(reader.calls_to("equity_calendar_earnings"), calls);
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        at + Duration::minutes(16),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(reader.calls_to("equity_calendar_earnings"), calls + 1);
+}

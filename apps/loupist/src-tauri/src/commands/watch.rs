@@ -103,6 +103,9 @@ pub(crate) struct Runtime {
     checking: Mutex<BTreeSet<String>>,
     /// Loupists whose first check after launch already ran (morning rule).
     first_checked: Mutex<BTreeSet<String>>,
+    /// Consecutive failures in this process. After restart, a persisted failure
+    /// starts with the first retry delay; no stored route format changes.
+    failures: Mutex<HashMap<(String, String, Route), u8>>,
     /// Captures running now, by event id ("Capturing what's expected…").
     preparing: Mutex<BTreeSet<String>>,
     pass: tokio::sync::Mutex<()>,
@@ -126,6 +129,47 @@ impl Runtime {
 
     fn count_read(&self, now_ms: i64) {
         self.reads.lock().expect("watch runtime lock").push(now_ms);
+    }
+
+    fn route_due(
+        &self,
+        loupist: &str,
+        asset: &str,
+        prior: &RouteState,
+        now: DateTime<Utc>,
+    ) -> bool {
+        if prior.status != "failed" {
+            return route_due(prior.route, Some(prior.checked_at_ms), now);
+        }
+        let attempts = self
+            .failures
+            .lock()
+            .expect("watch runtime lock")
+            .get(&(loupist.to_owned(), asset.to_owned(), prior.route))
+            .copied()
+            .unwrap_or(1);
+        let delay = match attempts {
+            0 | 1 => HOUR_MS / 4,
+            2 => HOUR_MS,
+            3 => 4 * HOUR_MS,
+            _ => 24 * HOUR_MS,
+        };
+        now.timestamp_millis().saturating_sub(prior.checked_at_ms) >= delay
+    }
+
+    fn route_result(&self, want: &Want, route: Route, failed: bool) {
+        let key = (want.loupist_id.clone(), want.page.asset_id.clone(), route);
+        let mut failures = self.failures.lock().expect("watch runtime lock");
+        if failed {
+            let previous = want
+                .prior
+                .as_ref()
+                .is_some_and(|prior| prior.status == "failed");
+            let count = failures.entry(key).or_insert(u8::from(previous));
+            *count = count.saturating_add(1).min(4);
+        } else {
+            failures.remove(&key);
+        }
     }
 
     pub(crate) fn is_checking(&self, loupist_id: &str) -> bool {
@@ -813,7 +857,10 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
                     .and_then(|states| states.iter().find(|state| state.route == route))
                     .cloned();
                 if !forced
-                    && !route_due(route, prior.as_ref().map(|state| state.checked_at_ms), now)
+                    && !prior.as_ref().map_or_else(
+                        || route_due(route, None, now),
+                        |prior| runtime.route_due(loupist_id, &page.asset_id, prior, now),
+                    )
                 {
                     continue;
                 }
@@ -985,6 +1032,11 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
             match result {
                 Ok(()) => {
                     touched.insert(want.loupist_id.clone());
+                    runtime.route_result(
+                        want,
+                        key.route,
+                        allowed && matches!(outcome, ReadOutcome::Failed(_)),
+                    );
                 }
                 Err(error) => eprintln!("Watch check could not record a read: {}", error.code),
             }
