@@ -390,8 +390,19 @@ svg foreignObject .katex:has(> math) {
 }
 
 /* A table that scrolls sideways fades at its right edge (chat design change 10). */
-.message.assistant .message-content [data-streamdown="table-wrapper"][data-overflows] {
+.message.assistant .message-content [data-streamdown="table-wrapper"][data-overflows] > div:has(> [data-streamdown="table"]) {
   mask-image: linear-gradient(to right, var(--gg-color-text-primary) calc(100% - 24px), transparent);
+}
+
+/* Streamdown frames the table in its own rounded, filled box; ruled rows need none of it. */
+.message.assistant .message-content [data-streamdown="table-wrapper"] > div:has(> [data-streamdown="table"]) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.message.assistant .message-content [data-streamdown="table-header"] {
+  background: transparent;
 }
 
 .message.assistant .message-content [data-streamdown="table-wrapper"] {
