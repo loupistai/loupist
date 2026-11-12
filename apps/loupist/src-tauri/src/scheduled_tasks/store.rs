@@ -375,6 +375,18 @@ impl SqliteStore {
         load_task(&connection, loupist_id, id)
     }
 
+    /// Earliest supported occurrence, excluding tasks that already own a run.
+    pub(crate) fn scheduled_tasks_next_due(&self) -> StoreResult<Option<i64>> {
+        let runnable = serde_json::to_string(&TaskKind::KNOWN)?;
+        let pages = self.for_each_readable_database(|_, connection| {
+            Ok(connection.query_row(
+                "SELECT MIN(next_run_at_ms) FROM scheduled_tasks AS task WHERE status='active' AND json_extract(data_json,'$.kind') IN (SELECT value FROM json_each(?1)) AND NOT EXISTS (SELECT 1 FROM scheduled_task_runs AS run WHERE run.task_id=task.id AND run.status='running')",
+                [&runnable], |row| row.get::<_, Option<i64>>(0),
+            )?)
+        })?;
+        Ok(pages.into_iter().flatten().min())
+    }
+
     #[cfg(test)]
     pub fn scheduled_tasks_due(&self, now: i64, limit: usize) -> StoreResult<Vec<Task>> {
         let loupists = self
@@ -398,7 +410,7 @@ impl SqliteStore {
         let pages = self.for_each_readable_database(|_, connection| {
             let mut statement = connection.prepare(&format!("SELECT {TASK_COLUMNS} FROM scheduled_tasks WHERE status='active' AND next_run_at_ms<=?1 AND loupist_id IN (SELECT value FROM json_each(?3)) AND json_extract(data_json,'$.kind') IN (SELECT value FROM json_each(?4)) ORDER BY next_run_at_ms,id LIMIT ?2"))?;
             let rows = statement.query_map(params![now, limit.min(MAX_TASKS_PER_LOUPIST) as i64, eligible, runnable], raw_task)?.collect::<Result<Vec<_>, _>>()?;
-            // Skipped silently: this scan runs every second, and the task list
+            // Skipped silently: this scan runs on each scheduler wake, and the task list
             // logs the same row when it is shown.
             Ok(rows
                 .into_iter()

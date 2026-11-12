@@ -59,6 +59,10 @@ Pause prevents future starts; Stop cancels the current run separately. Run now a
 starts a paused task without turning on its future weekday schedule. The user
 asks the Bot to run a task now; Schedule shows its definition and run history.
 
+The scheduler sleeps until the next due occurrence or a schedule-change signal,
+with a 60-second maximum to recheck folders and wall-clock changes; an overdue
+occurrence blocked on admission retries after five seconds.
+
 Task lists batch profile and Chat ownership checks, preserving per-row corruption
 isolation.
 
@@ -99,9 +103,12 @@ that touch a followed company or its one-hop neighbors. The reader can open the
 Map with the conflicting-evidence filter. Omitted referenced nodes are recovered
 with bounded exact World reads.
 
-Before admission, a briefing (scheduled or Run now) [refreshes](../knowledge/asset-pages.md#asset-pages)
-followed assets without a model call, so Run now, other schedules and maintenance
-never wait behind its reads: at most 24 assets (watched, then held), skipping assets
+After its durable claim and Chat admission, a briefing (scheduled or Run now)
+[refreshes](../knowledge/asset-pages.md#asset-pages) followed assets once for that
+occurrence without a model call. Its prompt cutoff is captured after those reads,
+so newly refreshed evidence is included. Busy, not-yet-due and already-running tasks make
+no refresh reads. The refresh releases the scheduler admission lock, so other
+schedules can attempt admission: at most 24 assets (watched, then held), skipping assets
 checked in the last 30 minutes, one at a time under a Memory-mutation activity,
 within 90 seconds, and abandoned when the scheduler stops. Assets not reached stay
 unchecked for that run. Wallet balances are then read for the held flags, within 30

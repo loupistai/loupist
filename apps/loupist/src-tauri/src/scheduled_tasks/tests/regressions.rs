@@ -429,6 +429,142 @@ fn repeated_recovery_warnings_report_each_skipped_run_only_once() {
 }
 
 #[test]
+fn scheduler_sleep_tracks_due_time_and_bounds_idle_and_blocked_retries() {
+    use crate::scheduled_tasks::{poll_delay, MAX_POLL_SLEEP, RETRY_POLL_SLEEP};
+    use std::time::Duration;
+    assert_eq!(poll_delay(None, 1_000), MAX_POLL_SLEEP);
+    assert_eq!(poll_delay(Some(i64::MAX), 1_000), MAX_POLL_SLEEP);
+    assert_eq!(poll_delay(Some(1_250), 1_000), Duration::from_millis(250));
+    assert_eq!(poll_delay(Some(1_000), 1_000), RETRY_POLL_SLEEP);
+    assert_eq!(poll_delay(Some(0), 1_000), RETRY_POLL_SLEEP);
+    let store = fixture();
+    let task = store
+        .scheduled_task_create("loupist-a", draft(), 1_000)
+        .unwrap();
+    assert_eq!(
+        store.scheduled_tasks_next_due().unwrap(),
+        task.next_run_at_ms
+    );
+    let claim = claim_task(&store, "loupist-a", &task.id, 2_000, true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(store.scheduled_tasks_next_due().unwrap(), None);
+    store
+        .scheduled_task_finish(
+            "loupist-a",
+            &claim.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            3_000,
+        )
+        .unwrap();
+    assert!(store.scheduled_tasks_next_due().unwrap().is_some());
+}
+
+#[tokio::test]
+async fn schedule_change_wakes_a_waiter_and_retains_an_early_notification() {
+    use std::future::Future;
+    let supervisor = crate::scheduled_tasks::ScheduledSupervisor::default();
+    supervisor.changed();
+    // A stored permit proves an edit between the due lookup and wait is not lost.
+    let early = supervisor.inner.changed.notified();
+    tokio::pin!(early);
+    assert!(matches!(
+        std::future::poll_fn(|cx| std::task::Poll::Ready(early.as_mut().poll(cx))).await,
+        std::task::Poll::Ready(())
+    ));
+    let wait = supervisor.inner.changed.notified();
+    tokio::pin!(wait);
+    assert!(matches!(
+        std::future::poll_fn(|cx| std::task::Poll::Ready(wait.as_mut().poll(cx))).await,
+        std::task::Poll::Pending
+    ));
+    supervisor.changed();
+    assert!(matches!(
+        std::future::poll_fn(|cx| std::task::Poll::Ready(wait.as_mut().poll(cx))).await,
+        std::task::Poll::Ready(())
+    ));
+}
+
+#[tokio::test]
+async fn briefing_refresh_requires_a_new_admitted_occurrence() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    state.store.create_loupist(&loupist("loupist-a")).unwrap();
+    let task = state
+        .store
+        .scheduled_task_create_kind(
+            "loupist-a",
+            "briefing-a",
+            TaskDraft {
+                target: TaskTarget::Dedicated,
+                update_memory: true,
+                ..draft()
+            },
+            TaskKind::Briefing,
+            1_000,
+        )
+        .unwrap();
+    let claim = claim_task(&state.store, "loupist-a", &task.id, 2_000, true)
+        .unwrap()
+        .unwrap();
+    assert!(state
+        .scheduled
+        .dispatch(&state, "loupist-a", &task.id, true)
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        state
+            .scheduled
+            .inner
+            .briefing_refreshes
+            .load(Ordering::SeqCst),
+        0
+    );
+    state
+        .store
+        .scheduled_task_finish(
+            "loupist-a",
+            &claim.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            3_000,
+        )
+        .unwrap();
+    // The missing Pi runtime fails after admission, without a provider call.
+    let run = state
+        .scheduled
+        .dispatch(&state, "loupist-a", &task.id, true)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(run.status, RunStatus::Failed);
+    assert_eq!(
+        state
+            .scheduled
+            .inner
+            .briefing_refreshes
+            .load(Ordering::SeqCst),
+        1
+    );
+    assert!(state
+        .scheduled
+        .dispatch(&state, "loupist-a", &task.id, false)
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        state
+            .scheduled
+            .inner
+            .briefing_refreshes
+            .load(Ordering::SeqCst),
+        1
+    );
+}
+
+#[test]
 fn batched_lists_preserve_missing_and_foreign_chat_rejection() {
     for status in [TaskStatus::Active, TaskStatus::Paused] {
         for owner in [Some("loupist-a"), Some("loupist-b"), None] {

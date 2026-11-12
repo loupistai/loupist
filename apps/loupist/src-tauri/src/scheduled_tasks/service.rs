@@ -68,6 +68,7 @@ pub(crate) fn create(
             .scheduled_task_create(loupist_id, draft, now_ms()),
     }
     .map_err(map_store)
+    .inspect(|_| state.scheduled.changed())
 }
 
 pub(crate) fn update(
@@ -100,6 +101,7 @@ pub(crate) fn update(
         .store
         .scheduled_task_update(loupist_id, id, revision, draft, now_ms())
         .map_err(map_store)
+        .inspect(|_| state.scheduled.changed())
 }
 
 pub(crate) fn set_status(
@@ -127,6 +129,7 @@ pub(crate) fn set_status(
         .store
         .scheduled_task_set_status(loupist_id, id, revision, status, now_ms())
         .map_err(map_store)
+        .inspect(|_| state.scheduled.changed())
 }
 
 /// The user's one-tap OK in the Chat card for a task the agent proposed.
@@ -142,6 +145,7 @@ pub(crate) fn confirm(state: &AppState, loupist_id: &str, id: &str) -> Result<Ta
         .store
         .scheduled_task_confirm(loupist_id, id, now_ms())
         .map_err(map_store)
+        .inspect(|_| state.scheduled.changed())
 }
 
 /// Removes a proposed task the user declined; confirmed tasks are managed elsewhere.
@@ -154,6 +158,7 @@ pub(crate) fn discard(state: &AppState, loupist_id: &str, id: &str) -> Result<()
         .store
         .scheduled_task_discard(loupist_id, id)
         .map_err(map_store)
+        .inspect(|_| state.scheduled.changed())
 }
 
 /// The current state of one task, or `None` once it is gone.
@@ -198,6 +203,7 @@ pub(crate) fn delete(
         .store
         .scheduled_task_delete(loupist_id, id, revision)
         .map_err(map_store)
+        .inspect(|_| state.scheduled.changed())
 }
 
 pub(crate) fn runs(state: &AppState, loupist_id: &str, id: &str) -> Result<Vec<Run>, CommandError> {

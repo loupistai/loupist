@@ -136,11 +136,10 @@ async fn scheduled_dispatch_defers_capacity_before_claiming_or_creating_chat() {
     drop(registrations);
 }
 
-/// A briefing's followed-asset refresh runs before scheduler admission, so a
-/// dispatch or Run now in progress never waits behind its reads, and it does
-/// not start once the scheduler stops.
+/// Followed assets refresh only after a briefing owns an admitted occurrence;
+/// stopping the scheduler prevents a new refresh.
 #[tokio::test]
-async fn a_briefing_refreshes_followed_assets_outside_admission_and_stops_with_the_scheduler() {
+async fn a_briefing_refreshes_followed_assets_after_admission_and_stops_with_the_scheduler() {
     use crate::knowledge::assets;
     let directory = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
@@ -173,29 +172,34 @@ async fn a_briefing_refreshes_followed_assets_outside_admission_and_stops_with_t
         .unwrap()
         .is_some_and(|page| page.refreshed_at_ms.is_some())
     };
-    // Another dispatch holds admission; the briefing's refresh still runs.
+    // A blocked admission has performed neither refresh nor a durable claim.
+    use std::future::Future;
     let held = state.scheduled.hold_admission().await;
     let dispatch = state
         .scheduled
         .dispatch(&state, &loupist.id, &task.id, true);
     tokio::pin!(dispatch);
-    let reached = tokio::time::timeout(std::time::Duration::from_secs(20), async {
-        loop {
-            tokio::select! {
-                _ = &mut dispatch => panic!("the briefing claimed while admission was held"),
-                _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {
-                    if refreshed(&state) {
-                        break;
-                    }
-                }
-            }
-        }
-    })
-    .await;
-    assert!(reached.is_ok(), "the refresh waited for admission");
+    assert!(matches!(
+        std::future::poll_fn(|cx| std::task::Poll::Ready(dispatch.as_mut().poll(cx))).await,
+        std::task::Poll::Pending
+    ));
+    assert!(!refreshed(&state));
+    assert!(state
+        .store
+        .scheduled_task_runs(&loupist.id, &task.id)
+        .unwrap()
+        .is_empty());
     drop(held);
-    // The run itself fails without a model runtime; its receipt is durable.
-    let _ = dispatch.await;
+    // The refresh now runs once; the missing model runtime then fails the run.
+    let run = dispatch.await.unwrap().unwrap();
+    assert!(refreshed(&state));
+    assert_eq!(run.status, RunStatus::Failed);
+    assert!(state
+        .scheduled
+        .dispatch(&state, &loupist.id, &task.id, false)
+        .await
+        .unwrap()
+        .is_none());
 
     // Once the scheduler stops, no refresh starts.
     let other = tempfile::tempdir().unwrap();
