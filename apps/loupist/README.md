@@ -6,7 +6,7 @@
 
 </div>
 
-This directory contains the Loupist React and Tauri desktop product, its agent resources, read-only market-data worker, in-process World extraction and search, native workspace execution, native E2E harness, app-local locks, and release packaging.
+This directory contains the Loupist React and Tauri desktop product, its agent resources, read-only market-data worker, in-process World extraction and search, bounded workspace file tools and offline Python, native E2E harness, app-local locks, and release packaging.
 
 ## Development
 
@@ -47,13 +47,13 @@ use_memory = true
 update_memory = true
 ```
 
-World, Lens, Journal and visualization are always available app workflows. World processing
-settings, connection grants, Scheduled tasks and execution state remain in
+Map (the internal World model), Lens, Journal and visualization are always available app workflows. Map building
+settings, connection grants, scheduled tasks and execution state remain in
 SQLite; credentials stay in the private credential stores.
 
 Settings → Skills lists included and user-added workflows, with search and
-shared enable/disable controls; Loupist settings manage local inheritance. Create a skill directly or use
-Skill Creator to draft one in Chat; Skill Installer helps add requested workflows.
+shared enable/disable controls; Loupist settings manage local inheritance. Advanced holds Add skill, Create skill and
+Skill Creator, which starts off. Skill Installer is not bundled; Settings imports Skills without a model.
 Folder, single-skill ZIP and public GitHub folder imports preserve supporting files.
 Personal skills use `<app-root>/skills/<id>/SKILL.md`; Loupist skills use
 `<workspace>/.loupist/skills/<id>/SKILL.md`. Changes load on the next Chat turn.

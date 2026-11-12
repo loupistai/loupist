@@ -2,7 +2,7 @@
 
 Followed assets are an explicit list the host reads onto the Map. Following is not a holding and not a trade.
 
-What the user follows (the watchlist, then holdings; one entry per symbol and market)
+What the user follows (the followed list, then holdings; one entry per symbol and market)
 reaches each Loupist's World as Sources the host writes, never as a host-written World
 snapshot (`knowledge/followed.rs`, `commands/knowledge/followed.rs`). Each is a
 `user_statement` Source with provider `loupist:followed` and the stored English title
@@ -20,12 +20,16 @@ per-episode anchor limit). The followed list and processing settings keep at mos
 `symbol:market` for a known market), and each Source gets one ordinary World job.
 Unfollowing or selling removes nothing; following again adds nothing.
 
-The user can also follow from chat: when they name what to follow or stop following,
-the agent calls [`loupist_setup`](../agent/turn-tools.md#turn-tools), whose commit goes
-through the same `follow` and `watchlist_remove` functions as the watchlist commands
-and the open Loupist takes the asset's watch defaults. A market the user did not give
-is stored as unknown, never guessed, and an asset already followed under any market is
-not added twice. The reply's receipt lists each asset it followed or stopped following.
+Following shares the followed list across Loupists and opens assets, holdings
+import, per-Loupist Watch-for choices and recent alerts. A bare six-digit page
+input means KRX. In Chat, [`loupist_setup`](../agent/turn-tools.md#turn-tools) uses
+the same `follow` and `watchlist_remove` functions; an unspecified market stays
+unknown, and an asset followed under any market is not added twice. Its receipt
+lists additions and removals. Following starts no automatic checks on a new
+install. Watch all (`watch_defaults_apply`) gives consent and applies class
+defaults only where no decision exists, preserving choices and reporting missing
+Data connections. Pause/Resume and Check now control Watching; Check now waits
+while paused. Earlier briefing opt-ins retain legacy automatic defaults.
 
 Rust brings a Loupist up to date when it is created, when it is opened, and for every
 Loupist about three seconds after the last follow, holdings import or wallet read, so a
