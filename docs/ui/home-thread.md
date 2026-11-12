@@ -8,6 +8,10 @@ there unless a saved chat or an unsent new chat was open. When a scheduled run
 finishes (succeeded or failed) after the Thread exists, Rust posts one host message
 into the Thread with the run's first paragraph and a `delivery` record (run, task,
 cadence, status, run chat), built from the run and task only, never from holdings.
+Host-card deduplication includes hidden edit versions: editing a tail never reposts
+a previously delivered card. A hidden research card stays in its version until that
+version is selected again. Watcher, earnings and link delivery marks commit in the
+same SQLite transaction as their Thread messages.
 Posting takes the chat-mutation lock; while a reply runs in the Thread, delivery
 waits for the next completion or workspace load. The result reads "From: {task} ·
 {cadence} · Open" and Open goes to the run's Chat; showing results marks them read.

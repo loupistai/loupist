@@ -141,3 +141,28 @@ fn the_bot_shows_three_links_a_day_and_keeps_the_fourth_for_later() {
         "the fourth is stored, not posted"
     );
 }
+
+#[test]
+fn home_delivery_rolls_back_chat_and_delivery_marks_together() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", &temporary.path().join("workspace"), 1),
+    );
+    publish_four_links(&state);
+    let before = crate::chat::home::ensure_home_thread(&state, "loupist-a").unwrap();
+    state.store.lock_loupist("loupist-a").unwrap().execute_batch(
+        "CREATE TRIGGER fail_delivery BEFORE UPDATE ON knowledge_connections BEGIN SELECT RAISE(ABORT, 'fixture delivery failure'); END;"
+    ).unwrap();
+    assert!(deliver_finished_runs(&state, "loupist-a").is_err());
+    assert_eq!(state.store.get_chat(&before.id).unwrap().unwrap(), before);
+    state
+        .store
+        .lock_loupist("loupist-a")
+        .unwrap()
+        .execute_batch("DROP TRIGGER fail_delivery")
+        .unwrap();
+    assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 3);
+    assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 0);
+}
