@@ -112,7 +112,7 @@ button.grid-card-name:focus-visible { outline: 2px solid var(--gg-color-focus); 
 .grid-card-period { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-regular); line-height: var(--gg-leading-caption); }
 .grid-card-value { min-width: 112px; max-width: 168px; text-align: end; white-space: nowrap; }
 .grid-card-value .number-chip { transition: text-decoration-color var(--gg-motion-fast) var(--gg-ease-out); }
-.grid-card-empty-cell { min-width: 112px; max-width: 168px; text-align: start; }
+.grid-card-empty-cell { min-width: 112px; max-width: 168px; text-align: end; }
 .grid-card-empty {
   display: inline-block;
   min-height: 28px;
