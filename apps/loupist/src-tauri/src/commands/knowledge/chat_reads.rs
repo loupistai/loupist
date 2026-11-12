@@ -1137,7 +1137,7 @@ fn search_with_options(
     }
     // Reference Sources of a removed shared pack stay hidden.
     let removed = with_loupist_knowledge(state, loupist_id, |tx, _| {
-        let mut excluded = crate::sharing::store::removed_sources(tx, loupist_id)?;
+        let mut excluded = super::removed_pack_sources(tx, loupist_id)?;
         let controls = crate::knowledge::memory_controls::load(tx, loupist_id)?;
         excluded.extend(controls.removed);
         if !include_paused {
@@ -1315,7 +1315,7 @@ pub(in crate::commands) fn host_prepare_read(
             }
             match request.scope.as_str() {
                 "source"
-                    if crate::sharing::store::removed_sources(tx, loupist_id)?
+                    if super::removed_pack_sources(tx, loupist_id)?
                         .contains(&request.record_id) =>
                 {
                     Err(crate::knowledge::KnowledgeError::NotFound)

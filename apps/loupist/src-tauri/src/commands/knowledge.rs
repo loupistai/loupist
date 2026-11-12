@@ -976,6 +976,30 @@ pub fn knowledge_graph_settings_set(
     graph_settings_view(state.inner(), &request.loupist_id, &current)
 }
 
+/// A removed pack loses access to its reference Sources. A capture retained
+/// by the user's research, or an acknowledged Chat read saved with that Chat,
+/// independently keeps the Source available.
+fn removed_pack_sources(
+    tx: &rusqlite::Transaction<'_>,
+    loupist_id: &str,
+) -> crate::knowledge::KnowledgeResult<std::collections::BTreeSet<String>> {
+    let mut removed = crate::sharing::store::removed_sources(tx, loupist_id)?;
+    if removed.is_empty() {
+        return Ok(removed);
+    }
+    let mut statement = tx.prepare("SELECT r.record_id FROM knowledge_records r
+        WHERE r.owner_loupist_id=?1 AND r.record_id IN (SELECT value FROM json_each(?2)) AND r.kind='source' AND (
+            EXISTS(SELECT 1 FROM knowledge_source_captures c WHERE c.record_id=r.record_id AND c.authorship<>'imported_contributor')
+            OR EXISTS(SELECT 1 FROM knowledge_read_receipts p WHERE p.loupist_id=?1 AND p.record_id=r.record_id AND p.purpose='chat_turn'))")?;
+    for record in statement.query_map(
+        rusqlite::params![loupist_id, serde_json::to_string(&removed)?],
+        |row| row.get::<_, String>(0),
+    )? {
+        removed.remove(&record?);
+    }
+    Ok(removed)
+}
+
 pub(crate) fn catalog(
     state: &AppState,
     request: KnowledgeCatalogRequest,
@@ -987,7 +1011,7 @@ pub(crate) fn catalog(
         let mut lenses = Vec::new();
         let mut sources = Vec::new();
         // Reference Sources of a removed shared pack stay hidden.
-        let removed = crate::sharing::store::removed_sources(tx, &request.loupist_id)?;
+        let removed = removed_pack_sources(tx, &request.loupist_id)?;
         for module in write.list_records(&request.loupist_id)? {
             if removed.contains(&module.record_id) {
                 continue;
@@ -1098,6 +1122,9 @@ pub(crate) fn source_read(
         ));
     }
     with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
+        if removed_pack_sources(tx, &request.loupist_id)?.contains(&request.record_id) {
+            return Err(KnowledgeError::NotFound);
+        }
         let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
         let revision = match (&request.world_record_id, &request.world_revision_id) {
             (Some(world_module), Some(world_revision)) => {

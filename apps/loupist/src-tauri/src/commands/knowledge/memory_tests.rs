@@ -1168,3 +1168,102 @@ fn lens_reads_links_search_and_filing_stay_within_the_loupist() {
         private.revision_id
     );
 }
+
+#[test]
+fn removed_pack_sources_are_unreadable_unless_research_independently_retained_them() {
+    use crate::sharing::{pack::License, store as packs};
+    let directory = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(directory.path().join("app"));
+    state
+        .store
+        .create_loupist(&loupist_profile("loupist-a"))
+        .unwrap();
+    let (pack_only, researched) = with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+        let write = KnowledgeWrite::bind(tx, blobs);
+        let mut imported = text_source("loupist-a", "shared_pack:import-a", b"Pack reference");
+        imported.source_class = SourceClass::ImportedContributor;
+        imported.authorship = Authorship::ImportedContributor;
+        let pack_only = write.retain_new_source(imported.clone())?;
+        imported.material.as_mut().unwrap().bytes = b"Research reference".to_vec();
+        imported.material.as_mut().unwrap().selector = Selector::ByteRange { start: 0, end: 18 };
+        let researched = write.retain_new_source(imported)?;
+        packs::insert_import(
+            tx,
+            "loupist-a",
+            &packs::ImportRow {
+                import_id: "import-a".into(),
+                pack_id: "pack-a".into(),
+                name: "Shared desk".into(),
+                author: None,
+                version: 1,
+                license: License::Cc0,
+                source_url: None,
+                repo: None,
+                path: None,
+                commit: None,
+                mode: packs::ImportMode::Merge,
+                added_at_ms: 1,
+                blocked_reason: None,
+                origin: vec![],
+                checked_at_ms: None,
+            },
+        )?;
+        for source in [&pack_only, &researched] {
+            packs::insert_world_ref(tx, "loupist-a", "import-a", "source", &source.record_id)?;
+        }
+        // The user's research retains a further capture of the same Source.
+        let own = text_source("loupist-a", "publisher", b"Own retained research");
+        write.retain_source(own.into_capture(
+            researched.record_id.clone(),
+            Some(researched.revision_id.clone()),
+            Some(researched.source_id.clone()),
+        ))?;
+        Ok((pack_only, researched))
+    })
+    .unwrap();
+    let request = |saved: &crate::knowledge::RetainedSource| KnowledgeSourceReadRequest {
+        loupist_id: "loupist-a".into(),
+        record_id: saved.record_id.clone(),
+        revision_id: saved.revision_id.clone(),
+        source_id: Some(saved.source_id.clone()),
+        span_id: saved.span_id.clone(),
+        purpose: "renderer_inspection".into(),
+        world_record_id: None,
+        world_revision_id: None,
+    };
+    assert!(source_read(&state, request(&pack_only)).is_ok());
+    with_loupist_knowledge(&state, "loupist-a", |tx, _| {
+        packs::mark_removed(tx, "loupist-a", "import-a", 10)?;
+        Ok(())
+    })
+    .unwrap();
+    assert!(source_read(&state, request(&pack_only)).is_err());
+    assert!(source_read(&state, request(&researched)).is_ok());
+    let catalog = catalog(
+        &state,
+        KnowledgeCatalogRequest {
+            loupist_id: "loupist-a".into(),
+        },
+    )
+    .unwrap();
+    assert!(!catalog
+        .sources
+        .iter()
+        .any(|item| item.record_id == pack_only.record_id));
+    assert!(catalog
+        .sources
+        .iter()
+        .any(|item| item.record_id == researched.record_id));
+    for (saved, readable) in [(&pack_only, false), (&researched, true)] {
+        let read = HostReadRequest {
+            scope: "source".into(),
+            revision_id: Some(saved.revision_id.clone()),
+            span_id: saved.span_id.clone(),
+            ..empty_read(&saved.record_id)
+        };
+        assert_eq!(
+            host_prepare_read(&state, "loupist-a", &read).is_ok(),
+            readable
+        );
+    }
+}
