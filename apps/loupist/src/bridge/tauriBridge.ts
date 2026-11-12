@@ -294,6 +294,7 @@ const bridge = (): StrictBridge => ({
   earningsEventsList: request("earnings_events_list"),
   earningsPrepare: request("earnings_prepare"),
 
+  watchDefaultsApply: request("watch_defaults_apply"),
   watchSettingsList: request("watch_settings_list"),
   watchSettingSet: request("watch_setting_set"),
   watchPauseSet: request("watch_pause_set"),

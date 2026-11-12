@@ -162,6 +162,8 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::user_context::WatchlistRemoveRequest,
         crate::commands::watch::WatchCheckNowRequest,
         crate::commands::watch::WatchCheckResult,
+        crate::commands::watch::WatchDefaultsApplyRequest,
+        crate::commands::watch::WatchDefaultsApplyResult,
         crate::commands::watch::WatchEventsListRequest,
         crate::commands::watch::WatchEventsSeenRequest,
         crate::commands::watch::WatchPauseSetRequest,
@@ -450,6 +452,7 @@ commands! {
         watchlist_add: crate::commands::user_context::WatchlistAddRequest => crate::store::user_context::WatchlistEntry;
         watchlist_list: () => Vec<crate::store::user_context::WatchlistEntry>;
         watchlist_remove: crate::commands::user_context::WatchlistRemoveRequest => ();
+        watch_defaults_apply: crate::commands::watch::WatchDefaultsApplyRequest => crate::commands::watch::WatchDefaultsApplyResult;
         watch_check_now: crate::commands::watch::WatchCheckNowRequest => crate::commands::watch::WatchCheckResult;
         watch_events_list: crate::commands::watch::WatchEventsListRequest => Vec<crate::knowledge::watch::WatchEventView>;
         watch_events_seen: crate::commands::watch::WatchEventsSeenRequest => ();
@@ -1203,6 +1206,11 @@ async fn command_signatures() {
         any::<crate::commands::user_context::WatchlistRemoveRequest>(),
         any(),
     );
+    let _: Result<crate::commands::watch::WatchDefaultsApplyResult, CommandError> =
+        crate::commands::watch::watch_defaults_apply(
+            any(),
+            any::<crate::commands::watch::WatchDefaultsApplyRequest>(),
+        );
     let _: Result<crate::commands::watch::WatchCheckResult, CommandError> =
         crate::commands::watch::watch_check_now(
             any(),

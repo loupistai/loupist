@@ -32,7 +32,7 @@ import type { RevisionRequest, RunRequest, ScheduledTasksLoupistRequest, StatusR
 import type { SkillCreateRequest, SkillDeleteRequest, SkillImportRequest, SkillReadRequest, SkillSaveRequest } from "./commands/skills";
 import type { ChatArtifactListRequest, ChatArtifactReadRequest, ChatArtifactRestoreRequest, ChatArtifactViewDto, ChatAttachmentReadDto, ChatAttachmentReadRequest, ChatBranchRequest, ChatControlReceiptDto, ChatControlRequestDto, ChatCreateRequest, ChatDeleteRequest, ChatFeedbackRequest, ChatMemorySetAsideRequest, ChatRenameRequest, ChatSendRequest, ChatThreadDto, ChatVersionSwitchRequest, LoupistArtifactItemDto, LoupistArtifactListRequest, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest, LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistRecoverRequest, LoupistSummary, LoupistWorkspace, RunStarted } from "./commands/types";
 import type { CsvCommitRequest, CsvImportRequest, MapColumnsRequest, WalletAddRequest, WalletIdRequest, WalletRefreshRequest, WalletRenameRequest, WatchlistAddRequest, WatchlistRemoveRequest } from "./commands/user_context";
-import type { WatchCheckNowRequest, WatchCheckResult, WatchEventsListRequest, WatchEventsSeenRequest, WatchPauseSetRequest, WatchSettingSetRequest, WatchSettingsListRequest, WatchSettingsView } from "./commands/watch";
+import type { WatchCheckNowRequest, WatchCheckResult, WatchDefaultsApplyRequest, WatchDefaultsApplyResult, WatchEventsListRequest, WatchEventsSeenRequest, WatchPauseSetRequest, WatchSettingSetRequest, WatchSettingsListRequest, WatchSettingsView } from "./commands/watch";
 import type { ChatActivityRequest, WorkspacePathRequest } from "./commands/workspace";
 import type { DraftAttachment, DraftIdentity, StoredChatDraft, WorkspaceUiState, WorkspaceUiWriteRequest } from "./commands/workspace_ui";
 import type { AddCommandRequest, AddJsonRequest, AddUrlRequest, ApproveRequest, AuthorizeRequest, ConfirmRequest, EnabledRequest, IdentityRequest, ListRequest, MemoryRequest } from "./custom_connections/commands";
@@ -132,7 +132,6 @@ export type BridgeCommands = {
   knowledge_catalog: { request: KnowledgeCatalogRequest, response: KnowledgeCatalogDto },
   knowledge_connection_dismiss: { request: KnowledgeConnectionRequest, response: ConnectionView },
   knowledge_connection_open: { request: KnowledgeConnectionRequest, response: ConnectionView },
-  knowledge_connections: { request: response: Array<ConnectionView> },
   knowledge_graph_job: { request: KnowledgeGraphJobRequest, response: GraphJobView },
   knowledge_graph_pause: { request: KnowledgeGraphPauseRequest, response: GraphProcessingView },
   knowledge_graph_recover: { request: KnowledgeGraphLoupistRequest, response: GraphProcessingView },
@@ -256,6 +255,7 @@ export type BridgeCommands = {
   watchlist_add: { request: WatchlistAddRequest, response: WatchlistEntry },
   watchlist_list: { request: never, response: Array<WatchlistEntry> },
   watchlist_remove: { request: WatchlistRemoveRequest, response: null },
+  watch_defaults_apply: { request: WatchDefaultsApplyRequest, response: WatchDefaultsApplyResult },
   watch_check_now: { request: WatchCheckNowRequest, response: WatchCheckResult },
   watch_events_list: { request: WatchEventsListRequest, response: Array<WatchEventView> },
   watch_events_seen: { request: WatchEventsSeenRequest, response: null },

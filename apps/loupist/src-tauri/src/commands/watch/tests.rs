@@ -1498,3 +1498,149 @@ async fn manual_watch_check_with_nothing_followed_finishes_without_a_read() {
     assert_eq!(checked.new_alerts, 0);
     assert!(!checked.settings.checking);
 }
+
+#[test]
+fn defaults_command_records_consent_keeps_choices_and_preserves_private_dated_drafts() {
+    use tauri::Manager;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", &temporary.path().join("workspace"), 1),
+    );
+    for (symbol, market) in [("MORR", "NASDAQ"), ("000660", "KRX"), ("KEEP", "NYSE")] {
+        follow(&state, symbol, market, symbol);
+    }
+    for mut binding in state.store.list_loupist_capabilities("loupist-a").unwrap() {
+        binding.enabled = false;
+        binding.updated_at_ms += 1;
+        state.store.save_loupist_capability(&binding).unwrap();
+    }
+    followed_pages(&state, "loupist-a").unwrap();
+    with_assets(&state, "loupist-a", true, |tx| {
+        watch::set_kind(
+            tx,
+            "loupist-a",
+            &page_id("KEEP", "NYSE"),
+            WatchKind::Filings,
+            false,
+            1,
+            2,
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    super::super::earnings::ensure_task(&state, "loupist-a", false).unwrap();
+    let mut chat = crate::commands::tests::chat("private-chat", "loupist-a", 3);
+    chat.memory_policy.use_memory = false;
+    chat.memory_policy.update_memory = false;
+    let mut question = crate::test_fixtures::chat_message(
+        "question",
+        crate::domain::ChatRole::User,
+        "Earlier research",
+    );
+    question.as_of = Some("2026-10-01".into());
+    chat.messages.push(question);
+    state.store.create_chat(&chat).unwrap();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state.clone());
+    let draft_id = || {
+        serde_json::from_value(json!({"loupist_id": "loupist-a", "thread_id": "private-chat"}))
+            .unwrap()
+    };
+    super::super::workspace_ui::chat_draft_write(
+        app.state(),
+        draft_id(),
+        serde_json::from_value(
+            json!({"prompt": "Keep this private", "context": {"asOf": "2026-10-01", "pins": []}}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let draft = serde_json::to_value(
+        super::super::workspace_ui::chat_draft_read(app.state(), draft_id()).unwrap(),
+    )
+    .unwrap();
+    let before = settings_view(&state, &Runtime::default(), "loupist-a").unwrap();
+    assert!(before.consent_off && before.watched.is_empty());
+    let result = watch_defaults_apply(
+        app.state(),
+        WatchDefaultsApplyRequest {
+            loupist_id: "loupist-a".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(result.watched_assets, 2);
+    assert!(!consent_mode(&state, "loupist-a").unwrap().eq("off"));
+    assert!(result
+        .needs_connections
+        .iter()
+        .any(|need| need.kind == WatchKind::Filings
+            && need.connection.id == OPENDART_CONNECTION
+            && need.asset_ids == [page_id("000660", "KRX")]));
+    assert!(result
+        .needs_connections
+        .iter()
+        .any(|need| need.kind == WatchKind::Results
+            && need.asset_ids.contains(&page_id("MORR", "NASDAQ"))));
+    let switches = with_assets(&state, "loupist-a", false, |tx| {
+        watch::switches(tx, "loupist-a")
+    })
+    .unwrap();
+    assert!(switches[&page_id("MORR", "NASDAQ")].enabled(WatchKind::Dividends));
+    assert!(switches[&page_id("KEEP", "NYSE")]
+        .kinds
+        .values()
+        .all(|enabled| !enabled));
+    assert_eq!(
+        state
+            .store
+            .scheduled_tasks_list("loupist-a")
+            .unwrap()
+            .into_iter()
+            .find(|task| task.kind == TaskKind::Earnings)
+            .unwrap()
+            .status,
+        TaskStatus::Active
+    );
+    let changes = state.store.lock().unwrap().total_changes();
+    assert_eq!(
+        watch_defaults_apply(
+            app.state(),
+            WatchDefaultsApplyRequest {
+                loupist_id: "loupist-a".into()
+            }
+        )
+        .unwrap(),
+        result
+    );
+    assert_eq!(state.store.lock().unwrap().total_changes(), changes);
+    assert_eq!(state.store.get_chat(&chat.id).unwrap().unwrap(), chat);
+    assert_eq!(
+        serde_json::to_value(
+            super::super::workspace_ui::chat_draft_read(app.state(), draft_id()).unwrap()
+        )
+        .unwrap(),
+        draft
+    );
+}
+
+#[test]
+fn defaults_command_applies_class_defaults_only_for_the_matching_template() {
+    for (template, watched) in [(None, 0), (Some(crate::domain::LoupistTemplate::Crypto), 1)] {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let mut saved = profile("loupist-a", &temporary.path().join("workspace"), 1);
+        saved.template = template;
+        seed_profile(state.store.as_ref(), &saved);
+        follow(&state, "ETH", "CRYPTO", "Ethereum");
+        assert_eq!(
+            apply_defaults_with_consent(&state, "loupist-a")
+                .unwrap()
+                .watched_assets,
+            watched
+        );
+    }
+}

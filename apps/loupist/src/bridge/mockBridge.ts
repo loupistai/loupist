@@ -134,6 +134,43 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   /** Local watchers; previews and tests install settings and alerts here. */
   readonly watch = new MockWatch(() => this.watchlistList());
+  async watchDefaultsApply(request: Parameters<Contract.LoupistBridge["watchDefaultsApply"]>[0]): ReturnType<Contract.LoupistBridge["watchDefaultsApply"]> {
+    const loupist = this.state.loupists.find(item => item.id === request.loupistId);
+    if (!loupist) throw new Error("Loupist not found.");
+    const settings = await this.watch.watchSettingsList(request);
+    const assets = [...settings.watched, ...settings.notWatched];
+    let changed = settings.consentOff;
+    for (const asset of assets) {
+      if (asset.revision !== 1 || asset.kinds.some(kind => kind.enabled)) continue;
+      const equity = asset.kinds.some(kind => kind.kind === "filings");
+      const templateClass = loupist.template === "crypto" && asset.kinds.some(kind => kind.kind === "cryptoMove" || kind.kind === "depeg")
+        || loupist.template === "commodities" && asset.kinds.some(kind => kind.kind === "futuresMove");
+      for (const kind of asset.kinds) kind.enabled = equity ? ["filings", "results", "dividends"].includes(kind.kind) : templateClass;
+      asset.revision += 1;
+      changed = true;
+    }
+    settings.consentOff = false;
+    settings.watched = assets.filter(asset => asset.kinds.some(kind => kind.enabled));
+    settings.notWatched = assets.filter(asset => asset.kinds.every(kind => !kind.enabled));
+    if (changed) this.watch.install(request.loupistId, settings, await this.watch.watchEventsList({ ...request, limit: Number.MAX_SAFE_INTEGER }));
+    if (assets.some(asset => asset.kinds.some(kind => kind.kind === "filings"))) {
+      const task = (await this.scheduled.list({ loupist_id: request.loupistId })).find(item => item.kind === "earnings");
+      if (task?.status === "paused" && task.revision === 1 && task.last_run_at_ms === null) {
+        await this.scheduled.setStatus({ loupist_id: request.loupistId, task_id: task.id, expected_revision: 1, status: "active" });
+      } else if (!task) {
+        const now = Date.now();
+        this.scheduled.installTask({ id: `earnings-${request.loupistId}`, loupist_id: request.loupistId, kind: "earnings", title: "Results before and after", prompt: "Automatic results captures", schedule: { kind: "interval", every_minutes: 60 }, target: { kind: "existing_chat", thread_id: loupistChat.ensureHomeThread(this.state, request.loupistId).id }, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: true, status: "active", revision: 1, created_at_ms: now, updated_at_ms: now, next_run_at_ms: now + 3_600_000, last_run_at_ms: null, last_error: null, session_thread_id: null, awaiting_confirmation: false });
+      }
+    }
+    const needs: import("../contracts/generated").WatchDefaultsConnectionNeed[] = [];
+    for (const asset of settings.watched) for (const kind of asset.kinds) {
+      if (!kind.enabled || !kind.needsConnection) continue;
+      let need = needs.find(item => item.kind === kind.kind && item.connection.id === kind.needsConnection!.id);
+      if (!need) { need = { kind: kind.kind, connection: kind.needsConnection, assetIds: [] }; needs.push(need); }
+      need.assetIds.push(asset.assetId);
+    }
+    return { watchedAssets: settings.watched.length, needsConnections: needs };
+  }
   watchSettingsList(request: { loupistId: string }) { return this.watch.watchSettingsList(request); }
   watchSettingSet(request: Parameters<Contract.LoupistBridge["watchSettingSet"]>[0]) { return this.watch.watchSettingSet(request); }
   watchPauseSet(request: { loupistId: string; paused: boolean }) { return this.watch.watchPauseSet(request); }

@@ -1637,19 +1637,24 @@ fn template_class(state: &AppState, loupist_id: &str) -> Option<AssetClass> {
         .and_then(crate::domain::LoupistTemplate::asset_class)
 }
 
+fn apply_followed_defaults(state: &AppState, loupist_id: &str) -> Result<bool, CommandError> {
+    let pages = followed_pages(state, loupist_id)?;
+    let template = template_class(state, loupist_id);
+    with_assets(state, loupist_id, true, |tx| {
+        let mut changed = false;
+        for page in pages.iter().filter(|page| watchable(page)) {
+            let defaults = watch::class_defaults(page.class, template);
+            changed |= watch::apply_defaults(tx, loupist_id, &page.asset_id, &defaults, now_ms())?;
+        }
+        Ok(changed)
+    })
+}
+
 /// Consent enables an untouched Results task. Earlier briefing opt-ins keep
 /// their defaults; a new explicit watch choice leaves every other kind alone.
 pub(crate) fn on_consent(state: &AppState, loupist_id: &str) -> Result<(), CommandError> {
     if consent_mode(state, loupist_id)? == "legacy" {
-        let pages = followed_pages(state, loupist_id)?;
-        let template = template_class(state, loupist_id);
-        with_assets(state, loupist_id, true, |tx| {
-            for page in pages.iter().filter(|page| watchable(page)) {
-                let defaults = watch::class_defaults(page.class, template);
-                watch::apply_defaults(tx, loupist_id, &page.asset_id, &defaults, now_ms())?;
-            }
-            Ok(())
-        })?;
+        apply_followed_defaults(state, loupist_id)?;
     }
     super::earnings::ensure_task(state, loupist_id, true)
 }
@@ -1878,6 +1883,96 @@ pub fn watch_settings_list(
         &state.scheduled.watch_runtime(),
         &request.loupist_id,
     )
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WatchDefaultsApplyRequest {
+    pub loupist_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct WatchDefaultsConnectionNeed {
+    pub kind: WatchKind,
+    pub connection: ConnectionRef,
+    pub asset_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct WatchDefaultsApplyResult {
+    pub watched_assets: usize,
+    pub needs_connections: Vec<WatchDefaultsConnectionNeed>,
+}
+
+#[tauri::command(async)]
+pub fn watch_defaults_apply(
+    state: State<'_, AppState>,
+    request: WatchDefaultsApplyRequest,
+) -> Result<WatchDefaultsApplyResult, CommandError> {
+    apply_defaults_with_consent(state.inner(), &request.loupist_id)
+}
+
+fn apply_defaults_with_consent(
+    state: &AppState,
+    loupist_id: &str,
+) -> Result<WatchDefaultsApplyResult, CommandError> {
+    admit(state, loupist_id)?;
+    let _activity = state
+        .maintenance
+        .admit_kind(MaintenanceActivityKind::MemoryMutation)?;
+    consent_mode(state, loupist_id)?;
+    let consent_changed = state
+        .store
+        .lock()
+        .map_err(map_store)?
+        .execute(
+            "UPDATE watcher_consent SET mode='selected' WHERE loupist_id=?1 AND mode='off'",
+            [loupist_id],
+        )
+        .map_err(|error| map_store(error.into()))?
+        > 0;
+    let defaults_changed = apply_followed_defaults(state, loupist_id)?;
+    let earnings_state = || -> Result<_, CommandError> {
+        Ok(state
+            .store
+            .scheduled_tasks_list(loupist_id)
+            .map_err(map_store)?
+            .into_iter()
+            .find(|task| task.kind == TaskKind::Earnings)
+            .map(|task| (task.id, task.revision)))
+    };
+    let earnings_before = earnings_state()?;
+    super::earnings::ensure_task(state, loupist_id, true)?;
+    let earnings_changed = earnings_before != earnings_state()?;
+    let settings = settings_view(state, &state.scheduled.watch_runtime(), loupist_id)?;
+    let mut needs: BTreeMap<(WatchKind, String), WatchDefaultsConnectionNeed> = BTreeMap::new();
+    for asset in &settings.watched {
+        for kind in asset.kinds.iter().filter(|kind| kind.enabled) {
+            if let Some(connection) = &kind.needs_connection {
+                needs
+                    .entry((kind.kind, connection.id.clone()))
+                    .or_insert_with(|| WatchDefaultsConnectionNeed {
+                        kind: kind.kind,
+                        connection: connection.clone(),
+                        asset_ids: Vec::new(),
+                    })
+                    .asset_ids
+                    .push(asset.asset_id.clone());
+            }
+        }
+    }
+    if consent_changed || defaults_changed || earnings_changed {
+        changed(loupist_id);
+    }
+    Ok(WatchDefaultsApplyResult {
+        watched_assets: settings.watched.len(),
+        needs_connections: needs.into_values().collect(),
+    })
 }
 
 #[derive(Debug, Deserialize)]

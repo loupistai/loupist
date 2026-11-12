@@ -50,8 +50,12 @@ While the app runs, `commands/watch.rs` checks what each Loupist follows against
 sources only, with no model call; nothing runs while the app is closed. A loop started
 with the scheduler ticks every minute, and the first scheduled check waits two minutes
 after launch. A Loupist is checked after watch consent and while its watchers are running. Existing active briefings retain their earlier opt-in on first access. New explicit watch requests enable the chosen asset and kind and turn on an untouched
-Results before and after task; a task the user paused stays paused. Other watch kinds
-keep their choices. Creating a new briefing leaves watch consent unchanged.
+Results before and after task; a task the user paused stays paused. `watch_defaults_apply`
+records consent and applies the class defaults to every currently followed asset with
+no saved choice. Existing per-asset choices stay intact, and a repeated call changes
+nothing. It returns `watchedAssets` and `needsConnections` grouped by kind and
+connection with their `assetIds`; it changes no Chat privacy or as-of state. Other
+watch kinds keep their choices. Creating a new briefing leaves watch consent unchanged.
 [Watch kinds](watchers.md#watchers) map to routes: filings (holders, and every
 Korean kind except flows; OpenDART, or SEC filings through OpenBB), insider trades
 (`sec`, `fmp` or `intrinio` only), the earnings calendar (`nasdaq`, `fmp` or `tmx`; one
@@ -85,7 +89,7 @@ first read alert on the next pass. The first
 check after launch, or the day's first check, hands its alerts to the morning message;
 later ones post in the [home Thread](../ui/home-thread.md). No OS notification is sent for a watch
 event. Schedule › Watching fades the right edge of a class table only when that table is wider than the pane. Watch for on the asset page and Schedule › Watching use `watch_settings_list`,
-`watch_setting_set` (guarded by the asset's revision; turning a kind on needs consent and
+`watch_defaults_apply`, `watch_setting_set` (guarded by the asset's revision; turning a kind on needs consent and
 a kind that applies), `watch_pause_set`, `watch_check_now`, `watch_events_list` and
 `watch_events_seen`; Rust emits `watch-changed` after each change.
 

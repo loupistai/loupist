@@ -316,6 +316,7 @@ pub fn run() {
             commands::earnings::earnings_snapshot_get,
             commands::earnings::earnings_events_list,
             commands::earnings::earnings_prepare,
+            commands::watch::watch_defaults_apply,
             commands::watch::watch_settings_list,
             commands::watch::watch_setting_set,
             commands::watch::watch_pause_set,
