@@ -14,7 +14,7 @@
   },
   "title": "Briefings",
   "morning": "Morning briefing",
-  "custom": "Scheduled research: {{title}}",
+  "custom": "Scheduled chat: {{title}}",
   "run": "Run now",
   "preparing": "Preparing…",
   "preparingBody": "Preparing your briefing…",
@@ -64,8 +64,7 @@
     "tasks": "Scheduled work",
     "open": "Open",
     "emptyTitle": "Nothing is scheduled yet",
-    "emptyBody": "Your Loupist runs briefings and checks on its own at the times you set, then tells you what changed. Tell Bot what to do and when. For example, “Summarize chip news every Monday at 8 AM.”",
-    "createLabel": "Schedule a task",
+    "emptyBody": "Your Loupist runs briefings and checks on its own at the times you set, then tells you what changed. Tell your Loupist in Home what to do and when. For example, “Summarize chip news every Monday at 8 AM.”",
     "filterLabel": "Show",
     "filterActive": "Active",
     "filterAll": "All",
@@ -107,8 +106,8 @@
     "deleteWhileRunning": "Wait for this run to finish before deleting the task.",
     "deleteTitle": "Delete “{{title}}”?",
     "deleteBody": "It stops running and its run history leaves Schedule. Chats it already wrote stay.",
-    "changeHint": "To change a task's time or prompt, tell Bot.",
-    "changeAsk": "Ask Bot",
+    "changeHint": "To change a task's time or prompt, tell your Loupist in Home.",
+    "changeAsk": "Ask in Home",
     "changePrompt": "Change my scheduled task “{{title}}”: ",
     "lastFailed": "The last run didn't finish. {{reason}}",
     "history": "Runs of {{title}}",
@@ -117,7 +116,10 @@
     "backTo": "← {{title}}",
     "runs": "Runs",
     "waitingPlan": "Waiting: ChatGPT plan at its limit",
-    "waitingReconnect": "Waiting: sign-in needs reconnect"
+    "waitingReconnect": "Waiting: sign-in needs reconnect",
+    "spending": "Scheduled tasks use your AI account each run. Watching uses none. Both run only while Loupist is open or in the menu bar.",
+    "morningBriefing": "Turn on a morning briefing",
+    "morningBriefingPrompt": "Turn on a weekday morning briefing at 8"
   },
   "sections": {
     "changed": "What changed",
@@ -198,5 +200,15 @@
     "showAll": "Show all",
     "showEarlier": "Show earlier",
     "failed": "Couldn't check now. Try again in a moment."
+  },
+  "following": {
+    "title": "Following",
+    "intro": "What you follow is shared by all your Loupists. Each Loupist chooses what to watch for.",
+    "empty": "Add a company, fund or coin to follow. Following is not a holding or a trade.",
+    "loadFailed": "Couldn't load what you follow.",
+    "importHoldings": "Import holdings…",
+    "watchAll": "Watch all {{n}}",
+    "watchAllDetail": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",
+    "watchAllFailed": "Couldn't turn on Watching. Try again."
   }
 }

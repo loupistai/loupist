@@ -119,7 +119,7 @@ it("refreshes exact source relationships and processing errors without losing th
     expect(reader).toHaveTextContent("Earlier processing issue");
     expect(screen.queryByRole("group", { name: "Related relationships" })).toBeNull();
     await act(async () => vi.advanceTimersByTimeAsync(2500));
-    expect(screen.getByRole("status")).toHaveTextContent("World updated");
+    expect(screen.getByRole("status")).toHaveTextContent("Map updated");
     expect(screen.getByRole("article", { name: "Source reader" })).toBe(reader);
     expect(reader).toHaveTextContent("The status-code element is a three-digit integer code.");
     expect(reader).not.toHaveTextContent("Earlier processing issue");
@@ -156,10 +156,10 @@ it("filters source processing independently of successful source storage", async
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(4);
   await user.click(screen.getByRole("radio", { name: /Processing/ }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(1);
-  expect(screen.getByRole("button", { name: /Report 0/ })).toHaveTextContent("World is updating");
+  expect(screen.getByRole("button", { name: /Report 0/ })).toHaveTextContent("Map is updating");
   await user.click(screen.getByRole("radio", { name: "Needs attention" }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(2);
-  expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("No text for World processing");
+  expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("No text for map building");
   await user.click(screen.getByRole("radio", { name: "All" }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(4);
 });
@@ -246,17 +246,17 @@ it("shows the What you follow Source in the interface language whatever title it
   const props = await fixture();
   const record = props.catalog.sources[0];
   const followed = { ...record, title: "What you follow", titleKey: "followed" as const, objects: [{
-    ...record.objects[0], title: "What you follow", titleKey: "followed" as const, originLabel: "Your watchlist and holdings",
+    ...record.objects[0], title: "What you follow", titleKey: "followed" as const, originLabel: "What you follow and your holdings",
   }] };
   const catalog = { ...props.catalog, sources: [followed] };
   const location = { loupistId: props.location.loupistId, surface: "source" as const };
   const view = render(<SourceWorkspace {...props} catalog={catalog} location={location} />);
-  expect(screen.getByRole("button", { name: /What you follow.*Your watchlist and holdings/ })).toBeVisible();
+  expect(screen.getByRole("button", { name: /What you follow.*What you follow and your holdings/ })).toBeVisible();
   try {
     await act(async () => { await i18n.changeLanguage("ko"); });
     view.rerender(<SourceWorkspace {...props} catalog={catalog} location={location} />);
     const row = screen.getByRole("button", { name: /관심 자산/ });
-    expect(row).toHaveTextContent("관심 목록과 보유 자산");
+    expect(row).toHaveTextContent("관심 자산과 보유 자산");
     expect(row).not.toHaveTextContent("What you follow");
     // The title the user reads is the one they can search for.
     view.rerender(<SourceWorkspace {...props} catalog={catalog} location={location} query="관심" />);

@@ -33,7 +33,7 @@ it("lists each warning in text, shows the flagged lines, and adds a new Loupist 
   await user.click(within(page).getByRole("button", { name: /Reverse DCF sanity check/ }));
   expect(within(page).getByText(/industry outlook \(example\.org\)/)).toBeVisible();
 
-  await user.click(within(page).getByRole("switch", { name: /Rules/ }));
+  await user.click(within(page).getByRole("switch", { name: /Principles/ }));
   const name = within(page).getByRole("textbox", { name: "Name" });
   await user.clear(name);
   await user.type(name, "Chip supply chain");
@@ -76,8 +76,8 @@ it("adding to an existing Loupist leaves its profile and perspective alone", asy
   expect(perspective).toBeDisabled();
   expect(perspective).toHaveAttribute("aria-checked", "false");
   // Said once, under Perspective.
-  expect(within(page).getAllByText("Your rules and perspective stay as they are.")).toHaveLength(1);
-  expect(within(within(page).getByRole("region", { name: "Perspective" })).getByText("Your rules and perspective stay as they are.")).toBeVisible();
+  expect(within(page).getAllByText("Your principles and perspective stay as they are.")).toHaveLength(1);
+  expect(within(within(page).getByRole("region", { name: "Perspective" })).getByText("Your principles and perspective stay as they are.")).toBeVisible();
   await user.click(within(page).getByRole("button", { name: "Add" }));
   await waitFor(() => expect(add).toHaveBeenCalledWith(expect.objectContaining({ mode: { merge: { loupistId: loupists[0].id } }, sections: expect.objectContaining({ perspective: false }) }), expect.any(Function)));
 });

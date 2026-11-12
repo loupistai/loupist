@@ -1,4 +1,22 @@
 {
+  "general": {
+    "label": "General",
+    "description": "When Loupist runs, and what leaves this Mac.",
+    "keywords": "general menu bar background running privacy notice about telemetry keychain",
+    "keepRunning": "Keep Loupist running in the menu bar for briefings and alerts",
+    "keepRunningDescription": "Scheduled work and Watching run only while Loupist is running. With this on, closing the window keeps it in the menu bar.",
+    "keepRunningAutomatic": "Loupist stays in the menu bar so briefings and Watching can run.",
+    "loadFailed": "Couldn't load this setting.",
+    "saveFailed": "Couldn't change this setting. Try again.",
+    "aboutTitle": "About & privacy",
+    "privacyTitle": "What leaves this Mac",
+    "privacyStays": "Stays on this Mac: chats, sources, Map, Lens, Journal and holdings, in each Loupist's folder. No Loupist account, no sync.",
+    "privacyProvider": "Goes to your AI provider: your messages, and the sources and saved notes an answer or background reading uses.",
+    "privacyDataSources": "Goes to data sources: names and tickers you follow or ask about, and wallet addresses you add. Holdings quantities and values never leave this Mac.",
+    "privacyWeb": "Goes to the web: pages your Loupist opens and searches it runs. A connection you add yourself gets what its tools ask for.",
+    "privacyMakers": "Loupist's makers receive nothing: no analytics or telemetry. The app checks GitHub for a signed update about once a day, sooner after a failed check.",
+    "privacyKeys": "Keys and sign-ins: data-connection keys in the macOS Keychain; AI sign-ins and keys in Loupist's private app folder on this Mac."
+  },
   "appearance": {
     "title": "Appearance",
     "description": "Customize the interface appearance and language.",
@@ -22,6 +40,8 @@
     "reload": "Reload"
   },
   "agentSettings": {
+    "performanceGroup": "Response speed",
+    "performanceDescription": "Fast asks your provider for its priority tier. It may cost more on API keys.",
     "diagnosticLine": "Problem in your preferences file (line {{line}}) — {{message}}",
     "diagnostic": "Problem in your preferences file — {{message}}",
     "unavailableThinking": "{{level}} (unavailable)",
@@ -53,7 +73,7 @@
     "defaultModel": "Default model",
     "theModelToUseWhenStartingAChat": "The model to use when starting a Chat.",
     "useGlobalDefaultModel": "Use global default model",
-    "automaticLastUsedModel": "Automatic · last used model",
+    "automaticRecommendedModel": "Auto · recommended model",
     "unavailableModel": "Unavailable model",
     "reasoningLevel": "Reasoning level",
     "howMuchTimeTheModelSpendsThinkingBefore": "How much time the model spends thinking before it responds.",
@@ -149,6 +169,9 @@
     "customRemoveBody": "Its address, saved key and models are removed from Loupist. The server itself is not changed."
   },
   "skillsSettings": {
+    "caption": "Extra abilities for analysis and charts",
+    "advancedSkills": "Advanced",
+    "advancedSkillsDescription": "Tools for writing and installing your own Skills.",
     "appDefaults": "{{name}} follows app defaults.",
     "globalDefaults": "{{name}} follows global defaults.",
     "disabledNotice": "{{name}} disabled. Changes apply to the next turn.",
@@ -267,14 +290,14 @@
   "worldSettings": {
     "loupist": "Loupist",
     "readiness": {
-      "recoveryRequired": "World processing was interrupted. Recover the last confirmed World to continue. The interrupted source will not be processed again automatically.",
-      "recovering": "Restoring the last confirmed World. This does not use a model or retry interrupted processing.",
-      "runtimeUnavailable": "World processing is unavailable. Update or reinstall the app to restore it.",
-      "awaitingProvider": "Waiting for a supported model provider. A recommended World model will be selected when one is connected.",
-      "chooseModel": "Choose a World processing model.",
-      "modelUnavailable": "The selected model is unavailable for World processing.",
+      "recoveryRequired": "Map building was interrupted. Recover the last confirmed map to continue. The interrupted source will not be processed again automatically.",
+      "recovering": "Restoring the last confirmed map. This does not use a model or retry interrupted processing.",
+      "runtimeUnavailable": "Map building is unavailable. Update or reinstall the app to restore it.",
+      "awaitingProvider": "Waiting for a supported model provider. A recommended map-building model will be selected when one is connected.",
+      "chooseModel": "Choose a Map building model.",
+      "modelUnavailable": "The selected model is unavailable for Map building.",
       "connectProvider": "Connect the selected provider in Settings.",
-      "isolationUnsupported": "This provider does not support isolated, non-retrying World processing.",
+      "isolationUnsupported": "This provider does not support isolated, non-retrying Map building.",
       "runtimeMissing": "The model runtime is unavailable.",
       "chooseConnectedModel": "Choose an available connected model.",
       "notConnected": "Connect the model provider in Settings.",
@@ -325,7 +348,7 @@
     "retry": "Retry",
     "skills": "Skills",
     "manageSkills": "Manage skills",
-    "optionalResearchAndDocumentWorkflowsEnabledByDefault": "Optional research and document workflows, enabled by default. World, Lens, Journal, and visualization are always available.",
+    "optionalResearchAndDocumentWorkflowsEnabledByDefault": "Optional research and document workflows, enabled by default. Map, Lens, Journal, and visualization are always available.",
     "loadingSkills": "Loading skills…",
     "noMatchingSkills": "No matching skills.",
     "noSkillsAvailable": "No skills available.",
@@ -376,7 +399,7 @@
     "standard": "Standard",
     "fast": "Fast",
     "standardDescription": "Use the provider's standard service tier.",
-    "fastDescription": "Request the provider's priority service tier."
+    "fastDescription": "Request the provider's priority service tier. It may cost more on API keys."
   },
   "bundledSkills": {
     "skill-creator": {
@@ -452,8 +475,8 @@
       "description": "Read, create, or edit PowerPoint decks and templates (.pptx/.potx), including financial charts, tables, speaker notes, and slide layouts. Use for a deck deliverable or an existing presentation."
     },
     "world": {
-      "name": "World",
-      "description": "Use when investigating what this Loupist already knows about entities, events, and their relationships, or when organizing source-grounded knowledge in World."
+      "name": "Map",
+      "description": "Use when investigating what this Loupist already knows about entities, events, and their relationships, or when organizing source-grounded knowledge in the Map."
     },
     "lens": {
       "name": "Lens",
@@ -473,7 +496,7 @@
     "advanced": "Advanced",
     "import": "Import Loupist",
     "openSettings": "Open Loupist settings",
-    "keywords": "Loupists profile tone instructions chat model memory learning skills connections World folders import remove",
+    "keywords": "Loupists profile tone instructions chat model memory learning skills connections Map folders import remove",
     "description": "Profile, chat, learning, skills and connections for each Loupist."
   },
   "custom": {
@@ -572,7 +595,7 @@
     "actions": {
       "newChat": "New chat",
       "palette": "Command palette",
-      "tabs": "Chat · World · Lens · Scheduled tasks",
+      "tabs": "Home · Map · Lens · Schedule",
       "panel": "Show or hide the panel",
       "settings": "Settings",
       "send": "Send",

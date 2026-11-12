@@ -73,6 +73,8 @@ const exceptions = new Map([
   ["settings.providers.dialectAnthropic", { terms: ["Messages"], reason: "Official name of the Anthropic Messages API" }],
   ["chat.workspaceTabBar.openAnHTTPOrHTTPSAddress", { terms: ["HTTP", "HTTPS"], reason: "Accepted URL protocols" }],
   ["sharing.showInFinder", { terms: ["Finder"], reason: "Name of the macOS file browser" }],
+  ["knowledge.memoryPage.about.addPlaceholder", { terms: ["AAPL"], reason: "Ticker symbol the user types, shown as an example" }],
+  ["knowledge.memoryPage.about.addHint", { terms: ["NVDA"], reason: "Ticker symbol in an example request" }],
   ["chat.chatMessageCard.showInFinder", { terms: ["Finder"], reason: "Name of the macOS file browser" }],
   ["sharing.gist", { terms: ["Gist"], reason: "GitHub product name" }],
   ["sharing.gistNote", { terms: ["Gist"], reason: "GitHub product name" }],
