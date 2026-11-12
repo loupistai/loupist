@@ -280,6 +280,7 @@
   scrollbar-width: thin;
   column-gap: 2px;
   scroll-padding-inline: var(--gg-space-4);
+  container-type: inline-size;
 }
 
 .workspace-tabs[data-overflow-end] { mask-image: linear-gradient(to right, var(--gg-color-text-primary) calc(100% - 16px), transparent); }
@@ -353,9 +354,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A reader tab gives up label width before the strip scrolls, so Chat map, Evidence and Work stay whole.
+   290px is the three fixed tabs plus the reader tab's icon, padding and close button. */
 .workspace-tab:not(.workspace-tab-fixed) > [role="tab"] > span {
   min-width: 0;
-  max-width: 160px;
+  max-width: clamp(48px, calc(100cqi - 290px), 160px);
 }
 .workspace-tab:not(.workspace-tab-fixed) > [role="tab"] { padding-right: calc(var(--gg-size-control-sm) + var(--gg-space-1)); }
 
