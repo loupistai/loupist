@@ -1,12 +1,10 @@
 import i18n, { useTranslation } from "@/i18n";
-import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { formatDate, formatDateTime, formatNumber, formatTime } from "@/i18n/format";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowLeftIcon, SearchIcon, XIcon } from "lucide-react";
 import type { ChatThread, LoupistSummary, LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, LensKind } from "../../types";
-import type { GrowthEvent, KnowledgeMapNode, LearningReview, MemoryUsage, Principle } from "../../contracts/knowledge";
+import type { GrowthEvent, LearningReview, MemoryUsage, Principle } from "../../contracts/knowledge";
 import type { PageView } from "../../contracts/lens";
-import type { HoldingsSummary, WatchlistEntry } from "../../contracts/userContext";
 import { useConfiguration } from "../../app/useConfiguration";
 import { errorMessage } from "../../lib/errors";
 import { revealFocused } from "../../lib/revealFocused";
@@ -17,21 +15,18 @@ import { chatTitle } from "../../app/chatTitle";
 import { LensLearningPanel } from "../knowledge/LensLearningPanel";
 import { PageReader } from "./PageReader";
 import { PrincipleSource } from "./PrincipleSource";
-import { entityLabel } from "../../knowledge/mapItems";
-import { useAssetPageOpener } from "../assets/assetOpener";
 import type { PackImportView, PackSuggestionGroup } from "../../contracts/sharing";
 import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { ShareSheet } from "../sharing/ShareSheet";
 import { PackSuggestions } from "../sharing/PackSuggestions";
 import { SHARED_SECTION_ITEM, SharedPacks } from "../sharing/SharedPacks";
 import { SharedOrigin } from "../sharing/SharedOrigin";
-import { HoldingsSheet } from "../holdings/HoldingsSheet";
 import { SourceWorkspace } from "../knowledge/SourceWorkspace";
 import "@/styles/memory-page.css";
 
 const t = i18n.getFixedT(null, "knowledge");
-export type MemorySegment = "about" | "pages" | "history";
-const SEGMENTS: readonly MemorySegment[] = ["about", "pages", "history"];
+export type MemorySegment = "pages" | "history";
+const SEGMENTS: readonly MemorySegment[] = ["pages", "history"];
 const KIND_ORDER: readonly LensKind[] = ["subject", "idea", "method", "principle", "perspective"];
 const day = (ms: number) => formatDate(ms, { year: undefined, month: "short", day: "numeric" });
 
@@ -55,10 +50,6 @@ type Data = {
   reviews: LearningReview[];
   events: GrowthEvent[];
   learnMethods: boolean | null;
-  watchlist: WatchlistEntry[];
-  /** Watched and held Map names, for showing a followed asset by its local name. */
-  followedNodes: KnowledgeMapNode[];
-  holdings: HoldingsSummary | null;
   /** Shared Loupists added here and their pending suggestions (W19.4). */
   suggestions: PackSuggestionGroup[];
   imports: PackImportView[];
@@ -117,14 +108,11 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
       bridge.learningReviewList({ loupistId, limit: 50 }).catch(() => []),
       bridge.knowledgeGrowthEvents({ loupistId, limit: 500 }).then(page => page.events).catch(() => []),
       bridge.memoryLearningSettingsGet({ loupistId }).then(settings => settings.learnMethods).catch(() => null),
-      bridge.watchlistList().catch(() => []),
-      bridge.holdingsSummary().catch(() => null),
-      readKnowledgeMap(bridge, loupistId).then(map => map.nodes.filter(node => node.kind === "entity" && (node.watched || node.held))).catch(() => []),
       bridge.packSuggestions({ loupistId }).catch(() => []),
       bridge.packList({ loupistId }).catch(() => []),
       bridge.githubAccount().then(account => account.indexConfigured).catch(() => false),
       bridge.knowledgeMemoryControls({ loupistId }),
-    ]).then(async ([principles, catalog, usage, reviews, events, learnMethods, watchlist, holdings, followedNodes, suggestions, imports, indexConfigured, controls]) => {
+    ]).then(async ([principles, catalog, usage, reviews, events, learnMethods, suggestions, imports, indexConfigured, controls]) => {
       const touched = [...new Set(events.filter(event => event.kind === "lens_revised" && event.actor === "user" && event.recordId).map(event => event.recordId!))].slice(0, 20);
       const pages = await Promise.all(touched.map(recordId => bridge.knowledgeLensRead({ loupistId, recordId }).catch(() => null)));
       if (!live) return;
@@ -134,7 +122,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
         catalog,
         userRows: pages.flatMap(page => page ? sectionRows(page) : []),
         usage: new Map(usage.map(item => [item.recordId, item])),
-        reviews, events, learnMethods, watchlist, holdings, followedNodes, suggestions, imports, indexConfigured,
+        reviews, events, learnMethods, suggestions, imports, indexConfigured,
       });
     }).catch(() => { if (live) setError(true); });
     return () => { live = false; };
@@ -151,15 +139,13 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
   ], [data]);
   useEffect(() => {
     if (!data || segment) return;
-    const target = items.find(item => item.id === initialItem);
-    const pendingSuggestions = showSharing && data.suggestions.some(group => group.items.some(item => item.state === "pending"));
-    const sharedLanding = showSharing && initialItem === SHARED_SECTION_ITEM;
     if (!initialItem) setSelectedId(KIND_ORDER.flatMap(kind => items.filter(item => item.kind === kind))[0]?.id);
-    setSegment(sharedLanding ? "about" : target || pendingSuggestions || items.length ? "pages" : "about");
-  }, [data, items, initialItem, segment, showSharing]);
+    // Lens opens on its pages; what the user follows lives on the Following page.
+    setSegment("pages");
+  }, [data, items, initialItem, segment]);
   // "About this shared Loupist" lands on the shared Loupists section.
   useEffect(() => {
-    if (showSharing && initialItem === SHARED_SECTION_ITEM && segment === "about") sharedRef.current?.scrollIntoView?.({ block: "start" });
+    if (showSharing && initialItem === SHARED_SECTION_ITEM && segment === "pages") sharedRef.current?.scrollIntoView?.({ block: "start" });
   }, [showSharing, initialItem, segment, data]);
   const suggestions = showSharing && data ? <PackSuggestions bridge={bridge} loupistId={loupistId} groups={data.suggestions}
     onChanged={groups => { setData(current => current && { ...current, suggestions: groups }); changed(); }} /> : null;
@@ -226,14 +212,13 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
     {error ? <div className="memory-page-error" role="alert"><span>{t("memoryPage.error")}</span><Button size="sm" variant="outline" onClick={() => setRefresh(value => value + 1)}>{t("memoryPage.retry")}</Button></div> : null}
     {!data && !error ? <div className="memory-page-loading" role="status" aria-label={t("memoryPage.loading")}><span /><span /><span /></div> : null}
     {data ? <div className="memory-page-body" data-segment={current} onFocus={revealFocused}>
-      {current === "about" ? <AboutYou bridge={bridge} loupist={loupist} data={data} onChanged={changed}
-        shared={showSharing ? <SharedPacks ref={sharedRef} bridge={bridge} loupistId={loupistId} imports={data.imports} indexConfigured={data.indexConfigured}
-          onChanged={imports => { setData(current => current && { ...current, imports }); changed(); }} /> : null} /> : null}
       {current === "pages" ? <>
         <ItemList label={t("memoryPage.tabs.pages")} description={t("memoryPage.pages.description")} items={shown} selectedId={selected?.id} usage={data.usage} onOpen={open}
-          before={suggestions} searching={Boolean(terms)} empty={<p className="memory-empty">{t("memoryPage.pages.empty")}</p>} />
+          before={suggestions} searching={Boolean(terms)} empty={<p className="memory-empty">{t("memoryPage.pages.empty")}</p>}
+          after={showSharing ? <SharedPacks ref={sharedRef} bridge={bridge} loupistId={loupistId} imports={data.imports} indexConfigured={data.indexConfigured}
+            onChanged={imports => { setData(current => current && { ...current, imports }); changed(); }} /> : null} />
         <Reader item={selected} takeFocus={chosen} bridge={bridge} loupistId={loupistId} usage={data.usage} paused={Boolean(selected && data.paused.has(selected.id))} threads={threads} onOpenChat={onOpenChat} onChanged={changed} onClose={() => setCompactReader(false)} backLabel={t("memoryPage.tabs.pages")} catalog={data.catalog} onOpenKnowledge={openKnowledge} onOpenPage={open} onAsk={onAsk}
-          onShare={showSharing ? recordId => setShare({ recordId }) : undefined} onAboutShared={showSharing ? () => { setSegment("about"); setCompactReader(false); requestAnimationFrame(() => sharedRef.current?.scrollIntoView?.({ block: "start" })); } : undefined} />
+          onShare={showSharing ? recordId => setShare({ recordId }) : undefined} onAboutShared={showSharing ? () => { setSegment("pages"); setCompactReader(false); requestAnimationFrame(() => sharedRef.current?.scrollIntoView?.({ block: "start" })); } : undefined} />
       </> : null}
       {current === "history" ? (() => {
         // The newest row that names a principle or method opens by default, so the tab shows how something was learned.
@@ -277,7 +262,7 @@ const usageLine = (item: Item, usage: Map<string, MemoryUsage>) => {
 };
 const kindLabel = (kind: LensKind) => t(`pageReader.kind.${kind}`);
 
-function ItemList({ label, description, items, selectedId, usage, onOpen, before, empty, searching }: { label: string; description: string; items: Item[]; selectedId?: string; usage: Map<string, MemoryUsage>; onOpen: (id: string) => void; before?: ReactNode; empty: ReactNode; searching: boolean }) {
+function ItemList({ label, description, items, selectedId, usage, onOpen, before, after, empty, searching }: { label: string; description: string; items: Item[]; selectedId?: string; usage: Map<string, MemoryUsage>; onOpen: (id: string) => void; before?: ReactNode; after?: ReactNode; empty: ReactNode; searching: boolean }) {
   const listId = useId();
   const refs = useRef(new Map<string, HTMLButtonElement>());
   const groups = KIND_ORDER.map(kind => ({ kind, items: items.filter(item => item.kind === kind) })).filter(group => group.items.length);
@@ -304,6 +289,7 @@ function ItemList({ label, description, items, selectedId, usage, onOpen, before
         </li>)}
       </ul>
     </section>) : searching ? <p className="memory-empty">{t("memoryPage.pages.noMatch")}</p> : empty}
+    {after}
   </div>;
 }
 
@@ -375,74 +361,6 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
       <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => bridge.principleArchive({ loupistId, recordId: item.id, archived: true }))}>{t("memoryPage.actions.archive")}</Button>
     </div>
   </aside>;
-}
-
-function AboutYou({ bridge, loupist, data, onChanged, shared }: {
-  bridge: LoupistBridge; loupist: LoupistSummary; data: Data; onChanged: () => void;
-  /** "Shared Loupists you added", shown when any. */
-  shared?: ReactNode;
-}) {
-  const [adding, setAdding] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [holdingsOpen, setHoldingsOpen] = useState(false);
-  const addId = useId();
-  const openAsset = useAssetPageOpener();
-  const run = async (action: () => Promise<unknown>) => {
-    setBusy(true); setError(null);
-    try { await action(); onChanged(); }
-    catch (cause) { setError(errorMessage(cause, t("memoryPage.actionError"))); }
-    finally { setBusy(false); }
-  };
-  const add = () => {
-    const [symbol, market = "UNKNOWN"] = adding.trim().toUpperCase().split(":");
-    if (!symbol) return;
-    void run(async () => { await bridge.watchlistAdd({ symbol, market, loupistId: loupist.id }); setAdding(""); });
-  };
-  return <div className="memory-about" data-testid="memory-about">
-    <section className="memory-card" aria-labelledby={addId}>
-      <h2 id={addId}>{t("memoryPage.about.follow")}</h2>
-      <ul className="memory-chips" data-testid="memory-chips">
-        {data.watchlist.map(entry => <li key={`${entry.symbol}:${entry.market}`}>
-          {(() => {
-            const label = followedName(entry, data.followedNodes) ? `${followedName(entry, data.followedNodes)} · ${entry.symbol}` : entry.symbol;
-            // A followed asset opens its asset page.
-            return openAsset ? <button type="button" className="memory-chip-open" onClick={() => openAsset({ loupistId: loupist.id, symbol: entry.symbol, market: entry.market, name: followedName(entry, data.followedNodes) ?? entry.displayName ?? undefined })}>{label}</button> : <span>{label}</span>;
-          })()}
-          <Button variant="ghost" size="icon-sm" disabled={busy} aria-label={t("memoryPage.about.remove", { name: followedName(entry, data.followedNodes) ?? entry.symbol })} onClick={() => void run(() => bridge.watchlistRemove({ symbol: entry.symbol, market: entry.market }))}><XIcon /></Button>
-        </li>)}
-      </ul>
-      <form className="memory-follow-add" data-testid="memory-follow-add" onSubmit={event => { event.preventDefault(); add(); }}>
-        <Input aria-label={t("memoryPage.about.addLabel")} placeholder={t("memoryPage.about.addPlaceholder")} value={adding} onChange={event => setAdding(event.target.value)} />
-        <Button type="submit" size="sm" variant="outline" disabled={busy || !adding.trim()}>{t("memoryPage.about.add")}</Button>
-      </form>
-      <p className="memory-meta memory-holdings" data-holdings-kinds>{holdingsLine(data.holdings)}
-        <Button variant="link" size="sm" className="memory-holdings-update" data-testid="memory-holdings-update" onClick={() => setHoldingsOpen(true)}>{t("memoryPage.about.update")}</Button></p>
-      <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={open => { setHoldingsOpen(open); if (!open) onChanged(); }} />
-    </section>
-    {shared}
-    {error ? <p className="memory-reader-error" role="alert">{error}</p> : null}
-  </div>;
-}
-
-
-/** "Stocks and funds: 14 assets · Oct 12 · Crypto: 3 assets · Nov 1": counts and dates only, never quantities. */
-function holdingsLine(holdings: HoldingsSummary | null) {
-  if (!holdings || (!holdings.stocks && !holdings.crypto)) return t("memoryPage.about.noHoldings");
-  const kind = (value: HoldingsSummary["stocks"]) => value
-    ? t("memoryPage.about.kindCount", { count: value.count, formattedCount: formatNumber(value.count), date: day(value.importedAtMs) })
-    : t("memoryPage.about.kindNone");
-  return t("memoryPage.about.holdingsByKind", { stocks: kind(holdings.stocks), crypto: kind(holdings.crypto) });
-}
-
-const sameName = (left: string | null | undefined, right: string) => Boolean(left) && left!.trim().toLocaleLowerCase() === right.trim().toLocaleLowerCase();
-/**
- * A followed asset by the same name the Map and the rest of the app use: the
- * Map's local name for its node when one matches, else the stored display name.
- */
-function followedName(entry: WatchlistEntry, nodes: readonly KnowledgeMapNode[]) {
-  const node = nodes.find(candidate => [candidate.label, ...(candidate.localNames ?? [])].some(name => sameName(entry.displayName, name) || sameName(entry.symbol, name)));
-  return node ? entityLabel(node, i18n.language) : entry.displayName ?? undefined;
 }
 
 type HistoryRow = { key: string; atMs: number; text: string; failed?: boolean; itemId?: string; map?: boolean };

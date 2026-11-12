@@ -66,11 +66,13 @@ function MatrixScroll({ group, label, children }: { group: string; label: string
   return <div ref={ref} className="watching-matrix-scroll" role="region" tabIndex={0} data-group={group} data-overflows={overflows || undefined} aria-label={label}>{children}</div>;
 }
 
-export function WatchingReader({ bridge, loupist, settings, onBack, onSettings }: {
+export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, embedded = false }: {
   bridge: LoupistBridge;
   loupist: LoupistSummary;
   settings: WatchSettings;
-  onBack: () => void;
+  onBack?: () => void;
+  /** Inside the Following page: no back link, and the section reads as part of that page. */
+  embedded?: boolean;
   /** Settings the host returned after Pause, Resume or Check now. */
   onSettings?: (next: WatchSettings) => void;
 }) {
@@ -134,7 +136,7 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings }
       : t("watch.cadenceFirst", { loupist: loupist.name });
 
   return <article className="briefings-reader watching-reader" aria-label={t("watch.title")}>
-    <Button variant="ghost" className="briefings-back" onClick={onBack}>{t("schedule.back")}</Button>
+    {!embedded && onBack ? <Button variant="ghost" className="briefings-back" onClick={onBack}>{t("schedule.back")}</Button> : null}
     <header className="watching-head">
       <div>
         <h2>{t("watch.title")}</h2>

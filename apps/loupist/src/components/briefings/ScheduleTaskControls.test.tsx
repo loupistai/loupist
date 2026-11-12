@@ -13,9 +13,9 @@ function setup(current: ScheduledTask, bridge: Partial<LoupistBridge> = {}) {
   const calls = {
     scheduledTaskSetStatus: vi.fn(async () => current), scheduledTaskRunNow: vi.fn(async () => ({})), scheduledTaskDelete: vi.fn(async () => undefined),
   };
-  const onChanged = vi.fn(), onDeleted = vi.fn(), onAskBot = vi.fn();
-  render(<ScheduleTaskControls bridge={{ ...calls, ...bridge } as unknown as LoupistBridge} task={current} title="Chip news" running={false} onChanged={onChanged} onDeleted={onDeleted} onAskBot={onAskBot} />);
-  return { calls, onChanged, onDeleted, onAskBot, user: userEvent.setup() };
+  const onChanged = vi.fn(), onDeleted = vi.fn(), onAskHome = vi.fn();
+  render(<ScheduleTaskControls bridge={{ ...calls, ...bridge } as unknown as LoupistBridge} task={current} title="Chip news" running={false} onChanged={onChanged} onDeleted={onDeleted} onAskHome={onAskHome} />);
+  return { calls, onChanged, onDeleted, onAskHome, user: userEvent.setup() };
 }
 
 it("pauses, runs once and deletes a task with the host commands, without a model call", async () => {
@@ -41,9 +41,9 @@ it("resumes a paused task, keeps the briefing undeletable, and shows a failure w
   expect(calls.scheduledTaskRunNow).not.toHaveBeenCalled();
 });
 
-it("hands time and prompt changes to Bot as a draft", async () => {
-  const { onAskBot, user } = setup(task());
-  expect(screen.getByText(/To change a task's time or prompt, tell Bot/)).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "Ask Bot" }));
-  expect(onAskBot).toHaveBeenCalledWith("Change my scheduled task “Chip news”: ");
+it("hands time and prompt changes to Home as a draft", async () => {
+  const { onAskHome, user } = setup(task());
+  expect(screen.getByText(/To change a task's time or prompt, tell your Loupist in Home/)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Ask in Home" }));
+  expect(onAskHome).toHaveBeenCalledWith("Change my scheduled task “Chip news”: ");
 });

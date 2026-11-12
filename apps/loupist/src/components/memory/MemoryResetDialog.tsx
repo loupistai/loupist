@@ -7,6 +7,8 @@ import { errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
+// The counts table is styled here too: Loupist settings › Learning opens this dialog without the Lens page.
+import "@/styles/memory-page.css";
 
 export function MemoryResetDialog({ bridge, loupistId, name, open, onOpenChange, onChanged }: {
   bridge: LoupistBridge; loupistId: string; name: string; open: boolean; onOpenChange: (open: boolean) => void; onChanged: () => void;

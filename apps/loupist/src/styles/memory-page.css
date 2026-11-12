@@ -1,7 +1,4 @@
-/* "What {Loupist} knows" (W15.15): a page inside the Loupist, over the current tab. */
-.app-stage-main:has(> .memory-page-layer) { position: relative; }
-/* Above the tab's own sticky layers (the composer, headers), below popovers and dialogs. */
-.memory-page-layer { position: absolute; inset: 0; z-index: calc(var(--gg-z-sticky) + 1); overflow: auto; background: var(--gg-color-bg-app); container: memory-pane / inline-size; }
+/* "What {Loupist} knows" (W15.15). */
 .memory-page { width: min(100%, var(--gg-size-page)); margin: 0 auto; padding: var(--gg-space-4) var(--gg-space-6) var(--gg-space-8); color: var(--gg-color-text-primary); }
 /* About you is one reading column. Header, tabs, and cards share it and sit in the center of the pane. */
 .memory-page[data-segment="about"] { width: min(100%, var(--gg-size-reading-column)); }
@@ -41,13 +38,10 @@
 .memory-marker.is-perspective { background: var(--gg-color-map-perspective); border-radius: 1px; transform: rotate(45deg) scale(.85); }
 .memory-marker.is-subject { background: var(--gg-color-map-subject); }
 .memory-marker.is-idea { border: 2px solid var(--gg-color-map-idea); }
-.memory-example { margin: var(--gg-space-2) var(--gg-space-4); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-body); font-style: italic; }
+
 .memory-empty { margin: var(--gg-space-2) 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); }
-.memory-add { margin-bottom: var(--gg-space-2); }
-.memory-add-form { display: grid; gap: var(--gg-space-2); margin-bottom: var(--gg-space-3); }
-.memory-add-form label { font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
-.memory-add-form div, .memory-edit div { display: flex; align-items: center; gap: var(--gg-space-2); }
-.memory-add-form [role="alert"], .memory-reader-error { margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+
+.memory-reader-error { margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
 .memory-reader { min-height: 240px; padding: var(--gg-space-6); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-lg); background: var(--gg-color-bg-raised); }
 .memory-reader.is-empty { border-style: dashed; background: transparent; }
 .memory-reader-back { display: none; }
@@ -61,7 +55,7 @@
 .memory-reader-section li button { min-height: var(--gg-size-control-sm); padding: 0; border: 0; background: transparent; color: var(--gg-color-accent-ink); font: inherit; text-align: left; cursor: pointer; }
 .memory-reader-section li small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); white-space: nowrap; }
 .memory-reader-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); margin-top: var(--gg-space-5); }
-.memory-edit { display: grid; gap: var(--gg-space-2); margin-bottom: var(--gg-space-4); }
+
 .memory-about { display: grid; gap: var(--gg-space-4); }
 .memory-card { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-5); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-lg); background: var(--gg-color-bg-raised); }
 .memory-card h2 { margin: 0; font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-semibold); }
@@ -111,6 +105,6 @@
 .memory-reset-counts dt { color: var(--gg-color-text-secondary); }
 .memory-reset-counts dd { margin: 0; font-variant-numeric: tabular-nums; }
 .memory-reset-confirm { display: grid; gap: var(--gg-space-2); margin-top: var(--gg-space-4); }
-.memory-source-page > .knowledge-sources { min-height: 0; flex: 1; }
+
 .memory-group-label { display: flex; align-items: baseline; gap: var(--gg-space-2); }
 .memory-group-count { color: var(--gg-color-text-tertiary); font-variant-numeric: tabular-nums; }

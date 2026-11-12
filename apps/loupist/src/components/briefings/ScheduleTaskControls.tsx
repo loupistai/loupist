@@ -13,9 +13,9 @@ type Busy = "status" | "run" | "delete" | null;
  * so stopping a recurring model run never needs a model call. Time and prompt changes
  * stay in conversation with Bot.
  */
-export function ScheduleTaskControls({ bridge, task, title, running, onChanged, onDeleted, onAskBot }: {
+export function ScheduleTaskControls({ bridge, task, title, running, onChanged, onDeleted, onAskHome }: {
   bridge: LoupistBridge; task: ScheduledTask; title: string; running: boolean;
-  onChanged: () => void; onDeleted: () => void; onAskBot?: (text: string) => void;
+  onChanged: () => void; onDeleted: () => void; onAskHome?: (text: string) => void;
 }) {
   const { t } = useTranslation("briefings");
   const [busy, setBusy] = useState<Busy>(null);
@@ -47,7 +47,7 @@ export function ScheduleTaskControls({ bridge, task, title, running, onChanged, 
       {canDelete ? <Button variant="ghost" size="sm" disabled={busy !== null || running} title={running ? t("schedule.deleteWhileRunning") : undefined} onClick={() => { setError(null); setConfirming(true); }}>{t("schedule.delete")}</Button> : null}
     </div>
     {error && !confirming ? <p className="inline-error" role="alert">{error}</p> : null}
-    <p className="briefings-meta schedule-task-change">{t("schedule.changeHint")}{onAskBot ? <> <Button variant="link" className="schedule-task-ask" onClick={() => onAskBot(t("schedule.changePrompt", { title }))}>{t("schedule.changeAsk")}</Button></> : null}</p>
+    <p className="briefings-meta schedule-task-change">{t("schedule.changeHint")}{onAskHome ? <> <Button variant="link" className="schedule-task-ask" onClick={() => onAskHome(t("schedule.changePrompt", { title }))}>{t("schedule.changeAsk")}</Button></> : null}</p>
     <Dialog open={confirming} onOpenChange={value => { if (busy !== "delete") setConfirming(value); }}>
       <DialogContent size="sm" className="dialog-form" showCloseButton={busy !== "delete"}>
         <DialogHeader><DialogTitle>{t("schedule.deleteTitle", { title })}</DialogTitle><DialogDescription>{t("schedule.deleteBody")}</DialogDescription></DialogHeader>

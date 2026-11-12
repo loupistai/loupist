@@ -33,11 +33,11 @@ it("shows host counts and what stays, then requires the typed confirmation", asy
 
 it("keeps the dialog open when the host refuses a busy World", async () => {
   const { reset, onChanged, onOpenChange, user } = fixture();
-  reset.mockRejectedValue(new Error("World processing is busy"));
+  reset.mockRejectedValue(new Error("Map building is busy"));
   const input = screen.getByRole("textbox", { name: "Type RESET to confirm" });
   await waitFor(() => expect(input).toBeEnabled());
   await user.type(input, "RESET"); await user.click(screen.getByRole("button", { name: "Reset" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("World processing is busy");
+  expect(await screen.findByRole("alert")).toHaveTextContent("Map building is busy");
   expect(onChanged).not.toHaveBeenCalled();
   expect(onOpenChange).not.toHaveBeenCalled();
 });

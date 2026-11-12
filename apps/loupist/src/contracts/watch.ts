@@ -95,6 +95,12 @@ export interface WatchBridge {
   watchPauseSet(request: { loupistId: string; paused: boolean }): Promise<WatchSettings>;
   /** Runs every enabled kind once for this Loupist; resolves when the check finished. */
   watchCheckNow(request: { loupistId: string }): Promise<{ newAlerts: number; settings: WatchSettings }>;
+  /**
+   * "Watch all": turns proactive updates on and applies the class defaults (filings, results
+   * and dividends where they apply) to followed assets with no decision yet. Host command
+   * `watch_defaults_apply` (payload pending the host worker's confirmation).
+   */
+  watchDefaultsApply(request: { loupistId: string }): Promise<WatchSettings>;
   /** Newest first. */
   watchEventsList(request: WatchEventsListRequest): Promise<WatchEvent[]>;
   /** The alerts were on screen (Thread message for 1 s, or Schedule › Watching opened). */

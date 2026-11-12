@@ -104,6 +104,22 @@ export class MockWatch implements WatchBridge {
     return this.watchSettingsList({ loupistId });
   }
 
+  /** Mirrors the host's "Watch all": consent on, class defaults for assets with every kind off. */
+  async watchDefaultsApply({ loupistId }: { loupistId: string }): Promise<WatchSettings> {
+    const settings = await this.current(loupistId);
+    settings.consentOff = false;
+    const defaults = new Set<WatchKind>(["filings", "results", "dividends"]);
+    for (const asset of [...settings.notWatched]) {
+      for (const kind of asset.kinds) if (defaults.has(kind.kind) && !kind.needsConnection) kind.enabled = true;
+      if (!asset.kinds.some(kind => kind.enabled)) continue;
+      asset.revision += 1;
+      settings.notWatched = settings.notWatched.filter(item => item !== asset);
+      settings.watched.push(asset);
+    }
+    this.emit(loupistId);
+    return this.watchSettingsList({ loupistId });
+  }
+
   async watchCheckNow({ loupistId }: { loupistId: string }): Promise<{ newAlerts: number; settings: WatchSettings }> {
     const settings = await this.current(loupistId);
     settings.checking = true;
