@@ -149,7 +149,7 @@ test('calculation evidence stays unknown when results, arguments or checks are u
 test('research assertion options validate before any paid run', () => {
   for (const min_items of [0, 1, 7, 2.5, '4']) {
     const copy = structuredClone(suite);
-    copy.scenarios.find(item => item.id === 'T-052').sessions[0].turns[0].expect.trace[0].min_items = min_items;
+    copy.scenarios.find(item => item.id === 'T-052').sessions[0].turns[0].expect.trace.find(item => item.assert === 'plan_progress').min_items = min_items;
     assert.throws(() => validateSuite(copy), /plan_progress/);
   }
   for (const invalid of [{ operation: '' }, { formula: '' }, { text: '' }, { inputs: {} }, { inputs: { numerator: '38100000000' } }]) {
