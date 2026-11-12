@@ -417,9 +417,12 @@ An empty or whitespace-only completed reply fails; an absent answer remains
 unknown unless other evidence already establishes a failure. This applies to forbidden content/calls, save restraint, unchanged Lens
 state, tool-count ceilings and empty scheduled-task state.
 
-`skill_read` takes an `id` and requires an `outcome: "ok"` native `read` whose
-path ends exactly in `skills/<id>/SKILL.md`; a failed read, reference file or
-similarly named path does not count. `tool_called` with `successful: true`
+`skill_read` takes an `id` and requires an `outcome: "ok"` native `read` with
+host-recorded `native_authorization.class: "BundledSkill"` and that `skill_id`.
+The host identifies the exact entrypoint under its sealed Skill root; a workspace
+copy, reference file, failed read or different Skill does not count. This evidence
+is eval-only and joined by tool-call ID; Pi cannot supply it. Old traces containing
+only a matching path suffix stay unmeasured. `tool_called` with `successful: true`
 requires an observed successful call; scheduling turns use this alongside saved
 state so a refusal or unchanged snapshot cannot masquerade as completed work.
 

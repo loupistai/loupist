@@ -141,6 +141,9 @@ pub(super) type QuestionSink =
 
 #[derive(Default)]
 pub(super) struct ToolCapture {
+    #[cfg(feature = "eval-harness")]
+    pub(in crate::commands) eval_native_read:
+        Option<Arc<super::chat_runtime::EvalNativeReadCallback>>,
     pub(super) tool_refusals: Arc<std::sync::Mutex<Vec<crate::domain::ChatToolRefusal>>>,
     pub(super) turn_taint: crate::custom_connections::taint::TurnTaint,
     pub(crate) unattended_run_id: Option<String>,

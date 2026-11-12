@@ -13,6 +13,7 @@ use std::{collections::BTreeMap, time::Instant};
 pub(crate) struct PiTrace {
     calls: Vec<ToolCall>,
     starts: BTreeMap<String, (usize, Instant)>,
+    native_reads: BTreeMap<String, Value>,
     pub usage_seen: bool,
     error: Option<Value>,
 }
@@ -32,6 +33,8 @@ struct ToolCall {
     /// Actual Pi-delivered response, separate from the host display trace.
     result: Option<Value>,
     result_redacted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_authorization: Option<Value>,
 }
 
 impl ToolCall {
@@ -54,6 +57,7 @@ impl ToolCall {
             result_bytes: entry.result_bytes,
             result: None,
             result_redacted: None,
+            native_authorization: None,
         }
     }
 
@@ -72,6 +76,14 @@ impl ToolCall {
 }
 
 impl PiTrace {
+    /// Only the host's admitted native read supplies this evidence, never Pi.
+    pub fn native_read_authorized(&mut self, call_id: &str, authorization: Value) {
+        if !call_id.is_empty() {
+            self.native_reads
+                .insert(call_id.into(), bounded_json(&authorization));
+        }
+    }
+
     pub fn observe(&mut self, event: &Value) {
         self.usage_seen |= event.pointer("/message/usage").is_some();
         if let Some(diagnostic) =
@@ -107,6 +119,7 @@ impl PiTrace {
                     result_bytes: None,
                     result: None,
                     result_redacted: None,
+                    native_authorization: None,
                 });
             }
             Some("tool_execution_end") => {
@@ -331,6 +344,13 @@ fn tool_calls(stored: Option<&ChatToolTrace>, pi: &PiTrace) -> Vec<ToolCall> {
             calls.push(host);
         }
     }
+    for call in calls.iter_mut().filter(|call| call.name == "read") {
+        call.native_authorization = call
+            .call_id
+            .as_ref()
+            .and_then(|id| pi.native_reads.get(id))
+            .cloned();
+    }
     calls
 }
 pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
@@ -505,6 +525,37 @@ fn content_excerpt(title: &str, content: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_authorization_is_host_only_and_bound_to_the_read_call() {
+        let mut pi = PiTrace::default();
+        // An agent event (or model argument) cannot manufacture host authority.
+        pi.observe(&json!({"type":"eval_native_read", "toolCallId":"workspace",
+            "native_authorization":{"class":"BundledSkill", "skill_id":"data-analysis"}}));
+        for id in ["bundle", "workspace", "unclassified"] {
+            pi.observe(
+                &json!({"type":"tool_execution_start", "toolCallId":id, "toolName":"read",
+                "args":{"path":"/workspace/skills/data-analysis/SKILL.md"}}),
+            );
+            pi.observe(&json!({"type":"tool_execution_end", "toolCallId":id, "isError":false, "result":{}}));
+        }
+        pi.native_read_authorized(
+            "bundle",
+            json!({"class":"BundledSkill", "skill_id":"data-analysis"}),
+        );
+        pi.native_read_authorized("workspace", json!({"class":"Workspace", "skill_id":null}));
+        pi.native_read_authorized(
+            "different-call",
+            json!({"class":"BundledSkill", "skill_id":"data-analysis"}),
+        );
+        let calls = json!(tool_calls(None, &pi));
+        assert_eq!(
+            calls[0]["native_authorization"]["skill_id"],
+            "data-analysis"
+        );
+        assert_eq!(calls[1]["native_authorization"]["class"], "Workspace");
+        assert!(calls[2].get("native_authorization").is_none());
+    }
 
     #[test]
     fn credential_field_names_are_redacted_without_hiding_section_metadata() {

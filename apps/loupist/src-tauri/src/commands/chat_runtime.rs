@@ -90,6 +90,8 @@ type ChatRunLogCapture =
 type ChatBaselineCallback = dyn Fn(&crate::domain::ChatSession) + Send + Sync;
 #[cfg(feature = "eval-harness")]
 type EvalPiEventCallback = dyn Fn(&Value) + Send + Sync;
+#[cfg(feature = "eval-harness")]
+pub(in crate::commands) type EvalNativeReadCallback = dyn Fn(&str, Value) + Send + Sync;
 
 #[derive(Clone)]
 pub(crate) struct ChatEventSink {
@@ -97,6 +99,8 @@ pub(crate) struct ChatEventSink {
     pub(crate) provider_idle_timeout: Option<Duration>,
     #[cfg(feature = "eval-harness")]
     pub(crate) eval_pi_event: Option<Arc<EvalPiEventCallback>>,
+    #[cfg(feature = "eval-harness")]
+    pub(crate) eval_native_read: Option<Arc<EvalNativeReadCallback>>,
     send: Arc<ChatEventCallback>,
     baseline: Option<Arc<ChatBaselineCallback>>,
     evidence: Arc<std::sync::Mutex<Vec<crate::domain::ChatEvidenceRef>>>,
@@ -123,6 +127,8 @@ impl ChatEventSink {
             provider_idle_timeout: None,
             #[cfg(feature = "eval-harness")]
             eval_pi_event: None,
+            #[cfg(feature = "eval-harness")]
+            eval_native_read: None,
             send: Arc::new(send),
             baseline: None,
             evidence: Arc::default(),

@@ -54,13 +54,23 @@ export function skillReadEvidence(assertion, calls) {
   let unknown = false;
   for (const call of calls.filter(call => call.name === 'read')) {
     if (call.outcome === 'error') continue;
+    const admitted = call.native_authorization;
+    if (admitted && typeof admitted.class === 'string') {
+      if (admitted.class !== 'BundledSkill') continue;
+      if (admitted.skill_id === undefined) { unknown = true; continue; }
+      if (admitted.skill_id !== id) continue;
+      if (call.outcome === 'ok') return { pass: true, detail: `read host-admitted Skill ${id}` };
+      unknown = true;
+      continue;
+    }
     if (comparableArgs(call.args) === null) { unknown = true; continue; }
     const path = call.args.path;
     if (typeof path !== 'string') continue;
     const parts = path.replaceAll('\\', '/').split('/');
     const matches = !parts.includes('..') && parts.slice(-3).join('/') === `skills/${id}/SKILL.md`;
     if (!matches) continue;
-    if (call.outcome === 'ok') return { pass: true, detail: `read skills/${id}/SKILL.md` };
+    // Old traces have no host classification. A suffix can suggest a Skill
+    // read, but cannot distinguish the sealed bundle from a workspace copy.
     unknown = true;
   }
   return { pass: unknown ? null : false, detail: unknown ? 'Skill read evidence unavailable' : `no successful read of skills/${id}/SKILL.md` };

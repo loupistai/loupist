@@ -111,7 +111,7 @@ for line in sys.stdin:
     elif command == "prompt":
         respond(request, {})
         envelope = json.loads(request["message"].split("<turn_envelope>\n", 1)[1].split("\n</turn_envelope>", 1)[0])
-        index = envelope.get("memory_protocol", {}).get("learned_index", [])
+        index = (envelope.get("memory_protocol") or {}).get("learned_index", [])
         learned = [entry for entry in index if entry["title"] == "Hanbit diluted-share rule"]
         provider_replay = "DART_EVAL" in request["message"]
         cite_note = "CITE_NOTE_EVAL" in request["message"]

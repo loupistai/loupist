@@ -15,8 +15,13 @@ function fixture(bucket, assertion, fields = {}, memory = 'remember') {
 }
 
 test('skill_read requires an exact successful native Skill entrypoint read', () => {
+  assert.equal(fixture('trace', { assert: 'skill_read', id: 'data-analysis' }, { tool_calls: [{
+    name: 'read', args: { path: '/workspace/skills/data-analysis/SKILL.md' }, outcome: 'ok',
+    native_authorization: { class: 'Workspace', skill_id: null },
+  }] }).score().pass, false);
   for (const path of ['/snapshot/skills/lens/SKILL.md', 'skills/lens/SKILL.md', 'C:\\snapshot\\skills\\lens\\SKILL.md']) {
-    assert.equal(fixture('trace', { assert: 'skill_read', id: 'lens' }, { tool_calls: [{ name: 'read', args: { path }, outcome: 'ok' }] }).score().pass, true, path);
+    assert.equal(fixture('trace', { assert: 'skill_read', id: 'lens' }, { tool_calls: [{ name: 'read', args: { path }, outcome: 'ok',
+      native_authorization: { class: 'BundledSkill', skill_id: 'lens' } }] }).score().pass, true, path);
   }
   for (const call of [
     { name: 'read', args: { path: '/skills/world/SKILL.md' }, outcome: 'ok' },
@@ -26,10 +31,17 @@ test('skill_read requires an exact successful native Skill entrypoint read', () 
     { name: 'read', args: { path: '/skills/lens/SKILL.md' }, outcome: 'error' },
     { name: 'read', args: {}, outcome: 'ok' },
     { name: 'lens_read', args: { path: '/skills/lens/SKILL.md' }, outcome: 'ok' },
+    { name: 'read', args: { path: '/workspace/skills/lens/SKILL.md' }, outcome: 'ok', native_authorization: { class: 'Workspace', skill_id: null } },
+    { name: 'read', args: { path: '/workspace/skills/lens/SKILL.md' }, outcome: 'ok', native_authorization: { class: 'Instructions', skill_id: null } },
+    { name: 'read', args: { path: '/bundle/skills/lens/SKILL.md' }, outcome: 'ok', native_authorization: { class: 'BundledSkill', skill_id: 'world' } },
+    { name: 'read', args: { path: '/bundle/skills/lens/references/guide.md' }, outcome: 'ok', native_authorization: { class: 'BundledSkill', skill_id: null } },
   ]) assert.equal(fixture('trace', { assert: 'skill_read', id: 'lens' }, { tool_calls: [call] }).score().pass, false, JSON.stringify(call));
   for (const call of [
     { name: 'read', args: null, outcome: 'ok' },
     { name: 'read', args: { path: '/skills/lens/SKILL.md' } },
+    { name: 'read', args: { path: '/workspace/skills/lens/SKILL.md' }, outcome: 'ok' },
+    { name: 'read', args: { path: '/skills/lens/SKILL.md' }, native_authorization: { class: 'BundledSkill', skill_id: 'lens' } },
+    { name: 'read', args: { path: '/skills/lens/SKILL.md' }, outcome: 'ok', native_authorization: { class: 'BundledSkill' } },
   ]) assert.equal(fixture('trace', { assert: 'skill_read', id: 'lens' }, { tool_calls: [call] }).score().pass, null);
   for (const id of ['', '../lens', 'lens/other', 'a'.repeat(65), 3]) {
     assert.throws(() => validateSuite(fixture('trace', { assert: 'skill_read', id }).suite), /skill_read/);
