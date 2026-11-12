@@ -2,7 +2,7 @@
 //! progress stream carries references; opening one never changes model context.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::File,
     io::Read,
     path::{Path, PathBuf},
@@ -58,6 +58,7 @@ pub(crate) struct ActivityRecorder {
     thread_id: String,
     run_id: String,
     active: HashMap<String, ActiveActivity>,
+    unsynced: HashSet<String>,
 }
 
 #[derive(Debug)]
@@ -83,6 +84,7 @@ impl ActivityRecorder {
             thread_id: thread_id.into(),
             run_id: run_id.into(),
             active: HashMap::new(),
+            unsynced: HashSet::new(),
         })
     }
 
@@ -131,7 +133,8 @@ impl ActivityRecorder {
             run_id: self.run_id.clone(),
             detail,
         };
-        write_record(&self.directory, &self.path, &stored, true)?;
+        write_record(&self.directory, &self.path, &stored)?;
+        self.unsynced.insert(stored.detail.id.clone());
         self.active.insert(
             call_id.into(),
             ActiveActivity {
@@ -153,7 +156,8 @@ impl ActivityRecorder {
         };
         assign_output(&mut active.stored.detail, result);
         if at_ms.saturating_sub(active.last_write_ms) >= UPDATE_INTERVAL_MS {
-            write_record(&self.directory, &self.path, &active.stored, false)?;
+            write_record(&self.directory, &self.path, &active.stored)?;
+            self.unsynced.insert(active.stored.detail.id.clone());
             active.last_write_ms = at_ms;
             return Ok(true);
         }
@@ -179,7 +183,8 @@ impl ActivityRecorder {
             ChatProgressStatus::Succeeded
         };
         active.stored.detail.finished_at_ms = Some(at_ms.max(active.stored.detail.started_at_ms));
-        write_record(&self.directory, &self.path, &active.stored, true)?;
+        write_record(&self.directory, &self.path, &active.stored)?;
+        self.unsynced.insert(active.stored.detail.id.clone());
         Ok(true)
     }
 
@@ -199,9 +204,68 @@ impl ActivityRecorder {
             };
             activity.stored.detail.finished_at_ms =
                 Some(at_ms.max(activity.stored.detail.started_at_ms));
-            write_record(&self.directory, &self.path, &activity.stored, true)?;
+            write_record(&self.directory, &self.path, &activity.stored)?;
+            self.unsynced.insert(activity.stored.detail.id.clone());
         }
+        self.sync_turn()?;
         Ok(finished)
+    }
+
+    fn sync_turn(&mut self) -> Result<(), CommandError> {
+        if self.unsynced.is_empty() {
+            return Ok(());
+        }
+        // Keep names rather than descriptors so a long turn cannot exhaust the
+        // host's file limit. Sync each latest snapshot through the pinned parent,
+        // then sync the directory once for the whole turn.
+        for id in &self.unsynced {
+            let filename = format!("{id}.json");
+            #[cfg(unix)]
+            let file = {
+                use rustix::fs::{openat, Mode, OFlags};
+                File::from(
+                    openat(
+                        self.directory.file(),
+                        filename.as_str(),
+                        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+                        Mode::empty(),
+                    )
+                    .map_err(internal)?,
+                )
+            };
+            #[cfg(windows)]
+            let file = {
+                let path = self.path.join(&filename);
+                crate::fs::windows::ensure_no_reparse_points(&path).map_err(internal)?;
+                let mut options = std::fs::OpenOptions::new();
+                options.read(true).write(true);
+                crate::fs::windows::add_open_reparse_point_flag_with_read_write_share(&mut options);
+                let file = options.open(path).map_err(internal)?;
+                if crate::fs::windows::metadata_is_reparse(&file.metadata().map_err(internal)?) {
+                    return Err(CommandError::invalid("tool activity changed before sync"));
+                }
+                file
+            };
+            #[cfg(not(any(unix, windows)))]
+            let file = File::open(self.path.join(&filename)).map_err(internal)?;
+            if !file.metadata().map_err(internal)?.is_file() {
+                return Err(CommandError::invalid("tool activity changed before sync"));
+            }
+            file.sync_all().map_err(internal)?;
+        }
+        #[cfg(unix)]
+        self.directory.file().sync_all().map_err(internal)?;
+        self.unsynced.clear();
+        Ok(())
+    }
+}
+
+impl Drop for ActivityRecorder {
+    fn drop(&mut self) {
+        // Dropping a cancelled turn still retains immediate tool activity.
+        if self.sync_turn().is_err() {
+            eprintln!("Could not sync local tool activity at the turn boundary");
+        }
     }
 }
 
@@ -407,7 +471,6 @@ fn write_record(
     directory: &PrivateDirectoryGuard,
     path: &Path,
     stored: &StoredActivity,
-    durable: bool,
 ) -> Result<(), CommandError> {
     let bytes = serde_json::to_vec(stored).map_err(internal)?;
     if bytes.len() > MAX_RECORD_BYTES {
@@ -416,7 +479,7 @@ fn write_record(
         ));
     }
     let name = format!("{}.json", stored.detail.id);
-    directory.write_atomic(path, &name, &bytes, durable)
+    directory.write_atomic(path, &name, &bytes, false)
 }
 
 fn internal(error: impl std::fmt::Display) -> CommandError {
@@ -427,6 +490,56 @@ fn internal(error: impl std::fmt::Display) -> CommandError {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn turn_boundary_syncs_latest_records_and_cancellation_keeps_written_activity() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = SecureDeletionRoot::open(&temp.path().canonicalize().unwrap()).unwrap();
+        let mut recorder =
+            ActivityRecorder::new(&root, "loupist-a", "chat-a", "run-batch", temp.path()).unwrap();
+        let first = recorder
+            .start("first", "write", &json!({"path":"outputs/note.txt"}), 1)
+            .unwrap()
+            .unwrap();
+        recorder
+            .finish(
+                "first",
+                &json!({"content":[{"type":"text","text":"saved"}]}),
+                false,
+                2,
+            )
+            .unwrap();
+        let second = recorder
+            .start("second", "read", &json!({"path":"notes/input.txt"}), 3)
+            .unwrap()
+            .unwrap();
+        assert_eq!(recorder.unsynced.len(), 2);
+        recorder.finish_remaining(true, 4).unwrap();
+        assert!(recorder.unsynced.is_empty());
+        assert_eq!(
+            read(&root, "loupist-a", "chat-a", &first.detail_id, |_| false)
+                .unwrap()
+                .status,
+            ChatProgressStatus::Succeeded
+        );
+        assert_eq!(
+            read(&root, "loupist-a", "chat-a", &second.detail_id, |_| false)
+                .unwrap()
+                .status,
+            ChatProgressStatus::Stopped
+        );
+        let third = recorder
+            .start("third", "read", &json!({"path":"notes/input.txt"}), 5)
+            .unwrap()
+            .unwrap();
+        drop(recorder);
+        assert_eq!(
+            read(&root, "loupist-a", "chat-a", &third.detail_id, |_| false)
+                .unwrap()
+                .status,
+            ChatProgressStatus::Stopped
+        );
+    }
 
     #[test]
     fn python_activity_retains_code_result_and_generated_file_after_restart() {

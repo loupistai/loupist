@@ -46,7 +46,12 @@ folder. Rust refuses file calls outside admitted roots: the folder, this run's
 scratch and this Chat's attachments. `run_python` is the code execution tool.
 It stays allowed after third-party text and in unattended runs, without a card
 ([Native tool permissions](permissions.md)).
-File changes are immediate and survive a failed or cancelled reply. Python may
+Workspace reads and folder selection report a bounded, actionable error rather
+than raw filesystem diagnostics. File changes are immediate and survive a failed
+or cancelled reply. Local-tool activity
+records are published immediately; their latest file snapshots are synced together
+at the turn boundary, including cancellation and recorder drop. Approval and
+question waits remove their registry entries when their response future is dropped. Python may
 write only host-granted workspace subfolders, `outputs/` and this run's scratch.
 
 `workspace-tools` holds pinned, digest-verified `rg` for offline content search
