@@ -86,6 +86,9 @@ export type WatchEvent = {
 };
 
 export type WatchSettingSetRequest = Wire.WatchSettingSetRequest;
+export type WatchDefaultsApplyRequest = { loupistId: string };
+/** How many assets are watched now, and per kind which followed assets still need a data connection. */
+export type WatchDefaultsApplyResult = { watchedAssets: number; needsConnections: Array<{ kind: WatchKind; connection: { id: string; name: string }; assetIds: string[] }> };
 export type WatchEventsListRequest = { loupistId: string; sinceMs?: number; limit: number };
 
 export interface WatchBridge {
@@ -98,9 +101,9 @@ export interface WatchBridge {
   /**
    * "Watch all": turns proactive updates on and applies the class defaults (filings, results
    * and dividends where they apply) to followed assets with no decision yet. Host command
-   * `watch_defaults_apply` (payload pending the host worker's confirmation).
+   * `watch_defaults_apply`.
    */
-  watchDefaultsApply(request: { loupistId: string }): Promise<WatchSettings>;
+  watchDefaultsApply(request: WatchDefaultsApplyRequest): Promise<WatchDefaultsApplyResult>;
   /** Newest first. */
   watchEventsList(request: WatchEventsListRequest): Promise<WatchEvent[]>;
   /** The alerts were on screen (Thread message for 1 s, or Schedule › Watching opened). */

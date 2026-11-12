@@ -300,7 +300,7 @@ const bridge = (): StrictBridge => ({
   watchPauseSet: request("watch_pause_set"),
   watchCheckNow: request("watch_check_now"),
   // Untyped until the host worker's command lands in the generated contract; then use `request("watch_defaults_apply")`.
-  watchDefaultsApply: (body: { loupistId: string }) => call("watch_defaults_apply", { request: body }),
+  watchDefaultsApply: (body: import("../contracts/watch").WatchDefaultsApplyRequest) => call<import("../contracts/watch").WatchDefaultsApplyResult>("watch_defaults_apply", { request: body }),
   watchEventsList: request("watch_events_list"),
   watchEventsSeen: request("watch_events_seen"),
   onWatchChanged: (handler) => subscribe(BRIDGE_EVENTS.watchChanged, handler),

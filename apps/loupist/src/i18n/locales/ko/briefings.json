@@ -33,8 +33,6 @@
   "print": "인쇄 또는 PDF로 저장…",
   "printFailed": "인쇄를 열지 못했어요. 다시 시도해 주세요.",
   "back": "← 브리핑",
-  "emptyTitle": "관심 자산 브리핑 받기",
-  "emptyBody": "루피스트가 정해진 시간에 관심 자산과 새 정보를 살펴보고 무엇이 바뀌었는지 알려 드려요.",
   "setup": "브리핑 설정",
   "disclosure": "AI는 틀릴 수 있어요. 투자자문업자가 아니에요.",
   "first": "첫 브리핑은 {{time}}에 도착해요.",
@@ -119,7 +117,8 @@
     "morningBriefingPrompt": "평일 아침 8시에 브리핑해 줘",
     "runNowCost": "AI 계정을 사용해요",
     "moreActions": "{{title}} 더보기",
-    "deleteEllipsis": "삭제…"
+    "deleteEllipsis": "삭제…",
+    "footer": "작업을 추가하거나 바꾸려면 홈에서 루피스트에게 할 일과 시간을 말해 주세요."
   },
   "sections": {
     "changed": "바뀐 내용",
@@ -206,6 +205,8 @@
     "watchAll": "관심 자산 {{n}}개 모두 지켜보기",
     "watchAllDetail": "관심 자산의 공시, 실적 발표일, 배당을 루피스트가 열려 있는 동안 매시간 확인해요. AI 사용량은 들지 않고, 데이터 제공처에는 이름만 보내요.",
     "watchAllFailed": "지켜보기를 켜지 못했어요. 다시 시도해 주세요.",
-    "holdingsTitle": "보유 자산"
+    "holdingsTitle": "보유 자산",
+    "needsConnection": "{{kind}}: {{connection}} 연결 필요",
+    "openConnections": "데이터 연결"
   }
 }

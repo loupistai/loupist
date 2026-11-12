@@ -17,14 +17,14 @@ it("says what Following is and what to add when nothing is followed", async () =
   expect(screen.getByRole("heading", { name: "Following" })).toBeVisible();
   expect(screen.getByText("What you follow is shared by all your Loupists. Each Loupist chooses what to watch for.")).toBeVisible();
   expect(await screen.findByText("Add a company, fund or coin to follow. Following is not a holding or a trade.")).toBeVisible();
-  expect(screen.getByText("You can also tell your Loupist “follow NVDA” in Chat.")).toBeVisible();
+  expect(screen.getByText("Or tell your Loupist in Home: “follow NVDA”.")).toBeVisible();
 });
 
 it("follows a bare six-digit code on KRX and notes the Map is still adding it", async () => {
   const { bridge, user } = await fixture(async bridge => { vi.spyOn(bridge, "knowledgeFollowedStatus").mockResolvedValue({ state: "queued", assets: 1 }); });
   const add = vi.spyOn(bridge, "watchlistAdd");
   await user.type(screen.getByRole("textbox", { name: "Add something to follow" }), "005930");
-  await user.click(screen.getByRole("button", { name: "+ Add" }));
+  await user.click(screen.getByRole("button", { name: "Follow" }));
   expect(add).toHaveBeenCalledWith(expect.objectContaining({ symbol: "005930", market: "KRX" }));
   expect(await screen.findByText("Adding to the map…")).toBeVisible();
 });

@@ -5,6 +5,8 @@ import { XIcon } from "lucide-react";
 import type { LoupistBridge, LoupistSummary } from "../../types";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import type { HoldingsSummary, WatchlistEntry } from "../../contracts/userContext";
+import type { WatchDefaultsApplyResult } from "../../contracts/watch";
+import { watchKindColumn } from "../assets/watchText";
 import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { entityLabel } from "../../knowledge/mapItems";
 import { errorMessage } from "../../lib/errors";
@@ -51,6 +53,8 @@ export type FollowingPageProps = {
   loupist: LoupistSummary;
   /** Leaves the page (Schedule shows it in place of its Watching reader). */
   onBack?: () => void;
+  /** Opens Settings › Data connections at a connection a watch kind needs. */
+  onOpenConnections?: (connectionId: string) => void;
 };
 
 /**
@@ -58,7 +62,7 @@ export type FollowingPageProps = {
  * and what this Loupist watches for and found. Following is not a holding or a trade,
  * and nothing here starts a model run.
  */
-export function FollowingPage({ bridge, loupist, onBack }: FollowingPageProps) {
+export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: FollowingPageProps) {
   useTranslation(["briefings", "knowledge"]);
   const loupistId = loupist.id;
   const [watchlist, setWatchlist] = useState<WatchlistEntry[] | null>(null);
@@ -72,6 +76,7 @@ export function FollowingPage({ bridge, loupist, onBack }: FollowingPageProps) {
   const [mapping, setMapping] = useState(false);
   const [holdingsOpen, setHoldingsOpen] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [needs, setNeeds] = useState<WatchDefaultsApplyResult["needsConnections"]>([]);
   const { settings, setSettings, reload: reloadWatch } = useWatchSettings(bridge, loupistId);
   const openAsset = useAssetPageOpener();
   const headingId = useId(), listId = useId(), holdingsId = useId();
@@ -110,7 +115,7 @@ export function FollowingPage({ bridge, loupist, onBack }: FollowingPageProps) {
   const offerWatchAll = Boolean(settings) && (settings!.consentOff || undecided > 0);
   const watchAll = async () => {
     setApplying(true); setError(null);
-    try { setSettings(await bridge.watchDefaultsApply({ loupistId })); }
+    try { const result = await bridge.watchDefaultsApply({ loupistId }); setNeeds(result.needsConnections); await reloadWatch(); }
     catch (cause) { setError(errorMessage(cause, t("following.watchAllFailed"))); }
     finally { setApplying(false); }
   };
@@ -152,6 +157,10 @@ export function FollowingPage({ bridge, loupist, onBack }: FollowingPageProps) {
       <Button disabled={applying} onClick={() => void watchAll()}>{applying ? <Spinner /> : null}{t("following.watchAll", { n: formatNumber(undecided || watchlist.length) })}</Button>
     </div> : null}
 
+    {needs.length ? <ul className="following-needs" data-watch-needs>{needs.map(item => <li key={`${item.kind}:${item.connection.id}`}>
+      {t("following.needsConnection", { kind: watchKindColumn(item.kind), connection: item.connection.name })}
+      {onOpenConnections ? <> <Button variant="link" size="sm" onClick={() => onOpenConnections(item.connection.id)}>{t("following.openConnections")}</Button></> : null}
+    </li>)}</ul> : null}
     {settings && watchlist?.length ? <WatchingReader bridge={bridge} loupist={loupist} settings={settings} onSettings={setSettings} embedded /> : null}
     </div>
     {/* Side column at wide sizes, after the list when compact: holdings are counts and dates only. */}

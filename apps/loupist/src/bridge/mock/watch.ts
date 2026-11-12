@@ -4,7 +4,7 @@
  * events and mirrors the revision check on each switch.
  */
 import type {
-  WatchAsset, WatchBridge, WatchEvent, WatchEventsListRequest, WatchKind, WatchSettingSetRequest, WatchSettings,
+  WatchAsset, WatchBridge, WatchDefaultsApplyRequest, WatchDefaultsApplyResult, WatchEvent, WatchEventsListRequest, WatchKind, WatchSettingSetRequest, WatchSettings,
 } from "../../contracts/watch";
 import type { WatchlistEntry } from "../../contracts/userContext";
 import { mockAssetId } from "./assets";
@@ -105,19 +105,27 @@ export class MockWatch implements WatchBridge {
   }
 
   /** Mirrors the host's "Watch all": consent on, class defaults for assets with every kind off. */
-  async watchDefaultsApply({ loupistId }: { loupistId: string }): Promise<WatchSettings> {
+  async watchDefaultsApply({ loupistId }: WatchDefaultsApplyRequest): Promise<WatchDefaultsApplyResult> {
     const settings = await this.current(loupistId);
     settings.consentOff = false;
     const defaults = new Set<WatchKind>(["filings", "results", "dividends"]);
+    const needs = new Map<string, WatchDefaultsApplyResult["needsConnections"][number]>();
     for (const asset of [...settings.notWatched]) {
-      for (const kind of asset.kinds) if (defaults.has(kind.kind) && !kind.needsConnection) kind.enabled = true;
+      for (const kind of asset.kinds) {
+        if (!defaults.has(kind.kind)) continue;
+        if (kind.needsConnection) {
+          const key = `${kind.kind}:${kind.needsConnection.id}`;
+          const entry = needs.get(key) ?? { kind: kind.kind, connection: kind.needsConnection, assetIds: [] };
+          entry.assetIds.push(asset.assetId); needs.set(key, entry);
+        } else kind.enabled = true;
+      }
       if (!asset.kinds.some(kind => kind.enabled)) continue;
       asset.revision += 1;
       settings.notWatched = settings.notWatched.filter(item => item !== asset);
       settings.watched.push(asset);
     }
     this.emit(loupistId);
-    return this.watchSettingsList({ loupistId });
+    return { watchedAssets: settings.watched.length, needsConnections: [...needs.values()] };
   }
 
   async watchCheckNow({ loupistId }: { loupistId: string }): Promise<{ newAlerts: number; settings: WatchSettings }> {

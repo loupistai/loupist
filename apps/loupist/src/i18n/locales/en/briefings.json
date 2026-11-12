@@ -34,8 +34,6 @@
   "print": "Print or save as PDF…",
   "printFailed": "Couldn’t open printing. Try again.",
   "back": "← Briefings",
-  "emptyTitle": "Get a briefing on what you follow",
-  "emptyBody": "Your Loupist checks your companies and new information on a schedule and tells you what changed.",
   "setup": "Set up a briefing",
   "disclosure": "AI can be wrong. Not a licensed financial adviser.",
   "first": "Your first briefing arrives {{time}}.",
@@ -122,7 +120,8 @@
     "morningBriefingPrompt": "Turn on a weekday morning briefing at 8",
     "runNowCost": "Uses your AI account",
     "moreActions": "More actions for {{title}}",
-    "deleteEllipsis": "Delete…"
+    "deleteEllipsis": "Delete…",
+    "footer": "To add or change a task, tell your Loupist in Home what you want and when."
   },
   "sections": {
     "changed": "What changed",
@@ -213,6 +212,8 @@
     "watchAll": "Watch all {{n}}",
     "watchAllDetail": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",
     "watchAllFailed": "Couldn't turn on Watching. Try again.",
-    "holdingsTitle": "Your holdings"
+    "holdingsTitle": "Your holdings",
+    "needsConnection": "{{kind}}: needs {{connection}}",
+    "openConnections": "Data connections"
   }
 }
