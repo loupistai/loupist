@@ -30,6 +30,7 @@ impl AppToolExecutor {
                             .get("warnings")
                             .and_then(Value::as_array)
                             .is_some_and(|warnings| !warnings.is_empty())
+                            && self.receipt_carries_untrusted_text(entry)
                     })
                     .map(|(index, _)| {
                         (
@@ -204,6 +205,23 @@ impl AppToolExecutor {
             }
             _ => Ok(None),
         }
+    }
+
+    fn receipt_carries_untrusted_text(&self, entry: &Value) -> bool {
+        let runtime = entry["runtime_id"].as_str().unwrap_or_default();
+        let name = entry["tool_name"].as_str().unwrap_or_default();
+        let method = ToolMethod::from_tool_name(name)
+            .filter(|method| {
+                method
+                    .producer()
+                    .is_some_and(|producer| producer.runtime == runtime)
+            })
+            .unwrap_or(ToolMethod::McpCall);
+        crate::custom_connections::taint::carries_untrusted_text(
+            method,
+            &json!({"server_id": runtime, "tool_name": name}),
+            &self.state.artifacts.mcp_runtimes,
+        )
     }
 
     fn returning_artifact(
