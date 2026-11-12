@@ -831,26 +831,45 @@ pub(crate) fn valid_repo_name(name: &str) -> bool {
         && !matches!(name, "." | "..")
 }
 
+/// An unavailable credential store is different from an absent token.
+/// Never retain native error text, which can include credential data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TokenStoreError;
+
+#[cfg(all(
+    any(target_os = "macos", windows),
+    any(test, not(any(debug_assertions, feature = "webdriver")))
+))]
+fn token_from_password(result: keyring::Result<String>) -> Result<Option<String>, TokenStoreError> {
+    match result {
+        Ok(token) => Ok(Some(token)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(_) => Err(TokenStoreError),
+    }
+}
+
 #[cfg(all(
     not(any(debug_assertions, test, feature = "webdriver")),
     any(target_os = "macos", windows)
 ))]
 mod token_store {
-    fn entry(environment: &str) -> Option<keyring::Entry> {
+    use super::TokenStoreError;
+
+    fn entry(environment: &str) -> Result<keyring::Entry, TokenStoreError> {
         keyring::Entry::new(
             "com.monarchjuno.loupist.github-sharing",
             &format!("{environment}:github-sharing"),
         )
-        .ok()
+        .map_err(|_| TokenStoreError)
     }
-    pub(super) fn load(environment: &str) -> Option<String> {
-        entry(environment)?.get_password().ok()
+    pub(super) fn load(environment: &str) -> Result<Option<String>, TokenStoreError> {
+        super::token_from_password(entry(environment)?.get_password())
     }
     pub(super) fn save(environment: &str, token: &str) -> bool {
-        entry(environment).is_some_and(|entry| entry.set_password(token).is_ok())
+        entry(environment).is_ok_and(|entry| entry.set_password(token).is_ok())
     }
     pub(super) fn delete(environment: &str) {
-        if let Some(entry) = entry(environment) {
+        if let Ok(entry) = entry(environment) {
             let _ = entry.delete_credential();
         }
     }
@@ -859,14 +878,19 @@ mod token_store {
 /// Debug and test builds keep the token in process memory, like connector keys.
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
 mod token_store {
+    use super::TokenStoreError;
     use std::{collections::HashMap, sync::Mutex};
     fn tokens() -> &'static Mutex<HashMap<String, String>> {
         static TOKENS: std::sync::OnceLock<Mutex<HashMap<String, String>>> =
             std::sync::OnceLock::new();
         TOKENS.get_or_init(Default::default)
     }
-    pub(super) fn load(environment: &str) -> Option<String> {
-        tokens().lock().ok()?.get(environment).cloned()
+    pub(super) fn load(environment: &str) -> Result<Option<String>, TokenStoreError> {
+        Ok(tokens()
+            .lock()
+            .map_err(|_| TokenStoreError)?
+            .get(environment)
+            .cloned())
     }
     pub(super) fn save(environment: &str, token: &str) -> bool {
         tokens()
@@ -886,8 +910,10 @@ mod token_store {
     not(any(target_os = "macos", windows))
 ))]
 mod token_store {
-    pub(super) fn load(_: &str) -> Option<String> {
-        None
+    use super::TokenStoreError;
+
+    pub(super) fn load(_: &str) -> Result<Option<String>, TokenStoreError> {
+        Err(TokenStoreError)
     }
     pub(super) fn save(_: &str, _: &str) -> bool {
         false
@@ -896,6 +922,12 @@ mod token_store {
 }
 
 pub(crate) fn load_token(environment: &str) -> Option<String> {
+    // Public reads and account display may proceed signed out. The export
+    // private-string scan must use the fallible entry point below.
+    try_load_token(environment).ok().flatten()
+}
+
+pub(crate) fn try_load_token(environment: &str) -> Result<Option<String>, TokenStoreError> {
     token_store::load(environment)
 }
 pub(crate) fn save_token(environment: &str, token: &str) -> bool {
@@ -1022,6 +1054,35 @@ pub(crate) mod fixture {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(any(target_os = "macos", windows))]
+    #[test]
+    fn keychain_token_reads_distinguish_absence_from_unavailable_and_malformed_credentials() {
+        assert_eq!(token_from_password(Err(keyring::Error::NoEntry)), Ok(None));
+        assert_eq!(
+            token_from_password(Ok("pine".into())),
+            Ok(Some("pine".into()))
+        );
+        for error in [
+            keyring::Error::NoStorageAccess(Box::new(std::io::Error::other("locked"))),
+            keyring::Error::BadEncoding(b"private-token-fixture".to_vec()),
+        ] {
+            let result = token_from_password(Err(error));
+            assert_eq!(result, Err(TokenStoreError));
+            assert!(!format!("{result:?}").contains("private-token-fixture"));
+        }
+    }
+
+    #[test]
+    fn fallible_token_reads_preserve_the_optional_public_read_api() {
+        let environment = format!("token-test-{}", uuid::Uuid::new_v4());
+        assert_eq!(try_load_token(&environment), Ok(None));
+        assert!(save_token(&environment, "pine"));
+        assert_eq!(try_load_token(&environment), Ok(Some("pine".into())));
+        assert_eq!(load_token(&environment), Some("pine".into()));
+        delete_token(&environment);
+        assert_eq!(try_load_token(&environment), Ok(None));
+    }
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
