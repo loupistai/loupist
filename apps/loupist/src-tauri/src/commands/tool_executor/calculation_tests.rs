@@ -154,7 +154,7 @@ async fn calculation_refuses_foreign_and_corrupted_revisions_and_reports_bad_arg
                 json!({"operation": "ratio", "loupist_id": "loupist-b"}),
             )
             .await,
-        Err(BrokerError::MethodDenied)
+        Err(BrokerError::InvalidArguments { ref field, .. }) if field == "loupist_id"
     ));
 }
 

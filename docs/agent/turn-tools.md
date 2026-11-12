@@ -29,7 +29,14 @@ unattended allowlist and the Bot turn's model and Memory flags, and the Bot show
 `handoff` card ([Home Thread](../ui/home-thread.md#home-thread)). A session or an
 unattended run does not list the tool and the broker refuses it by surface.
 
-The `schedules` component is independent of Memory. Read current IDs/revisions
+The general `schedules` tools are independent of Memory. `schedule_watch` and
+`schedule_briefing` read and save Memory settings, so their executor guards require
+both Memory access and Save learning; a Private chat or either missing grant
+refuses them before any read or write, even though their catalog permission is
+`always`. Other schedule tools keep their existing permission classes. Their run
+receipts expose control metadata (IDs, status, times and a fixed failure notice);
+briefing context and answer summaries stay in the run's Chat, because they can
+contain Memory and third-party text. Read current IDs/revisions
 before editing and keep a stable creation key within the turn. Agent modes are
 fresh history or the task's own dedicated Chat; scheduled runs cannot mutate
 schedules. Use [Scheduled Chats](../runtime/scheduled-runs.md#scheduled-chats) and the
@@ -204,7 +211,13 @@ conflicting judgments. Test serialized schemas and Rust validation together.
 Chart/data contracts are owned by [Financial analysis](../analysis.md).
 
 Native file calls follow the [path policy](../runtime/permissions.md) without
-permission cards. `run_python` stays allowed after third-party text, after a
+permission cards. Both native reads and grep check exported-file trust; grep
+checks every admitted file candidate before the extension searches it. A tagged
+candidate raises the turn's third-party-text tier and delimits the grep response;
+ordinary user files keep their existing tier. Path refusals name the applicable
+boundary, including read-only attachments, Git metadata and hard-linked aliases.
+Memory saves distinguish disabled Memory reads from disabled saving.
+`run_python` stays allowed after third-party text, after a
 custom-connection result and in unattended runs, without a card. `ask_user` asks
 about task choices, never tool permission. Unattended runs retain their host
 allowlist, and that allowlist includes `run_python`.

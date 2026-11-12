@@ -25,7 +25,7 @@ impl AppToolExecutor {
             };
             BrokerError::invalid(field, expected)
         })?;
-        let map = |e: crate::app::CommandError| BrokerError::Execution(e.to_string());
+        let map = command_error;
         if request.input_refs.len() > 16
             || request.expected_sha256.as_ref().is_some_and(|hash| {
                 hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit())
@@ -79,7 +79,7 @@ impl AppToolExecutor {
             .state
             .store
             .get_loupist(&self.loupist_id)
-            .map_err(|e| BrokerError::Execution(e.to_string()))?
+            .map_err(store_error)?
             .ok_or_else(|| BrokerError::Execution("Loupist does not exist".into()))?;
         let root = crate::fs::loupist_root::profile_workspace(&profile).map_err(map)?;
         let path = crate::fs::workspace_files::relative_path(&request.path).map_err(map)?;

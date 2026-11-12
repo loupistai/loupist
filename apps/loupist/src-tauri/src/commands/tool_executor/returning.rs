@@ -16,6 +16,32 @@ impl AppToolExecutor {
         result: &Value,
     ) -> Result<Option<Returning>, BrokerError> {
         match method {
+            ToolMethod::ArtifactList => self.returning_artifact_titles(result),
+            ToolMethod::RunResultsList => {
+                // The registry stores warnings before presentation delimiters.
+                // Listing receipts must not promote provider prose to host advice.
+                let fields = result
+                    .get("results")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                    .filter(|(_, entry)| {
+                        entry
+                            .get("warnings")
+                            .and_then(Value::as_array)
+                            .is_some_and(|warnings| !warnings.is_empty())
+                            && self.receipt_carries_untrusted_text(entry)
+                    })
+                    .map(|(index, _)| {
+                        (
+                            format!("/results/{index}/warnings"),
+                            "tool result warnings".into(),
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                Ok((!fields.is_empty()).then_some(Returning::Fields(fields)))
+            }
             ToolMethod::PythonRun if result["untrusted_input"] == true => {
                 Ok(Some(Returning::Fields(BTreeMap::from([
                     (
@@ -32,7 +58,7 @@ impl AppToolExecutor {
                 self.returning_artifact(method, result)
             }
             ToolMethod::AssetPageRead => {
-                let fields = ["rows", "watchAlerts"]
+                let mut fields = ["rows", "watchAlerts"]
                     .into_iter()
                     .filter(|key| {
                         result
@@ -42,6 +68,26 @@ impl AppToolExecutor {
                     })
                     .map(|key| (format!("/{key}"), "asset watch observations".to_owned()))
                     .collect::<BTreeMap<_, _>>();
+                for (index, entry) in result
+                    .get("results")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                {
+                    for key in ["callTone", "measures", "filedSoFar", "revisions"] {
+                        if entry.get(key).is_some_and(|value| match value {
+                            Value::String(text) => !text.is_empty(),
+                            Value::Array(items) => !items.is_empty(),
+                            _ => false,
+                        }) {
+                            fields.insert(
+                                format!("/results/{index}/{key}"),
+                                "saved results observations".into(),
+                            );
+                        }
+                    }
+                }
                 Ok((!fields.is_empty()).then_some(Returning::Fields(fields)))
             }
             ToolMethod::ConversationMemory | ToolMethod::ChatHistory => {
@@ -57,13 +103,21 @@ impl AppToolExecutor {
                     .third_party_world(result, Some(&view))?
                     .map(Returning::Whole))
             }
-            ToolMethod::DatasetDescribe | ToolMethod::DatasetQuery | ToolMethod::DatasetImport => {
+            ToolMethod::DatasetDescribe
+            | ToolMethod::DatasetQuery
+            | ToolMethod::DatasetImport
+            | ToolMethod::DatasetExport => {
                 let reference = result
-                    .get(if method == ToolMethod::DatasetImport {
-                        "dataset_ref"
-                    } else {
-                        "ref"
-                    })
+                    .get(
+                        if matches!(
+                            method,
+                            ToolMethod::DatasetImport | ToolMethod::DatasetExport
+                        ) {
+                            "dataset_ref"
+                        } else {
+                            "ref"
+                        },
+                    )
                     .ok_or(BrokerError::Malformed)?;
                 let (Some(dataset_id), Some(revision)) = (
                     reference.get("dataset_id").and_then(Value::as_str),
@@ -78,11 +132,19 @@ impl AppToolExecutor {
                     .state
                     .store
                     .dataset_metadata(&self.loupist_id, dataset_id, revision)
-                    .map_err(|error| BrokerError::Execution(error.to_string()))?;
+                    .map_err(command_error)?;
                 Ok((!retained_trusted(&metadata)).then(|| {
                     let label = dataset_label(dataset_id, &metadata);
-                    if method == ToolMethod::DatasetImport {
-                        Returning::Fields(BTreeMap::from([("/data_summary".into(), label)]))
+                    if matches!(
+                        method,
+                        ToolMethod::DatasetImport | ToolMethod::DatasetExport
+                    ) {
+                        let field = if method == ToolMethod::DatasetImport {
+                            "/data_summary"
+                        } else {
+                            "/columns"
+                        };
+                        Returning::Fields(BTreeMap::from([(field.into(), label)]))
                     } else {
                         Returning::Whole(label)
                     }
@@ -146,6 +208,79 @@ impl AppToolExecutor {
         }
     }
 
+    fn receipt_carries_untrusted_text(&self, entry: &Value) -> bool {
+        let runtime = entry["runtime_id"].as_str().unwrap_or_default();
+        let name = entry["tool_name"].as_str().unwrap_or_default();
+        let method = ToolMethod::from_tool_name(name)
+            .filter(|method| {
+                method
+                    .producer()
+                    .is_some_and(|producer| producer.runtime == runtime)
+            })
+            .unwrap_or(ToolMethod::McpCall);
+        crate::custom_connections::taint::carries_untrusted_text(
+            method,
+            &json!({"server_id": runtime, "tool_name": name}),
+            &self.state.artifacts.mcp_runtimes,
+        )
+    }
+
+    fn returning_artifact_titles(&self, result: &Value) -> Result<Option<Returning>, BrokerError> {
+        let mut fields = BTreeMap::new();
+        // Every item normally belongs to one Chat; load that transcript once.
+        let mut messages: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (index, entry) in result["artifacts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let Some(id) = entry["artifact_id"].as_str() else {
+                continue;
+            };
+            let Some(artifact) = self
+                .state
+                .store
+                .get_chat_artifact(id)
+                .map_err(store_error)?
+            else {
+                continue;
+            };
+            if let std::collections::btree_map::Entry::Vacant(slot) =
+                messages.entry(artifact.chat_session_id.clone())
+            {
+                let chat = self
+                    .state
+                    .store
+                    .get_chat(&artifact.chat_session_id)
+                    .map_err(store_error)?;
+                let untrusted = chat
+                    .filter(|chat| chat.loupist_id == self.loupist_id)
+                    .into_iter()
+                    .flat_map(|chat| chat.messages)
+                    .filter(crate::domain::ChatMessage::has_untrusted_text)
+                    .map(|message| message.id)
+                    .collect();
+                slot.insert(untrusted);
+            }
+            let Some(revision) = self
+                .state
+                .store
+                .get_chat_artifact_current(id)
+                .map_err(store_error)?
+            else {
+                continue;
+            };
+            if messages[&artifact.chat_session_id].contains(&revision.source_message_id) {
+                fields.insert(
+                    format!("/artifacts/{index}/title"),
+                    "saved artifact from third-party text".into(),
+                );
+            }
+        }
+        Ok((!fields.is_empty()).then_some(Returning::Fields(fields)))
+    }
+
     fn returning_artifact(
         &self,
         method: ToolMethod,
@@ -163,7 +298,7 @@ impl AppToolExecutor {
                 .state
                 .store
                 .get_chart_dataset(id)
-                .map_err(|e| BrokerError::Execution(e.to_string()))?
+                .map_err(store_error)?
                 .ok_or(BrokerError::Malformed)?;
             if let crate::chat::chart::ChartDatasetLineage::FromDataset {
                 dataset_id,
@@ -190,13 +325,13 @@ impl AppToolExecutor {
                 .state
                 .store
                 .get_chat_artifact(id)
-                .map_err(|e| BrokerError::Execution(e.to_string()))?
+                .map_err(store_error)?
             {
                 if let Some(revision) = self
                     .state
                     .store
                     .get_chat_artifact_current(id)
-                    .map_err(|e| BrokerError::Execution(e.to_string()))?
+                    .map_err(store_error)?
                 {
                     untrusted |= self.message_untrusted(
                         &artifact.chat_session_id,
@@ -234,11 +369,7 @@ impl AppToolExecutor {
     }
 
     fn message_untrusted(&self, chat_id: &str, message_id: &str) -> Result<bool, BrokerError> {
-        let chat = self
-            .state
-            .store
-            .get_chat(chat_id)
-            .map_err(|e| BrokerError::Execution(e.to_string()))?;
+        let chat = self.state.store.get_chat(chat_id).map_err(store_error)?;
         Ok(chat
             .filter(|chat| chat.loupist_id == self.loupist_id)
             .is_some_and(|chat| {
@@ -266,7 +397,7 @@ impl AppToolExecutor {
                 (
                     entry.get("chatId").and_then(Value::as_str),
                     entry.get("messageId").and_then(Value::as_str),
-                    &["text", "snippet"][..],
+                    &["text", "snippet", "title"][..],
                 )
             };
             if let (Some(chat), Some(message)) = (chat, message) {
@@ -307,7 +438,7 @@ impl AppToolExecutor {
             result,
             view,
         )
-        .map_err(|e| BrokerError::Execution(e.to_string()))?;
+        .map_err(command_error)?;
         if unresolved {
             return Ok(Some("World claim with unavailable Source".into()));
         }
@@ -342,7 +473,7 @@ impl AppToolExecutor {
             revision_id,
             span_id,
         )
-        .map_err(|error| BrokerError::Execution(error.to_string()))?;
+        .map_err(command_error)?;
         if spans.is_empty() {
             return Ok(Some(format!("saved Source {record_id}")));
         }

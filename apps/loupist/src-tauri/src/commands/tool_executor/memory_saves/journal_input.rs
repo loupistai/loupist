@@ -7,7 +7,7 @@ pub(super) fn journal_argument_error(error: crate::knowledge::KnowledgeError) ->
             expected.split_whitespace().next().unwrap_or("journal"),
             format!("{code}: {expected}"),
         ),
-        error => BrokerError::Execution(error.to_string()),
+        error => knowledge_error(error),
     }
 }
 pub(super) fn parse_research_journal(

@@ -235,7 +235,7 @@ impl AppToolExecutor {
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         if !policy.use_memory {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::MemoryDisabled);
         }
         let object = exact_object(&params, &[], &["assetId", "symbol", "market"])?;
         let asset_id = match (
@@ -259,8 +259,7 @@ impl AppToolExecutor {
         // Every row carries its fact date, so an as-of turn reads only what was
         // dated on or before its cutoff.
         let as_of = super::market::parse_as_of_date(policy.as_of.as_deref())?;
-        let context = crate::commands::assets::view_context(&self.state)
-            .map_err(|error| BrokerError::Execution(error.message))?;
+        let context = crate::commands::assets::view_context(&self.state).map_err(command_error)?;
         let loupist = policy.loupist_id.clone();
         let page = crate::commands::assets::with_assets(&self.state, &loupist, false, |tx| {
             if assets::get_page(tx, &loupist, &asset_id)?.is_none() {
@@ -289,7 +288,7 @@ impl AppToolExecutor {
             value["watchAlerts"] = json!(events);
             Ok(value)
         })
-        .map_err(|error| BrokerError::Execution(error.message))?;
+        .map_err(command_error)?;
         // The latest two results snapshots, each a citable saved read whose
         // link renders the results card in the answer. Not under an as-of date.
         let mut value = page;
@@ -297,7 +296,7 @@ impl AppToolExecutor {
             let events = crate::commands::assets::with_assets(&self.state, &loupist, false, |tx| {
                 crate::knowledge::earnings::events_for(tx, &loupist, &asset_id)
             })
-            .map_err(|error| BrokerError::Execution(error.message))?;
+            .map_err(command_error)?;
             let today = chrono::Local::now().date_naive();
             let mut results = Vec::new();
             for event in events
@@ -390,7 +389,11 @@ impl AppToolExecutor {
         if !policy.propose_memory_updates || !policy.use_memory {
             return Err(BrokerError::invalid(
                 "thesis_update",
-                "thesis_private: saving is off in this chat, so the read cannot change",
+                if !policy.use_memory {
+                    "thesis_private: Memory reads are off for this Chat. Tell the user it was not changed."
+                } else {
+                    "thesis_private: Saving is off for this Chat. Tell the user it was not changed."
+                },
             ));
         }
         let object = exact_object(
@@ -509,7 +512,7 @@ impl AppToolExecutor {
                     crate::commands::assets::with_assets(&self.state, &loupist, false, |tx| {
                         assets::line_unit(tx, &loupist, &asset_id, journal_id)
                     })
-                    .map_err(|error| BrokerError::Execution(error.message))?
+                    .map_err(command_error)?
                     .ok_or_else(|| {
                         BrokerError::invalid(
                             "lineReading.journalId",
@@ -594,9 +597,10 @@ impl AppToolExecutor {
             assets::check_update(tx, &loupist, &update)
         })
         .map_err(|error| {
+            let code = error.code.clone();
             BrokerError::invalid(
                 "thesis_update",
-                format!("{}: {}", error.code, error.message),
+                format!("{code}: {}", command_message(error)),
             )
         })?;
         Ok((update, checked))

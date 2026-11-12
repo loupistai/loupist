@@ -34,6 +34,21 @@ const MCP_SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 type SharedMcpServer = Arc<Mutex<Option<TurnMcpServer>>>;
 
+fn protected_values(
+    credentials: &BTreeMap<String, String>,
+    app_data: &std::path::Path,
+    scratch: &std::path::Path,
+) -> Vec<String> {
+    credentials
+        .values()
+        .cloned()
+        .chain([
+            app_data.to_string_lossy().into_owned(),
+            scratch.to_string_lossy().into_owned(),
+        ])
+        .collect()
+}
+
 #[derive(Default)]
 pub(super) struct McpTurnSessions {
     by_server: BTreeMap<String, SharedMcpServer>,
@@ -487,7 +502,11 @@ impl AppToolExecutor {
                 scratch
             }
         };
-        let sensitive_values = authority.credentials.values().cloned().collect::<Vec<_>>();
+        let sensitive_values = protected_values(
+            &authority.credentials,
+            &self.state.artifacts.app_data_dir,
+            &scratch,
+        );
         let providerless_tool_policy = authority.runtime.providerless_tool_policy.clone();
         let provider_receipt_pointer = authority.runtime.provider_receipt_pointer.clone();
         let control_tool_names = authority.runtime.control_tool_names.clone();
@@ -623,7 +642,7 @@ impl AppToolExecutor {
                 .state
                 .store
                 .dataset_fresh(&self.loupist_id, &plan.request_key, max_age)
-                .map_err(|error| BrokerError::Execution(error.to_string()))?,
+                .map_err(command_error)?,
             _ => None,
         };
 
@@ -653,8 +672,18 @@ impl AppToolExecutor {
         } else {
             let reused = retained.is_some();
             let compact = payload.to_string().len() > 16 * 1024;
-            let (reference, fetched_at) =
-                self.retain_mcp_read(&plan, &payload, retained, compact)?;
+            let (reference, fetched_at) = match retained {
+                Some(retained) => retained,
+                None => {
+                    let (reference, fetched_at) = self.retain_dataset(
+                        &plan.request_key,
+                        &payload,
+                        json!({"producer":"mcp", "request":plan.capture_request,"publication_policy":"provider-declared; unknown availability is not point-in-time evidence","model_coverage":if compact {"bounded_sample"} else {"complete"},
+                            "trust": crate::custom_connections::taint::retained_trust(ToolMethod::McpCall, &plan.capture_request, &self.state.artifacts.mcp_runtimes)}),
+                    )?;
+                    (reference, Some(fetched_at))
+                }
+            };
             let mut model_payload =
                 self.shape_mcp_read(&mut payload, &reference, fetched_at, reused, compact)?;
             let result_ref = match self
@@ -724,7 +753,7 @@ impl AppToolExecutor {
         cutoff: Option<chrono::NaiveDate>,
     ) -> Result<McpCallPlan, BrokerError> {
         let Some(tool) = server.tools.get(&request.tool_name) else {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid("tool_name", "Not in this connection's active tool list. Use an active tool, or load this connection again if it stopped."));
         };
         if let Err(error) =
             validate_provider_argument(tool, &request.arguments, &server.enabled_provider_ids)
@@ -789,29 +818,6 @@ impl AppToolExecutor {
         })
     }
 
-    /// Provenance: the dataset revision that retains a data read in full, the
-    /// reused one or a new one recorded with its request and trust.
-    fn retain_mcp_read(
-        &self,
-        plan: &McpCallPlan,
-        payload: &Value,
-        retained: Option<(crate::datasets::DatasetRef, Option<String>)>,
-        compact: bool,
-    ) -> Result<(crate::datasets::DatasetRef, Option<String>), BrokerError> {
-        if let Some(retained) = retained {
-            return Ok(retained);
-        }
-        let fetched_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-        let reference = self.state.store.dataset_put(
-            &self.loupist_id,
-            &plan.request_key,
-            payload,
-            json!({"producer":"mcp", "request":plan.capture_request,"fetched_at":fetched_at,"publication_policy":"provider-declared; unknown availability is not point-in-time evidence","model_coverage":if compact {"bounded_sample"} else {"complete"},
-                "trust": crate::custom_connections::taint::retained_trust(ToolMethod::McpCall, &plan.capture_request, &self.state.artifacts.mcp_runtimes)}),
-        ).map_err(|error| BrokerError::Execution(error.to_string()))?;
-        Ok((reference, Some(fetched_at)))
-    }
-
     /// Result shaping: stamps the retained dataset on the full payload and, for
     /// a large one, returns the bounded summary the model receives instead.
     fn shape_mcp_read(
@@ -835,7 +841,7 @@ impl AppToolExecutor {
             .state
             .store
             .dataset_describe(&self.loupist_id, &reference.dataset_id, reference.revision)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+            .map_err(command_error)?;
         let mut delivered = json!({"dataset_ref":reference,"fetched_at":payload["fetched_at"],"data_summary":description,"model_delivery":{"coverage":"bounded_sample","retained":"complete"}});
         if let Some(as_of) = payload.get("as_of") {
             delivered["as_of"] = as_of.clone();
@@ -944,8 +950,12 @@ impl AppToolExecutor {
             .get(&request.server_id)
             .and_then(|runtime| runtime.provider_config_fields.get(provider))
             .is_some_and(|fields| !fields.is_empty());
-        if matches!(error, BrokerError::MethodDenied) && needs_setup {
-            return error.with_next(PROVIDER_SETUP_NEXT);
+        if matches!(
+            error,
+            BrokerError::MethodDenied | BrokerError::InvalidArguments { .. }
+        ) && needs_setup
+        {
+            return BrokerError::invalid("provider", format!("Provider {provider} needs setup. If connection_setup is available, call it with this provider's connection name so the user finishes setup in a card; otherwise tell the user to check this provider in Connections."));
         }
         error
     }
@@ -1111,7 +1121,7 @@ fn setup_notices<'a>(
         .collect()
 }
 
-const PROVIDER_SETUP_NEXT: &str = "This provider needs setup before it can run (SEC EDGAR needs a contact email). If connection_setup is available, call it with the provider's connection id or name so the user finishes it in a card (otherwise point them to Connections), or use another provider listed in the tool schema and name it when citing.";
+const PROVIDER_SETUP_NEXT: &str = "The providers named above need setup before they can run. If connection_setup is available, call it with the named connection id so the user finishes setup in a card; otherwise tell the user to check that provider in Connections. Use another provider only when its tool schema lists it, and name it when citing.";
 
 fn connect_response(server_id: &str, tools: Vec<Value>, notices: &[String]) -> Value {
     let mut response = json!({ "server_id": server_id, "tools": tools });
@@ -1279,7 +1289,7 @@ fn ensure_inventory_contains_no_protected_values(
         .map_err(|_| BrokerError::Execution("MCP tool inventory was invalid".into()))?;
     if contains_protected_value(&inventory, sensitive_values) {
         return Err(BrokerError::Execution(
-            "MCP tool inventory contained protected credential data".into(),
+            "MCP tool inventory contained protected private data".into(),
         ));
     }
     Ok(())
@@ -1394,7 +1404,10 @@ fn validate_provider_argument(
         });
     let provider = arguments.get("provider").and_then(Value::as_str);
     if required && provider.is_none() {
-        return Err(BrokerError::Malformed);
+        return Err(BrokerError::invalid(
+            "provider",
+            "Choose a provider listed in this active tool's schema.",
+        ));
     }
     if let Some(provider) = provider {
         let schema_allows = provider_schema
@@ -1402,7 +1415,7 @@ fn validate_provider_argument(
             .and_then(Value::as_array)
             .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(provider)));
         if !enabled_provider_ids.contains(provider) || !schema_allows {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid("provider", "Not enabled for this tool in this run. Choose a provider listed in the active tool schema, or use connection_setup for the provider you need."));
         }
     }
     Ok(())
@@ -1764,12 +1777,18 @@ done
     }
 
     #[test]
-    fn credential_echoes_are_refused_in_results_and_inventory() {
-        let secrets = vec!["provider-secret-123".to_owned()];
+    fn credentials_and_private_paths_are_refused_in_results_and_inventory() {
+        let secrets = protected_values(
+            &BTreeMap::from([("api_key".into(), "provider-secret-123".into())]),
+            std::path::Path::new("/private/app-data"),
+            std::path::Path::new("/private/scratch"),
+        );
         let mut keyed_echo = serde_json::Map::new();
         keyed_echo.insert("provider-secret-123".into(), json!("credential-shaped key"));
         for echoed in [
             json!({"content": [{"type": "text", "text": "error: provider-secret-123"}]}),
+            json!({"content": [{"type": "text", "text": "Read /private/app-data/key.json"}]}),
+            json!({"structuredContent": {"path":"/private/scratch/runtime.json"}}),
             Value::Object(keyed_echo),
         ] {
             assert!(contains_protected_value(&echoed, &secrets));
@@ -1943,11 +1962,11 @@ done
         assert!(!tool_names(&connected_b).contains(&"equity_quote".to_owned()));
         assert!(matches!(
             call(&executor_b, "equity_quote", quote("fmp")).await,
-            Err(BrokerError::MethodDenied)
+            Err(BrokerError::InvalidArguments { .. })
         ));
         assert!(matches!(
             call(&executor_a, "equity_quote", quote("fmp")).await,
-            Err(BrokerError::MethodDenied)
+            Err(BrokerError::InvalidArguments { .. })
         ));
         call(&executor_a, "equity_quote", quote("yfinance"))
             .await
@@ -2027,7 +2046,7 @@ done
                 json!({"symbol": "TEST", "provider": "yfinance"})
             )
             .await,
-            Err(BrokerError::MethodDenied)
+            Err(BrokerError::InvalidArguments { .. })
         ));
         assert_eq!(
             fs::read_to_string(&spawned.transcript)

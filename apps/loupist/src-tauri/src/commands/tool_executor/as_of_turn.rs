@@ -73,7 +73,7 @@ impl AppToolExecutor {
                 cutoff,
                 left,
             )
-            .map_err(|error| BrokerError::Execution(error.to_string()))
+            .map_err(command_error)
         };
         let mut rest = rows.split_off(window.min(rows.len()));
         let mut left = LeftOut::default();

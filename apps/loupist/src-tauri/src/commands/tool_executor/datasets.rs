@@ -57,6 +57,24 @@ pub(super) fn ensure_within_cutoff(
 }
 
 impl AppToolExecutor {
+    /// Native and bundled reads retain the complete result by the same path.
+    /// Callers own their provenance fields and handle reuse before writing.
+    pub(super) fn retain_dataset(
+        &self,
+        request_key: &str,
+        payload: &Value,
+        mut metadata: Value,
+    ) -> Result<(crate::datasets::DatasetRef, String), BrokerError> {
+        let fetched_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+        metadata["fetched_at"] = json!(fetched_at);
+        let reference = self
+            .state
+            .store
+            .dataset_put(&self.loupist_id, request_key, payload, metadata)
+            .map_err(command_error)?;
+        Ok((reference, fetched_at))
+    }
+
     /// Refuses a revision the turn's as-of cutoff cannot use.
     pub(super) fn ensure_dataset_within_cutoff(
         &self,
@@ -71,7 +89,7 @@ impl AppToolExecutor {
             .state
             .store
             .dataset_metadata(&self.loupist_id, dataset_id, revision)
-            .map_err(|e| BrokerError::Execution(e.to_string()))?;
+            .map_err(command_error)?;
         ensure_within_cutoff(dataset_id, revision, &metadata, Some(cutoff))
     }
 
@@ -83,13 +101,16 @@ impl AppToolExecutor {
     ) -> Result<Value, BrokerError> {
         let object = params.as_object().ok_or(BrokerError::Malformed)?;
         if object.contains_key("loupist_id") {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid(
+                "loupist_id",
+                "Omit this field; datasets belong to this Chat's Loupist.",
+            ));
         }
         fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, BrokerError> {
             serde_json::from_value(v).map_err(|_| BrokerError::Malformed)
         }
         fn map<T>(r: Result<T, crate::app::CommandError>) -> Result<T, BrokerError> {
-            r.map_err(|e| BrokerError::Execution(e.to_string()))
+            r.map_err(command_error)
         }
         match method {
             ToolMethod::DatasetDescribe => {

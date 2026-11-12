@@ -51,7 +51,9 @@ impl AppToolExecutor {
                         .get_journal(&policy.loupist_id, journal_id)
                     },
                 )
-                .map_err(|error| BrokerError::invalid("journal.earlier.readRef", error.message))?;
+                .map_err(|error| {
+                    BrokerError::invalid("journal.earlier.readRef", command_message(error))
+                })?;
                 if let Some(outcome) = journal
                     .outcome
                     .as_ref()
@@ -137,7 +139,7 @@ impl AppToolExecutor {
                 &policy.loupist_id,
                 id,
             )
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+            .map_err(command_error)?;
             if research.working_note.is_some() && previous.chat_id == policy.session_id {
                 return Err(BrokerError::invalid(
                     "previousNoteIds",
@@ -155,9 +157,7 @@ impl AppToolExecutor {
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         if !policy.propose_memory_updates {
-            return Err(BrokerError::Execution(
-                "Save learning is off, so this turn cannot retain a Source".into(),
-            ));
+            return Err(BrokerError::ProposalDisabled);
         }
         let object = exact_object(
             &params,
@@ -393,8 +393,11 @@ impl AppToolExecutor {
         delivery_id: &str,
         review: bool,
     ) -> Result<Value, BrokerError> {
-        if !policy.propose_memory_updates || !policy.use_memory {
+        if !policy.use_memory {
             return Err(BrokerError::MemoryDisabled);
+        }
+        if !policy.propose_memory_updates {
+            return Err(BrokerError::ProposalDisabled);
         }
         if !review
             && (self
@@ -529,9 +532,7 @@ impl AppToolExecutor {
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         if !policy.propose_memory_updates {
-            return Err(BrokerError::Execution(
-                "Save learning is off, so this turn cannot save research".into(),
-            ));
+            return Err(BrokerError::ProposalDisabled);
         }
         let object = exact_object(
             &params,
@@ -604,7 +605,7 @@ impl AppToolExecutor {
                 if error.code == "conflict" {
                     BrokerError::invalid("workingNote.expectedResearchId", error.message)
                 } else {
-                    BrokerError::Execution(error.to_string())
+                    command_error(error)
                 }
             })?;
         }

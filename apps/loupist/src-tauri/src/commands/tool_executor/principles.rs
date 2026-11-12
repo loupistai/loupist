@@ -14,8 +14,11 @@ impl AppToolExecutor {
         params: Value,
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
-        if !policy.propose_memory_updates || !policy.use_memory {
+        if !policy.use_memory {
             return Err(BrokerError::MemoryDisabled);
+        }
+        if !policy.propose_memory_updates {
+            return Err(BrokerError::ProposalDisabled);
         }
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -38,8 +41,7 @@ impl AppToolExecutor {
             origin_chat_id: self.capture.bound_chat_id.clone(),
             origin_message_id: self.capture.principle_user_message_id.clone(),
         };
-        crate::knowledge::principles::validate_principle(&mut input)
-            .map_err(|e| BrokerError::Execution(e.to_string()))?;
+        crate::knowledge::principles::validate_principle(&mut input).map_err(knowledge_error)?;
         let current = crate::commands::knowledge::principles::list(
             &self.state,
             crate::commands::knowledge::principles::PrincipleListRequest {
@@ -47,7 +49,7 @@ impl AppToolExecutor {
                 include_archived: Some(true),
             },
         )
-        .map_err(|e| BrokerError::Execution(e.to_string()))?;
+        .map_err(command_error)?;
         let folded = crate::knowledge::fold_lens_title(&input.statement);
         if current.iter().any(|p| {
             !p.archived

@@ -149,7 +149,10 @@ async fn only_the_bot_with_saving_on_keeps_memory_of_its_conversation() {
         )
         .await
         .unwrap_err();
-    assert!(matches!(private, BrokerError::MemoryDisabled), "{private}");
+    assert!(
+        matches!(private, BrokerError::ProposalDisabled),
+        "{private}"
+    );
 
     for (surface, name) in [
         (Some(ChatSurface::Session), "session"),

@@ -197,7 +197,7 @@ impl AppToolExecutor {
             .state
             .store
             .list_chat_artifacts(&policy.session_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+            .map_err(store_error)?;
         Ok(json!({
             "artifacts": artifacts.into_iter().map(|artifact| json!({
                 "artifact_id": artifact.id,
@@ -225,10 +225,13 @@ impl AppToolExecutor {
             .state
             .store
             .get_chat_artifact(&artifact_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?
+            .map_err(store_error)?
             .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
         if artifact.chat_session_id != policy.session_id {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid(
+                "artifact_id",
+                "Not an artifact in this Chat; list artifacts and use an ID from this Chat.",
+            ));
         }
         let revision_id = object
             .get("revision_id")
@@ -246,7 +249,7 @@ impl AppToolExecutor {
             .state
             .store
             .read_chat_artifact(&artifact.id, revision_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?
+            .map_err(store_error)?
             .ok_or_else(|| BrokerError::Execution("artifact revision was not found".into()))?;
         let artifact = snapshot.artifact;
         let revision = snapshot.revision;
@@ -357,7 +360,7 @@ impl AppToolExecutor {
             .capture
             .source_message_id
             .clone()
-            .ok_or(BrokerError::MethodDenied)?;
+            .ok_or_else(|| BrokerError::invalid("artifact_publish", "This reply has no artifact publishing context. Continue without publishing and tell the user it was not saved."))?;
         let timestamp = now_ms();
 
         let commit = match mode {
@@ -414,10 +417,10 @@ impl AppToolExecutor {
                     .state
                     .store
                     .get_chat_artifact(&artifact_id)
-                    .map_err(|error| BrokerError::Execution(error.to_string()))?
+                    .map_err(store_error)?
                     .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
                 if artifact.chat_session_id != policy.session_id {
-                    return Err(BrokerError::MethodDenied);
+                    return Err(BrokerError::invalid("artifact_id", "Not an artifact in this Chat; list artifacts and use an ID from this Chat."));
                 }
                 if artifact.current_revision != expected_revision {
                     return Err(BrokerError::Execution(
@@ -465,7 +468,7 @@ impl AppToolExecutor {
         params: Value,
     ) -> Result<Value, BrokerError> {
         let request: ChartQueryRequest = serde_json::from_value(params)
-            .map_err(|error| BrokerError::invalid("chart_query", error.to_string()))?;
+            .map_err(|_| BrokerError::invalid("chart_query", "artifact_id, revision, optional offset, limit and columns matching the tool schema"))?;
         if request.limit == 0 || request.limit > MAX_CHART_QUERY_ROWS {
             return Err(BrokerError::invalid(
                 "limit",
@@ -476,11 +479,14 @@ impl AppToolExecutor {
             .state
             .store
             .get_chat_artifact(&request.artifact_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?
+            .map_err(store_error)?
             .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
         if artifact.chat_session_id != policy.session_id || artifact.kind != ChatArtifactKind::Chart
         {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid(
+                "artifact_id",
+                "Not a chart in this Chat; list artifacts and use a chart ID from this Chat.",
+            ));
         }
         if !self
             .capture
@@ -497,7 +503,7 @@ impl AppToolExecutor {
             .state
             .store
             .read_chat_artifact(&artifact.id, Some(request.revision))
-            .map_err(|error| BrokerError::Execution(error.to_string()))?
+            .map_err(store_error)?
             .ok_or_else(|| BrokerError::Execution("artifact revision was not found".into()))?;
         let revision = snapshot.revision;
         let ChatArtifactPayload::Chart { chart, .. } = revision.payload else {
@@ -597,7 +603,7 @@ impl AppToolExecutor {
                     .state
                     .store
                     .dataset(&self.loupist_id, &selected.dataset_id, revision)
-                    .map_err(|error| BrokerError::Execution(error.to_string()))?;
+                    .map_err(command_error)?;
                 crate::chat::chart::dataset_from_dataset_selection(
                     new_id("dataset"),
                     selected,
@@ -693,7 +699,7 @@ impl AppToolExecutor {
             .capture
             .source_message_id
             .clone()
-            .ok_or(BrokerError::MethodDenied)?;
+            .ok_or_else(|| BrokerError::invalid("chart_publish", "This reply has no chart publishing context. Continue without publishing and tell the user it was not saved."))?;
         let commit = match request.mode {
             ChartPublishMode::Create => {
                 if request.artifact_id.is_some() || request.edit_token.is_some() {
@@ -764,18 +770,18 @@ impl AppToolExecutor {
                     .state
                     .store
                     .get_chat_artifact(artifact_id)
-                    .map_err(|error| BrokerError::Execution(error.to_string()))?
+                    .map_err(store_error)?
                     .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
                 if artifact.chat_session_id != policy.session_id
                     || artifact.kind != ChatArtifactKind::Chart
                 {
-                    return Err(BrokerError::MethodDenied);
+                    return Err(BrokerError::invalid("artifact_id", "Not a chart in this Chat; list artifacts and use a chart ID from this Chat."));
                 }
                 let current = self
                     .state
                     .store
                     .get_chat_artifact_current(&artifact.id)
-                    .map_err(|error| BrokerError::Execution(error.to_string()))?
+                    .map_err(store_error)?
                     .ok_or_else(|| {
                         BrokerError::Execution("artifact content was not found".into())
                     })?;
@@ -804,7 +810,7 @@ impl AppToolExecutor {
                     self.state
                         .store
                         .get_chart_dataset(&current_chart.dataset_id)
-                        .map_err(|error| BrokerError::Execution(error.to_string()))?
+                        .map_err(store_error)?
                         .ok_or_else(|| {
                             BrokerError::Execution("chart dataset was not found".into())
                         })?

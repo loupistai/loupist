@@ -276,6 +276,11 @@ mod web_as_of;
 mod workspace;
 
 mod custom_connections;
+mod execution_work;
+mod grep_trust;
+mod refusals;
+mod release_boundaries;
+mod runtime_profile;
 
 #[test]
 fn world_reads_report_their_delivered_names_once_and_in_order() {

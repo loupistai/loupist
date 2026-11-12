@@ -285,7 +285,7 @@ async fn the_page_read_is_a_citable_memory_receipt_that_never_creates_a_page() {
         )
         .await
         .unwrap_err();
-    assert!(matches!(denied, BrokerError::MethodDenied));
+    assert!(matches!(denied, BrokerError::MemoryDisabled));
 }
 
 #[tokio::test]

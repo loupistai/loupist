@@ -494,6 +494,9 @@ impl AgentRuntimeProfile {
         let capabilities = normalize_capability_ids(capability_ids)?;
         let allowed = |tool: &&crate::broker::tools::AgentToolSpec| {
             tool.permission.allows(use_memory, propose_memory_updates)
+                && crate::broker::ToolMethod::from_tool_name(&tool.name)
+                    .and_then(crate::finance_data::serving_vendor)
+                    .is_none_or(|vendor| capabilities.iter().any(|id| id == vendor.source_id))
         };
         let core_tools = TOOL_CATALOG
             .tools

@@ -17,6 +17,29 @@ service handlers independently validate arguments, ownership and evidence.
 Host-handled `as_of` treats null as absent and rejects other non-string values;
 non-null optional `world_read` revision, span and center-node IDs must be bounded
 strings.
+The runtime profile advertises a native finance tool only when its vendor's exact
+capability is enabled: enabling public wallets alone does not expose DefiLlama.
+Each execution checks the Chat's live database binding without loading its
+transcript. Dataset file/query work and Lens search run on blocking workers;
+captured results reuse their measured byte size through reservation and delivery.
+Native finance and bundled MCP reads share one dataset-retention writer, keeping
+their existing provenance metadata and reuse rules.
+An active tool with a stale source, wrong Chat or artifact kind, or missing host
+context names the field and a repair, rather than suggesting a capability load.
+Missing provider setup names that provider. Web refusals distinguish URL policy
+from a scanned document with no text layer.
+Internal storage failures and free-form finance diagnostics return host-owned
+repair messages rather than raw errors, URLs or private paths. Native finance
+results refuse an echoed API key before capture or retention; bundled MCP also
+refuses credentials, app-data paths and private scratch paths in results and tool
+inventories. Ambiguous DART resolution errors list only validated corporate codes,
+with names available through the lookup result. Schedule receipts
+report that a run failed without copying its stored diagnostic. Third-party result
+warnings, exported dataset column names and saved results quotes retain the
+third-party-text boundary; receipt IDs and citation URLs remain host fields.
+Warning receipts keep the producer's existing trust class, including trusted
+workspace and reviewed numeric results. Artifact-list and conversation-search
+titles inherit the saved reply's third-party-text marker, as their bodies do.
 Journal saves and reviews share one per-turn reservation, released for an
 undelivered call. Acknowledged web pages preserve all issued pagination offsets
 even when deliveries finish out of order.

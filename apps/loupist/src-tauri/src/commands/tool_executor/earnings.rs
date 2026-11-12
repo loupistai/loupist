@@ -108,7 +108,11 @@ impl AppToolExecutor {
         if !policy.propose_memory_updates || !policy.use_memory {
             return Err(BrokerError::invalid(
                 "earnings_snapshot_save",
-                "earnings_private: saving is off in this chat, so results cannot be recorded",
+                if !policy.use_memory {
+                    "earnings_private: Memory reads are off for this Chat. Tell the user it was not changed."
+                } else {
+                    "earnings_private: Saving is off for this Chat. Tell the user it was not changed."
+                },
             ));
         }
         let object = exact_object(
@@ -166,7 +170,7 @@ impl AppToolExecutor {
                 };
                 Ok((page, event, existing))
             })
-            .map_err(|error| BrokerError::Execution(error.message))?;
+            .map_err(command_error)?;
         let page = page.ok_or_else(|| {
             BrokerError::invalid("assetId", "earnings_no_page: read the asset page first")
         })?;
