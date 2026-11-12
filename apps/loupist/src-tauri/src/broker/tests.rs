@@ -183,57 +183,35 @@ async fn broker_request(socket_path: &PathBuf, token: &str, id: &str, method: &s
 
 #[cfg(unix)]
 #[tokio::test]
-async fn broker_identity_is_idle_between_sequential_instances() {
-    let temporary = tempfile::tempdir().unwrap();
-    let socket_path = temporary.path().join("reusable-broker.sock");
-    let identity = ToolBrokerIdentity::new(socket_path.clone());
-
-    assert!(
-        !socket_path.exists(),
-        "idle identity must not accept clients"
-    );
-    let first = identity
-        .start(policy(), Arc::new(UnusedExecutor))
-        .await
-        .unwrap();
-    assert!(socket_path.exists());
-    assert_eq!(first.token(), identity.token());
-
-    let concurrent = identity.start(policy(), Arc::new(UnusedExecutor)).await;
-    assert!(matches!(
-        concurrent,
-        Err(BrokerError::Io(ref error)) if error.kind() == io::ErrorKind::AddrInUse
-    ));
-
-    first.shutdown().await.unwrap();
-    assert!(
-        !socket_path.exists(),
-        "shutdown must remove the accepting endpoint before releasing identity"
-    );
-
-    let second = identity
-        .start(policy(), Arc::new(UnusedExecutor))
-        .await
-        .unwrap();
-    assert_eq!(second.token(), identity.token());
-    second.shutdown().await.unwrap();
-    assert!(!socket_path.exists());
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn broker_identity_rejects_a_stale_endpoint_without_removing_it() {
+async fn broker_rejects_a_stale_endpoint_without_removing_it() {
     let temporary = tempfile::tempdir().unwrap();
     let socket_path = temporary.path().join("stale-broker.sock");
     std::fs::write(&socket_path, b"not a broker").unwrap();
-    let identity = ToolBrokerIdentity::new(socket_path.clone());
 
-    let result = identity.start(policy(), Arc::new(UnusedExecutor)).await;
+    let result = start_tool_broker(socket_path.clone(), policy(), Arc::new(UnusedExecutor)).await;
     assert!(matches!(
         result,
         Err(BrokerError::Io(ref error)) if error.kind() == io::ErrorKind::AddrInUse
     ));
     assert_eq!(std::fs::read(&socket_path).unwrap(), b"not a broker");
+}
+
+#[tokio::test]
+async fn shutdown_reports_an_accept_loop_failure_after_removing_the_endpoint() {
+    let temporary = tempfile::tempdir().unwrap();
+    let socket_path = temporary.path().join("failed-broker.sock");
+    let handle = ToolBrokerHandle {
+        socket_path: socket_path.clone(),
+        token: new_broker_token(),
+        shutdown: None,
+        task: Some(tokio::spawn(async {
+            Err(BrokerError::Io(io::Error::other("accept failed")))
+        })),
+    };
+    assert!(
+        matches!(handle.shutdown().await, Err(BrokerError::Io(error)) if error.to_string() == "accept failed")
+    );
+    assert!(!socket_path.exists());
 }
 
 #[cfg(unix)]
@@ -263,7 +241,6 @@ async fn sequential_brokers_do_not_share_policy_executor_or_cardinality() {
 
     let temporary = tempfile::tempdir().unwrap();
     let socket_path = temporary.path().join("turn-scoped-broker.sock");
-    let identity = ToolBrokerIdentity::new(socket_path.clone());
     let first_executor = Arc::new(Executor::default());
     let mut first_policy = policy();
     first_policy.loupist_id = "loupist-first".into();
@@ -271,8 +248,7 @@ async fn sequential_brokers_do_not_share_policy_executor_or_cardinality() {
     first_policy.use_memory = true;
     first_policy.propose_memory_updates = true;
     first_policy.memory_proposal_budget = 3;
-    let first = identity
-        .start(first_policy, first_executor.clone())
+    let first = start_tool_broker(socket_path.clone(), first_policy, first_executor.clone())
         .await
         .unwrap();
 
@@ -283,6 +259,7 @@ async fn sequential_brokers_do_not_share_policy_executor_or_cardinality() {
     let first_journal =
         broker_request(&socket_path, first.token(), "first-journal", "source.save").await;
     assert_eq!(first_journal["ok"], true);
+    let first_token = first.token().to_owned();
     first.shutdown().await.unwrap();
 
     let second_executor = Arc::new(Executor::default());
@@ -292,10 +269,10 @@ async fn sequential_brokers_do_not_share_policy_executor_or_cardinality() {
     second_policy.use_memory = false;
     second_policy.propose_memory_updates = true;
     second_policy.memory_proposal_budget = 3;
-    let second = identity
-        .start(second_policy, second_executor.clone())
+    let second = start_tool_broker(socket_path.clone(), second_policy, second_executor.clone())
         .await
         .unwrap();
+    assert_ne!(second.token(), first_token);
 
     let denied_memory = broker_request(
         &socket_path,

@@ -10,10 +10,7 @@ use std::{
     io,
     path::PathBuf,
     pin::Pin,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex as StdMutex,
-    },
+    sync::{Arc, Mutex as StdMutex},
     time::Duration,
 };
 use thiserror::Error;
@@ -524,78 +521,7 @@ pub struct ToolBrokerHandle {
     pub socket_path: PathBuf,
     token: String,
     shutdown: Option<watch::Sender<bool>>,
-    task: Option<JoinHandle<()>>,
-    identity_lease: Option<ToolBrokerIdentityLease>,
-}
-
-/// Process-lifetime authority for sequential, turn-scoped tool brokers.
-///
-/// The endpoint and token remain stable so a future long-lived Pi process can
-/// keep one broker identity, while each broker start still receives a fresh
-/// policy, executor, and transaction-cardinality state. This type deliberately
-/// does not implement `Debug` or serialization because its token is authority.
-#[derive(Clone)]
-pub struct ToolBrokerIdentity {
-    inner: Arc<ToolBrokerIdentityInner>,
-}
-
-struct ToolBrokerIdentityInner {
-    socket_path: PathBuf,
-    token: String,
-    leased: AtomicBool,
-}
-
-struct ToolBrokerIdentityLease {
-    identity: Arc<ToolBrokerIdentityInner>,
-}
-
-impl Drop for ToolBrokerIdentityLease {
-    fn drop(&mut self) {
-        self.identity.leased.store(false, Ordering::Release);
-    }
-}
-
-impl ToolBrokerIdentity {
-    pub fn new(socket_path: PathBuf) -> Self {
-        Self {
-            inner: Arc::new(ToolBrokerIdentityInner {
-                socket_path,
-                token: new_broker_token(),
-                leased: AtomicBool::new(false),
-            }),
-        }
-    }
-
-    pub fn socket_path(&self) -> &PathBuf {
-        &self.inner.socket_path
-    }
-
-    pub fn token(&self) -> &str {
-        &self.inner.token
-    }
-
-    pub async fn start(
-        &self,
-        policy: ToolPolicy,
-        executor: Arc<dyn ToolExecutor>,
-    ) -> Result<ToolBrokerHandle, BrokerError> {
-        start_tool_broker_with_identity(self, policy, executor).await
-    }
-
-    fn acquire(&self) -> Result<ToolBrokerIdentityLease, BrokerError> {
-        self.inner
-            .leased
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| {
-                BrokerError::Io(io::Error::new(
-                    io::ErrorKind::AddrInUse,
-                    "tool broker identity is already active",
-                ))
-            })?;
-        Ok(ToolBrokerIdentityLease {
-            identity: self.inner.clone(),
-        })
-    }
+    task: Option<JoinHandle<Result<(), BrokerError>>>,
 }
 
 #[derive(Debug, Default)]
@@ -755,7 +681,7 @@ impl ToolBrokerHandle {
         }
         let task_result = if let Some(mut task) = self.task.take() {
             match timeout(Duration::from_secs(2), &mut task).await {
-                Ok(Ok(())) => Ok(()),
+                Ok(Ok(result)) => result,
                 Ok(Err(error)) => Err(BrokerError::Io(io::Error::other(format!(
                     "tool broker task failed: {error}"
                 )))),
@@ -775,9 +701,6 @@ impl ToolBrokerHandle {
             Ok(())
         };
         let endpoint_result = remove_broker_endpoint(&self.socket_path);
-        // Keep the identity leased until both the accept task and every
-        // connection handler have drained and the accepting endpoint is gone.
-        self.identity_lease.take();
         task_result?;
         endpoint_result
     }
@@ -791,7 +714,6 @@ impl Drop for ToolBrokerHandle {
             shutdown.send_replace(true);
         }
         if let Some(mut task) = self.task.take() {
-            let identity_lease = self.identity_lease.take();
             let socket_path = self.socket_path.clone();
             if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                 runtime.spawn(async move {
@@ -800,17 +722,14 @@ impl Drop for ToolBrokerHandle {
                         let _ = task.await;
                     }
                     let _ = remove_broker_endpoint(&socket_path);
-                    drop(identity_lease);
                 });
             } else {
                 task.abort();
                 let _ = remove_broker_endpoint(&socket_path);
-                drop(identity_lease);
             }
             return;
         }
         let _ = remove_broker_endpoint(&self.socket_path);
-        self.identity_lease.take();
     }
 }
 
@@ -854,23 +773,12 @@ pub async fn start_tool_broker(
     policy: ToolPolicy,
     executor: Arc<dyn ToolExecutor>,
 ) -> Result<ToolBrokerHandle, BrokerError> {
-    ToolBrokerIdentity::new(socket_path)
-        .start(policy, executor)
-        .await
-}
-
-async fn start_tool_broker_with_identity(
-    identity: &ToolBrokerIdentity,
-    policy: ToolPolicy,
-    executor: Arc<dyn ToolExecutor>,
-) -> Result<ToolBrokerHandle, BrokerError> {
     if policy.memory_proposal_budget > MAX_MEMORY_PROPOSALS
         || (policy.propose_memory_updates && policy.memory_proposal_budget == 0)
     {
         return Err(BrokerError::Malformed);
     }
-    let identity_lease = identity.acquire()?;
-    let socket_path = identity.socket_path().clone();
+    let token = new_broker_token();
     let (shutdown, shutdown_receiver) = watch::channel(false);
     #[cfg(unix)]
     let task = {
@@ -890,7 +798,7 @@ async fn start_tool_broker_with_identity(
         }
         let listener = UnixListener::bind(&socket_path)?;
         std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))?;
-        let server_token = identity.token().to_owned();
+        let server_token = token.clone();
         let task_token = server_token.clone();
         let task_shutdown = shutdown.clone();
         let mut shutdown_receiver = shutdown_receiver;
@@ -899,10 +807,10 @@ async fn start_tool_broker_with_identity(
             let connection_slots = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
             let policy = Arc::new(policy);
             let mut handlers = FuturesUnordered::new();
-            loop {
+            let result = loop {
                 tokio::select! {
                     biased;
-                    _ = shutdown_requested(&mut shutdown_receiver) => break,
+                    _ = shutdown_requested(&mut shutdown_receiver) => break Ok(()),
                     _ = handlers.next(), if !handlers.is_empty() => {}
                     accepted = listener.accept() => match accepted {
                         Ok((stream, _)) => {
@@ -918,12 +826,16 @@ async fn start_tool_broker_with_identity(
                                 ));
                             }
                         }
-                        Err(_) => break,
+                        Err(error) => break Err(BrokerError::Io(error)),
                     },
                 }
+            };
+            if result.is_err() {
+                eprintln!("Loupist tool broker could not accept another connection");
             }
             task_shutdown.send_replace(true);
             drain_connection_handlers(&mut handlers).await;
+            result
         });
         (server_token, task)
     };
@@ -935,7 +847,7 @@ async fn start_tool_broker_with_identity(
         }
         let security = WindowsPipeSecurity::current_user_and_system()?;
         let server = create_windows_pipe_server(&socket_path, true, &security)?;
-        let server_token = identity.token().to_owned();
+        let server_token = token.clone();
         let task_token = server_token.clone();
         let task_path = socket_path.clone();
         let task_shutdown = shutdown.clone();
@@ -946,15 +858,15 @@ async fn start_tool_broker_with_identity(
             let policy = Arc::new(policy);
             let mut handlers = FuturesUnordered::new();
             let mut server = server;
-            loop {
+            let result = loop {
                 let connected = tokio::select! {
                     biased;
-                    _ = shutdown_requested(&mut shutdown_receiver) => break,
+                    _ = shutdown_requested(&mut shutdown_receiver) => break Ok(()),
                     _ = handlers.next(), if !handlers.is_empty() => continue,
                     connected = server.connect() => connected,
                 };
-                if connected.is_err() {
-                    break;
+                if let Err(error) = connected {
+                    break Err(BrokerError::Io(error));
                 }
                 let next = create_windows_pipe_server(&task_path, false, &security);
                 if let Ok(permit) = connection_slots.clone().try_acquire_owned() {
@@ -970,11 +882,15 @@ async fn start_tool_broker_with_identity(
                 }
                 match next {
                     Ok(next) => server = next,
-                    Err(_) => break,
+                    Err(error) => break Err(BrokerError::Io(error)),
                 }
+            };
+            if result.is_err() {
+                eprintln!("Loupist tool broker could not accept another connection");
             }
             task_shutdown.send_replace(true);
             drain_connection_handlers(&mut handlers).await;
+            result
         });
         (server_token, task)
     };
@@ -986,7 +902,6 @@ async fn start_tool_broker_with_identity(
         token,
         shutdown: Some(shutdown),
         task: Some(task),
-        identity_lease: Some(identity_lease),
     })
 }
 
