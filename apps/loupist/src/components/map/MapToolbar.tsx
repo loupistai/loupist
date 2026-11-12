@@ -84,12 +84,8 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
       </details> : null}
       {filtersActive(filters) || overlayId ? <Button disabled={disabled} variant="link" onClick={() => { onFilters(defaultFilters()); onOverlay(undefined); }}>{t("map.clearFilters")}</Button> : null}
     </PopoverContent></Popover>
-    <Button className="map-toolbar-button" disabled={disabled} variant="ghost" data-map-library {...foldProps("library", true)} aria-label={t("map.library")} title={t("map.library")} aria-expanded={libraryOpen} onClick={onLibrary}><BookOpenIcon /><span className="map-control-label">{t("map.library")}</span></Button>
-    <Button className="map-toolbar-button" disabled={disabled || replayDisabled} variant="ghost" data-map-replay {...foldProps("replay", true)} aria-label={t("map.replay.label")} title={t("map.replay.label")} aria-pressed={replayActive} onClick={onReplay}><PlayIcon /><span className="map-control-label">{t("map.replay.label")}</span></Button>
     <div className="map-toolbar-spacer" />
-    <Button className="map-toolbar-button" disabled={disabled || fitDisabled} variant="ghost" data-map-fit {...foldProps("fit", true)} aria-label={t("map.fit")} title={t("map.fit")} onClick={onFit}><ScanIcon /><span className="map-control-label">{t("map.fit")}</span></Button>
     {exportControl}
-    <Button className="map-toolbar-button" disabled={disabled || listDisabled} variant="ghost" data-map-list {...foldProps("list", true)} aria-label={listLabel} title={listLabel} aria-pressed={list} onClick={onList}>{list ? <WaypointsIcon /> : <ListIcon />}<span className="map-control-label">{listLabel}</span></Button>
     <DropdownMenu>
       <DropdownMenuTrigger asChild><Button className="map-toolbar-button" variant="ghost" data-map-more disabled={disabled} aria-label={t("map.moreActions")} title={t("map.moreActions")}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="map-more-menu">

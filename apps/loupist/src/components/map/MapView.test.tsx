@@ -44,7 +44,8 @@ it('shows the first-map guidance when the host has only seeded its standing Lens
   expect(screen.queryByText('No names match these filters.')).not.toBeInTheDocument();
   expect(screen.queryByText('0 on the map · 0 relationships')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Share' })).toBeDisabled();
-  expect(screen.queryByRole('button', { name: 'Add source' })).toBeNull();
+  screen.getByRole('button', { name: 'Add source' }).click();
+  expect(addSource).toHaveBeenCalledOnce();
   expect(screen.getByRole('button', { name: 'Ask in Chat' })).toBeVisible();
   expect(screen.queryByRole('button', { name: 'Lens wiki' })).toBeNull();
 });

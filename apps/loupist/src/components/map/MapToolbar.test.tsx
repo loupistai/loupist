@@ -16,9 +16,9 @@ it("keeps Export in the row and runs secondary actions from More on a narrow map
     render(<MapToolbar nodes={[]} query="" onQuery={noop} filters={defaultFilters()} onFilters={noop} onSelect={noop} list={false} onList={onList} onFit={noop}
       lenses={[]} onOverlay={noop} libraryOpen={false} onLibrary={noop} onReplay={noop}
       exportControl={<button type="button" data-map-export onClick={() => save(false)}>Export</button>} />);
-    expect(document.querySelector("[data-map-list]")).toHaveAttribute("inert");
+    expect(document.querySelector("[data-map-list]")).toBeNull();
     expect(screen.getByRole("button", { name: "Export" })).not.toHaveAttribute("data-overflowed");
-    expect(document.querySelector("[data-map-fit]")).toHaveAttribute("inert");
+    expect(document.querySelector("[data-map-fit]")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Export" }));
     expect(save).toHaveBeenCalledWith(false);
     await user.click(screen.getByRole("button", { name: "More actions" }));
@@ -34,10 +34,8 @@ it("keeps secondary World actions together in More even when there is space", as
   const user = userEvent.setup();
   render(<MapToolbar nodes={[]} query="" onQuery={noop} filters={defaultFilters()} onFilters={noop} onSelect={noop} list={false} onList={noop} onFit={noop}
     lenses={[]} onOverlay={noop} libraryOpen={false} onLibrary={noop} onReplay={noop} />);
-  expect(document.querySelector("[data-map-library]")).toHaveAttribute("inert");
-  expect(document.querySelector("[data-map-fit]")).toHaveAttribute("inert");
-  expect(document.querySelector("[data-map-list]")).toHaveAttribute("inert");
   await user.click(screen.getByRole("button", { name: "More actions" }));
+  expect(document.querySelector(".map-toolbar [data-map-library], .map-toolbar [data-map-fit], .map-toolbar [data-map-list]")).toBeNull();
   expect(screen.getByRole("menuitemcheckbox", { name: "Library" })).toBeVisible();
   expect(screen.getByRole("menuitemcheckbox", { name: "List view" })).toBeVisible();
   expect(screen.getByRole("menuitem", { name: "Fit" })).toBeVisible();
