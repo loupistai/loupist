@@ -151,17 +151,17 @@ it("accepts typed model IDs without a Test", async () => {
 
 it("groups the picker like onboarding and keeps the rest of Pi's providers collapsed", async () => {
   const { user, sheet } = await open({ kind: "picker" });
-  expect(within(sheet).getByRole("heading", { name: "Add a provider" })).toBeVisible();
+  expect(within(sheet).getByRole("heading", { name: "Add an AI account" })).toBeVisible();
   const chatgpt = within(sheet).getByRole("button", { name: /Continue with ChatGPT/ });
   // ChatGPT is signed in, so its row shows its state instead of "Recommended".
   expect(chatgpt).toHaveTextContent("Connected");
   expect(chatgpt).not.toHaveTextContent("Recommended");
-  const more = within(sheet).getByText("More providers (2)").closest("details")!;
+  const more = within(sheet).getByText("Other AI accounts (2)").closest("details")!;
   expect(more).not.toHaveAttribute("open");
   await user.click(within(sheet).getByRole("button", { name: "Google Gemini" }));
   expect(within(sheet).getByRole("heading", { name: "Google Gemini" })).toBeVisible();
   await user.click(within(sheet).getByRole("button", { name: "All ways" }));
-  expect(within(sheet).getByRole("heading", { name: "Add a provider" })).toBeVisible();
+  expect(within(sheet).getByRole("heading", { name: "Add an AI account" })).toBeVisible();
 });
 
 it("offers Claude only as an Anthropic API key, with no sign-in row", async () => {

@@ -595,9 +595,11 @@ export function MarketplaceSetupDialog({
               </DialogBody>
               <DialogFooter>
                 {onManageLoupists ? <Button type="button" variant="ghost" className="marketplace-manage-access" onClick={() => leave(onManageLoupists)}><SlidersHorizontalIcon />{i18n.t("connections:marketplaceSetupDialog.loupistAccess")}</Button> : null}
-                <Button type="button" variant="outline" onClick={requestClose}>
-                  {i18n.t("connections:marketplaceSetupDialog.done")}</Button>
-                {entry.setup && connector?.readiness !== "runtime_unavailable" ? <Button type="submit" disabled={Boolean(setupBusy)}>
+                {/* Before a verified setup: Cancel and the filled Save & verify. Once ready: Done is the filled button; saving changed settings stays possible. */}
+                {connectionState(connector) === "ready" ? <Button type="button" onClick={requestClose}>
+                  {i18n.t("connections:marketplaceSetupDialog.done")}</Button> : <Button type="button" variant="ghost" onClick={requestClose}>
+                  {i18n.t("connections:marketplaceSetupDialog.cancel")}</Button>}
+                {entry.setup && connector?.readiness !== "runtime_unavailable" ? <Button type="submit" variant={connectionState(connector) === "ready" ? "outline" : "default"} disabled={Boolean(setupBusy)}>
                   {setupBusy === "save" ? <LoaderCircleIcon className="animate-spin" aria-hidden="true" /> : null}
                   {setupBusy === "save"
                     ? setupProgress

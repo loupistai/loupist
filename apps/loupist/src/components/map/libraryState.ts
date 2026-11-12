@@ -1,5 +1,7 @@
 import type { LoupistBridge, KnowledgeLocation } from "../../types";
-export type LibraryTab = "source" | "note";
+export type LibraryTab = "source" | "journal" | "note";
+/** The knowledge surface a Library tab reads: the Journal and research notes are both notes. */
+export const librarySurface = (tab: LibraryTab) => (tab === "source" ? "source" : "note") as "source" | "note";
 export type LibraryState = { open: boolean; tab: LibraryTab; views: Partial<Record<LibraryTab, KnowledgeLocation>> };
 // Transient navigation only: survives Settings and failed Loupist switches without
 // writing knowledge or leaking one bridge/session's state into another.

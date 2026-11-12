@@ -205,7 +205,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
             </Select>
           </div>
 
-          {snapshot ? <p className="marketplace-result-count">{i18n.t("connections:marketplaceView.resultCount", { visible: formatNumber(visibleEntries.length), total: formatNumber(browseableEntryCount) })}</p> : null}
+          {snapshot && visibleEntries.length !== browseableEntryCount ? <p className="marketplace-result-count">{i18n.t("connections:marketplaceView.resultCount", { visible: formatNumber(visibleEntries.length), total: formatNumber(browseableEntryCount) })}</p> : null}
           {!snapshot && error ? null : !snapshot ? (
             <div
               className="marketplace-loading"

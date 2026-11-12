@@ -69,9 +69,8 @@ export function pressMenu(trigger: Element | null | undefined) {
 
 /** Clicks a Map toolbar action, through "More" when a narrow toolbar has folded it there. */
 export async function clickMapAction(selector: string, root: ParentNode = document) {
-  await until(() => root.querySelector(selector), `Map action did not initialize: ${selector}`);
-  if ([...root.querySelectorAll(selector)].some(visible)) return click(selector, root);
   const more = await until(() => select("[data-map-more]", root), "More actions not visible");
+  if ([...root.querySelectorAll(selector)].some(visible)) return click(selector, root);
   // The menu opens on pointer down, as a mouse press does.
   pressMenu(more);
   await click(`[role="menu"] ${selector}`);

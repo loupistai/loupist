@@ -1,3 +1,4 @@
+import { useSettledScroll } from "./settledScroll";
 import { ConnectionOrigin } from "../connections/custom/ConnectionOrigin";
 import { formatDate, formatNumber } from "../../i18n/format";
 import { dateValue, timePointValue, spanSelectorLabel } from "../../knowledge/presentation";
@@ -39,7 +40,8 @@ const sourceDate = (value: string | undefined) => {
   if (/^\d{4}(?:-\d{2})?$/.test(value)) return dateValue(value);
   // A publication day is a local calendar date, not a UTC instant.
   const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value);
-  return Number.isNaN(date.getTime()) ? value : formatDate(date, { dateStyle: "medium" });
+  // Korean reads the long form (2026년 10월 27일), not "2026. 10. 27.".
+  return Number.isNaN(date.getTime()) ? value : formatDate(date, { dateStyle: i18n.language.toLowerCase().startsWith("ko") ? "long" : "medium" });
 };
 const textMedia = (value: string) => value.startsWith("text/") || value === "application/json";
 
@@ -86,6 +88,8 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
   const currentScope = useRef(scopeKey);
   currentScope.current = scopeKey;
   const reading = !compact && Boolean(selected?.sourceId || selected?.spanId);
+  const onLibraryScroll = useSettledScroll((top) => patchView({ sourceScrollTop: top }), scopeKey);
+  const onReaderScroll = useSettledScroll((top) => patchView({ readerScrollTop: top }), scopeKey);
   const readSelectedSource = useCallback(() => bridge.knowledgeSourceRead({
     loupistId: location.loupistId, recordId: location.recordId!, revisionId: location.revisionId!,
     sourceId: selected?.sourceId, spanId: selected?.spanId, worldRecordId: selected?.worldRecordId,
@@ -181,26 +185,25 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
   };
 
   return <div className={`knowledge-source world-sources${reading ? " has-reader" : ""}${readerOnly ? " source-reader-only" : ""}${compact ? " is-library-only" : ""}`}>
-    {!readerOnly ? <div ref={libraryRef} className="knowledge-browser source-library" onScroll={(event) => patchView({ sourceScrollTop: event.currentTarget.scrollTop })}>
+    {!readerOnly ? <div ref={libraryRef} className="knowledge-browser source-library" onScroll={onLibraryScroll}>
       <div className="source-library-controls">
       {compact ? null : <div className="source-library-heading"><h2>{t("sourceWorkspace.savedSources")}</h2><span>{formatNumber(sources.length)}</span></div>}
       {onQueryChange ? <div className="memory-search source-search"><SearchIcon aria-hidden="true" /><Input aria-label={t("sourceWorkspace.searchSources")} placeholder={t("sourceWorkspace.companyFilingOrSource")} value={query} onChange={(event) => onQueryChange(event.target.value)} />{query ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.clearSearch")} onClick={() => onQueryChange("")}><XIcon /></Button> : null}</div> : null}
       <SegmentedControl value={filter} onValueChange={(value) => patchView({ sourceFilter: value as "all" | "processing" | "attention", sourceScrollTop: 0 })} aria-label={t("sourceWorkspace.sourceProcessingFilters")}><SegmentedControlItem value="all">{t("sourceWorkspace.all")}</SegmentedControlItem><SegmentedControlItem value="processing">{matching.some(({ item }) => isProcessing(item.processing?.status)) ? t("sourceWorkspace.processingCount", { countText: formatNumber(matching.filter(({ item }) => isProcessing(item.processing?.status)).length) }) : t("sourceWorkspace.processing")}</SegmentedControlItem><SegmentedControlItem value="attention">{t("sourceWorkspace.needsAttention")}</SegmentedControlItem></SegmentedControl></div>
-      {compact ? <div className="source-library-heading library-section-label"><h2>{t("sourceWorkspace.savedSources")}</h2><span>{formatNumber(sources.length)}</span>{onAddSource ? <Button variant="ghost" className="library-add" onClick={onAddSource}>{t("map.addInLibrary")}</Button> : null}</div> : null}
+      {compact ? <div className="source-library-heading library-section-label"><h2>{t("sourceWorkspace.savedSources")}</h2><span>{formatNumber(sources.length)}</span>{onAddSource ? <Button variant="outline" size="sm" className="library-add" onClick={onAddSource}>{t("map.addInLibrary")}</Button> : null}</div> : null}
       {!sources.length ? <EmptyState title={search || filter !== "all" ? t("sourceWorkspace.noMatchingSources") : t("sourceWorkspace.noSourcesYet")} description={search || filter !== "all" ? t("sourceWorkspace.tryAnotherSearchOrChooseAll") : t("sourceWorkspace.addTextAFileOrALinkToUseIn")} /> : null}
       <ul ref={listRef} aria-label={t("sourceWorkspace.sources")}>
         {sources.map(({ record, item }) => <li key={`${record.recordId}:${item.id}`}>
           <Button variant="ghost" className="source-library-row" data-testid="source-library-row" data-source-id={item.id} aria-current={item.id === selected?.sourceId} onClick={() => onOpen({ loupistId: location.loupistId, surface: "source", recordId: record.recordId, revisionId: record.revisionId, objectId: item.id, view: { ...location.view, readerScrollTop: 0, focusSourceId: item.id }, selection: { kind: "source", sourceId: item.id } })}>
-            <FileTextIcon className="memory-rail-icon" aria-hidden="true" />
             <span className="memory-rail-copy"><strong>{sourceTitle(item)}</strong>{item.summary ? <span className="source-summary">{item.summary}</span> : null}
               <small className="source-row-meta"><ConnectionOrigin origin={item.origin} /><span className="source-row-origin" title={sourceOrigin(item)}>{compactOrigin(sourceOrigin(item))}</span>{item.publicationTime?.value ?? item.acquiredAt?.value ? <time title={item.publicationTime?.value ?? item.acquiredAt?.value}>{sourceDate(item.publicationTime?.value ?? item.acquiredAt?.value)}</time> : null}
-              <span className="source-row-status" data-attention={needsAttention(item.processing?.status) || undefined}>{isProcessing(item.processing?.status) ? <Spinner /> : item.processing?.status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceProcessingLabel(item.processing?.status)}</span></small>
+              {item.processing?.status === "completed" ? null : <span className="source-row-status" data-attention={needsAttention(item.processing?.status) || undefined}>{isProcessing(item.processing?.status) ? <Spinner /> : item.processing?.status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceProcessingLabel(item.processing?.status)}</span>}</small>
             </span>
           </Button>
         </li>)}
       </ul>
     </div> : null}
-    {reading ? <div ref={scrollReaderRef} className="knowledge-reading source-reader" onScroll={(event) => patchView({ readerScrollTop: event.currentTarget.scrollTop })}>
+    {reading ? <div ref={scrollReaderRef} className="knowledge-reading source-reader" onScroll={onReaderScroll}>
       <div className="memory-reader-toolbar">
         {!readerOnly ? <Button variant="ghost" size="sm" aria-label={t("sourceWorkspace.closeSource")} onClick={closeReader}><ArrowLeftIcon />{t("sourceWorkspace.backToSources")}</Button> : <span>{t("sourceWorkspace.savedSourceReadOnly")}</span>}
         {detail ? <Button size="sm" onClick={() => onAsk(pinForSource(detail, location.loupistId))}>{t("sourceWorkspace.addToQuestion")}</Button> : null}

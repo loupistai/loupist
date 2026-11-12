@@ -37,6 +37,8 @@ export type PageReaderProps = {
   recordId: string;
   catalog?: KnowledgeCatalog;
   toolbar?: React.ReactNode;
+  /** How often the page was used, said once in the meta line beside its kind and date. */
+  usage?: string;
   children?: React.ReactNode;
   chatTitle?: (chatId: string) => string | undefined;
   onOpenPage: (recordId: string) => void;
@@ -54,7 +56,7 @@ function PageLinks({ onLens, children }: { onLens: (recordId: string) => void; c
   return <OpenProvider open={open}>{children}</OpenProvider>;
 }
 
-export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, children, chatTitle, onOpenPage, onOpen, onAsk, onChanged, onLoaded, takeFocus = true }: PageReaderProps) {
+export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usage, children, chatTitle, onOpenPage, onOpen, onAsk, onChanged, onLoaded, takeFocus = true }: PageReaderProps) {
   const { t } = useTranslation("knowledge");
   const [page, setPage] = useState<PageView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -161,7 +163,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, chil
   return <article className="page-reader" aria-label={t("pageReader.label")} data-page-kind={page.kind}>
     {toolbar ? <div className="page-reader-toolbar">{toolbar}</div> : null}
     <header className="page-reader-head">
-      <p className="page-reader-meta">{toolbar ? null : <span>{t(`pageReader.kind.${page.kind}`)}</span>}{page.updatedAtMs ? <span>{t("pageReader.updated", { date: formatDate(page.updatedAtMs, { year: undefined, month: "short", day: "numeric" }) })}</span> : null}
+      <p className="page-reader-meta"><span>{t(`pageReader.kind.${page.kind}`)}</span>{usage ? <span>{usage}</span> : null}{page.updatedAtMs ? <span>{t("pageReader.updated", { date: formatDate(page.updatedAtMs, { year: undefined, month: "short", day: "numeric" }) })}</span> : null}
         {idea ? <span className="page-idea-status" data-status={idea.status}>{t(`pageReader.ideaStatus.${idea.status}`)}</span> : null}</p>
       <h2 ref={heading} tabIndex={-1}>{pageTitle(page)}</h2>
       <SharedOrigin bridge={bridge} loupistId={loupistId} subjectId={page.recordId} onAbout={showSharing ? () => onOpen({ loupistId, surface: "lens", recordId: SHARED_SECTION_ITEM }) : undefined} />
@@ -181,7 +183,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, chil
             {section.chip === "view" ? <span className="page-chip" data-chip="view">{t("pageReader.chip.view")}</span> : null}
             {section.basis.refs.map(chip)}
             {section.contested ? <button type="button" className="page-contested" disabled={!section.contestedClaimIds[0]} onClick={() => section.contestedClaimIds[0] && openClaim(section.contestedClaimIds[0])}><TriangleAlertIcon aria-hidden="true" />{t("pageReader.contested")}</button> : null}
-            {page.archived ? null : <Button variant="ghost" size="sm" disabled={busy} aria-label={t("pageReader.forgetSection", { heading: section.heading })} onClick={() => forget(section)}>{t("pageReader.forget")}</Button>}
+            {page.archived ? null : <Button variant="ghost" size="sm" className="page-forget" disabled={busy} aria-label={t("pageReader.forgetSection", { heading: section.heading })} onClick={() => forget(section)}>{t("pageReader.forget")}</Button>}
           </div>
         </header>
         <PageLinks onLens={openLens}><SafeMessageResponse text={rewritten.texts[index] ?? section.markdown} isAnimating={false} /></PageLinks>

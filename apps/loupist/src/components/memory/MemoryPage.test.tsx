@@ -15,7 +15,7 @@ async function fixture(setup?: (bridge: MockLoupistBridge, loupist: LoupistSumma
   return { bridge, loupist, handlers, view, user: userEvent.setup() };
 }
 
-it("opens on Pages with your principles grouped in, shows where one was used, and asks Bot to revise it", async () => {
+it("opens on Pages with your principles grouped in, shows where one was used, and asks your Loupist to revise it", async () => {
   let recordId = "";
   const { handlers, view, user } = await fixture(async (bridge, loupist) => {
     recordId = (await bridge.principleCreate({ loupistId: loupist.id, statement: "Prefer companies that publish segment margins.", origin: "settings" })).recordId;
@@ -26,36 +26,14 @@ it("opens on Pages with your principles grouped in, shows where one was used, an
   const page = await screen.findByRole("region", { name: /What .* knows/ });
   const tabs = within(page).getByRole("tablist");
   expect(within(tabs).getByRole("tab", { name: /Pages/ })).toHaveAttribute("aria-selected", "true");
+  // Lens is Pages and History; what you follow lives on the Following page.
+  expect(within(tabs).getAllByRole("tab").map(tab => tab.textContent)).toEqual([expect.stringMatching(/^Pages/), expect.stringMatching(/^History/)]);
   await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Principle, used 4 times/ }));
   const reader = within(page).getByRole("complementary", { name: /Prefer companies that publish segment margins/ });
   await user.click(within(reader).getByRole("button", { name: "Hanul margin review" }));
   expect(handlers.onOpenChat).toHaveBeenCalledWith("chat-margin");
-  await user.click(within(reader).getByRole("button", { name: "Ask Bot to revise" }));
+  await user.click(within(reader).getByRole("button", { name: "Ask your Loupist to revise" }));
   expect(handlers.onAsk).toHaveBeenCalledWith(expect.objectContaining({ recordId, kind: "lens" }));
-});
-
-it("starts a new Loupist on About you with follows, holdings as a count only, and no principles yet", async () => {
-  const { bridge, view, user } = await fixture(async (bridge) => {
-    await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" });
-    const preview = await bridge.holdingsImportCsv({ path: "/tmp/holdings.csv" });
-    await bridge.holdingsCommitCsv({ previewId: preview.previewId });
-  });
-  const remove = vi.spyOn(bridge, "watchlistRemove");
-  vi.spyOn(bridge, "principleList").mockResolvedValue([]);
-  vi.spyOn(bridge, "learningReviewList").mockResolvedValue([]);
-  vi.spyOn(bridge, "knowledgeGrowthEvents").mockResolvedValue({ events: [], nextCursor: null });
-  render(view());
-  await user.click(await screen.findByRole("tab", { name: /About you/ }));
-  expect(screen.getByText("Apple · AAPL")).toBeVisible();
-  expect(screen.getByText(/^Stocks and funds: 1 asset · .* · Crypto: none/)).toBeVisible();
-  expect(screen.getByRole("button", { name: "Update holdings" })).toBeVisible();
-  // Quantities and values never reach this page.
-  expect(document.body).not.toHaveTextContent("2.5");
-  expect(document.body).not.toHaveTextContent("500");
-  await user.click(screen.getByRole("button", { name: "Stop following Apple" }));
-  expect(remove).toHaveBeenCalledWith({ symbol: "AAPL", market: "NASDAQ" });
-  await user.click(screen.getByRole("tab", { name: /History/ }));
-  expect(await screen.findByText("No history yet.")).toBeVisible();
 });
 
 it("says learning is paused when nothing new is saved, and Resume turns both switches back on", async () => {
@@ -71,7 +49,6 @@ it("says learning is paused when nothing new is saved, and Resume turns both swi
   await user.click(within(banner.closest("[role=status]")!).getByRole("button", { name: "Resume" }));
   expect(learn).toHaveBeenCalledWith({ loupistId: loupist.id, learnMethods: true });
   await waitFor(() => expect(screen.queryByText(/Learning is paused/)).toBeNull());
-  await user.click(screen.getByRole("tab", { name: /About you/ }));
   expect(screen.queryByRole("switch", { name: "Remember new chats" })).toBeNull();
   const config = await bridge.configRead({ scope: { kind: "project", loupistId: loupist.id } });
   expect(config.effective.chat.use_memory && config.effective.chat.update_memory).toBe(true);
@@ -125,8 +102,8 @@ it("groups pages by kind and narrows them with search", async () => {
   const { view, user } = await fixture();
   render(view());
   await screen.findByRole("region", { name: /What .* knows/ });
-  const groups = await screen.findAllByRole("region", { name: /^(Topics|Ideas|Methods|Your principles|Outlook)$/ });
-  expect(groups.map(group => group.getAttribute("aria-label"))).toEqual(["Topics", "Ideas", "Methods", "Your principles", "Outlook"]);
+  const groups = await screen.findAllByRole("region", { name: /^(Topics|Ideas|Methods|Your principles|Perspective)$/ });
+  expect(groups.map(group => group.getAttribute("aria-label"))).toEqual(["Topics", "Ideas", "Methods", "Your principles", "Perspective"]);
   const header = within(groups[0]!).getByRole("heading", { level: 3 });
   expect(header.children).toHaveLength(3);
   expect(header.children[0]).toHaveTextContent(/^Topics$/);

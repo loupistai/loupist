@@ -13,15 +13,15 @@ const recovering = (loupist: LoupistSummary): LoupistSummary => ({
 
 const openModelSettings = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(await mainTab(/Settings/));
-  await user.click(screen.getByRole("button", { name: "Models & providers" }));
+  await user.click(screen.getByRole("button", { name: "AI accounts" }));
 };
 
 /** Settings › Models & providers › Add a provider, then one of its ways to connect. */
 const openProviderPicker = async (user: ReturnType<typeof userEvent.setup>, row: RegExp) => {
   await openModelSettings(user);
   await screen.findByRole("article", { name: "ChatGPT" });
-  await user.click(screen.getByRole("button", { name: "Add a provider" }));
-  const dialog = await screen.findByRole("dialog", { name: "Add a provider" });
+  await user.click(screen.getByRole("button", { name: "Add an AI account" }));
+  const dialog = await screen.findByRole("dialog", { name: "Add an AI account" });
   await user.click(within(dialog).getByRole("button", { name: row }));
   return dialog;
 };
@@ -289,8 +289,8 @@ describe("Loupist · Model providers", () => {
     expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
     expect(selectedLoupistButton()).toHaveTextContent("Quality Compounder");
     await user.click(screen.getByRole("button", { name: "Connect an AI account" }));
-    await user.click(await screen.findByRole("button", { name: "Add a provider" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add a provider" });
+    await user.click(await screen.findByRole("button", { name: "Add an AI account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add an AI account" });
     await user.click(within(dialog).getByRole("button", { name: /Continue with ChatGPT/u }));
     await user.click(await mainTab(/Chat/));
     expect(screen.getByRole("heading", { name: "Bot" })).toBeVisible();
@@ -365,10 +365,11 @@ describe("Loupist · Model providers", () => {
     await openModelSettings(user);
     const connected = await screen.findByRole("list", { name: "Connected providers" });
     expect(within(connected).getByRole("heading", { name: "ChatGPT" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Disconnect ChatGPT" }));
+    await user.click(screen.getByRole("button", { name: "More actions for ChatGPT" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Disconnect ChatGPT" }));
     await user.click(within(await screen.findByRole("dialog", { name: "Disconnect ChatGPT?" })).getByRole("button", { name: "Disconnect" }));
     await waitFor(() => expect(disconnect).toHaveBeenCalledWith("openai"));
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Disconnect ChatGPT" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "More actions for ChatGPT" })).not.toBeInTheDocument());
   });
 
   it("hides unchecked models and blocks Chat when no visible model remains", async () => {

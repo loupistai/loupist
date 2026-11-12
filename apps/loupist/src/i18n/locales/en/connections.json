@@ -124,10 +124,10 @@
   },
   "marketplaceView": {
     "couldNotLoadConnections": "Could not load connections.",
-    "connections": "Connections",
+    "connections": "Data connections",
     "availableConnections": "Available connections",
     "newConnectionsAreEnabledForAvailableLoupistsAdjust": "You don't need any connection to start. Free sources work without setup; add others when you need them.",
-    "manageLoupistAccess": "Choose which Loupists can use them",
+    "manageLoupistAccess": "Loupist access",
     "retry": "Retry",
     "connectionReadiness": "Connection readiness",
     "allConnections": "All connections",

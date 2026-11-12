@@ -19,7 +19,7 @@ off in every scope until the user turns them on. The included catalog in
 `src-tauri/src/agent_harness.rs` is authoritative. Optional/custom Skills use scoped TOML enablement; see
 [Scoped configuration](../runtime/storage-authority.md#scoped-configuration).
 
-Settings → Skills offers search/filter, instruction/file details, toggles, reset,
+Settings → Skills lists research Skills first and keeps Skill Creator and Skill Installer under an Advanced disclosure (open while searching). It offers search/filter, instruction/file details, toggles, reset,
 owned-skill create/edit/delete and import. Personal Skills live at global
 `skills/<id>/`; Loupist Skills at `<workspace>/.loupist/skills/<id>/`. Each has `SKILL.md`
 with frontmatter and optional supporting files. Included and other-scope Skills

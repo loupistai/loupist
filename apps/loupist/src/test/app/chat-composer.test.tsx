@@ -146,11 +146,11 @@ describe("Loupist · Chat composer", () => {
     await user.type(composer(), "@sec");
     await user.click(await screen.findByRole("option", { name: /SEC EDGAR/ }));
     await user.type(composer(), "/world");
-    expect(await screen.findByRole("option", { name: /World/ })).toBeVisible();
+    expect(await screen.findByRole("option", { name: /^Map\b/ })).toBeVisible();
     await user.keyboard("{Enter}");
     const added = screen.getByRole("list", { name: "Added to this message" });
     expect(added).toHaveTextContent("SEC EDGAR");
-    expect(screen.getByRole("list", { name: "Message modes" })).toHaveTextContent("World");
+    expect(screen.getByRole("list", { name: "Message modes" })).toHaveTextContent("Map");
     expect(chatSend).not.toHaveBeenCalled();
 
     fireEvent.change(composer(), { target: { value: "$research $world @sec.edgar Samsung Electronics" } });

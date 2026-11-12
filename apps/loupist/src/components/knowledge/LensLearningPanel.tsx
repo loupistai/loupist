@@ -61,7 +61,7 @@ export function LensLearningPanel({ bridge, loupistId, node, onArchived }: {
       <p className="learning-meta">{t("learning.learnedOn", { date: formatDate(learnedAt), count: review?.evidenceCount ?? 0 })}</p>
       {rationale ? <blockquote>“{rationale}”</blockquote> : null}
       {!kept && !confirm ? <p className="learning-meta">{t("learning.inUse")}</p> : null}
-      {confirm ? <div className="learning-confirm"><p>{t("learning.archiveConfirm")}</p><div className="learning-actions"><Button ref={confirmation} variant="ghost" disabled={busy} onClick={() => void archive()}>{t("learning.archive")}</Button><Button variant="ghost" disabled={busy} onClick={() => { setConfirm(false); requestAnimationFrame(() => archiveTrigger.current?.focus()); }}>{t("learning.cancel")}</Button></div></div> : <div className="learning-actions"><Button variant="ghost" className="learning-keep" disabled={kept} onClick={() => acknowledgeMethod(bridge, loupistId, node.recordId!, learnedAt)}>{t(kept ? "learning.kept" : "learning.keep")}</Button><Button ref={archiveTrigger} variant="ghost" onClick={() => setConfirm(true)}>{t("learning.archive")}</Button></div>}
+      {confirm ? <div className="learning-confirm"><p>{t("learning.archiveConfirm")}</p><div className="learning-actions"><Button ref={confirmation} variant="ghost" disabled={busy} onClick={() => void archive()}>{t("learning.archive")}</Button><Button variant="ghost" disabled={busy} onClick={() => { setConfirm(false); requestAnimationFrame(() => archiveTrigger.current?.focus()); }}>{t("learning.cancel")}</Button></div></div> : <div className="learning-actions"><Button variant="outline" size="sm" className="learning-keep" disabled={kept} onClick={() => acknowledgeMethod(bridge, loupistId, node.recordId!, learnedAt)}>{t(kept ? "learning.kept" : "learning.keep")}</Button><Button ref={archiveTrigger} variant="ghost" size="sm" className="learning-archive" onClick={() => setConfirm(true)}>{t("learning.archive")}</Button></div>}
       {archiveError ? <p role="alert">{t("learning.archiveError")}</p> : null}
     </section> : null}
     <ThenNow events={events} />
@@ -87,11 +87,12 @@ function ThenNow({ events }: { events: GrowthEvent[] }) {
   if (!latest) return null;
   const beforeDate = events.filter(event => event.atMs < latest.atMs && (event.kind === "lens_revised" || event.kind === "lens_created")).sort((a, b) => b.atMs - a.atMs)[0]?.atMs;
   return <section ref={history} className="lens-history" aria-label={t("learning.thenNow")}><h3>{t("learning.thenNow")}</h3>
+    {/* The reason leads: it says what changed before the two versions do. */}
+    {latest.rationale && !isStandingPlaceholder(latest.rationale) ? <p className="lens-change-reason">{t("learning.changedOn", { date: formatDate(latest.atMs), rationale: latest.rationale })}</p> : null}
     <div className={`lens-then-now${wide ? " is-wide" : ""}`} data-testid="lens-then-now">{(["then", "now"] as const).map(side => {
       const date = side === "now" ? formatDate(latest.atMs) : beforeDate === undefined ? t("learning.unknownDate") : formatDate(beforeDate);
-      return <div key={side}><h4><Trans ns="knowledge" i18nKey={`learning.${side}`} values={{ date }} components={{ 0: <span className="learning-date" /> }} /></h4><RevisionSummary key={`${latest.eventId}:${side}`} summary={readable(side === "then" ? latest.beforeSummary : latest.afterSummary) || "—"} /></div>;
+      return <div key={side} data-side={side}><h4><Trans ns="knowledge" i18nKey={`learning.${side}`} values={{ date }} components={{ 0: <span className="learning-date" /> }} /></h4><RevisionSummary key={`${latest.eventId}:${side}`} summary={readable(side === "then" ? latest.beforeSummary : latest.afterSummary) || "—"} /></div>;
     })}</div>
-    {latest.rationale && !isStandingPlaceholder(latest.rationale) ? <p className="learning-meta">{t("learning.changedBecause", { rationale: latest.rationale })}</p> : null}
     {revisions.length > 1 ? <><Button variant="link" aria-expanded={earlier} onClick={() => setEarlier(value => !value)}>{t("learning.earlier", { count: revisions.length - 1 })}</Button>{earlier ? <ul className="learning-earlier">{revisions.slice(1).map(event => <li key={event.eventId}>{formatDate(event.atMs)}{event.rationale ? ` · ${event.rationale}` : ""}</li>)}</ul> : null}</> : null}
   </section>;
 }

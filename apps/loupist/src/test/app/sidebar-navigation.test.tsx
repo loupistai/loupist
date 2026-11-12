@@ -14,11 +14,11 @@ describe("Loupist shell navigation", () => {
     const search = screen.getByRole("searchbox", { name: "Search settings" });
     await user.type(search, "retry");
     const sections = screen.getByRole("navigation", { name: "Settings sections" });
-    expect(within(sections).queryByRole("button", { name: "Models & providers" })).toBeNull();
+    expect(within(sections).queryByRole("button", { name: "AI accounts" })).toBeNull();
     await user.click(within(sections).getByRole("button", { name: "Chat defaults" }));
     expect(await screen.findByRole("heading", { name: "Chat defaults", level: 1 })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Clear settings search" }));
-    expect(within(sections).getByRole("button", { name: "Connections" })).toBeVisible();
+    expect(within(sections).getByRole("button", { name: "Data connections" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Loupists" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByLabelText("Chat workspace panel")).toHaveAttribute("data-panel-kind", "world");

@@ -36,7 +36,7 @@ sign-in code in the provider extension.
 
 ## Shared providers and World processing
 
-Settings › Models & providers owns shared sign-ins, keys and the model catalog.
+Settings › Models & providers owns shared sign-ins, keys and the model catalog; it is the first Settings destination, followed by Loupists, Connections, Chat defaults and Skills, then General (menu-bar residence, the AI notice and a privacy summary), Appearance, Keyboard and Updates. The global Chat default model's empty choice reads "Auto · recommended model": Auto picks a recommended model at admission and never follows the last answer's model. Response speed (Standard or Fast) sits under Advanced and says Fast may cost more on API keys.
 Its Add a provider sheet and onboarding share one list of ways to connect
 (`components/settings/ProviderWays.tsx`, featured rows from the provider
 manifest); the sheet adds Pi's other key providers

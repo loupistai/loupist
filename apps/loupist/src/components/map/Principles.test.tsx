@@ -17,7 +17,7 @@ it("reloads a conflicting revision before editing again", async () => {
   await bridge.principleUpdate({ loupistId, recordId: principle.recordId, expectedRevisionId: principle.revisionId, statement: "Compare the same reporting periods." });
   await user.type(screen.getByRole("textbox", { name: "Why" }), "A local draft");
   await user.click(screen.getByRole("button", { name: "Save" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("This rule changed elsewhere. Reload it to edit.");
+  expect(await screen.findByRole("alert")).toHaveTextContent("This principle changed elsewhere. Reload it to edit.");
   expect(saved).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "Reload" }));
@@ -36,7 +36,7 @@ it("preserves a failed draft for retry and gives duplicates a specific message",
   expect(screen.getByRole("textbox", { name: "Statement" })).toHaveValue("Compare cash flows.");
   create.mockRejectedValueOnce({ code: "duplicate_principle" });
   await user.click(screen.getByRole("button", { name: "Try again" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("You already have this rule.");
+  expect(await screen.findByRole("alert")).toHaveTextContent("You already have this principle.");
   expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
 });
 it("opens a principle's origin Chat and applications, and edits it in the inspector", async () => {

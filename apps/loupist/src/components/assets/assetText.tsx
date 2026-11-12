@@ -49,9 +49,13 @@ function metricValue(value: number, unit: string) {
   return unit === "%" ? `${formatNumber(value, { maximumFractionDigits: 1 })}%` : formatNumber(value, { notation: Math.abs(value) >= 1e6 ? "compact" : "standard", maximumFractionDigits: 1 }) + (unit && unit !== "%" ? ` ${unit}` : "");
 }
 
-/** An expense ratio reported as a fraction (0.0009) or a percent (0.09). */
+/**
+ * An expense ratio exactly as the provider reported it. Providers send a fraction
+ * (0.0009) or a percent (0.09) without saying which, so no unit is added: a guessed
+ * "%" could be wrong by a factor of 100.
+ */
 function ratio(value: number) {
-  return `${formatNumber(value < 0.02 ? value * 100 : value, { maximumFractionDigits: 2 })}%`;
+  return formatNumber(value, { maximumSignificantDigits: 4 });
 }
 
 /**
@@ -256,6 +260,14 @@ export const GLANCE_KIND: Record<AssetGlanceRow["key"], string> = {
   price: "price", drawdown: "price", expenseRatio: "fees", level: "level",
 };
 
+/** The label of an "At a glance" row: a rates level names its series ("10-year Treasury yield"); FX and others keep the generic label. */
+const SERIES_NAMES: Record<string, string> = { "10-year Treasury yield": "glance.tenYearYield" };
+export function glanceLabel(row: AssetGlanceRow) {
+  const name = row.key === "level" ? text(row.facts.name) : "";
+  if (!name) return tDynamic(`glance.${row.key}`);
+  return SERIES_NAMES[name] ? tDynamic(SERIES_NAMES[name]) : name;
+}
+
 /** The value column of an "At a glance" row. */
 export function glanceValue(row: AssetGlanceRow) {
   const facts = row.facts;
@@ -275,7 +287,7 @@ export function glanceValue(row: AssetGlanceRow) {
     case "dividend": return recordDateText(facts) ?? `${amount(num(facts.amount) ?? 0, facts.currency)} · ${t("glance.exDate", { date: shortDay(text(facts.exDate)) })}`;
     case "price": return together(t("row.price", { change: signed(num(facts.change) ?? 0, "%"), date: shortDay(text(facts.fromDate)), from: amount(num(facts.from) ?? 0, facts.currency), to: amount(num(facts.to) ?? 0, facts.currency) }));
     case "drawdown": return signed(num(facts.change) ?? 0, "%");
-    case "expenseRatio": return ratio(num(facts.ratio) ?? 0);
+    case "expenseRatio": return t("glance.asReported", { value: ratio(num(facts.ratio) ?? 0) });
     case "level": return `${formatNumber(num(facts.value) ?? 0, { maximumFractionDigits: 2 })}${text(facts.unit) === "%" ? "%" : ""}`;
   }
 }

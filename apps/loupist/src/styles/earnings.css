@@ -1,5 +1,5 @@
 /* Results before and after (W16.6, finance-earnings-snapshot.md §2). */
-.earnings-card { display: grid; gap: var(--gg-space-4); padding: var(--gg-space-6); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-lg); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); scroll-margin-top: var(--gg-space-6); }
+.earnings-card { display: grid; gap: var(--gg-space-4); padding: var(--gg-space-6); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); scroll-margin-top: var(--gg-space-6); }
 .earnings-card[data-variant="compact"] { gap: var(--gg-space-3); padding: var(--gg-space-4); max-width: var(--gg-size-reading-column); }
 .earnings-card[data-highlight] { animation: earnings-highlight 1s var(--gg-ease-in-out) 1; }
 @keyframes earnings-highlight { from { box-shadow: 0 0 0 3px var(--gg-color-accent-soft); } to { box-shadow: 0 0 0 3px transparent; } }

@@ -41,7 +41,7 @@ export const settingsPageScenarios: PreviewScenario[] = [
     }
   }),
   { ...base("existing-user-notice", "Existing user notice", () => select("[data-notice-dialog]")), setup: async bridge => { await prepareFixture(bridge); bridge.noticeSettingsGet = async () => ({ notice_acknowledged_version: 0 }); } },
-  base("settings-application", "Application notice", () => select("[data-notice-settings]"), root => settings(root, "agent")),
+  base("settings-application", "General: menu bar, AI notice and privacy", () => select("[data-keep-running] [role=switch]:not([disabled])") && select("[data-privacy]"), root => settings(root, "general")),
   // W15.37: the ⌘K command palette and Settings › Keyboard.
   { ...base("palette-open", "The command palette searches what needs attention, chats, names and actions", () => select('.command-palette-list [data-palette-row^="attention:"]') && select(".command-palette-list"), async (root) => {
     await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");

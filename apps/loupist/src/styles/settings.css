@@ -19,9 +19,9 @@
 .settings-navigation [data-slot="sidebar-group-label"] { font-size: var(--gg-text-caption); letter-spacing: .04em; color: var(--gg-color-text-secondary); padding-inline: 10px; margin-bottom: 6px; }
 .settings-navigation:lang(ko) [data-slot="sidebar-group-label"] { letter-spacing: 0; }
 .settings-navigation nav [data-slot="sidebar-menu-button"] { height: var(--gg-space-8); padding-inline: 10px; font-weight: var(--gg-weight-regular); border-radius: var(--gg-radius-sm); }
-.settings-navigation nav [data-slot="sidebar-menu-button"]:has(.settings-nav-caption) { height: auto; min-height: var(--gg-space-8); padding-block: 6px; white-space: normal; overflow: visible; align-items: flex-start; }
 .settings-nav-label { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.3; }
-.settings-nav-caption { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-regular); white-space: normal; overflow-wrap: anywhere; }
+/* Captions stay searchable but are not drawn: two of nine rows had one, and the rows ran uneven. */
+.settings-nav-caption { display: none; }
 .settings-navigation [data-slot="sidebar-menu-button"][data-active="true"] { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); }
 .settings-search { display: flex; align-items: center; gap: var(--gg-space-2); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); padding: 9px 10px; background: var(--gg-color-bg-app); }
 .settings-search > svg, .settings-search button svg { width: 15px; height: 15px; color: var(--gg-color-text-secondary); }
@@ -35,7 +35,7 @@
 .settings-search input::-webkit-search-cancel-button { display: none; }
 .settings-search-empty { padding: var(--gg-space-4) var(--gg-space-6); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
 .settings-section, .settings-stack > [data-slot="card"] {
-  border: 1px solid var(--gg-color-border-subtle); border-radius: 14px; background: var(--gg-color-bg-raised); box-shadow: none;
+  border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); box-shadow: none;
 }
 .settings-stack > [data-slot="card"] { padding-block: var(--gg-space-6); gap: var(--gg-space-6); }
 .settings-stack > [data-slot="card"] > [data-slot="card-header"], .settings-stack > [data-slot="card"] > [data-slot="card-content"] { padding-inline: var(--gg-space-6); }
@@ -44,6 +44,23 @@
 .settings-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-4); padding: var(--gg-space-5); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .settings-row strong { display: block; font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); }
 .settings-row-description { margin: var(--gg-space-1) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); }
+/* Settings › General: two blocks under caption labels; the privacy card lists where things go as a definition list. */
+.settings-general { display: grid; gap: var(--gg-space-6); }
+.settings-general-block { display: grid; gap: var(--gg-space-3); }
+.settings-general .settings-row > div { flex: 1 1 18rem; min-width: 0; }
+.settings-caption-label { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
+.settings-caption-label:lang(ko) { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); letter-spacing: 0; text-transform: none; }
+.settings-privacy { padding: var(--gg-space-5); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); container: settings-privacy / inline-size; }
+.settings-privacy h3 { margin: 0 0 var(--gg-space-2); font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
+.settings-privacy-list { margin: 0; }
+.settings-privacy-list > div { display: grid; gap: var(--gg-space-1); padding-block: var(--gg-space-3); }
+.settings-privacy-list > div + div { border-top: 1px solid var(--gg-color-border-subtle); }
+.settings-privacy-list dt { font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); color: var(--gg-color-text-primary); }
+.settings-privacy-list dd { margin: 0; font-size: var(--gg-text-body); line-height: 22px; color: var(--gg-color-text-secondary); }
+@container settings-privacy (min-width: 720px) {
+  .settings-privacy-list > div { grid-template-columns: 180px minmax(0, 1fr); column-gap: var(--gg-space-4); }
+  .settings-privacy-list:lang(ko) > div { grid-template-columns: 160px minmax(0, 1fr); }
+}
 .settings-section-heading { margin-bottom: var(--gg-space-2); }
 .settings-section-heading:has(> button) { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: var(--gg-space-4); }
 .settings-section-heading h3, .agent-config-group h4 { margin: 0; font-size: var(--gg-text-reading); font-weight: var(--gg-weight-semibold); }
@@ -181,7 +198,7 @@
 /* Connected accounts are summaries first; model management stays close by. */
 /* Provider cards (providers spec §2.3): state, credential, billing, one notice, then models. */
 .provider-card-list { display: grid; gap: var(--gg-space-3); padding: 0; margin: var(--gg-space-2) 0 0; list-style: none; }
-.provider-card { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.provider-card { display: grid; gap: var(--gg-space-2); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .provider-card-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--gg-space-3); min-width: 0; }
 .provider-card-heading h3 { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
 .provider-card-meta { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
@@ -204,7 +221,7 @@
 .settings-model-row { display: flex; align-items: center; gap: var(--gg-space-3); padding: 14px var(--gg-space-1); }
 .settings-model-row.has-divider { border-top: 1px solid var(--gg-color-border-subtle); }
 .settings-model-row strong { font-weight: var(--gg-weight-medium); }
-.settings-provider-empty { padding: var(--gg-space-8) var(--gg-space-6); text-align: center; border: 1px solid var(--gg-color-border-subtle); border-radius: 14px; background: var(--gg-color-bg-raised); }
+.settings-provider-empty { padding: var(--gg-space-8) var(--gg-space-6); text-align: center; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 /* Tiny workspace previews use explicit palettes, independent of the active theme. */
 .theme-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .theme-card { position: relative; min-width: 0; display: grid; gap: var(--gg-space-4); padding: 10px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); color: var(--gg-color-text-primary); background: var(--gg-color-bg-app); cursor: pointer; text-align: left; }
@@ -260,3 +277,4 @@
 .keyboard-table th { padding: var(--gg-space-2) 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); text-align: left; }
 .keyboard-table td { padding: var(--gg-space-2) var(--gg-space-3) var(--gg-space-2) 0; border-top: 1px solid var(--gg-color-border-subtle); color: var(--gg-color-text-primary); }
 .keyboard-table kbd { display: inline-block; min-width: 20px; padding: 1px var(--gg-space-2); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-caption); text-align: center; }
+.settings-privacy-list dd::first-letter { text-transform: uppercase; }

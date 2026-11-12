@@ -32,7 +32,7 @@ it("opens an exact journal inline with source, World, and Lens revision links", 
   expect(within(journal).getByRole("region", { name: "Why" })).toHaveTextContent("The retained excerpt states the dependency.");
   fireEvent.click(screen.getByRole("button", { name: "Open source 1" }));
   expect(props.onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ surface: "source", recordId: "source-pack", revisionId: "rev-source-1", selection: expect.objectContaining({ spanId: "span-status-codes" }) }));
-  fireEvent.click(screen.getByRole("button", { name: "Open World version 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open map version 1" }));
   expect(props.onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ surface: "world", recordId: "world-protocols", revisionId: expect.any(String) }));
   fireEvent.click(screen.getByRole("button", { name: "Open Lens 1" }));
   expect(props.onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ surface: "lens", recordId: "lens-compare-accounts", revisionId: "rev-lens-1" }));

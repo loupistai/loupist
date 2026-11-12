@@ -31,6 +31,8 @@ it("keeps profile, chat, learning and skills on one page with changes scoped to 
   await waitFor(() => expect(learning).toHaveBeenCalledWith({ loupistId: "loupist-quality", learnMethods: !enabled }));
   await user.click(within(page).getByRole("button", { name: "Skills & connections" }));
   await user.click(within(page).getByRole("button", { name: "Manage skills" }));
+  // Writing a Skill sits under Advanced.
+  await user.click((await waitFor(() => page.querySelector<HTMLElement>("[data-skills-advanced] > summary")!)));
   expect(await within(page).findByRole("button", { name: "Create skill" })).toBeVisible();
   expect(within(page).queryByRole("combobox", { name: "Available to" })).toBeNull();
   expect((await bridge.configRead({ scope: { kind: "global" } })).explicit).toEqual({});
@@ -53,7 +55,7 @@ it("opens the same page for the chosen Loupist from app settings", async () => {
   await screen.findByRole("heading", { name: "Loupists", level: 1 });
   const rows = document.querySelector(".settings-loupists")!;
   const target = within(rows as HTMLElement).getByText("Contrarian Value").closest("li")!;
-  await user.click(within(target).getByRole("button", { name: "Open Loupist settings" }));
+  await user.click(within(target).getByRole("button", { name: /^Settings: / }));
   const page = await screen.findByRole("region", { name: "Loupist settings" });
   expect(within(page).getByRole("textbox", { name: "Name" })).toHaveValue("Contrarian Value");
   await user.click(within(page).getByRole("button", { name: "Back" }));
@@ -111,7 +113,7 @@ it("distinguishes Loupists with matching folder names and opens the intended one
   expect(selectedLoupistButton()).toHaveTextContent("research");
 });
 
-it("keeps what the map tracks in World processing, not Learning", async () => {
+it("keeps what the map tracks in Map building, not Learning", async () => {
   const user = userEvent.setup();
   await openApp();
   await user.click(headerAction("Loupist settings"));
@@ -130,8 +132,8 @@ it("opens the current Loupist's Skills & connections from the Connections page a
   try {
     await openApp();
     await user.click(await mainTab(/Connections/));
-    expect(document.querySelector('.settings-navigation [aria-current="page"]')).toHaveTextContent("Connections");
-    await user.click(await screen.findByRole("button", { name: "Choose which Loupists can use them" }));
+    expect(document.querySelector('.settings-navigation [aria-current="page"]')).toHaveTextContent("Data connections");
+    await user.click(await screen.findByRole("button", { name: "Loupist access" }));
     const page = await screen.findByRole("region", { name: "Loupist settings" });
     await waitFor(() => expect(page.querySelector<HTMLDetailsElement>('[data-loupist-section="capabilities"]')!.open).toBe(true));
     // It lands on the connections list, past the Skills above it.

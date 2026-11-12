@@ -1,9 +1,10 @@
-import { NoticeSettingsRow } from "./onboarding/Notice";
+import { ApplicationSettings } from "./settings/ApplicationSettings";
+import { MoreHorizontalIcon } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { MarketplaceView } from "./marketplace/MarketplaceView";
 import { LoupistAvatar } from "./app/AppHeader";
 import i18n, { useTranslation } from "../i18n";
 import { SkillsSettings } from "./settings/SkillsSettings";
-import { RefreshCwIcon } from "lucide-react";
 import { Button } from "./ui/button";
 import { PageHeader } from "./ui/page-header";
 import type { LanguagePreference } from "../i18n/useLanguage";
@@ -18,7 +19,7 @@ import { UpdateSettingsCard } from "./settings/UpdateSettingsCard";
 import type { useAppUpdate } from "./settings/useAppUpdate";
 import type { ConfigScope, LoupistSummary, LoupistBridge } from "../types";
 import { AgentSettings, ConfigurationDiagnostics } from "./settings/AgentSettings";
-import { notifyConfigurationChanged, type useConfiguration } from "../app/useConfiguration";
+import type { useConfiguration } from "../app/useConfiguration";
 import { useState } from "react";
 import { sharingReleaseVisible } from "../sharing/releaseVisibility";
 import { ShareSheet } from "./sharing/ShareSheet";
@@ -82,7 +83,12 @@ export function SettingsView({
 
       <div className="settings-stack">
         {section === "connections" ? <MarketplaceView bridge={bridge} loupists={loupists} currentLoupistId={currentLoupistId} initialEntryId={connectionsEntryId} onManageLoupists={() => currentLoupistId && onOpenLoupistConnections ? onOpenLoupistConnections(currentLoupistId) : onOpenLoupists?.()} onOpenModelSettings={onManageProviders} /> : null}
-        {section === "loupists" ? <div className="settings-loupists"><div className="settings-loupist-actions"><Button onClick={onCreateLoupist}>{i18n.t("app:shell.newLoupist")}</Button><Button variant="outline" data-loupist-import onClick={onImportLoupist}>{i18n.t("settings:loupists.import")}</Button></div><ul>{loupists.map(loupist => <li key={loupist.id}><LoupistAvatar loupist={loupist} /><div><strong>{loupist.name}</strong><p>{loupist.philosophy}</p></div>{showSharing ? <Button variant="outline" data-share-loupist={loupist.id} onClick={() => setShareTarget(loupist)}>{i18n.t("sharing:share")}</Button> : null}<Button variant="outline" onClick={() => onOpenLoupistSettings?.(loupist.id)}>{i18n.t("settings:loupists.openSettings")}</Button><Button variant="ghost" onClick={() => onRemoveLoupist?.(loupist.id)}>{i18n.t("app:shell.removeLoupist")}</Button></li>)}</ul>
+        {section === "loupists" ? <div className="settings-loupists"><div className="settings-loupist-actions"><Button onClick={onCreateLoupist}>{i18n.t("app:shell.newLoupist")}</Button><Button variant="outline" data-loupist-import onClick={onImportLoupist}>{i18n.t("settings:loupists.import")}</Button></div><ul>{loupists.map(loupist => <li key={loupist.id}><LoupistAvatar loupist={loupist} /><div><strong>{loupist.name}</strong><p>{loupist.philosophy}</p></div><Button variant="outline" size="sm" aria-label={i18n.t("settings:loupists.settingsFor", { name: loupist.name })} onClick={() => onOpenLoupistSettings?.(loupist.id)}>{i18n.t("settings:loupists.settings")}</Button>
+            <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={i18n.t("settings:loupists.moreFor", { name: loupist.name })}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {showSharing ? <DropdownMenuItem data-share-loupist={loupist.id} onSelect={() => setShareTarget(loupist)}>{i18n.t("sharing:share")}</DropdownMenuItem> : null}
+                <DropdownMenuItem onSelect={() => onRemoveLoupist?.(loupist.id)}>{i18n.t("settings:loupists.removeEllipsis")}</DropdownMenuItem>
+              </DropdownMenuContent></DropdownMenu></li>)}</ul>
           {showSharing && shareTarget ? <ShareSheet bridge={bridge} loupistId={shareTarget.id} loupistName={shareTarget.name} scope={{ kind: "loupist" }} open onOpenChange={open => { if (!open) setShareTarget(null); }} /> : null}</div> : null}
         {section === "model" ? (
           <ModelSettingsPanel catalog={catalog} loadError={loadError} bridge={bridge} chatModelProfileId={appearanceConfiguration.snapshot?.effective.chat.model_profile_id}
@@ -90,13 +96,14 @@ export function SettingsView({
         ) : null}
 
         {section === "appearance" ? (
-          <><AppearanceSettings language={language} onLanguageChange={onLanguageChange} theme={theme} onThemeChange={onThemeChange} disabled={appearanceConfiguration.busy || !appearanceConfiguration.snapshot || Boolean(appearanceConfiguration.snapshot.diagnostics.length)} />{appearanceConfiguration.error ? <p role="alert" className="inline-error">{appearanceConfiguration.error}</p> : null}<ConfigurationDiagnostics snapshot={appearanceConfiguration.snapshot} /><div className="settings-footnote"><span>{i18n.t("settings:settingsView.savedAutomaticallyForAllLoupistsOnThisDevice")}</span><Button type="button" variant="ghost" size="sm" disabled={appearanceConfiguration.busy} onClick={() => notifyConfigurationChanged()}><RefreshCwIcon /> {i18n.t("settings:settingsView.reload")}</Button></div></>
+          <><AppearanceSettings language={language} onLanguageChange={onLanguageChange} theme={theme} onThemeChange={onThemeChange} disabled={appearanceConfiguration.busy || !appearanceConfiguration.snapshot || Boolean(appearanceConfiguration.snapshot.diagnostics.length)} />{appearanceConfiguration.error ? <p role="alert" className="inline-error">{appearanceConfiguration.error}</p> : null}<ConfigurationDiagnostics snapshot={appearanceConfiguration.snapshot} /><p className="settings-footnote"><span>{i18n.t("settings:settingsView.savedAutomaticallyForAllLoupistsOnThisDevice")}</span></p></>
         ) : null}
 
         {section === "keyboard" ? <KeyboardSettings /> : null}
         {section === "skills" ? <SkillsSettings bridge={bridge} loupists={loupists} scope={{ kind: "global" }} onDraftSkill={onDraftSkill} /> : null}
 
-        {section === "agent" ? <><NoticeSettingsRow /><AgentSettings bridge={bridge} loupists={loupists} catalog={catalog} scope={{ kind: "global" }} /></> : null}
+        {section === "agent" ? <AgentSettings bridge={bridge} loupists={loupists} catalog={catalog} scope={{ kind: "global" }} /> : null}
+        {section === "general" ? <ApplicationSettings bridge={bridge} /> : null}
 
         {section === "updates" ? (
           <UpdateSettingsCard status={update.status} phase={update.phase} error={update.error} onCheck={update.checkForUpdates} onInstall={(offer_id) => update.installUpdate({ offer_id })} />

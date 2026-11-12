@@ -8,7 +8,7 @@ import { WorldProcessingSettings } from "./WorldProcessingSettings";
 const autoProcess = () => screen.getByRole("checkbox", { name: "Automatically process saved sources" });
 const setup = (bridge = new MockLoupistBridge({ delay_ms: 0 })) => ({ bridge, loupistId: "loupist-quality", onChanged: vi.fn(), onManageProviders: vi.fn() });
 const selection = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.click(await screen.findByRole("button", { name: /World processing model/ }));
+  await user.click(await screen.findByRole("button", { name: /Map building model/ }));
   await user.type(screen.getByRole("searchbox", { name: "Search models" }), "ChatGPT");
   await user.click(screen.getByRole("menuitemradio", { name: "GPT-5.6 Luna" }));
   await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
@@ -36,7 +36,7 @@ it("uses the shared model catalog and controls while leaving automatic processin
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   await waitFor(() => expect(save).toHaveBeenCalledExactlyOnceWith({ loupistId: props.loupistId, settings: { enrichmentEnabled: true, paused: false, helperModelProfileId: "model-test", thinkingLevel: "high", runOptions: { performance: "fast" }, maxLlmCalls: 6, timeoutMs: 45000, researchFocus: "", relationHints: [], anchors: [], fastModel: null } }));
   expect(await screen.findByText("Ready to review sources")).toBeVisible();
-  expect(screen.getByLabelText("World processing readiness")).toHaveTextContent("GPT-5.6 Luna");
+  expect(screen.getByLabelText("Map building readiness")).toHaveTextContent("GPT-5.6 Luna");
 });
 
 it("keeps model preferences per Loupist and independent of the Chat picker", async () => {
@@ -45,12 +45,12 @@ it("keeps model preferences per Loupist and independent of the Chat picker", asy
   const user = userEvent.setup();
   await selection(user);
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
-  await screen.findByText("World processing settings saved for this Loupist.");
+  await screen.findByText("Map building settings saved for this Loupist.");
   rerender(<WorldProcessingSettings {...props} loupistId="loupist-value" />);
-  expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("Choose model");
+  expect(await screen.findByRole("button", { name: /Map building model/ })).toHaveTextContent("Choose model");
   expect(autoProcess()).not.toBeChecked();
   rerender(<WorldProcessingSettings {...props} />);
-  expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("GPT-5.6 Luna · High · Fast");
+  expect(await screen.findByRole("button", { name: /Map building model/ })).toHaveTextContent("GPT-5.6 Luna · High · Fast");
 });
 
 it("offers provider management when there are no connected models without enabling processing", async () => {
@@ -60,7 +60,7 @@ it("offers provider management when there are no connected models without enabli
   render(<WorldProcessingSettings {...props} />);
   const user = userEvent.setup();
   expect(await screen.findByText(/No connected models/)).toBeVisible();
-  expect(screen.queryByRole("button", { name: /World processing model/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Map building model/ })).toBeNull();
   expect(autoProcess()).not.toBeChecked();
   await user.click(screen.getByRole("button", { name: "Manage providers" }));
   expect(props.onManageProviders).toHaveBeenCalledOnce();
@@ -75,7 +75,7 @@ it("shows host readiness for a disconnected provider", async () => {
   const view = await props.bridge.knowledgeGraphSettingsGet({ loupistId: props.loupistId });
   vi.spyOn(props.bridge, "knowledgeGraphSettingsGet").mockResolvedValue({ ...view, settings: { ...view.settings, enrichmentEnabled: true, helperModelProfileId: "removed-model" }, readiness: { status, note: "not_connected", modelName: "Saved model", providerName: "Saved provider", authKind: "oauth" } });
   render(<WorldProcessingSettings {...props} />);
-  const readiness = await screen.findByLabelText("World processing readiness");
+  const readiness = await screen.findByLabelText("Map building readiness");
   expect(within(readiness).getByText(label)).toBeVisible();
   expect(readiness).toHaveTextContent("Saved model");
   expect(within(readiness).getByText("Connect the model provider in Settings.")).toBeVisible();
@@ -87,11 +87,11 @@ it("words the host's readiness note in the interface language", async () => {
   const view = await props.bridge.knowledgeGraphSettingsGet({ loupistId: props.loupistId });
   vi.spyOn(props.bridge, "knowledgeGraphSettingsGet").mockResolvedValue({ ...view, readiness: { status: "model_required", note: "awaiting_provider", modelName: null, providerName: null, authKind: null } });
   render(<WorldProcessingSettings {...props} />);
-  const readiness = await screen.findByLabelText("World processing readiness");
-  expect(readiness).toHaveTextContent("Waiting for a supported model provider. A recommended World model will be selected when one is connected.");
+  const readiness = await screen.findByLabelText("Map building readiness");
+  expect(readiness).toHaveTextContent("Waiting for a supported model provider. A recommended map-building model will be selected when one is connected.");
   await act(async () => { await i18n.changeLanguage("ko"); });
   try {
-    expect(readiness).toHaveTextContent("지원되는 AI 서비스를 기다리는 중이에요. 연결되면 추천 World 모델을 골라 드려요.");
+    expect(readiness).toHaveTextContent("지원되는 AI 서비스를 기다리는 중이에요. 연결되면 추천 지도 구성 모델을 골라 드려요.");
     expect(readiness).not.toHaveTextContent("Waiting for a supported model provider");
   } finally {
     await act(async () => { await i18n.changeLanguage("en"); });
@@ -111,12 +111,12 @@ it("preserves edits after save or pause errors and retries settings reads", asyn
   await selection(user);
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Settings could not save");
-  expect(screen.getByRole("button", { name: /World processing model/ })).toHaveTextContent("High · Fast");
+  expect(screen.getByRole("button", { name: /Map building model/ })).toHaveTextContent("High · Fast");
   await user.click(screen.getByRole("button", { name: "Pause processing" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Processing could not pause");
-  expect(screen.getByRole("button", { name: /World processing model/ })).toHaveTextContent("High · Fast");
+  expect(screen.getByRole("button", { name: /Map building model/ })).toHaveTextContent("High · Fast");
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
-  await screen.findByText("World processing settings saved for this Loupist.");
+  await screen.findByText("Map building settings saved for this Loupist.");
 });
 
 it("ignores an old Loupist save response after navigation", async () => {
@@ -129,9 +129,9 @@ it("ignores an old Loupist save response after navigation", async () => {
   await selection(user);
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   rerender(<WorldProcessingSettings {...props} loupistId="loupist-value" />);
-  expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("Choose model");
+  expect(await screen.findByRole("button", { name: /Map building model/ })).toHaveTextContent("Choose model");
   await act(async () => resolveSave({ ...old, settings: { ...old.settings, helperModelProfileId: "model-test" } }));
-  expect(screen.getByRole("button", { name: /World processing model/ })).toHaveTextContent("Choose model");
+  expect(screen.getByRole("button", { name: /Map building model/ })).toHaveTextContent("Choose model");
   expect(props.onChanged).not.toHaveBeenCalled();
 });
 
@@ -145,10 +145,10 @@ it("recovers explicitly without a connected model, enabling processing, or savin
   const recover = vi.spyOn(props.bridge, "knowledgeGraphRecover").mockReturnValue(new Promise((done) => { resolve = done; }));
   render(<WorldProcessingSettings {...props} />);
   const user = userEvent.setup();
-  await screen.findByRole("button", { name: "Recover World processing" });
+  await screen.findByRole("button", { name: "Recover map building" });
   await user.click(screen.getByText("Advanced limits"));
   fireEvent.change(screen.getByLabelText("Maximum model requests per source"), { target: { value: "8" } });
-  await user.dblClick(screen.getByRole("button", { name: "Recover World processing" }));
+  await user.dblClick(screen.getByRole("button", { name: "Recover map building" }));
   expect(recover).toHaveBeenCalledExactlyOnceWith({ loupistId: props.loupistId });
   expect(screen.getByRole("button", { name: "Starting recovery…" })).toBeDisabled();
   expect(screen.getByText(/Recovery does not use a model/)).toBeVisible();
@@ -156,7 +156,7 @@ it("recovers explicitly without a connected model, enabling processing, or savin
   expect(screen.getByLabelText("Maximum model requests per source")).toHaveValue(8);
   expect(autoProcess()).not.toBeChecked();
   expect(screen.getByRole("status")).toHaveTextContent("Interrupted processing was not retried");
-  expect(screen.queryByRole("button", { name: "Recover World processing" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Recover map building" })).toBeNull();
   expect(save).not.toHaveBeenCalled();
   expect(props.onChanged).toHaveBeenCalledOnce();
 });
@@ -171,12 +171,12 @@ it("resumes read-only recovery polling when opening an in-progress recovery", as
   try {
     render(<WorldProcessingSettings {...props} />);
     await act(async () => {});
-    expect(screen.getByRole("status")).toHaveTextContent("Restoring confirmed World data");
+    expect(screen.getByRole("status")).toHaveTextContent("Restoring confirmed map data");
     expect(screen.getByRole("button", { name: "Save processing settings" })).toBeDisabled();
     await act(async () => vi.advanceTimersByTimeAsync(2_000));
-    expect(screen.getByRole("status")).toHaveTextContent("Restoring confirmed World data");
+    expect(screen.getByRole("status")).toHaveTextContent("Restoring confirmed map data");
     await act(async () => vi.advanceTimersByTimeAsync(2_000));
-    expect(screen.getByRole("status")).toHaveTextContent("World processing recovered");
+    expect(screen.getByRole("status")).toHaveTextContent("Map building recovered");
     expect(props.onChanged).toHaveBeenCalledOnce();
     await act(async () => vi.advanceTimersByTimeAsync(4_000));
     expect(get).toHaveBeenCalledTimes(3);
@@ -199,7 +199,7 @@ it("shows a background processing failure without refreshing or losing unsaved g
     fireEvent.click(screen.getByText("Research guidance"));
     fireEvent.change(screen.getByLabelText("Research focus"), { target: { value: "Keep this unsaved research focus" } });
     await act(async () => vi.advanceTimersByTimeAsync(5_000));
-    expect(screen.getByRole("button", { name: "Recover World processing" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Recover map building" })).toBeEnabled();
     expect(screen.getByLabelText("Research focus")).toHaveValue("Keep this unsaved research focus");
     expect(screen.getByText(/Unsaved changes/)).toBeVisible();
     await act(async () => vi.advanceTimersByTimeAsync(15_000));
@@ -222,24 +222,24 @@ it("saves guidance-only edits, preserves anchor identifiers, and discards all gu
   expect(screen.getByRole("button", { name: "Save processing settings" })).toBeEnabled();
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ settings: expect.objectContaining({ relationHints: ["supplies", "owns"], anchors }) })));
-  await screen.findByText("World processing settings saved for this Loupist.");
+  await screen.findByText("Map building settings saved for this Loupist.");
   await user.type(screen.getByLabelText("Key companies and topics"), "; Acme");
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   await waitFor(() => expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ anchors: [...anchors, { name: "Acme", aliases: [], identifiers: [] }] }) })));
-  await screen.findByText("World processing settings saved for this Loupist.");
+  await screen.findByText("Map building settings saved for this Loupist.");
   await user.type(screen.getByLabelText("Key companies and topics"), " | Another alias");
   await user.click(screen.getByRole("button", { name: "Discard changes" }));
   expect(screen.getByLabelText("Key companies and topics")).toHaveValue("Samsung | 삼성 | 005930; Acme");
 });
 
-const keepAwakeLabel = "Keep this Mac awake while the World is processing";
+const keepAwakeLabel = "Keep this Mac awake while the map is being built";
 const keepAwake = (overrides: Partial<KeepAwakeStatus> = {}): KeepAwakeStatus => ({ supported: true, enabled: false, active: false, onBattery: false, remaining: 0, ...overrides });
 
 it("hides keep-awake where the host cannot prevent sleep", async () => {
   const props = setup();
   vi.spyOn(props.bridge, "worldKeepAwakeGet").mockResolvedValue(keepAwake({ supported: false, enabled: true }));
   render(<WorldProcessingSettings {...props} />);
-  await screen.findByRole("form", { name: "World processing settings" });
+  await screen.findByRole("form", { name: "Map building settings" });
   await waitFor(() => expect(props.bridge.worldKeepAwakeGet).toHaveBeenCalled());
   expect(screen.queryByRole("checkbox", { name: keepAwakeLabel })).toBeNull();
   expect(screen.queryByText(/closing the lid/)).toBeNull();

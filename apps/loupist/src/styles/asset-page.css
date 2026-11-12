@@ -31,7 +31,7 @@
 .asset-inline-link:hover { text-decoration: underline; }
 
 /* Thesis card */
-.asset-thesis { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-6); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-lg); background: var(--gg-color-bg-raised); }
+.asset-thesis { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-6); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .asset-thesis-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-2); }
 /* The one-line explanation of "thesis" and "line", tucked under the card's title. */
 .asset-thesis-hint { margin: calc(-1 * var(--gg-space-2)) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }

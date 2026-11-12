@@ -5,6 +5,7 @@
  * so "한울정밀" never sits next to "Hanul Precision".
  */
 import { useCallback, useEffect, useState } from "react";
+import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { useTranslation } from "@/i18n";
 import type { LoupistBridge } from "../../types";
 import type { AssetDelta } from "../../contracts/assets";
@@ -46,7 +47,7 @@ function load(bridge: LoupistBridge, loupistId: string) {
   const cached = byLoupist.get(loupistId);
   if (cached && Date.now() - cached.atMs < FRESH_MS) return cached.data;
   const data = Promise.all([
-    bridge.knowledgeMap({ loupistId, maxNodes: 1000 }).catch(() => null),
+    readKnowledgeMap(bridge, loupistId).catch(() => null),
     // Read-only: every page's identity; nothing is created.
     bridge.assetDelta?.({ loupistId, sinceMs: Date.now() }).catch(() => []) ?? Promise.resolve([]),
   ]).then(([map, pages]): AssetNameData => ({ nodes: map?.nodes ?? [], pages }));

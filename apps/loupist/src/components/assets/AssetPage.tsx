@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenu
 import { connectionText } from "../marketplace/connectionCopy";
 import english from "@/i18n/locales/en/connections.json";
 import { AssetThesis } from "./AssetThesis";
-import { checkKind, citationNumbers, dilutionText, FLOW_VALUE, flowText, GLANCE_KIND, glanceValue, rowSentence, shortDay, SourceChips } from "./assetText";
+import { checkKind, citationNumbers, dilutionText, FLOW_VALUE, flowText, GLANCE_KIND, glanceLabel, glanceValue, rowSentence, shortDay, SourceChips } from "./assetText";
 import { useAssetNames } from "./assetName";
 import { lastAssetVisit, recordAssetVisit, rememberedRange, rememberRange } from "./assetVisit";
 import { EarningsCard, earningsStatusText } from "./EarningsCard";
@@ -555,7 +555,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
               const stale = unread.has(GLANCE_KIND[row.key]);
               const price = row.key === "price" || row.key === "drawdown";
               return <div key={row.key}>
-                <dt>{tDynamic(`glance.${row.key}`)}</dt>
+                <dt>{glanceLabel(row)}</dt>
                 <dd className={`gg-num${price ? " asset-price" : ""}`} data-stale={stale || undefined} data-direction={price && !stale ? (Number(row.facts.change) < 0 ? "down" : Number(row.facts.change) > 0 ? "up" : undefined) : undefined}>
                   {row.facts.notAnnounced ? <span className="asset-caption">{t("earnings.notAnnounced")}</span>
                     : hasResults && (row.key === "lastResults" || row.key === "nextEarnings")

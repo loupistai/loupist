@@ -23,6 +23,6 @@ export function MapClaimInspector({ bridge, location, claimId, onClose, onOpen, 
     {claim ? <><p>{claim.attribution}</p>{claim.publicationTime?.value ? <time>{dateValue(claim.publicationTime.value)}</time> : null}<ul className="map-facts">{claim.evidence.map((e, index) => {
       const target = e.spanId ? graph?.sourceTargets?.[e.spanId] : undefined;
       return <li key={`${e.spanId}:${index}`}><p>{e.attribution}</p>{target ? <Button variant="link" onClick={() => onOpen({ loupistId: location.loupistId, surface: "source", recordId: target.recordId, revisionId: target.revisionId, objectId: target.sourceId, selection: { kind: "source", sourceId: target.sourceId, spanId: target.spanId, worldRecordId: target.worldRecordId, worldRevisionId: target.worldRevisionId } })}>{t("map.openSource")}</Button> : null}</li>;
-    })}</ul><footer><Button onClick={() => onAsk(pinForClaim(location.loupistId, graph!.recordId, graph!.revisionId, claim))}>{t("map.askAbout")}</Button></footer></> : graph ? <p>{t("map.noFacts")}</p> : null}
+    })}</ul><footer><Button onClick={() => onAsk(pinForClaim(location.loupistId, graph!.recordId, graph!.revisionId, claim))}>{t("map.askAbout")}</Button></footer></> : graph ? <p>{t("map.noClaimFacts")}</p> : null}
   </aside>;
 }

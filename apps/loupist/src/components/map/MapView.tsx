@@ -1,7 +1,7 @@
 import { CanvasBoundary } from "./CanvasBoundary";
 import { useConflictHighlights } from "./useConflictHighlights";
 import { mapStatsText } from "./stats";
-import { XIcon } from "lucide-react";
+import { XIcon, ScanIcon } from "lucide-react";
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin } from "../../types";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
@@ -17,8 +17,8 @@ import { libraryState } from "./libraryState";
 import { MapLibrary } from "./MapLibrary";
 import { MapReader } from "./MapReader";
 import { MapReplayBar } from "./MapReplayBar";
-import { MapExport } from "./MapExport";
-import { replayStart, replayVisible, useMapReplay } from "./replay";
+import { useMapExport } from "./MapExport";
+import { replayStart, useMapReplay, useReplayVisible } from "./replay";
 import { MapLegend } from "./MapLegend";
 import { dismissMapHint, mapHintDismissed, recentFocal, rememberFocal, rememberLegendOpen, rememberScope, storedFocal, storedLegendOpen, storedScope } from "./mapVisit";
 import { MapWhatsNew } from "./MapWhatsNew";
@@ -88,7 +88,8 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const viewRef = useRef<HTMLDivElement>(null);
   const [mapWidth, setMapWidth] = useState(() => window.innerWidth);
   const compactMap = mapWidth > 0 && mapWidth < 900;
-  const legendOpen = legendChoice ?? !compactMap;
+  // The key strip is open until the user closes it, at every size.
+  const legendOpen = legendChoice ?? true;
   useEffect(() => {
     setShowMapHint(!mapHintDismissed(location.loupistId));
     setVisit({ loupistId: location.loupistId, lastSeenAtMs: lastSeenAt(location.loupistId), nowMs: Date.now() });
@@ -178,8 +179,8 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const closeReplay = () => {
     replay.close();
     if (replayFrom !== undefined) { setReplayFrom(undefined); setScopeOverride(undefined); }
-    // Replay may be folded into "More"; focus returns to whichever control shows it.
-    toolbar.current?.querySelector<HTMLButtonElement>("[data-map-replay]:not([data-overflowed]), [data-map-more]:not([data-overflowed])")?.focus();
+    // Replay lives in "More"; focus returns there.
+    toolbar.current?.querySelector<HTMLButtonElement>("[data-map-more]")?.focus();
   };
   useEffect(() => {
     if (!pendingReplay || replay.start !== replayFrom) return;
@@ -187,7 +188,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
     replay.open();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `replay.open` runs once its start is ready.
   }, [pendingReplay, replay.start, replayFrom]);
-  const replayed = useMemo(() => replay.active ? replayVisible(visible, edges, replay.time) : { nodes: visible, edges }, [visible, edges, replay.active, replay.time]);
+  const replayed = useReplayVisible(visible, edges, replay.active ? replay.time : undefined);
   const positions = useMemo(() => map ? frozenLayout(location.loupistId, map.worldRevisionId, worldNodes, worldEdges) : [], [map, worldNodes, worldEdges, location.loupistId]);
   const positioned = useMemo(() => positions.filter((n) => shownIds.has(n.id)), [positions, shownIds]);
   const changeFocal = (id: string) => {
@@ -293,6 +294,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const totalNames = map ? map.nodes.filter((node) => node.kind === "entity").length : 0;
   const localStats = local ? t(local.capped ? "map.boundedAround" : "map.localStats", { shown: formatNumber(local.shown), total: formatNumber(local.capped ? local.total : totalNames), name: focalName }) : undefined;
   const exportStats = local ? `${stats} · ${t("map.exportScope", { name: focalName, scope: scopeLabel })}` : stats;
+  const mapExport = useMapExport({ bridge, loupistId: location.loupistId, controls, replay, stats: exportStats, onRecording: setRecording });
   const conflicts = replayed.edges.filter((edge) => edge.status === "disputed").length;
   const appliedInView = appliedEntities.filter(node => shownIds.has(node.id));
   const overlayHighlight = appliedInView.length ? new Set(appliedInView.map(node => node.id)) : undefined;
@@ -303,26 +305,26 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const overlayTitle = overlay ? lensTitles[overlay.id] ?? overlay.label : "";
   const overlayOutsideScope = !!overlay && appliedEntities.length > 0 && appliedInView.length === 0;
   const noNeighbors = !!local && local.neighbors === 0 && !replay.active;
-  const hintVisible = !!map && showMapHint && replayed.nodes.length >= 1;
   // The coach mark yields to anything else the user opened or is reading, so notes never pile up on the canvas.
-  const showHint = hintVisible && !emptyLens && !whatsNewOpen && !libraryOpen && !selected && !selectedClaimId && !reading && !picking && !overlay && !noNeighbors;
-  const hint = showHint ? <div className="map-first-hint" role="status"><p>{t("map.firstHint")}</p><Button size="icon-sm" variant="ghost" aria-label={t("map.dismissHint")} onClick={() => { dismissMapHint(location.loupistId); setShowMapHint(false); }}><XIcon /></Button></div> : null;
   const lensBanner = emptyLens ? <div className="map-lens-banner" role="status"><p>{t("map.overlayEmpty", { title: overlayTitle })}</p><Button variant="outline" onClick={onAskInChat} disabled={!onAskInChat}>{t("map.askInChat")}</Button><Button size="icon-sm" variant="ghost" aria-label={t("map.exitOverlay")} onClick={() => setOverlayId(undefined)}><XIcon /></Button></div> : null;
   return <div ref={viewRef} className={`map-view${recording ? " is-recording" : ""}`} data-testid="map-view" data-keyboard-focus={keyboardFocus} onPointerDownCapture={() => setKeyboardFocus(false)} onKeyDownCapture={() => setKeyboardFocus(true)} aria-busy={data.loading} onKeyDown={(e) => { if (e.key === "Escape") { if (picking) { e.preventDefault(); setPicking(false); } else if (cursorId) { e.preventDefault(); setCursorId(undefined); } else if (overlayId) { e.preventDefault(); setOverlayId(undefined); } else if (selected || selectedClaimId || reading) { e.preventDefault(); clear(); } else if (whatsNewOpen) { e.preventDefault(); closeWhatsNew(); } else if (libraryOpen) { e.preventDefault(); setLibraryOpen(false); } } }}>
-    <div ref={toolbar}><MapToolbar disabled={recording} replayActive={replay.active} onReplay={replay.active ? closeReplay : replay.open} exportControl={<MapExport key={location.loupistId} bridge={bridge} loupistId={location.loupistId} controls={controls} replay={replay} stats={exportStats} disabled={!!list || !hasWorldNodes} onRecording={setRecording} />} lenses={(map?.nodes ?? []).filter(isLensNode)} appliedCounts={appliedCounts} lensTitles={lensTitles} baseLensIds={baseLensIds} overlayId={overlayId} onOverlay={setOverlayId} libraryOpen={libraryOpen} onLibrary={() => { setWhatsNewOpen(false); setLibraryOpen(!libraryOpen); }}
+    {mapExport.status}
+    <div ref={toolbar}><MapToolbar disabled={recording} empty={!!map && !hasWorldNodes} replayActive={replay.active} onReplay={replay.active ? closeReplay : replay.open} exportActions={{ image: mapExport.image, video: mapExport.video, disabled: !!list || !hasWorldNodes || mapExport.busy }} lenses={(map?.nodes ?? []).filter(isLensNode)} appliedCounts={appliedCounts} lensTitles={lensTitles} baseLensIds={baseLensIds} overlayId={overlayId} onOverlay={setOverlayId} libraryOpen={libraryOpen} onLibrary={() => { setWhatsNewOpen(false); setLibraryOpen(!libraryOpen); }}
       local={focal && map ? { focal, followed: followedNames(map.nodes), recent: recent.filter((id) => id !== focal.id).flatMap((id) => map.nodes.filter((node) => node.id === id)), onFocal: (node) => changeFocal(node.id), onPickOnMap: () => setPicking(true), scope, onScope: setScope } : undefined}
-      whatsNew={{ count: badgeCount, open: whatsNewOpen, onToggle: () => { if (whatsNewOpen) closeWhatsNew(); else openWhatsNew(); } }} nodes={searchResults} query={query} onQuery={setQuery} filters={filters} onFilters={setFilters} onSelect={select} list={!!list} onList={() => onPatch({ ...location, view: { ...location.view, listMode: !list } })} onFit={() => controls.current?.fit()} fitDisabled={!!map && !hasWorldNodes} replayDisabled={!!map && !hasWorldNodes} listDisabled={!!map && !hasWorldNodes} /></div>
-    {compactMap ? <div className="map-hint-row" data-map-caption>{hint}{lensBanner}</div> : lensBanner ? <div className="map-hint-row">{lensBanner}</div> : null}
+      whatsNew={{ count: badgeCount, open: whatsNewOpen, onToggle: () => { if (whatsNewOpen) closeWhatsNew(); else openWhatsNew(); } }} nodes={searchResults} query={query} onQuery={setQuery} filters={filters} onFilters={setFilters} onSelect={select} list={!!list} onList={() => onPatch({ ...location, view: { ...location.view, listMode: !list } })} replayDisabled={!!map && !hasWorldNodes} listDisabled={!!map && !hasWorldNodes} /></div>
+    {lensBanner ? <div className="map-hint-row" data-map-caption={compactMap || undefined}>{lensBanner}</div> : null}
     <div inert={recording} className={`map-body${selected || selectedClaimId || reading ? " has-selection" : ""}`}>
       <div className="map-stage" tabIndex={focal && !list ? 0 : undefined} role={focal && !list ? "group" : undefined} aria-label={focal && !list ? t("map.stageLabel", { name: focalName }) : undefined} aria-keyshortcuts={focal && !list ? "ArrowLeft ArrowRight Enter Shift+Enter Backspace 1 2 0" : undefined} onKeyDown={stageKeys}>
         {focal && !list ? <p className="sr-only" aria-live="polite">{cursor ? `${entityLabel(cursor, i18n.language)} · ${t(`map.kind.${nodeCategory(cursor) as "other"}`)}` : ""}</p> : null}
         {highlights.error ? <div className="map-error" role="alert">{t("map.detailError")}<Button variant="ghost" onClick={highlights.retry}>{t("map.retry")}</Button></div> : null}
         {data.error ? <div className="map-error" role="alert">{t("map.error")}<Button variant="ghost" onClick={data.retry}>{t("map.retry")}</Button></div> : null}
-        <div className="map-status-stack">{showStats ? <div className="map-stats" data-testid="map-stats" role="status">{data.loading && !map ? t("map.loading") : <><strong className="map-world-kicker">{t("map.worldName")}</strong><span>{localStats ?? stats}</span>{weekly > 0 ? <span className="map-growth" title={t("map.weeklyTip")}>{t("map.weekly", { n: formatNumber(weekly) })}</span> : null}{conflicts > 0 ? <span className="map-conflict-count" title={t("map.conflictTip")}>{t("map.conflictCount", { n: formatNumber(conflicts) })}</span> : null}{processing && !!map?.nodes.length && (!replay.active || replay.playing) ? <span className="map-updating"><i />{t("map.updating")}</span> : null}{bounded ? <small>{t("map.bounded", { shown: formatNumber(visible.length), total: formatNumber(total) })}</small> : null}{filtersActive(filters) ? <Button variant="link" onClick={() => { setFilters(defaultFilters()); setOverlayId(undefined); }}>{t("map.clearFilters")}</Button> : null}</>}</div> : null}{overlay && !emptyLens ? <div className="map-overlay-pill" role="status" data-lens-applied={overlay.id}><span><span className="map-overlay-title">{t("map.viewingThrough", { title: overlayTitle })}</span><small>{overlayOutsideScope ? t("map.overlayOutsideScope") : t("map.overlayLines")}</small></span><div className="map-applied-names" aria-label={t("map.appliedNames")}>{appliedEntities.map(node => <button type="button" key={node.id} onClick={() => select(node)}>{entityLabel(node, i18n.language)}</button>)}</div>{overlayOutsideScope ? <Button variant="link" onClick={() => setScope("all")}>{t("map.showWholeMap")}</Button> : null}<Button size="icon-sm" variant="ghost" aria-label={t("map.exitOverlay")} onClick={() => setOverlayId(undefined)}><XIcon /></Button></div> : null}{picking ? <p className="map-pick-hint" role="status">{t("map.pickHint")}</p> : null}{noNeighbors && focal ? <div className="map-no-neighbors" role="status"><p>{t("map.noNeighbors", { name: focalName })}</p><Button variant="outline" size="sm" onClick={onAskInChat} disabled={!onAskInChat}>{t("map.askInChat")}</Button></div> : null}{compactMap ? null : hint}</div>
-        {data.loading && !map ? <div className="map-skeleton" /> : map && !hasWorldNodes ? <div className="map-empty" data-testid="map-empty"><h2>{t("map.emptyTitle")}</h2><p>{t("map.emptyBody")}</p><div><Button onClick={onAskInChat} disabled={!onAskInChat}>{t("map.askInChat")}</Button></div></div> : map ? <>
-          {list ? <MapList nodes={replayed.nodes} edges={replayed.edges} onSelect={select} onClaim={(id) => onPatch({ ...location, selection: { kind: "claim", id } })} /> : <CanvasBoundary onError={() => setCanvasFailed(true)}><Suspense fallback={<div className="map-skeleton" />}><MapCanvas learnedIds={learnedIds} learningGlowIds={learningGlowIds} replayAt={replay.active ? replay.time : undefined} key={location.loupistId} scopeKey={`${location.loupistId}:${map.worldRevisionId}:${viewKey}`} nodes={positioned} edges={edges} selectedId={selectedId} focalId={local ? focalId : undefined} overlayIds={overlayHighlight ?? highlightIds} highlightIds={highlightIds ?? cursorIds} emphasisEdgeId={pointedEdge} controls={controls} onSelect={select} onClear={clear} stats={stats} dataArrivedAt={data.arrivedAt} reserveLegend={!list} reserveHint={showHint && !compactMap} /></Suspense></CanvasBoundary>}
+        <div className="map-status-stack">{showStats ? <div className="map-stats" data-testid="map-stats" role="status">{data.loading && !map ? t("map.loading") : <><span title={bounded || local?.capped ? t("map.searchForOthers") : undefined}>{localStats ?? stats}</span>{weekly > 0 ? <span className="map-growth" title={t("map.weeklyTip")}>{t("map.weekly", { n: formatNumber(weekly) })}</span> : null}{conflicts > 0 ? <span className="map-conflict-count" title={t("map.conflictTip")}>{t("map.conflictCount", { n: formatNumber(conflicts) })}</span> : null}{processing && !!map?.nodes.length && (!replay.active || replay.playing) ? <span className="map-updating"><i />{t("map.updating")}</span> : null}{bounded ? <small title={t("map.searchForOthers")}>{t("map.bounded", { shown: formatNumber(visible.length), total: formatNumber(total) })}</small> : null}{filtersActive(filters) ? <Button variant="link" onClick={() => { setFilters(defaultFilters()); setOverlayId(undefined); }}>{t("map.clearFilters")}</Button> : null}</>}</div> : null}{overlay && !emptyLens ? <div className="map-overlay-pill" role="status" data-lens-applied={overlay.id}><span><span className="map-overlay-title">{t("map.viewingThrough", { title: overlayTitle })}</span><small>{overlayOutsideScope ? t("map.overlayOutsideScope") : t("map.overlayLines")}</small></span><div className="map-applied-names" aria-label={t("map.appliedNames")}>{appliedEntities.map(node => <button type="button" key={node.id} onClick={() => select(node)}>{entityLabel(node, i18n.language)}</button>)}</div>{overlayOutsideScope ? <Button variant="link" onClick={() => setScope("all")}>{t("map.showWholeMap")}</Button> : null}<Button size="icon-sm" variant="ghost" aria-label={t("map.exitOverlay")} onClick={() => setOverlayId(undefined)}><XIcon /></Button></div> : null}{picking ? <p className="map-pick-hint" role="status">{t("map.pickHint")}</p> : null}{noNeighbors && focal ? <div className="map-no-neighbors" role="status"><p>{t("map.noNeighbors", { name: focalName })}</p><Button variant="outline" size="sm" onClick={onAskInChat} disabled={!onAskInChat}>{t("map.askInChat")}</Button></div> : null}</div>
+        {data.loading && !map ? <div className="map-skeleton" /> : map && !hasWorldNodes ? <div className="map-empty" data-testid="map-empty"><h2>{t("map.emptyTitle")}</h2><p>{t("map.emptyBody")}</p><div><Button onClick={onAskInChat} disabled={!onAskInChat}>{t("map.askInChat")}</Button>{onAddSource ? <Button variant="outline" onClick={onAddSource}>{t("map.addSource")}</Button> : null}</div></div> : map ? <>
+          {list ? <MapList nodes={replayed.nodes} edges={replayed.edges} onSelect={select} onClaim={(id) => onPatch({ ...location, selection: { kind: "claim", id } })} /> : <CanvasBoundary onError={() => setCanvasFailed(true)}><Suspense fallback={<div className="map-skeleton" />}><MapCanvas learnedIds={learnedIds} learningGlowIds={learningGlowIds} replayAt={replay.active ? replay.time : undefined} key={location.loupistId} scopeKey={`${location.loupistId}:${map.worldRevisionId}:${viewKey}`} nodes={positioned} edges={edges} selectedId={selectedId} focalId={local ? focalId : undefined} overlayIds={overlayHighlight ?? highlightIds} highlightIds={highlightIds ?? cursorIds} emphasisEdgeId={pointedEdge} controls={controls} onSelect={select} onClear={clear} stats={stats} dataArrivedAt={data.arrivedAt} reserveLegend={!list} /></Suspense></CanvasBoundary>}
           {!visible.length ? <div className="map-empty" data-testid="map-empty"><p>{t("map.noFiltered")}</p><Button variant="outline" onClick={() => { setFilters(defaultFilters()); setOverlayId(undefined); }}>{t("map.clearFilters")}</Button></div> : null}
-          {!list ? <MapLegend open={legendOpen} nodes={replayed.nodes} conflicts={conflicts > 0} lensLines={!!overlayHighlight} onOpenChange={(open) => { setLegendChoice(open); rememberLegendOpen(open); }} /> : null}
+          {/* Fit sits on the canvas, at the end of the key strip. */}
+          {!list ? <Button type="button" variant="outline" size="icon-sm" className="map-fit" data-map-fit aria-label={t("map.fitToView")} title={t("map.fitToView")} disabled={recording || (!!map && !hasWorldNodes)} onClick={() => controls.current?.fit()}><ScanIcon /></Button> : null}
+          {!list ? <MapLegend open={legendOpen} lead={showMapHint} nodes={replayed.nodes} conflicts={conflicts > 0} lensLines={!!overlayHighlight} onOpenChange={(open) => { setLegendChoice(open); rememberLegendOpen(open); }} /> : null}
         </> : null}
       </div>
       {libraryOpen ? <MapLibrary key={`${location.loupistId}:library`} bridge={bridge} catalog={catalog} location={readerLocation ?? location} onOpen={next => { onOpen(next); if ((toolbar.current?.clientWidth ?? 0) > 0 && toolbar.current!.clientWidth <= 900) setLibraryOpen(false); }} onAsk={onAsk} onChanged={onChanged} onClose={() => setLibraryOpen(false)} onAddSource={onAddSource} onManageProcessing={onManageProcessing} /> : null}

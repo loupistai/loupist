@@ -62,7 +62,6 @@
   gap: 2px;
   min-width: 0;
 }
-.knowledge-source dl > div,
-.knowledge-lens dl > div {
+.knowledge-source dl > div {
   grid-template-columns: minmax(0, 1fr);
 }

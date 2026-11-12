@@ -21,3 +21,4 @@
 .skills-empty { padding: var(--gg-space-8) 0; display: grid; justify-items: center; gap: var(--gg-space-3); color: var(--gg-color-text-secondary); }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @media (max-width: 760px) { .skills-scope { align-items: stretch; flex-direction: column; } .skills-scope select { max-width: none; } .skill-row { flex-wrap: wrap; gap: var(--gg-space-3); } .skill-summary { flex-basis: 100%; } }
+.skills-advanced-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); margin-bottom: var(--gg-space-3); }

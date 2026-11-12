@@ -138,6 +138,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   watchSettingSet(request: Parameters<Contract.LoupistBridge["watchSettingSet"]>[0]) { return this.watch.watchSettingSet(request); }
   watchPauseSet(request: { loupistId: string; paused: boolean }) { return this.watch.watchPauseSet(request); }
   watchCheckNow(request: { loupistId: string }) { return this.watch.watchCheckNow(request); }
+  watchDefaultsApply(request: { loupistId: string }) { return this.watch.watchDefaultsApply(request); }
   watchEventsList(request: Parameters<Contract.LoupistBridge["watchEventsList"]>[0]) { return this.watch.watchEventsList(request); }
   watchEventsSeen(request: { loupistId: string; eventIds: string[] }) { return this.watch.watchEventsSeen(request); }
   onWatchChanged(handler: (event: { loupistId: string }) => void) { return this.watch.onWatchChanged(handler); }
@@ -171,9 +172,10 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   onInboxOpen(_handler: (event: Contract.InboxOpenEvent) => void) { return () => {}; }
   briefingSettingsGet(request: { loupistId: string }) { return this.scheduled.briefingSettingsGet(request); }
   briefingSettingsSet(request: Contract.BriefingSettingsRequest) { return this.scheduled.briefingSettingsSet(request); }
-  private resident: Contract.BriefingResidentSettings = { keepRunning: true, notificationPermissionAsked: false };
+  // The fixture already has a briefing, so the automatic default has turned menu-bar residence on.
+  private resident: Contract.BriefingResidentSettings = { keepRunning: true, notificationPermissionAsked: false, keepRunningChoice: null };
   async briefingResidentSettingsGet() { return { ...this.resident }; }
-  async briefingResidentSettingsSet({ keepRunning }: { keepRunning: boolean }) { this.resident = { ...this.resident, keepRunning }; return { ...this.resident }; }
+  async briefingResidentSettingsSet({ keepRunning }: { keepRunning: boolean }) { this.resident = { ...this.resident, keepRunning, keepRunningChoice: keepRunning }; return { ...this.resident }; }
   inboxList(request: Contract.InboxRequest) { return this.scheduled.inboxList(request); }
   inboxMarkRead(request: { loupistId: string; runIds: string[] }) { return this.scheduled.inboxMarkRead(request); }
   inboxUnreadCounts() { return this.scheduled.inboxUnreadCounts(); }

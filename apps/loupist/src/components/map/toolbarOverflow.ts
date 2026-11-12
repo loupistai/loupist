@@ -1,8 +1,8 @@
 import { useLayoutEffect, useState, type RefObject } from "react";
 import { flushSync } from "react-dom";
 
-/** Hidden secondary triggers retain the native E2E selectors; actions live in More. */
-export function foldProps(name: "library" | "replay" | "fit" | "list" | "scope", folded: boolean) {
+/** A folded Scope segment stays measurable but hidden and inert while its menu button replaces it. */
+export function foldProps(name: "scope", folded: boolean) {
   return folded ? { "data-overflow-item": name, "data-overflowed": true, inert: true } : { "data-overflow-item": name };
 }
 

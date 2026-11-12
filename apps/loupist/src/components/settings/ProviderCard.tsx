@@ -1,7 +1,8 @@
-import { ChevronDownIcon, ExternalLinkIcon, LoaderCircleIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
+import { ChevronDownIcon, ExternalLinkIcon, LoaderCircleIcon, MoreHorizontalIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { formatDate, formatDateTime, formatNumber } from "../../i18n/format";
@@ -88,7 +89,10 @@ export function ProviderCard({ option, models, hiddenModels, chatModel, loading,
   const reconnect = status.state === "needs_reconnect";
   const removeText = t(option.custom ? "providers.remove" : "providers.disconnect");
   const removeLabel = t(option.custom ? "modelSettingsPanel.customRemoveLabel" : "modelSettingsPanel.disconnectLabel", { label: title });
-  const chatUses = chatModel === undefined ? null : chatModel === null ? t("providers.chatUsesAuto") : t("providers.chatUses", { model: chatModel.name });
+  // Only the account that owns the Chat default names it; Auto is said once, in Chat defaults.
+  const chatUses = chatModel ? t("providers.chatDefault", { model: chatModel.name }) : null;
+  const canReconnect = Boolean(option.custom || option.api_key || option.oauth);
+  const reconnectText = option.api_key && !option.oauth && !option.custom ? t("providers.changeKey") : t("providers.reconnectEllipsis");
   return (
     <li>
       <article className="provider-card" data-provider-card={option.id} data-state={status.state} aria-label={title}>
@@ -115,10 +119,15 @@ export function ProviderCard({ option, models, hiddenModels, chatModel, loading,
             <Button type="button" size="sm" variant="ghost" aria-expanded={expanded} aria-controls={`provider-models-${option.id}`} onClick={() => setExpanded((value) => !value)}>
               {t("providers.models", { formattedCount: formatNumber(models.length) })}<ChevronDownIcon className={expanded ? "rotate-180" : ""} aria-hidden="true" />
             </Button>
-            {option.custom || option.api_key || option.oauth ? <Button type="button" size="sm" variant={reconnect ? "default" : "ghost"} aria-label={t("modelSettingsPanel.reconnectLabel", { label: title })} disabled={locked} onClick={() => onConnect(reconnectTarget(option))}>{t("providers.reconnect")}</Button> : null}
-            <Button type="button" size="sm" variant="ghost" aria-label={removeLabel} disabled={locked || option.credential_source !== "saved"} title={option.credential_source === "environment" ? t("modelSettingsPanel.thisProviderIsConnectedFromTheEnvironment") : undefined} onClick={onRemove}>
-              {removing ? <LoaderCircleIcon className="animate-spin" /> : null}{removeText}
-            </Button>
+            {/* Only an account that needs it shows a filled Reconnect; otherwise Reconnect or Change key and Disconnect sit in More. */}
+            {reconnect && canReconnect ? <Button type="button" size="sm" aria-label={t("modelSettingsPanel.reconnectLabel", { label: title })} disabled={locked} onClick={() => onConnect(reconnectTarget(option))}>{t("providers.reconnect")}</Button> : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild><Button type="button" size="icon-sm" variant="ghost" aria-label={t("providers.moreActions", { label: title })} disabled={locked}>{removing ? <LoaderCircleIcon className="animate-spin" /> : <MoreHorizontalIcon />}</Button></DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canReconnect && !reconnect ? <DropdownMenuItem onSelect={() => onConnect(reconnectTarget(option))}>{reconnectText}</DropdownMenuItem> : null}
+                <DropdownMenuItem aria-label={removeLabel} disabled={option.credential_source !== "saved"} title={option.credential_source === "environment" ? t("modelSettingsPanel.thisProviderIsConnectedFromTheEnvironment") : undefined} onSelect={onRemove}>{removeText}</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </span>
         </div>
         {expanded ? (

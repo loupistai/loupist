@@ -61,9 +61,10 @@ export function MarketplaceCard({ entry, connector, onSetup, headingLevel = 4 }:
         </div>
       </div>
       <div className="marketplace-entry-actions">
-        <span className="connection-status" data-tone={state.tone}>
+        {/* Twenty grey "Not connected" labels say nothing: only Ready and what needs attention are marked. */}
+        {state.tone === "neutral" ? null : <span className="connection-status" data-tone={state.tone}>
           <span aria-hidden="true" />{state.label}
-        </span>
+        </span>}
         {onSetup ? <Button type="button" size="sm" variant="ghost" aria-label={setupEntryLabel(entry, connector)} onClick={() => onSetup(entry)}>{action}<ChevronRightIcon /></Button> : null}
       </div>
     </article>

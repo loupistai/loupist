@@ -97,10 +97,10 @@
     "unavailable": "{{name}} 사용 불가"
   },
   "navigation": {
-    "connections": "연결",
+    "connections": "데이터 연결",
     "connectionsDataSourcesApiKeyDartKrxOpenbb": "연결 자료 제공처 API 키 DART KRX OpenBB",
     "addDataSourcesAndChooseWhichLoupistsCan": "자료 제공처를 추가하고 사용할 루피스트를 선택해 주세요.",
-    "modelsProviders": "AI 모델 및 서비스",
+    "modelsProviders": "AI 계정",
     "accountsConnectApiKeySignInModels": "계정 연결 API 키 로그인 모델",
     "connectYourAccountsAndChooseTheModelsAvailable": "루피스트가 대화에서 쓸 AI 모델을 골라요.",
     "modelsCaption": "AI 계정",

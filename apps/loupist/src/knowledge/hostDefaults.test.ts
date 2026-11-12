@@ -15,7 +15,7 @@ it("shows the host-default perspective title and English default headings in the
   expect(displaySectionHeading("custom", "Custom")).toBe("Custom");
 });
 
-it("keeps the English words in English", () => {
-  expect(displayPageTitle("perspective", "Outlook")).toBe("Outlook");
+it("words the host perspective in English and keeps other English titles", () => {
+  expect(displayPageTitle("perspective", "Outlook")).toBe("Perspective");
   expect(displaySectionHeading("value-chain", "Value chain")).toBe("Value chain");
 });

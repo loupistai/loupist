@@ -189,7 +189,6 @@
   "sharedTag": "공유됨",
   "sharedFrom": "공유됨 · {{author}}의 {{pack}}",
   "aboutPack": "이 공유 루피스트 정보",
-  "growthRollup": "{{pack}}에서 이름 {{formattedCount}}개 추가",
   "sharedTitle": "추가한 공유 루피스트",
   "addedOn": "{{date}} 추가 · 버전 {{version}}",
   "checkUpdates": "업데이트 확인",
@@ -227,6 +226,5 @@
   },
   "deepTitle": "공유된 루피스트를 열까요?",
   "deepBody": "이 링크로 GitHub에 공유된 루피스트를 열려고 해요. 링크는 어디서나 올 수 있으니, 추가하기 전에 모든 내용을 먼저 보여 드려요.",
-  "linkBad": "이 링크는 열 수 없어요.",
-  "readmeNotice": "AI 리서치 동료 루피스트로 만들었어요. 분석 방법, 원칙과 지도는 AI의 도움으로 작성되어 틀릴 수 있어요. 투자 조언이 아니에요."
+  "linkBad": "이 링크는 열 수 없어요."
 }

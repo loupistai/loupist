@@ -96,10 +96,10 @@
     "unavailable": "{{name}} unavailable"
   },
   "navigation": {
-    "connections": "Connections",
+    "connections": "Data connections",
     "connectionsDataSourcesApiKeyDartKrxOpenbb": "connections data sources api key dart krx openbb",
     "addDataSourcesAndChooseWhichLoupistsCan": "Add data sources and choose which Loupists can use them.",
-    "modelsProviders": "Models & providers",
+    "modelsProviders": "AI accounts",
     "accountsConnectApiKeySignInModels": "accounts connect api key sign in models",
     "connectYourAccountsAndChooseTheModelsAvailable": "Choose which AI models your Loupists can use in Chat.",
     "modelsCaption": "Your AI accounts",
