@@ -2,7 +2,7 @@ import i18n, { useTranslation } from "@/i18n";
 import { chatSessionKey } from "../../chat/sessionRegistry";
 import { useState } from "react";
 import {
-  ArrowLeftIcon, PlusIcon, SearchIcon, Settings2Icon, XIcon,
+  ArrowLeftIcon, CalendarClockIcon, PlusIcon, SearchIcon, Settings2Icon, XIcon,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
@@ -15,7 +15,8 @@ import { LoupistChatItem } from "./LoupistChatItem";
 import { NeedsAttention } from "./NeedsAttention";
 import type { AttentionItem } from "../../contracts/attention";
 import { getLoupistChatList, recentLoupistChats } from "./loupistNavigation";
-import { shortcutFor } from "../../app/shortcuts";
+import { shortcutFor, tabShortcut } from "../../app/shortcuts";
+import { APP_DESTINATIONS } from "../../app/navigation";
 import type { ChatThread, LoupistSummary } from "../../types";
 import "../../styles/navigation.css";
 
@@ -45,12 +46,14 @@ type Props = {
   onSearch: () => void;
   onDeleteThread: (thread: ChatThread) => void;
   onExportThread?: (thread: ChatThread, format: "md" | "pdf") => void;
+  /** Unread scheduled results for the selected Loupist, shown on the Schedule row. */
+  scheduleUnread?: number;
 };
 
 export function AppNavigation({
   attention = [], finishedThreadKeys = new Set(), onOpenAttention, onMoreAttention, tab, selectedLoupist, loading, threadsByLoupist, activeThreadId,
   runningThreadKeys, draftThreadKeys = new Set(), settingsSection, updateAvailable, onTabChange, onSettingsSectionChange, onExitSettings,
-  onCreateThread, onSelectThread, onRenameThread, onDeleteThread, onExportThread, onSearch,
+  onCreateThread, onSelectThread, onRenameThread, onDeleteThread, onExportThread, onSearch, scheduleUnread = 0,
 }: Props) {
   useTranslation();
   const { isMobile, setOpenMobile, state } = useSidebar();
@@ -59,9 +62,12 @@ export function AppNavigation({
   const canStartChat = selectedLoupist != null && !loading && selectedLoupist.availability.status === "available";
   const [settingsSearch, setSettingsSearch] = useState("");
   const recent = selectedLoupist ? recentLoupistChats(getLoupistChatList(threadsByLoupist[selectedLoupist.id]), activeThreadId, selectedLoupist.id) : [];
+  const iconOnly = !isMobile && state === "collapsed";
+  const scheduleLabel = i18n.t("app:shell.tabs.schedule");
+  const sessions = recent.filter(thread => !thread.home);
   const row = (thread: ChatThread) => {
     const key = chatSessionKey(thread.loupist_id, thread.id);
-    return <LoupistChatItem iconOnly={!isMobile && state === "collapsed"} key={key} thread={thread} active={thread.id === activeThreadId} running={runningThreadKeys.has(key)} finished={finishedThreadKeys.has(key)} draft={draftThreadKeys.has(key)}
+    return <LoupistChatItem iconOnly={iconOnly} key={key} thread={thread} active={thread.id === activeThreadId} running={runningThreadKeys.has(key)} finished={finishedThreadKeys.has(key)} draft={draftThreadKeys.has(key)}
       onSelect={item => { onSelectThread(item); closeMobile(); }} onSchedule={thread.home ? () => navigate("schedule") : undefined} onRename={onRenameThread} onDelete={onDeleteThread} onExport={onExportThread} />;
   };
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
@@ -117,14 +123,25 @@ export function AppNavigation({
           <SearchIcon /><span>{i18n.t("app:shell.search")}</span><kbd aria-hidden="true">{searchShortcut}</kbd>
         </Button>
         <Button variant="ghost" className="navigation-command navigation-new" data-testid="navigation-new" disabled={!canStartChat} aria-label={state === "collapsed" && !isMobile ? i18n.t("app:shell.newResearch") : undefined}
-          title={`${i18n.t("app:shell.newResearch")} ${newChatShortcut}`} onClick={() => { if (selectedLoupist) onCreateThread(selectedLoupist.id); closeMobile(); }}>
+          title={`${i18n.t("app:shell.newResearchHint")} ${newChatShortcut}`} onClick={() => { if (selectedLoupist) onCreateThread(selectedLoupist.id); closeMobile(); }}>
           <PlusIcon /><span>{i18n.t("app:shell.newResearch")}</span><kbd aria-hidden="true">{newChatShortcut}</kbd>
         </Button>
       </SidebarHeader>
       <SidebarContent>{onOpenAttention ? <NeedsAttention items={attention} onOpen={(item) => { onOpenAttention(item); closeMobile(); }} onMore={onMoreAttention ? () => { onMoreAttention(); closeMobile(); } : undefined} /> : null}<SidebarGroup className="loupist-navigation" data-testid="loupist-navigation">
-        <SidebarMenu>{recent.filter(thread => thread.home).map(row)}</SidebarMenu>
+        <SidebarMenu>{recent.filter(thread => thread.home).map(row)}
+          {selectedLoupist ? <SidebarMenuItem className="loupist-chat-row loupist-schedule-row">
+            <SidebarMenuButton type="button" className="loupist-chat-button" data-sidebar-schedule isActive={tab === "schedule"} aria-current={tab === "schedule" ? "page" : undefined}
+              aria-label={iconOnly ? scheduleLabel : undefined} aria-describedby={scheduleUnread > 0 ? "sidebar-schedule-unread" : undefined}
+              title={`${scheduleLabel} ${tabShortcut(APP_DESTINATIONS.findIndex(item => item.id === "schedule") + 1)}`} onClick={() => navigate("schedule")}>
+              <CalendarClockIcon className="loupist-home-icon" aria-hidden="true" />
+              {iconOnly ? null : <span className="loupist-chat-title">{scheduleLabel}</span>}
+              {scheduleUnread > 0 ? <><span className="shell-unread" aria-hidden="true">{scheduleUnread}</span><span className="sr-only" id="sidebar-schedule-unread">{i18n.t("app:shell.unreadBriefings", { count: scheduleUnread })}</span></> : null}
+            </SidebarMenuButton>
+          </SidebarMenuItem> : null}
+        </SidebarMenu>
         <div className="loupist-list-heading"><SidebarGroupLabel>{i18n.t("app:shell.sessions")}</SidebarGroupLabel></div>
-        <SidebarMenu>{(isMobile || state === "expanded") && recent.filter(thread => !thread.home).map(row)}</SidebarMenu>
+        {iconOnly ? null : sessions.length ? <SidebarMenu>{sessions.map(row)}</SidebarMenu>
+          : <p className="loupist-sessions-empty" data-sessions-empty>{i18n.t("app:shell.sessionsEmpty")}</p>}
       </SidebarGroup></SidebarContent>
       <SidebarFooter className="navigation-footer">
 

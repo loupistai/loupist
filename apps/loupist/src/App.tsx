@@ -807,6 +807,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
         <div className="app-body">
         <AppNavigation
           tab={tab}
+          scheduleUnread={selectedLoupist ? inboxCounts[selectedLoupist.id] ?? 0 : 0}
           selectedLoupist={selectedLoupist}
           loading={loupist.loading}
           threadsByLoupist={chat.threadsByLoupist}

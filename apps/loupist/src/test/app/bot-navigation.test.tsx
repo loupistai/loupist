@@ -102,3 +102,13 @@ it("reopens an inline file reference in its sentence and sends its original path
   await user.click(screen.getByRole("button", { name: "Send" }));
   await vi.waitFor(() => expect(send.mock.calls[0]?.[0].prompt).toBe("Compare reports/report.md with last year."));
 });
+
+it("opens Schedule from its sidebar row under Bot", async () => {
+  const user = userEvent.setup();
+  await openApp();
+  const row = screen.getByRole("button", { name: "Schedule" });
+  expect(row).not.toHaveAttribute("aria-current");
+  await user.click(row);
+  expect(await screen.findByRole("region", { name: "Schedule" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Schedule" })).toHaveAttribute("aria-current", "page");
+});

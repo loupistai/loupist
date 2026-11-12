@@ -45,6 +45,8 @@
 [data-collapsible="icon"] .loupist-chat-row :is(.loupist-draft-dot, .loupist-status-dot, .thread-running, .loupist-private-mark) { position: absolute; top: var(--gg-space-1); right: var(--gg-space-1); margin: 0; }
 
 .shell-unread { margin-inline-start: var(--gg-space-2); }
+.loupist-schedule-row .shell-unread { margin-inline-start: auto; }
+.loupist-sessions-empty { margin: var(--gg-space-1) var(--gg-space-2) 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 
 /* Needs attention (E1): rows above the Loupists with a status dot; hidden when empty. */
 .needs-attention ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
