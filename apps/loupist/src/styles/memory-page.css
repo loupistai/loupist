@@ -24,12 +24,13 @@
 .memory-page:lang(ko) .memory-section-label { letter-spacing: 0; text-transform: none; }
 .memory-section-description { margin: var(--gg-space-1) 0 var(--gg-space-3); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .memory-page-list ul { display: grid; gap: var(--gg-space-1); margin: 0; padding: 0; list-style: none; }
-.memory-row { display: flex; align-items: flex-start; gap: var(--gg-space-3); width: 100%; min-height: 52px; padding: var(--gg-space-3) var(--gg-space-4); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.memory-row:hover { background: var(--gg-color-bg-hover); }
-.memory-row[aria-current="true"] { background: var(--gg-color-bg-selected); }
-.memory-row > span { display: grid; gap: 2px; min-width: 0; }
-.memory-row strong { display: -webkit-box; overflow: hidden; font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
-.memory-row small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+/* Scoped: the answer footer also has a .memory-row (chat.css), and its grid, margin and grey must not reach this list. */
+.memory-page .memory-row { display: flex; align-items: flex-start; gap: var(--gg-space-3); width: 100%; min-height: 52px; padding: var(--gg-space-3) var(--gg-space-4); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: inherit; font: inherit; text-align: left; margin-top: 0; cursor: pointer; }
+.memory-page .memory-row:hover { background: var(--gg-color-bg-hover); }
+.memory-page .memory-row[aria-current="true"] { background: var(--gg-color-bg-selected); }
+.memory-page .memory-row > span { display: grid; gap: 2px; min-width: 0; }
+.memory-page .memory-row strong { display: -webkit-box; overflow: hidden; font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.memory-page .memory-row small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
 .memory-marker { flex: none; width: 10px; height: 10px; margin-top: 6px; border-radius: 3px; }
 .memory-marker.is-principle { background: var(--gg-color-map-principle); }
 .memory-marker.is-method { border: 2px solid var(--gg-color-map-method); }
@@ -77,6 +78,9 @@
 
 /* One column when the pane cannot hold the 480px list, the gap, and the 420px reader.
    971px is that pair plus the page padding. The pane, not the window, is the measure, so a docked panel counts. */
+/* Side by side, the reader starts level with the list: no empty toolbar row (Back is hidden) and no top inset. */
+.page-reader-toolbar:has(> .memory-reader-back:only-child) { display: none; }
+.workspace-lens-content .memory-page-body > .memory-reader.is-lens { padding-top: 0; }
 @container memory-pane (max-width: 971px) {
   .memory-page { padding: var(--gg-space-3) var(--gg-space-4) var(--gg-space-6); }
   .memory-page-body, .memory-page-body[data-segment="history"] { grid-template-columns: minmax(0, 1fr); }
@@ -85,6 +89,7 @@
   .memory-page:not([data-reader-open]) .memory-reader { display: none; }
   .memory-page[data-reader-open] .memory-page-list { display: none; }
   .memory-page[data-reader-open] .memory-reader-back { display: inline-flex; margin: 0 0 var(--gg-space-2) calc(var(--gg-space-2) * -1); }
+  .memory-page[data-reader-open] .page-reader-toolbar { display: flex; }
   .memory-page-tabs { max-width: 100%; min-width: 0; overflow-x: auto; }
   .memory-page-search { width: 100%; }
 }
@@ -93,7 +98,7 @@
   .memory-tab-full { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
   .memory-tab-short { display: inline; }
   .memory-page-tabs { height: auto; min-height: var(--gg-size-control-sm); }
-  .memory-row small { display: none; }
+  .memory-page .memory-row small { display: none; }
   .memory-reader { padding: var(--gg-space-4); }
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -107,5 +112,5 @@
 .memory-reset-counts dd { margin: 0; font-variant-numeric: tabular-nums; }
 .memory-reset-confirm { display: grid; gap: var(--gg-space-2); margin-top: var(--gg-space-4); }
 
-.memory-group-label { display: flex; align-items: baseline; gap: var(--gg-space-2); }
+.memory-group-label { display: flex; align-items: baseline; gap: var(--gg-space-2); margin-top: var(--gg-space-3); }
 .memory-group-count { color: var(--gg-color-text-tertiary); font-variant-numeric: tabular-nums; }
