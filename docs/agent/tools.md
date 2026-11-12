@@ -19,6 +19,11 @@ non-null optional `world_read` revision, span and center-node IDs must be bounde
 strings.
 The runtime profile advertises a native finance tool only when its vendor's exact
 capability is enabled: enabling public wallets alone does not expose DefiLlama.
+Each execution checks the Chat's live database binding without loading its
+transcript. Dataset file/query work and Lens search run on blocking workers;
+captured results reuse their measured byte size through reservation and delivery.
+Native finance and bundled MCP reads share one dataset-retention writer, keeping
+their existing provenance metadata and reuse rules.
 Internal storage failures and free-form finance diagnostics return host-owned
 repair messages rather than raw errors, URLs or private paths. Native finance
 results refuse an echoed API key before capture or retention; bundled MCP also

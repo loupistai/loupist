@@ -5,7 +5,7 @@ use super::arguments::{bounded_text, optional_bounded_text, optional_unique_stri
 use super::*;
 
 impl AppToolExecutor {
-    pub(super) async fn lens_search(
+    pub(super) fn lens_search(
         &self,
         policy: &ToolPolicy,
         params: Value,

@@ -672,8 +672,18 @@ impl AppToolExecutor {
         } else {
             let reused = retained.is_some();
             let compact = payload.to_string().len() > 16 * 1024;
-            let (reference, fetched_at) =
-                self.retain_mcp_read(&plan, &payload, retained, compact)?;
+            let (reference, fetched_at) = match retained {
+                Some(retained) => retained,
+                None => {
+                    let (reference, fetched_at) = self.retain_dataset(
+                        &plan.request_key,
+                        &payload,
+                        json!({"producer":"mcp", "request":plan.capture_request,"publication_policy":"provider-declared; unknown availability is not point-in-time evidence","model_coverage":if compact {"bounded_sample"} else {"complete"},
+                            "trust": crate::custom_connections::taint::retained_trust(ToolMethod::McpCall, &plan.capture_request, &self.state.artifacts.mcp_runtimes)}),
+                    )?;
+                    (reference, Some(fetched_at))
+                }
+            };
             let mut model_payload =
                 self.shape_mcp_read(&mut payload, &reference, fetched_at, reused, compact)?;
             let result_ref = match self
@@ -806,29 +816,6 @@ impl AppToolExecutor {
             capture_request,
             request_key,
         })
-    }
-
-    /// Provenance: the dataset revision that retains a data read in full, the
-    /// reused one or a new one recorded with its request and trust.
-    fn retain_mcp_read(
-        &self,
-        plan: &McpCallPlan,
-        payload: &Value,
-        retained: Option<(crate::datasets::DatasetRef, Option<String>)>,
-        compact: bool,
-    ) -> Result<(crate::datasets::DatasetRef, Option<String>), BrokerError> {
-        if let Some(retained) = retained {
-            return Ok(retained);
-        }
-        let fetched_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-        let reference = self.state.store.dataset_put(
-            &self.loupist_id,
-            &plan.request_key,
-            payload,
-            json!({"producer":"mcp", "request":plan.capture_request,"fetched_at":fetched_at,"publication_policy":"provider-declared; unknown availability is not point-in-time evidence","model_coverage":if compact {"bounded_sample"} else {"complete"},
-                "trust": crate::custom_connections::taint::retained_trust(ToolMethod::McpCall, &plan.capture_request, &self.state.artifacts.mcp_runtimes)}),
-        ).map_err(|error| BrokerError::Execution(error.to_string()))?;
-        Ok((reference, Some(fetched_at)))
     }
 
     /// Result shaping: stamps the retained dataset on the full payload and, for

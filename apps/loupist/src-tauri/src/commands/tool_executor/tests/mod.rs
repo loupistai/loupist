@@ -276,6 +276,7 @@ mod web_as_of;
 mod workspace;
 
 mod custom_connections;
+mod execution_work;
 mod release_boundaries;
 mod runtime_profile;
 

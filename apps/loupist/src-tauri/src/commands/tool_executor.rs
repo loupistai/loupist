@@ -225,7 +225,7 @@ struct PendingToolCapture {
     memories: HashMap<String, MemoryRefSnapshot>,
     web_sources: HashMap<String, crate::web::WebSource>,
     web_fetch_snapshots: HashMap<String, RunWebFetchSnapshot>,
-    run_results: BTreeMap<String, RunResult>,
+    run_results: BTreeMap<String, CapturedRunResult>,
     staged_sources: Vec<StagedSource>,
     staged_reads: Vec<StagedKnowledgeRead>,
     note_reads: BTreeSet<String>,
@@ -240,6 +240,11 @@ struct PendingToolCapture {
     artifact_reads: BTreeSet<(String, u32)>,
     handoff: Option<crate::chat::handoff::StagedHandoff>,
     call_id: Option<String>,
+}
+
+struct CapturedRunResult {
+    result: RunResult,
+    bytes: usize,
 }
 
 pub(crate) use crate::broker::tool_class::RunResultOrigin;
@@ -277,8 +282,17 @@ impl RunResultRegistry {
         self.results.get(result_ref)
     }
 
+    #[cfg(test)]
     fn insert(&mut self, result: RunResult) -> Result<(), BrokerError> {
-        let bytes = run_result_bytes(&result)?;
+        let payload_bytes = serde_json::to_vec(&result.payload)
+            .map_err(|_| BrokerError::Execution("tool result could not be captured".into()))?
+            .len();
+        let bytes = run_result_bytes(&result, payload_bytes);
+        self.insert_captured(CapturedRunResult { result, bytes })
+    }
+
+    fn insert_captured(&mut self, captured: CapturedRunResult) -> Result<(), BrokerError> {
+        let CapturedRunResult { result, bytes } = captured;
         if bytes > MAX_RUN_RESULT_BYTES
             || self.results.len() >= MAX_RUN_RESULTS
             || self
@@ -529,7 +543,7 @@ impl ToolCapture {
             warnings,
             upstream_result_refs,
         };
-        let result_bytes = run_result_bytes(&result)?;
+        let result_bytes = run_result_bytes(&result, response_bytes.len());
         if result_bytes > MAX_RUN_RESULT_BYTES {
             return Err(BrokerError::Execution(
                 "tool result exceeded the run result capture limit".into(),
@@ -544,9 +558,7 @@ impl ToolCapture {
         let pending_bytes = pending
             .values()
             .flat_map(|capture| capture.run_results.values())
-            .try_fold(0_usize, |total, result| {
-                total.checked_add(run_result_bytes(result).ok()?)
-            })
+            .try_fold(0_usize, |total, captured| total.checked_add(captured.bytes))
             .ok_or_else(|| {
                 BrokerError::Execution("run result registry capacity was exceeded".into())
             })?;
@@ -565,7 +577,13 @@ impl ToolCapture {
             .entry(delivery_id.to_owned())
             .or_default()
             .run_results
-            .insert(result_ref.clone(), result);
+            .insert(
+                result_ref.clone(),
+                CapturedRunResult {
+                    result,
+                    bytes: result_bytes,
+                },
+            );
         drop(pending);
         drop(committed);
         Ok(result_ref)
@@ -612,10 +630,10 @@ impl ToolCapture {
         };
         let call_id = pending.call_id.clone();
         let mut delivered_evidence = Vec::new();
-        for (_, result) in std::mem::take(&mut pending.run_results) {
-            delivered_evidence.push(evidence::project(&result));
+        for (_, captured) in std::mem::take(&mut pending.run_results) {
+            delivered_evidence.push(evidence::project(&captured.result));
             registry
-                .insert(result)
+                .insert_captured(captured)
                 .expect("staged run result budget was checked before delivery");
         }
         drop(pending_deliveries);
@@ -803,29 +821,25 @@ fn memory_authority_rank(memory: &MemoryRefSnapshot) -> u8 {
     }
 }
 
-fn run_result_bytes(result: &RunResult) -> Result<usize, BrokerError> {
-    serde_json::to_vec(&result.payload)
-        .map(|payload| {
-            payload.len()
-                + result.model_delivery.as_ref().map_or(0, |delivery| {
-                    delivery.excerpt.len() + delivery.content_sha256.len() + 64
-                })
-                + result.result_ref.len()
-                + result.producer.runtime_id.len()
-                + result.producer.tool_name.len()
-                + result.producer.provider.as_deref().map_or(0, str::len)
-                + result.origin.as_deref().map_or(0, str::len)
-                + result.request_digest.len()
-                + result.response_digest.len()
-                + result.retrieved_at.len()
-                + result.warnings.iter().map(String::len).sum::<usize>()
-                + result
-                    .upstream_result_refs
-                    .iter()
-                    .map(String::len)
-                    .sum::<usize>()
+fn run_result_bytes(result: &RunResult, payload_bytes: usize) -> usize {
+    payload_bytes
+        + result.model_delivery.as_ref().map_or(0, |delivery| {
+            delivery.excerpt.len() + delivery.content_sha256.len() + 64
         })
-        .map_err(|_| BrokerError::Execution("tool result could not be captured".into()))
+        + result.result_ref.len()
+        + result.producer.runtime_id.len()
+        + result.producer.tool_name.len()
+        + result.producer.provider.as_deref().map_or(0, str::len)
+        + result.origin.as_deref().map_or(0, str::len)
+        + result.request_digest.len()
+        + result.response_digest.len()
+        + result.retrieved_at.len()
+        + result.warnings.iter().map(String::len).sum::<usize>()
+        + result
+            .upstream_result_refs
+            .iter()
+            .map(String::len)
+            .sum::<usize>()
 }
 
 fn result_origin(request: &Value) -> Option<String> {
@@ -1005,6 +1019,17 @@ impl ToolExecutor for AppToolExecutor {
 }
 
 impl AppToolExecutor {
+    /// File and local dataset/index work must not occupy an async worker.
+    async fn blocking_tool<F>(&self, operation: F) -> Result<Value, BrokerError>
+    where
+        F: FnOnce(Self) -> Result<Value, BrokerError> + Send + 'static,
+    {
+        let executor = self.clone();
+        tokio::task::spawn_blocking(move || operation(executor))
+            .await
+            .map_err(|_| BrokerError::Execution("local tool execution failed".into()))?
+    }
+
     async fn execute_staged(
         &self,
         policy: &ToolPolicy,
@@ -1079,11 +1104,20 @@ impl AppToolExecutor {
             }
             ToolMethod::BotMemory => self.stage_bot_memory(policy, params, delivery_id).await,
             ToolMethod::ChatHistory => self.chat_history(policy, params),
-            ToolMethod::DatasetExport => self.dataset_export(policy, params),
-            ToolMethod::DatasetDescribe | ToolMethod::DatasetQuery => {
-                self.dataset_tool(policy, method, params)
+            ToolMethod::DatasetExport
+            | ToolMethod::DatasetDescribe
+            | ToolMethod::DatasetQuery
+            | ToolMethod::DatasetImport
+            | ToolMethod::LensSearch => {
+                let policy = policy.clone();
+                self.blocking_tool(move |executor| match method {
+                    ToolMethod::DatasetExport => executor.dataset_export(&policy, params),
+                    ToolMethod::DatasetImport => executor.dataset_import(params),
+                    ToolMethod::LensSearch => executor.lens_search(&policy, params),
+                    _ => executor.dataset_tool(&policy, method, params),
+                })
+                .await
             }
-            ToolMethod::DatasetImport => self.dataset_import(params),
             ToolMethod::Calculate => self.calculate(policy, params).await,
             ToolMethod::WorldbankSeries => self.worldbank_series(policy, params).await,
             ToolMethod::DefillamaRead => self.defillama_read(policy, params).await,
@@ -1106,7 +1140,6 @@ impl AppToolExecutor {
             ToolMethod::SourceSave => self.stage_source_save(policy, params, delivery_id).await,
             ToolMethod::WorldSearch => self.world_search(policy, params).await,
             ToolMethod::WorldRead => self.world_read(policy, params, delivery_id).await,
-            ToolMethod::LensSearch => self.lens_search(policy, params).await,
             ToolMethod::LensRead => self.lens_read(policy, params, delivery_id).await,
             ToolMethod::WorldJob => self.world_job(policy, params).await,
             ToolMethod::ConversationMemory => {
@@ -1229,12 +1262,11 @@ impl AppToolExecutor {
                     true,
                 ),
                 None => {
-                    let fetched_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-                    let reference = self.state.store.dataset_put(
-                        &self.loupist_id, &request_key, &result,
-                        json!({"producer": format!("{method:?}"), "request": request, "fetched_at": fetched_at, "as_of": effective_as_of(policy, &request)?.map(|cutoff| cutoff.to_string()), "upstream_result_refs": upstream, "coverage": {"retained":"complete provider result", "model": if compact {"bounded sample"} else {"complete"}},
+                    let (reference, fetched_at) = self.retain_dataset(
+                        &request_key, &result,
+                        json!({"producer": format!("{method:?}"), "request": request, "as_of": effective_as_of(policy, &request)?.map(|cutoff| cutoff.to_string()), "upstream_result_refs": upstream, "coverage": {"retained":"complete provider result", "model": if compact {"bounded sample"} else {"complete"}},
                             "trust": crate::custom_connections::taint::retained_trust(method, &request, &self.state.artifacts.mcp_runtimes)}),
-                    ).map_err(|error| BrokerError::Execution(error.to_string()))?;
+                    )?;
                     (reference, json!(fetched_at), false)
                 }
             };
@@ -1254,7 +1286,7 @@ impl AppToolExecutor {
                     .state
                     .store
                     .dataset_describe(&self.loupist_id, &reference.dataset_id, reference.revision)
-                    .map_err(|error| BrokerError::Execution(error.to_string()))?;
+                    .map_err(command_error)?;
                 Some(
                     json!({"dataset_ref":reference, "fetched_at":result.get("fetched_at"), "data_summary":description, "receipt":result.get("receipt"), "quality":result.get("quality"), "warnings":result.get("warnings"), "model_delivery":result.get("model_delivery")}),
                 )
