@@ -198,7 +198,7 @@
 /* Connected accounts are summaries first; model management stays close by. */
 /* Provider cards (providers spec §2.3): state, credential, billing, one notice, then models. */
 .provider-card-list { display: grid; gap: var(--gg-space-3); padding: 0; margin: var(--gg-space-2) 0 0; list-style: none; }
-.provider-card { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.provider-card { display: grid; gap: var(--gg-space-2); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .provider-card-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--gg-space-3); min-width: 0; }
 .provider-card-heading h3 { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
 .provider-card-meta { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }

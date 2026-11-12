@@ -658,8 +658,6 @@
     "noticeNoCredit": "이 계정의 크레딧이 떨어졌어요.",
     "lastLimit": "마지막 한도 도달: {{date}}",
     "reconnectBody": "로그인이 더 이상 작동하지 않아요. 다시 연결하면 이어서 쓸 수 있어요. 대화와 지도는 그대로예요.",
-    "chatUses": "대화 모델: {{model}}",
-    "chatUsesAuto": "대화 모델: 자동",
     "models": "모델 ({{formattedCount}})",
     "inMenu": "메뉴에 표시",
     "more": "다른 AI 계정 ({{formattedCount}})",
@@ -675,6 +673,10 @@
     "hideKey": "숨기기",
     "addProvider": "AI 계정 추가",
     "connectedRecommended": "추천",
-    "usedBy_other": "예약 작업 {{formattedCount}}개가 아직 이 계정을 써요."
+    "usedBy_other": "예약 작업 {{formattedCount}}개가 아직 이 계정을 써요.",
+    "chatDefault": "대화 기본 모델: {{model}}",
+    "changeKey": "키 바꾸기…",
+    "reconnectEllipsis": "다시 연결…",
+    "moreActions": "{{label}} 더보기"
   }
 }

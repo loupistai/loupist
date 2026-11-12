@@ -365,10 +365,11 @@ describe("Loupist · Model providers", () => {
     await openModelSettings(user);
     const connected = await screen.findByRole("list", { name: "Connected providers" });
     expect(within(connected).getByRole("heading", { name: "ChatGPT" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Disconnect ChatGPT" }));
+    await user.click(screen.getByRole("button", { name: "More actions for ChatGPT" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Disconnect ChatGPT" }));
     await user.click(within(await screen.findByRole("dialog", { name: "Disconnect ChatGPT?" })).getByRole("button", { name: "Disconnect" }));
     await waitFor(() => expect(disconnect).toHaveBeenCalledWith("openai"));
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Disconnect ChatGPT" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "More actions for ChatGPT" })).not.toBeInTheDocument());
   });
 
   it("hides unchecked models and blocks Chat when no visible model remains", async () => {

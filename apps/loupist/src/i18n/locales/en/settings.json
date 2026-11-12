@@ -657,8 +657,6 @@
     "noticeNoCredit": "This account is out of credit.",
     "lastLimit": "Last reached its limit {{date}}",
     "reconnectBody": "Your sign-in stopped working. Reconnect to keep going; your chats and map are safe.",
-    "chatUses": "Chat uses: {{model}}",
-    "chatUsesAuto": "Chat uses: Auto",
     "models": "Models ({{formattedCount}})",
     "inMenu": "In menu",
     "more": "Other AI accounts ({{formattedCount}})",
@@ -675,6 +673,10 @@
     "addProvider": "Add an AI account",
     "connectedRecommended": "Recommended",
     "usedBy_one": "{{formattedCount}} schedule still uses this account.",
-    "usedBy_other": "{{formattedCount}} schedules still use this account."
+    "usedBy_other": "{{formattedCount}} schedules still use this account.",
+    "chatDefault": "Chat default: {{model}}",
+    "changeKey": "Change key…",
+    "reconnectEllipsis": "Reconnect…",
+    "moreActions": "More actions for {{label}}"
   }
 }
