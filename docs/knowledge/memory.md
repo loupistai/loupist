@@ -11,7 +11,9 @@ names its contents, with two tabs, Pages and History. What the user follows, hol
 Watching live on the [Following page](follow.md#what-you-follow) (`components/briefings/FollowingPage.tsx`):
 followed assets in one table per class with a Watch-for checkbox per kind, add (a bare
 six-digit code is a KRX listing), remove, a quiet "Adding to the map…" line while
-`knowledge_followed_status` reports queued or running work, holdings as a count and date
+`knowledge_followed_status` reports queued, running or waiting work (read again every few seconds
+until it settles), a quiet "Couldn't load Watching settings." line with Try again when those
+settings fail to load, holdings as a count and date
 per kind from `holdings_summary` with Import holdings, Watch all through
 `watch_defaults_apply` (also offered on the first follow receipt in chat; both list each kind that
 still needs a data connection, linked to Settings › Data connections), Check now and Pause.

@@ -93,3 +93,21 @@ it("gives each asset class its own table, says why a class kind does not apply, 
   expect(within(recent).getByText(/^Corvid Token closed 21\.4% below its 90-day high/)).toBeVisible();
   // "Watch" on a coin watched nowhere here turns on the class kinds that apply.
 });
+
+it("reaches every followed asset on the Following page when watched and not-watched pass 50 together", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const [loupist] = await bridge.loupistList() as LoupistSummary[];
+  bridge.watch.install(loupist!.id, previewWatchSettings(), []);
+  const settings = await bridge.watchSettingsList({ loupistId: loupist!.id });
+  const template = settings.watched[1]!;
+  const notWatched = Array.from({ length: 50 }, (_, index) => ({ ...template, assetId: `${template.assetId}-${index}`, symbol: `NW${index}`, name: `Unwatched ${index}`,
+    kinds: template.kinds.map(kind => ({ ...kind, enabled: false })) }));
+  render(<WatchingReader bridge={bridge} loupist={loupist!} settings={{ ...settings, notWatched }} embedded />);
+  const user = userEvent.setup();
+  const article = screen.getByRole("article", { name: "Watching" });
+  expect(within(article).getByText("Unwatched 46")).toBeVisible();
+  expect(within(article).queryByText("Unwatched 49")).toBeNull();
+  await user.click(within(article).getByRole("button", { name: "Show all" }));
+  expect(within(article).getByText("Unwatched 49")).toBeVisible();
+  expect(within(article).queryByRole("button", { name: "Show all" })).toBeNull();
+});

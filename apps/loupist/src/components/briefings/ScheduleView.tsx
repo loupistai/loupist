@@ -126,6 +126,19 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     catch { setError(true); }
   }, [bridge, loupist.id]);
   useEffect(() => { if (focusTaskId && focusTaskId !== WATCHING_TASK_ID) void loadHistory(focusTaskId); }, [focusTaskId, loadHistory, tasks]);
+  // A run left open while it runs (Run now): the refreshed task list and history carry its
+  // result, so the reader takes the new snapshot and loads the answer.
+  useEffect(() => {
+    if (!selected) return;
+    // One list may be a read behind the other; a settled copy wins over a running one.
+    const copies = [...tasks.flatMap(task => task.latest_run ? [task.latest_run] : []), ...Object.values(history).flat()]
+      .filter(run => run.run_id === selected.runId);
+    const fresh = copies.find(run => run.status !== "running") ?? copies[0];
+    if (!fresh || (fresh.status === selected.status && fresh.message_id === selected.messageId)) return;
+    const next = inboxItemOf(fresh);
+    setSelected(current => current?.runId === next.runId ? { ...next, readAtMs: current.readAtMs ?? next.readAtMs } : current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reconciles on each refresh, keyed on the open run's id and state.
+  }, [tasks, history, selected?.runId, selected?.status, selected?.messageId]);
 
   // A run opened from a notification or a Thread message: find it across pages.
   useEffect(() => {

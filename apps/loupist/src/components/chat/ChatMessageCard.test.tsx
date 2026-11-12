@@ -325,6 +325,23 @@ it("cites external grounding once, opens it, and routes saved reads to Memory", 
   expect(within(screen.getByLabelText("Work progress")).getByLabelText("Tool result")).toHaveTextContent(search.excerpt);
 });
 
+it("keeps a numbered citation on the line of the word before it, but leaves code as written", async () => {
+  const filing = evidenceFixture({ id: `ev_${"6".repeat(32)}`, title: "Annual filing" });
+  const cite = `[1](#evidence-${filing.id})`;
+  renderAnswer(answer({
+    content: `Margins rose ${cite}.\n\nRun \`total   ${cite}\` here.\n\n\`\`\`text\nrow  ${cite}\n\`\`\`\n\n    indented   ${cite}\n`,
+    evidence_refs: [filing],
+  }));
+  const paragraph = (await screen.findByText(/^Margins rose/u)).closest("p")!;
+  expect(paragraph.textContent).toMatch(/^Margins rose /u);
+  const code = [...document.querySelectorAll(".message-content code")].map((node) => node.textContent);
+  expect(code).toEqual(expect.arrayContaining([`total   ${cite}`]));
+  const blocks = [...document.querySelectorAll(".message-content pre")].map((node) => node.textContent ?? "");
+  expect(blocks.some((text) => text.includes(`row  ${cite}`))).toBe(true);
+  expect(blocks.some((text) => text.includes(`indented   ${cite}`))).toBe(true);
+  expect(document.querySelector(".message-content")!.textContent).not.toMatch(/ \[1\]/u);
+});
+
 it("opens a quote basket from the source list and the citation without the raw reader", async () => {
   const excerpt = JSON.stringify({ content: [{ type: "text", text: JSON.stringify({ results: [
     { symbol: "AAPL", name: "Apple", currency: "USD", last_price: 271.4 },

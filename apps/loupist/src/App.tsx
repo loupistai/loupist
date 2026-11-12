@@ -245,11 +245,14 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     setTab("chat");
   }, [dispatchSurface, setTab]);
   /** ⌘1–⌘4, the native View menu and the palette's open rows. */
+  const homeLoupistId = selectedLoupist?.id;
   const navigate = useCallback((destination: AppDestinationId) => {
     setMemoryPage(null);
     dispatchSurface({ type: "closeAssetPage" });
+    // ⌘1 is Home: the Loupist's home Thread (`home-{id}` on the host), not the last topic Chat.
+    if (destination === "chat" && homeLoupistId) setActiveThreadForLoupist(homeLoupistId, `home-${homeLoupistId}`);
     goTo(destination);
-  }, [dispatchSurface, goTo]);
+  }, [dispatchSurface, goTo, homeLoupistId, setActiveThreadForLoupist]);
   const startChatFor = useCallback((loupistId: string) => {
     pendingComposerFocus.current = chatSessionKey(loupistId, EMPTY_CHAT_THREAD_ID);
     showChat();
