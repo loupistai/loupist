@@ -19,5 +19,4 @@ possibly stale or absent caches. Independently check decisive results with
 `calculate` or Python. There is no spreadsheet engine or sheet renderer: report
 missing recalculation and visual checks. Link the saved file.
 
-To cite figures from an input file, ask the user to attach it to Chat (or fetch
-a PDF URL). Python extraction is working material, not citable Source evidence.
+To cite figures from an input file, ask the user to attach it to Chat. Python extraction is working material, not citable Source evidence.

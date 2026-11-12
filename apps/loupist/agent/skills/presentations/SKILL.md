@@ -18,8 +18,7 @@ Report the visual check as missing and link the saved file.
 On the last slide of decks made for others, include this line in their language:
 "Made with AI in Loupist. AI can be wrong. Not a licensed financial adviser."
 
-To cite figures from an input file, ask the user to attach it to Chat (or fetch
-a PDF URL). Python extraction is working material, not citable Source evidence.
+To cite figures from an input file, ask the user to attach it to Chat. Python extraction is working material, not citable Source evidence.
 
 Bundled PDF/chart fonts do not cover Korean, Japanese or Chinese; use Latin labels
 or offer Word or Markdown for such content. No renderer checks font fallback.

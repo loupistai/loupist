@@ -18,5 +18,4 @@ workflow. State any relevant preservation or visual limit.
 Link the saved file. End documents made for others with this line in their
 language: "Made with AI in Loupist. AI can be wrong. Not a licensed financial adviser."
 
-To cite figures from an input file, ask the user to attach it to Chat (or fetch
-a PDF URL). Python extraction is working material, not citable Source evidence.
+To cite figures from an input file, ask the user to attach it to Chat. Python extraction is working material, not citable Source evidence.
