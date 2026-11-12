@@ -1435,3 +1435,66 @@ fn explicit_watch_consent_enables_untouched_results_without_enabling_other_kinds
         TaskStatus::Paused
     );
 }
+
+#[tokio::test]
+async fn watch_pause_command_stops_reads_and_resume_restarts_them() {
+    use tauri::Manager;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    defaults(&state, "loupist-a");
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state.clone());
+    let paused = watch_pause_set(
+        app.state(),
+        WatchPauseSetRequest {
+            loupist_id: "loupist-a".into(),
+            paused: true,
+        },
+    )
+    .unwrap();
+    assert!(paused.paused);
+    let runtime = Runtime::default();
+    let mut reader = Scripted::default();
+    let at = Utc::now();
+    run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+        .await
+        .unwrap();
+    assert!(reader.calls.is_empty());
+    let resumed = watch_pause_set(
+        app.state(),
+        WatchPauseSetRequest {
+            loupist_id: "loupist-a".into(),
+            paused: false,
+        },
+    )
+    .unwrap();
+    assert!(!resumed.paused);
+    run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+        .await
+        .unwrap();
+    assert_eq!(reader.calls_to("equity_fundamental_filings"), 1);
+}
+
+#[tokio::test]
+async fn manual_watch_check_with_nothing_followed_finishes_without_a_read() {
+    use tauri::Manager;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state);
+    let checked = watch_check_now(
+        app.state(),
+        WatchCheckNowRequest {
+            loupist_id: "loupist-a".into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(checked.new_alerts, 0);
+    assert!(!checked.settings.checking);
+}
