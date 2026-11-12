@@ -2162,7 +2162,7 @@
       "permission": "always",
       "component": null,
       "label": "Ask the user",
-      "description": "Ask the user one question in a card and wait for the answer, without ending the reply. Ask only when the answer changes the work materially and no sensible default exists; otherwise assume, proceed and say what you assumed. Give 2 to 4 concrete options, mark the one you would pick with recommended (an index into options), and keep the question short. The card also lets the user type their own answer. Never ask for passwords, API keys or account numbers, and never ask permission to run tools: the host asks when it needs to. At most 2 questions per reply. If the user does not answer, the result says which option was assumed: continue with it and say so. Interactive chats only; unavailable in scheduled runs.",
+      "description": "Ask the user one question in a card and wait for the answer, without ending the reply. Ask only when the answer changes the work materially and no sensible default exists; otherwise assume, proceed and say what you assumed. Give 2 to 4 concrete options, mark the one you would pick with recommended (an index into options), and keep the question short. The card also lets the user type their own answer. Never ask for passwords, API keys or account numbers, and never ask permission to run tools: the host asks when it needs to. At most 2 questions per reply. If the user does not answer, continue with the recommended option only when the choice affects how you research or present this answer, and say which one you used. If it decides whether to delete, change, cancel, schedule, send or save something, do not do it: finish the reply and say what you need answered. Interactive chats only; unavailable in scheduled runs.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -2206,7 +2206,7 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 3,
-            "description": "Index into options of the one you would pick; assumed if the user does not answer."
+            "description": "Index into options of the one you would pick. An unanswered question permits only a research or presentation default, never permission to change anything."
           }
         }
       },

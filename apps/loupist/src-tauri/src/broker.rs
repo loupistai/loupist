@@ -365,7 +365,7 @@ pub enum BrokerError {
     ConnectionDontSave,
     #[error("request: the tool request is malformed.")]
     Malformed,
-    #[error("{field}: {expected}")]
+    #[error("{message}", message = if .field.is_empty() { .expected.clone() } else { format!("{}: {}", .field, .expected) })]
     InvalidArguments { field: String, expected: String },
     #[error("{source}")]
     WithNext {

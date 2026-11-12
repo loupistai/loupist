@@ -759,3 +759,19 @@ test('multi-step research budgets include the accumulated preloaded context', ()
     assert.equal(loaded.find(file => file.name === name).json.budget.maxInputTokensPerTurn, 500000, name);
   }
 });
+
+
+test('S-005 fails an executed deletion even when the saved-state snapshot still has both tasks', () => {
+  const suite = loaded.find(file => file.name === 'scheduling-v1.json').json;
+  const scenario = suite.scenarios.find(item => item.id === 'S-005');
+  const session = scenario.sessions[0];
+  const state = session.turns[1].expect.trace.find(item => item.assert === 'scheduled_tasks');
+  assert.equal(state.count, 2);
+  assert.ok(session.turns[1].expect.trace.some(item => item.assert === 'tool_not_called' && item.tool === 'schedule_delete'));
+  const scheduled_tasks = state.tasks.map(({ prompt_includes, ...task }, i) => ({ task_id: `task-${i}`, ...task, prompt: prompt_includes.join(' ') }));
+  for (const [extra, pass] of [[[], true], [[{ name: 'schedule_delete', outcome: 'error', error_code: 'malformed_request' }], true], [[{ name: 'schedule_delete', outcome: 'ok' }], false]]) {
+    const trace = observedTurn(suite, scenario, session, 1, { scheduled_tasks, tool_calls: [{ name: 'schedule_list', outcome: 'ok', args: {} }, ...extra] });
+    const rows = grade(suite, [trace]).results;
+    assert.equal(rows.find(row => row.assert === 'tool_not_called').pass, pass);
+  }
+});
