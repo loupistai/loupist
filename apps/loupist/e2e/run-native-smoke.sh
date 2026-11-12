@@ -39,31 +39,6 @@ fi
 # No secret and no network: the e2e catalog marker lets this credential-free
 # suite pass the ChatGPT step and open the shell. Live journeys do not set it.
 export LOUPIST_E2E_PROVIDER_READY=1
-if [ "${LOUPIST_E2E_REUSE_DEV_SERVER:-}" != "1" ] && [ -z "${LOUPIST_E2E_DEV_PORT:-}" ]; then
-    LOUPIST_E2E_DEV_PORT=$(node -e '
-      const net = require("node:net");
-      const alloc = () => new Promise((resolve, reject) => {
-        const server = net.createServer();
-        server.unref();
-        server.once("error", reject);
-        server.listen(0, "127.0.0.1", () => {
-          const port = server.address().port;
-          server.close(() => resolve(port));
-        });
-      });
-      (async () => {
-        for (let attempt = 0; attempt < 20; attempt += 1) {
-          const port = await alloc();
-          if (port !== 1420) {
-            process.stdout.write(String(port));
-            return;
-          }
-        }
-        process.exit(1);
-      })().catch((error) => { console.error(error.message); process.exit(1); });
-    ')
-    export LOUPIST_E2E_DEV_PORT
-fi
 
 cleanup() {
     status=$?

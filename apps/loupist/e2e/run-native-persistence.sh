@@ -27,32 +27,7 @@ fi
 # No secret and no network: the e2e catalog marker opens the shell without a
 # provider sign-in. Nothing in this suite sends a model request.
 export LOUPIST_E2E_PROVIDER_READY=1
-# Every launch reuses one private Vite port so the suite never needs 1420.
-if [ "${LOUPIST_E2E_REUSE_DEV_SERVER:-}" != "1" ] && [ -z "${LOUPIST_E2E_DEV_PORT:-}" ]; then
-    LOUPIST_E2E_DEV_PORT=$(node -e '
-      const net = require("node:net");
-      const alloc = () => new Promise((resolve, reject) => {
-        const server = net.createServer();
-        server.unref();
-        server.once("error", reject);
-        server.listen(0, "127.0.0.1", () => {
-          const port = server.address().port;
-          server.close(() => resolve(port));
-        });
-      });
-      (async () => {
-        for (let attempt = 0; attempt < 20; attempt += 1) {
-          const port = await alloc();
-          if (port !== 1420) {
-            process.stdout.write(String(port));
-            return;
-          }
-        }
-        process.exit(1);
-      })().catch((error) => { console.error(error.message); process.exit(1); });
-    ')
-    export LOUPIST_E2E_DEV_PORT
-fi
+# Each launch lets Vite bind its own private port.
 
 cleanup_app() {
     if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
@@ -137,13 +112,15 @@ run_phase() {
         exit 1
     fi
 
+    DEV_PORT=$(node -e 'const s=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); console.log(new URL(s.devUrl).port)' "$SESSION_INFO")
+
     if ! node "$SCRIPT_DIR/native-persistence.mjs" "$SESSION_INFO" "$phase" "$phase_root"; then
         tail -n 100 "$RUN_LOG" >&2
         exit 1
     fi
     cleanup_app
     if [ "${LOUPIST_E2E_REUSE_DEV_SERVER:-}" != "1" ]; then
-        wait_for_dev_server_exit "$LOUPIST_E2E_DEV_PORT"
+        wait_for_dev_server_exit "$DEV_PORT"
     fi
 }
 

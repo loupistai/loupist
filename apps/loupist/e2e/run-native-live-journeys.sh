@@ -24,32 +24,6 @@ unset LOUPIST_E2E_PROVIDER_READY || true
 
 # Model and effort defaults live in live-preset.mjs; optional overrides pass through.
 
-if [ "${LOUPIST_E2E_REUSE_DEV_SERVER:-}" != "1" ] && [ -z "${LOUPIST_E2E_DEV_PORT:-}" ]; then
-    LOUPIST_E2E_DEV_PORT=$(node -e '
-      const net = require("node:net");
-      const alloc = () => new Promise((resolve, reject) => {
-        const server = net.createServer();
-        server.unref();
-        server.once("error", reject);
-        server.listen(0, "127.0.0.1", () => {
-          const port = server.address().port;
-          server.close(() => resolve(port));
-        });
-      });
-      (async () => {
-        for (let attempt = 0; attempt < 20; attempt += 1) {
-          const port = await alloc();
-          if (port !== 1420) {
-            process.stdout.write(String(port));
-            return;
-          }
-        }
-        process.exit(1);
-      })().catch((error) => { console.error(error.message); process.exit(1); });
-    ')
-    export LOUPIST_E2E_DEV_PORT
-fi
-
 E2E_STARTUP_TIMEOUT_MS=${LOUPIST_E2E_STARTUP_TIMEOUT_MS:-300000}
 case "$E2E_STARTUP_TIMEOUT_MS" in
     *[!0-9]*|'')
@@ -62,7 +36,6 @@ SESSION_INFO=
 STATE_ROOT=
 RUN_LOG=
 APP_PID=
-DEV_PORT=${LOUPIST_E2E_DEV_PORT:-1420}
 
 cleanup_app() {
     if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
@@ -146,6 +119,8 @@ if ! node "$SCRIPT_DIR/wait-session.mjs" \
     echo "Loupist exited before the live journey session was ready." >&2
     exit 1
 fi
+
+DEV_PORT=$(node -e 'const s=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")); console.log(new URL(s.devUrl).port)' "$SESSION_INFO")
 
 node "$SCRIPT_DIR/native-live-journeys.mjs" "$SESSION_INFO"
 cleanup_app
