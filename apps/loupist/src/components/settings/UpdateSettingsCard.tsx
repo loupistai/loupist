@@ -27,7 +27,8 @@ type Props = {
 const displayPublishedAt = (value: string) => {
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) return value;
-  return formatDate(timestamp, { dateStyle: "medium" });
+  // Korean reads the long form (2026년 11월 4일), not "2026. 11. 4.", as Schedule and sources do.
+  return formatDate(timestamp, { dateStyle: i18n.language.toLowerCase().startsWith("ko") ? "long" : "medium" });
 };
 
 export function UpdateSettingsCard({

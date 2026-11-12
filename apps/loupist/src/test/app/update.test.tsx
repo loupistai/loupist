@@ -1,6 +1,8 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "@/i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
+import { UpdateSettingsCard } from "../../components/settings/UpdateSettingsCard";
 import type { UpdateState } from "../../types";
 import { mainTab, openApp } from "../renderApp";
 
@@ -56,6 +58,14 @@ describe("Loupist · Updates", () => {
     expect(install).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Install and restart" }));
     await waitFor(() => expect(install).toHaveBeenCalledWith({ offer_id: OFFER_ID }));
+  });
+
+  it("dates a Korean release in the long form", async () => {
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    try {
+      render(<UpdateSettingsCard status={available} phase="idle" error={null} onCheck={vi.fn()} onInstall={vi.fn()} />);
+      expect(screen.getByText("2026년 8월 9일")).toBeVisible();
+    } finally { await act(async () => { await i18n.changeLanguage("en"); }); }
   });
 
   it("shows active-work blockers without offering force quit", async () => {
