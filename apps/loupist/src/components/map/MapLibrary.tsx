@@ -26,7 +26,12 @@ export function MapLibrary({ bridge, catalog, location, onOpen, onAsk, onChanged
   const surface = librarySurface(tab);
   const saved = views[tab] ?? { loupistId: location.loupistId, surface };
   const current = { ...saved, recordId: location.surface === surface ? location.recordId : undefined, revisionId: location.surface === surface ? location.revisionId : undefined, selection: location.surface === surface ? location.selection : undefined };
-  const patch = (next: KnowledgeLocation) => setViews(v => ({ ...v, [tab]: next }));
+  // Also written straight to the session store: a scroll offset saved as the compact Library closes outlives this component.
+  const patch = (next: KnowledgeLocation) => {
+    const state = libraryState(bridge, location.loupistId);
+    state.views = { ...state.views, [tab]: next };
+    setViews(v => ({ ...v, [tab]: next }));
+  };
   const shared = { bridge, catalog, location: current, query: current.view?.search ?? "", onQueryChange: (search: string) => patch({ ...current, view: { ...current.view, search } }), onPatch: patch, onOpen, onAsk, onChanged };
   return <aside className="map-library" data-testid="map-library" aria-label={t("map.library")}>
     <header><h2>{t("map.library")}</h2><Button variant="ghost" size="icon-sm" aria-label={t("map.closeLibrary")} onClick={onClose}><XIcon /></Button></header>
