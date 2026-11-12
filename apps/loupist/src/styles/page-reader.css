@@ -36,6 +36,8 @@ button.page-chip:hover { border-color: var(--gg-color-border-strong); color: var
 .page-principle-statement { margin: 0; font-size: var(--gg-text-reading); }
 .page-forgot { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
 .page-linked h3, .page-history h3 { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); }
+.page-linked h3, .page-history h3 { line-height: var(--gg-leading-caption); letter-spacing: .06em; text-transform: uppercase; }
+.page-linked h3:lang(ko), .page-history h3:lang(ko) { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); letter-spacing: 0; text-transform: none; }
 .page-history ul { display: grid; gap: var(--gg-space-1); margin: 0; padding: 0; list-style: none; }
 .page-history li { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gg-space-3); font-size: var(--gg-text-control); color: var(--gg-color-text-secondary); }
 .page-history time { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }

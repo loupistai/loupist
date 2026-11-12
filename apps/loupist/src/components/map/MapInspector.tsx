@@ -131,7 +131,7 @@ export function MapInspector({ node, map, bridge, location, onClose, onSelect, o
     {showRelationships ? <MapRelationships map={map} node={node} onSelect={(next) => { onPointRelationship?.(); walk(next); }} onPoint={onPointRelationship} /> : null}
     {showRelationships ? null : node.kind === "entity" ? <><InspectorThesis bridge={bridge} loupistId={location.loupistId} entityId={node.id} /><h3>{t("map.keyFacts")}</h3>{!graph && !error ? <p role="status">{t("map.loadingFacts")}</p> : null}
       <ul className="map-facts">{claims.map(({ claim }) => <li key={claim.id}><p>{claim.proposition}</p><small>{claim.publicationTime?.value ? dateValue(claim.publicationTime.value) : claim.recordedAtMs ? dateValue(new Date(claim.recordedAtMs).toISOString()) : null}{[...new Set(claim.evidence.map((e) => e.spanId).filter((id): id is string => !!id && !!graph?.sourceTargets?.[id]))].map((spanId) => <Button variant="link" key={spanId} onClick={() => openSource(spanId)}>{t("map.openSource")}</Button>)}</small></li>)}</ul>
-      {graph && !claims.length ? <p className="map-muted">{t("map.noFacts")}</p> : null}
+      {graph && !claims.length ? <p className="map-muted">{t("map.noFacts", { name })}</p> : null}
       {notes.length ? <section className="map-notes" aria-label={t("map.notes")}><h3>{t("map.notes")}</h3>
         <ul>{notes.map((note) => <li key={note.recordId}><button type="button" onClick={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: note.recordId, objectId: note.recordId, selection: { kind: "lens", recordId: note.recordId } })}>
           <strong>{note.title}</strong><small>{t(`pageReader.kind.${note.kind}`)}</small>{note.summary ? <span>{note.summary}</span> : null}</button></li>)}</ul></section> : null}

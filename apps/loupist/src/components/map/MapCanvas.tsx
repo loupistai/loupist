@@ -68,7 +68,8 @@ const cameras = new Map<string, { x: number; y: number; scale: number }>();
 /** Screen radius stays at most 1.5× the unscaled node radius, except that a handful
  *  of names may draw larger so a small map does not sit as a speck in its canvas. */
 const MAX_FIT_ZOOM = 1.5;
-const fitZoomCap = (count: number) => count <= 12 ? 3 : count <= 40 ? 2.2 : MAX_FIT_ZOOM;
+// A young map fills the canvas: up to 60 names may zoom in further than a large one.
+const fitZoomCap = (count: number) => count <= 12 ? 3 : count <= 60 ? 2.6 : MAX_FIT_ZOOM;
 /** Up to this many names, a fit never zooms out so far that a dot is under 6 px across. */
 const MIN_DOT_FIT_COUNT = 150;
 const minFitZoom = (shown: readonly PositionedNode[]) => shown.length > MIN_DOT_FIT_COUNT ? .3 : Math.max(.3, 3 / Math.min(...shown.map(nodeRadius)));

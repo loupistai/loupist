@@ -421,3 +421,8 @@
 /* Secondary-action rule: inline "open" links read as links, not buttons. */
 .map-facts small button, .map-conflict-pair button { color:var(--gg-color-accent-ink); font-weight:var(--gg-weight-regular); }
 .learning-actions button { font-weight:var(--gg-weight-regular); }
+
+/* M6/X2: inspector section labels match the asset page's caption labels; Korean drops uppercase and tracking. */
+.map-inspector h3 { color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); line-height:var(--gg-leading-caption); font-weight:var(--gg-weight-medium); letter-spacing:.06em; text-transform:uppercase; }
+.map-inspector h3:lang(ko) { color:var(--gg-color-text-secondary); font-size:var(--gg-text-meta); letter-spacing:0; text-transform:none; }
+.map-disclosure { color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); line-height:var(--gg-leading-caption); }
