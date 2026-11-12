@@ -86,9 +86,9 @@ export type WatchEvent = {
 };
 
 export type WatchSettingSetRequest = Wire.WatchSettingSetRequest;
-export type WatchDefaultsApplyRequest = { loupistId: string };
+export type WatchDefaultsApplyRequest = Wire.WatchDefaultsApplyRequest;
 /** How many assets are watched now, and per kind which followed assets still need a data connection. */
-export type WatchDefaultsApplyResult = { watchedAssets: number; needsConnections: Array<{ kind: WatchKind; connection: { id: string; name: string }; assetIds: string[] }> };
+export type WatchDefaultsApplyResult = Wire.WatchDefaultsApplyResult;
 export type WatchEventsListRequest = { loupistId: string; sinceMs?: number; limit: number };
 
 export interface WatchBridge {

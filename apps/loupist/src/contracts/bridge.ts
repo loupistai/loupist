@@ -107,7 +107,6 @@ import type {
 import type { ConfigScope, ConfigSnapshot, ConfigUpdateRequest } from "./config";
 
 export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridge, AssetBridge, SharingBridge, EarningsBridge, WatchBridge {
-  watchDefaultsApply(request: import("./generated").WatchDefaultsApplyRequest): Promise<import("./generated").WatchDefaultsApplyResult>;
   noticeSettingsGet(): Promise<NoticeSettings>;
   noticeAcknowledge(): Promise<NoticeSettings>;
   learningReviewList(request: import("./knowledge").LearningReviewQuery): Promise<import("./knowledge").LearningReview[]>;
