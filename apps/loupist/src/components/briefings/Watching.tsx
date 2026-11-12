@@ -5,6 +5,7 @@ import type { LoupistBridge, LoupistSummary } from "../../types";
 import type { AssetEvidence } from "../../contracts/assets";
 import { WATCH_KIND_GROUPS, type WatchAsset, type WatchEvent, type WatchKind, type WatchSettings } from "../../contracts/watch";
 import { Button } from "../ui/button";
+import { Spinner } from "../ui/spinner";
 import { useAssetPageOpener } from "../assets/assetOpener";
 import { useAssetNames } from "../assets/assetName";
 import { citationNumbers, shortDay, SourceChips } from "../assets/assetText";
@@ -65,14 +66,32 @@ function MatrixScroll({ group, label, children }: { group: string; label: string
   return <div ref={ref} className="watching-matrix-scroll" role="region" tabIndex={0} data-group={group} data-overflows={overflows || undefined} aria-label={label}>{children}</div>;
 }
 
-export function WatchingReader({ bridge, loupist, settings, onBack }: {
+export function WatchingReader({ bridge, loupist, settings, onBack, onSettings }: {
   bridge: LoupistBridge;
   loupist: LoupistSummary;
   settings: WatchSettings;
   onBack: () => void;
+  /** Settings the host returned after Pause, Resume or Check now. */
+  onSettings?: (next: WatchSettings) => void;
 }) {
   useTranslation(["briefings", "assets", "chat"]);
   const loupistId = loupist.id;
+  const [busy, setBusy] = useState<"pause" | "check" | null>(null);
+  const [controlError, setControlError] = useState<string | null>(null);
+  const [checked, setChecked] = useState<number | null>(null);
+  // Pausing and checking are host work on this computer; neither starts a model run.
+  const togglePause = async () => {
+    setBusy("pause"); setControlError(null); setChecked(null);
+    try { onSettings?.(await bridge.watchPauseSet({ loupistId, paused: !settings.paused })); }
+    catch { setControlError(t("watch.pauseFailed")); }
+    finally { setBusy(null); }
+  };
+  const checkNow = async () => {
+    setBusy("check"); setControlError(null); setChecked(null);
+    try { const result = await bridge.watchCheckNow({ loupistId }); setChecked(result.newAlerts); onSettings?.(result.settings); void loadEvents(); }
+    catch { setControlError(t("watch.checkFailed")); }
+    finally { setBusy(null); }
+  };
   const openAsset = useAssetPageOpener();
   const names = useAssetNames(bridge, loupistId);
   const [events, setEvents] = useState<WatchEvent[] | null>(null);
@@ -121,7 +140,12 @@ export function WatchingReader({ bridge, loupist, settings, onBack }: {
         <h2>{t("watch.title")}</h2>
         <p className="briefings-meta watching-status" data-paused={settings.paused || undefined}>{status}</p>
       </div>
+      {!settings.consentOff && !noWatchedAssets ? <div className="watching-controls">
+        <Button variant="outline" size="sm" data-watch-pause={settings.paused ? "resume" : "pause"} disabled={busy !== null} onClick={() => void togglePause()}>{busy === "pause" ? <Spinner /> : null}{settings.paused ? t("watch.resume") : t("schedule.pause")}</Button>
+        <Button variant="outline" size="sm" data-watch-check disabled={busy !== null || settings.paused || settings.checking} onClick={() => void checkNow()}>{busy === "check" || settings.checking ? <Spinner /> : null}{busy === "check" || settings.checking ? t("watch.checking") : t("watch.checkNow")}</Button>
+      </div> : null}
     </header>
+    {controlError ? <p className="inline-error" role="alert">{controlError}</p> : checked !== null ? <p className="briefings-meta" role="status">{checked ? t("watch.found", { count: checked, formattedCount: formatNumber(checked) }) : t("watch.nothingNew")}</p> : null}
     <p className="watching-privacy">{t("watch.privacy")}</p>
     {/* Each matrix scrolls sideways inside its own box; the asset column stays. With more than one class, each table names its class. */}
     {groups.map(group => {

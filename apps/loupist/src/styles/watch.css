@@ -16,6 +16,7 @@
 .watching-reader > .briefings-back { justify-self: start; }
 .watching-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--gg-space-2); }
 .watching-head h2 { margin: 0; }
+.watching-controls { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
 .watching-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
 .watching-actions [data-slot="button"] { gap: var(--gg-space-2); }
 .watching-privacy { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }

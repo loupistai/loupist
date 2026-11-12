@@ -1,4 +1,5 @@
 import { whatsNewRows } from "../map/whatsNew";
+import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { briefingFailure } from "./briefingFailure";
 import { ChatMapProvider } from "../workspace/ChatMapContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,6 +9,8 @@ import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
 import type { BriefingContext, BriefingSettings, ChatMessage, LoupistSummary, LoupistBridge, InboxItem, RunSummaryItem, ScheduledRun, ScheduledTask, ScheduledTaskListItem, ModelCatalog } from "@/types";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
+import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
+import { ScheduleTaskControls } from "./ScheduleTaskControls";
 import { Disclosure } from "../ui/disclosure";
 import { ChatMessageCard } from "../chat/ChatMessageCard";
 import { ChatExecutionProvider } from "../chat/ChatExecutionContext";
@@ -32,7 +35,9 @@ type Props = { onOpenModelSettings?: () => void; bridge: LoupistBridge; loupist:
   /** Opens what a run's answer cites beside that run's own Chat. */
   open: (run: InboxItem, to: ChatDestination, how?: OpenHow) => Promise<void>;
   onOpenMap?: (disputedEntityIds?: string[]) => void;
-  onInitialConsumed?: () => void; onOpenChat: (item: InboxItem) => Promise<void> };
+  onInitialConsumed?: () => void; onOpenChat: (item: InboxItem) => Promise<void>;
+  /** Puts a request into Bot's composer (never sends): time and prompt changes are a conversation. */
+  onAskBot?: (text: string) => void };
 
 /** The reader works on inbox items; run history arrives as stored runs. */
 export const inboxItemOf = (run: ScheduledRun): InboxItem => ({
@@ -68,7 +73,7 @@ function RunLinks({ run, open, children }: { run: InboxItem; open: Props["open"]
  * confirmation. Results are read in the Thread; a run opened here shows its
  * structured briefing and full answer.
  */
-export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupist, theme, initialRunId, initialTaskId, onInitialConsumed, onOpenChat, open, onOpenMap }: Props) {
+export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupist, theme, initialRunId, initialTaskId, onInitialConsumed, onOpenChat, open, onOpenMap, onAskBot }: Props) {
   const { t, i18n } = useTranslation("briefings");
   const [settings, setSettings] = useState<BriefingSettings | null>(null);
   const [tasks, setTasks] = useState<ScheduledTaskListItem[]>([]);
@@ -95,7 +100,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
   const failure =briefingFailure(selected?.error || readerError, message?.failure_kind);
   const briefingTask = tasks.find(task => task.kind === "briefing") ?? settings?.task ?? null;
   // Watching is a pinned item, not a scheduled task: Rust checks on this computer without a model call.
-  const { settings: watch } = useWatchSettings(bridge, loupist.id);
+  const { settings: watch, setSettings: setWatch } = useWatchSettings(bridge, loupist.id);
   const watchingShown = followedCount(watch) > 0;
   const running = tasks.filter(task => task.latest_run?.status === "running");
 
@@ -216,10 +221,10 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     {error && <p role="alert" className="briefings-error">{t("loadError")} <Button variant="ghost" onClick={() => void load()}>{t("retry")}</Button></p>}
     {loading ? <p role="status">{t("loading")}</p> : <div className="briefings-layout" data-reader-open={readerOpen || undefined} data-empty={(!visible.length && !selected && !watchingShown) || undefined}>
       <div className="schedule-list">
-        <div className="schedule-filter" role="group" aria-label={t("schedule.filterLabel")} data-schedule-filter={filter}>
-          <Button type="button" size="sm" variant={filter === "active" ? "secondary" : "ghost"} aria-pressed={filter === "active"} onClick={() => setFilter("active")}>{t("schedule.filterActive")}</Button>
-          <Button type="button" size="sm" variant={filter === "all" ? "secondary" : "ghost"} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>{t("schedule.filterAll")}</Button>
-        </div>
+        {ordered.length ? <SegmentedControl className="schedule-filter" value={filter} onValueChange={value => setFilter(value as typeof filter)} aria-label={t("schedule.filterLabel")} data-schedule-filter={filter}>
+          <SegmentedControlItem value="active">{t("schedule.filterActive")}</SegmentedControlItem>
+          <SegmentedControlItem value="all">{t("schedule.filterAll")}</SegmentedControlItem>
+        </SegmentedControl> : null}
         {watch && watchingShown ? <ul className="schedule-tasks schedule-pinned" aria-label={t("watch.title")}>
           <WatchingItem settings={watch} current={watchingFocus && !selected} onOpen={() => { setSelected(null); setFocusTaskId(WATCHING_TASK_ID); setFocusExplicit(true); }} />
         </ul> : null}
@@ -252,7 +257,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
           })}</ul>}
         </section>
       </div>
-      {readerOpen ? <div className="briefings-reader-scroll" onFocus={revealFocused}>{!selected && watchingFocus && watch ? <WatchingReader bridge={bridge} loupist={loupist} settings={watch} onBack={() => { setFocusExplicit(false); setFocusTaskId(null); }} />
+      {readerOpen ? <div className="briefings-reader-scroll" onFocus={revealFocused}>{!selected && watchingFocus && watch ? <WatchingReader bridge={bridge} loupist={loupist} settings={watch} onSettings={setWatch} onBack={() => { setFocusExplicit(false); setFocusTaskId(null); }} />
         : selected ? <article className="briefings-reader" ref={readerRef}><Button variant="ghost" className="briefings-back" data-print="omit" onClick={() => setSelected(null)}>{t("schedule.backTo", { title: focusTask ? displayTitle({ kind: focusTask.kind, title: focusTask.title }) : t("schedule.title") })}</Button><header><h2>{displayTitle(selected)}</h2><p className="briefings-meta">{formatDate(selected.startedAtMs)} · {formatTime(selected.startedAtMs)} · {loupist.name}</p></header>
         {selected.briefingContext?.changed ? <BriefingSections bridge={bridge} loupistId={loupist.id} loupistName={loupist.name} context={selected.briefingContext} startedAtMs={selected.startedAtMs} nextRun={briefingTask ? nextRun(briefingTask) : null} skipped={selected.skippedTools.map(tool => tool.name)}
           onOpenMap={onOpenMap} onOpenCheck={(journalId, title) => void open(selected, { kind: "memory", location: { loupistId: loupist.id, surface: "note", objectId: journalId, selection: { kind: "journal", journalId } }, title })} /> : null}
@@ -277,6 +282,9 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
         <header className="schedule-detail-header"><div><h2>{displayTitle(focusTask)}</h2>
           <p className="briefings-meta">{[t(`schedule.kind.${focusTask.kind}`), cadence(focusTask), taskStatus(focusTask), nextRun(focusTask)].filter(Boolean).join(" · ")}</p></div>
           </header>
+        {focusTask.latest_run && ["failed", "interrupted"].includes(focusTask.latest_run.status) ? <p className="inline-error schedule-task-error" role="status">{t("schedule.lastFailed", { reason: t(`failure.${briefingFailure(focusTask.latest_run.error ?? focusTask.last_error)}`) })}{briefingFailure(focusTask.latest_run.error ?? focusTask.last_error) === "auth" && onOpenModelSettings ? <> <Button variant="link" onClick={onOpenModelSettings}>{t("failure.models")}</Button></> : null}</p> : null}
+        <ScheduleTaskControls key={`${focusTask.id}:${focusTask.revision}`} bridge={bridge} task={focusTask} title={displayTitle(focusTask)} running={focusTask.latest_run?.status === "running"} onAskBot={onAskBot}
+          onChanged={() => { void load(); void loadHistory(focusTask.id); }} onDeleted={() => { setFocusExplicit(false); setFocusTaskId(null); void load(); }} />
         {focusTask.kind === "custom" && focusTask.prompt ? <p className="schedule-task-prompt">{focusTask.prompt}</p> : null}
         <h3 className="schedule-section-label">{t("schedule.runs")}</h3>
         {(history[focusTask.id] ?? []).length ? <ol className="schedule-history" aria-label={t("schedule.history", { title: displayTitle(focusTask) })}>{(history[focusTask.id] ?? []).slice(0, HISTORY_ROWS).map(runRow)}</ol>
@@ -300,7 +308,7 @@ function BriefingSections({ bridge, loupistId, loupistName, context, startedAtMs
   const [names, setNames] = useState<Record<string, string>>({});
   useEffect(() => {
     let live = true;
-    void bridge.knowledgeMap({ loupistId, maxNodes: 1000 }).then(next => { if (live) setMap(next); }).catch(() => {});
+    void readKnowledgeMap(bridge, loupistId).then(next => { if (live) setMap(next); }).catch(() => {});
     void bridge.watchlistList().then(entries => {
       if (live) setNames(Object.fromEntries(entries.flatMap(entry => entry.displayName?.trim() ? [[entry.symbol, entry.displayName.trim()]] : [])));
     }).catch(() => {});

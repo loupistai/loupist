@@ -38,12 +38,29 @@ it("lists recent alerts with their sources and marks them seen when Watching ope
   await waitFor(() => expect(bridge.watch.seenCalls.flat()).toHaveLength(6));
 });
 
-it("shows pause state and the first-check explanation without offering manual controls", async () => {
+it("shows pause state and the first-check explanation; a paused watch can resume but not check", async () => {
   const { article } = await reader({paused:true,events:false});
   expect(await within(article).findByText("No alerts yet. The first check sets a starting point.")).toBeVisible();
   expect(within(article).getByText("Paused")).toBeVisible();
-  expect(within(article).queryByRole("button", {name:"Check now"})).toBeNull();
-  expect(within(article).queryByRole("button", {name:"Resume"})).toBeNull();
+  expect(within(article).getByRole("button", {name:"Check now"})).toBeDisabled();
+  expect(within(article).getByRole("button", {name:"Resume"})).toBeEnabled();
+});
+
+it("pauses, resumes and checks now on this computer, and says when a check fails", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const [loupist] = await bridge.loupistList() as LoupistSummary[];
+  bridge.watch.install(loupist!.id, previewWatchSettings(), []);
+  const onSettings = vi.fn();
+  render(<WatchingReader bridge={bridge} loupist={loupist!} settings={await bridge.watchSettingsList({ loupistId: loupist!.id })} onBack={vi.fn()} onSettings={onSettings} />);
+  const user = userEvent.setup();
+  const article = screen.getByRole("article", { name: "Watching" });
+  await user.click(within(article).getByRole("button", { name: "Pause" }));
+  await waitFor(() => expect(onSettings).toHaveBeenLastCalledWith(expect.objectContaining({ paused: true })));
+  await user.click(within(article).getByRole("button", { name: "Check now" }));
+  expect(await within(article).findByText("Checked. Nothing new.")).toBeVisible();
+  bridge.watch.checkFails = true;
+  await user.click(within(article).getByRole("button", { name: "Check now" }));
+  expect(await within(article).findByRole("alert")).toHaveTextContent("Couldn't check now. Try again in a moment.");
 });
 
 it("gives each asset class its own table, says why a class kind does not apply, and words class alerts", async () => {

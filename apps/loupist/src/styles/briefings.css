@@ -101,6 +101,11 @@
 .schedule-create { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-4) var(--gg-space-4) 0; }
 .schedule-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1); margin: var(--gg-space-3) var(--gg-space-4) 0; }
 .schedule-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gg-space-3); }
+.schedule-task-controls { margin-top: var(--gg-space-3); display: grid; gap: var(--gg-space-2); }
+.schedule-task-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); }
+.schedule-task-change { margin: 0; }
+.schedule-task-change .schedule-task-ask { height: auto; padding: 0; vertical-align: baseline; }
+.schedule-task-error { margin: var(--gg-space-3) 0 0; }
 @media (max-width: 899px) {
   .schedule-create { margin-inline: var(--gg-space-4); }
   .schedule-create > button[type="submit"] { flex: 1 1 auto; }
