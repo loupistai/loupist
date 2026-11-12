@@ -116,7 +116,8 @@ impl ScheduledSupervisor {
         self.inner.watch.clone()
     }
 
-    #[cfg(feature = "eval-harness")]
+    // Only the growth eval, a test module, installs an observer.
+    #[cfg(all(test, feature = "eval-harness"))]
     pub(crate) fn observe_eval(&self, observer: EvalObserver) {
         *self.inner.eval_observer.lock().expect("eval observer lock") = Some(observer);
     }
