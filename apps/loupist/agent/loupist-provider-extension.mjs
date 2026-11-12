@@ -30,6 +30,8 @@ export const LOUPIST_PROVIDER_NAME = "Loupist";
 const XAI_DEVICE_CODE_URL = "https://auth.x.ai/oauth2/device/code";
 /** The title of the paste prompt; Rust answers only this UI request. */
 export const MANUAL_CODE_TITLE = `${PROTOCOL}:manual_code`;
+/** Only this API-key prompt may receive the host's one-use stdin answer. */
+export const API_KEY_TITLE = `${PROTOCOL}:api_key`;
 const MAX_RESULT_BYTES = 512 * 1024;
 const LIVE_MODELS_URL = "https://api.openai.com/v1/models";
 const LIVE_MODELS_TIMEOUT_MS = 8_000;
@@ -47,10 +49,8 @@ export function resultOpenFlagsForPlatform(platform = process.platform) {
 const RESULT_OPEN_FLAGS = resultOpenFlagsForPlatform();
 const RESULT_FILE = process.env.LOUPIST_PROVIDER_RESULT_FILE;
 const REQUEST_FILE = process.env.LOUPIST_PROVIDER_REQUEST_FILE;
-const PROVIDER_API_KEY = process.env.LOUPIST_PROVIDER_API_KEY;
 delete process.env.LOUPIST_PROVIDER_RESULT_FILE;
 delete process.env.LOUPIST_PROVIDER_REQUEST_FILE;
-delete process.env.LOUPIST_PROVIDER_API_KEY;
 
 /**
  * The stable installation ID Pi keeps in its global settings (never a project
@@ -455,22 +455,28 @@ export default function loupistTerminalProviderExtension(pi) {
       if (operation === "clear") {
         await runtime.logout(providerId);
       } else {
-        if (
-          !PROVIDER_API_KEY ||
-          Buffer.byteLength(PROVIDER_API_KEY, "utf8") > 8 * 1024 ||
-          /[\u0000-\u001f\u007f]/u.test(PROVIDER_API_KEY)
-        ) {
-          throw new Error("Provider API key is invalid");
+        try {
+          await runtime.login(providerId, "api_key", {
+            prompt: async (prompt) => {
+              if (prompt.type !== "secret") {
+                throw new Error("Pi provider requested unsupported API-key input");
+              }
+              const value = await ctx.ui.input(API_KEY_TITLE, "", { timeout: 10_000 });
+              if (
+                typeof value !== "string" || !value ||
+                Buffer.byteLength(value, "utf8") > 8 * 1024 ||
+                /[\u0000-\u001f\u007f]/u.test(value)
+              ) {
+                throw new Error("Provider API key is invalid");
+              }
+              return value;
+            },
+            notify: () => undefined,
+          });
+        } catch {
+          // Provider exceptions can include their input. Never put that text on RPC.
+          throw new Error("Provider API key could not be saved");
         }
-        await runtime.login(providerId, "api_key", {
-          prompt: async (prompt) => {
-            if (prompt.type !== "secret" && prompt.type !== "text") {
-              throw new Error("Pi provider requested unsupported API-key input");
-            }
-            return PROVIDER_API_KEY;
-          },
-          notify: () => undefined,
-        });
       }
       writeCredentialUpdated(providerId);
     },

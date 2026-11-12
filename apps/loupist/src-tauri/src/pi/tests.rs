@@ -375,7 +375,7 @@ fn support_launch_starts_on_the_manifest_bootstrap_with_only_a_placeholder_key()
         result_file: "result.json".into(),
         request_file: None,
         provider_credential: None,
-        mutation_api_key: None,
+        mutation_api_key: Some("mutation-key-private-fixture".into()),
     };
     let args = config.rpc_arguments();
     let value = |flag: &str| args[args.iter().position(|arg| arg == flag).unwrap() + 1].clone();
@@ -385,6 +385,13 @@ fn support_launch_starts_on_the_manifest_bootstrap_with_only_a_placeholder_key()
         ("google".to_owned(), "gemini-2.5-flash".to_owned())
     );
     let env = config.environment();
+    assert!(!env
+        .values()
+        .any(|value| value.contains("mutation-key-private-fixture")));
+    assert!(!env.contains_key("LOUPIST_PROVIDER_API_KEY"));
+    assert!(!args
+        .iter()
+        .any(|arg| arg.contains("mutation-key-private-fixture")));
     assert_eq!(
         env.get("GEMINI_API_KEY").map(String::as_str),
         Some(SUPPORT_BOOTSTRAP_KEY)

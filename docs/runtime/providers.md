@@ -84,6 +84,14 @@ Removing a custom endpoint always deletes its card and status row, even when sav
 Startup also removes status rows left by older builds for custom endpoints absent from `models.json`.
 Once sign-in is stored, a closed renderer event channel does not fail the completed connection.
 Progress and completion messages use host copy, never provider-supplied prose that might contain a credential.
+An API-key change sends the key only over Pi's private stdin RPC answer, once,
+after the extension's secret-login callback requests `ctx.ui.input` with the exact
+title `loupist-provider/1:api_key`. Rust checks the request type, method, title and
+bounded id before answering. Unexpected prompts receive no key; cancellation,
+the 10-second input timeout or the support-operation timeout discard pending
+answers. The key is absent from launch arguments, environment, transfer files,
+results and diagnostics; Pi persists a successful login in its private credential
+store as before. Provider exceptions during key login become fixed host text.
 Pi persists rotated OAuth credentials before returning them; model discovery adopts that durable generation
 under its support lease so rotation does not reject or immediately invalidate the new catalog.
 Private support request and result files are removed on every normal exit, including errors; startup removes

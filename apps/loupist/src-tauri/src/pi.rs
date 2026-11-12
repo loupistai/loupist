@@ -850,9 +850,6 @@ impl PiSupportLaunchConfig {
         if let Some((name, value)) = &self.provider_credential {
             environment.insert(name.clone(), value.clone());
         }
-        if let Some(value) = &self.mutation_api_key {
-            environment.insert("LOUPIST_PROVIDER_API_KEY".into(), value.clone());
-        }
         environment
     }
 }
@@ -1624,7 +1621,7 @@ impl PiProcess {
     }
 
     /// Answers one extension UI request (`ctx.ui.input`) by its string id. Used
-    /// only for a sign-in's pasted address or code, which Rust validated first.
+    /// for a sign-in's pasted address/code or the one expected API-key prompt.
     pub async fn respond_extension_ui(&self, request_id: &str, value: &str) -> Result<(), PiError> {
         bounded_rpc_value(request_id)?;
         if value.is_empty() || value.len() > 8 * 1024 || value.contains('\0') {
