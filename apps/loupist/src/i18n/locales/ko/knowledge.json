@@ -702,7 +702,7 @@
       "learning": "학습",
       "learnMethods": "새 정보에서 분석 방법 배우기",
       "learnMethodsHint": "새 정보가 들어올 때 AI 계정을 사용해요.",
-      "holdingsByKind": "주식·펀드: {{stocks}} · 크립토: {{crypto}}",
+      "holdingsByKind": "주식·펀드: {{stocks}} · 가상자산: {{crypto}}",
       "kindCount_other": "{{formattedCount}}개 · {{date}}",
       "kindNone": "없음",
       "reset": "학습 내용 초기화…"
@@ -763,7 +763,7 @@
     "title": "보유 자산",
     "lead": "무엇을 보유했는지 표시하는 데만 써요. 수량과 금액은 이 컴퓨터에만 있어요.",
     "stocks": "주식·펀드",
-    "crypto": "크립토",
+    "crypto": "가상자산",
     "wallets": "지갑",
     "file": "파일(CSV)",
     "exchangeFile": "거래소 파일",

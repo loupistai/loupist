@@ -22,7 +22,7 @@
   "class": {
     "menu": "자산 종류",
     "equity": "주식",
-    "crypto": "크립토",
+    "crypto": "가상자산",
     "fund": "펀드·ETF",
     "commodity": "원자재",
     "rates_fx": "금리·환율",

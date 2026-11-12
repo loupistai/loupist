@@ -166,7 +166,7 @@
     "consentOff": "지켜보기 꺼짐",
     "group": {
       "equity": "주식",
-      "crypto": "크립토",
+      "crypto": "가상자산",
       "commodity": "원자재"
     },
     "kindNeeds": "{{kind}}: {{connection}} 연결 필요",
