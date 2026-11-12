@@ -16,7 +16,7 @@ export function measureShellLayout() {
     .flatMap(element => {
       const bounds = box(element);
       return bounds ? [{ bounds, mobile: element.dataset.mobile === "true",
-        railButtons: element.closest('[data-collapsible="icon"]') ? [...element.querySelectorAll('.navigation-search,[data-testid=loupist-chat-row][data-home] button[data-testid=loupist-chat-button],[data-testid=navigation-new],#main-tab-settings')].map(box).filter(Boolean) : [],
+        railButtons: element.closest('[data-collapsible="icon"]') ? [...element.querySelectorAll('.navigation-search,[data-testid=loupist-chat-row][data-home] button[data-testid=loupist-chat-button],[data-sidebar-place] button,[data-testid=navigation-new],#main-tab-settings')].map(box).filter(Boolean) : [],
         footer: box(element.querySelector('[data-slot="sidebar-footer"]')) }] : [];
     });
   const content = document.querySelector(".conversation-content");
