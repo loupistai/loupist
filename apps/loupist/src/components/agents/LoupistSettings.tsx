@@ -1,4 +1,4 @@
-import { skillPresentation } from "../../lib/agentSkills";
+import { skillBlurb, skillPresentation } from "../../lib/agentSkills";
 import i18n, { useTranslation } from "../../i18n";
 import { CONFIG_CHANGED_EVENT, notifyConfigurationChanged } from "../../app/useConfiguration";
 import { Disclosure } from "../ui/disclosure";
@@ -263,6 +263,8 @@ export function LoupistSettings({
       skills.filter((skill) => !skill.fixed).map((skill) => ({
         id: skill.id,
         ...skillPresentation(skill),
+        // The row shows the short line for people; the model-facing description stays in Settings › Skills' detail.
+        description: skillBlurb(skill),
         enabled: skill.enabled,
         locked: false,
       })),
