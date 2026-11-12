@@ -98,7 +98,7 @@ it("keeps World and Lens pack sharing out of the user app", async () => {
   const rows = document.querySelector(".settings-loupists");
   if (!rows) throw new Error("missing Loupist rows");
   expect(within(rows as HTMLElement).getByRole("button", { name: "Import Loupist" })).toBeVisible();
-  expect(within(rows as HTMLElement).getAllByRole("button", { name: "Open Loupist settings" }).length).toBeGreaterThan(0);
+  expect(within(rows as HTMLElement).getAllByRole("button", { name: /^Settings: / }).length).toBeGreaterThan(0);
   expectNoPackSharing(rows);
   const sections = screen.getByRole("navigation", { name: "Settings sections" });
   expect(within(sections).queryByRole("button", { name: /Gallery|Share/ })).toBeNull();

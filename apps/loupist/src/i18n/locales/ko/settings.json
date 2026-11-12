@@ -496,9 +496,12 @@
     "memory": "기억",
     "advanced": "고급",
     "import": "루피스트 가져오기",
-    "openSettings": "루피스트 설정 열기",
     "keywords": "루피스트 프로필 말투 지침 대화 모델 기억 학습 스킬 연결 지도 구성 폴더 가져오기 제거",
-    "description": "루피스트별 프로필, 대화, 학습, 스킬과 연결을 한곳에서 관리해요."
+    "description": "루피스트별 프로필, 대화, 학습, 스킬과 연결을 한곳에서 관리해요.",
+    "settings": "설정",
+    "settingsFor": "설정: {{name}}",
+    "moreFor": "{{name}} 더보기",
+    "removeEllipsis": "제거…"
   },
   "custom": {
     "addButton": "연결 추가",

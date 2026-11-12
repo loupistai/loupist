@@ -495,9 +495,12 @@
     "memory": "Memory",
     "advanced": "Advanced",
     "import": "Import Loupist",
-    "openSettings": "Open Loupist settings",
     "keywords": "Loupists profile tone instructions chat model memory learning skills connections Map folders import remove",
-    "description": "Profile, chat, learning, skills and connections for each Loupist."
+    "description": "Profile, chat, learning, skills and connections for each Loupist.",
+    "settings": "Settings",
+    "settingsFor": "Settings: {{name}}",
+    "moreFor": "More for {{name}}",
+    "removeEllipsis": "Remove…"
   },
   "custom": {
     "addButton": "Add a connection",

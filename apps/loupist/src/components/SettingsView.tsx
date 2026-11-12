@@ -1,4 +1,6 @@
 import { ApplicationSettings } from "./settings/ApplicationSettings";
+import { MoreHorizontalIcon } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { MarketplaceView } from "./marketplace/MarketplaceView";
 import { LoupistAvatar } from "./app/AppHeader";
 import i18n, { useTranslation } from "../i18n";
@@ -81,7 +83,12 @@ export function SettingsView({
 
       <div className="settings-stack">
         {section === "connections" ? <MarketplaceView bridge={bridge} loupists={loupists} currentLoupistId={currentLoupistId} initialEntryId={connectionsEntryId} onManageLoupists={() => currentLoupistId && onOpenLoupistConnections ? onOpenLoupistConnections(currentLoupistId) : onOpenLoupists?.()} onOpenModelSettings={onManageProviders} /> : null}
-        {section === "loupists" ? <div className="settings-loupists"><div className="settings-loupist-actions"><Button onClick={onCreateLoupist}>{i18n.t("app:shell.newLoupist")}</Button><Button variant="outline" data-loupist-import onClick={onImportLoupist}>{i18n.t("settings:loupists.import")}</Button></div><ul>{loupists.map(loupist => <li key={loupist.id}><LoupistAvatar loupist={loupist} /><div><strong>{loupist.name}</strong><p>{loupist.philosophy}</p></div>{showSharing ? <Button variant="outline" data-share-loupist={loupist.id} onClick={() => setShareTarget(loupist)}>{i18n.t("sharing:share")}</Button> : null}<Button variant="outline" onClick={() => onOpenLoupistSettings?.(loupist.id)}>{i18n.t("settings:loupists.openSettings")}</Button><Button variant="ghost" onClick={() => onRemoveLoupist?.(loupist.id)}>{i18n.t("app:shell.removeLoupist")}</Button></li>)}</ul>
+        {section === "loupists" ? <div className="settings-loupists"><div className="settings-loupist-actions"><Button onClick={onCreateLoupist}>{i18n.t("app:shell.newLoupist")}</Button><Button variant="outline" data-loupist-import onClick={onImportLoupist}>{i18n.t("settings:loupists.import")}</Button></div><ul>{loupists.map(loupist => <li key={loupist.id}><LoupistAvatar loupist={loupist} /><div><strong>{loupist.name}</strong><p>{loupist.philosophy}</p></div><Button variant="outline" size="sm" aria-label={i18n.t("settings:loupists.settingsFor", { name: loupist.name })} onClick={() => onOpenLoupistSettings?.(loupist.id)}>{i18n.t("settings:loupists.settings")}</Button>
+            <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={i18n.t("settings:loupists.moreFor", { name: loupist.name })}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {showSharing ? <DropdownMenuItem data-share-loupist={loupist.id} onSelect={() => setShareTarget(loupist)}>{i18n.t("sharing:share")}</DropdownMenuItem> : null}
+                <DropdownMenuItem onSelect={() => onRemoveLoupist?.(loupist.id)}>{i18n.t("settings:loupists.removeEllipsis")}</DropdownMenuItem>
+              </DropdownMenuContent></DropdownMenu></li>)}</ul>
           {showSharing && shareTarget ? <ShareSheet bridge={bridge} loupistId={shareTarget.id} loupistName={shareTarget.name} scope={{ kind: "loupist" }} open onOpenChange={open => { if (!open) setShareTarget(null); }} /> : null}</div> : null}
         {section === "model" ? (
           <ModelSettingsPanel catalog={catalog} loadError={loadError} bridge={bridge} chatModelProfileId={appearanceConfiguration.snapshot?.effective.chat.model_profile_id}

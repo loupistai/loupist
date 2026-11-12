@@ -55,7 +55,7 @@ it("opens the same page for the chosen Loupist from app settings", async () => {
   await screen.findByRole("heading", { name: "Loupists", level: 1 });
   const rows = document.querySelector(".settings-loupists")!;
   const target = within(rows as HTMLElement).getByText("Contrarian Value").closest("li")!;
-  await user.click(within(target).getByRole("button", { name: "Open Loupist settings" }));
+  await user.click(within(target).getByRole("button", { name: /^Settings: / }));
   const page = await screen.findByRole("region", { name: "Loupist settings" });
   expect(within(page).getByRole("textbox", { name: "Name" })).toHaveValue("Contrarian Value");
   await user.click(within(page).getByRole("button", { name: "Back" }));
