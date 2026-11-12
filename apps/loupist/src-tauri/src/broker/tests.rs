@@ -185,7 +185,7 @@ async fn dont_save_connection_cause_precedes_the_chats_saving_switch() {
         }
     }
     let request = serde_json::from_value(json!({"protocol":PROTOCOL, "id":"save", "token":"fixture-token", "method":"source.save", "params":{}})).unwrap();
-    let (_, error) = execute_request(
+    let result = execute_request(
         request,
         "fixture-token",
         &policy(),
@@ -193,9 +193,11 @@ async fn dont_save_connection_cause_precedes_the_chats_saving_switch() {
         Arc::new(DontSaveExecutor),
         "delivery",
     )
-    .await
-    .err()
-    .expect("save refused");
+    .await;
+    let (_, error) = match result {
+        Err(error) => error,
+        Ok(_) => panic!("a blocked save must be refused"),
+    };
     assert_eq!(error_body(&error)["code"], "proposal_disabled");
     assert_eq!(error_body(&error)["reason"], "connection_dont_save");
 }

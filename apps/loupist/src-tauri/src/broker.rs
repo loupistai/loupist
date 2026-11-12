@@ -325,9 +325,9 @@ impl ToolMethod {
 
 #[derive(Debug, Error)]
 pub enum BrokerError {
-    #[error("Outbound access is paused for this turn because it read content from a custom connection. The user can ask again in a new message.")]
+    #[error("{}", crate::custom_connections::taint::OUTBOUND_REFUSAL)]
     OutboundPaused,
-    #[error("This reply read outside text, so schedule changes and custom connections are paused until it ends. Do not retry here. Finish the answer and tell the user they can ask for this in their next message.")]
+    #[error("{}", crate::custom_connections::taint::UNTRUSTED_TEXT_REFUSAL)]
     UntrustedTextPaused,
     #[error("This path is protected and is not touched.")]
     ProtectedPath,
