@@ -62,6 +62,145 @@ fn a_service_approval_shows_the_next_step_its_own_provider_gave() {
 }
 
 #[test]
+fn refusal_messages_name_the_cause_end_in_a_period_and_do_not_repeat_the_next_step() {
+    for (error, message) in [
+        (BrokerError::MethodDenied, "This tool is not available in this run. Use another tool or name the gap."),
+        (BrokerError::MemoryDisabled, "Memory is off for this Chat, so this was not read. Answer without it and say so."),
+        (BrokerError::ProposalDisabled, "Saving is off for this Chat, so this was not saved. Say so; do not promise to remember."),
+        (BrokerError::ConnectionDontSave, "This reply read a connection the user marked Don't save, so nothing from this reply is saved. Say it was not saved and why."),
+        (BrokerError::OutboundPaused, crate::custom_connections::taint::OUTBOUND_REFUSAL),
+        (BrokerError::UntrustedTextPaused, crate::custom_connections::taint::UNTRUSTED_TEXT_REFUSAL),
+    ] {
+        let body = error_body(&error);
+        assert_eq!(body["message"], message);
+        assert!(body["message"].as_str().unwrap().ends_with('.'));
+        assert_eq!(body["next"], "");
+        assert_eq!(body["retryable"], false);
+    }
+    let invalid = error_body(&BrokerError::invalid(
+        "source_id",
+        "not from a web_search in this reply; search again or pass the URL",
+    ));
+    assert_eq!(
+        invalid["message"],
+        "source_id: not from a web_search in this reply; search again or pass the URL."
+    );
+    assert_eq!(invalid["next"], "");
+    let malformed = error_body(&BrokerError::Malformed);
+    assert!(malformed["message"]
+        .as_str()
+        .unwrap()
+        .starts_with("request:"));
+    assert!(malformed["next"]
+        .as_str()
+        .unwrap()
+        .contains("request fields"));
+    let private_error = error_body(&BrokerError::Io(io::Error::other(
+        "Authorization: Bearer private-fixture-key /private/fixture/path",
+    )));
+    let serialized = private_error.to_string();
+    for private in [
+        "Authorization",
+        "private-fixture-key",
+        "/private/fixture/path",
+    ] {
+        assert!(!serialized.contains(private));
+    }
+    assert!(private_error["message"].as_str().unwrap().ends_with('.'));
+    let path = error_body(
+        &BrokerError::UntrustedTextPaused
+            .with_next(crate::custom_connections::taint::HARD_LINK_WRITE_REFUSAL),
+    );
+    assert_eq!(
+        path["message"],
+        "This file has another name on disk and is not touched."
+    );
+    assert_eq!(path["next"], "");
+    let git =
+        error_body(&BrokerError::ProtectedPath.with_next("Git metadata is not read or written."));
+    assert_eq!(git["message"], "Git metadata is not read or written.");
+    assert_eq!(git["next"], "");
+}
+
+#[test]
+fn declined_timed_out_and_unattended_custom_calls_have_distinct_refusals() {
+    for (cause, reason, message) in [
+        (CustomApprovalRefusal::Declined, "declined", "The user declined this tool for now. Do not call it again in this reply; continue without it and say what is missing."),
+        (CustomApprovalRefusal::TimedOut, "timed_out", "Nobody answered the approval card. Do not call it again in this reply."),
+        (CustomApprovalRefusal::Unattended, "blocked_unattended", "This custom tool has no standing approval, so an unattended run cannot use it."),
+    ] {
+        let body = error_body(&BrokerError::CustomApprovalRefused { connection_id: "custom-fixture".into(), tool_name: "read_prices".into(), cause });
+        assert_eq!(body["code"], "needs_approval");
+        assert_eq!(body["reason"], reason);
+        assert_eq!(body["message"], message);
+        assert_eq!(body["next"], "");
+    }
+}
+
+#[test]
+fn every_transaction_budget_names_its_tool_and_actual_limit() {
+    let mut policy = policy();
+    policy.memory_proposal_budget = 2;
+    for (method, limit) in [
+        (ToolMethod::NoteSave, 1),
+        (ToolMethod::SourceSave, MAX_CHAT_TURN_SOURCES),
+        (ToolMethod::PrincipleSave, policy.memory_proposal_budget),
+        (ToolMethod::WorldSchemaUpdate, 1),
+        (ToolMethod::LoupistSetup, 1),
+        (ToolMethod::ConnectionSetup, MAX_CHAT_TURN_CONNECTION_SETUPS),
+        (ToolMethod::AskUser, MAX_CHAT_TURN_QUESTIONS),
+        (ToolMethod::LensFile, MAX_CHAT_TURN_FILINGS),
+        (ToolMethod::ArtifactPublish, MAX_CHAT_TURN_ARTIFACTS as u8),
+        (ToolMethod::ChartPublish, MAX_CHAT_TURN_ARTIFACTS as u8),
+        (ToolMethod::GridPublish, MAX_CHAT_TURN_ARTIFACTS as u8),
+        (ToolMethod::ResearchOpen, 1),
+    ] {
+        let mut cardinality = TransactionCardinality::default();
+        for _ in 0..limit {
+            cardinality.consume(method, &policy).unwrap();
+        }
+        let body = error_body(&cardinality.consume(method, &policy).unwrap_err());
+        assert_eq!(body["code"], "transaction_limit");
+        assert_eq!(body["message"], format!("{} has reached its limit of {limit} per reply. Do not call it again in this reply; other tools still work.", method.tool_name()));
+        assert_eq!(body["next"], "");
+        assert!(cardinality.consume(ToolMethod::WebSearch, &policy).is_ok());
+    }
+}
+
+#[tokio::test]
+async fn dont_save_connection_cause_precedes_the_chats_saving_switch() {
+    struct DontSaveExecutor;
+    #[async_trait]
+    impl ToolExecutor for DontSaveExecutor {
+        fn enforce_turn_policy(&self, _: ToolMethod, _: &Value) -> Result<(), BrokerError> {
+            Err(BrokerError::ConnectionDontSave)
+        }
+        async fn execute(
+            &self,
+            _: &ToolPolicy,
+            _: ToolMethod,
+            _: Value,
+        ) -> Result<Value, BrokerError> {
+            panic!("a blocked save must not execute")
+        }
+    }
+    let request = serde_json::from_value(json!({"protocol":PROTOCOL, "id":"save", "token":"fixture-token", "method":"source.save", "params":{}})).unwrap();
+    let (_, error) = execute_request(
+        request,
+        "fixture-token",
+        &policy(),
+        Arc::new(StdMutex::new(TransactionCardinality::default())),
+        Arc::new(DontSaveExecutor),
+        "delivery",
+    )
+    .await
+    .err()
+    .expect("save refused");
+    assert_eq!(error_body(&error)["code"], "proposal_disabled");
+    assert_eq!(error_body(&error)["reason"], "connection_dont_save");
+}
+
+#[test]
 fn an_offline_read_has_its_own_error_category_and_marks_the_turn_trace() {
     let body = error_body(&BrokerError::Offline("krx.market-data".into()));
     assert_eq!(body["code"], "offline");
@@ -650,7 +789,7 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
     }
     assert!(matches!(
         cardinality.consume(ToolMethod::SourceSave, &policy),
-        Err(BrokerError::BudgetExceeded)
+        Err(BrokerError::BudgetExceeded { .. })
     ));
 
     for _ in 0..MAX_CHAT_TURN_ARTIFACTS {
@@ -660,7 +799,7 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
     }
     assert!(matches!(
         cardinality.consume(ToolMethod::ArtifactPublish, &policy),
-        Err(BrokerError::BudgetExceeded)
+        Err(BrokerError::BudgetExceeded { .. })
     ));
 
     cardinality
@@ -668,7 +807,7 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
         .unwrap();
     assert!(matches!(
         cardinality.consume(ToolMethod::ResearchOpen, &policy),
-        Err(BrokerError::BudgetExceeded)
+        Err(BrokerError::BudgetExceeded { .. })
     ));
     cardinality.rollback(ToolMethod::ResearchOpen);
     cardinality
@@ -680,7 +819,7 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
     }
     assert!(matches!(
         cardinality.consume(ToolMethod::LensFile, &policy),
-        Err(BrokerError::BudgetExceeded)
+        Err(BrokerError::BudgetExceeded { .. })
     ));
     cardinality.rollback(ToolMethod::LensFile);
     cardinality.consume(ToolMethod::LensFile, &policy).unwrap();
@@ -690,7 +829,7 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
     }
     assert!(matches!(
         cardinality.consume(ToolMethod::AskUser, &policy),
-        Err(BrokerError::BudgetExceeded)
+        Err(BrokerError::BudgetExceeded { .. })
     ));
 }
 

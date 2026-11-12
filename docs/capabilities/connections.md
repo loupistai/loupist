@@ -81,6 +81,10 @@ Users can add their own MCP data sources under Settings → Connections → Your
   DefiLlama included, and schedule changes) are refused for the rest of that turn. `run_python` stays allowed.
 - **Memory:** "Don't save results to Memory" is on by default per connection. When it is on and the connection
   taints a turn, that turn writes no Memory; otherwise Sources and Map nodes carry their connection origin.
+  A refused save names that connection policy as its cause, even when Chat saving is also off; it never suggests
+  enabling saving to bypass the connection's choice. Tool refusals distinguish a declined approval card, an
+  unanswered card and missing standing approval in an unattended run. Outside-text pauses invite the user to ask
+  for the paused schedule or connection action in their next message, and outbound-pause guidance is sent once.
 - **Unattended runs:** briefings and scheduled runs may call only Always-approved read-only custom tools.
   Custom-enabled turns start a cold Pi session.
 
