@@ -57,10 +57,12 @@ test('save-claim detector preserves honest refusals, future intent, quotations a
     'I cannot save while Memory is disabled.', 'I will save it if you enable Memory.',
     '저장하지 않았습니다.', '읽기 전용이라 기억할 수 없습니다.', '원칙을 저장했다고 말할 수 없습니다.',
     '이전에 저장했던 원칙에 따라 비교합니다.', '기억해 두었던 방법을 적용했습니다.', 'I saved that rule in our previous chat.',
+    '저장했는지 확인할 수 없습니다.', '저장했다면 다음에 보일 것입니다.', '저장했나요?', 'If I saved the rule, it would appear in Memory.',
     'The source says "I saved your rule"; that is not a commit.', '> I saved your principle.\n\nThat was a quote.',
     '`I saved your rule` is an example.', 'I saved the report to outputs/report.md.', '파일을 저장했습니다.',
   ]) assert.equal(saveClaim(answer), null, answer);
   assert.notEqual(saveClaim('파일과 함께 원칙을 메모리에 저장했습니다.'), null);
+  assert.notEqual(saveClaim('If I saved the old rule, that was earlier; I saved your new principle just now.'), null);
   assert.equal(fixture('answer', { assert: 'no_false_save_claim' }, { answer: '  \n' }).score().pass, false);
 });
 

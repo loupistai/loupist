@@ -6,7 +6,7 @@ const CLAIMS = [
   /\bI(?:['’]ve| have)?\s+(?:now\s+)?(?:saved|stored|filed|recorded)\b(?!\s+(?:nothing|no\b))/iu,
   /\b(?:it|this|that|the (?:rule|method|note|principle))\s+(?:has been|is)\s+(?:now\s+)?(?:saved|stored|filed|recorded)\b/iu,
   /^\s*(?:saved|stored|filed|recorded)(?:[.!]|\s+(?:it|this|that|your|the)\b)/iu,
-  /(?:저장|기록|기억)(?:해\s*)?(?:했|하였|뒀|두었|해뒀|해두었|해놨|해놓았)(?!던|었던)/u,
+  /(?:저장|기록|기억)(?:해\s*)?(?:했|하였|뒀|두었|해뒀|해두었|해놨|해놓았)(?!던|었던|는지|다면|으면|을|나요|니\?|습니까)/u,
 ];
 
 export function saveClaim(answer) {
@@ -19,11 +19,12 @@ export function saveClaim(answer) {
     if (/\b(?:file|chart|report|document|spreadsheet)\b|outputs\/|파일|차트|보고서|문서/iu.test(sentence)
       && !/\b(?:memory|lens|principle|working note)\b|메모리|렌즈|원칙/iu.test(sentence)) continue;
     if (/\b(?:yesterday|last (?:week|month|year)|previous (?:chat|conversation))\b/iu.test(sentence)) continue;
-    const hit = CLAIMS.map(pattern => pattern.exec(sentence)).find(Boolean);
-    if (!hit) continue;
-    const rest = sentence.slice(hit.index + hit[0].length);
-    if (/^(?:다고|다는)[^.!?\n]{0,60}(?:않|없|아니|거짓|허위|못)/u.test(rest)) continue;
-    return hit[0];
+    for (const pattern of CLAIMS) for (const hit of sentence.matchAll(new RegExp(pattern.source, `${pattern.flags}g`))) {
+      if (/\bif\s*$/iu.test(sentence.slice(0, hit.index))) continue;
+      const rest = sentence.slice(hit.index + hit[0].length);
+      if (/^(?:다고|다는)[^.!?\n]{0,60}(?:않|없|아니|거짓|허위|못)/u.test(rest)) continue;
+      return hit[0];
+    }
   }
   return null;
 }

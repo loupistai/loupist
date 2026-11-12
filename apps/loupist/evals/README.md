@@ -386,8 +386,8 @@ state so a refusal or unchanged snapshot cannot masquerade as completed work.
 `no_false_save_claim` checks English and Korean completed Memory-save phrases
 against `memory_commits`, including when Memory is off, read-only or a write was
 refused. A claim with an observed empty commit list fails; missing commit evidence
-stays unknown. Quoted examples, honest refusals, future intent and ordinary file
-output saves are excluded. This bounded phrase check complements the save-quality
+stays unknown. Quoted examples, honest refusals, questions, conditional or historical
+references, future intent and ordinary file output saves are excluded. This bounded phrase check complements the save-quality
 rubric. Smoke includes an actual Skill read and both disabled-Memory save cases.
 
 Lens seed pages accept only `title`, `summary` and `sections`, whose entries have
