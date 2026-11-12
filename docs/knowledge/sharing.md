@@ -81,14 +81,18 @@ Accepted text and origin rights remain in SQLite independently of those files.
 Per-result shared-text provenance reads query only the delivered record IDs; a
 single result may contain records from several packs.
 
-A failed GitHub publish removes a repository only when this attempt created it and
-an immediate check confirms it has no commits. An automatically initialized README
-counts as content. Existing, nonempty or unreadable repositories are left on GitHub,
-and the error says whether cleanup succeeded; cleanup permission failure also leaves
-the repository. New GitHub device sign-ins request `delete_repo` alongside
-`public_repo gist` for this cleanup; older tokens without it can only leave the
-repository and report that result. The host never deletes a pre-existing repository.
-GitHub has no conditional repository-delete API.
+A failed GitHub publish never deletes a repository. Device sign-ins request only
+`public_repo gist`, without repository-deletion authority. If this attempt created
+a repository, the error includes its name and GitHub URL so the person can inspect
+or remove it there. A successful upload followed by a local record error is
+reported as uploaded, rather than claiming nothing was published.
+
+A failed creation is not reused by name: new repositories are automatically
+initialized with a README, which counts as content even if no pack was published.
+The app has no durable receipt proving ownership of an uninitialized failed
+creation, so existing repositories remain refused, including empty ones. Retry
+with a new name or remove the failed repository on GitHub first; the error does not
+promise that an existing repository will be reused.
 
 ## Code
 

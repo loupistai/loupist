@@ -1,4 +1,4 @@
-//! GitHub for sharing: OAuth device flow (scopes `public_repo gist delete_repo`), the token
+//! GitHub for sharing: OAuth device flow (scopes `public_repo gist`), the token
 //! in the OS keyring, public repository and gist publishing, and public reads
 //! for links. Every call runs here; the renderer sees the login only.
 use std::time::Duration;
@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use super::pack::{Files, MAX_BYTES};
 
-pub(crate) const SCOPES: &str = "public_repo gist delete_repo";
+pub(crate) const SCOPES: &str = "public_repo gist";
 pub(crate) const TOPIC: &str = "loupist-pack";
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
@@ -114,14 +114,6 @@ impl Github {
     }
 
     async fn send(&self, builder: reqwest::RequestBuilder) -> Result<(u16, Value), ApiError> {
-        self.send_checked(builder, false).await
-    }
-
-    async fn send_checked(
-        &self,
-        builder: reqwest::RequestBuilder,
-        allow_empty_repo: bool,
-    ) -> Result<(u16, Value), ApiError> {
         let response = builder.send().await.map_err(|_| ApiError::Offline)?;
         let status = response.status().as_u16();
         let limited = response
@@ -151,11 +143,6 @@ impl Github {
             403 if limited => Err(ApiError::RateLimited),
             429 => Err(ApiError::RateLimited),
             404 => Err(ApiError::NotFound),
-            409 if allow_empty_repo
-                && body["message"].as_str() == Some("Git Repository is empty.") =>
-            {
-                Ok((status, body))
-            }
             422 if body.to_string().contains("already exists") => Err(ApiError::NameTaken),
             _ => Err(ApiError::Other(format!("GitHub returned {status}"))),
         }
@@ -343,47 +330,6 @@ impl Github {
             return Err(RecordedError::Mismatch);
         }
         Ok(repo)
-    }
-
-    /// Cleanup is restricted to a repository created by this publish attempt.
-    /// An initialized README counts as content too; ambiguous or failed reads
-    /// preserve the repository. GitHub does not offer conditional deletion.
-    pub(crate) async fn remove_empty_created_repo(
-        &self,
-        token: &str,
-        full_name: &str,
-        created: bool,
-    ) -> bool {
-        if !created {
-            return false;
-        }
-        let commits = self
-            .send_checked(
-                self.request(
-                    reqwest::Method::GET,
-                    format!("{}/repos/{full_name}/commits", self.api),
-                    Some(token),
-                )
-                .query(&[("per_page", "1")]),
-                true,
-            )
-            .await;
-        // This endpoint returns 409 for a repository with no commits. Any
-        // successful response must be an explicitly empty array.
-        let empty = match commits {
-            Ok((409, _)) => true,
-            Ok((_, body)) => body.as_array().is_some_and(Vec::is_empty),
-            _ => false,
-        };
-        empty
-            && self
-                .send(self.request(
-                    reqwest::Method::DELETE,
-                    format!("{}/repos/{full_name}", self.api),
-                    Some(token),
-                ))
-                .await
-                .is_ok()
     }
 
     pub(crate) async fn set_topic(&self, token: &str, full_name: &str) -> Result<(), ApiError> {
@@ -1082,53 +1028,23 @@ mod tests {
     };
 
     #[tokio::test]
-    async fn failed_publish_deletes_only_its_own_confirmed_empty_repository() {
-        let fixture = fixture::serve(Arc::new(|method, path, _| {
-            if method == "DELETE" && path == "/api/repos/user/empty" {
-                return (204, String::new());
-            }
-            if path.starts_with("/api/repos/user/empty/commits?") {
-                return (409, r#"{"message":"Git Repository is empty."}"#.into());
-            }
-            if path.starts_with("/api/repos/user/content/commits?") {
-                return (200, r#"[{"sha":"other-persons-commit"}]"#.into());
-            }
-            if path.starts_with("/api/repos/user/unknown/commits?") {
-                return (409, r#"{"message":"another conflict"}"#.into());
-            }
-            if path.starts_with("/api/repos/user/denied/commits?") {
-                return (403, "{}".into());
-            }
-            panic!("unexpected request: {method} {path}");
-        }))
-        .await;
-        let api = Github::new(
-            &fixture.base,
-            &format!("{}/api", fixture.base),
-            &fixture.base,
-        );
-        assert!(
-            !api.remove_empty_created_repo("fixture", "user/preexisting", false)
-                .await
-        );
-        for name in ["content", "unknown", "denied"] {
-            assert!(
-                !api.remove_empty_created_repo("fixture", &format!("user/{name}"), true)
-                    .await
+    async fn publishing_never_touches_an_existing_repository_even_if_it_is_empty() {
+        for name in ["preexisting", "empty", "content", "unknown", "denied"] {
+            let server = fixture::serve(Arc::new(|method, path, _| {
+                assert_eq!((method, path), ("POST", "/api/user/repos"));
+                (422, r#"{"message":"already exists"}"#.into())
+            }))
+            .await;
+            let api = Github::new(&server.base, &format!("{}/api", server.base), &server.base);
+            assert_eq!(
+                api.create_repo("t", name, "d").await,
+                Err(ApiError::NameTaken)
             );
+            let requests = server.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].0, "POST");
+            assert_eq!(requests[0].1, "/api/user/repos");
         }
-        assert!(
-            api.remove_empty_created_repo("fixture", "user/empty", true)
-                .await
-        );
-        let requests = fixture.requests.lock().unwrap();
-        assert_eq!(
-            requests
-                .iter()
-                .filter(|(method, _, _)| method == "DELETE")
-                .count(),
-            1
-        );
     }
 
     #[tokio::test]
@@ -1182,7 +1098,10 @@ mod tests {
         let count = polls.clone();
         let server = fixture::serve(Arc::new(move |method, path, body| match (method, path) {
             ("POST", "/login/device/code") => {
-                assert!(body.contains("scope=public_repo+gist+delete_repo"), "{body}");
+                let form: std::collections::HashMap<String, String> =
+                    reqwest::Url::parse(&format!("https://example.test/?{body}"))
+                        .unwrap().query_pairs().into_owned().collect();
+                assert_eq!(form.get("scope").map(String::as_str), Some("public_repo gist"));
                 (200, r#"{"device_code":"dev-1","user_code":"WDJB-MJHT","verification_uri":"https://github.com/login/device","expires_in":900,"interval":0}"#.into())
             }
             ("POST", "/login/oauth/access_token") => match count.fetch_add(1, Ordering::SeqCst) {
@@ -1218,6 +1137,7 @@ mod tests {
             ("POST", "/api/user/repos") => {
                 let request: Value = serde_json::from_str(body).unwrap();
                 assert_eq!(request["private"], false);
+                assert_eq!(request["auto_init"], true);
                 if request["name"] == "taken" {
                     return (422, r#"{"message":"Repository creation failed.","errors":[{"message":"name already exists on this account"}]}"#.into());
                 }
