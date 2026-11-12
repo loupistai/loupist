@@ -305,6 +305,39 @@ fn draft_table(state: &AppState, id: &DraftIdentity) -> Result<(), CommandError>
     Ok(())
 }
 
+/// Drafts live in the app profile even when the Chat lives in its folder.
+/// Clear them before deleting the Chat, so an interrupted deletion cannot leave
+/// large attachment rows that no surviving Chat can reach.
+pub(super) fn clear_chat_drafts(
+    state: &AppState,
+    loupist: &str,
+    thread: &str,
+) -> Result<(), CommandError> {
+    let mut db = state.store.lock().map_err(map_store)?;
+    let tx = db.transaction().map_err(|error| map_store(error.into()))?;
+    for table in [
+        "composer_draft_context",
+        "composer_draft_files",
+        "composer_drafts",
+    ] {
+        let exists: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?1)",
+                [table],
+                |row| row.get(0),
+            )
+            .map_err(|error| map_store(error.into()))?;
+        if exists {
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE loupist_id=?1 AND thread_id=?2"),
+                [loupist, thread],
+            )
+            .map_err(|error| map_store(error.into()))?;
+        }
+    }
+    tx.commit().map_err(|error| map_store(error.into()))
+}
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

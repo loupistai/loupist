@@ -356,6 +356,7 @@ pub async fn chat_delete(
         return Err(CommandError::conflict("the home Thread cannot be deleted"));
     }
     let durable_root = state.loupist_files_root(&expected.loupist_id)?;
+    super::workspace_ui::clear_chat_drafts(&state, &expected.loupist_id, &expected.id)?;
     let timestamp = now_ms();
     let result = if state.store.is_folder_catalog() {
         deletion::delete_chat_with_runtime(

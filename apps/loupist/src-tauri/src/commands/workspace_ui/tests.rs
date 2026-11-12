@@ -387,3 +387,74 @@ fn symlinked_preferences_cannot_read_or_overwrite_another_location() {
     assert_eq!(std::fs::read(&outside_file).unwrap(), b"untouched");
     assert!(read_state(&state).unwrap().is_some());
 }
+
+#[tokio::test]
+async fn deleting_a_chat_removes_only_its_prompt_context_and_attachment_drafts() {
+    let (_temporary, state) = fixture();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state);
+    for (loupist, thread) in [
+        ("loupist-a", "chat-a"),
+        ("loupist-b", "chat-b"),
+        ("loupist-a", "__empty-chat__"),
+    ] {
+        let id = || DraftIdentity {
+            loupist_id: loupist.into(),
+            thread_id: thread.into(),
+        };
+        chat_draft_write(
+            app.state(),
+            id(),
+            serde_json::from_value(json!({"prompt": "Unsent", "context": {"asOf": "2026-11-01"}}))
+                .unwrap(),
+        )
+        .unwrap();
+        chat_draft_files_write(
+            app.state(),
+            id(),
+            vec![DraftAttachment {
+                id: "file".into(),
+                filename: "report.txt".into(),
+                media_type: "text/plain".into(),
+                url: "data:text/plain;base64,cmVwb3J0".into(),
+            }],
+        )
+        .unwrap();
+    }
+    super::super::records::chat_delete(
+        super::super::types::ChatDeleteRequest {
+            loupist_id: "loupist-a".into(),
+            thread_id: "chat-a".into(),
+        },
+        app.state(),
+    )
+    .await
+    .unwrap();
+    let state = app.state::<AppState>();
+    assert!(state.store.get_chat("chat-a").unwrap().is_none());
+    let db = state.store.lock().unwrap();
+    for table in [
+        "composer_drafts",
+        "composer_draft_context",
+        "composer_draft_files",
+    ] {
+        let rows: Vec<(String, String)> = db
+            .prepare(&format!(
+                "SELECT loupist_id,thread_id FROM {table} ORDER BY loupist_id,thread_id"
+            ))
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            [
+                ("loupist-a".into(), "__empty-chat__".into()),
+                ("loupist-b".into(), "chat-b".into())
+            ]
+        );
+    }
+}
