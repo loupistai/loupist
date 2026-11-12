@@ -290,8 +290,11 @@ boundary), so production parsing, result references and citations still run. Eve
 unmatched request fails with `eval_replay_unmatched`; replay never reaches the
 network and does not intercept model traffic, run_python or MCP. Native finance
 replay failures retain an eval-only error category through provider normalization;
-the executor reports a fixture failure instead of sanitizing it as an outside
-provider rejection. Real provider diagnostics remain sanitized. OpenBB point-in-time
+the executor keeps the `eval_replay_unmatched` marker instead of sanitizing it as an
+outside provider rejection, and tells the model what a provider with no matching
+data would: change the request or use another tool. A wording that named the
+fixture made the model stop where a real run would continue (T-038, T-039). Real
+provider diagnostics remain sanitized. OpenBB point-in-time
 filtering and refusal are therefore proven by Rust tests against a scripted MCP
 server (`commands::tool_executor::mcp_host`), not by agent replay.
 

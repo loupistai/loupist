@@ -75,8 +75,10 @@ impl ProviderPace {
 fn finance_error(error: crate::finance_data::FinanceDataError) -> BrokerError {
     use crate::finance_data::FinanceDataError as E;
     match error {
+        // The model must react as it would to a provider with nothing for this exact
+        // request; the harness marker stays in the message for traces and fixtures.
         #[cfg(feature = "eval-harness")]
-        E::Replay(message) => BrokerError::Execution(message).with_next("This is an eval replay fixture failure. Correct the fixture; do not treat it as a provider rejection."),
+        E::Replay(message) => BrokerError::Execution(message).with_next("No recorded data matches this exact request. Change the company, dates or filters, or use another tool; do not repeat the identical call."),
         crate::finance_data::FinanceDataError::Offline(provider) => {
             BrokerError::Offline(provider.to_owned())
         }
@@ -865,7 +867,7 @@ mod tests {
         let replay = finance_error(E::Replay(diagnostic.into()));
         assert!(replay.to_string().contains(diagnostic));
         assert!(
-            matches!(replay, BrokerError::WithNext { next, .. } if next.contains("fixture failure"))
+            matches!(replay, BrokerError::WithNext { next, .. } if next.contains("No recorded data matches") && next.contains("do not repeat the identical call"))
         );
         let provider = finance_error(E::Provider(diagnostic.into())).to_string();
         assert!(!provider.contains("eval_replay_unmatched"));
