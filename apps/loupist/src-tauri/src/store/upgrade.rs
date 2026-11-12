@@ -40,7 +40,7 @@ pub(crate) const KNOWLEDGE_BASELINE_VERSION: i64 = 6;
 type Step = fn(&Transaction<'_>) -> StoreResult<()>;
 
 /// Store steps; index 0 upgrades `STORE_BASELINE_VERSION` by one.
-const STORE_STEPS: &[Step] = &[store_4_to_5];
+const STORE_STEPS: &[Step] = &[store_4_to_5, store_5_to_6];
 /// Knowledge steps; index 0 upgrades `KNOWLEDGE_BASELINE_VERSION` by one.
 const KNOWLEDGE_STEPS: &[Step] = &[knowledge_6_to_7];
 
@@ -500,6 +500,19 @@ fn restore_removed_session_cache_keys(transaction: &Transaction<'_>) -> StoreRes
     Ok(())
 }
 
+// --- Store 5 → 6 ------------------------------------------------------
+
+/// Cover the global-id lookups used by Source span and representation readers.
+/// Ids can occur in more than one retained record, so these are not unique.
+fn store_5_to_6(transaction: &Transaction<'_>) -> StoreResult<()> {
+    transaction.execute_batch(
+        "CREATE INDEX knowledge_spans_by_id ON knowledge_source_spans(span_id, record_id);
+         CREATE INDEX knowledge_representations_by_id
+             ON knowledge_source_representations(representation_id, record_id);",
+    )?;
+    Ok(())
+}
+
 // --- Knowledge 6 → 7 ------------------------------------------------------
 
 /// As `STORE_5_ENUMERATIONS`. The immutable provenance and revision tables
@@ -936,7 +949,9 @@ pub(crate) fn restore_baseline_for_test(connection: &mut Connection) {
     }
     transaction
         .execute_batch(&format!(
-            "PRAGMA user_version = {STORE_BASELINE_VERSION};
+            "DROP INDEX IF EXISTS knowledge_spans_by_id;
+             DROP INDEX IF EXISTS knowledge_representations_by_id;
+             PRAGMA user_version = {STORE_BASELINE_VERSION};
              UPDATE knowledge_schema SET version = {KNOWLEDGE_BASELINE_VERSION};"
         ))
         .unwrap();
