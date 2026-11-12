@@ -52,7 +52,7 @@ impl AppToolExecutor {
                     &query,
                     "research",
                 )
-                .map_err(|error| BrokerError::Execution(error.to_string()))?
+                .map_err(command_error)?
             } else {
                 json!([])
             };
@@ -66,7 +66,7 @@ impl AppToolExecutor {
                 .state
                 .store
                 .list_chats_for_loupist(&policy.loupist_id)
-                .map_err(|error| BrokerError::Execution(error.to_string()))?;
+                .map_err(store_error)?;
             let terms: BTreeSet<_> = words(&query).into_iter().collect();
             if terms.is_empty() && query != "*" {
                 return Err(BrokerError::Malformed);
@@ -156,7 +156,7 @@ impl AppToolExecutor {
                 &policy.loupist_id,
                 &id,
             )
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+            .map_err(command_error)?;
             if let Some(cutoff) =
                 crate::commands::knowledge::as_of::Cutoff::parse(policy.as_of.as_deref())
                     .filter(|cutoff| !cutoff.recorded(note.recorded_at_ms))
@@ -206,7 +206,7 @@ impl AppToolExecutor {
             .state
             .store
             .get_chat(&chat_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?
+            .map_err(store_error)?
             .filter(|chat| chat.loupist_id == policy.loupist_id)
             .ok_or(BrokerError::MethodDenied)?;
         let message = completed_conversation_messages(&chat)

@@ -51,7 +51,12 @@ impl AppToolExecutor {
                         .get_journal(&policy.loupist_id, journal_id)
                     },
                 )
-                .map_err(|error| BrokerError::invalid("journal.earlier.readRef", error.message))?;
+                .map_err(|error| {
+                    BrokerError::invalid(
+                        "journal.earlier.readRef",
+                        command_error(error).to_string(),
+                    )
+                })?;
                 if let Some(outcome) = journal
                     .outcome
                     .as_ref()
@@ -137,7 +142,7 @@ impl AppToolExecutor {
                 &policy.loupist_id,
                 id,
             )
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+            .map_err(command_error)?;
             if research.working_note.is_some() && previous.chat_id == policy.session_id {
                 return Err(BrokerError::invalid(
                     "previousNoteIds",
@@ -604,7 +609,7 @@ impl AppToolExecutor {
                 if error.code == "conflict" {
                     BrokerError::invalid("workingNote.expectedResearchId", error.message)
                 } else {
-                    BrokerError::Execution(error.to_string())
+                    command_error(error)
                 }
             })?;
         }

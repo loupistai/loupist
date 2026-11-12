@@ -27,7 +27,9 @@ mod dataset_import;
 #[cfg(test)]
 mod dataset_tests;
 mod datasets;
+mod errors;
 mod evidence;
+use errors::{command_error, knowledge_error, store_error};
 mod finance;
 mod grid;
 #[cfg(test)]
@@ -1051,7 +1053,7 @@ impl AppToolExecutor {
                 .state
                 .store
                 .dataset_fresh(&self.loupist_id, key, max_age)
-                .map_err(|error| BrokerError::Execution(error.to_string()))?,
+                .map_err(command_error)?,
             _ => None,
         };
         let mut reused_payload = reused.as_ref().map(|(_, payload, _)| payload.clone());

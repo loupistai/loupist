@@ -29,7 +29,11 @@ unattended allowlist and the Bot turn's model and Memory flags, and the Bot show
 `handoff` card ([Home Thread](../ui/home-thread.md#home-thread)). A session or an
 unattended run does not list the tool and the broker refuses it by surface.
 
-The `schedules` component is independent of Memory. Read current IDs/revisions
+The general `schedules` tools are independent of Memory. `schedule_watch` and
+`schedule_briefing` read and save Memory settings, so their executor guards require
+both Memory access and Save learning; a Private chat or either missing grant
+refuses them before any read or write, even though their catalog permission is
+`always`. Other schedule tools keep their existing permission classes. Read current IDs/revisions
 before editing and keep a stable creation key within the turn. Agent modes are
 fresh history or the task's own dedicated Chat; scheduled runs cannot mutate
 schedules. Use [Scheduled Chats](../runtime/scheduled-runs.md#scheduled-chats) and the

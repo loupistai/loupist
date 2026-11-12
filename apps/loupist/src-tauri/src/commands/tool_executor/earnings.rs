@@ -166,7 +166,7 @@ impl AppToolExecutor {
                 };
                 Ok((page, event, existing))
             })
-            .map_err(|error| BrokerError::Execution(error.message))?;
+            .map_err(command_error)?;
         let page = page.ok_or_else(|| {
             BrokerError::invalid("assetId", "earnings_no_page: read the asset page first")
         })?;

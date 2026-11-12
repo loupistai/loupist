@@ -66,10 +66,10 @@ impl AppToolExecutor {
                 self.capture.surface.as_ref().map_or("host", ChatSurface::name)
             )));
         }
-        let request: Input = serde_json::from_value(params).map_err(|error| {
+        let request: Input = serde_json::from_value(params).map_err(|_| {
             invalid(
                 "ask_user",
-                format!("{{question, options: [{{label, description?}}] (2 to 4), recommended?: index}}: {error}"),
+                "{question, options: [{label, description?}] (2 to 4), recommended?: index}".into(),
             )
         })?;
         let options = request

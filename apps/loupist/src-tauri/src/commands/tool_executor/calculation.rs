@@ -25,7 +25,7 @@ impl calculations::DatasetSource for PinnedDatasets<'_> {
         let (reference, payload, metadata) = self
             .store
             .dataset(self.loupist_id, dataset_id, revision)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| command_error(error).to_string())?;
         if let Err(refused) =
             super::datasets::ensure_within_cutoff(dataset_id, revision, &metadata, self.cutoff)
         {

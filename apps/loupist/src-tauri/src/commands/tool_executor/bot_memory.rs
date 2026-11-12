@@ -222,7 +222,7 @@ impl AppToolExecutor {
             .state
             .store
             .get_chat(&policy.session_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?
+            .map_err(store_error)?
             .filter(|chat| chat.loupist_id == self.loupist_id && crate::chat::home::is_home(chat))
             .ok_or(BrokerError::MethodDenied)?;
         // Check against every call this reply has reserved, delivered or not,

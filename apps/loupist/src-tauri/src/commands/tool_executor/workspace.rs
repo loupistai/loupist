@@ -127,7 +127,7 @@ impl AppToolExecutor {
                         self.capture.turn_taint.exposure(),
                         request.tool != NativeTool::Ls,
                     )
-                    .map_err(|error| BrokerError::Execution(error.to_string()))?;
+                    .map_err(|_| BrokerError::Execution("Workspace search is unavailable. Check the selected file or directory.".into()))?;
                 }
                 result["resolved"] = json!(resolved);
             }
@@ -136,7 +136,7 @@ impl AppToolExecutor {
         if request.tool == NativeTool::Read {
             if let Some(path) = request.target.as_deref() {
                 if crate::commands::export_trust::tagged_file(&self.state, path)
-                    .map_err(|error| BrokerError::Execution(error.to_string()))?
+                    .map_err(command_error)?
                 {
                     self.capture.turn_taint.mark_untrusted_text();
                     result["untrusted_text"] =
@@ -225,22 +225,20 @@ impl AppToolExecutor {
             .state
             .store
             .get_loupist(&self.loupist_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?
+            .map_err(store_error)?
             .ok_or_else(|| BrokerError::Execution("Loupist does not exist".into()))?;
-        let root = crate::fs::loupist_root::profile_workspace(&profile)
-            .map_err(|error| BrokerError::Execution(error.message))?;
-        let relative = crate::fs::workspace_files::relative_path(&path)
-            .map_err(|error| BrokerError::Execution(error.message))?;
+        let root = crate::fs::loupist_root::profile_workspace(&profile).map_err(command_error)?;
+        let relative = crate::fs::workspace_files::relative_path(&path).map_err(command_error)?;
         self.host_file_gate(&relative, HostFile::Capture)?;
         let file = crate::fs::workspace_files::exact_text(&root, &path, expected.as_deref())
-            .map_err(|error| BrokerError::Execution(error.message))?;
+            .map_err(command_error)?;
         let untrusted = crate::commands::export_trust::contains(
             &self.state,
             file.content_sha256
                 .as_deref()
                 .ok_or(BrokerError::Malformed)?,
         )
-        .map_err(|error| BrokerError::Execution(error.message))?;
+        .map_err(command_error)?;
         Ok(json!({
             "path": file.path,
             "content": file.content,

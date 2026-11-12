@@ -34,6 +34,21 @@ const MCP_SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 type SharedMcpServer = Arc<Mutex<Option<TurnMcpServer>>>;
 
+fn protected_values(
+    credentials: &BTreeMap<String, String>,
+    app_data: &std::path::Path,
+    scratch: &std::path::Path,
+) -> Vec<String> {
+    credentials
+        .values()
+        .cloned()
+        .chain([
+            app_data.to_string_lossy().into_owned(),
+            scratch.to_string_lossy().into_owned(),
+        ])
+        .collect()
+}
+
 #[derive(Default)]
 pub(super) struct McpTurnSessions {
     by_server: BTreeMap<String, SharedMcpServer>,
@@ -487,7 +502,11 @@ impl AppToolExecutor {
                 scratch
             }
         };
-        let sensitive_values = authority.credentials.values().cloned().collect::<Vec<_>>();
+        let sensitive_values = protected_values(
+            &authority.credentials,
+            &self.state.artifacts.app_data_dir,
+            &scratch,
+        );
         let providerless_tool_policy = authority.runtime.providerless_tool_policy.clone();
         let provider_receipt_pointer = authority.runtime.provider_receipt_pointer.clone();
         let control_tool_names = authority.runtime.control_tool_names.clone();
@@ -623,7 +642,7 @@ impl AppToolExecutor {
                 .state
                 .store
                 .dataset_fresh(&self.loupist_id, &plan.request_key, max_age)
-                .map_err(|error| BrokerError::Execution(error.to_string()))?,
+                .map_err(command_error)?,
             _ => None,
         };
 
@@ -835,7 +854,7 @@ impl AppToolExecutor {
             .state
             .store
             .dataset_describe(&self.loupist_id, &reference.dataset_id, reference.revision)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+            .map_err(command_error)?;
         let mut delivered = json!({"dataset_ref":reference,"fetched_at":payload["fetched_at"],"data_summary":description,"model_delivery":{"coverage":"bounded_sample","retained":"complete"}});
         if let Some(as_of) = payload.get("as_of") {
             delivered["as_of"] = as_of.clone();
@@ -1764,12 +1783,18 @@ done
     }
 
     #[test]
-    fn credential_echoes_are_refused_in_results_and_inventory() {
-        let secrets = vec!["provider-secret-123".to_owned()];
+    fn credentials_and_private_paths_are_refused_in_results_and_inventory() {
+        let secrets = protected_values(
+            &BTreeMap::from([("api_key".into(), "provider-secret-123".into())]),
+            std::path::Path::new("/private/app-data"),
+            std::path::Path::new("/private/scratch"),
+        );
         let mut keyed_echo = serde_json::Map::new();
         keyed_echo.insert("provider-secret-123".into(), json!("credential-shaped key"));
         for echoed in [
             json!({"content": [{"type": "text", "text": "error: provider-secret-123"}]}),
+            json!({"content": [{"type": "text", "text": "Read /private/app-data/key.json"}]}),
+            json!({"structuredContent": {"path":"/private/scratch/runtime.json"}}),
             Value::Object(keyed_echo),
         ] {
             assert!(contains_protected_value(&echoed, &secrets));

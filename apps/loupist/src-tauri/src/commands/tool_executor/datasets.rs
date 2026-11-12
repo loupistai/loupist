@@ -71,7 +71,7 @@ impl AppToolExecutor {
             .state
             .store
             .dataset_metadata(&self.loupist_id, dataset_id, revision)
-            .map_err(|e| BrokerError::Execution(e.to_string()))?;
+            .map_err(command_error)?;
         ensure_within_cutoff(dataset_id, revision, &metadata, Some(cutoff))
     }
 
@@ -89,7 +89,7 @@ impl AppToolExecutor {
             serde_json::from_value(v).map_err(|_| BrokerError::Malformed)
         }
         fn map<T>(r: Result<T, crate::app::CommandError>) -> Result<T, BrokerError> {
-            r.map_err(|e| BrokerError::Execution(e.to_string()))
+            r.map_err(command_error)
         }
         match method {
             ToolMethod::DatasetDescribe => {

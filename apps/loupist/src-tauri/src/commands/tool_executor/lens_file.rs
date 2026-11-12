@@ -242,7 +242,7 @@ impl AppToolExecutor {
     ) -> Result<(), BrokerError> {
         let screens =
             crate::commands::knowledge::screen_filing(&self.state, loupist_id, &filing.deltas)
-                .map_err(|error| BrokerError::Execution(error.to_string()))?;
+                .map_err(command_error)?;
         let said_ops = &filing.said_ops;
         for (index, (delta, screen)) in filing.deltas.iter_mut().zip(screens).enumerate() {
             if let Some((field, reason)) = screen.refusals.first() {

@@ -22,7 +22,7 @@ impl AppToolExecutor {
             &query,
             "lens",
         )
-        .map_err(|error| BrokerError::Execution(error.to_string()))?;
+        .map_err(command_error)?;
         self.as_of_hits(policy, &mut hits)?;
         discovery_page(hits, offset, false)
     }
@@ -59,7 +59,7 @@ impl AppToolExecutor {
                 ),
             },
         )
-        .map_err(|error| BrokerError::Execution(error.to_string()))?;
+        .map_err(command_error)?;
         delivered["lens_url"] = json!(format!("lens:{record_id}"));
         Ok(delivered)
     }
@@ -107,11 +107,11 @@ impl AppToolExecutor {
         if let Some(id) = job_id {
             let job =
                 crate::commands::knowledge::host_world_job(&self.state, &policy.loupist_id, &id)
-                    .map_err(|error| BrokerError::Execution(error.to_string()))?;
+                    .map_err(command_error)?;
             return Ok(summarize(&job));
         }
         let jobs = crate::commands::knowledge::host_world_jobs(&self.state, &policy.loupist_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+            .map_err(command_error)?;
         Ok(json!(jobs
             .as_array()
             .ok_or(BrokerError::Malformed)?
@@ -189,7 +189,7 @@ impl AppToolExecutor {
         })
         .await
         .map_err(|_| BrokerError::Execution("knowledge search failed".into()))?
-        .map_err(|error| BrokerError::Execution(error.to_string()))?;
+        .map_err(command_error)?;
         let capped = hits
             .as_array()
             .is_some_and(|rows| rows.len() >= crate::knowledge::SEARCH_WINDOW_LIMIT);
@@ -250,7 +250,7 @@ impl AppToolExecutor {
             &journal_id,
             cutoff,
         )
-        .map_err(|error| BrokerError::Execution(error.to_string()))?
+        .map_err(command_error)?
         .ok_or_else(|| {
             let mut left = crate::commands::knowledge::as_of::LeftOut::default();
             left.notes.insert(journal_id.clone());
@@ -383,7 +383,7 @@ impl AppToolExecutor {
             &policy.loupist_id,
             &request,
         )
-        .map_err(|error| BrokerError::Execution(error.to_string()))?;
+        .map_err(command_error)?;
         let read_ref = staged.read_ref.clone();
         let revision_id = staged.revision_id.clone();
         let span_id = staged.span_id.clone();
@@ -466,7 +466,7 @@ impl AppToolExecutor {
         cutoff: crate::commands::knowledge::as_of::Cutoff,
     ) -> Result<(), BrokerError> {
         use crate::commands::knowledge::as_of;
-        let execution = |error: crate::app::CommandError| BrokerError::Execution(error.to_string());
+        let execution = command_error;
         let mut left = as_of::LeftOut::default();
         let refused = match request.scope.as_str() {
             "source" => {

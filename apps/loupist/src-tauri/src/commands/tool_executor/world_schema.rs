@@ -102,7 +102,7 @@ impl AppToolExecutor {
             .collect();
         let live = self
             .live_extension(&policy.loupist_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+            .map_err(knowledge_error)?;
         let staged = self.capture.staged_vocabulary.lock().await;
         let mut preview = live;
         for earlier in staged.iter() {
@@ -122,8 +122,7 @@ impl AppToolExecutor {
         }
         preview.types.extend(types.iter().cloned());
         preview.relations.extend(relations.iter().cloned());
-        crate::knowledge::validate_extension(&preview)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+        crate::knowledge::validate_extension(&preview).map_err(knowledge_error)?;
         drop(staged);
         let names: Vec<String> = types
             .iter()

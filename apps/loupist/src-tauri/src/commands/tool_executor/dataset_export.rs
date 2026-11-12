@@ -98,7 +98,7 @@ impl AppToolExecutor {
             .state
             .store
             .dataset(&self.loupist_id, &request.dataset_id, request.revision)
-            .map_err(export_error)?;
+            .map_err(command_error)?;
         super::datasets::ensure_within_cutoff(
             &request.dataset_id,
             request.revision,
@@ -141,13 +141,13 @@ impl AppToolExecutor {
             .state
             .store
             .get_loupist(&self.loupist_id)
-            .map_err(export_error)?
+            .map_err(store_error)?
             .ok_or_else(|| export_error("Loupist does not exist"))?;
-        let root = crate::fs::loupist_root::profile_workspace(&profile).map_err(export_error)?;
+        let root = crate::fs::loupist_root::profile_workspace(&profile).map_err(command_error)?;
         if !crate::custom_connections::taint::retained_trusted(&metadata) {
-            crate::commands::export_trust::record(&self.state, &bytes).map_err(export_error)?;
+            crate::commands::export_trust::record(&self.state, &bytes).map_err(command_error)?;
             crate::commands::export_trust::record(&self.state, &metadata_bytes)
-                .map_err(export_error)?;
+                .map_err(command_error)?;
         }
         write_export(&root, &path, &bytes, &metadata_bytes)?;
         Ok(
