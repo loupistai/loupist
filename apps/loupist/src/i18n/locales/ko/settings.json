@@ -577,7 +577,8 @@
       "financial_action": "거래나 결제 동작으로 보여서 차단했어요."
     },
     "urlPlaceholder": "{{scheme}}…",
-    "disclosure": "직접 연결 추가 (고급)"
+    "disclosure": "직접 연결 추가 (고급)",
+    "chooseEach": "도구마다 선택하면 완료할 수 있어요."
   },
   "runDiagnostics": {
     "title": "진단",

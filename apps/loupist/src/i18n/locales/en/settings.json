@@ -576,7 +576,8 @@
       "financial_action": "Looks like a trading or payment action. Blocked."
     },
     "urlPlaceholder": "{{scheme}}…",
-    "disclosure": "Add your own connection (advanced)"
+    "disclosure": "Add your own connection (advanced)",
+    "chooseEach": "Choose for each tool to finish."
   },
   "runDiagnostics": {
     "title": "Diagnostics",
