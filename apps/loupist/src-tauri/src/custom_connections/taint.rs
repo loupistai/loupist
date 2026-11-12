@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Mutex,
     },
 };
@@ -57,6 +57,7 @@ pub struct TurnTaint {
     memory_blocked: AtomicBool,
     /// A missing answer never grants destructive authority later in this reply.
     unanswered_question: AtomicBool,
+    pending_questions: AtomicUsize,
     origin: Mutex<Option<CustomOrigin>>,
     /// Sites this turn may read after third-party text.
     web: Mutex<SeenWeb>,
@@ -70,6 +71,27 @@ pub struct TurnTaint {
 struct SeenWeb {
     hosts: BTreeSet<String>,
     urls: BTreeSet<String>,
+}
+
+/// Dropping a waiting call without an answer also preserves the reply's guard.
+pub(crate) struct PendingQuestion<'a> {
+    taint: &'a TurnTaint,
+    answered: bool,
+}
+
+impl PendingQuestion<'_> {
+    pub(crate) fn settle(mut self, answered: bool) {
+        self.answered = answered;
+    }
+}
+
+impl Drop for PendingQuestion<'_> {
+    fn drop(&mut self) {
+        if !self.answered {
+            self.taint.mark_unanswered_question();
+        }
+        self.taint.pending_questions.fetch_sub(1, Ordering::Release);
+    }
 }
 
 /// What `web_fetch` may do with one URL under the untrusted-text tier.
@@ -94,6 +116,14 @@ impl TurnTaint {
 
     pub(crate) fn mark_unanswered_question(&self) {
         self.unanswered_question.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn begin_question(&self) -> PendingQuestion<'_> {
+        self.pending_questions.fetch_add(1, Ordering::AcqRel);
+        PendingQuestion {
+            taint: self,
+            answered: false,
+        }
     }
 
     pub fn mark_untrusted_text(&self) {
@@ -269,7 +299,12 @@ impl TurnTaint {
     }
 
     pub fn enforce(&self, method: ToolMethod, params: &Value) -> Result<(), BrokerError> {
-        if self.unanswered_question.load(Ordering::Acquire) && destructive_change(method, params) {
+        // Read the counter before the flag: an unanswered call sets the flag
+        // before dropping its counter, leaving no settlement gap.
+        let pending_question = self.pending_questions.load(Ordering::Acquire) > 0;
+        if (pending_question || self.unanswered_question.load(Ordering::Acquire))
+            && destructive_change(method, params)
+        {
             return Err(BrokerError::invalid("", "The user did not answer, so this change was not made.")
                 .with_next("The user did not answer. Finish the reply and say what you need answered; do not retry this change in this reply."));
         }
@@ -288,18 +323,34 @@ impl TurnTaint {
     }
 }
 
-/// Only explicit removal, pause and cancellation operations. Ordinary research
-/// and saves stay available; the model must still respect the question's repair.
+/// Explicit changes to standing work and Memory. Ordinary saves and work
+/// products (artifact revision, native writes/edits and Python) stay available.
 fn destructive_change(method: ToolMethod, params: &Value) -> bool {
     match method {
-        ToolMethod::ScheduleDelete | ToolMethod::ScheduleStop => true,
+        ToolMethod::ScheduleDelete | ToolMethod::ScheduleStop | ToolMethod::ScheduleUpdate => true,
         ToolMethod::ScheduleSetStatus => params["status"] == "paused",
         ToolMethod::ScheduleWatch | ToolMethod::ScheduleBriefing => params["enabled"] == false,
         ToolMethod::BotMemory => params["changes"].as_array().is_some_and(|changes| {
-            changes
-                .iter()
-                .any(|change| matches!(change["action"].as_str(), Some("forget" | "resolve")))
+            changes.iter().any(|change| {
+                matches!(
+                    change["action"].as_str(),
+                    Some("forget" | "resolve" | "update")
+                )
+            })
         }),
+        ToolMethod::LensFile => params["pages"].as_array().is_some_and(|pages| {
+            pages.iter().any(|page| {
+                page["ops"]
+                    .as_array()
+                    .is_some_and(|ops| ops.iter().any(|op| op["op"] == "retire"))
+            })
+        }),
+        ToolMethod::LoupistSetup => {
+            params.get("focus").is_some_and(|focus| !focus.is_null())
+                || params["unfollow"]
+                    .as_array()
+                    .is_some_and(|assets| !assets.is_empty())
+        }
         _ => false,
     }
 }
@@ -893,6 +944,10 @@ mod tests {
         let refused = [
             (ToolMethod::ScheduleDelete, json!({})),
             (ToolMethod::ScheduleStop, json!({})),
+            (
+                ToolMethod::ScheduleUpdate,
+                json!({"title":"A clearer title"}),
+            ),
             (ToolMethod::ScheduleSetStatus, json!({"status":"paused"})),
             (ToolMethod::ScheduleWatch, json!({"enabled":false})),
             (ToolMethod::ScheduleBriefing, json!({"enabled":false})),
@@ -904,6 +959,19 @@ mod tests {
                 ToolMethod::BotMemory,
                 json!({"changes":[{"action":"resolve","id":"entry"}]}),
             ),
+            (
+                ToolMethod::BotMemory,
+                json!({"changes":[{"action":"update","id":"entry","text":"A preference"}]}),
+            ),
+            (
+                ToolMethod::LensFile,
+                json!({"pages":[{"ops":[{"op":"put"},{"op":"retire","key":"old"}]}]}),
+            ),
+            (
+                ToolMethod::LoupistSetup,
+                json!({"unfollow":[{"symbol":"AAPL"}]}),
+            ),
+            (ToolMethod::LoupistSetup, json!({"focus":"A new focus"})),
         ];
         for (method, params) in &refused {
             state.enforce(*method, params).unwrap();
@@ -922,7 +990,7 @@ mod tests {
             };
             if !matches!(
                 method,
-                ToolMethod::ScheduleDelete | ToolMethod::ScheduleStop
+                ToolMethod::ScheduleDelete | ToolMethod::ScheduleStop | ToolMethod::ScheduleUpdate
             ) {
                 state
                     .enforce(method, &json!({}))
@@ -930,10 +998,6 @@ mod tests {
             }
         }
         for (method, params) in [
-            (
-                ToolMethod::ScheduleUpdate,
-                json!({"title":"A clearer title","schedule":null}),
-            ),
             (ToolMethod::ScheduleSetStatus, json!({"status":"active"})),
             (ToolMethod::ScheduleWatch, json!({"enabled":true})),
             (ToolMethod::ScheduleBriefing, json!({"enabled":true})),
@@ -942,13 +1006,25 @@ mod tests {
                 json!({"changes":[{"action":"remember","text":"A preference"}]}),
             ),
             (
-                ToolMethod::BotMemory,
-                json!({"changes":[{"action":"update","id":"entry","text":"A preference"}]}),
+                ToolMethod::LensFile,
+                json!({"pages":[{"ops":[{"op":"put","key":"new","markdown":"A fact"}]}]}),
+            ),
+            (
+                ToolMethod::LoupistSetup,
+                json!({"follow":[{"symbol":"AAPL"}],"preset":"equity","unfollow":[],"focus":null}),
             ),
             (ToolMethod::ArtifactPublish, json!({"mode":"revise"})),
             (
                 ToolMethod::NativeAuthorize,
                 json!({"name":"read","path":"notes.txt"}),
+            ),
+            (
+                ToolMethod::NativeAuthorize,
+                json!({"name":"write","path":"notes.txt"}),
+            ),
+            (
+                ToolMethod::NativeAuthorize,
+                json!({"name":"edit","path":"notes.txt"}),
             ),
             (ToolMethod::PythonRun, json!({"code":"print(1)"})),
             (ToolMethod::Calculate, json!({"operation":"sum"})),
@@ -960,6 +1036,30 @@ mod tests {
         super::TurnTaint::default()
             .enforce(ToolMethod::ScheduleDelete, &json!({}))
             .unwrap();
+    }
+
+    #[test]
+    fn every_waiting_question_must_settle_before_destructive_authority_returns() {
+        let taint = super::TurnTaint::default();
+        let first = taint.begin_question();
+        let second = taint.begin_question();
+        assert!(taint
+            .enforce(ToolMethod::ScheduleDelete, &json!({}))
+            .is_err());
+        first.settle(true);
+        assert!(taint
+            .enforce(ToolMethod::ScheduleDelete, &json!({}))
+            .is_err());
+        second.settle(true);
+        taint
+            .enforce(ToolMethod::ScheduleDelete, &json!({}))
+            .unwrap();
+        let abandoned = taint.begin_question();
+        drop(abandoned);
+        taint.begin_question().settle(true);
+        assert!(taint
+            .enforce(ToolMethod::ScheduleDelete, &json!({}))
+            .is_err());
     }
 
     use super::*;

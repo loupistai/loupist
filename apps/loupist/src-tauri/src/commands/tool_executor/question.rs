@@ -1,6 +1,6 @@
 //! `ask_user`: the model asks the user one question mid-reply and the call
 //! waits for the answer, the wait limit or the run stopping. A question nobody
-//! answers is not an error and never grants permission to change anything.
+//! answers is not an error and never grants destructive authority.
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -41,7 +41,7 @@ fn invalid(field: &str, expected: String) -> BrokerError {
 
 fn unanswered(question: &ChatQuestion) -> Value {
     json!({"answered": false, "assumed": question.recommended_label(), "next":
-        "The user did not answer. If the choice only affects how you research or present this answer, continue with the recommended option and say which one you used. If it decides whether to delete, change, cancel, schedule or save something, do not do it: finish the reply and say what you need answered."})
+        "The user did not answer. For a research or presentation choice, use the recommended option and say which one you used. Do not delete, stop, edit or pause a schedule; disable a watch or briefing; retire a Lens section; unfollow an asset or replace the research focus; or update, resolve or forget Bot memory. Finish the reply and say what you need answered before making any of those changes. Other research, saves and work products may continue."})
 }
 
 impl AppToolExecutor {
@@ -92,10 +92,11 @@ impl AppToolExecutor {
             answer: None,
             requested_at_ms: chrono::Utc::now().timestamp_millis(),
         };
+        // Raise the guard before publishing a card, including synchronous sinks.
+        let pending = self.capture.turn_taint.begin_question();
         // Nobody to ask: a run without cards.
         let Some(sink) = self.capture.question_sink.as_ref() else {
             question.state = QuestionState::Expired;
-            self.capture.turn_taint.mark_unanswered_question();
             return Ok(unanswered(&question));
         };
         let call_id = current_tool_call_id();
@@ -114,9 +115,7 @@ impl AppToolExecutor {
             QuestionState::Expired
         };
         question.answer = answer.clone();
-        if answer.is_none() {
-            self.capture.turn_taint.mark_unanswered_question();
-        }
+        pending.settle(answer.is_some());
         sink(call_id, question.clone());
         Ok(match answer {
             Some(QuestionAnswer::Choice(index)) => {

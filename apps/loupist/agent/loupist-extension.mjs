@@ -376,6 +376,7 @@ function register(pi, name, label, description, parameters, method) {
     label,
     description,
     parameters,
+    ...(name === "ask_user" ? { executionMode: "sequential" } : {}),
     ...(name === "note_save" ? {
       prepareArguments: (input) => prepareSiblingArguments(input, "workingNote", ["sourceReads", "worldReads", "lensReads", "previousNoteIds"]),
     } : name === "lens_file" ? {

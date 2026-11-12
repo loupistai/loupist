@@ -199,14 +199,19 @@ stopping. The result is `{answered: true, choice: "<label>"}` or
 `{answered: true, text}`; with no answer it is `{answered: false, assumed: "<recommended
 label>" | null, next}`, not an error, and `next` tells the model to continue with the
 research or presentation default and say which one it used. The `assumed` label
-is only the recommendation: silence never authorizes deleting, overwriting,
-cancelling, scheduling, sending or saving. If the choice controls an action,
-finish the reply and say what needs answering. An unanswered card raises a
-reply-local guard against schedule deletion/stopping/pausing, watch or briefing
-disables, and Bot memory forget/resolve;
-ordinary reads, research, calculations and saves keep their existing authority.
-The current schedule-update schema cannot pause or remove a schedule, and null
-means no change. There are no Chat or artifact delete tools. A later answer does not clear the
+is only the recommendation. Before publishing the card, Rust raises a reply-local
+pending-question counter; while any question is waiting, and after any question
+ends unanswered, it refuses schedule deletion, stopping, editing and pausing;
+watch or briefing disables; Lens section retirement; unfollowing an asset or
+replacing the research focus; and Bot memory update, resolve and forget. The
+returned `next` and tool description name this same list. Ordinary reads,
+research, calculations, other saves and work products (artifact revision,
+native write/edit and Python) keep their existing authority. A supplied `focus`
+replaces the focus, so it is guarded even when the old focus is empty. There are
+no Chat or artifact delete tools. Pi registers `ask_user` as sequential, which the
+pinned runtime applies to its whole tool batch. Answering a card drops only its
+pending count; dropping the call without an answer preserves the guard. A later
+answer does not clear the
 guard in the same reply; a new reply starts fresh. A text answer's URLs count as typed by the user for
 the untrusted-text rule, and the answer joins the private text no URL may carry after
 third-party text. The description tells the model to ask only when the answer
