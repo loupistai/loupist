@@ -79,11 +79,17 @@ runs interrupted; a failure in one Loupist's recovery is skipped so other
 Loupists can still run. An undecodable running receipt is skipped individually,
 and its run id is logged once per app process; other orphans in that Loupist still
 recover. Recovery opens a write transaction only when it finds an
-orphaned run. A failed/interrupted recurring task stays active for its next
-scheduled occurrence; three consecutive non-successes pause it, and a success
-resets that streak. Missing model/account credentials pause immediately. The
-streak is derived from terminal receipts, so no counter field or schema step is
-needed. A newer edit still prevents an old completion from changing the definition.
+orphaned run. A failed recurring task or unexpected interruption stays active for
+its next occurrence; three consecutive failures pause it, and success resets the
+streak. User Stops and graceful app-quit interruptions neither count nor reset it.
+Old receipts with the ambiguous quit/crash message are also neutral; new orphan
+recovery explicitly records an unexpected interruption and still counts.
+Resume and every definition edit start a fresh failure window, persisted in the
+task JSON as a start timestamp and a revision tie-breaker for runs begun in the
+same millisecond; no schema step or public Task field is added. Only terminal
+receipts from that window count. The sink carries typed NeedsReconnect/ModelGone
+failures into the task policy so rejected credentials or a missing model pause
+immediately, even though the Chat's failure text is the generic placeholder. A newer edit still prevents an old completion from changing the definition.
 History records status, timing, error and target Chat, where the reply and its evidence remain. Renderer discovery polls every two
 seconds while the window is visible and every 30 seconds while hidden, and reads
 immediately when the window becomes visible or regains focus. A finished run is also

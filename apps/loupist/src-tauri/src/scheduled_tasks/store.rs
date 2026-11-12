@@ -247,7 +247,7 @@ impl SqliteStore {
         task.next_run_at_ms = Some(next_run_at_ms);
         task.validate()?;
         transaction.execute(
-            "UPDATE scheduled_tasks SET next_run_at_ms=?3, data_json=?4 WHERE id=?1 AND loupist_id=?2 AND status='active'",
+            "UPDATE scheduled_tasks SET next_run_at_ms=?3, data_json=json_set(?4,'$.failure_streak_started_at_ms',coalesce(json_extract(data_json,'$.failure_streak_started_at_ms'),0),'$.failure_streak_started_revision',coalesce(json_extract(data_json,'$.failure_streak_started_revision'),0)) WHERE id=?1 AND loupist_id=?2 AND status='active'",
             params![id, loupist_id, next_run_at_ms, serde_json::to_string(&task)?],
         )?;
         transaction.commit()?;
@@ -545,7 +545,7 @@ impl SqliteStore {
             proposed_in_message_id: None,
         };
         task.validate()?;
-        transaction.execute("INSERT INTO scheduled_tasks(id,loupist_id,revision,status,next_run_at_ms,target_thread_id,updated_at_ms,data_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+        transaction.execute("INSERT INTO scheduled_tasks(id,loupist_id,revision,status,next_run_at_ms,target_thread_id,updated_at_ms,data_json) VALUES(?1,?2,?3,?4,?5,?6,?7,json_set(?8,'$.failure_streak_started_at_ms',?7,'$.failure_streak_started_revision',?3))",
             params![task.id,task.loupist_id,task.revision as i64,task.status.as_str(),task.next_run_at_ms,target_thread(&task),task.updated_at_ms,serde_json::to_string(&task)?])?;
         transaction.commit()?;
         Ok(task)
@@ -586,6 +586,7 @@ impl SqliteStore {
         task.last_error = None;
         touch(&mut task, now)?;
         update_task(&transaction, &task, expected_revision)?;
+        reset_failure_streak(&transaction, &task, now)?;
         transaction.commit()?;
         Ok(task)
     }
@@ -624,6 +625,9 @@ impl SqliteStore {
         task.proposed_in_message_id = None;
         touch(&mut task, now)?;
         update_task(&transaction, &task, expected_revision)?;
+        if status == TaskStatus::Active {
+            reset_failure_streak(&transaction, &task, now)?;
+        }
         transaction.commit()?;
         Ok(task)
     }
@@ -878,7 +882,7 @@ impl SqliteStore {
                     &run.loupist_id,
                     &run.run_id,
                     RunStatus::Interrupted,
-                    Some("Interrupted before completion.".into()),
+                    Some("Interrupted unexpectedly before completion.".into()),
                     now,
                 )?);
             }
@@ -943,9 +947,11 @@ fn finish_run(
             && task.status == TaskStatus::Active
             && !matches!(task.schedule, Schedule::Once { .. })
         {
+            // The revision disambiguates old and new runs at the same millisecond.
+            // Deliberate Stops and graceful shutdowns neither count nor reset it.
             let failures = connection.prepare(
-                "SELECT status FROM scheduled_task_runs WHERE task_id=?1 AND status<>'running' ORDER BY rowid DESC LIMIT 3",
-            )?.query_map([&task.id], |row| row.get::<_, String>(0))?
+                "SELECT run.status FROM scheduled_task_runs AS run JOIN scheduled_tasks AS task ON task.id=run.task_id WHERE run.task_id=?1 AND run.status<>'running' AND run.started_at_ms>=coalesce(json_extract(task.data_json,'$.failure_streak_started_at_ms'),0) AND run.task_revision>=coalesce(json_extract(task.data_json,'$.failure_streak_started_revision'),0) AND NOT (run.status='interrupted' AND coalesce(json_extract(run.data_json,'$.error'),'') IN (?2,?3,?4)) ORDER BY run.rowid DESC LIMIT 3",
+            )?.query_map(params![task.id, super::USER_STOPPED, super::APP_QUIT, super::LEGACY_INTERRUPTED], |row| row.get::<_, String>(0))?
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter().take_while(|status| status != "succeeded").count();
             if failures >= 3 || run.error.as_deref().is_some_and(requires_setup) {
@@ -966,7 +972,6 @@ fn requires_setup(error: &str) -> bool {
         error,
         crate::pi::provider_failure::NEEDS_RECONNECT
             | crate::pi::provider_failure::MODEL_GONE
-            | "Pi model was not found"
             | "the selected Pi model is hidden from Chat"
             | "Connect an AI account in Settings › Models & providers before chatting."
     )
@@ -1084,10 +1089,18 @@ fn new_id(prefix: &str) -> String {
 
 fn update_task(connection: &Connection, task: &Task, expected_revision: u64) -> StoreResult<()> {
     task.validate()?;
-    let changed=connection.execute("UPDATE scheduled_tasks SET revision=?3,status=?4,next_run_at_ms=?5,target_thread_id=?6,updated_at_ms=?7,data_json=?8 WHERE id=?1 AND loupist_id=?2 AND revision=?9",params![task.id,task.loupist_id,task.revision as i64,task.status.as_str(),task.next_run_at_ms,target_thread(task),task.updated_at_ms,serde_json::to_string(task)?,expected_revision as i64])?;
+    let changed=connection.execute("UPDATE scheduled_tasks SET revision=?3,status=?4,next_run_at_ms=?5,target_thread_id=?6,updated_at_ms=?7,data_json=json_set(?8,'$.failure_streak_started_at_ms',coalesce(json_extract(data_json,'$.failure_streak_started_at_ms'),0),'$.failure_streak_started_revision',coalesce(json_extract(data_json,'$.failure_streak_started_revision'),0)) WHERE id=?1 AND loupist_id=?2 AND revision=?9",params![task.id,task.loupist_id,task.revision as i64,task.status.as_str(),task.next_run_at_ms,target_thread(task),task.updated_at_ms,serde_json::to_string(task)?,expected_revision as i64])?;
     if changed != 1 {
         return Err(StoreError::Conflict("scheduled task compare-and-swap"));
     }
+    Ok(())
+}
+
+fn reset_failure_streak(connection: &Connection, task: &Task, now: i64) -> StoreResult<()> {
+    connection.execute(
+        "UPDATE scheduled_tasks SET data_json=json_set(data_json,'$.failure_streak_started_at_ms',?3,'$.failure_streak_started_revision',?4) WHERE id=?1 AND loupist_id=?2",
+        params![task.id, task.loupist_id, now, task.revision as i64],
+    )?;
     Ok(())
 }
 

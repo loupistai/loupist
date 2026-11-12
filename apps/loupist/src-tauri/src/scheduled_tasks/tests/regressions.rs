@@ -778,13 +778,10 @@ fn recurring_failures_retry_until_three_consecutive_non_successes_and_success_re
 #[test]
 fn model_or_credential_setup_pauses_immediately_but_transient_text_does_not() {
     for (error, paused) in [
-        (crate::pi::provider_failure::NEEDS_RECONNECT, true),
-        (crate::pi::provider_failure::MODEL_GONE, true),
         (
             "Connect an AI account in Settings › Models & providers before chatting.",
             true,
         ),
-        ("Pi model was not found", true),
         ("Temporary network outage", false),
         ("The model response was malformed", false),
         (
@@ -849,4 +846,204 @@ fn model_or_credential_setup_pauses_immediately_but_transient_text_does_not() {
             .status,
         TaskStatus::Paused
     );
+}
+
+fn finish_occurrence(
+    store: &SqliteStore,
+    task_id: &str,
+    status: RunStatus,
+    error: &str,
+    now: i64,
+) -> Task {
+    let run = claim_task(store, "loupist-a", task_id, now, true)
+        .unwrap()
+        .unwrap()
+        .run;
+    store
+        .scheduled_task_finish("loupist-a", &run.run_id, status, Some(error), now + 1)
+        .unwrap();
+    store
+        .scheduled_task_get("loupist-a", task_id)
+        .unwrap()
+        .unwrap()
+}
+
+#[test]
+fn resume_and_every_edit_start_a_new_failure_streak_even_in_the_same_millisecond() {
+    for edit in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("streak.sqlite3");
+        let store = SqliteStore::open(&path).unwrap();
+        store.create_loupist(&loupist("loupist-a")).unwrap();
+        let task = store
+            .scheduled_task_create("loupist-a", draft(), 1_000)
+            .unwrap();
+        for index in 0..3 {
+            let saved = finish_occurrence(
+                &store,
+                &task.id,
+                RunStatus::Failed,
+                "Temporary outage",
+                2_000,
+            );
+            assert_eq!(saved.status == TaskStatus::Paused, index == 2);
+        }
+        let paused = store
+            .scheduled_task_get("loupist-a", &task.id)
+            .unwrap()
+            .unwrap();
+        let reset = if edit {
+            let mut changed = paused.draft();
+            changed.title = "Corrected instructions".into();
+            changed.status = TaskStatus::Active;
+            store
+                .scheduled_task_update("loupist-a", &task.id, paused.revision, changed, 2_000)
+                .unwrap()
+        } else {
+            store
+                .scheduled_task_set_status(
+                    "loupist-a",
+                    &task.id,
+                    paused.revision,
+                    TaskStatus::Active,
+                    2_000,
+                )
+                .unwrap()
+        };
+        let (since, revision): (i64, i64) = store.lock_loupist("loupist-a").unwrap().query_row(
+            "SELECT json_extract(data_json,'$.failure_streak_started_at_ms'),json_extract(data_json,'$.failure_streak_started_revision') FROM scheduled_tasks WHERE id=?1",
+            [&task.id], |row| Ok((row.get(0)?,row.get(1)?)),
+        ).unwrap();
+        assert_eq!(since, 2_000);
+        assert_eq!(revision, reset.revision as i64);
+        // Internal persistence metadata does not expand the public Task response.
+        assert!(serde_json::to_value(&reset)
+            .unwrap()
+            .get("failure_streak_started_at_ms")
+            .is_none());
+        drop(store);
+        let store = SqliteStore::open(&path).unwrap();
+        for index in 0..3 {
+            let saved = finish_occurrence(
+                &store,
+                &task.id,
+                RunStatus::Failed,
+                "Temporary outage",
+                2_000,
+            );
+            assert_eq!(
+                saved.status == TaskStatus::Paused,
+                index == 2,
+                "edit={edit}, failure={index}"
+            );
+        }
+    }
+    // Editing an active definition also breaks the streak without changing its schedule.
+    let store = fixture();
+    let task = store
+        .scheduled_task_create("loupist-a", draft(), 1_000)
+        .unwrap();
+    finish_occurrence(
+        &store,
+        &task.id,
+        RunStatus::Failed,
+        "Temporary outage",
+        2_000,
+    );
+    let twice = finish_occurrence(
+        &store,
+        &task.id,
+        RunStatus::Failed,
+        "Temporary outage",
+        3_000,
+    );
+    let mut changed = twice.draft();
+    changed.prompt = "Use the corrected report.".into();
+    store
+        .scheduled_task_update("loupist-a", &task.id, twice.revision, changed, 4_000)
+        .unwrap();
+    assert_eq!(
+        finish_occurrence(
+            &store,
+            &task.id,
+            RunStatus::Failed,
+            "Temporary outage",
+            5_000
+        )
+        .status,
+        TaskStatus::Active
+    );
+}
+
+#[test]
+fn deliberate_stops_and_quits_do_not_count_or_reset_real_failures() {
+    let store = fixture();
+    let task = store
+        .scheduled_task_create("loupist-a", draft(), 1_000)
+        .unwrap();
+    for (index, status, error) in [
+        (0, RunStatus::Failed, "Temporary outage"),
+        (1, RunStatus::Interrupted, super::super::USER_STOPPED),
+        (2, RunStatus::Interrupted, super::super::APP_QUIT),
+        (3, RunStatus::Interrupted, super::super::LEGACY_INTERRUPTED),
+        (4, RunStatus::Interrupted, "Unexpected worker loss"),
+        (5, RunStatus::Interrupted, super::super::USER_STOPPED),
+        (6, RunStatus::Failed, "Temporary outage"),
+    ] {
+        let saved = finish_occurrence(&store, &task.id, status, error, 2_000 + index * 1_000);
+        assert_eq!(saved.status == TaskStatus::Paused, index == 6, "{error}");
+    }
+}
+
+#[test]
+fn automatic_earnings_rescheduling_preserves_the_failure_streak_boundary() {
+    let store = fixture();
+    let task = store
+        .scheduled_task_create_kind(
+            "loupist-a",
+            "earnings-a",
+            draft(),
+            TaskKind::Earnings,
+            1_000,
+        )
+        .unwrap();
+    let reset = store
+        .scheduled_task_update("loupist-a", &task.id, task.revision, task.draft(), 2_000)
+        .unwrap();
+    store
+        .scheduled_task_reschedule("loupist-a", &task.id, 10_000)
+        .unwrap();
+    let data: String = store
+        .lock_loupist("loupist-a")
+        .unwrap()
+        .query_row(
+            "SELECT data_json FROM scheduled_tasks WHERE id=?1",
+            [&task.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let data: serde_json::Value = serde_json::from_str(&data).unwrap();
+    assert_eq!(data["failure_streak_started_at_ms"], 2_000);
+    assert_eq!(data["failure_streak_started_revision"], reset.revision);
+}
+
+#[test]
+fn unexpected_restart_recoveries_still_count_toward_the_failure_limit() {
+    let store = fixture();
+    let task = store
+        .scheduled_task_create("loupist-a", draft(), 1_000)
+        .unwrap();
+    for index in 0..3 {
+        let now = 2_000 + index * 1_000;
+        claim_task(&store, "loupist-a", &task.id, now, true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(store.scheduled_tasks_recover_running(now + 1).unwrap(), 1);
+        let saved = store
+            .scheduled_task_get("loupist-a", &task.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.status == TaskStatus::Paused, index == 2);
+        assert!(saved.last_error.unwrap().contains("unexpectedly"));
+    }
 }

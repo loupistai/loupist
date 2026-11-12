@@ -28,6 +28,10 @@ use crate::{
 use types::{Run, RunStatus, TaskKind};
 
 pub(crate) const USER_STOPPED: &str = "Stopped before completion";
+pub(crate) const APP_QUIT: &str = "Interrupted when the app quit.";
+// Older receipts used this for both graceful quit and crash recovery; do not
+// turn an ambiguous historical interruption into a failure.
+const LEGACY_INTERRUPTED: &str = "Interrupted before completion.";
 
 // Recheck capacity/offline folders and wall-clock changes at least once a minute.
 const MAX_POLL_SLEEP: Duration = Duration::from_secs(60);
@@ -465,13 +469,60 @@ impl ScheduledSupervisor {
                 current.run = run.clone();
             }
         }
+        let sink = self.chat_event_sink(state, &run);
+        let request = ChatSendRequest {
+            run_id: run_id.clone(),
+            loupist_id: loupist_id.to_owned(),
+            thread_id: run
+                .thread_id
+                .clone()
+                .ok_or_else(|| CommandError::internal("scheduled Chat target is missing"))?,
+            prompt,
+            use_memory: task.use_memory,
+            update_memory: task.update_memory,
+            as_of: None,
+            model_profile_id: task.model_profile_id,
+            thinking_level: task.thinking_level,
+            run_options: task.run_options,
+            mentioned_connection_ids: vec![],
+            attachments: vec![],
+            pins: vec![],
+            selected_artifact: None,
+        };
+        // Completion delivery owns the live entry once ordinary Chat launch starts.
+        preparing.detach();
+        if let Err(error) = send_chat(request, sink, state, Some(admission)).await {
+            if let Ok(mut live) = self.inner.live.lock() {
+                live.remove(&run_id);
+            }
+            let finished = state
+                .store
+                .scheduled_task_finish(
+                    loupist_id,
+                    &run_id,
+                    RunStatus::Failed,
+                    Some(&bounded_error(&error.message)),
+                    now_ms(),
+                )
+                .map_err(map_store)?;
+            crate::briefings::desktop::completed(state, &finished);
+            // A claimed run is a durable receipt, including admission failure.
+        }
+        state
+            .store
+            .scheduled_task_run_get(loupist_id, &run_id)
+            .map_err(map_store)
+    }
+
+    /// The completion path used by ordinary scheduled Chat, including typed provider failures.
+    pub(crate) fn chat_event_sink(&self, state: &AppState, run: &Run) -> ChatEventSink {
         let inner = Arc::downgrade(&self.inner);
         let store = state.store.clone();
         let binding = run.clone();
         let completion_state = state.clone();
-        crate::briefings::desktop::changed(loupist_id);
+        crate::briefings::desktop::changed(&run.loupist_id);
         let baseline_inner = inner.clone();
-        let baseline_id = run_id.clone();
+        let baseline_id = run.run_id.clone();
         #[allow(unused_mut)]
         let mut sink = ChatEventSink::new(move |event| {
             let terminal = match &event {
@@ -480,15 +531,28 @@ impl ScheduledSupervisor {
                     RunStatus::Interrupted,
                     Some(
                         if *completion_state.scheduled.inner.stop.borrow() {
-                            "Interrupted before completion."
+                            APP_QUIT
                         } else {
                             USER_STOPPED
                         }
                         .to_owned(),
                     ),
                 )),
-                ChatStreamEvent::Error { message, .. } => {
-                    Some((RunStatus::Failed, Some(bounded_error(message))))
+                ChatStreamEvent::Error {
+                    message,
+                    failure_kind,
+                    ..
+                } => {
+                    let error = match failure_kind {
+                        crate::domain::ChatFailureKind::NeedsReconnect => {
+                            crate::pi::provider_failure::NEEDS_RECONNECT.to_owned()
+                        }
+                        crate::domain::ChatFailureKind::ModelGone => {
+                            crate::pi::provider_failure::MODEL_GONE.to_owned()
+                        }
+                        _ => bounded_error(message),
+                    };
+                    Some((RunStatus::Failed, Some(error)))
                 }
                 _ => None,
             };
@@ -562,48 +626,7 @@ impl ScheduledSupervisor {
                 .expect("eval observer lock")
                 .clone();
         }
-        let request = ChatSendRequest {
-            run_id: run_id.clone(),
-            loupist_id: loupist_id.to_owned(),
-            thread_id: run
-                .thread_id
-                .clone()
-                .ok_or_else(|| CommandError::internal("scheduled Chat target is missing"))?,
-            prompt,
-            use_memory: task.use_memory,
-            update_memory: task.update_memory,
-            as_of: None,
-            model_profile_id: task.model_profile_id,
-            thinking_level: task.thinking_level,
-            run_options: task.run_options,
-            mentioned_connection_ids: vec![],
-            attachments: vec![],
-            pins: vec![],
-            selected_artifact: None,
-        };
-        // Completion delivery owns the live entry once ordinary Chat launch starts.
-        preparing.detach();
-        if let Err(error) = send_chat(request, sink, state, Some(admission)).await {
-            if let Ok(mut live) = self.inner.live.lock() {
-                live.remove(&run_id);
-            }
-            let finished = state
-                .store
-                .scheduled_task_finish(
-                    loupist_id,
-                    &run_id,
-                    RunStatus::Failed,
-                    Some(&bounded_error(&error.message)),
-                    now_ms(),
-                )
-                .map_err(map_store)?;
-            crate::briefings::desktop::completed(state, &finished);
-            // A claimed run is a durable receipt, including admission failure.
-        }
-        state
-            .store
-            .scheduled_task_run_get(loupist_id, &run_id)
-            .map_err(map_store)
+        sink
     }
 
     pub fn watch(
