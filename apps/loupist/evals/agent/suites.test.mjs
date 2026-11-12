@@ -753,3 +753,9 @@ test('on-demand pack checks require a matching load before first use without dem
   const security = loaded.find(file => file.name === 'security-v1.json').json;
   assert(!traceAsserts(security, 'capability_loaded').some(({ item }) => ['charts', 'schedules'].includes(item.id)), 'refused task data must not require a pack load');
 });
+
+test('multi-step research budgets include the accumulated preloaded context', () => {
+  for (const name of ['learning-v1.json', 'personalization-v1.json', 'principles-v1.json', 'security-v1.json']) {
+    assert.equal(loaded.find(file => file.name === name).json.budget.maxInputTokensPerTurn, 500000, name);
+  }
+});
