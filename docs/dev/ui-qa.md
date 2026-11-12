@@ -108,7 +108,7 @@ is the focus/identity accent, while data and error states retain semantic colors
 The shell's implemented destinations and reader behavior are described in
 [Sidebar](../ui/sidebar.md#sidebar), [Map and Library](../ui/map-lens.md#map-and-library)
 and [item surfaces](../analysis/surfaces.md#where-each-item-appears). Review those flows rather
-than assuming a separate World, Lens or Growth page exists.
+than assuming a separate Map, Lens or Growth page exists.
 For graph work, preserve camera/selection through navigation and use Fit for
 explicit reframing. For Chat work, inspect intermediate text and tools as well as
 the final reply. Keep provider recovery, source inspection and return paths reachable.

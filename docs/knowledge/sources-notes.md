@@ -48,8 +48,8 @@ the hostname for HTTP(S) URLs or the retained label for other origins.
 
 ## Working notes and Journal
 
-Substantial work can have one current Working note per Chat; the Bot keeps
-[Bot memory](../ui/home-thread.md#bot-memory) instead. An update replaces its
+Substantial work can have one current Working note per Chat; Home keeps
+[Home memory](../ui/home-thread.md#bot-memory) (tool `bot_memory`) instead. An update replaces its
 body in the completed-turn transaction and keeps its research id, so links resolve
 to the current body after an update. The expected id checks whether the Chat has
 that note; it is not a body revision token. Failed or

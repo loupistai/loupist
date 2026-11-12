@@ -8,7 +8,7 @@ implementation term, use `rg -n '<term>' docs apps/loupist/src apps/loupist/src-
 | --- | --- |
 | Sidebar, panels, composer, citations, map, schedule | [UI pages](ui/) |
 | Storage, turns, providers, scheduling, untrusted input | [Architecture](architecture.md), [Runtime](runtime/) |
-| Sources, World, Lens, Journal, sharing | [Knowledge and Memory](knowledge-model.md), [Knowledge](knowledge/) |
+| Sources, Map, Lens, Journal, sharing | [Knowledge and Memory](knowledge-model.md), [Knowledge](knowledge/) |
 | Datasets, calculations, numbers, charts | [Financial analysis](analysis.md), [Analysis](analysis/) |
 | Product agent prompts, tool contracts, Skills, MCP | [Agent](agent/), [Capabilities](capabilities/) |
 | Development decisions, tool entry points, session handoff | [Repository guidance](dev/repository-guidance.md) |

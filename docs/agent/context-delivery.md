@@ -8,8 +8,8 @@ With saving enabled, what a turn establishes (a dated fact with its source, a
 mechanism, a value-chain link, a contradiction, a check that mattered) is filed into Lens
 pages with `lens_file`. A turn creates a method only when the user teaches, corrects or asks
 to keep one; its own checks stay on subject and idea pages until
-[method learning](../knowledge/lens.md#method-learning) sees them recur. This Chat's progress and user-stated facts use `note_save`; the Bot keeps them in
-[Bot memory](../ui/home-thread.md#bot-memory) with `bot_memory` instead;
+[method learning](../knowledge/lens.md#method-learning) sees them recur. This Chat's progress and user-stated facts use `note_save`; in Home they use
+[Home memory](../ui/home-thread.md#bot-memory) (tool `bot_memory`) instead;
 handed-over originals use acknowledged capture followed by `source_save`. Chatter, light questions and
 explicit one-offs are not saved. A reply promising to remember is not a Memory write.
 World processing extracts relationships from retained Sources. Research filed in
@@ -41,9 +41,9 @@ retrieval. Truncated previews do not establish complete contents.
 SQLite is the canonical transcript; Pi JSONL is derived context. After compaction,
 restart or a cold rebuild, preserve the current goal and corrections, completed and
 pending work, data revisions, evidence IDs, permissions and next exact reads. Test
-continuation on work that depends on earlier context. The Bot carries the user's
-preferences, decisions and open requests past the cold transcript bound in
-[Bot memory](../ui/home-thread.md#bot-memory).
+continuation on work that depends on earlier context. In Home, your Loupist carries
+the user's preferences, decisions and open requests past the cold transcript bound in [Home memory](../ui/home-thread.md#bot-memory)
+(tool `bot_memory`).
 
 During a reply, the host freezes the current request and full turn envelope in the
 private Pi bootstrap. After Pi compacts in this reply's process, the extension
@@ -71,7 +71,7 @@ Under an as-of date, automatic context follows
 [the cutoff rules](../knowledge/memory.md#memory-under-a-cutoff): a perspective (1) or
 catalog method (6c) whose current version is later is left out, Journal pointers and
 counts (6b, 6d) use only entries created by then with later outcomes read as pending,
-later notes (6e, 6g) are left out, and Bot memory (5c) reads as it stood then;
+later notes (6e, 6g) are left out, and Home memory (5c) reads as it stood then;
 principles (2) stay as they are today.
 
 Automatic context never serializes holdings position fields. It reads the Map's

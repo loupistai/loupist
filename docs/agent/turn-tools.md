@@ -8,10 +8,11 @@ seal: transcript, Memory, model/runtime, credentials, configuration and resource
 hashes. A Skill mention does not change Memory access. Invalid host context must
 fail startup rather than become model text.
 
-The model receives a compact capability index and uses `capability_load` with an
-exact ID to expose tools. Mentioned connections are preloaded. Reuse tools already
-loaded in this Chat, and load the same id again when the host says those tools are
-unavailable or tells the model to reconnect. Repeated loads return a short receipt.
+Built-in tools allowed for the turn are preloaded, including enabled web research;
+they need no `capability_load`. The compact index lists data connections only. Use
+`capability_load` with an exact connection ID to expose its tools; mentioned enabled
+connections preload too. Reuse loaded connection tools, and load again only when the
+host says they are unavailable or asks for reconnection. Repeated loads return a short receipt.
 Unavailable bundled entries retain enough purpose/context
 to name the connection the user needs to configure. Loading cannot grant access.
 An artifact id already returned in this Chat, including by `chart_publish`, or
@@ -19,14 +20,14 @@ supplied by the user, is enough for `artifact_read`. Call `artifact_list` only t
 discover an unknown target id.
 [Connections](../capabilities/connections.md) owns IDs and credential behavior.
 
-`research_open` (always permitted, no component, Bot only, one per reply) hands a
-question that needs depth or several steps to a research session: `title`, `question`,
+`research_open` (always permitted, no component, Home only, one per reply) hands a
+question that needs depth or several steps to a separate Chat: `title`, `question`,
 `brief`, `pins` of `{lens}` or `{world}` ids and a `requestKey`. It stages; the reply's
-commit inserts one `chat_handoffs` row and the session Chat in the same transaction, a
+commit inserts one `chat_handoffs` row and the separate Chat in the same transaction, a
 repeated key creates nothing, and a reply that does not finish hands nothing off. After
-the commit the host runs the session once through ordinary Chat admission with the
-unattended allowlist and the Bot turn's model and Memory flags, and the Bot shows a
-`handoff` card ([Home Thread](../ui/home-thread.md#home-thread)). A session or an
+the commit the host runs that Chat once through ordinary Chat admission with the
+unattended allowlist and the Home turn's model and Memory flags, and Home shows a
+`handoff` card ([Home](../ui/home-thread.md#home-thread)). A separate Chat or an
 unattended run does not list the tool and the broker refuses it by surface.
 
 The general `schedules` tools are independent of Memory. `schedule_watch` and
@@ -100,16 +101,16 @@ change, and applies it with the reply together with the asking message; a stoppe
 reply applies nothing, and a change whose name the map gained since staging is
 skipped and listed in the answer's `memory_update.skippedKinds`. [Worlds](../knowledge/worlds.md#presets-changes-and-undo) owns the rules.
 
-`loupist_setup` (Memory save in `memory-save`, Bot and research sessions only, one call
+`loupist_setup` (Memory save in `memory-save`, Home and interactive Chats only, one call
 per reply, refused in scheduled and delegated runs by the unattended allowlist and by
 the chat surface) sets a Loupist up from what the user says. It takes `follow` (at most
 ten `{symbol, market?, name?}`), `unfollow` (at most ten `{symbol, market?}`), `focus`
 (1–280 characters, replacing the research focus) and `preset` (a `LoupistTemplate`
 id). Rust checks each field when the call arrives and refuses by field
 (`follow[1].symbol`, `focus`, `preset`); nothing applies until the reply commits, and a
-stopped reply changes nothing. The watchlist lives in the app database, outside the
+stopped reply changes nothing. The followed list lives in the app database, outside the
 reply's transaction, so its changes apply just before that transaction through the
-watchlist commands' own functions (`commands/user_context.rs`) and stay if the commit
+Following commands' own functions (`commands/user_context.rs`) and stay if the commit
 then fails; a market the user did not give stays unknown, and an asset already
 followed under any market is not added again. In the reply's
 transaction the focus is written to the Loupist profile, the World settings'
@@ -122,7 +123,7 @@ are listed in `skippedKinds`. `SYSTEM.md` tells the agent to call it in the repl
 the user says what they research, what to follow or picks a starting point, and never
 to send them to settings.
 
-`connection_setup` (core, Bot and research sessions only, three calls per reply) takes
+`connection_setup` (core, Home and interactive Chats only, three calls per reply) takes
 one `id`: a catalog entry id (`fred.macro`), the entry's English or Korean display name,
 or a plugin id or group name (`World Bank`, `세계은행`) that covers exactly one entry,
 compared case-insensitively with `-`, `_` and `.` read as spaces
@@ -139,7 +140,7 @@ authority is sealed at start. The progress step's target is the resolved entry i
 which the renderer reads to draw the [setup card](../ui/chat-composer.md#chat-composer);
 a failed step draws nothing. `SYSTEM.md`, the capability index, `resolveCapability`,
 the provider setup notices and the KRX approval text all name this tool instead of
-sending the user to Connections.
+sending the user to Data connections.
 
 `thesis_update` (Memory save, staged until the reply commits) takes `assetId`, 1–3
 `evidence` citation URLs from the turn and either `to` with a `reason` (≤ 280
@@ -187,7 +188,7 @@ projects it into the reply's progress plan, keeps each step's first activation
 time and marks unfinished steps Not done when the run ends. It creates no evidence
 and touches no Memory, and scheduled runs may call it.
 
-`ask_user` (core, Bot and research sessions only, two calls per reply) lets the agent
+`ask_user` (core, Home and interactive Chats only, two calls per reply) lets the agent
 settle a real fork without ending the reply. It takes `question` (1-300 characters),
 `options` (2-4 of `{label` 1-60 characters, unique ignoring case; `description?` up to
 160`}`) and `recommended?` (an index into `options`); Rust refuses by field

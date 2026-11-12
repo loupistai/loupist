@@ -12,7 +12,7 @@ fewer also needs its exchange), and the Loupist's standing moves. Model text nev
 becomes a row, and Rust keeps no observation and returns no row without a fact date
 and a source. The first observations of each kind (each close series on its own) are
 a baseline: they never count as new and show only when their fact date falls in the
-window. Each row carries `new` and `material`; for the Thread and briefings, assets
+window. Each row carries `new` and `material`; for Home and briefings, assets
 order by a moved read, a crossed line, a filing or results row, a material price
 move, then the rest.
 

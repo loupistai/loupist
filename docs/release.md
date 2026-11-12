@@ -73,9 +73,9 @@ developer's daily-use machine or on a production network.
    [Storage and downgrades](#storage-and-downgrades)). An unsupported older
    database must still be present and unchanged. Capture durable,
    credential-free HTTPS evidence for the macOS candidate.
-5. On the clean signed macOS candidate, complete the `LOUPIST.md` Connections,
+5. On the clean signed macOS candidate, complete the `LOUPIST.md` Data connections,
    Chat, and Knowledge flow, including a later turn that uses a retained Source
-   or a revised World or Lens. Capture durable credential-free HTTPS evidence
+   or a revised Map or Lens. Capture durable credential-free HTTPS evidence
    that identifies the candidate tag and candidate-set digest; OAuth or
    connector credentials must never appear in that evidence.
 6. Dispatch `release-qualification.yml` from the candidate `vX.Y.Z` tag (not
