@@ -6,6 +6,7 @@ import { useTranslation } from "../../i18n";
 import { Button } from "../ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Input } from "../ui/input";
+import { Disclosure } from "../ui/disclosure";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { entityCategories, nodeCategory } from "../../knowledge/mapKinds";
 import { entityLabel } from "../../knowledge/mapItems";
@@ -80,10 +81,9 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
       {entityCategories.map((kind) => <label key={kind}><input type="checkbox" data-map-filter-kind={kind} checked={filters.kinds.includes(kind)} onChange={(e) => onFilters({ ...filters, kinds: e.target.checked ? [...filters.kinds, kind] : filters.kinds.filter((k) => k !== kind) })} />{t(`map.kind.${kind}`)}</label>)}
       <hr />{(["personal", "disputed"] as const).map((key) => <label key={key}><input type="checkbox" checked={filters[key]} onChange={(e) => onFilters({ ...filters, [key]: e.target.checked })} />{t(`map.filter${key === "personal" ? "Personal" : "Disputed"}`)}</label>)}
       <label><input type="checkbox" checked={filters.metrics} onChange={(e) => onFilters({ ...filters, metrics: e.target.checked })} />{t("map.filterMetrics")}</label>
-      {lenses.length ? <details className="map-lens-filter">
-        <summary>{t("map.lensOverlay")}</summary>
+      {lenses.length ? <Disclosure className="map-lens-filter" title={t("map.lensOverlay")}>
         <div className="map-lens-menu"><LensMenu lenses={lenses} overlayId={overlayId} onOverlay={onOverlay} disabled={disabled} appliedCounts={appliedCounts} lensTitles={lensTitles} baseLensIds={baseLensIds} onClose={() => setFilterOpen(false)} /></div>
-      </details> : null}
+      </Disclosure> : null}
       {filtersActive(filters) || overlayId ? <Button disabled={disabled} variant="link" onClick={() => { onFilters(defaultFilters()); onOverlay(undefined); }}>{t("map.clearFilters")}</Button> : null}
     </PopoverContent></Popover>
     <Button className="map-toolbar-button" disabled={disabled} variant="ghost" data-map-library aria-label={t("map.library")} title={t("map.library")} aria-expanded={libraryOpen} onClick={onLibrary}><BookOpenIcon /><span className="map-control-label">{t("map.library")}</span></Button>
