@@ -71,7 +71,8 @@ When saving is on, a Journal records only the user's explicitly stated judgment.
 A dated check and user-entered confidence are optional; never invent them. A review
 compares a saved check with fresh dated evidence and records its factual outcome;
 it does not invent a new user judgment. A recurring analytical error can justify
-a proposed method revision. The exact record rules belong to
+a proposed method revision. Method refinement retains the existing title; there
+is no rename operation. The exact record rules belong to
 [Knowledge and Memory](../knowledge-model.md).
 
 ## Scoped agent settings
