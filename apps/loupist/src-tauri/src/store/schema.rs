@@ -127,7 +127,17 @@ impl SqliteStore {
             }
             upgrade::upgrade(&mut connection, database_path.as_deref())?;
         }
-        connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
+        connection.execute_batch("PRAGMA foreign_keys = ON;")?;
+        // Folder databases are copyable single files. Opening one must never
+        // switch DELETE → WAL → DELETE, which takes needless exclusive locks.
+        let journal: String = connection.query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
+        let expected_journal = if folder { "delete" } else { "wal" };
+        if database_path.is_some() && !journal.eq_ignore_ascii_case(expected_journal) {
+            connection.pragma_update(None, "journal_mode", expected_journal)?;
+        }
+        if folder {
+            connection.execute_batch("PRAGMA synchronous = FULL;")?;
+        }
         if version == 0 {
             Self::initialize_schema(&connection)?;
         }

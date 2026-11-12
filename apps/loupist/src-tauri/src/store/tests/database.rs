@@ -127,3 +127,48 @@ fn a_folder_store_from_an_earlier_build_is_refused_as_an_earlier_version() {
         Err(StoreError::EarlierVersion)
     ));
 }
+
+#[test]
+fn reopening_a_folder_in_delete_mode_keeps_a_concurrent_reader_working() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("loupist.sqlite3");
+    drop(SqliteStore::open_folder(&path).unwrap());
+    let reader = Connection::open(&path).unwrap();
+    reader
+        .execute_batch("BEGIN; SELECT count(*) FROM loupist_profiles;")
+        .unwrap();
+    let reopened = SqliteStore::open_folder(&path).unwrap();
+    let journal: String = reopened
+        .lock()
+        .unwrap()
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(journal, "delete");
+    reader.execute_batch("ROLLBACK").unwrap();
+}
+
+#[test]
+fn known_chat_ownership_does_not_open_other_registered_folders() {
+    let root = tempfile::tempdir().unwrap();
+    let store = SqliteStore::open_catalog(root.path().join("catalog.sqlite3")).unwrap();
+    let mut profiles = Vec::new();
+    for (index, id) in ["owner", "unrelated"].iter().enumerate() {
+        let workspace = root.path().join(id);
+        std::fs::create_dir(&workspace).unwrap();
+        let mut profile = crate::test_fixtures::loupist_profile(id);
+        profile.workspace_root = workspace.to_str().unwrap().into();
+        profile.root_filesystem_identity =
+            crate::fs::loupist_root::BoundLoupistRoot::open_unbound(workspace.clone())
+                .unwrap()
+                .identity();
+        profile.updated_at_ms = index as i64 + 1;
+        store.create_loupist(&profile).unwrap();
+        profiles.push(profile);
+    }
+    let chat = crate::test_fixtures::chat_session("known-chat", &profiles[0].id);
+    store.create_chat(&chat).unwrap();
+    assert_eq!(store.folders.lock().unwrap().len(), 1);
+    assert_eq!(store.get_chat(&chat.id).unwrap(), Some(chat));
+    assert_eq!(store.folders.lock().unwrap().len(), 1);
+    assert!(!store.folders.lock().unwrap().contains_key("unrelated"));
+}

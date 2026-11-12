@@ -146,6 +146,10 @@ Store 6 adds covering indexes for Source lookups by `span_id` and
 `representation_id`. They are non-unique because retained material may appear in
 several records; the normal backup and one-step transaction rules apply.
 
+Folder connections start in DELETE journal mode and leave it there on reopen;
+the catalog uses WAL. Record reads check already bound folders for ownership before
+opening other registrations, while still checking the owning folder's identity.
+
 Store 5 also restores the `piSessionCache` key that builds before it removed from
 stored Chats on reconnect and import. Chat writes compare the stored text with the
 re-encoded Chat, so those Chats refused every later write; the step puts the key
