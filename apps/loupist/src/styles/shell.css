@@ -385,7 +385,7 @@ html[data-desktop-platform="macos"] .app-shell {
 .command-palette-group:lang(ko) { letter-spacing: 0; text-transform: none; }
 .command-palette-row { display: flex; align-items: center; gap: var(--gg-space-2); min-height: 40px; margin: 0 var(--gg-space-2); padding: 0 var(--gg-space-3); border-radius: var(--gg-radius-sm); color: var(--gg-color-text-primary); font-size: var(--gg-text-control); cursor: pointer; }
 .command-palette-row[aria-selected="true"] { background: var(--gg-color-bg-selected); }
-.command-palette-row[data-more] { color: var(--gg-color-accent-ink); }
+.command-palette-row[data-more] .command-palette-label { text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
 .command-palette-row .map-swatch { flex: none; width: 8px; height: 8px; }
 .command-palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .command-palette-row small { flex: none; max-width: 45%; overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); text-overflow: ellipsis; white-space: nowrap; }
