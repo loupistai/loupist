@@ -42,8 +42,8 @@ it.each([false, true])("applies current Memory defaults to a new Chat unless the
   await user.click(newChatButton());
   await screen.findByRole("heading", { name: "New chat" });
   if (explicit) {
-    await user.click(screen.getByRole("button", { name: "Private chat: don't remember this chat" }));
-    await user.click(screen.getByRole("button", { name: "Private chat: don't remember this chat" }));
+    await user.click(screen.getByRole("button", { name: "Private chat" }));
+    await user.click(screen.getByRole("button", { name: "Private chat" }));
   }
   await updateGlobal(bridge, { chat: { use_memory: false, update_memory: false } });
   await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Use my current Chat preferences");

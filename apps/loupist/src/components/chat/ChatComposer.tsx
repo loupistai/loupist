@@ -2,7 +2,6 @@ import i18n, { useTranslation } from "@/i18n";
 import type { ChatDraft } from "../../app/useChatDrafts";
 import {
   ClipboardIcon,
-  EyeIcon,
   EyeOffIcon,
   ArrowUpIcon,
   CornerDownLeftIcon,
@@ -381,12 +380,13 @@ function ComposerPromptTools({
     <PromptInputTools className="composer-tools">
       <PromptInputButton
         className="composer-private-toggle"
-        aria-label={t("chatComposer.dontRememberThisChat")}
+        aria-label={t("chatComposer.privateChat")}
         aria-pressed={privateChat}
-        tooltip={t(privateChat ? "chatComposer.privateChatOn" : "chatComposer.dontRememberThisChat")}
+        tooltip={t("chatComposer.privateChatHint")}
         onClick={() => onPrivateChatChange(!privateChat)}
       >
-        {privateChat ? <EyeOffIcon aria-hidden="true" /> : <EyeIcon aria-hidden="true" />}
+        <EyeOffIcon aria-hidden="true" />
+        {privateChat ? <span>{t("chatComposer.privateOn")}</span> : null}
       </PromptInputButton>
       <PromptInputActionMenu onOpenChange={anchorAddMenu}>
         <PromptInputActionMenuTrigger
@@ -1044,7 +1044,7 @@ export function ChatComposer({
             />
           </div>
         </PromptInputBody>
-        {privateChat ? <div className="composer-private-status"><span>{t("chatComposer.privateNotSavedToMemory")}</span></div> : null}
+        {privateChat ? <div className="composer-private-status"><span>{t("chatComposer.privateStatus")}</span></div> : null}
         <ComposerChipTray
           chips={ownedChips.filter(chip => chip.kind === "skill")}
           asOf={asOf}

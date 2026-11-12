@@ -73,7 +73,7 @@ export const newChatButton = () => screen.getByRole("button", { name: "New resea
 
 export const savedSurface = (name: string) => screen.getByRole("tab", { name });
 
-export const privateChatToggle = () => screen.getByRole("button", { name: "Private chat: don't remember this chat" });
+export const privateChatToggle = () => screen.getByRole("button", { name: "Private chat" });
 
 export const chooseLoupist = async (
   user: { click: (element: Element) => Promise<unknown> },

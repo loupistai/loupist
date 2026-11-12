@@ -803,7 +803,7 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .composer-private-status { align-self: flex-start; max-width: 100%; padding: var(--gg-space-2) var(--gg-space-3) 0; }
 .composer-private-status > span { display: inline-block; padding: var(--gg-space-1) var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
 .composer-private-toggle { color: var(--gg-color-text-secondary); min-width: var(--gg-size-control-sm); min-height: var(--gg-size-control-sm); }
-.composer-private-toggle[aria-pressed="true"] { background: var(--gg-color-bg-hover); }
+.composer-private-toggle[aria-pressed="true"] { gap: var(--gg-space-1); padding-inline: var(--gg-space-2); background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
 .composer-disclosure { display: flex; align-items: center; justify-content: center; min-height: var(--gg-space-5); margin: 0; text-align: center; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
 .model-menu-advanced { display: flex; justify-content: space-between; }
 .model-menu-advanced[aria-expanded="true"] > svg { transform: rotate(180deg); }

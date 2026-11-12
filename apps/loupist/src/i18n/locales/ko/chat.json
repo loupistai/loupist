@@ -124,9 +124,10 @@
     "attachmentName": "첨부 파일",
     "removeAttachment": "{{value1}} 제거",
     "removeContextChip": "{{label}} 제거",
-    "dontRememberThisChat": "비공개 대화: 이 대화는 기억하지 않기",
-    "privateChatOn": "비공개 대화 켜짐: 이 대화는 기억하지 않아요",
-    "privateNotSavedToMemory": "비공개 대화 · 기억에 남기지 않아요",
+    "privateChat": "비공개 대화",
+    "privateChatHint": "비공개 대화: 대화 기록은 남지만, 이 대화에서 배우거나 다시 쓰지 않아요.",
+    "privateOn": "비공개",
+    "privateStatus": "비공개: 대화 기록은 남지만, 이 대화에서 배우거나 다시 쓰지 않아요.",
     "informationDisclosure": "AI는 틀릴 수 있어요. 투자자문업자가 아니에요.",
     "moreChips": "{{formattedCount}}개 더",
     "attachments": {

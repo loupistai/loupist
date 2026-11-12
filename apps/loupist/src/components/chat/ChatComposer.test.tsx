@@ -138,11 +138,13 @@ describe("ChatComposer input", () => {
   it("toggles private chat from the keyboard and keeps the AI notice visible", async () => {
     const user = userEvent.setup();
     render(<RunningComposer isRunning={false} />);
-    const toggle = screen.getByRole("button", { name: "Private chat: don't remember this chat" });
+    const toggle = screen.getByRole("button", { name: "Private chat" });
+    expect(toggle).not.toHaveTextContent("Private");
     toggle.focus();
     await user.keyboard(" ");
     expect(toggle).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("Private — not saved to memory")).toBeVisible();
+    expect(toggle).toHaveTextContent("Private");
+    expect(screen.getByText("Private: this chat stays in history, but nothing is learned from it or reused.")).toBeVisible();
     expect(screen.getByText("AI can be wrong. Not a licensed financial adviser.")).toBeVisible();
   });
 

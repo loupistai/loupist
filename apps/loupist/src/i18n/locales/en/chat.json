@@ -124,9 +124,10 @@
     "attachmentName": "attachment",
     "removeAttachment": "Remove {{value1}}",
     "removeContextChip": "Remove {{label}}",
-    "dontRememberThisChat": "Private chat: don't remember this chat",
-    "privateChatOn": "Private chat is on: this chat won't be remembered",
-    "privateNotSavedToMemory": "Private — not saved to memory",
+    "privateChat": "Private chat",
+    "privateChatHint": "Private chat: history is kept, but nothing is learned or reused.",
+    "privateOn": "Private",
+    "privateStatus": "Private: this chat stays in history, but nothing is learned from it or reused.",
     "informationDisclosure": "AI can be wrong. Not a licensed financial adviser.",
     "moreChips": "+{{formattedCount}} more",
     "attachments": {
