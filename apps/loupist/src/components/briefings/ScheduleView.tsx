@@ -268,7 +268,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
             return <li key={task.id} className="schedule-task" data-schedule-task={task.id} data-status={task.awaiting_confirmation ? "awaiting" : task.status} data-current={current || undefined}>
               <div className="schedule-task-row">
                 <button type="button" className="schedule-task-summary" aria-current={current || undefined} onClick={() => openTask(task)}>
-                  <span className="schedule-task-heading"><strong title={task.title}>{displayTitle(task)}</strong>{state ? <span className="schedule-task-status">{state}</span> : null}</span>
+                  <span className="schedule-task-heading"><strong title={displayTitle(task)}>{displayTitle(task)}</strong>{state ? <span className="schedule-task-status">{state}</span> : null}</span>
                   <span className="briefings-meta">{cadence(task)}{next ? ` · ${next}` : ""}</span>
                 </button>
                 <ChevronRightIcon className="schedule-task-chevron" aria-hidden="true" />

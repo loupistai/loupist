@@ -9,21 +9,34 @@ import { SafeMessageResponse } from "./SafeMessageResponse";
 
 /**
  * Marks a Markdown table wrapper that scrolls sideways (`data-overflows`), so its right
- * edge fades. One observer per segment, only while a table is rendered.
+ * edge fades. Streamdown scrolls the table inside its own frame (the table's parent), and
+ * may mount the table after this segment commits, so tables are collected as they appear.
  */
 function useTableOverflow(root: RefObject<HTMLElement | null>, revision: string) {
   useEffect(() => {
-    const wrappers = [...(root.current?.querySelectorAll<HTMLElement>('[data-streamdown="table-wrapper"]') ?? [])];
-    if (!wrappers.length || typeof ResizeObserver !== "function") return;
-    const mark = () => { for (const wrapper of wrappers) wrapper.toggleAttribute("data-overflows", wrapper.scrollWidth > wrapper.clientWidth + 1); };
-    const observer = new ResizeObserver(mark);
-    for (const wrapper of wrappers) {
-      observer.observe(wrapper);
-      const table = wrapper.querySelector("table");
-      if (table) observer.observe(table);
-    }
-    mark();
-    return () => observer.disconnect();
+    const element = root.current;
+    if (!element || typeof ResizeObserver !== "function") return;
+    const observed = new Set<Element>();
+    const wrappers = () => [...element.querySelectorAll<HTMLElement>('[data-streamdown="table-wrapper"]')];
+    const mark = () => {
+      for (const wrapper of wrappers()) {
+        const frame = wrapper.querySelector("table")?.parentElement ?? wrapper;
+        wrapper.toggleAttribute("data-overflows", frame.scrollWidth > frame.clientWidth + 1);
+      }
+    };
+    const resize = new ResizeObserver(mark);
+    const collect = () => {
+      for (const wrapper of wrappers()) {
+        for (const target of [wrapper, wrapper.querySelector("table")]) {
+          if (target && !observed.has(target)) { observed.add(target); resize.observe(target); }
+        }
+      }
+      mark();
+    };
+    const mutations = typeof MutationObserver === "function" ? new MutationObserver(collect) : null;
+    mutations?.observe(element, { childList: true, subtree: true });
+    collect();
+    return () => { resize.disconnect(); mutations?.disconnect(); };
   }, [root, revision]);
 }
 

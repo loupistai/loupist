@@ -99,3 +99,14 @@ it("translates bundled Skill metadata while preserving personal Skill content", 
     await act(async () => { await i18n.changeLanguage("en"); });
   }
 });
+
+it("lists a bundled Skill by its short line for people and keeps the full description for its detail", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  render(<View bridge={bridge} loupists={await bridge.loupistList()} />);
+  await screen.findByRole("switch", { name: "Skill Creator: disabled" });
+  const blurb = i18n.t("chat:skillBlurb.dividend-income");
+  const full = i18n.t("settings:bundledSkills.dividend-income.description");
+  expect(blurb).not.toBe(full);
+  expect(screen.getByText(blurb)).toBeVisible();
+  expect(screen.queryByText(full)).toBeNull();
+});

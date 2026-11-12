@@ -2,11 +2,13 @@ import { StrictMode, useState, type ComponentProps } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
+import { AGENT_SKILLS, FIXED_AGENT_SKILLS } from "@/lib/agentSkills";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatComposer } from "./ChatComposer";
 
-function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = true, onSearchContext, chips, modelCount = 1 }: {
+function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = true, onSearchContext, chips, modelCount = 1, skills = [{ id: "research", name: "Research", description: "Research a topic" }] }: {
   modelCount?: number;
+  skills?: ComponentProps<typeof ChatComposer>["skills"];
   onFollowUp?: ComponentProps<typeof ChatComposer>["onFollowUp"];
   onSend?: ComponentProps<typeof ChatComposer>["onSend"];
   isRunning?: boolean;
@@ -19,7 +21,7 @@ function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = t
     prompt={prompt} onPromptChange={setPrompt}
     privateChat={privateChat} isRunning={isRunning} error={null} streamAnnouncement=""
     models={Array.from({ length: modelCount }, (_, index) => ({ id: index ? `model-${index}` : "model", provider: "test", model: "model", name: index ? `Model ${index}` : "Model", input: ["text", "image"] as ("text" | "image")[], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" as const }))} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelAuto onModelResetToAuto={() => {}}
-    skills={[{ id: "research", name: "Research", description: "Research a topic" }]}
+    skills={skills}
     plugins={[]}
     onPrivateChatChange={setPrivateChat} onModelSelectionChange={vi.fn()}
     onSend={onSend} onFollowUp={onFollowUp} onAbort={vi.fn()}
@@ -145,6 +147,9 @@ describe("ChatComposer input", () => {
     await user.click(await screen.findByRole("menuitemcheckbox", { name: /Private chat/ }));
     const off = await screen.findByRole("button", { name: "Turn off private chat" });
     expect(screen.getByText("Private · memory off")).toBeVisible();
+    // Focus goes back to the message, so the "+" tooltip does not reopen over the chip.
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveFocus());
+    expect(screen.queryByRole("tooltip")).toBeNull();
     expect(screen.getByText("Private · memory off").parentElement).toHaveAccessibleDescription("Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.");
     await user.click(off);
     expect(screen.queryByText("Private · memory off")).toBeNull();
@@ -188,6 +193,19 @@ describe("ChatComposer input", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     await user.keyboard("{Enter}");
     expect(onFollowUp).toHaveBeenCalledOnce();
+  });
+
+  it("lists bundled Skills by their Korean names in the / menu and adds the Skill by id", async () => {
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    const user = userEvent.setup();
+    const map = [...AGENT_SKILLS, ...FIXED_AGENT_SKILLS].find(skill => skill.id === "world")!;
+    render(<RunningComposer isRunning={false} skills={[{ id: map.id, name: map.name, description: map.description }]} />);
+    const textarea = screen.getByRole("textbox");
+    await user.type(textarea, "/지도");
+    const option = screen.getByRole("option", { name: /지도/ });
+    expect(option).not.toHaveTextContent(/\bMap\b/);
+    await user.keyboard("{Enter}");
+    expect(screen.getByText("지도")).toBeVisible();
   });
 
   it("dismisses shortcuts without bubbling Escape and ignores IME Enter", async () => {

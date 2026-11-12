@@ -20,9 +20,20 @@ async function reader(options: { paused?: boolean; events?: boolean } = {}) {
   return { bridge, loupist: loupist!, article, user: userEvent.setup() };
 }
 
+it("links a column that needs a connection to Data connections", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const [loupist] = await bridge.loupistList() as LoupistSummary[];
+  bridge.watch.install(loupist!.id, previewWatchSettings({}), previewWatchEvents());
+  const onOpenConnections = vi.fn();
+  render(<WatchingReader bridge={bridge} loupist={loupist!} settings={await bridge.watchSettingsList({ loupistId: loupist!.id })} onOpenConnections={onOpenConnections} embedded />);
+  const hint = screen.getByText(/needs Korea Investment/).closest("p")!;
+  await userEvent.setup().click(within(hint).getByRole("button", { name: "Data connections" }));
+  expect(onOpenConnections).toHaveBeenCalledWith("koreainvestment.market-data");
+});
+
 it("shows per-kind checks as a read-only table and keeps holdings private", async () => {
   const { bridge, article } = await reader();
-  expect(within(article).getByText("Your quantities and values never leave this computer. Checks ask data sources only about the names you follow.")).toBeVisible();
+  expect(within(article).getByText("Your quantities and values never leave this Mac. Checks ask data sources only about the names you follow.")).toBeVisible();
   const matrix = within(article).getByRole("table", {name:"Watching"});
   expect(within(matrix).getAllByRole("columnheader").map(header => header.textContent)).toEqual(["Asset", "Filings", "Results", "Insiders", "5% holders", "Flows", "Dividends", "Last alert"]);
   expect(within(matrix).queryByRole("checkbox")).toBeNull();

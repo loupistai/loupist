@@ -1,4 +1,4 @@
-import { skillPresentation } from "../../lib/agentSkills";
+import { skillBlurb, skillPresentation } from "../../lib/agentSkills";
 import i18n, { useTranslation } from "../../i18n";
 import { CONFIG_CHANGED_EVENT, notifyConfigurationChanged } from "../../app/useConfiguration";
 import { Disclosure } from "../ui/disclosure";
@@ -263,6 +263,8 @@ export function LoupistSettings({
       skills.filter((skill) => !skill.fixed).map((skill) => ({
         id: skill.id,
         ...skillPresentation(skill),
+        // The row shows the short line for people; the model-facing description stays in Settings › Skills' detail.
+        description: skillBlurb(skill),
         enabled: skill.enabled,
         locked: false,
       })),
@@ -378,7 +380,7 @@ export function LoupistSettings({
               </Disclosure>
               <Disclosure title={i18n.t("knowledge:memoryPage.about.learning")} data-loupist-section="learning">
                 <LoupistLearningSettings key={selectedAgent.id} bridge={bridge} loupistId={selectedAgent.id} onChanged={onChanged} />
-                <Button variant="destructive" size="sm" data-memory-reset onClick={() => setResetOpen(true)}>{i18n.t("knowledge:memoryPage.about.reset")}</Button>
+                <Button variant="outline" size="sm" className="justify-self-start self-start" data-memory-reset onClick={() => setResetOpen(true)}>{i18n.t("knowledge:memoryPage.about.reset")}</Button>
                 <MemoryResetDialog bridge={bridge} loupistId={selectedAgent.id} name={selectedAgent.name} open={resetOpen} onOpenChange={setResetOpen} onChanged={onChanged} />
               </Disclosure>
             </> : null}

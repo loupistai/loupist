@@ -8,22 +8,20 @@ import { relationName } from "./relations";
 import { relationshipGroups, strokeWidth, type RelationshipGroup, type RelationshipRow } from "./relationships";
 
 const PER_GROUP = 6;
-const CHIP_CHARS = 16;
 
 /**
- * A counterpart chip: the category swatch and a name cut at 16 characters (full
- * name in the tooltip). Its left rule carries the claim's weight (1.5–3 px) and
+ * A counterpart chip: the category swatch and the name, which the chip's CSS ends with an
+ * ellipsis only when it runs out of room (full name in the tooltip). Its left rule carries the claim's weight (1.5–3 px) and
  * turns dashed when the claim is disputed and dotted for a Lens entry, standing
  * in for the line on the canvas.
  */
 function Chip({ row, group, onSelect, onPoint }: { row: RelationshipRow; group?: RelationshipGroup; onSelect: (node: KnowledgeMapNode) => void; onPoint?: (edgeId?: string) => void }) {
   const { i18n } = useTranslation("knowledge");
   const name = entityLabel(row.node, i18n.language);
-  const short = [...name].length > CHIP_CHARS ? `${[...name].slice(0, CHIP_CHARS).join("")}…` : name;
   return <button type="button" className="map-relationship-chip" title={name} data-status={row.edge.status === "disputed" ? "disputed" : undefined} data-lens={row.lens || undefined}
     style={group ? { borderLeftWidth: `${strokeWidth(group.rows, row)}px` } : undefined} onClick={() => onSelect(row.node)}
     onPointerEnter={() => onPoint?.(row.edge.id)} onPointerLeave={() => onPoint?.()} onFocus={() => onPoint?.(row.edge.id)} onBlur={() => onPoint?.()}>
-    <i className={`map-swatch is-${nodeCategory(row.node)}`} aria-hidden="true" /><span>{short}</span>
+    <i className={`map-swatch is-${nodeCategory(row.node)}`} aria-hidden="true" /><span>{name}</span>
   </button>;
 }
 

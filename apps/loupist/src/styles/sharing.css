@@ -225,8 +225,8 @@
 /* New Loupist dialog: start from a shared Loupist. */
 .loupist-shared-entry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .loupist-shared-entry > span { margin-right: auto; }
-/* The shared-entry row takes a line from the scrolling form; on short windows the template cards tighten so the
-   Name field stays whole above the fold instead of being cut through its text. */
+/* The shared-entry row takes a line from the scrolling form; on short windows the template cards tighten. Their
+   descriptions keep every line (the form scrolls), and the body fades at the fold instead of slicing a line. */
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @media (max-height: 620px) {
   .loupist-dialog:has([data-loupist-shared-entry]) .dialog-form { gap: var(--gg-space-3); }
@@ -235,8 +235,6 @@
   .loupist-dialog:has([data-loupist-shared-entry]) .loupist-template-fields { gap: var(--gg-space-2); }
   .loupist-dialog:has([data-loupist-shared-entry]) .loupist-template-grid { gap: var(--gg-space-1); }
   .loupist-dialog:has([data-loupist-shared-entry]) .loupist-template-card { padding: var(--gg-space-2) var(--gg-space-4); }
-  /* Two lines, not three: together with the tighter padding the Name field stays whole above the fold. The full line is on the card's title. */
-  .loupist-dialog:has([data-loupist-shared-entry]) .loupist-template-card > span:last-child { -webkit-line-clamp: 2; line-clamp: 2; }
 }
 
 /* Update diff under a shared Loupist's row (W19.5). */

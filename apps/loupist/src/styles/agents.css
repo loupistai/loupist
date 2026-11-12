@@ -108,7 +108,8 @@
 .loupist-profile-avatars > div { display: grid; grid-template-columns: repeat(auto-fit, 40px); gap: var(--gg-space-2); margin-top: var(--gg-space-2); }
 .loupist-profile-avatars button, .loupist-profile-avatars .loupist-avatar { width: 40px; height: 40px; }
 .loupist-profile-avatars button { border-radius: var(--gg-radius-full); }
-.loupist-profile-avatars button[aria-pressed="true"] { outline: 2px solid var(--gg-color-accent); outline-offset: 2px; }
+/* Selection is neutral like the tone cards; amber is kept for "needs you" and "learned this". */
+.loupist-profile-avatars button[aria-pressed="true"] { outline: 2px solid var(--gg-color-text-primary); outline-offset: 2px; }
 .loupist-profile-avatars button:focus-visible { outline: 2px solid var(--gg-color-text-primary); outline-offset: 3px; }
 .loupist-profile-avatars button:disabled { opacity: .5; }
 .loupist-profile-counter { justify-self: end; font-size: var(--gg-text-caption); color: var(--gg-color-text-secondary); }
@@ -126,6 +127,9 @@
 .loupist-tracking-intro { margin:var(--gg-space-3) 0 0; font-size:var(--gg-text-body); line-height:var(--gg-leading-body); }
 .loupist-tracking-list { list-style:none; padding:0; margin:var(--gg-space-2) 0 0; display:grid; gap:var(--gg-space-2); }
 .loupist-tracking-list li { display:grid; grid-template-columns:auto 1fr auto; column-gap:var(--gg-space-2); align-items:start; }
+/* A change row has no swatch: its text takes the free track and Undo lines up at the right edge. */
+.loupist-tracking-changes li { grid-template-columns:minmax(0, 1fr) auto; }
+.loupist-tracking-recent { margin-top:var(--gg-space-4); }
 .loupist-tracking-list .map-swatch { width:10px; height:10px; margin-top:6px; }
 .loupist-tracking-copy { min-width:0; }
 .loupist-tracking-copy strong { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; font-size:var(--gg-text-body); font-weight:var(--gg-weight-semibold); line-height:var(--gg-leading-body); }

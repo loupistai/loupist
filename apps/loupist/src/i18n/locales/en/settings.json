@@ -5,7 +5,7 @@
     "keywords": "general menu bar background running privacy notice about telemetry keychain",
     "keepRunning": "Keep running in the menu bar",
     "keepRunningDescription": "Scheduled tasks and Watching run only while Loupist is open or in the menu bar.",
-    "keepRunningAutomatic": "Not chosen yet. Loupist turns this on when you start a briefing or Watching.",
+    "keepRunningAutomatic": "On because a briefing or Watching is active. You can turn it off here.",
     "loadFailed": "Couldn't load this setting.",
     "saveFailed": "Couldn't change this setting. Try again.",
     "aboutTitle": "About & privacy",
@@ -302,7 +302,7 @@
   },
   "useAppUpdate": {
     "couldNotReadUpdateStatus": "Could not read update status.",
-    "couldNotCheckForUpdates": "Could not check for updates.",
+    "couldNotCheckForUpdates": "Couldn't check for updates. Check your connection and try again.",
     "couldNotInstallTheUpdate": "Could not install the update."
   },
   "agentCapabilityList": {
@@ -576,7 +576,7 @@
     "runLogs": "Run logs",
     "reveal": "Reveal in Finder",
     "copy": "Copy last error details",
-    "description": "Local execution details only. Global defaults shows app sign-ins; select a Loupist above for its runs.",
+    "description": "Run details kept on this Mac. This page shows app sign-ins; a Loupist's runs are in its own settings.",
     "copied": "Last error details copied.",
     "noError": "No failed runs recorded.",
     "failed": "Could not access run logs. Try again.",

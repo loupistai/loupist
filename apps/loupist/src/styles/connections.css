@@ -6,6 +6,8 @@
 .custom-heading { flex-wrap: wrap; }
 .custom-heading h2 { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-semibold); line-height: var(--gg-leading-subtitle); margin: 0; }
 .custom-meta { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+/* In a dialog footer the reason Done waits sits at the start, Done at the end. */
+[data-slot="dialog-footer"] > .custom-review-hint { margin: 0 auto 0 0; align-self: center; }
 .custom-field { display: flex; flex-direction: column; gap: var(--gg-space-2); font-size: var(--gg-text-control); }
 .custom-rows, .custom-tools { list-style: none; margin: 0; padding: 0; }
 .custom-row { width: 100%; min-width: 0; min-height: calc(var(--gg-size-field) + var(--gg-space-4)); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; text-align: start; gap: var(--gg-space-2) var(--gg-space-4); padding: var(--gg-space-4) 0; border-bottom: 1px solid var(--gg-color-border-subtle); }

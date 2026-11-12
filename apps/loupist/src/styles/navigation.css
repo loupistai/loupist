@@ -94,6 +94,9 @@ button.needs-attention-more:hover { color: var(--gg-color-text-primary); }
   padding: 0;
 }
 [data-collapsible="icon"] :is(.loupist-place-key, #main-tab-settings > span) { display: none; }
+/* The rail keeps the unread count as a dot inside the button's rounded corner, so the icon stays centred and whole. */
+[data-collapsible="icon"] .loupist-chat-button { position: relative; }
+[data-collapsible="icon"] .loupist-chat-button .shell-unread { position: absolute; top: 4px; right: 4px; width: 6px; min-width: 6px; height: 6px; padding: 0; margin: 0; overflow: hidden; color: transparent; background: var(--gg-color-text-secondary); }
 [data-collapsible="icon"] :is(.loupist-navigation, .navigation-footer) [data-slot="sidebar-menu"] {
   width: fit-content;
   align-self: center;

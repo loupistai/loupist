@@ -180,7 +180,7 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
       {t("following.needsConnection", { kind: watchKindColumn(item.kind), connection: item.connection.name })}
       {onOpenConnections ? <> <Button variant="link" size="sm" onClick={() => onOpenConnections(item.connection.id)}>{t("following.openConnections")}</Button></> : null}
     </li>)}</ul> : null}
-    {settings && watchlist?.length ? <WatchingReader bridge={bridge} loupist={loupist} settings={settings} onSettings={setSettings} embedded />
+    {settings && watchlist?.length ? <WatchingReader bridge={bridge} loupist={loupist} settings={settings} onSettings={setSettings} onOpenConnections={onOpenConnections} embedded />
       : watchFailed && watchlist?.length ? <div role="alert" className="inline-error" data-watch-load-failed><span>{t("following.watchLoadFailed")}</span> <Button variant="outline" size="sm" onClick={() => void reloadWatch()}>{t("retry")}</Button></div> : null}
     </div>
     {/* Side column at wide sizes, after the list when compact: holdings are counts and dates only. */}

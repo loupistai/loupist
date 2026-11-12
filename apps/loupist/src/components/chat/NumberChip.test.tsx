@@ -7,7 +7,7 @@ import { chatMarkdown } from "../../chat/exportChat";
 import { chatReceipt } from "../../chat/receipt";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatMessageCard } from "./ChatMessageCard";
-import { NumberChip } from "./NumberChip";
+import { NumberChip, popoverCollisionPadding } from "./NumberChip";
 import { renderWithOpen, destinations } from "../../test/open";
 
 const dart = evidenceFixture({ id: "ev_dart", title: "Solsup Foods FY2025 statements", tool_name: "dart_financials", provider: "OpenDART", url: undefined, published_at: "2026-03-18",
@@ -299,4 +299,14 @@ it("exports a number with a footnote for its formula or source", () => {
   expect(markdown).toContain("The margin was 8.4%[^1] on revenue of ₩452.3bn[^2]");
   expect(markdown).toContain("[^1]: Margin = 38.1 / 452.3 = 8.42% (calculated in Loupist; inputs: OpenDART, 2026-03-18)");
   expect(markdown).toContain("[^2]: Solsup Foods FY2025 statements — 2026-03-18");
+});
+
+it("lets the popover cover the composer in a short window so its inputs and sources stay visible", () => {
+  const height = window.innerHeight;
+  try {
+    window.innerHeight = 560;
+    expect(popoverCollisionPadding(null)).toEqual({ top: 56, right: 8, bottom: 8, left: 8 });
+    window.innerHeight = 820;
+    expect(popoverCollisionPadding(null)).toMatchObject({ top: 112 });
+  } finally { window.innerHeight = height; }
 });

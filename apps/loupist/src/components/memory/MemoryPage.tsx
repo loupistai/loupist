@@ -15,6 +15,7 @@ import { chatTitle } from "../../app/chatTitle";
 import { LensLearningPanel } from "../knowledge/LensLearningPanel";
 import { PageReader } from "./PageReader";
 import { PrincipleSource } from "./PrincipleSource";
+import { PrincipleForm } from "../map/PrincipleForm";
 import type { PackImportView, PackSuggestionGroup } from "../../contracts/sharing";
 import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { ShareSheet } from "../sharing/ShareSheet";
@@ -23,6 +24,7 @@ import { SHARED_SECTION_ITEM, SharedPacks } from "../sharing/SharedPacks";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SourceWorkspace } from "../knowledge/SourceWorkspace";
 import "@/styles/memory-page.css";
+import "@/styles/map.css";
 
 const t = i18n.getFixedT(null, "knowledge");
 export type MemorySegment = "pages" | "history";
@@ -80,6 +82,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
   useTranslation(["knowledge", "onboarding"]);
   const loupistId = loupist.id;
   const [refresh, setRefresh] = useState(0);
+  const [addingPrinciple, setAddingPrinciple] = useState(false);
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState(false);
   const [resumeFailed, setResumeFailed] = useState(false);
@@ -214,7 +217,12 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
     {data ? <div className="memory-page-body" data-segment={current} onFocus={revealFocused}>
       {current === "pages" ? <>
         <ItemList label={t("memoryPage.tabs.pages")} description={t("memoryPage.pages.description")} items={shown} selectedId={selected?.id} usage={data.usage} onOpen={open}
-          before={suggestions} searching={Boolean(terms)} empty={<p className="memory-empty">{t("memoryPage.pages.empty")}</p>}
+          before={suggestions} searching={Boolean(terms)} empty={<div className="memory-empty-state">
+            <p className="memory-empty">{t("memoryPage.pages.empty")}</p>
+            {addingPrinciple ? <PrincipleForm bridge={bridge} loupistId={loupistId} origin="settings" onCancel={() => setAddingPrinciple(false)}
+              onSaved={saved => { setAddingPrinciple(false); open(saved.recordId); changed(); }} />
+              : <Button variant="outline" size="sm" data-add-principle onClick={() => setAddingPrinciple(true)}>{t("memoryPage.principles.add")}</Button>}
+          </div>}
           after={showSharing ? <SharedPacks ref={sharedRef} bridge={bridge} loupistId={loupistId} imports={data.imports} indexConfigured={data.indexConfigured}
             onChanged={imports => { setData(current => current && { ...current, imports }); changed(); }} /> : null} />
         <Reader item={selected} takeFocus={chosen} bridge={bridge} loupistId={loupistId} usage={data.usage} paused={Boolean(selected && data.paused.has(selected.id))} threads={threads} onOpenChat={onOpenChat} onChanged={changed} onClose={() => setCompactReader(false)} backLabel={t("memoryPage.tabs.pages")} catalog={data.catalog} onOpenKnowledge={openKnowledge} onOpenPage={open} onAsk={onAsk}

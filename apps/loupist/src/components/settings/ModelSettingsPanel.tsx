@@ -252,7 +252,8 @@ export function ModelSettingsPanel({
               {i18n.t("settings:modelSettingsPanel.modelProviders")}</h2>
           </div>
           {cards.length ? (
-            <Button type="button" data-provider-connect disabled={providerMutationBusy} onClick={() => openSheet({ kind: "picker" })}>
+            // With an account listed, adding another is secondary; a card's own Reconnect or Connect stays the filled one.
+            <Button type="button" variant="outline" data-provider-connect disabled={providerMutationBusy} onClick={() => openSheet({ kind: "picker" })}>
               <PlusIcon />{i18n.t("settings:providers.addProvider")}</Button>
           ) : null}
         </div>

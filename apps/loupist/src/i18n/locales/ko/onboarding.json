@@ -90,9 +90,9 @@
         "suggestedName": "테크 루피스트"
       },
       "crypto": {
-        "title": "크립토",
+        "title": "가상자산",
         "focus": "블록체인 네트워크, 토큰과 관련 기업",
-        "suggestedName": "크립토 루피스트"
+        "suggestedName": "가상자산 루피스트"
       },
       "macro": {
         "title": "매크로·금리",
@@ -143,7 +143,7 @@
     "openrouterNote": "키 하나로 여러 모델",
     "local": "이 Mac의 모델 사용",
     "localNote": "무료이고 외부로 보내지 않아요. Ollama, LM Studio, llama.cpp 중 하나가 필요해요.",
-    "custom": "사용자 지정 엔드포인트(고급)",
+    "custom": "사용자 지정 엔드포인트",
     "keyStays": "키는 이 기기에만 저장돼요. 요청은 AI 서비스로 바로 가요.",
     "waitingBodyOther": "끝나면 이 화면이 저절로 넘어가요.",
     "starters": "눌러서 관심 자산에 추가:",

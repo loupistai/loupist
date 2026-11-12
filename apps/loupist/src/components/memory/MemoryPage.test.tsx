@@ -28,7 +28,7 @@ it("opens on Pages with your principles grouped in, shows where one was used, an
   expect(within(tabs).getByRole("tab", { name: /Pages/ })).toHaveAttribute("aria-selected", "true");
   // Lens is Pages and History; what you follow lives on the Following page.
   expect(within(tabs).getAllByRole("tab").map(tab => tab.textContent)).toEqual([expect.stringMatching(/^Pages/), expect.stringMatching(/^History/)]);
-  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Principle, used 4 times/ }));
+  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Principle, Used 4 times/ }));
   const reader = within(page).getByRole("complementary", { name: /Prefer companies that publish segment margins/ });
   await user.click(within(reader).getByRole("button", { name: "Hanul margin review" }));
   expect(handlers.onOpenChat).toHaveBeenCalledWith("chat-margin");
@@ -197,4 +197,20 @@ it("debounces Lens search while the user types and cancels a cleared query", asy
     expect(search).toHaveBeenCalledTimes(1);
     rendered.unmount();
   } finally { vi.useRealTimers(); }
+});
+
+it("offers + Add principle on an empty Lens and opens the principle it saves", async () => {
+  const { bridge, loupist, view, user } = await fixture();
+  // A new Loupist: no methods or pages yet.
+  const catalog = bridge.knowledgeCatalog.bind(bridge);
+  vi.spyOn(bridge, "knowledgeCatalog").mockImplementation(async request => ({ ...await catalog(request), lenses: [] }));
+  for (const principle of await bridge.principleList({ loupistId: loupist.id })) await bridge.principleArchive({ loupistId: loupist.id, recordId: principle.recordId, archived: true });
+  render(view());
+  const page = await screen.findByRole("region", { name: /What .* knows/ });
+  await within(page).findByText(/Nothing here yet/);
+  await user.click(within(page).getByRole("button", { name: "+ Add principle" }));
+  await user.type(within(page).getByRole("textbox", { name: "Statement" }), "Check capacity costs before trusting a margin recovery.");
+  await user.click(within(page).getByRole("button", { name: "Save" }));
+  expect(await within(page).findByRole("complementary", { name: /Check capacity costs before trusting a margin recovery/ })).toBeVisible();
+  expect((await bridge.principleList({ loupistId: loupist.id })).map(item => item.statement)).toContain("Check capacity costs before trusting a margin recovery.");
 });

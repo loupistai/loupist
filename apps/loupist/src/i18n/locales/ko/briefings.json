@@ -48,7 +48,7 @@
     "auth": "AI 계정에 다시 로그인해야 해요.",
     "budget": "사용 한도에 도달했어요.",
     "generic": "이 브리핑을 끝내지 못했어요.",
-    "models": "설정 → 모델",
+    "models": "설정 › AI 계정",
     "details": "세부 정보"
   },
   "schedule": {
@@ -149,7 +149,7 @@
     "statusSetup": "설정 필요",
     "cadence": "{{loupist}}가 열려 있는 동안 매시간 · 마지막 확인 {{time}}",
     "cadenceFirst": "{{loupist}}가 열려 있는 동안 매시간",
-    "privacy": "보유 수량과 금액은 이 컴퓨터 밖으로 나가지 않아요. 확인할 때는 관심 자산의 이름만 데이터 출처에 물어봐요.",
+    "privacy": "보유 수량과 금액은 이 Mac 밖으로 나가지 않아요. 확인할 때는 관심 자산의 이름만 데이터 출처에 물어봐요.",
     "checkNow": "지금 확인",
     "checking": "확인 중…",
     "found_one": "새 알림 {{formattedCount}}개를 찾았어요.",
@@ -158,7 +158,7 @@
     "pauseFailed": "지켜보기 설정을 바꾸지 못했어요. 다시 시도해 주세요.",
     "checkFailed": "지금 확인하지 못했어요. 잠시 후 다시 시도해 주세요.",
     "resume": "다시 시작",
-    "statusPaused": "일시 중지",
+    "statusPaused": "일시정지",
     "pausedDetail": "{{loupist}}가 확인하지 않아요",
     "recent": "최근 알림",
     "empty": "아직 알림이 없어요. 첫 확인으로 기준을 잡아요.",
@@ -166,7 +166,7 @@
     "consentOff": "지켜보기 꺼짐",
     "group": {
       "equity": "주식",
-      "crypto": "크립토",
+      "crypto": "가상자산",
       "commodity": "원자재"
     },
     "kindNeeds": "{{kind}}: {{connection}} 연결 필요",

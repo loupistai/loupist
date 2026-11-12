@@ -49,7 +49,7 @@
     "auth": "Your AI account needs to sign in again.",
     "budget": "The usage limit was reached.",
     "generic": "Couldn't finish this briefing.",
-    "models": "Settings → Models",
+    "models": "Settings › AI accounts",
     "details": "Details"
   },
   "schedule": {
@@ -156,7 +156,7 @@
     "statusSetup": "Set up",
     "cadence": "Hourly while {{loupist}} is open · last checked {{time}}",
     "cadenceFirst": "Hourly while {{loupist}} is open",
-    "privacy": "Your quantities and values never leave this computer. Checks ask data sources only about the names you follow.",
+    "privacy": "Your quantities and values never leave this Mac. Checks ask data sources only about the names you follow.",
     "checkNow": "Check now",
     "checking": "Checking…",
     "found_one": "Found {{formattedCount}} new alert.",

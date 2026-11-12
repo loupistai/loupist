@@ -100,8 +100,10 @@ export function ProviderCard({ option, models, hiddenModels, chatModel, loading,
         <p className="provider-card-meta">{credential}</p>
         {reconnect ? <p className="provider-card-body">{t("providers.reconnectBody")}</p> : null}
         {plan && option.billing_note === "chatgpt_plan" ? <p className="provider-card-body" data-plan-line="chatgpt">
-          {t("providers.usingPlan")}<span aria-hidden="true"> · </span>
-          <button type="button" className="connect-link" onClick={() => onOpenUsage(option.id)}>{t("providers.manageUsage")}<ExternalLinkIcon aria-hidden="true" /></button>
+          {t("providers.usingPlan")}
+          {/* While the plan-limit notice offers Manage usage, the plan line does not repeat it. */}
+          {notice?.kind === "plan_limit" ? null : <><span aria-hidden="true"> · </span>
+          <button type="button" className="connect-link" onClick={() => onOpenUsage(option.id)}>{t("providers.manageUsage")}<ExternalLinkIcon aria-hidden="true" /></button></>}
         </p> : null}
         {notice ? <div className="provider-card-row" data-tone="warning" role="status" data-notice={notice.kind}>
           <p>{notice.kind === "plan_limit" ? t("providers.noticePlanLimit", { dateTime: formatDateTime(notice.at_ms) })

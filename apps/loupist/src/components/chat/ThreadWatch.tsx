@@ -11,7 +11,6 @@ import { hostSourceDestination } from "../../chat/navigation";
 import { useAssetNames } from "../assets/assetName";
 import { citationNumbers, SourceChips } from "../assets/assetText";
 import { datedWatchSentence, newestFirst } from "../assets/watchText";
-import { WATCHING_TASK_ID } from "../briefings/Watching";
 import "@/styles/watch.css";
 
 const t = i18n.getFixedT(null, "chat");
@@ -76,7 +75,8 @@ export function ThreadWatch({ message, bridge, loupistId, loupistName, active }:
     } catch { setFailed(event.eventId); }
     finally { setPreparing(null); }
   };
-  const openWatching = () => go?.({ kind: "schedule", taskId: WATCHING_TASK_ID });
+  // Watch alerts live on Following, next to the assets they are about.
+  const openWatching = () => go?.({ kind: "following" });
   return <article className="message assistant thread-watch" aria-label={t("watchMessage.label")}>
     <div className="message-meta">
       <span>{loupistName}</span>

@@ -8,11 +8,15 @@ import { CheckIcon, FolderOpenIcon, RefreshCwIcon } from "lucide-react";
 import type { ConfigDocument, ConfigScope, ConfigSnapshot, LoupistSummary, LoupistBridge, ModelCatalog } from "../../types";
 import { notifyConfigurationChanged, useConfiguration } from "../../app/useConfiguration";
 import { Button } from "../ui/button";
+import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { Input } from "../ui/input";
 import { NativeSelect } from "../ui/native-select";
 import { Switch } from "../ui/switch";
 import { thinkingLabel, runControlLabel, runChoiceLabel, visibleCatalogModels } from "../../lib/modelSelection";
 import { ProviderPlanLine } from "../models/ProviderPlanLine";
+
+/** Conversation context presets: how much recent conversation stays before older turns are summarized. */
+const CONTEXT_PRESETS = [{ id: "standard", keep: 20000 }, { id: "keepMore", keep: 40000 }] as const;
 
 function leaf(document: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((value, key) => value && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined, document);
@@ -130,7 +134,12 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange 
         {optionModel?.run_controls.length ? <div className="agent-config-group" data-run-controls><h4>{i18n.t("settings:agentSettings.performanceGroup")}</h4><div className="agent-config-fields">
           {optionModel?.run_controls.map((control) => <SettingField key={control.id} {...field(`chat.run_options.${control.id}`, runControlLabel(control), control.id === "performance" ? i18n.t("settings:agentSettings.performanceDescription") : undefined)}><NativeSelect id={`config-chat.run_options.${control.id}`} aria-describedby={control.id === "performance" ? `config-description-chat.run_options.${control.id}` : undefined} disabled={disabled} value={snapshot.effective.chat.run_options[control.id] ?? control.default_choice} onChange={(event) => void update({ chat: { run_options: { [control.id]: event.target.value } } })}>{snapshot.effective.chat.run_options[control.id] !== undefined && !control.choices.some((choice) => choice.id === snapshot.effective.chat.run_options[control.id]) ? <option value={snapshot.effective.chat.run_options[control.id]}>{i18n.t("settings:agentSettings.unavailableChoice")}</option> : null}{control.choices.map((choice) => <option key={choice.id} value={choice.id}>{runChoiceLabel(control, choice)}</option>)}</NativeSelect></SettingField>)}
         </div></div> : null}
-        <div className="agent-config-group"><h4>{i18n.t("settings:agentSettings.conversationContext")}</h4><p>{i18n.t("settings:agentSettings.standardFitsANormalResearchChatKeepMore")}</p><div className="agent-config-presets"><Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void update({ pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 20000 } } })}>{i18n.t("settings:agentSettings.standard")}</Button><Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void update({ pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 40000 } } })}>{i18n.t("settings:agentSettings.keepMore")}</Button></div><Disclosure title={i18n.t("settings:agentSettings.customAmounts")}><div className="agent-config-fields">
+        <div className="agent-config-group"><h4>{i18n.t("settings:agentSettings.conversationContext")}</h4><p>{i18n.t("settings:agentSettings.standardFitsANormalResearchChatKeepMore")}</p>{/* The preset shows as chosen only when the kept amount is exactly its own; a custom amount selects neither. */}
+          <SegmentedControl className="agent-config-presets" aria-label={i18n.t("settings:agentSettings.conversationContext")} disabled={disabled}
+            value={CONTEXT_PRESETS.find(preset => preset.keep === snapshot.effective.pi.compaction.keep_recent_tokens)?.id ?? ""}
+            onValueChange={id => { const preset = CONTEXT_PRESETS.find(candidate => candidate.id === id); if (preset) void update({ pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: preset.keep } } }); }}>
+            {CONTEXT_PRESETS.map(preset => <SegmentedControlItem key={preset.id} value={preset.id}>{i18n.t(`settings:agentSettings.${preset.id}`)}</SegmentedControlItem>)}
+          </SegmentedControl><Disclosure title={i18n.t("settings:agentSettings.customAmounts")}><div className="agent-config-fields">
           <NumberSetting {...field("pi.compaction.reserve_tokens", i18n.t("settings:agentSettings.reservedTokens"), i18n.t("settings:agentSettings.leaveRoomForTheModelSNextResponse"))} max={Number.MAX_SAFE_INTEGER} onSave={save} onDirtyChange={onNumberDirtyChange} />
           <NumberSetting {...field("pi.compaction.keep_recent_tokens", i18n.t("settings:agentSettings.recentTokensToKeep"), i18n.t("settings:agentSettings.keepThisMuchRecentConversationBeforeSummarizingOlder"))} max={Number.MAX_SAFE_INTEGER} onSave={save} onDirtyChange={onNumberDirtyChange} />
         </div></Disclosure></div>

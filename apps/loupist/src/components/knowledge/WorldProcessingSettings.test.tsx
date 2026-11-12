@@ -5,7 +5,7 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { GraphProcessingView, KeepAwakeStatus } from "../../types";
 import { WorldProcessingSettings } from "./WorldProcessingSettings";
 
-const autoProcess = () => screen.getByRole("checkbox", { name: "Automatically process saved sources" });
+const autoProcess = () => screen.getByRole("checkbox", { name: "Build the Map from saved sources automatically" });
 const setup = (bridge = new MockLoupistBridge({ delay_ms: 0 })) => ({ bridge, loupistId: "loupist-quality", onChanged: vi.fn(), onManageProviders: vi.fn() });
 const selection = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(await screen.findByRole("button", { name: /Map building model/ }));
@@ -23,7 +23,7 @@ it("uses the shared model catalog and controls while leaving automatic processin
   const save = vi.spyOn(props.bridge, "knowledgeGraphSettingsSet");
   render(<WorldProcessingSettings {...props} />);
   const user = userEvent.setup();
-  expect(await screen.findByRole("checkbox", { name: "Automatically process saved sources" })).not.toBeChecked();
+  expect(await screen.findByRole("checkbox", { name: "Build the Map from saved sources automatically" })).not.toBeChecked();
   await selection(user);
   expect(autoProcess()).not.toBeChecked();
   expect(save).not.toHaveBeenCalled();

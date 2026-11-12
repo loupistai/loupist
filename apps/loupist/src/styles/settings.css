@@ -219,7 +219,7 @@
 }
 .agent-config-plan-line { margin-top: calc(-1 * var(--gg-space-2)); }
 .settings-model-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); }
-.settings-model-list { max-height: var(--gg-size-inspector); overflow-y: auto; }
+.settings-model-list { max-height: var(--gg-size-inspector); overflow-y: auto; overflow-x: hidden; }
 .settings-model-row { display: flex; align-items: center; gap: var(--gg-space-3); padding: 14px var(--gg-space-1); }
 .settings-model-row.has-divider { border-top: 1px solid var(--gg-color-border-subtle); }
 .settings-model-row strong { font-weight: var(--gg-weight-medium); }

@@ -108,7 +108,7 @@ export function WatchingStatus({ bridge, loupist, settings, onSettings }: {
   </div>;
 }
 
-export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, embedded = false }: {
+export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, onOpenConnections, embedded = false }: {
   bridge: LoupistBridge;
   loupist: LoupistSummary;
   settings: WatchSettings;
@@ -117,6 +117,8 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
   embedded?: boolean;
   /** Settings the host returned after Pause, Resume or Check now. */
   onSettings?: (next: WatchSettings) => void;
+  /** Opens Settings › Data connections at the connection a column needs. */
+  onOpenConnections?: (connectionId: string) => void;
 }) {
   useTranslation(["briefings", "assets", "chat"]);
   const loupistId = loupist.id;
@@ -159,8 +161,8 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
   const sorted = newestFirst(events ?? []);
   const alerts = sorted.slice(0, shownAlerts);
   // A kind that needs a connection says so once under the matrix, beside its disabled boxes.
-  const needed = new Map<WatchKind, string>();
-  for (const asset of rows) for (const state of asset.kinds) if (state.needsConnection && !needed.has(state.kind)) needed.set(state.kind, connectionText(state.needsConnection.name));
+  const needed = new Map<WatchKind, { id: string; text: string }>();
+  for (const asset of rows) for (const state of asset.kinds) if (state.needsConnection && !needed.has(state.kind)) needed.set(state.kind, { id: state.needsConnection.id, text: connectionText(state.needsConnection.name) });
   const numbers = citationNumbers(alerts.map(event => event.evidence));
   const openPage = (event: Pick<WatchEvent, "assetId" | "name" | "symbol" | "market">) => openAsset?.({ loupistId, assetId: event.assetId, name: nameOf(event) });
   const openEvidence = (event: WatchEvent) => (evidence: AssetEvidence) => { if (evidence.url) void bridge.openExternalUrl(evidence.url); else openPage(event); };
@@ -207,7 +209,8 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
       </MatrixScroll>;
     })}
     {toggleFailed ? <p className="inline-error" role="alert">{t("watch.toggleFailed")}</p> : null}
-    {[...needed].map(([kind, connection]) => <p key={kind} className="watching-hint">{t("watch.kindNeeds", { kind: watchKindColumn(kind), connection })}</p>)}
+    {[...needed].map(([kind, connection]) => <p key={kind} className="watching-hint">{t("watch.kindNeeds", { kind: watchKindColumn(kind), connection: connection.text })}
+      {onOpenConnections ? <> <Button variant="link" size="sm" onClick={() => onOpenConnections(connection.id)}>{t("following.openConnections")}</Button></> : null}</p>)}
     {listed.length > rows.length ? <Button variant="ghost" size="sm" onClick={() => setAllRows(true)}>{t("watch.showAll")}</Button> : null}
 
     <section className="watching-section" aria-labelledby="watching-recent">

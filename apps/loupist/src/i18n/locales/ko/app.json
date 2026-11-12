@@ -271,7 +271,7 @@
     "closed": "{{market}} 장 마감",
     "holiday": "{{market}} 오늘 휴장",
     "closesEarly": "{{market}} {{time}} 조기 마감",
-    "always": "크립토 24시간",
+    "always": "가상자산 24시간",
     "minutes_other": "{{formattedCount}}분",
     "hours_other": "{{formattedCount}}시간",
     "market": {

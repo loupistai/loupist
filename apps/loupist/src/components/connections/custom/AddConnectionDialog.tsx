@@ -8,7 +8,7 @@ import { Textarea } from "../../ui/textarea";
 import { SegmentedControl, SegmentedControlItem } from "../../ui/segmented-control";
 import { Disclosure } from "../../ui/disclosure";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from "../../ui/dialog";
-import { ToolReview, reviewComplete } from "./ToolReview";
+import { ReviewHint, ToolReview, reviewComplete } from "./ToolReview";
 
 export function AddConnectionDialog({ bridge, loupistId, onClose, onChanged }: { bridge: CustomConnectionsBridge; loupistId: string; onClose: () => void; onChanged: () => void }) {
   const { t } = useTranslation("settings");
@@ -109,7 +109,7 @@ export function AddConnectionDialog({ bridge, loupistId, onClose, onChanged }: {
           // A finished sign-in confirms for the Loupist that opened Add, so tool approval is possible.
           if (next.auth_state === "signed_in" || next.auth_state === "not_required") void run(() => confirm(next));
           else setReview(next);
-        }} /> : review.pending ? <p role="alert" className="custom-status negative">{t("custom.failed")} <Button variant="link" disabled={busy} onClick={() => void run(() => confirm(review))}>{t("custom.tryAgain")}</Button></p> : <ToolReview bridge={bridge} connection={review} loupistId={loupistId} onChanged={setReview} onError={() => { retry.current = null; setError(true); }} />}
+        }} /> : review.pending ? <p role="alert" className="custom-status negative">{t("custom.failed")} <Button variant="link" disabled={busy} onClick={() => void run(() => confirm(review))}>{t("custom.tryAgain")}</Button></p> : <ToolReview bridge={bridge} connection={review} loupistId={loupistId} hint={false} onChanged={setReview} onError={() => { retry.current = null; setError(true); }} />}
       </> : <>
         <SegmentedControl value={mode === "command" ? "" : mode} onValueChange={value => { setMode(value); setPending([]); }} aria-label={t("custom.method")}><SegmentedControlItem value="url"><span>{t("custom.serverUrl")}</span><small>{t("custom.recommended")}</small></SegmentedControlItem><SegmentedControlItem value="json">{t("custom.pasteJson")}</SegmentedControlItem></SegmentedControl>
         {pending.length ? <><p className="custom-meta">{t("custom.nothingRuns")}</p><ul className="custom-tools">{pending.map(record => {
@@ -126,6 +126,6 @@ export function AddConnectionDialog({ bridge, loupistId, onClose, onChanged }: {
     </DialogBody>
     {bodyFades ? <div className="custom-scroll-fade" aria-hidden="true" /> : null}
     </div>
-    <DialogFooter>{review ? <Button disabled={busy || !loupistId || review.pending || review.auth_state === "in_progress" || review.auth_state === "sign_in_needed" || !reviewComplete(review)} onClick={() => { void run(async () => { if (pending.length) setReview(null); else onClose(); }); }}>{t("custom.done")}</Button> : pending.length && mode === "json" ? <Button type="button" variant="outline" disabled={busy} onClick={() => void returnToPaste()}>{t("custom.back")}</Button> : !pending.length ? <Button disabled={busy || (mode === "url" ? !url.trim() : mode === "json" ? !json.trim() : !command.trim())} onClick={() => void submit()}>{t(busy ? "custom.connecting" : mode === "url" ? "custom.connect" : "custom.review")}</Button> : null}</DialogFooter>
+    <DialogFooter>{review && !review.pending && !reviewComplete(review) ? <ReviewHint /> : null}{review ? <Button disabled={busy || !loupistId || review.pending || review.auth_state === "in_progress" || review.auth_state === "sign_in_needed" || !reviewComplete(review)} onClick={() => { void run(async () => { if (pending.length) setReview(null); else onClose(); }); }}>{t("custom.done")}</Button> : pending.length && mode === "json" ? <Button type="button" variant="outline" disabled={busy} onClick={() => void returnToPaste()}>{t("custom.back")}</Button> : !pending.length ? <Button disabled={busy || (mode === "url" ? !url.trim() : mode === "json" ? !json.trim() : !command.trim())} onClick={() => void submit()}>{t(busy ? "custom.connecting" : mode === "url" ? "custom.connect" : "custom.review")}</Button> : null}</DialogFooter>
   </DialogContent></Dialog>;
 }

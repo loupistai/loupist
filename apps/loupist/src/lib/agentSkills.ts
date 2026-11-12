@@ -19,14 +19,26 @@ export const FIXED_AGENT_SKILLS: ReadonlyArray<BundledSkill> = BUNDLED_SKILLS.fi
 export const DEFAULT_AGENT_SKILL_IDS = AGENT_SKILLS.map((skill) => skill.id);
 
 /** Localize bundled UI metadata only; installed Skill content keeps its own language. */
-export function skillPresentation(skill: Pick<AgentSkillSummary, "id" | "name" | "description"> & { source?: string }) {
+type SkillIdentity = Pick<AgentSkillSummary, "id" | "name" | "description"> & { source?: string };
+
+/** The bundled Skill this summary is, unless an installed Skill shadows its id. */
+function bundledId(skill: SkillIdentity): BundledSkillId | null {
   const builtin = BUNDLED_SKILLS.find((candidate) => candidate.id === skill.id);
-  if (!builtin || (skill.source !== undefined ? skill.source !== "bundled" : skill.name !== builtin.name || skill.description !== builtin.description)) {
-    return { name: skill.name, description: skill.description };
-  }
-  const id = builtin.id as BundledSkillId;
+  if (!builtin || (skill.source !== undefined ? skill.source !== "bundled" : skill.name !== builtin.name || skill.description !== builtin.description)) return null;
+  return builtin.id as BundledSkillId;
+}
+
+export function skillPresentation(skill: SkillIdentity) {
+  const id = bundledId(skill);
+  if (!id) return { name: skill.name, description: skill.description };
   return {
     name: i18n.t(`settings:bundledSkills.${id}.name`),
     description: i18n.t(`settings:bundledSkills.${id}.description`),
   };
+}
+
+/** A list row's line: a bundled Skill's short people-facing blurb (the "/" menu's), else its description. Details keep the full text. */
+export function skillBlurb(skill: SkillIdentity): string {
+  const id = bundledId(skill);
+  return id && i18n.exists(`chat:skillBlurb.${id}`) ? i18n.t(`chat:skillBlurb.${id}`) : skillPresentation(skill).description;
 }
