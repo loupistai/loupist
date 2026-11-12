@@ -406,7 +406,7 @@ fn tray_actions_focus_select_quit_and_residency_controls_close() {
         fake.0.borrow().as_slice(),
         ["focus", "focus", "select:loupist-a", "quit", "hide"]
     );
-    assert!(desktop::ResidentSettings::default().keep_running);
+    assert!(!desktop::ResidentSettings::default().keep_running);
 }
 
 #[test]
@@ -654,6 +654,120 @@ fn briefing_settings_take_an_exact_schedule_while_saved_schedules_read_leniently
     let off: commands::SettingsRequest =
         serde_json::from_value(json!({ "loupistId": "loupist-a", "enabled": false })).unwrap();
     assert!(off.schedule.is_none());
+}
+
+#[test]
+fn resident_choice_survives_briefing_enable_and_disable() {
+    for choice in [None, Some(false), Some(true)] {
+        let (_root, state, loupist) = state_fixture();
+        let root = &state.artifacts.app_data_dir;
+        let initial = desktop::read_settings(root).unwrap();
+        assert!(!initial.keep_running);
+        assert_eq!(initial.keep_running_choice, None);
+        if let Some(choice) = choice {
+            desktop::set_keep_running(&state, choice).unwrap();
+        }
+        for enabled in [true, false, true, false] {
+            commands::settings_set(
+                &state,
+                commands::SettingsRequest {
+                    loupist_id: loupist.clone(),
+                    enabled,
+                    schedule: None,
+                },
+            )
+            .unwrap();
+            let settings = desktop::read_settings(root).unwrap();
+            assert_eq!(settings.keep_running, choice.unwrap_or(true));
+            assert_eq!(settings.keep_running_choice, choice);
+            let response = serde_json::to_value(&settings).unwrap();
+            assert_eq!(
+                response["keepRunningChoice"],
+                serde_json::to_value(choice).unwrap()
+            );
+        }
+    }
+}
+
+#[test]
+fn old_resident_values_load_and_remain_the_users_choice() {
+    for keep_running in [false, true] {
+        let (_root, state, _loupist) = state_fixture();
+        let root = &state.artifacts.app_data_dir;
+        std::fs::create_dir_all(root).unwrap();
+        std::fs::write(
+            root.join("briefings-settings.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "keepRunning": keep_running, "notificationPermissionAsked": false,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let loaded = desktop::read_settings(root).unwrap();
+        assert_eq!(loaded.keep_running, keep_running);
+        assert_eq!(loaded.keep_running_choice, Some(keep_running));
+        desktop::enable(&state).unwrap();
+        let reopened = desktop::read_settings(root).unwrap();
+        assert_eq!(reopened.keep_running, keep_running);
+        assert_eq!(reopened.keep_running_choice, Some(keep_running));
+    }
+}
+
+#[test]
+fn watching_only_activates_automatic_residency_without_an_explicit_choice() {
+    use crate::{
+        commands::watch::{update_setting, WatchSettingSetRequest},
+        knowledge::watch::WatchKind,
+    };
+    for choice in [None, Some(false), Some(true)] {
+        let (_root, state, loupist) = state_fixture();
+        if let Some(choice) = choice {
+            desktop::set_keep_running(&state, choice).unwrap();
+        }
+        state.store.watchlist_add("MORR", "NASDAQ", None).unwrap();
+        let page = crate::commands::watch::followed_pages(&state, &loupist)
+            .unwrap()
+            .pop()
+            .unwrap();
+        update_setting(
+            &state,
+            WatchSettingSetRequest {
+                loupist_id: loupist.clone(),
+                asset_id: page.asset_id.clone(),
+                kind: WatchKind::Filings,
+                enabled: false,
+                expected_revision: 1,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            desktop::read_settings(&state.artifacts.app_data_dir)
+                .unwrap()
+                .keep_running,
+            choice.unwrap_or(false)
+        );
+        let revision = crate::commands::assets::with_assets(&state, &loupist, false, |tx| {
+            Ok(crate::knowledge::watch::switches(tx, &loupist)?
+                .get(&page.asset_id)
+                .map_or(1, |switch| switch.revision))
+        })
+        .unwrap();
+        update_setting(
+            &state,
+            WatchSettingSetRequest {
+                loupist_id: loupist,
+                asset_id: page.asset_id,
+                kind: WatchKind::Filings,
+                enabled: true,
+                expected_revision: revision,
+            },
+        )
+        .unwrap();
+        let settings = desktop::read_settings(&state.artifacts.app_data_dir).unwrap();
+        assert_eq!(settings.keep_running, choice.unwrap_or(true));
+        assert_eq!(settings.keep_running_choice, choice);
+        assert!(!settings.notification_permission_asked);
+    }
 }
 
 #[test]

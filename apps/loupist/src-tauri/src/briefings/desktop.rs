@@ -16,20 +16,15 @@ static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
 static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 const TRAY_ID: &str = "briefings-tray";
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ResidentSettings {
     pub keep_running: bool,
     pub notification_permission_asked: bool,
-}
-impl Default for ResidentSettings {
-    fn default() -> Self {
-        Self {
-            keep_running: true,
-            notification_permission_asked: false,
-        }
-    }
+    /// None follows the automatic default; Some preserves the user's choice.
+    #[serde(default)]
+    pub keep_running_choice: Option<bool>,
 }
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -152,10 +147,24 @@ impl DesktopEffects for NativeEffects {
     }
 }
 
-fn read_settings(root: &Path) -> Result<ResidentSettings, CommandError> {
+pub(super) fn read_settings(root: &Path) -> Result<ResidentSettings, CommandError> {
     match std::fs::read(root.join("briefings-settings.json")) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map_err(|_| CommandError::internal("Briefing resident settings are invalid")),
+        Ok(bytes) => {
+            let value: serde_json::Value = serde_json::from_slice(&bytes)
+                .map_err(|_| CommandError::internal("Briefing resident settings are invalid"))?;
+            let legacy = value.get("keepRunningChoice").is_none();
+            let mut settings: ResidentSettings = serde_json::from_value(value)
+                .map_err(|_| CommandError::internal("Briefing resident settings are invalid"))?;
+            // An old file cannot distinguish an automatic value from a user
+            // choice. Preserve it as explicit rather than overwrite a prior off.
+            if legacy {
+                settings.keep_running_choice = Some(settings.keep_running);
+            }
+            if let Some(choice) = settings.keep_running_choice {
+                settings.keep_running = choice;
+            }
+            Ok(settings)
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             Ok(ResidentSettings::default())
         }
@@ -177,12 +186,23 @@ fn write_settings(root: &Path, settings: &ResidentSettings) -> Result<(), Comman
 }
 
 pub(crate) fn enable(state: &AppState) -> Result<(), CommandError> {
+    enable_automatic(state, true)
+}
+
+pub(crate) fn enable_for_watching(state: &AppState) -> Result<(), CommandError> {
+    enable_automatic(state, false)
+}
+
+fn enable_automatic(state: &AppState, notifications: bool) -> Result<(), CommandError> {
     let _lock = SETTINGS_LOCK
         .lock()
         .map_err(|_| CommandError::internal("Briefing settings lock failed"))?;
     let mut settings = read_settings(&state.artifacts.app_data_dir)?;
-    settings.keep_running = true;
-    let request_permission = !settings.notification_permission_asked && APP.get().is_some();
+    if settings.keep_running_choice.is_none() {
+        settings.keep_running = true;
+    }
+    let request_permission =
+        notifications && !settings.notification_permission_asked && APP.get().is_some();
     if request_permission {
         settings.notification_permission_asked = true;
     }
@@ -212,11 +232,19 @@ pub(crate) fn briefing_resident_settings_set(
     request: ResidentRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<ResidentSettings, CommandError> {
+    set_keep_running(&state, request.keep_running)
+}
+
+pub(super) fn set_keep_running(
+    state: &AppState,
+    keep_running: bool,
+) -> Result<ResidentSettings, CommandError> {
     let _lock = SETTINGS_LOCK
         .lock()
         .map_err(|_| CommandError::internal("Briefing settings lock failed"))?;
     let mut settings = read_settings(&state.artifacts.app_data_dir)?;
-    settings.keep_running = request.keep_running;
+    settings.keep_running = keep_running;
+    settings.keep_running_choice = Some(keep_running);
     write_settings(&state.artifacts.app_data_dir, &settings)?;
     Ok(settings)
 }

@@ -15,8 +15,14 @@ Linux verifies the boot ID, process start ticks and executable identity through
 procfs and requires the process group to remain verifiable. Other Unix hosts
 fail closed with `UnsupportedPlatform`.
 
-Keep running in the menu bar for briefings defaults on, and turning a briefing on
-sets it again. Closing the main window hides it while that setting is on.
+Keep running in the menu bar starts off. With no explicit choice, enabling the
+first briefing or Watching turns it on automatically and leaves it on when those
+features are later turned off. Once the user sets the toggle, neither enabling nor
+disabling a briefing or watcher overrides that choice. The settings response carries
+`keepRunningChoice: null` for the automatic default, or the user's explicit boolean;
+`keepRunning` is the effective value. Old files without the choice field retain their
+stored boolean as an explicit choice, because its origin cannot be recovered.
+Closing the main window hides it while the effective setting is on.
 Menu Quit and Cmd+Q exit. The tray menu opens the app, selects a Loupist's Schedule
 tab, or quits. A finished briefing posts an OS notification when permission is
 granted. That notification does not open the item. Tray selection emits the
@@ -72,8 +78,8 @@ orphaned run. A failed/interrupted recurring task stays active for its next
 scheduled occurrence; three consecutive non-successes pause it, and a success
 resets that streak. Missing model/account credentials pause immediately. The
 streak is derived from terminal receipts, so no counter field or schema step is
-needed. A newer edit still prevents an old completion from changing the definition. History records status, timing, error and target
-Chat, where the reply and its evidence remain. Renderer discovery polls every two
+needed. A newer edit still prevents an old completion from changing the definition.
+History records status, timing, error and target Chat, where the reply and its evidence remain. Renderer discovery polls every two
 seconds while the window is visible and every 30 seconds while hidden, and reads
 immediately when the window becomes visible or regains focus. A finished run is also
 announced in the Loupist's [home Thread](../ui/home-thread.md). Desktop notifications
