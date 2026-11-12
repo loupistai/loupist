@@ -7,8 +7,7 @@ type User = ReturnType<typeof userEvent.setup>;
 const composer = () => screen.getByRole("textbox", { name: "Message Loupist" });
 async function attachSource(user: User) {
   await user.click(await mainTab(/Map/));
-  await user.click(await screen.findByRole("button", { name: "More actions" }));
-  await user.click(await screen.findByRole("menuitemcheckbox", { name: "Library" }));
+  await user.click(await screen.findByRole("button", { name: "Library" }));
   await user.click(await screen.findByRole("tab", { name: "Sources" }));
   await user.click(await screen.findByRole("button", { name: /RFC 9110 HTTP semantics/ }));
   await user.click(await screen.findByRole("button", { name: "Add to question" }));
@@ -17,7 +16,7 @@ async function discussLens(user: User) {
   await user.click(await mainTab(/Lens/));
   const lens = await screen.findByRole("region", { name: /What .* knows/ });
   await user.click(await within(lens).findByRole("button", {name:/Compare independent accounts/}));
-  await user.click(await within(lens).findByRole("button", { name: "Ask Bot to revise" }));
+  await user.click(await within(lens).findByRole("button", { name: "Ask your Loupist to revise" }));
 }
 
 describe("World and Lens in the single Chat flow", () => {

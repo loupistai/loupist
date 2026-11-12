@@ -4,11 +4,11 @@ import { useTranslation } from "../../i18n";
 import { entityCategories, nodeCategory } from "../../knowledge/mapKinds";
 
 /** Rows the legend card shows at most; the rest fold into "More…". */
-export const LEGEND_MAX_ROWS = 6;
+export const LEGEND_MAX_ROWS = 8;
 const categoryOrder = ["company", "product", "technology", "industry", "person", "event", "market", "other"] as const satisfies readonly (typeof entityCategories)[number][];
 
 /** `personal` says which rings are drawn: the dashed watchlist ring, the solid holdings ring, or both. */
-export type LegendRow = { id: string; kind: "category" | "lens" | "lensLine" | "personal" | "conflict"; rings?: "watch" | "hold" | "both" };
+export type LegendRow = { id: string; kind: "category" | "lens" | "line" | "lensLine" | "personal" | "conflict"; rings?: "watch" | "hold" | "both" };
 
 /**
  * Rows for every mark in the drawn view. Colour rows (entity categories and
@@ -26,12 +26,15 @@ export function legendRows(nodes: readonly KnowledgeMapNode[], conflicts = false
     if ((categoryOrder as readonly string[]).includes(category) || category === "journal") counts.set(category, (counts.get(category) ?? 0) + 1);
   }
   const order = [...categoryOrder, "journal"];
-  const colours = [...counts.keys()].sort((a, b) => counts.get(b)! - counts.get(a)! || order.indexOf(a) - order.indexOf(b))
+  // "Other" explains the least, so it sorts last whatever its count.
+  const colours = [...counts.keys()].sort((a, b) => Number(a === "other") - Number(b === "other") || counts.get(b)! - counts.get(a)! || order.indexOf(a) - order.indexOf(b))
     .map((id): LegendRow => ({ id, kind: "category" }));
   // A held name draws the solid ring even when it is also watched.
   const watch = nodes.some((node) => node.watched && !node.held);
   const hold = nodes.some((node) => node.held);
   const marks: LegendRow[] = [
+    // A plain line is a relationship a source states; it is always explained.
+    { id: "line", kind: "line" as const },
     ...(lensLines ? [{ id: "lensLine", kind: "lensLine" as const }] : []),
     ...(watch || hold ? [{ id: "personal", kind: "personal" as const, rings: watch && hold ? "both" as const : watch ? "watch" as const : "hold" as const }] : []),
     ...(conflicts ? [{ id: "conflict", kind: "conflict" as const }] : []),
@@ -40,13 +43,15 @@ export function legendRows(nodes: readonly KnowledgeMapNode[], conflicts = false
   // One slot goes to the "More…" row itself. Disagreeing sources are always explained
   // when drawn; then every drawn colour, most drawn first, so no dot on the canvas goes
   // unexplained before a line or ring does; the other marks fill what is left.
-  const ranked = [...marks.filter((row) => row.kind === "conflict"), ...colours, ...marks.filter((row) => row.kind !== "conflict")];
+  const ranked = [...marks.filter((row) => row.kind === "conflict" || row.kind === "line"), ...colours, ...marks.filter((row) => row.kind !== "conflict" && row.kind !== "line")];
   const shown = new Set(ranked.slice(0, LEGEND_MAX_ROWS - 1));
   return { rows: [...colours, ...marks].filter((row) => shown.has(row)), more: [...colours, ...marks].filter((row) => !shown.has(row)) };
 }
 
-export function MapLegend({ open, nodes, conflicts = false, lensLines = false, onOpenChange }: {
+export function MapLegend({ open, lead = false, nodes, conflicts = false, lensLines = false, onOpenChange }: {
   open: boolean;
+  /** First visit: one line above the key says what clicking a name does. */
+  lead?: boolean;
   nodes: KnowledgeMapNode[];
   /** A drawn relationship has sources that disagree. */
   conflicts?: boolean;
@@ -70,6 +75,7 @@ export function MapLegend({ open, nodes, conflicts = false, lensLines = false, o
   }, [open, nodes, conflicts, lensLines]);
   const row = (item: LegendRow) => {
     if (item.kind === "lens") return <li key={item.id}><span className="map-legend-glyphs" aria-hidden="true"><i className="map-swatch is-perspective" /><i className="map-swatch is-method" /><i className="map-swatch is-principle" /></span>{t("map.legendLens")}</li>;
+    if (item.kind === "line") return <li key={item.id}><span className="map-legend-glyphs" aria-hidden="true"><i className="map-swatch is-claim-line" /></span>{t("map.legendLine")}</li>;
     if (item.kind === "lensLine") return <li key={item.id}><span className="map-legend-glyphs" aria-hidden="true"><i className="map-swatch is-lens-line" /></span>{t("map.legendLensLine")}</li>;
     if (item.kind === "conflict") return <li key={item.id}><span className="map-legend-glyphs" aria-hidden="true"><i className="map-swatch is-conflict-line" /><i className="map-swatch is-conflict" /></span>{t("map.legendConflict")}</li>;
     if (item.kind === "personal") return <li key={item.id}><span className="map-legend-glyphs" aria-hidden="true">
@@ -80,7 +86,7 @@ export function MapLegend({ open, nodes, conflicts = false, lensLines = false, o
   return <details ref={ref} className={`map-legend${overflowing ? " is-overflowing" : ""}`} open={open} onToggle={(event) => {
     const next = event.currentTarget.open;
     if (next !== open) onOpenChange(next);
-  }}><summary>{t("map.legend")}</summary><ul>
+  }}><summary>{t("map.legend")}</summary>{lead ? <p className="map-legend-lead">{t("map.legendLead")}</p> : null}<ul>
     {rows.map(row)}
     {more.length ? <li className="map-legend-more"><details><summary>{t("map.legendMore")}</summary><ul>{more.map(row)}</ul></details></li> : null}
   </ul></details>;

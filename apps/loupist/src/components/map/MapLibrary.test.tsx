@@ -26,8 +26,7 @@ async function setup() {
 }
 it('opens a compact Source library and reads an exact source in the map inspector', async () => {
   const { user, read } = await setup();
-  await user.click(screen.getByRole('button', { name: 'More actions' }));
-  await user.click(screen.getByRole('menuitemcheckbox', { name: 'Library' }));
+  await user.click(screen.getByRole('button', { name: 'Library' }));
   const library = screen.getByRole('complementary', { name: 'Library' });
   expect(within(library).getByRole('button', { name: '+ Add source' })).toBeVisible();
   await user.click(within(library).getByRole('button', { name: /RFC 9110 HTTP semantics/ }));
@@ -55,11 +54,10 @@ it('applies only application neighbors, reports an unused Lens and exits with Es
 });
 it('restores the Library tab and query after the map is remounted', async () => {
   const { user, remount } = await setup();
-  await user.click(screen.getByRole('button', { name: 'More actions' }));
-  await user.click(screen.getByRole('menuitemcheckbox', { name: 'Library' }));
+  await user.click(screen.getByRole('button', { name: 'Library' }));
   await user.type(screen.getByRole('textbox', { name: 'Search sources' }), 'RFC');
   remount();
   expect(await screen.findByRole('textbox', { name: 'Search sources' })).toHaveValue('RFC');
   await user.click(screen.getByRole('button', { name: 'More actions' }));
-  expect(screen.getByRole('menuitemcheckbox', { name: 'Library' })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole("button", { name: "Library" })).toHaveAttribute("aria-expanded", "true");
 });

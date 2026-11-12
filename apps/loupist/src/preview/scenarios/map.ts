@@ -4,7 +4,7 @@ import { rememberScope } from "../../components/map/mapVisit";
 import type { GrowthEvent, KnowledgeMapNode } from "../../contracts/knowledge";
 import { workspaceOverlayMedia } from "../../components/workspace/useWorkspacePanelResize";
 import { MIN_VISIT_MS, recordVisit } from "../../app/loupistVisit";
-import { base, click, clickMapAction, enterMap, hasLayout, localViewMap, mapCanvas, navigate, pressMenu, rememberPreviewMap, select, until, visible, type PreviewScenario } from "./kit";
+import { base, click, clickMapAction, enterMap, hasLayout, localViewMap, mapCanvas, navigate, pressMenu, rememberPreviewMap, select, until, type PreviewScenario } from "./kit";
 
 /** Last visit two days ago and five changes since: two names, a relationship, conflicting evidence and a learned method. */
 function whatsNewFixture(bridge: PreviewBridge, withChanges: boolean) {
@@ -34,7 +34,7 @@ function legendAtFirstVisit() {
 export const mapScenarios: PreviewScenario[] = [
   ...["map-overview", "map-1000", "map-empty", "map-selected", "map-filtered", "map-lens-overlay", "map-lens-on-world", "map-library-sources", "map-replay-paused", "map-export-menu"].map((id): PreviewScenario => ({
     ...base(id, "Research map", () => {
-      if (id === "map-export-menu") return select(".map-export-menu, .map-more-menu");
+      if (id === "map-export-menu") return select(".map-more-menu [data-map-export]");
       const map = select(".map-view");
       return map?.querySelector("canvas, .map-empty, .map-list") ?? (map?.clientWidth === 0 ? map : null);
     }, async (root) => {
@@ -80,10 +80,8 @@ export const mapScenarios: PreviewScenario[] = [
         if (id !== "map-replay-paused" && id !== "map-selected") await clickMapAction("[data-map-fit]", map);
       }
       if (id === "map-export-menu") {
-        const trigger = map.querySelector("[data-map-export]");
-        if (visible(trigger)) await click("[data-map-export]", map);
-        else pressMenu(await until(() => select("[data-map-more]"), "More actions did not load"));
-        await until(() => select(".map-export-menu, .map-more-menu"), "Export choices did not open");
+        pressMenu(await until(() => select("[data-map-more]"), "More actions did not load"));
+        await until(() => select(".map-more-menu [data-map-export]"), "Export choices did not open");
       }
     }),
     setup: async (bridge) => {

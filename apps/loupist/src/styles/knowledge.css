@@ -39,8 +39,7 @@
   font-weight: var(--gg-weight-regular);
   line-height: 1.5;
 }
-.knowledge-source,
-.knowledge-lens {
+.knowledge-source {
   display: grid;
   grid-template-columns: 244px minmax(0, 1fr);
   grid-template-rows: minmax(180px, 1fr) auto;
@@ -155,20 +154,17 @@
   border-radius: var(--gg-radius-sm);
   background: var(--gg-color-bg-hover);
 }
-.knowledge-source dl > div,
-.knowledge-lens dl > div {
+.knowledge-source dl > div {
   display: grid;
   grid-template-columns: 100px minmax(0, 1fr);
   gap: var(--gg-space-3);
   padding-block: 7px;
 }
-.knowledge-source dt,
-.knowledge-lens dt {
+.knowledge-source dt {
   color: var(--gg-color-text-secondary);
   font-size: var(--gg-text-meta);
 }
-.knowledge-source dd,
-.knowledge-lens dd {
+.knowledge-source dd {
   min-width: 0;
   margin: 0;
   font-size: var(--gg-text-control);

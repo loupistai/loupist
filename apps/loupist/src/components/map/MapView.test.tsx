@@ -7,7 +7,7 @@ import { setPreviewLanguage } from "../../i18n/useLanguage";
 import { MapView } from "./MapView";
 const canvasFailure = vi.hoisted(() => ({ active: false }));
 vi.mock('./MapCanvas', () => ({ default: ({ nodes = [], edges = [], overlayIds }: { nodes?: { kind: string; entityKind?: string }[]; edges?: { id: string }[]; overlayIds?: Set<string> }) => { if (canvasFailure.active) throw new Error("Canvas unavailable"); return <div data-testid="map-canvas" data-kinds={nodes.map(node => node.kind).join(",")} data-nodes={nodes.map(node => `${node.kind}|${node.entityKind ?? ""}`).join(",")} data-edges={edges.map(edge => edge.id).join(",")} data-overlay={[...(overlayIds ?? [])].sort().join(",")} />; } }));
-const hintCopy = "Each dot is something your Loupist knows. Click one to see why it's here.";
+const hintCopy = "Click a name to see what your Loupist knows about it and where that came from.";
 function mockMapBox(width: number, height: number) {
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(width);
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(height);
@@ -43,7 +43,7 @@ it('shows the first-map guidance when the host has only seeded its standing Lens
   expect(await screen.findByRole('heading', { name: "Your Loupist's map grows as you research" })).toBeVisible();
   expect(screen.queryByText('No names match these filters.')).not.toBeInTheDocument();
   expect(screen.queryByText('0 on the map · 0 relationships')).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Share' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Library' })).toBeVisible();
   screen.getByRole('button', { name: 'Add source' }).click();
   expect(addSource).toHaveBeenCalledOnce();
   expect(screen.getByRole('button', { name: 'Ask in Chat' })).toBeVisible();
@@ -64,7 +64,7 @@ it('searches and selects with the keyboard, opens the inspector, and attaches th
 it('provides list navigation and combines watchlist and kind filters', async () => {
   const { user } = await setup();
   await user.click(screen.getByRole('button', { name: 'Filter' }));
-  await user.click(screen.getByLabelText('Only my watchlist & holdings'));
+  await user.click(screen.getByLabelText('Only what I follow and hold'));
   await screen.findByText('3 on the map · 2 relationships');
   await user.keyboard('{Escape}');
   await user.click(screen.getByRole('button', { name: 'More actions' }));
@@ -83,11 +83,11 @@ it('retries a failed projection without switching Loupist', async () => {
   await screen.findByText('37 on the map · 36 relationships');
   expect(request).toHaveBeenLastCalledWith({ loupistId: 'loupist-quality', maxNodes: 1000 });
 });
-it('opens the legend and first-visit hint, keeps unlinked principles off the canvas, and remembers a collapse', async () => {
+it('opens the key strip with its first-visit lead, keeps unlinked principles off the canvas, and remembers a collapse', async () => {
   localStorage.clear();
   // A first visit opens the legend whatever the window size; a collapse is remembered.
   mockMapBox(1000, 640);
-  const { user } = await setup();
+  await setup();
   const legend = document.querySelector('details.map-legend') as HTMLDetailsElement;
   expect(legend.open).toBe(true);
   expect(screen.getByText(hintCopy)).toBeVisible();
@@ -99,11 +99,11 @@ it('opens the legend and first-visit hint, keeps unlinked principles off the can
   expect(edges).not.toContain('map-lens-link');
   legend.open = false;
   fireEvent(legend, new Event('toggle', { bubbles: true }));
-  await user.click(screen.getByRole('button', { name: 'Dismiss' }));
   cleanup();
   await setup();
   expect((document.querySelector('details.map-legend') as HTMLDetailsElement).open).toBe(false);
-  expect(screen.queryByText(hintCopy)).toBeNull();
+  expect(screen.getByText(hintCopy)).not.toBeVisible();
+  expect(document.querySelector('.map-first-hint')).toBeNull();
   vi.restoreAllMocks();
 });
 it('turns numbers back on when search selects a hidden metric', async () => {
@@ -130,7 +130,7 @@ it('reads the World through a Lens and clears back to the World', async () => {
   const canvas = () => screen.getByTestId('map-canvas');
   await user.click(screen.getByRole('button', { name: 'Filter' }));
   await user.click(screen.getByText('Highlight Lens applications'));
-  expect(screen.getByText('World')).toBeVisible();
+  expect(screen.getByTestId('map-stats')).not.toHaveTextContent('World');
   expect(screen.getByText('Choose a Lens to highlight the companies, assets and other names it was applied to.')).toBeVisible();
   await user.click(screen.getByRole('button', { name: /Evidence before conviction/ }));
   expect(await screen.findByText(/hasn't been applied to anything yet/)).toBeVisible();
@@ -167,7 +167,7 @@ it('shows the host default title as the localized perspective', async () => {
   const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: 'Filter' }));
   await user.click(screen.getByText('Highlight Lens applications'));
-  expect(screen.getByRole('button', { name: /Outlook/ })).toBeVisible();
+  expect(screen.getByRole('button', { name: /^Perspective/ })).toBeVisible();
   expect(screen.queryByRole('button', { name: /Standing/ })).toBeNull();
   await user.keyboard('{Escape}');
   await user.type(screen.getByRole('combobox'), 'Standing');
@@ -184,13 +184,13 @@ it('highlights the companies a Lens was applied to in Korean', async () => {
       return <MapView bridge={bridge} catalog={catalog} location={location} onPatch={setLocation} onOpen={vi.fn()} onAsk={vi.fn()} />;
     }
     render(<Harness />);
-    expect(await screen.findByText('World')).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Lens 위키' })).toBeNull();
+    expect(await screen.findByTestId('map-stats')).not.toHaveTextContent('World');
+    expect(screen.queryByRole('button', { name: '렌즈 위키' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: '필터' }));
-    await userEvent.click(screen.getByText('Lens 적용 대상 강조'));
-    expect(screen.getByText('Lens를 선택하면 이 관점으로 살펴본 기업·자산 등이 지도에서 강조돼요.')).toBeVisible();
+    await userEvent.click(screen.getByText('렌즈 적용 대상 강조'));
+    expect(screen.getByText('렌즈를 선택하면 이 관점으로 살펴본 기업·자산 등이 지도에서 강조돼요.')).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: /Compare competitive advantages/ }));
-    expect(await screen.findByText('적용된 Lens: Compare competitive advantages')).toBeVisible();
+    expect(await screen.findByText('적용된 렌즈: Compare competitive advantages')).toBeVisible();
     expect(document.querySelector('[data-lens-applied="map-lens-1"]')).toBeTruthy();
     expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-overlay', 'map-entity-00,map-entity-02,map-entity-04,map-entity-06,map-entity-08');
   } finally {

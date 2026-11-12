@@ -1,24 +1,23 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { DownloadIcon, ImageIcon, VideoIcon } from "lucide-react";
 import type { LoupistBridge } from "../../types";
 import { useTranslation } from "../../i18n";
 import { formatDate, formatNumber } from "../../i18n/format";
 import { loupistAvatarSource } from "../../lib/loupistAvatar";
 import { Button } from "../ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import type { MapCanvasControls } from "./MapCanvas";
 import { composeMapExport, pngBytes, recordingFormat, type MapExportFooter } from "./export";
 import { REPLAY_DURATION_MS, replayTime, type MapReplay } from "./replay";
 const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-export function MapExport({ bridge, loupistId, controls, replay, stats, disabled, onRecording }: { bridge: LoupistBridge; loupistId: string; controls: MutableRefObject<MapCanvasControls | null>; replay: MapReplay; stats: string; disabled?: boolean; onRecording: (recording: boolean) => void }) {
+/** Map export as an image or a replay video; the actions live in the toolbar's More menu and the progress and error sit over the Map. */
+export function useMapExport({ bridge, loupistId, controls, replay, stats, onRecording }: { bridge: LoupistBridge; loupistId: string; controls: MutableRefObject<MapCanvasControls | null>; replay: MapReplay; stats: string; onRecording: (recording: boolean) => void }) {
   const { t } = useTranslation("knowledge");
-  const [open, setOpen] = useState(false), [progress, setProgress] = useState<number | null>(null), [error, setError] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null), [error, setError] = useState(false);
   const cancel = useRef(false), mounted = useRef(true), busy = useRef(false);
   const current = useRef({ stats, replay }); current.current = { stats, replay };
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; cancel.current = true; }; }, []);
   const save = async (video: boolean) => {
     if (busy.current) return;
-    busy.current = true; cancel.current = false; setOpen(false); setError(false);
+    busy.current = true; cancel.current = false; setError(false);
     let stream: MediaStream | undefined, recorder: MediaRecorder | undefined;
     const previous = { active: replay.active, playing: replay.playing, time: replay.time, end: replay.end, speed: replay.speed };
     try {
@@ -75,9 +74,9 @@ export function MapExport({ bridge, loupistId, controls, replay, stats, disabled
       busy.current = false;
     }
   };
-  return <>
-    <Popover open={open} onOpenChange={setOpen}><PopoverTrigger asChild><Button className="map-toolbar-button" variant="ghost" data-map-export disabled={disabled || progress !== null} aria-label={t("map.export.label")} title={t("map.export.label")}><DownloadIcon /><span className="map-control-label">{t("map.export.label")}</span></Button></PopoverTrigger><PopoverContent align="end" className="map-export-menu"><Button variant="ghost" data-map-export-png onClick={() => void save(false)}><ImageIcon />{t("map.export.image")}</Button><Button variant="ghost" onClick={() => void save(true)}><VideoIcon />{t("map.export.video")}</Button></PopoverContent></Popover>
+  const status = <>
     {progress !== null ? <div className="map-recording" role="status"><span>{t("map.export.recording", { pct: formatNumber(progress) })}</span><Button variant="outline" onClick={() => { cancel.current = true; }}>{t("map.export.cancel")}</Button></div> : null}
     {error ? <div className="map-export-error" role="alert">{t("map.export.error")}<Button variant="ghost" onClick={() => setError(false)}>{t("map.export.dismiss")}</Button></div> : null}
   </>;
+  return { image: () => void save(false), video: () => void save(true), busy: progress !== null, status };
 }

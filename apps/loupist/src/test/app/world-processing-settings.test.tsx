@@ -17,25 +17,25 @@ it("saves the World model per Loupist without touching global configuration", as
   await openApp(bridge);
   await openWorldProcessing(user);
   expect(await screen.findByRole("textbox", { name: "Name" })).toHaveValue("Quality Compounder");
-  await user.click(await screen.findByRole("button", { name: /World processing model/ }));
+  await user.click(await screen.findByRole("button", { name: /Map building model/ }));
   await user.type(screen.getByRole("searchbox", { name: "Search models" }), "ChatGPT");
   await user.click(screen.getByRole("menuitemradio", { name: "GPT-5.6 Luna" }));
   await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
   await user.click(screen.getByRole("menuitemradio", { name: "High" }));
   await user.keyboard("{Escape}");
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
-  await screen.findByText("World processing settings saved for this Loupist.");
+  await screen.findByText("Map building settings saved for this Loupist.");
   expect(save).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality", settings: expect.objectContaining({ helperModelProfileId: "model-test", thinkingLevel: "high" }) });
   expect(config).not.toHaveBeenCalled();
   await chooseLoupist(user, "Contrarian Value");
   await openWorldProcessing(user);
-  expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("Choose model");
+  expect(await screen.findByRole("button", { name: /Map building model/ })).toHaveTextContent("Choose model");
   await chooseLoupist(user, "Quality Compounder");
   await openWorldProcessing(user);
-  expect(await screen.findByRole("button", { name: /World processing model/ })).toHaveTextContent("GPT-5.6 Luna · High");
+  expect(await screen.findByRole("button", { name: /Map building model/ })).toHaveTextContent("GPT-5.6 Luna · High");
 });
 
-it("recovers World processing and refreshes an uncertain Chat update without retrying extraction", async () => {
+it("recovers Map building and refreshes an uncertain Chat update without retrying extraction", async () => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const workspace = await bridge.loupistSelect("loupist-quality");
@@ -54,8 +54,8 @@ it("recovers World processing and refreshes an uncertain Chat update without ret
   await user.click(await screen.findByRole("button", { name: "Saved 1 source" }));
   expect(await screen.findByText(/World: outcome uncertain/)).toBeVisible();
   await openWorldProcessing(user);
-  await user.click(screen.getByRole("button", { name: "Recover World processing" }));
-  await screen.findByText(/World processing recovered/);
+  await user.click(screen.getByRole("button", { name: "Recover map building" }));
+  await screen.findByText(/Map building recovered/);
   await user.click(await mainTab(/Chat/));
   await user.click(await screen.findByRole("button", { name: "Saved 1 source" }));
   expect(await screen.findByText("Source retained · Interrupted World processing was not retried")).toBeVisible();
@@ -67,13 +67,12 @@ it("opens a source's processing settings and returns to the same filtered reader
   const user = userEvent.setup();
   await openApp();
   await user.click(await mainTab(/Map/));
-  await user.click(await screen.findByRole("button", { name: "More actions" }));
-  await user.click(await screen.findByRole("menuitemcheckbox", { name: "Library" }));
+  await user.click(await screen.findByRole("button", { name: "Library" }));
   await user.click(await screen.findByRole("tab", { name: "Sources" }));
   await user.type(screen.getByRole("textbox", { name: "Search sources" }), "RFC 9110");
   await user.click(await screen.findByRole("button", { name: /RFC 9110 HTTP semantics/ }));
   const sourceId = (await screen.findByRole("article", { name: "Source reader" })).getAttribute("data-source-id");
-  await user.click(screen.getByRole("button", { name: "World processing settings" }));
+  await user.click(screen.getByRole("button", { name: "Map building settings" }));
   expect(await screen.findByRole("textbox", { name: "Name" })).toHaveValue("Quality Compounder");
   await user.click(within(screen.getByRole("region", { name: "Loupist settings" })).getByRole("button", { name: "Back" }));
   expect(await screen.findByRole("article", { name: "Source reader" })).toHaveAttribute("data-source-id", sourceId);
