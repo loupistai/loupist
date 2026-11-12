@@ -582,7 +582,9 @@ fn a_new_focus_rewrites_only_the_perspective_focus_section() {
 
 #[test]
 fn methods_stay_in_a_sixty_line_index_crowded_by_eighty_subject_pages() {
-    use crate::knowledge::lens_page::{FilingOrigin, LensOp, PageDelta, PageKind, PageTarget};
+    use crate::knowledge::lens_page::{
+        Basis, BasisRef, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
+    };
     let (_dir, state) = fixture();
     let expected = with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
         let write = KnowledgeWrite::bind(tx, blobs);
@@ -634,15 +636,32 @@ fn methods_stay_in_a_sixty_line_index_crowded_by_eighty_subject_pages() {
             expected.push((page.record_id, summary));
         }
         for index in 0..80 {
-            write.file_section(
+            let filed = write.file(
                 "loupist-a",
-                PageKind::Subject,
-                &format!("Subject {index}"),
-                "notes",
-                "More recent subject research.",
                 &origin,
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Subject,
+                        title: format!("Subject {index}"),
+                        anchors: vec![],
+                    },
+                    ops: vec![LensOp::Put {
+                        key: SectionKey::new("notes")?,
+                        heading: "Notes".into(),
+                        markdown: "More recent subject research.".into(),
+                        expected: None,
+                        basis: Basis {
+                            refs: vec![BasisRef::Page {
+                                record_id: expected[0].0.clone(),
+                                section_key: None,
+                            }],
+                            uncertainty: Some("A research view based on the method.".into()),
+                        },
+                    }],
+                }],
                 index + 100,
             )?;
+            assert!(!filed[0].record_id.is_empty(), "{filed:?}");
         }
         Ok(expected)
     })
