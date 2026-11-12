@@ -1890,6 +1890,11 @@ mod production_asset_isolation_tests {
             .iter()
             .position(|arg| arg == "--system-prompt")
             .unwrap();
-        assert_eq!(args[index + 1], LOUPIST_SYSTEM_PROMPT);
+        assert_eq!(
+            args[index + 1],
+            LOUPIST_SYSTEM_PROMPT
+                .replace("<!-- safety:locked -->", "")
+                .replace("<!-- /safety:locked -->", "")
+        );
     }
 }

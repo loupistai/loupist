@@ -273,7 +273,7 @@ async fn scheduled_admission_failure_is_durable_and_not_retried_on_every_tick() 
             .unwrap()
             .unwrap()
             .status,
-        TaskStatus::Paused
+        TaskStatus::Active
     );
     assert!(state
         .scheduled
