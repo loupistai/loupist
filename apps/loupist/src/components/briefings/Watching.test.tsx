@@ -22,7 +22,7 @@ async function reader(options: { paused?: boolean; events?: boolean } = {}) {
 
 it("shows per-kind checks as a read-only table and keeps holdings private", async () => {
   const { bridge, article } = await reader();
-  expect(within(article).getByText("Your quantities and values never leave this computer. Checks ask data sources only about the names you follow.")).toBeVisible();
+  expect(within(article).getByText("Your quantities and values never leave this Mac. Checks ask data sources only about the names you follow.")).toBeVisible();
   const matrix = within(article).getByRole("table", {name:"Watching"});
   expect(within(matrix).getAllByRole("columnheader").map(header => header.textContent)).toEqual(["Asset", "Filings", "Results", "Insiders", "5% holders", "Flows", "Dividends", "Last alert"]);
   expect(within(matrix).queryByRole("checkbox")).toBeNull();
