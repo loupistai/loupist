@@ -43,6 +43,8 @@ type Props = {
   askDisabled?: boolean;
   /** An as-of answer's date, shown after the title. */
   asOf?: string;
+  /** A failed chart puts the question that asked for it back in the composer. */
+  onAskAgain?: () => void;
 };
 
 type ViewState = { status: "loading" } | { status: "ready"; view: ChatArtifactView } | { status: "unavailable" };
@@ -52,7 +54,7 @@ type ViewState = { status: "loading" } | { status: "ready"; view: ChatArtifactVi
  * Loupist starts building it until the chart is drawn, so the thread never jumps.
  * Each answer draws its retained revision and notes when a newer version exists.
  */
-export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
+export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain }: Props) {
   const go = useGo();
   useTranslation("chat");
   const scope = useChatExecution();
@@ -102,7 +104,10 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
       <p>{t("chatBlock.building")}</p>
     </div>;
   } else if (block.kind === "failed") {
-    body = <p className="chat-artifact-block-state" role="alert">{t("chatBlock.couldNotBuildChart")}</p>;
+    body = <div className="chat-artifact-block-state" role="alert">
+      <p>{t("chatBlock.couldNotBuildChart")}</p>
+      {onAskAgain ? <Button type="button" variant="ghost" size="sm" data-ask-again onClick={onAskAgain}>{t("chatBlock.askAgain")}</Button> : null}
+    </div>;
   } else if (block.kind === "ready" && view.status === "unavailable") {
     body = <div className="chat-artifact-block-state" role="alert">
       <p>{t("chatBlock.unavailable")}</p>

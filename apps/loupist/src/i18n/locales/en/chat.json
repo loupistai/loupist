@@ -1002,6 +1002,7 @@
   "chatBlock": {
     "building": "Building…",
     "couldNotBuildChart": "Couldn't build this chart.",
+    "askAgain": "Ask again",
     "updatedSince": "Updated since this answer.",
     "openLatest": "Open latest",
     "unavailable": "This chart is no longer available.",

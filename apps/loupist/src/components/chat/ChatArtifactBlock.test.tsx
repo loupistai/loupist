@@ -114,9 +114,12 @@ describe("Save as PNG… (X9)", () => {
   });
 });
 
-it("says when a chart could not be built", () => {
-  render(withScope(<ChatArtifactBlock block={{ kind: "failed", key: "f", title: "Operating margin" }} />));
+it("says when a chart could not be built and offers the question again", () => {
+  const onAskAgain = vi.fn();
+  render(withScope(<ChatArtifactBlock block={{ kind: "failed", key: "f", title: "Operating margin" }} onAskAgain={onAskAgain} />));
   expect(screen.getByRole("alert")).toHaveTextContent("Couldn't build this chart.");
+  fireEvent.click(screen.getByRole("button", { name: "Ask again" }));
+  expect(onAskAgain).toHaveBeenCalledOnce();
 });
 
 it("draws the older answer's revision, keeps the update note, and opens the latest on request", async () => {

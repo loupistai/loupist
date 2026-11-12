@@ -314,6 +314,8 @@ function ChatMessageCardComponent({
     return [...written].filter((path) => delivered.has(path));
   }, [message.role, message.progress?.items, message.content, workspacePath]);
   // Charts render as cards in the answer; documents stay in the outputs row and open the panel.
+  // A setup card, a failed chart or a failed table offers the question again; it fills the composer and never sends.
+  const askAgain = onFillComposer && previousQuestion ? () => onFillComposer(previousQuestion) : undefined;
   const charts = useMemo(() => chartBlocks(message), [message]);
   // Grid answers and conflict cards render in the answer too, after its charts.
   const grids = useMemo(() => gridBlocks(message), [message]);
@@ -405,10 +407,10 @@ function ChatMessageCardComponent({
       {transcript}
       {bridge && settledAnswer ? settledAnswer.cards.map((card) => <EarningsChatCard key={card.evidenceId} bridge={bridge} loupistId={loupistId} loupistName={loupistName} assetId={card.assetId} eventId={card.eventId} />) : null}
 
-      {charts.map((block) => <ChatArtifactBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} asOf={message.as_of} />)}
+      {charts.map((block) => <ChatArtifactBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} asOf={message.as_of} onAskAgain={askAgain} />)}
       {bridge ? connectionSetups.map((block) => <ConnectionSetupCard key={block.key} bridge={bridge} loupistId={loupistId} entryId={block.entryId}
-        onAskAgain={onFillComposer && previousQuestion ? () => onFillComposer(previousQuestion) : undefined} />) : null}
-      {grids.map((block) => <ChatGridBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} />)}
+        onAskAgain={askAgain} />) : null}
+      {grids.map((block) => <ChatGridBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onAskAgain={askAgain} />)}
 
       {message.role === "assistant" && <MessageSchedules receipts={message.schedule_receipts ?? []} />}
 

@@ -962,6 +962,7 @@
   "chatBlock": {
     "building": "만드는 중…",
     "couldNotBuildChart": "차트를 만들지 못했어요.",
+    "askAgain": "다시 요청",
     "updatedSince": "이 답변 뒤에 바뀌었어요.",
     "openLatest": "최신 버전 열기",
     "unavailable": "이 차트는 더 이상 열 수 없어요.",
