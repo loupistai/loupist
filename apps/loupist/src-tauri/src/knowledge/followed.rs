@@ -428,6 +428,40 @@ mod tests {
     }
 
     #[test]
+    fn unknown_markets_do_not_requeue_unchanged_watchlists() {
+        let dir = tempfile::tempdir().unwrap();
+        let database = dir.path().join("knowledge.sqlite");
+        let store = super::super::KnowledgeStore::open(&database).unwrap();
+        let assets = [
+            FollowedAsset::new("QUAYX", "UNKNOWN", None),
+            FollowedAsset::new("OTHER", "", None),
+        ];
+        store
+            .transact(|w| {
+                let settings = GraphProcessingSettings {
+                    enrichment_enabled: true,
+                    helper_provider: Some("fixture".into()),
+                    helper_model: Some("fixture".into()),
+                    ..Default::default()
+                };
+                graph_jobs::store_settings(w.tx, "loupist-a", &settings)?;
+                assert_eq!(w.sync_followed("loupist-a", &assets, 1)?, 1);
+                assert_eq!(w.sync_followed("loupist-a", &assets, 2)?, 0);
+                Ok(())
+            })
+            .unwrap();
+        drop(store);
+        let store = super::super::KnowledgeStore::open(&database).unwrap();
+        store
+            .transact(|w| {
+                assert_eq!(w.sync_followed("loupist-a", &assets, 3)?, 0);
+                assert_eq!(followed_records(w.tx, "loupist-a")?.len(), 1);
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
     fn several_sources_report_the_most_pressing_read() {
         use FollowedState::*;
         for (states, expected) in [

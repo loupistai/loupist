@@ -14,7 +14,9 @@ the earlier `- {name} ({symbol}, {market})` form, so existing Sources do not cau
 the same assets to be listed again. Holdings appear by name only, never quantities or
 values. Sources are immutable, so a Loupist gets a new Source for the assets none of its
 earlier "What you follow" Sources lists, at most 24 per Source (the
-per-episode anchor limit). Each new asset becomes an anchor (its symbol, plus
+per-episode anchor limit). The followed list and processing settings keep at most
+200 anchors. An unknown market is written as a bare ticker and read back as
+`UNKNOWN`, so an unchanged list creates no new Source or job. Each new asset becomes an anchor (its symbol, plus
 `symbol:market` for a known market), and each Source gets one ordinary World job.
 Unfollowing or selling removes nothing; following again adds nothing.
 
