@@ -112,7 +112,7 @@ snapshot.
 
 The global `catalog.sqlite3` and every folder's `loupist.sqlite3` share one schema
 (`initialize_schema` in `store/schema.rs`) and one upgrade ladder
-(`store/upgrade.rs`). The store schema is version 5 (`PRAGMA user_version`), the
+(`store/upgrade.rs`). The store schema is version 6 (`PRAGMA user_version`), the
 Knowledge schema version 7 (`knowledge_schema`) and the Knowledge format version 1.
 A fresh database is created at the current versions.
 
@@ -141,6 +141,14 @@ keeps rowids, indexes and triggers, including the Memory immutability triggers;
 it may add no foreign-key violation. `store/tests/upgrade.rs` upgrades the frozen
 baseline (`store/tests/fixtures/baseline-store4-knowledge6.sql`) and requires the
 same shape as a fresh database.
+
+Store 6 adds covering indexes for Source lookups by `span_id` and
+`representation_id`. They are non-unique because retained material may appear in
+several records; the normal backup and one-step transaction rules apply.
+
+Folder connections start in DELETE journal mode and leave it there on reopen;
+the catalog uses WAL. Record reads check already bound folders for ownership before
+opening other registrations, while still checking the owning folder's identity.
 
 Store 5 also restores the `piSessionCache` key that builds before it removed from
 stored Chats on reconnect and import. Chat writes compare the stored text with the

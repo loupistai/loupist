@@ -987,7 +987,7 @@ fn search_with_options(
 ) -> Result<serde_json::Value, CommandError> {
     admit(state, loupist_id)?;
     let query = query.trim();
-    if query.chars().count() > 200 {
+    if query.chars().count() > crate::knowledge::RESEARCH_QUERY_MAX_CHARS {
         return Err(CommandError::invalid("knowledge query is too long"));
     }
     if !matches!(scope, "all" | "source" | "lens" | "world" | "research") {

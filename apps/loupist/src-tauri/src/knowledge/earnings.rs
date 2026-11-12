@@ -97,7 +97,8 @@ CREATE TABLE knowledge_earnings_notices (
 /// The card shows an event this far ahead, and keeps a reported one this long.
 pub const AHEAD_DAYS: i64 = 14;
 pub const KEEP_DAYS: i64 = 30;
-/// An after- or final-capture is retried hourly at most this many times.
+/// Maximum capture attempts per event and side. After/final retries are hourly;
+/// before-capture failures use exponential backoff.
 pub const MAX_ATTEMPTS: u32 = 6;
 /// The after-capture waits this long after the release is seen.
 pub const AFTER_DELAY_MS: i64 = 30 * 60 * 1000;
@@ -196,6 +197,11 @@ pub struct Flags {
     pub failed: Option<Failure>,
     #[serde(default)]
     pub after_attempts: u32,
+    /// Failed before-captures for this event; other capture sides do not reset it.
+    #[serde(default)]
+    pub before_attempts: u32,
+    #[serde(default)]
+    pub before_last_attempt_ms: Option<i64>,
     #[serde(default)]
     pub final_attempts: u32,
     #[serde(default)]
@@ -456,7 +462,29 @@ pub fn edit_flags(
     edit: impl FnOnce(&mut Flags),
 ) -> KnowledgeResult<()> {
     let mut event = get_event(tx, loupist_id, event_id)?.ok_or(KnowledgeError::NotFound)?;
+    let previous_failure = event.flags.failed.clone();
     edit(&mut event.flags);
+    // The host records a failed before-capture through this entry point. Count
+    // that persisted failure here so callers cannot omit its retry budget.
+    if event.flags.failed != previous_failure
+        && event
+            .flags
+            .failed
+            .as_ref()
+            .is_some_and(|failure| failure.side == "before")
+    {
+        event.flags.before_attempts = event
+            .flags
+            .before_attempts
+            .max(u32::from(
+                previous_failure
+                    .as_ref()
+                    .is_some_and(|failure| failure.side == "before"),
+            ))
+            .saturating_add(1);
+        event.flags.before_last_attempt_ms =
+            event.flags.failed.as_ref().map(|failure| failure.at_ms);
+    }
     update_flags(tx, loupist_id, event_id, &event.flags, now_ms)
 }
 
@@ -1969,13 +1997,32 @@ pub fn due(events: &[EventRecord], market: &str, now: DateTime<Utc>) -> (Vec<Due
         }
         let reported =
             event.release.is_some() || matches!(event.status, Status::Reported | Status::Final);
-        if event.before_at_ms.is_none()
-            && event
-                .flags
-                .failed
-                .as_ref()
-                .is_none_or(|failed| failed.side != "before" || now_ms - failed.at_ms >= RETRY_MS)
-        {
+        let before_failure = event
+            .flags
+            .failed
+            .as_ref()
+            .filter(|failure| failure.side == "before");
+        // Earlier folders have no counter: a recorded failure is one attempt.
+        let before_attempts = event
+            .flags
+            .before_attempts
+            .max(u32::from(before_failure.is_some()));
+        let before_ready = event
+            .flags
+            .before_last_attempt_ms
+            .or_else(|| before_failure.map(|failure| failure.at_ms))
+            .map(|last| {
+                last.saturating_add(
+                    RETRY_MS.saturating_mul(1_i64 << before_attempts.saturating_sub(1).min(5)),
+                )
+            });
+        let before_spaced = before_ready.is_none_or(|at| now_ms >= at);
+        if event.before_at_ms.is_none() && before_attempts < MAX_ATTEMPTS {
+            if let Some(at) = before_ready.filter(|at| *at > now_ms) {
+                later(at);
+            }
+        }
+        if event.before_at_ms.is_none() && before_attempts < MAX_ATTEMPTS && before_spaced {
             let late_day = if reported {
                 Some(event.reported_on())
             } else if today >= event.report_date && event.date_source != DateSource::LegalDeadline {

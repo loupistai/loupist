@@ -507,3 +507,42 @@ fn a_restored_baseline_round_trips_through_the_ladder() {
     baseline.execute_batch(BASELINE_FIXTURE).unwrap();
     assert_eq!(shape(&connection), shape(&baseline));
 }
+
+#[test]
+fn store_five_adds_source_lookup_indexes_without_rewriting_rows() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("loupist.sqlite3");
+    drop(SqliteStore::open(&path).unwrap());
+    let prior = Connection::open(&path).unwrap();
+    prior.execute_batch("DROP INDEX knowledge_spans_by_id; DROP INDEX knowledge_representations_by_id; PRAGMA user_version=5;").unwrap();
+    let before = data(&prior);
+    drop(prior);
+    let upgraded = SqliteStore::open(&path).unwrap();
+    let connection = upgraded.lock().unwrap();
+    assert_eq!(
+        versions(&connection),
+        (
+            STORE_SCHEMA_VERSION,
+            crate::knowledge::KNOWLEDGE_SCHEMA_VERSION
+        )
+    );
+    assert_eq!(data(&connection), before);
+    for (table, column, index) in [
+        ("knowledge_source_spans", "span_id", "knowledge_spans_by_id"),
+        (
+            "knowledge_source_representations",
+            "representation_id",
+            "knowledge_representations_by_id",
+        ),
+    ] {
+        let plan: String = connection
+            .query_row(
+                &format!("EXPLAIN QUERY PLAN SELECT record_id FROM {table} WHERE {column}=?1"),
+                ["missing"],
+                |row| row.get(3),
+            )
+            .unwrap();
+        assert!(plan.contains(index), "{plan}");
+    }
+    assert_eq!(backups(root.path()).len(), 1);
+}
