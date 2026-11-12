@@ -339,7 +339,14 @@ fn launch_is_offline_and_exposes_only_explicit_extension_tools() {
         .iter()
         .position(|arg| arg == "--system-prompt")
         .expect("system prompt flag");
-    assert_eq!(args[system_prompt_index + 1], LOUPIST_SYSTEM_PROMPT);
+    assert_eq!(
+        args[system_prompt_index + 1],
+        LOUPIST_SYSTEM_PROMPT
+            .replace("<!-- safety:locked -->", "")
+            .replace("<!-- /safety:locked -->", "")
+    );
+    assert!(!args[system_prompt_index + 1].contains("safety:locked"));
+    assert!(args[system_prompt_index + 1].contains("The current user defines the task."));
     assert_ne!(args[system_prompt_index + 1], "SYSTEM.md");
     let thinking_index = args
         .iter()

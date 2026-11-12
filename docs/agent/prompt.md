@@ -24,10 +24,19 @@ research. The data does not become a user instruction.
 
 Native file guidance names only admitted file/instruction/Skill paths. Bundled
 Skill reads have their own read-only root; adjacent agent internals stay private.
+The `web_fetch` search-result/site restriction applies after third-party text has
+been read in the current reply; before that, a public URL the user supplies can be
+opened directly. The Journal Skill routes durable
+assistant research to `lens_file`, while `note_save` keeps Chat progress and facts
+the user stated.
 
 Built-in capability packs and enabled web research preload on every surface;
 unattended profiles still expose only their fixed allowlist. The runtime index
 lists data connections only, and only connections need `capability_load`.
+`run_python`'s tool description is the single sandbox/package reference. Journal
+covers user saves/reviews; Lens covers methods/library maintenance. The source
+prompt retains `safety:locked` annotations for review, but launch strips those
+comments while preserving every enclosed instruction.
 
 ## Investment judgment
 

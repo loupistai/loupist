@@ -251,6 +251,9 @@ impl PiLaunchConfig {
         let system_prompt = crate::eval_harness::artifacts::registered_bytes(&self.system_prompt)
             .and_then(|bytes| String::from_utf8(bytes).ok())
             .unwrap_or(system_prompt);
+        let system_prompt = system_prompt
+            .replace("<!-- safety:locked -->", "")
+            .replace("<!-- /safety:locked -->", "");
         let mut arguments = vec!["--mode".into(), "rpc".into()];
         if let Some(session) = &self.session {
             arguments.extend([
