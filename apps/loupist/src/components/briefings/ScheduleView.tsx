@@ -9,6 +9,8 @@ import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
 import type { BriefingContext, BriefingSettings, ChatMessage, LoupistSummary, LoupistBridge, InboxItem, RunSummaryItem, ScheduledRun, ScheduledTask, ScheduledTaskListItem, ModelCatalog } from "@/types";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
+import { EmptyState } from "../ui/empty-state";
+import { ChevronRightIcon } from "lucide-react";
 import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { ScheduleTaskControls } from "./ScheduleTaskControls";
 import { Disclosure } from "../ui/disclosure";
@@ -242,9 +244,8 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
         </section> : null}
         <section aria-label={t("schedule.tasks")}>
           {visible.length ? <h2 className="schedule-section-label">{t("schedule.tasks")}</h2> : null}
-          {!ordered.length ? <div className="briefings-empty"><h3>{t("schedule.emptyTitle")}</h3><p>{t("schedule.emptyBody")}</p>
-              {onAskHome ? <Button type="button" data-schedule-morning onClick={() => onAskHome(t("schedule.morningBriefingPrompt"))}>{t("schedule.morningBriefing")}</Button> : null}
-            </div>
+          {!ordered.length ? <EmptyState className="schedule-empty" title={t("schedule.emptyTitle")} description={t("schedule.emptyBody")}
+              action={onAskHome ? <Button type="button" data-schedule-morning onClick={() => onAskHome(t("schedule.morningBriefingPrompt"))}>{t("schedule.morningBriefing")}</Button> : undefined} />
             : !visible.length ? <div className="briefings-empty"><h3>{t("schedule.noActiveTitle")}</h3><p>{t("schedule.noActiveBody")}</p>
               <Button type="button" variant="outline" onClick={() => setFilter("all")}>{t("schedule.showAll")}</Button></div>
             : <ul className="schedule-tasks">{visible.map(task => {
@@ -257,10 +258,12 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
                   <span className="schedule-task-heading"><strong title={task.title}>{displayTitle(task)}</strong>{state ? <span className="schedule-task-status">{state}</span> : null}</span>
                   <span className="briefings-meta">{cadence(task)}{next ? ` · ${next}` : ""}</span>
                 </button>
+                <ChevronRightIcon className="schedule-task-chevron" aria-hidden="true" />
               </div>
             </li>;
           })}</ul>}
         </section>
+        {ordered.length ? <p className="briefings-meta schedule-footer">{t("schedule.footer")}</p> : null}
       </div>
       {readerOpen ? <div className="briefings-reader-scroll" onFocus={revealFocused}>{!selected && watchingFocus && watch ? <FollowingPage bridge={bridge} loupist={loupist} onBack={() => { setFocusExplicit(false); setFocusTaskId(null); }} />
         : selected ? <article className="briefings-reader" ref={readerRef}><Button variant="ghost" className="briefings-back" data-print="omit" onClick={() => setSelected(null)}>{t("schedule.backTo", { title: focusTask ? displayTitle({ kind: focusTask.kind, title: focusTask.title }) : t("schedule.title") })}</Button><header><h2>{displayTitle(selected)}</h2><p className="briefings-meta">{formatDate(selected.startedAtMs)} · {formatTime(selected.startedAtMs)} · {loupist.name}</p></header>
@@ -285,7 +288,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
       </article> : focusTask ? <article className="briefings-reader schedule-task-detail" aria-label={displayTitle(focusTask)}>
         <Button variant="ghost" className="briefings-back" onClick={() => { setFocusExplicit(false); setSelected(null); }}>{t("schedule.back")}</Button>
         <header className="schedule-detail-header"><div><h2>{displayTitle(focusTask)}</h2>
-          <p className="briefings-meta">{[t(`schedule.kind.${focusTask.kind}`), cadence(focusTask), taskStatus(focusTask), nextRun(focusTask)].filter(Boolean).join(" · ")}</p></div>
+          <p className="briefings-meta schedule-detail-status"><strong>{taskStatus(focusTask)}</strong>{[t(`schedule.kind.${focusTask.kind}`) === displayTitle(focusTask) ? null : t(`schedule.kind.${focusTask.kind}`), cadence(focusTask), nextRun(focusTask)].filter(Boolean).map(part => ` · ${part}`).join("")}</p></div>
           </header>
         {focusTask.latest_run && ["failed", "interrupted"].includes(focusTask.latest_run.status) ? <p className="inline-error schedule-task-error" role="status">{t("schedule.lastFailed", { reason: t(`failure.${briefingFailure(focusTask.latest_run.error ?? focusTask.last_error)}`) })}{briefingFailure(focusTask.latest_run.error ?? focusTask.last_error) === "auth" && onOpenModelSettings ? <> <Button variant="link" onClick={onOpenModelSettings}>{t("failure.models")}</Button></> : null}</p> : null}
         <ScheduleTaskControls key={`${focusTask.id}:${focusTask.revision}`} bridge={bridge} task={focusTask} title={displayTitle(focusTask)} running={focusTask.latest_run?.status === "running"} onAskHome={onAskHome}

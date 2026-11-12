@@ -9,7 +9,7 @@ export const scheduleScenarios: PreviewScenario[] = [
   ...([
     ["schedule-list", "Scheduled tasks with saved names, cadence and a task menu", ".schedule-list"],
     ["schedule-watching-setup", "Asset watch history keeps the saved choices read-only", ".watching-reader .watching-status"],
-    ["schedule-empty", "Nothing scheduled yet", ".schedule-list .briefings-empty"],
+    ["schedule-empty", "Nothing scheduled yet", ".schedule-list .schedule-empty"],
     ["schedule-create", "Request scheduled work in Bot", ".composer-shell textarea"],
     ["schedule-active-filter", "Active filter hides a paused task", "[data-schedule-filter='active']"],
     ["schedule-dialog", "Saved briefing cadence and run history", ".schedule-task-detail"],

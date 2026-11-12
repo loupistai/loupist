@@ -5,6 +5,7 @@ import type { LoupistBridge, LoupistSummary } from "../../types";
 import type { AssetEvidence } from "../../contracts/assets";
 import { WATCH_KIND_GROUPS, type WatchAsset, type WatchEvent, type WatchKind, type WatchSettings } from "../../contracts/watch";
 import { Button } from "../ui/button";
+import { ChevronRightIcon } from "lucide-react";
 import { Spinner } from "../ui/spinner";
 import { useAssetPageOpener } from "../assets/assetOpener";
 import { useAssetNames } from "../assets/assetName";
@@ -39,6 +40,7 @@ export function WatchingItem({ settings, current, onOpen }: { settings: WatchSet
         <span className="schedule-task-heading"><strong>{t("watch.title")}</strong><span className="schedule-task-status">{status}</span></span>
         <span className="briefings-meta">{summary}</span>
       </button>
+      <ChevronRightIcon className="schedule-task-chevron" aria-hidden="true" />
     </div>
   </li>;
 }

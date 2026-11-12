@@ -113,3 +113,11 @@
 /* The spending line is the bar's second row on the list; a task or run detail keeps its height. */
 .briefings-bar > .schedule-spending { flex: 1 0 100%; max-width: 72ch; margin: 0; padding-bottom: var(--gg-space-2); }
 .schedule-view:has(.briefings-layout[data-reader-open]) .schedule-spending { display: none; }
+
+/* S1/S3: the detail status leads with the state; rows end in a quiet chevron; the list ends with how to add a task. */
+.schedule-detail-status strong { font-weight: var(--gg-weight-medium); color: var(--gg-color-text-primary); }
+.schedule-task-row { position: relative; }
+.schedule-task-chevron { position: absolute; right: var(--gg-space-3); top: 50%; width: 16px; height: 16px; translate: 0 -50%; color: var(--gg-color-text-tertiary); pointer-events: none; }
+.schedule-empty { text-align: start; align-items: flex-start; margin: var(--gg-space-4); }
+.schedule-footer { margin: var(--gg-space-4); max-width: 72ch; }
+.schedule-task-row .schedule-task-summary { padding-right: calc(var(--gg-space-3) + 20px); }
