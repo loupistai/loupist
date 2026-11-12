@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { openSpy } from "../../test/open";
 import { OpenProvider } from "../navigation/Open";
 import type { ReactNode } from "react";
@@ -112,6 +113,31 @@ describe("Save as PNG… (X9)", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Couldn’t save the picture. Try again.");
     expect(exportSave).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps a failed save from the narrow card's … menu on the card after the menu closes", async () => {
+    const user = userEvent.setup();
+    const exportSave = vi.fn().mockRejectedValue(new Error("disk full"));
+    render(withScope(<ChatArtifactBlock block={{ kind: "ready", key: "r", artifact: ref, updating: false }} />, undefined, exportSave));
+    await screen.findByText("compact-chart");
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Save as PNG…" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Couldn’t save the picture. Try again.");
+    // Under 720 px the action bar is hidden; the message is not inside it.
+    expect(alert.closest(".chat-artifact-block-actions")).toBeNull();
+    expect(exportSave).toHaveBeenCalledOnce();
+  });
+});
+
+it("shows a failed Copy data outside the action bar a narrow card hides", async () => {
+  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
+  render(withScope(<ChatArtifactBlock block={{ kind: "ready", key: "r", artifact: ref, updating: false }} />));
+  await screen.findByText("compact-chart");
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Copy data" })); });
+  const alert = await screen.findByRole("alert");
+  expect(alert.closest(".chat-artifact-block-actions")).toBeNull();
+  expect(alert.closest("section")).toHaveAttribute("aria-label", "Chart: Operating margin");
 });
 
 it("says when a chart could not be built and offers the question again", () => {
