@@ -610,9 +610,8 @@ fn anchored_pages(
         .collect())
 }
 
-// The research search accepts at most 200 UTF-8 bytes (Lens accepts 200
-// characters). Reserve the final clause when a paste precedes it, and drop
-// any token longer than 32 bytes so one hash cannot fill the budget.
+// Automatic term selection keeps a conservative 200-byte budget. Drop
+// tokens longer than 32 bytes so one hash cannot fill that budget.
 fn memory_query_terms(message: &str) -> Vec<String> {
     const STOP: &[&str] = &[
         "a",
