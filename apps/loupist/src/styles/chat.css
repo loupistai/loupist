@@ -2031,17 +2031,15 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .chat-divider[data-kind="new"] { color: var(--gg-color-accent-ink); }
 
 /* Outline of a long answer (X16): a quiet disclosure above the text, headings as links. */
-.answer-outline { margin: 0 0 var(--gg-space-3); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
-.answer-outline > summary { width: fit-content; min-height: var(--gg-size-control-sm); display: flex; align-items: center; gap: var(--gg-space-1); cursor: pointer; color: var(--gg-color-text-secondary); list-style: none; }
-.answer-outline > summary::-webkit-details-marker { display: none; }
-/* A disclosure chevron: points right when folded, down when open. */
-.answer-outline > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--gg-motion-fast) var(--gg-ease-out); }
-.answer-outline[open] > summary::before { transform: rotate(45deg); }
-.answer-outline > summary:hover { color: var(--gg-color-text-primary); }
-.answer-outline ol { list-style: none; margin: var(--gg-space-1) 0 0; padding: 0 0 0 var(--gg-space-3); border-left: 1px solid var(--gg-color-border-subtle); display: grid; gap: 2px; }
+/* Outline (chat design change 18): a quiet trigger at the end of the meta row and a popover list. */
+.answer-outline-trigger { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-height: var(--gg-size-control-sm); margin-left: auto; padding: 0 var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
+.answer-outline-trigger:hover, .answer-outline-trigger[data-state="open"] { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.answer-outline-trigger svg { width: 14px; height: 14px; }
+.answer-outline { width: min(320px, calc(100vw - 32px)); padding: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
+.answer-outline ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .answer-outline li[data-level="3"] { padding-left: var(--gg-space-3); }
-.answer-outline li button { min-height: 28px; padding: 0; border: 0; background: transparent; color: var(--gg-color-text-secondary); font: inherit; text-align: left; cursor: pointer; }
-.answer-outline li button:hover { color: var(--gg-color-text-primary); text-decoration: underline; }
+.answer-outline li button { width: 100%; min-height: 28px; padding: var(--gg-space-1) var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer; }
+.answer-outline li button:hover, .answer-outline li button:focus-visible { background: var(--gg-color-bg-hover); }
 
 /* Sent images (context-rail §2.3): small thumbnails above the user's text that open the lightbox. */
 .sent-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-1); margin: 0 0 var(--gg-space-1); }

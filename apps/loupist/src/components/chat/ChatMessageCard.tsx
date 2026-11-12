@@ -194,7 +194,7 @@ type Props = {
   /** Edit forks (X18): show the version of the chat before or after this message's version. */
   onEarlierVersion?: () => void;
   onLaterVersion?: () => void;
-  /** Briefings open the outline of a long answer (X16). */
+  /** No longer used: the outline is a trigger in the meta row for every long answer. Kept until the Schedule reader stops passing it. */
   outlineOpen?: boolean;
   onRetry?: () => void;
   /** The newest answer, or the newest question, keeps its action row visible; earlier ones show it on hover or focus (X1). */
@@ -272,7 +272,6 @@ function ChatMessageCardComponent({
   editDisabled = false,
   onEarlierVersion,
   onLaterVersion,
-  outlineOpen = false,
   onRetry,
   latest = false,
   stopping = false,
@@ -385,6 +384,7 @@ function ChatMessageCardComponent({
         <span>{message.role === "user" ? t("chatMessageCard.you") : loupistName}</span>
         <time>{formatTime(new Date(message.created_at))}</time>
         {message.role === "assistant" && message.as_of ? <AsOfTag asOf={message.as_of} kind="answer" /> : null}
+        {message.role === "assistant" && answerText ? <AnswerOutline messageId={message.id} markdown={answerText} /> : null}
         {message.execution_model || message.performance || message.host_composed ? <Popover>
           <PopoverTrigger asChild><button type="button" className="message-details-trigger" aria-label={t("chatMessageCard.responseDetails")} aria-description={[executionModelTitle, performanceTitle, ...tokenLines].filter(Boolean).join(" · ")}><InfoIcon /></button></PopoverTrigger>
           <PopoverContent className="message-details-panel" align="start" aria-label={t("chatMessageCard.responseDetails")}>
@@ -478,7 +478,6 @@ function ChatMessageCardComponent({
         </> : null}
       </TurnFooter> : null}
       {message.role === "assistant" && complete && message.as_of_report ? <AsOfNote report={message.as_of_report} loupistName={loupistName} /> : null}
-      {message.role === "assistant" && answerText ? <AnswerOutline messageId={message.id} markdown={answerText} defaultOpen={outlineOpen} /> : null}
       {message.role === "assistant" && complete && onNextStep ? <NextSteps loupistId={loupistId} chatId={chatId} messageId={message.id} onAsk={onNextStep} /> : null}
       {message.role === "user" && (onEditUser || onEarlierVersion || onLaterVersion) ? <div className="message-actions message-action-bar">
         {onEditUser ? <button type="button" aria-label={t("chatMessageCard.editMessage")} title={t("chatMessageCard.edit")} disabled={editDisabled} onClick={() => onEditUser(message)}>{t("chatMessageCard.edit")}</button> : null}
