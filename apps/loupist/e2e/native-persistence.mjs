@@ -152,6 +152,9 @@ async function createLoupist() {
   await selectLoupist(NEW_LOUPIST);
 }
 
+// A saved Chat with no messages is listed as "Untitled chat"; "New chat" names the command.
+const EMPTY_CHAT = "Untitled chat";
+
 /** The composer's /new command creates and opens a saved, empty Chat. */
 async function createChatFromComposer() {
   await openMainTab(browser, "chat");
@@ -160,10 +163,10 @@ async function createChatFromComposer() {
   await composer.click();
   await composer.setValue("/new");
   await (await displayed('[role="listbox"] [role="option"][aria-label="New chat"]')).click();
-  await browser.waitUntil(async () => (await chatTitles()).filter((title) => title === "New chat").length === before.filter((title) => title === "New chat").length + 1, {
+  await browser.waitUntil(async () => (await chatTitles()).filter((title) => title === EMPTY_CHAT).length === before.filter((title) => title === EMPTY_CHAT).length + 1, {
     timeout: 15_000, timeoutMsg: "The /new command did not save a Chat",
   });
-  await browser.waitUntil(async () => (await browser.$(chatRow("New chat")).getAttribute("aria-current")) === "page", {
+  await browser.waitUntil(async () => (await browser.$(chatRow(EMPTY_CHAT)).getAttribute("aria-current")) === "page", {
     timeout: 10_000, timeoutMsg: "The new Chat did not open",
   });
 }
@@ -338,7 +341,7 @@ async function verifyPrinciple() {
 async function verifyFollowedAndHoldings({ copied }) {
   await openMemorySegment("about");
   const chips = await browser.$("[data-testid=memory-about] [data-testid=memory-chips]");
-  const names = await chips.getText();
+  const names = (await chips.isExisting()) ? await chips.getText() : "";
   assert.equal(names.includes("NWHLD"), !copied, "Followed assets belong to app data, not a copied Loupist folder");
   const summary = await (await displayed("[data-holdings-kinds]")).getText();
   if (copied) assert.doesNotMatch(summary, /3 assets/u, "Global holdings followed a copied folder");
@@ -354,7 +357,11 @@ async function followAndImportHoldings() {
   };
   await follow("LMHLD");
   await (await displayed('button[aria-label="Stop following LMHLD"]')).click();
-  await browser.waitUntil(async () => !(await (await displayed("[data-testid=memory-chips]")).getText()).includes("LMHLD"), { timeout: 10_000 });
+  // The list is not rendered while nothing is followed.
+  await browser.waitUntil(async () => {
+    const chips = await browser.$("[data-testid=memory-chips]");
+    return !(await chips.isExisting()) || !(await chips.getText()).includes("LMHLD");
+  }, { timeout: 10_000, timeoutMsg: "LMHLD stayed in what you follow" });
   await follow("NWHLD");
   await (await displayed("button[data-testid=memory-holdings-update]")).click();
   const sheet = await displayed("[data-holdings-sheet]");
@@ -594,7 +601,7 @@ async function seed() {
   await step("create a Chat with /new and rename it", async () => {
     await selectLoupist(FOLDER_LOUPIST);
     await createChatFromComposer();
-    await renameChat("New chat", CHAT);
+    await renameChat(EMPTY_CHAT, CHAT);
   });
   await step("save a Source from the Map Library", async () => {
     record.sourceId = await addSource();
