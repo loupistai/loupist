@@ -109,6 +109,15 @@ describe("Loupist shell navigation", () => {
     expect(await screen.findByRole("heading", { level: 2, name: "Pemberton Rail" })).toBeVisible();
   });
 
+  it("opens the holdings import from the command palette", async () => {
+    const user = userEvent.setup();
+    await openApp();
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    await user.type(await screen.findByRole("combobox", { name: "Command palette" }), "import holdings");
+    fireEvent.click(await screen.findByRole("option", { name: /Import holdings/ }));
+    expect(await screen.findByRole("dialog", { name: /holdings/i })).toBeVisible();
+  });
+
   it("opens a principle found in another Loupist on that Loupist's Memory page", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });

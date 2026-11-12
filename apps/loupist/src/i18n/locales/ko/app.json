@@ -334,6 +334,7 @@
       "openMap": "World 열기",
       "openLens": "Lens 열기",
       "openSchedule": "예약 열기",
+      "importHoldings": "보유 자산 가져오기…",
       "allChats": "모든 대화",
       "whatItKnows": "{{loupistSubject}} 아는 것",
       "togglePanel": "패널 보이기/숨기기",

@@ -338,6 +338,7 @@
       "openMap": "Open World",
       "openLens": "Open Lens",
       "openSchedule": "Open schedule",
+      "importHoldings": "Import holdings…",
       "allChats": "All chats",
       "whatItKnows": "What {{loupistSubject}} knows",
       "togglePanel": "Show or hide the panel",

@@ -17,6 +17,7 @@ import {
   useState,
 } from "react";
 import { createLoupistBridge } from "./bridge/tauriBridge";
+import { HoldingsSheet } from "./components/holdings/HoldingsSheet";
 import { ChatView } from "./components/ChatView";
 import { DismissOnOpen, OpenProvider } from "./components/navigation/Open";
 import { useAppOpen } from "./app/useAppOpen";
@@ -626,6 +627,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       .catch((cause) => threadActions.setMutationError(errorMessage(cause, i18n.t("app:app.couldNotExport"))));
   };
   const activeExportThread = threads.find((thread) => thread.id === activeThreadId && thread.messages.length > 0);
+  const [holdingsOpen, setHoldingsOpen] = useState(false);
   const paletteActions: PaletteAction[] = [
     ...(selectedLoupist ? [{ id: "new-chat", label: i18n.t("app:palette.actions.newChat"), keys: shortcutFor("newChat"), run: startNewChat }] : []),
     ...APP_DESTINATIONS.map((destination, index) => ({ id: destination.id, label: destination.action, keys: tabShortcut(index + 1), run: () => navigate(destination.id) })),
@@ -634,6 +636,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       { id: "export-chat", label: i18n.t("app:palette.actions.exportChat"), run: () => exportThread(activeExportThread) },
       { id: "print-chat", label: i18n.t("app:palette.actions.printChat"), run: () => exportThread(activeExportThread, "pdf") },
     ] : []),
+    { id: "import-holdings", label: i18n.t("app:palette.actions.importHoldings"), run: () => setHoldingsOpen(true) },
     { id: "settings", label: i18n.t("app:palette.actions.settings"), keys: shortcutFor("settings"), run: () => openSettings() },
     { id: "keyboard", label: i18n.t("app:palette.actions.keyboard"), run: () => openSettings("keyboard") },
   ];
@@ -744,6 +747,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     onOpenChatPreferences: (loupistId) => { void openLoupistSettingsFor(loupistId, false, "chat"); },
   });
 
+  const holdingsSheet = <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={setHoldingsOpen} />;
   const appDialogs = <AppDialogs
           dialogs={dialogs}
           onFollowStarter={async (entry) => { await bridge.watchlistAdd(entry); }}
@@ -1142,7 +1146,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
           </DialogContent>
         </Dialog>
 
-        {appDialogs}
+        {appDialogs}{holdingsSheet}
         {sharingVisible ? <PackLinkDialog bridge={bridge} open={packLinkOpen} onOpenChange={setPackLinkOpen} onOpened={result => openPackReview(result)} /> : null}
         {sharingVisible ? <DeepLinkConfirm bridge={bridge} source={packReview ? null : deepLinks.link} onClose={deepLinks.clear} onOpened={result => openPackReview(result)} /> : null}
         <CommandPalette
