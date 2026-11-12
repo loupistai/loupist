@@ -22,6 +22,8 @@ import { ChevronDownIcon, Settings2Icon } from "lucide-react";
 
 export type ModelSelectionMenuProps = {
   models: ConfiguredModel[];
+  /** Show the search field only from this many models (the composer passes 8); every model by default. */
+  searchFrom?: number;
   providers: ModelProviderOption[];
   selection: ModelRunSelection;
   disabled?: boolean;
@@ -71,10 +73,9 @@ const keepMenuOpen = (event: Event) => {
   event.preventDefault();
 };
 
-const SEARCH_FROM = 8;
-
 export function ModelSelectionMenu({
   models,
+  searchFrom = 0,
   providers,
   selection,
   disabled = false,
@@ -169,8 +170,8 @@ export function ModelSelectionMenu({
         >
           <div className="model-menu-header">
             <strong>{contextLabel}</strong>
-            {/* Fewer than eight models fit at a glance: the search field would only add a row (chat design 35). */}
-            {models.length >= SEARCH_FROM ? <Input autoFocus type="search" aria-label={i18n.t("settings:modelSelectionMenu.searchModels")} placeholder={i18n.t("settings:modelSelectionMenu.searchProvidersOrModels")} value={query}
+            {/* A short list fits at a glance: the composer hides search under eight models (chat design 35). */}
+            {models.length >= searchFrom ? <Input autoFocus type="search" aria-label={i18n.t("settings:modelSelectionMenu.searchModels")} placeholder={i18n.t("settings:modelSelectionMenu.searchProvidersOrModels")} value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {

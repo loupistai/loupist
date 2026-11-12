@@ -5,7 +5,8 @@ import i18n from "@/i18n";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatComposer } from "./ChatComposer";
 
-function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = true, onSearchContext, chips }: {
+function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = true, onSearchContext, chips, modelCount = 1 }: {
+  modelCount?: number;
   onFollowUp?: ComponentProps<typeof ChatComposer>["onFollowUp"];
   onSend?: ComponentProps<typeof ChatComposer>["onSend"];
   isRunning?: boolean;
@@ -17,7 +18,7 @@ function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = t
   return <TooltipProvider><ChatComposer
     prompt={prompt} onPromptChange={setPrompt}
     privateChat={privateChat} isRunning={isRunning} error={null} streamAnnouncement=""
-    models={[{ id: "model", provider: "test", model: "model", name: "Model", input: ["text", "image"], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" }]} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelAuto onModelResetToAuto={() => {}}
+    models={Array.from({ length: modelCount }, (_, index) => ({ id: index ? `model-${index}` : "model", provider: "test", model: "model", name: index ? `Model ${index}` : "Model", input: ["text", "image"] as ("text" | "image")[], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" as const }))} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelAuto onModelResetToAuto={() => {}}
     skills={[{ id: "research", name: "Research", description: "Research a topic" }]}
     plugins={[]}
     onPrivateChatChange={setPrivateChat} onModelSelectionChange={vi.fn()}
@@ -47,7 +48,8 @@ describe("ChatComposer input", () => {
 
   it("keeps focus in the model search when clicking its portaled input", async () => {
     const user = userEvent.setup();
-    render(<RunningComposer isRunning={false} />);
+    // The composer shows search from eight models.
+    render(<RunningComposer isRunning={false} modelCount={8} />);
     await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
     const search = screen.getByRole("searchbox", { name: "Search models" });
     await user.click(search);
