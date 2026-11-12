@@ -576,9 +576,7 @@ fn pending_vocabulary(
     loupist_id: &str,
     home: &ChatSession,
 ) -> Result<Vec<crate::knowledge::SchemaChange>, CommandError> {
-    let posted: HashSet<&str> = home
-        .messages
-        .iter()
+    let posted: HashSet<&str> = all_messages(home)
         .filter_map(|message| message.vocabulary.as_ref())
         .map(|record| record.change_id.as_str())
         .collect();
@@ -598,15 +596,22 @@ fn pending_vocabulary(
     Ok(changes)
 }
 
+/// Host deliveries belong to the conversation even when an edit hides its tail.
+fn all_messages(chat: &ChatSession) -> impl Iterator<Item = &ChatMessage> {
+    chat.messages.iter().chain(
+        chat.versions
+            .iter()
+            .flat_map(|version| version.messages.iter()),
+    )
+}
+
 /// Crossed lines since the Thread began that it has not announced yet.
 fn pending_alerts(
     state: &AppState,
     loupist_id: &str,
     home: &ChatSession,
 ) -> Result<Vec<crate::knowledge::assets::LineAlert>, CommandError> {
-    let posted: HashSet<String> = home
-        .messages
-        .iter()
+    let posted: HashSet<String> = all_messages(home)
         .filter_map(|message| message.alert.as_ref().map(|alert| alert.move_id.clone()))
         .collect();
     Ok(
@@ -630,8 +635,7 @@ pub(crate) fn deliver_finished_runs(
 ) -> Result<usize, CommandError> {
     let home = ensure_home_thread(state, loupist_id)?;
     let delivered_in = |chat: &ChatSession| -> HashSet<String> {
-        chat.messages
-            .iter()
+        all_messages(chat)
             .filter_map(|message| message.delivery.as_ref().map(|d| d.run_id.clone()))
             .collect()
     };
@@ -670,6 +674,19 @@ pub(crate) fn deliver_finished_runs(
                     {
                         None
                     }
+                    None if chat
+                        .versions
+                        .iter()
+                        .flat_map(|version| &version.messages)
+                        .any(|message| {
+                            message
+                                .handoff
+                                .as_ref()
+                                .is_some_and(|record| record.handoff_id == handoff.id)
+                        }) =>
+                    {
+                        None
+                    }
                     posted => Some((handoff.clone(), posted)),
                 }
             })
@@ -678,10 +695,10 @@ pub(crate) fn deliver_finished_runs(
     if !runs.iter().any(|run| deliverable(run, &home, &delivered))
         && handoffs
             .iter()
-            .all(|task| home.messages.iter().any(|m| m.id == task.id))
+            .all(|task| all_messages(&home).any(|m| m.id == task.id))
         && questions
             .iter()
-            .all(|q| home.messages.iter().any(|m| m.id == q.receipt.task_id))
+            .all(|q| all_messages(&home).any(|m| m.id == q.receipt.task_id))
         && research_changes(&home).is_empty()
         && pending_alerts(state, loupist_id, &home)?.is_empty()
         && pending_vocabulary(state, loupist_id, &home)?.is_empty()
@@ -712,7 +729,7 @@ pub(crate) fn deliver_finished_runs(
     pending.sort_by_key(|run| (run.finished_at_ms, run.run_id.clone()));
     let mut posted = Vec::new();
     for q in &questions {
-        if !expected.messages.iter().any(|m| m.id == q.receipt.task_id) {
+        if !all_messages(&expected).any(|m| m.id == q.receipt.task_id) {
             let mut m = host_message(
                 "bot-question",
                 format!("{}\n\n{}", q.prompt, q.receipt.question),
@@ -723,11 +740,7 @@ pub(crate) fn deliver_finished_runs(
         }
     }
     for task in &handoffs {
-        if expected
-            .messages
-            .iter()
-            .any(|message| message.id == task.id)
-        {
+        if all_messages(&expected).any(|message| message.id == task.id) {
             continue;
         }
         let mut message = host_message("bot-handoff", task.title.clone(), task.created_at_ms)?;
@@ -791,23 +804,28 @@ pub(crate) fn deliver_finished_runs(
     // read these messages through Chat history.
     chat.pi_session_cache = None;
     chat.updated_at_ms = now_ms().max(expected.updated_at_ms.saturating_add(1));
-    state
-        .store
-        .replace_chat(&expected, &chat)
-        .map_err(map_store)?;
-    crate::briefings::desktop::changed(loupist_id);
-    // Delivered once: the alerts and notices now live in the Thread.
     let notice_ids: Vec<String> = notices
         .iter()
         .map(|(notice, _)| notice.notice_id.clone())
         .collect();
-    if !watch_ids.is_empty() || !notice_ids.is_empty() || !link_ids.is_empty() {
-        let at = now_ms();
-        crate::commands::assets::with_assets(state, loupist_id, true, |tx| {
-            crate::knowledge::watch::mark_delivered(tx, loupist_id, &watch_ids, "message", at)?;
-            crate::knowledge::earnings::mark_notices_posted(tx, loupist_id, &notice_ids, at)?;
-            crate::knowledge::connections_mark_shown(tx, loupist_id, &link_ids, at)
-        })?;
+    let has_marks = !watch_ids.is_empty() || !notice_ids.is_empty() || !link_ids.is_empty();
+    let at = now_ms();
+    state
+        .store
+        .replace_chat_with(&expected, &chat, |tx| {
+            let mark = || -> crate::knowledge::KnowledgeResult<()> {
+                crate::knowledge::watch::mark_delivered(tx, loupist_id, &watch_ids, "message", at)?;
+                crate::knowledge::earnings::mark_notices_posted(tx, loupist_id, &notice_ids, at)?;
+                crate::knowledge::connections_mark_shown(tx, loupist_id, &link_ids, at)
+            };
+            if has_marks {
+                mark().map_err(|error| crate::store::StoreError::Invalid(error.to_string()))?;
+            }
+            Ok(())
+        })
+        .map_err(map_store)?;
+    crate::briefings::desktop::changed(loupist_id);
+    if has_marks {
         crate::commands::watch::changed(loupist_id);
     }
     Ok(count)

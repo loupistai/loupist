@@ -222,7 +222,9 @@ async fn drive(
     };
     let bytes = serde_json::to_vec(&request)
         .map_err(|_| BrokerError::Execution("Python execution failed".into()))?;
-    let omitted = !prepared.omitted.is_empty();
+    let omitted = prepared.omitted_count;
+    let omitted_paths = prepared.omitted.clone();
+    let scan_truncated = prepared.scan_truncated;
     let untrusted_inputs = prepared.untrusted_inputs;
     let outcome = supervise_worker(
         &worker,
@@ -236,7 +238,14 @@ async fn drive(
     let report = tokio::task::spawn_blocking(move || prepared.writeback())
         .await
         .map_err(|_| BrokerError::Execution("Python execution failed".into()))??;
-    let mut result = result_value(&outcome?, &report, omitted, &secret_text(&secrets));
+    let mut result = result_value(
+        &outcome?,
+        &report,
+        omitted,
+        &omitted_paths,
+        scan_truncated,
+        &secret_text(&secrets),
+    );
     result["untrusted_input"] = json!(untrusted_inputs);
     Ok(result)
 }
@@ -442,7 +451,9 @@ fn exit_code(status: &std::process::ExitStatus) -> i32 {
 fn result_value(
     outcome: &WorkerOutcome,
     report: &snapshot::WriteReport,
-    omitted: bool,
+    omitted: usize,
+    omitted_paths: &[String],
+    scan_truncated: bool,
     secrets: &[String],
 ) -> Value {
     let mut stderr = redact(&outcome.stderr, secrets);
@@ -450,7 +461,9 @@ fn result_value(
         report
             .truncated
             .then_some("Some workspace changes were not copied back.\n"),
-        omitted.then_some("Some files were left out of the snapshot because they are too large.\n"),
+        (omitted > 0).then_some(
+            "Some files or folders were left out of the snapshot because of its limits.\n",
+        ),
     ]
     .into_iter()
     .flatten()
@@ -467,6 +480,9 @@ fn result_value(
         "stderr": stderr,
         "stdout_truncated": outcome.stdout_truncated,
         "stderr_truncated": outcome.stderr_truncated,
+        "snapshot_omitted_count": omitted,
+        "snapshot_omitted_paths": omitted_paths.iter().take(8).collect::<Vec<_>>(),
+        "snapshot_scan_truncated": scan_truncated,
         "changed_files": report.changed,
         "conflicts": report.conflicts.iter().map(|conflict| json!({
             "path": conflict.path,

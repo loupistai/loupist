@@ -46,7 +46,9 @@ next to its name block until that item is left out; an email, phone number, the 
 full name or home path warns and can be accepted ("It's fine"). Export rebuilds the pack
 and refuses unresolved findings (`findings_unresolved`). The first share mints the
 Loupist's pack ID, and the version rises when the content hash changes, including
-license and attribution changes. Rust defaults new shares to `CC-BY-NC-SA-4.0` and
+license and attribution changes. An unchanged saved share recovers its actual
+license from the content hash for the summary, so a nondefault license does not
+spuriously advance the version. Rust defaults new shares to `CC-BY-NC-SA-4.0` and
 computes allowed licenses over the selected items and their stored origins: CC0 and BY
 allow any public pack license, BY-SA only BY-SA, BY-NC either BY-NC or BY-NC-SA, and
 BY-NC-SA only BY-NC-SA. `share_summary` accepts sections and excluded item keys and
@@ -71,6 +73,26 @@ legal-code URL from Rust, then one plain line about what anyone may do), starts 
 section or left-out item changes; one allowed license is shown fixed with the reason. A
 `licenseConflict` replaces the choice with the clashing items, each with Leave it out,
 and keeps every output off until Rust allows a license again.
+
+Retained import copies under `.loupist/packs/<import>/<version>` are derived update
+baselines. A removed import loses its copies; an applied newer version prunes older
+copies after commit, retaining the version still referenced by an active import.
+Accepted text and origin rights remain in SQLite independently of those files.
+Per-result shared-text provenance reads query only the delivered record IDs; a
+single result may contain records from several packs.
+
+A failed GitHub publish never deletes a repository. Device sign-ins request only
+`public_repo gist`, without repository-deletion authority. If this attempt created
+a repository, the error includes its name and GitHub URL so the person can inspect
+or remove it there. A successful upload followed by a local record error is
+reported as uploaded, rather than claiming nothing was published.
+
+A failed creation is not reused by name: new repositories are automatically
+initialized with a README, which counts as content even if no pack was published.
+The app has no durable receipt proving ownership of an uninitialized failed
+creation, so existing repositories remain refused, including empty ones. Retry
+with a new name or remove the failed repository on GitHub first; the error does not
+promise that an existing repository will be reused.
 
 ## Code
 

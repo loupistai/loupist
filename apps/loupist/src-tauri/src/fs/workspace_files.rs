@@ -408,8 +408,10 @@ fn media_type(path: &str, binary: bool) -> &'static str {
     }
 }
 
-fn io_error(error: impl std::fmt::Display) -> CommandError {
-    CommandError::invalid(format!("could not read workspace entry: {error}"))
+fn io_error(_error: impl std::fmt::Display) -> CommandError {
+    CommandError::invalid(
+        "Could not read this workspace entry. Check that it still exists and is readable.",
+    )
 }
 
 #[cfg(test)]
@@ -420,6 +422,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = BoundLoupistRoot::open_unbound(dir.path().canonicalize().unwrap()).unwrap();
         (dir, root)
+    }
+
+    #[test]
+    fn workspace_errors_do_not_expose_os_details() {
+        for detail in [
+            "/Users/private/.ssh/id_ed25519",
+            "permission denied (os error 13)",
+            "token=private",
+        ] {
+            let error = io_error(detail);
+            assert!(!error.message.contains(detail));
+            assert_eq!(error.code, "invalid_request");
+        }
+        let (_dir, root) = fixture();
+        assert_eq!(
+            read(&root, "missing").unwrap_err().message,
+            io_error("").message
+        );
+        assert!(relative_path("notes/report.md").is_ok());
+        assert!(relative_path("./notes/report.md").is_ok());
     }
 
     #[test]

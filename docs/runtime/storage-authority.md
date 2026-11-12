@@ -267,7 +267,11 @@ Loupist version wrote: a connector or connector field it no longer declares, or 
 Skill it now keeps always on. Such a setting is ignored and reported as a warning
 (`warnings`); its text stays in the file and saves and runs continue. A save
 request may name only settings this version has. Saves check revisions and preserve
-comments; admission rereads and freezes the effective settings.
+comments; admission checks the file and freezes the effective settings. Parsed
+configuration is cached by path and scope, modification time, length and filesystem
+identity (including Unix change time). Each hit still opens the file without
+following a link; external replacement, deletion and writes invalidate the cache.
+The process keeps at most 64 parsed files.
 Rust emits no configuration event: after its own save the renderer tells its other
 views through the `loupist-configuration-changed` window event, and edits made outside
 the app are read at reload, app activation and scope changes.

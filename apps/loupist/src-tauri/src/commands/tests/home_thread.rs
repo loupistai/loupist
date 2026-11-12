@@ -383,3 +383,45 @@ fn a_crossed_line_is_announced_once_in_the_thread_and_waits_in_needs_attention()
     .unwrap();
     assert!(!crossed(&state));
 }
+
+#[test]
+fn editing_the_home_tail_does_not_repost_a_hidden_run_or_handoff() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary);
+    ensure_home_thread(&state, "loupist-a").unwrap();
+    let task = service::create(
+        &state,
+        "loupist-a",
+        draft("Hidden result"),
+        Some("bot-handoff-hidden"),
+    )
+    .unwrap();
+    finish_run(&state, &task.id, "Original result", RunStatus::Succeeded);
+    assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 2);
+    let expected = state
+        .store
+        .get_chat(&home_thread_id("loupist-a"))
+        .unwrap()
+        .unwrap();
+    let mut edited = expected.clone();
+    let mut user =
+        crate::test_fixtures::chat_message("user-before-hidden", ChatRole::User, "Question");
+    user.created_at_ms = expected.created_at_ms;
+    let mut hidden = vec![user];
+    hidden.append(&mut edited.messages);
+    edited.versions.push(crate::domain::ChatVersion {
+        id: "hidden-tail".into(),
+        after_message_id: None,
+        messages: hidden,
+        archived_at_ms: expected.updated_at_ms,
+    });
+    state.store.replace_chat(&expected, &edited).unwrap();
+    assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 0);
+    assert!(state
+        .store
+        .get_chat(&edited.id)
+        .unwrap()
+        .unwrap()
+        .messages
+        .is_empty());
+}

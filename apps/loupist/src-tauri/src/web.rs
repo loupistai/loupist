@@ -11,9 +11,9 @@ pub use search_provider::{
 };
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::OnceLock,
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -766,6 +766,27 @@ struct BoundedResponse {
     retry_after: Option<Duration>,
 }
 
+/// Each hop admits DNS answers before reqwest can use them. There is no fallback
+/// resolver, so client reuse never opens a second, unchecked DNS lookup.
+#[derive(Default)]
+struct FetchResolver(Mutex<HashMap<String, Vec<SocketAddr>>>);
+
+impl reqwest::dns::Resolve for FetchResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let addresses = self
+            .0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(name.as_str())
+            .cloned();
+        Box::pin(async move {
+            let addresses =
+                addresses.ok_or_else(|| std::io::Error::other("web host was not admitted"))?;
+            Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
 async fn request_bounded(
     method: Method,
     mut url: Url,
@@ -796,6 +817,14 @@ async fn request_bounded(
     // One budget covers every redirect hop and the body, so a redirect chain
     // cannot multiply the caller's timeout.
     let deadline = Instant::now() + timeout;
+    let resolver = Arc::new(FetchResolver::default());
+    let client = Client::builder()
+        .redirect(Policy::none())
+        .no_proxy()
+        .connect_timeout(Duration::from_secs(5).min(timeout))
+        .dns_resolver(resolver.clone())
+        .build()
+        .map_err(|_| WebError::Provider)?;
     for redirect_count in 0..=MAX_REDIRECTS {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
@@ -831,16 +860,14 @@ async fn request_bounded(
             });
         }
         let (host, addresses) = resolve_public(&url).await?;
-        let client = Client::builder()
-            .redirect(Policy::none())
-            .no_proxy()
-            .connect_timeout(Duration::from_secs(5).min(remaining))
-            .timeout(remaining)
-            .resolve_to_addrs(&host, &addresses)
-            .build()
-            .map_err(|_| WebError::Provider)?;
+        resolver
+            .0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(host, addresses);
         let mut request = client
             .request(method.clone(), url.clone())
+            .timeout(deadline.saturating_duration_since(Instant::now()))
             .header(USER_AGENT, "Loupist-Web/1.0 (+pi-web-access-compatible)")
             .header(ACCEPT, accept);
         if let Some(body) = &json_body {
@@ -1905,6 +1932,34 @@ mod tests {
             classified.to_string(),
             "web request could not reach 127.0.0.1"
         );
+    }
+
+    #[tokio::test]
+    async fn reused_fetch_resolver_has_only_the_admitted_hop_addresses() {
+        use reqwest::dns::Resolve;
+        let resolver = FetchResolver::default();
+        assert!(resolver
+            .resolve("unadmitted.test".parse().unwrap())
+            .await
+            .is_err());
+        for (host, address) in [("first.test", "8.8.8.8:443"), ("next.test", "1.1.1.1:443")] {
+            resolver
+                .0
+                .lock()
+                .unwrap()
+                .insert(host.into(), vec![address.parse().unwrap()]);
+            assert_eq!(
+                resolver
+                    .resolve(host.parse().unwrap())
+                    .await
+                    .unwrap()
+                    .collect::<Vec<_>>(),
+                vec![address.parse::<SocketAddr>().unwrap()]
+            );
+        }
+        for address in ["127.0.0.1", "10.0.0.1", "::1", "::ffff:10.0.0.1"] {
+            assert!(!is_public_ip(address.parse().unwrap()));
+        }
     }
 
     #[test]

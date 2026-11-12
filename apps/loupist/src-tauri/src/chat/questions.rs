@@ -8,12 +8,12 @@
 //! as its assumption and the reply goes on.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
-use super::approvals::valid_request_id;
+use super::approvals::{valid_request_id, Response};
 use crate::domain::DomainError;
 
 pub const MAX_QUESTION_CHARS: usize = 300;
@@ -168,6 +168,7 @@ impl ChatQuestion {
 }
 
 struct Pending {
+    token: Arc<()>,
     loupist_id: String,
     option_count: usize,
     sender: oneshot::Sender<QuestionAnswer>,
@@ -178,25 +179,36 @@ fn registry() -> &'static Mutex<HashMap<String, Pending>> {
     REGISTRY.get_or_init(Default::default)
 }
 
-/// Parks a call until the user answers; the caller must `forget` the id when done.
+/// Parks a call until the user answers, the wait expires or the caller cancels.
 pub fn register(
     request_id: &str,
     loupist_id: &str,
     option_count: usize,
-) -> oneshot::Receiver<QuestionAnswer> {
+) -> Response<QuestionAnswer> {
     let (sender, receiver) = oneshot::channel();
+    let token = Arc::new(());
     registry()
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .insert(
             request_id.to_owned(),
             Pending {
+                token: token.clone(),
                 loupist_id: loupist_id.to_owned(),
                 option_count,
                 sender,
             },
         );
-    receiver
+    let request_id = request_id.to_owned();
+    Response::new(receiver, move || {
+        let mut entries = registry().lock().unwrap_or_else(|error| error.into_inner());
+        if entries
+            .get(&request_id)
+            .is_some_and(|entry| Arc::ptr_eq(&entry.token, &token))
+        {
+            entries.remove(&request_id);
+        }
+    })
 }
 
 pub fn forget(request_id: &str) {
@@ -241,6 +253,19 @@ pub fn answer(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn cancelling_a_wait_removes_only_its_registration() {
+        let waiting = register("question-cancel", "loupist-a", 2);
+        assert!(registry().lock().unwrap().contains_key("question-cancel"));
+        drop(waiting);
+        assert!(!registry().lock().unwrap().contains_key("question-cancel"));
+        let old = register("question-replaced", "loupist-a", 2);
+        let mut current = register("question-replaced", "loupist-a", 2);
+        drop(old);
+        answer("loupist-a", "question-replaced", QuestionAnswer::Choice(1)).unwrap();
+        assert_eq!(current.try_recv().unwrap(), QuestionAnswer::Choice(1));
+    }
 
     fn option(label: &str) -> ChatQuestionOption {
         ChatQuestionOption {

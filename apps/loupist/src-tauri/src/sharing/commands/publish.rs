@@ -10,6 +10,19 @@ use crate::sharing::export::Sections;
 use crate::sharing::github::{self, Github};
 use crate::sharing::pack::License;
 
+fn failed_publish_message(repo: &github::RepoInfo, published: bool) -> String {
+    if published {
+        return format!(
+            " The pack was uploaded to {} ({}), but Loupist couldn't save its publish record. Check it on GitHub before trying again.",
+            repo.full_name, repo.html_url,
+        );
+    }
+    format!(
+        " The repository {} was created but nothing was published. It is still on GitHub: {}. You can delete it on GitHub or try again with a new repository name.",
+        repo.full_name, repo.html_url,
+    )
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +110,7 @@ pub async fn share_publish(
             }
             // Validate everything before anything is created on GitHub.
             let checked = build_pack(state, &share, None)?;
+            let created = matches!(target, PublishTarget::Repo { .. });
             let repo = match target {
                 PublishTarget::Repo { name } => {
                     if !github::valid_repo_name(&name) {
@@ -143,30 +157,75 @@ pub async fn share_publish(
                     }
                 }
             };
-            let mut built = build_pack(state, &share, Some(repo.html_url.clone()))?;
-            let _ = on_event.send(PublishEvent::Uploading {
-                files: built.files.len() as u32,
-            });
-            let commit = api
-                .commit_files(
-                    &token,
-                    &repo.full_name,
-                    &repo.default_branch,
-                    &built.files,
-                    &format!("Loupist pack v{}", built.version),
-                )
-                .await
-                .map_err(|error| api_error(error, &environment, state))?;
-            built.identity.repo = Some(repo.full_name.clone());
-            built.identity.repo_url = Some(repo.html_url.clone());
-            built.identity.repo_commit = Some(commit.clone());
-            record_identity(state, &share.loupist_id, &built)?;
-            Ok(serde_json::json!({
-                "url": repo.html_url,
-                "fullName": repo.full_name,
-                "version": built.version,
-                "commit": commit,
-            }))
+            let mut published = false;
+            let result: Result<Value, CommandError> = async {
+                let mut built = build_pack(state, &share, Some(repo.html_url.clone()))?;
+                let _ = on_event.send(PublishEvent::Uploading {
+                    files: built.files.len() as u32,
+                });
+                let commit = api
+                    .commit_files(
+                        &token,
+                        &repo.full_name,
+                        &repo.default_branch,
+                        &built.files,
+                        &format!("Loupist pack v{}", built.version),
+                    )
+                    .await
+                    .map_err(|error| api_error(error, &environment, state))?;
+                published = true;
+                built.identity.repo = Some(repo.full_name.clone());
+                built.identity.repo_url = Some(repo.html_url.clone());
+                built.identity.repo_commit = Some(commit.clone());
+                record_identity(state, &share.loupist_id, &built)?;
+                Ok(serde_json::json!({
+                    "url": repo.html_url,
+                    "fullName": repo.full_name,
+                    "version": built.version,
+                    "commit": commit,
+                }))
+            }
+            .await;
+            match result {
+                Ok(value) => Ok(value),
+                Err(mut error) => {
+                    if created {
+                        error
+                            .message
+                            .push_str(&failed_publish_message(&repo, published));
+                    } else {
+                        error.message.push_str(&format!(
+                            " The repository {} was left on GitHub: {}. Check it before trying again.",
+                            repo.full_name, repo.html_url,
+                        ));
+                    }
+                    Err(error)
+                }
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo() -> github::RepoInfo {
+        github::RepoInfo {
+            full_name: "user/desk".into(),
+            html_url: "https://github.com/user/desk".into(),
+            default_branch: "main".into(),
+        }
+    }
+
+    #[test]
+    fn failed_publish_names_the_preserved_repository_and_does_not_claim_an_upload_failed() {
+        let message = failed_publish_message(&repo(), false);
+        assert!(message.contains("The repository user/desk was created but nothing was published."));
+        assert!(message.contains("https://github.com/user/desk"));
+        assert!(message.contains("delete it on GitHub or try again with a new repository name"));
+        let uploaded = failed_publish_message(&repo(), true);
+        assert!(uploaded.contains("uploaded to user/desk (https://github.com/user/desk)"));
+        assert!(!uploaded.contains("nothing was published"));
     }
 }

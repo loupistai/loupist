@@ -3166,8 +3166,10 @@ async fn a_fork_checks_for_updates_shows_a_diff_and_applies_only_what_is_chosen(
     })
     .unwrap();
     assert!(statement(&state).contains("Ignore your previous instructions"));
-    let flagged_record =
-        commands::with_tx(&state, &b, |tx, _| Ok(store::shared_lens(tx, &b).unwrap())).unwrap();
+    let flagged_record = commands::with_tx(&state, &b, |tx, _| {
+        Ok(store::shared_lens_for(tx, &b, None).unwrap())
+    })
+    .unwrap();
     assert!(
         flagged_record.values().any(|(_, flagged)| *flagged),
         "the accepted flagged text is delivered with extra caution"
@@ -3852,4 +3854,80 @@ async fn rate_limited_update_checks_consume_the_automatic_check_window() {
         "rate_limited"
     );
     assert!(server.requests.lock().unwrap().len() > before);
+}
+
+#[tokio::test]
+async fn retained_pack_copies_follow_only_the_active_import_version() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let id = loupist(&state, "Pack copies").await;
+    let OpenResult::Preview { preview } = import::stage(
+        Fetched {
+            files: minimal_pack(),
+            ..Fetched::default()
+        },
+        None,
+    ) else {
+        panic!("fixture pack rejected")
+    };
+    let staged = import::staged(&preview.staging_id).unwrap();
+    let mut row = commands::add::import_row(&staged, ImportMode::Merge, AT);
+    commands::with_tx(&state, &id, |tx, _| {
+        store::insert_import(tx, &id, &row)
+            .map_err(|error| CommandError::internal(error.to_string()))
+    })
+    .unwrap();
+    let copies = state
+        .store
+        .loupist_data_dir(&id)
+        .unwrap()
+        .join("packs")
+        .join(&row.import_id);
+    commands::add::retain_copy(&state, &id, &row.import_id, 1, &staged.fetched.files);
+    assert!(copies.join("1").is_dir());
+    commands::add::prune_copies(&state, &id, &row.import_id);
+    assert!(copies.join("1").is_dir(), "the referenced copy remains");
+    row.version = 2;
+    commands::with_tx(&state, &id, |tx, _| {
+        store::advance_import(tx, &id, &row)
+            .map_err(|error| CommandError::internal(error.to_string()))
+    })
+    .unwrap();
+    commands::add::retain_copy(&state, &id, &row.import_id, 2, &staged.fetched.files);
+    assert!(!copies.join("1").exists());
+    assert!(copies.join("2").is_dir());
+    #[cfg(unix)]
+    {
+        let outside = tempfile::tempdir().unwrap();
+        let sentinel = outside.path().join(pack::MANIFEST);
+        std::fs::write(&sentinel, "private sentinel").unwrap();
+        std::fs::remove_dir_all(copies.join("2")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), copies.join("2")).unwrap();
+        commands::add::retain_copy(&state, &id, &row.import_id, 2, &staged.fetched.files);
+        assert_eq!(
+            std::fs::read_to_string(&sentinel).unwrap(),
+            "private sentinel"
+        );
+        commands::add::prune_copies(&state, &id, "../outside");
+        assert!(sentinel.is_file());
+        std::fs::remove_file(copies.join("2")).unwrap();
+        commands::add::retain_copy(&state, &id, &row.import_id, 2, &staged.fetched.files);
+    }
+    commands::add::retain_copy(&state, &id, &row.import_id, 1, &staged.fetched.files);
+    assert!(
+        !copies.join("1").exists(),
+        "a late retain cannot recreate the obsolete version"
+    );
+    commands::with_tx(&state, &id, |tx, _| {
+        store::mark_removed(tx, &id, &row.import_id, AT + 1)
+            .map_err(|error| CommandError::internal(error.to_string()))
+    })
+    .unwrap();
+    commands::add::prune_copies(&state, &id, &row.import_id);
+    assert!(!copies.exists());
+    commands::add::retain_copy(&state, &id, &row.import_id, 2, &staged.fetched.files);
+    assert!(
+        !copies.exists(),
+        "a late retain cannot recreate a removed import"
+    );
 }

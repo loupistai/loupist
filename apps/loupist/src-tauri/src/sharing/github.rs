@@ -1028,6 +1028,26 @@ mod tests {
     };
 
     #[tokio::test]
+    async fn publishing_never_touches_an_existing_repository_even_if_it_is_empty() {
+        for name in ["preexisting", "empty", "content", "unknown", "denied"] {
+            let server = fixture::serve(Arc::new(|method, path, _| {
+                assert_eq!((method, path), ("POST", "/api/user/repos"));
+                (422, r#"{"message":"already exists"}"#.into())
+            }))
+            .await;
+            let api = Github::new(&server.base, &format!("{}/api", server.base), &server.base);
+            assert_eq!(
+                api.create_repo("t", name, "d").await,
+                Err(ApiError::NameTaken)
+            );
+            let requests = server.requests.lock().unwrap();
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].0, "POST");
+            assert_eq!(requests[0].1, "/api/user/repos");
+        }
+    }
+
+    #[tokio::test]
     async fn github_rejects_oversized_responses_before_the_body_finishes() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         for chunked in [false, true] {
@@ -1078,7 +1098,10 @@ mod tests {
         let count = polls.clone();
         let server = fixture::serve(Arc::new(move |method, path, body| match (method, path) {
             ("POST", "/login/device/code") => {
-                assert!(body.contains("scope=public_repo+gist"), "{body}");
+                let form: std::collections::HashMap<String, String> =
+                    reqwest::Url::parse(&format!("https://example.test/?{body}"))
+                        .unwrap().query_pairs().into_owned().collect();
+                assert_eq!(form.get("scope").map(String::as_str), Some("public_repo gist"));
                 (200, r#"{"device_code":"dev-1","user_code":"WDJB-MJHT","verification_uri":"https://github.com/login/device","expires_in":900,"interval":0}"#.into())
             }
             ("POST", "/login/oauth/access_token") => match count.fetch_add(1, Ordering::SeqCst) {
@@ -1114,6 +1137,7 @@ mod tests {
             ("POST", "/api/user/repos") => {
                 let request: Value = serde_json::from_str(body).unwrap();
                 assert_eq!(request["private"], false);
+                assert_eq!(request["auto_init"], true);
                 if request["name"] == "taken" {
                     return (422, r#"{"message":"Repository creation failed.","errors":[{"message":"name already exists on this account"}]}"#.into());
                 }

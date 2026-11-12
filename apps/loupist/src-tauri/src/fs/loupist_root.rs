@@ -190,7 +190,9 @@ fn map_selected_root_error(error: PinnedRootError) -> CommandError {
         PinnedRootError::IdentityMismatch => {
             CommandError::conflict("Loupist root identity changed; reconnect its folder")
         }
-        PinnedRootError::Io(error) => CommandError::invalid(error.to_string()),
+        PinnedRootError::Io(_) => CommandError::invalid(
+            "Could not open this folder. Check that it still exists and is readable.",
+        ),
     }
 }
 
@@ -203,5 +205,35 @@ fn map_profile_root_error(error: PinnedRootError) -> CommandError {
         PinnedRootError::InvalidPath | PinnedRootError::NotDirectory | PinnedRootError::Io(_) => {
             CommandError::conflict("Loupist root moved or was rebound; reconnect its folder")
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selected_folder_io_errors_are_actionable_without_raw_os_details() {
+        for kind in [
+            std::io::ErrorKind::NotFound,
+            std::io::ErrorKind::PermissionDenied,
+            std::io::ErrorKind::InvalidData,
+        ] {
+            let error = map_selected_root_error(PinnedRootError::Io(std::io::Error::new(
+                kind,
+                "/Users/private/token=secret",
+            )));
+            assert_eq!(error.code, "invalid_request");
+            assert!(!error.message.contains("private"));
+            assert!(error.message.contains("folder"));
+        }
+        assert_eq!(
+            map_selected_root_error(PinnedRootError::IdentityMismatch).code,
+            "conflict"
+        );
+        assert_eq!(
+            map_selected_root_error(PinnedRootError::NotDirectory).code,
+            "invalid_request"
+        );
     }
 }
