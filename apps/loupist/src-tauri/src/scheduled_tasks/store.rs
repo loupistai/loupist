@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{Mutex, OnceLock},
 };
 
@@ -287,9 +287,19 @@ impl SqliteStore {
         if rows.len() > MAX_TASKS_PER_LOUPIST {
             return Err(invalid("too many saved scheduled tasks"));
         }
+        let rows = rows
+            .into_iter()
+            .map(|task| (task, None))
+            .collect::<Vec<_>>();
+        let references = BatchReferences::load(&connection, &rows)?;
         Ok(rows
             .into_iter()
-            .filter_map(|row| readable(decode_task(&connection, row)))
+            .filter_map(|(row, _)| {
+                readable(decode_task_with_references(
+                    ReadReferences::Batched(&references),
+                    row,
+                ))
+            })
             .collect())
     }
 
@@ -329,13 +339,22 @@ impl SqliteStore {
         if rows.len() > MAX_TASKS_PER_LOUPIST {
             return Err(invalid("too many saved scheduled tasks"));
         }
+        let references = BatchReferences::load(&connection, &rows)?;
         Ok(rows
             .into_iter()
             .filter_map(|(task, latest_run)| {
-                let task = readable(decode_task(&connection, task))?;
+                let task = readable(decode_task_with_references(
+                    ReadReferences::Batched(&references),
+                    task,
+                ))?;
                 // An unreadable latest run leaves its task listed without one.
                 let latest_run = latest_run
-                    .and_then(|row| readable(decode_run(&connection, row)))
+                    .and_then(|row| {
+                        readable(decode_run_with_references(
+                            ReadReferences::Batched(&references),
+                            row,
+                        ))
+                    })
                     .filter(|run| {
                         let own = run.task_id == task.id && run.loupist_id == task.loupist_id;
                         if !own {
@@ -1074,7 +1093,104 @@ fn raw_run_at(row: &rusqlite::Row<'_>, offset: usize) -> rusqlite::Result<RawRun
     ))
 }
 
+// A list validates every referenced owner with two bounded batch queries,
+// rather than reading the profile and Chat table again for each returned row.
+struct BatchReferences {
+    loupists: HashSet<String>,
+    chats: HashMap<String, String>,
+}
+
+impl BatchReferences {
+    fn load(connection: &Connection, rows: &[(RawTask, Option<RawRun>)]) -> StoreResult<Self> {
+        let mut loupists = HashSet::new();
+        let mut chats = HashSet::new();
+        for (task, run) in rows {
+            loupists.insert(task.1.clone());
+            if task.7.len() <= MAX_TASK_JSON_BYTES {
+                if let Ok(task) = serde_json::from_str::<Task>(&task.7) {
+                    if let TaskTarget::ExistingChat { thread_id } = task.target {
+                        chats.insert(thread_id);
+                    }
+                    chats.extend(task.session_thread_id);
+                }
+            }
+            if let Some(run) = run {
+                loupists.insert(run.2.clone());
+                chats.extend(run.4.clone());
+            }
+        }
+        let mut statement = connection.prepare(
+            "SELECT id FROM loupist_profiles WHERE id IN (SELECT value FROM json_each(?1))",
+        )?;
+        let loupists = statement
+            .query_map([serde_json::to_string(&loupists)?], |row| row.get(0))?
+            .collect::<Result<HashSet<String>, _>>()?;
+        let mut statement = connection.prepare(
+            "SELECT id,loupist_id FROM chat_sessions WHERE id IN (SELECT value FROM json_each(?1))",
+        )?;
+        let chats = statement
+            .query_map([serde_json::to_string(&chats)?], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
+            .collect::<Result<HashMap<String, String>, _>>()?;
+        Ok(Self { loupists, chats })
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ReadReferences<'a> {
+    Database(&'a Connection),
+    Batched(&'a BatchReferences),
+}
+
+impl ReadReferences<'_> {
+    fn require_loupist(self, loupist_id: &str) -> StoreResult<()> {
+        match self {
+            Self::Database(connection) => require_loupist(connection, loupist_id),
+            Self::Batched(references) => {
+                identifier(loupist_id)?;
+                if references.loupists.contains(loupist_id) {
+                    Ok(())
+                } else {
+                    Err(rusqlite::Error::QueryReturnedNoRows.into())
+                }
+            }
+        }
+    }
+
+    fn require_target(
+        self,
+        loupist_id: &str,
+        target: &TaskTarget,
+        allow_missing: bool,
+    ) -> StoreResult<()> {
+        match self {
+            Self::Database(connection) => {
+                require_target(connection, loupist_id, target, allow_missing)
+            }
+            Self::Batched(references) => {
+                if let TaskTarget::ExistingChat { thread_id } = target {
+                    match references.chats.get(thread_id) {
+                        Some(owner) if owner == loupist_id => {}
+                        None if allow_missing => {}
+                        _ => {
+                            return Err(StoreError::Conflict(
+                                "scheduled target Chat is missing or belongs to another Loupist",
+                            ))
+                        }
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 fn decode_task(connection: &Connection, row: RawTask) -> StoreResult<Task> {
+    decode_task_with_references(ReadReferences::Database(connection), row)
+}
+
+fn decode_task_with_references(references: ReadReferences<'_>, row: RawTask) -> StoreResult<Task> {
     let (id, loupist_id, revision, status, next, target, updated, json) = row;
     if json.len() > MAX_TASK_JSON_BYTES {
         return Err(invalid("stored scheduled task exceeds its limit"));
@@ -1091,16 +1207,14 @@ fn decode_task(connection: &Connection, row: RawTask) -> StoreResult<Task> {
     {
         return Err(invalid("scheduled task projections do not match"));
     }
-    require_loupist(connection, &task.loupist_id)?;
-    require_target(
-        connection,
+    references.require_loupist(&task.loupist_id)?;
+    references.require_target(
         &task.loupist_id,
         &task.target,
         task.status != TaskStatus::Active,
     )?;
     if let Some(thread_id) = &task.session_thread_id {
-        require_target(
-            connection,
+        references.require_target(
             &task.loupist_id,
             &TaskTarget::ExistingChat {
                 thread_id: thread_id.clone(),
@@ -1112,6 +1226,10 @@ fn decode_task(connection: &Connection, row: RawTask) -> StoreResult<Task> {
 }
 
 fn decode_run(connection: &Connection, row: RawRun) -> StoreResult<Run> {
+    decode_run_with_references(ReadReferences::Database(connection), row)
+}
+
+fn decode_run_with_references(references: ReadReferences<'_>, row: RawRun) -> StoreResult<Run> {
     let (
         id,
         task_id,
@@ -1153,10 +1271,9 @@ fn decode_run(connection: &Connection, row: RawRun) -> StoreResult<Run> {
             "scheduled run projections or snapshot do not match",
         ));
     }
-    require_loupist(connection, &run.loupist_id)?;
+    references.require_loupist(&run.loupist_id)?;
     if let Some(thread_id) = &run.thread_id {
-        require_target(
-            connection,
+        references.require_target(
             &run.loupist_id,
             &TaskTarget::ExistingChat {
                 thread_id: thread_id.clone(),

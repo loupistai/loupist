@@ -59,6 +59,9 @@ Pause prevents future starts; Stop cancels the current run separately. Run now a
 starts a paused task without turning on its future weekday schedule. The user
 asks the Bot to run a task now; Schedule shows its definition and run history.
 
+Task lists batch profile and Chat ownership checks, preserving per-row corruption
+isolation.
+
 Missed recurring occurrences coalesce into one due run. Startup marks unfinished
 runs interrupted; a failure in one Loupist's recovery is skipped so other
 Loupists can still run. An undecodable running receipt is skipped individually,

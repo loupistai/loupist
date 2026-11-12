@@ -427,3 +427,161 @@ fn repeated_recovery_warnings_report_each_skipped_run_only_once() {
     }
     assert_eq!(reported, ["bad-run-a", "bad-run-b"]);
 }
+
+#[test]
+fn batched_lists_preserve_missing_and_foreign_chat_rejection() {
+    for status in [TaskStatus::Active, TaskStatus::Paused] {
+        for owner in [Some("loupist-a"), Some("loupist-b"), None] {
+            let store = fixture();
+            store
+                .create_chat(&crate::test_fixtures::chat_session("target", "loupist-a"))
+                .unwrap();
+            let task = store
+                .scheduled_task_create(
+                    "loupist-a",
+                    TaskDraft {
+                        target: TaskTarget::ExistingChat {
+                            thread_id: "target".into(),
+                        },
+                        status,
+                        ..draft()
+                    },
+                    1_000,
+                )
+                .unwrap();
+            match owner {
+                Some(owner) => {
+                    store
+                        .lock()
+                        .unwrap()
+                        .execute(
+                            "UPDATE chat_sessions SET loupist_id=?1 WHERE id='target'",
+                            [owner],
+                        )
+                        .unwrap();
+                }
+                None => {
+                    store
+                        .lock()
+                        .unwrap()
+                        .execute("DELETE FROM chat_sessions WHERE id='target'", [])
+                        .unwrap();
+                }
+            }
+            let readable =
+                owner == Some("loupist-a") || (owner.is_none() && status != TaskStatus::Active);
+            assert_eq!(
+                store.scheduled_task_get("loupist-a", &task.id).is_ok(),
+                readable
+            );
+            assert_eq!(
+                store.scheduled_tasks_list("loupist-a").unwrap().len(),
+                usize::from(readable)
+            );
+            assert_eq!(
+                store
+                    .scheduled_tasks_list_with_latest("loupist-a")
+                    .unwrap()
+                    .len(),
+                usize::from(readable)
+            );
+        }
+    }
+}
+
+#[test]
+fn task_lists_batch_reference_queries_independently_of_task_count() {
+    use std::{ffi::c_void, sync::atomic::AtomicUsize};
+
+    // Trace the real SQLite connection. The callback borrows a stable boxed
+    // counter, and the guard unregisters it before freeing that counter.
+    struct QueryCounter<'a> {
+        store: &'a SqliteStore,
+        statements: Box<AtomicUsize>,
+    }
+    unsafe extern "C" fn count_statement(
+        _: u32,
+        context: *mut c_void,
+        _: *mut c_void,
+        _: *mut c_void,
+    ) -> i32 {
+        // SAFETY: QueryCounter keeps this box alive until the trace is removed.
+        unsafe { &*context.cast::<AtomicUsize>() }.fetch_add(1, Ordering::SeqCst);
+        0
+    }
+    impl<'a> QueryCounter<'a> {
+        fn new(store: &'a SqliteStore) -> Self {
+            let mut counter = Self {
+                store,
+                statements: Box::default(),
+            };
+            let connection = store.lock().unwrap();
+            // SAFETY: the connection is locked and the boxed callback context
+            // stays at this address until Drop unregisters the callback.
+            let result = unsafe {
+                rusqlite::ffi::sqlite3_trace_v2(
+                    connection.handle(),
+                    rusqlite::ffi::SQLITE_TRACE_STMT as u32,
+                    Some(count_statement),
+                    (&mut *counter.statements as *mut AtomicUsize).cast(),
+                )
+            };
+            assert_eq!(result, rusqlite::ffi::SQLITE_OK);
+            counter
+        }
+        fn take(&self) -> usize {
+            self.statements.swap(0, Ordering::SeqCst)
+        }
+    }
+    impl Drop for QueryCounter<'_> {
+        fn drop(&mut self) {
+            let connection = self.store.lock().unwrap();
+            // SAFETY: the connection is locked; no callback retains the box
+            // after sqlite3_trace_v2 removes this registration.
+            unsafe {
+                rusqlite::ffi::sqlite3_trace_v2(connection.handle(), 0, None, std::ptr::null_mut())
+            };
+        }
+    }
+    let store = fixture();
+    for index in 0..12 {
+        let thread_id = format!("batch-target-{index}");
+        store
+            .create_chat(&crate::test_fixtures::chat_session(&thread_id, "loupist-a"))
+            .unwrap();
+        let task = store
+            .scheduled_task_create(
+                "loupist-a",
+                TaskDraft {
+                    target: TaskTarget::ExistingChat { thread_id },
+                    ..draft()
+                },
+                1_000,
+            )
+            .unwrap();
+        let run = claim_task(&store, "loupist-a", &task.id, 2_000, true)
+            .unwrap()
+            .unwrap()
+            .run;
+        store
+            .scheduled_task_finish("loupist-a", &run.run_id, RunStatus::Succeeded, None, 3_000)
+            .unwrap();
+    }
+    let queries = QueryCounter::new(&store);
+    assert_eq!(store.scheduled_tasks_list("loupist-a").unwrap().len(), 12);
+    assert!(
+        queries.take() <= 4,
+        "task list issued per-row reference queries"
+    );
+    assert_eq!(
+        store
+            .scheduled_tasks_list_with_latest("loupist-a")
+            .unwrap()
+            .len(),
+        12
+    );
+    assert!(
+        queries.take() <= 4,
+        "latest-run list issued per-row reference queries"
+    );
+}
