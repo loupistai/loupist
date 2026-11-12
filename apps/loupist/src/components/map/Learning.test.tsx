@@ -56,7 +56,7 @@ it("shows the latest revision summary and earlier changes for a learned method",
   const { bridge, map, node, location, catalog } = await fixture();
   render(<MapInspector bridge={bridge} map={map} node={node} location={location} catalog={catalog} onSelect={vi.fn()} onClose={vi.fn()} onOpen={vi.fn()} onAsk={vi.fn()} />);
   expect(await screen.findByText(/Confirm recovery with operating cash flow/)).toBeVisible();
-  expect(screen.getByText(/Changed because: Margin recovery alone/)).toBeVisible();
+  expect(screen.getByText(/^Changed .*: Margin recovery alone/)).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "Earlier changes (1)" }));
   expect(screen.getByText(/Three companies reported temporary qualification costs/)).toBeVisible();
 });

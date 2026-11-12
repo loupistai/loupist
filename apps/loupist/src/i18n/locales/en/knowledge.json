@@ -506,7 +506,6 @@
     "thenNow": "Then vs now",
     "then": "Then · <0>{{date}}</0>",
     "now": "Now · <0>{{date}}</0>",
-    "changedBecause": "Changed because: {{rationale}}",
     "earlier": "Earlier changes ({{count}})",
     "new": "New",
     "inUse": "Your Loupist already uses this method. Keep it, or archive it to stop.",
