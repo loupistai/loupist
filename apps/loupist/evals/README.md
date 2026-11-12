@@ -281,6 +281,10 @@ server (`commands::tool_executor::mcp_host`), not by agent replay.
 Unit-test replays belong to the test's Tokio runtime, including its spawned
 broker tasks; other test runtimes keep their own fixtures and HTTP servers.
 The serial eval runner keeps its replay process-wide for Tauri worker tasks.
+The holdings probe uses distinctive long numeric canaries in both its imported
+positions and replay response, and checks every reviewed account field directly.
+Short substrings such as `1337` can occur in generated evidence IDs, message IDs,
+digests or timings; a substring collision there is not an account-data leak.
 DART statement fixtures include `company.json?corp_code=…` with the matching
 `corp_code` and `acc_mt` fiscal year-end month. Without that profile, the real
 normalizer leaves statement periods undated; the statement replay test checks
