@@ -393,9 +393,15 @@ pub(crate) async fn dispatch(
     if summaries.is_empty() {
         summaries.push(RunSummaryItem::Nothing);
     }
-    let _ = state
+    if let Err(error) = state
         .store
-        .scheduled_run_summary(loupist_id, &run_id, summaries);
+        .scheduled_run_summary(loupist_id, &run_id, summaries)
+    {
+        eprintln!(
+            "Could not save Results run summary: {}",
+            map_store(error).code
+        );
+    }
     let status = if !failures.is_empty() && captured == 0 {
         RunStatus::Failed
     } else {
@@ -413,7 +419,9 @@ pub(crate) async fn dispatch(
         )
         .map_err(map_store)?;
     reschedule_pending_captures(state, loupist_id, task_id, &pages, &attempted, Utc::now())?;
-    let _ = crate::chat::home::deliver_finished_runs(state, loupist_id);
+    if let Err(error) = crate::chat::home::deliver_finished_runs(state, loupist_id) {
+        eprintln!("Could not deliver Results run: {}", error.code);
+    }
     crate::briefings::desktop::changed(loupist_id);
     watch_commands::changed(loupist_id);
     Ok(Some(finished))
@@ -590,7 +598,7 @@ async fn record_prices<R: HostReader>(
             &tool_read(read.tool, provider.as_deref(), &payload, page, now),
             &page.symbol,
         );
-        let _ = with_assets(state, loupist_id, true, |tx| {
+        if let Err(error) = with_assets(state, loupist_id, true, |tx| {
             assets::record_observations(
                 tx,
                 loupist_id,
@@ -600,7 +608,9 @@ async fn record_prices<R: HostReader>(
                 None,
                 now.timestamp_millis(),
             )
-        });
+        }) {
+            eprintln!("Could not save Results price observations: {}", error.code);
+        }
     }
 }
 

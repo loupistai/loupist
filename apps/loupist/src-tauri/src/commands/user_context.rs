@@ -369,24 +369,48 @@ pub(crate) const WALLET_REFRESH_BUDGET: std::time::Duration = std::time::Duratio
 
 /// Reads the given wallet, or all of them, within the 30 s budget. A failed
 /// read keeps the last good snapshot; wallets not reached in time are left as
-/// they were. Nothing here is returned to a model or written to a log.
+/// they were. Diagnostics name the failed operation without wallet addresses,
+/// holdings or provider responses; nothing here is returned to a model.
 pub(crate) async fn refresh_wallets(state: &AppState, wallet_id: Option<&str>) {
-    let Ok(targets) = state.store.wallet_targets(wallet_id) else {
-        return;
+    let targets = match state.store.wallet_targets(wallet_id) {
+        Ok(targets) => targets,
+        Err(error) => {
+            eprintln!(
+                "Could not load wallet refresh targets: {}",
+                super::map_store(error).code
+            );
+            return;
+        }
     };
     let reads = async {
         for target in targets {
             match state.finance_data.wallet_read(&target).await {
                 Ok(read) => {
-                    let _ = state.store.wallet_save_read(&target.id, read);
+                    if let Err(error) = state.store.wallet_save_read(&target.id, read) {
+                        eprintln!(
+                            "Could not save wallet snapshot: {}",
+                            super::map_store(error).code
+                        );
+                    }
                 }
                 Err(_) => {
-                    let _ = state.store.wallet_mark_failed(&target.id);
+                    eprintln!("Wallet provider read failed");
+                    if let Err(error) = state.store.wallet_mark_failed(&target.id) {
+                        eprintln!(
+                            "Could not save wallet refresh failure: {}",
+                            super::map_store(error).code
+                        );
+                    }
                 }
             }
         }
     };
-    let _ = tokio::time::timeout(WALLET_REFRESH_BUDGET, reads).await;
+    if tokio::time::timeout(WALLET_REFRESH_BUDGET, reads)
+        .await
+        .is_err()
+    {
+        eprintln!("Wallet refresh reached its time budget");
+    }
     // A token that appeared in a wallet is followed from now on.
     state.followed.schedule(state);
 }

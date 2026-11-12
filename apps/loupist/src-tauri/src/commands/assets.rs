@@ -847,7 +847,7 @@ pub(crate) async fn refresh_followed(
             break;
         };
         let remaining = budget.saturating_sub(started.elapsed());
-        if tokio::time::timeout(
+        match tokio::time::timeout(
             remaining,
             refresh_asset(
                 state,
@@ -858,9 +858,10 @@ pub(crate) async fn refresh_followed(
             ),
         )
         .await
-        .is_ok_and(|result| result.is_ok())
         {
-            refreshed += 1;
+            Ok(Ok(_)) => refreshed += 1,
+            Ok(Err(error)) => eprintln!("Could not refresh briefing asset: {}", error.code),
+            Err(_) => eprintln!("Briefing asset refresh reached its time budget"),
         }
     }
     Ok(refreshed)
