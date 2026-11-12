@@ -24,7 +24,8 @@ output digests, Source record/revision/span binding, selected extraction model,
 inference/usage status and sealed revision id. Rust commits publication and job
 completion atomically, then discards the extraction JSON. Superseded World revisions
 are also removed; these receipts are provenance and deduplication records, not a
-World history or restore feature. Recovery rebuilds the derived index from the
+World history or restore feature. Job polling returns the receipt fields without
+the internal extraction document or retained Source text. Recovery rebuilds the derived index from the
 current canonical World and retained Source evidence. An uncertain publication
 instead keeps its extraction JSON while quarantined for reconciliation.
 Publication bounds extracted node names and descriptions, drops unreadable nodes

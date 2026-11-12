@@ -424,6 +424,30 @@ fn underfunded_source_chunks_wait_without_attempts_or_blocking_other_sources() {
 }
 
 #[test]
+fn polling_omits_the_extraction_document_but_storage_keeps_it() {
+    let (_directory, store) = open();
+    let job = queued(
+        &store,
+        &enabled(),
+        "loupist-a",
+        b"Private retained Source text",
+    );
+    let wire = serde_json::to_value(&job).unwrap();
+    assert!(wire.get("document").is_none());
+    assert_eq!(wire["jobId"], job.job_id);
+    assert_eq!(wire["status"], JOB_QUEUED);
+    assert!(!wire.to_string().contains("Private retained"));
+    assert_eq!(
+        store
+            .graph_job("loupist-a", &job.job_id)
+            .unwrap()
+            .document
+            .body,
+        "Private retained Source text"
+    );
+}
+
+#[test]
 fn a_long_source_becomes_linked_chunks_that_run_in_order() {
     let (_directory, store) = open();
     let mut settings = enabled();

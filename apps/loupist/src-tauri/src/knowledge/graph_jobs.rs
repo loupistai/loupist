@@ -158,6 +158,9 @@ pub struct GraphJobView {
     pub status: String,
     pub payload_digest: String,
     pub created_at_ms: i64,
+    // Host-only extraction state; polling exposes the receipt, not Source text.
+    #[serde(skip_serializing)]
+    #[cfg_attr(test, ts(skip))]
     pub document: JobDocument,
     pub host_may_redrive: bool,
 }
