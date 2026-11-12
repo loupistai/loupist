@@ -352,6 +352,10 @@ mod tests {
         let result = result.unwrap();
         assert!(result.to_string().contains("Fictional Hanbit Aurora"));
         let unmatched = service.opendart_filing_search(serde_json::json!({"corp_code":"00888888","start":"2020-01-01","end":"2020-12-31","limit":1}), "eval-placeholder").await.unwrap_err();
+        assert!(matches!(
+            unmatched,
+            crate::finance_data::FinanceDataError::Replay(_)
+        ));
         assert!(unmatched.to_string().contains("eval_replay_unmatched"));
         let source = crate::web::source_from_url("https://fictional.example/unmatched").unwrap();
         assert!(crate::web::fetch(&source)

@@ -75,6 +75,8 @@ impl ProviderPace {
 fn finance_error(error: crate::finance_data::FinanceDataError) -> BrokerError {
     use crate::finance_data::FinanceDataError as E;
     match error {
+        #[cfg(feature = "eval-harness")]
+        E::Replay(message) => BrokerError::Execution(message).with_next("This is an eval replay fixture failure. Correct the fixture; do not treat it as a provider rejection."),
         crate::finance_data::FinanceDataError::Offline(provider) => {
             BrokerError::Offline(provider.to_owned())
         }
@@ -853,6 +855,21 @@ mod tests {
                 matches!(finance_error(error), BrokerError::Execution(message) if message == expected)
             );
         }
+    }
+
+    #[cfg(feature = "eval-harness")]
+    #[test]
+    fn replay_failures_keep_the_harness_diagnostic_without_trusting_provider_text() {
+        use crate::finance_data::FinanceDataError as E;
+        let diagnostic = "eval_replay_unmatched: opendart.disclosures fixture request";
+        let replay = finance_error(E::Replay(diagnostic.into()));
+        assert!(replay.to_string().contains(diagnostic));
+        assert!(
+            matches!(replay, BrokerError::WithNext { next, .. } if next.contains("fixture failure"))
+        );
+        let provider = finance_error(E::Provider(diagnostic.into())).to_string();
+        assert!(!provider.contains("eval_replay_unmatched"));
+        assert!(provider.contains("finance provider rejected"));
     }
 
     fn matched(name: &str, symbol: Option<&str>, corp_code: &str, grade: &str) -> Value {
