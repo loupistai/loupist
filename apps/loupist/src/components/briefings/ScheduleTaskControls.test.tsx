@@ -25,7 +25,8 @@ it("pauses, runs once and deletes a task with the host commands, without a model
   await user.click(screen.getByRole("button", { name: "Run now" }));
   expect(calls.scheduledTaskRunNow).toHaveBeenCalledWith({ loupist_id: "loupist", task_id: "task-1" });
   expect(onChanged).toHaveBeenCalledTimes(2);
-  await user.click(screen.getByRole("button", { name: "Delete" }));
+  await user.click(screen.getByRole("button", { name: "More actions for Chip news" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Delete…" }));
   const dialog = await screen.findByRole("dialog", { name: "Delete “Chip news”?" });
   expect(calls.scheduledTaskDelete).not.toHaveBeenCalled();
   await user.click(within(dialog).getByRole("button", { name: "Delete" }));
@@ -35,7 +36,9 @@ it("pauses, runs once and deletes a task with the host commands, without a model
 
 it("resumes a paused task, keeps the briefing undeletable, and shows a failure with retry", async () => {
   const { calls, user } = setup(task({ kind: "briefing", status: "paused" }), { scheduledTaskSetStatus: vi.fn().mockRejectedValueOnce(new Error("")) as never });
-  expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /More actions/ })).toBeNull();
+  // Paused: Resume is the one filled button.
+  expect(screen.getByRole("button", { name: "Resume" })).toHaveAttribute("data-variant", "default");
   await user.click(screen.getByRole("button", { name: "Resume" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't change this task. Try again.");
   expect(calls.scheduledTaskRunNow).not.toHaveBeenCalled();

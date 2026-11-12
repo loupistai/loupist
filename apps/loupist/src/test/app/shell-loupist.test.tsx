@@ -20,8 +20,8 @@ const openModelSettings = async (user: ReturnType<typeof userEvent.setup>) => {
 const openProviderPicker = async (user: ReturnType<typeof userEvent.setup>, row: RegExp) => {
   await openModelSettings(user);
   await screen.findByRole("article", { name: "ChatGPT" });
-  await user.click(screen.getByRole("button", { name: "Add a provider" }));
-  const dialog = await screen.findByRole("dialog", { name: "Add a provider" });
+  await user.click(screen.getByRole("button", { name: "Add an AI account" }));
+  const dialog = await screen.findByRole("dialog", { name: "Add an AI account" });
   await user.click(within(dialog).getByRole("button", { name: row }));
   return dialog;
 };
@@ -289,8 +289,8 @@ describe("Loupist · Model providers", () => {
     expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
     expect(selectedLoupistButton()).toHaveTextContent("Quality Compounder");
     await user.click(screen.getByRole("button", { name: "Connect an AI account" }));
-    await user.click(await screen.findByRole("button", { name: "Add a provider" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add a provider" });
+    await user.click(await screen.findByRole("button", { name: "Add an AI account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add an AI account" });
     await user.click(within(dialog).getByRole("button", { name: /Continue with ChatGPT/u }));
     await user.click(await mainTab(/Chat/));
     expect(screen.getByRole("heading", { name: "Bot" })).toBeVisible();

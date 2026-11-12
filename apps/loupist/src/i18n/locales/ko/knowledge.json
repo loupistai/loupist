@@ -501,7 +501,7 @@
     "changedBecause": "바뀐 이유: {{rationale}}",
     "earlier": "이전 변경 내역 ({{count}})",
     "new": "새로 배움",
-    "inUse": "사용 중이에요. 유지하면 ‘새로 배움’ 표시가 사라지고, 보관하면 더 이상 쓰지 않아요.",
+    "inUse": "루피스트가 이미 이 분석 방법을 쓰고 있어요. 그대로 두거나, 보관해서 쓰지 않게 할 수 있어요.",
     "chatOrigin": "대화에서 저장 · {{date}}",
     "createdToast": "루피스트가 분석 방법을 배웠어요: {{title}}",
     "refinedToast": "루피스트가 분석 방법을 다듬었어요: {{title}}",
@@ -513,7 +513,8 @@
     "unknownDate": "날짜 없음",
     "showMore": "더 보기",
     "showLess": "접기",
-    "openError": "분석 방법을 열지 못했어요. 보기를 다시 눌러 주세요."
+    "openError": "분석 방법을 열지 못했어요. 보기를 다시 눌러 주세요.",
+    "changedOn": "{{date}}에 바뀜: {{rationale}}"
   },
   "journal": {
     "notes": "저널·노트",

@@ -116,7 +116,10 @@
     "waitingReconnect": "대기 중: 다시 로그인 필요",
     "spending": "예약 작업은 실행할 때마다 AI 계정을 사용해요. 지켜보기는 사용하지 않아요. 둘 다 루피스트가 열려 있거나 메뉴 막대에 있을 때만 실행돼요.",
     "morningBriefing": "아침 브리핑 켜기",
-    "morningBriefingPrompt": "평일 아침 8시에 브리핑해 줘"
+    "morningBriefingPrompt": "평일 아침 8시에 브리핑해 줘",
+    "runNowCost": "AI 계정을 사용해요",
+    "moreActions": "{{title}} 더보기",
+    "deleteEllipsis": "삭제…"
   },
   "sections": {
     "changed": "바뀐 내용",

@@ -76,8 +76,8 @@ it("adds a provider through the shared connect sheet and reports the connection"
   const user = userEvent.setup();
   const props = panelProps();
   render(<ModelSettingsPanel {...props} />);
-  await user.click(screen.getByRole("button", { name: "Add a provider" }));
-  const dialog = await screen.findByRole("dialog", { name: "Add a provider" });
+  await user.click(screen.getByRole("button", { name: "Add an AI account" }));
+  const dialog = await screen.findByRole("dialog", { name: "Add an AI account" });
   // The picker lists the same ways as onboarding; no logos or monograms.
   expect(dialog.querySelector(".settings-provider-monogram")).toBeNull();
   await user.click(within(dialog).getByRole("button", { name: /^xAI/u }));

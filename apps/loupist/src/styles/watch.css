@@ -85,3 +85,6 @@
   .watching-alert[data-arrived] { animation: none; }
   .watching-matrix, .watch-switch [data-slot="switch-thumb"] { transition: none; }
 }
+/* Row utilities stay quieter than the alert sentence. */
+.watching-alert [data-slot="button"] { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-regular); }
+.watching-reader .schedule-section-label { margin-inline: 0; }

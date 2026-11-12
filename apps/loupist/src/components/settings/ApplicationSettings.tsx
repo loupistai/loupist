@@ -31,20 +31,27 @@ export function ApplicationSettings({ bridge }: { bridge: LoupistBridge }) {
   };
   const automatic = resident?.keepRunning === true && (resident.keepRunningChoice ?? null) === null;
   return <div className="settings-general">
+    <section className="settings-general-block" aria-labelledby="settings-application-title">
+    <h2 id="settings-application-title" className="settings-caption-label">{t("general.applicationTitle")}</h2>
     <div className="settings-row" data-keep-running>
       <div><strong id={labelId}>{t("general.keepRunning")}</strong><p className="settings-row-description" id={descriptionId}>{t("general.keepRunningDescription")}</p>
         {automatic ? <p className="settings-row-description" data-keep-running-automatic>{t("general.keepRunningAutomatic")}</p> : null}</div>
       <Switch aria-labelledby={labelId} aria-describedby={descriptionId} checked={resident?.keepRunning ?? false} disabled={resident === null || busy} onCheckedChange={value => void change(value)} />
     </div>
     {error ? <p className="inline-error" role="alert">{error}</p> : null}
-    <section className="settings-about" aria-labelledby="settings-about-title">
-      <h2 id="settings-about-title" className="settings-section-title">{t("general.aboutTitle")}</h2>
-      <NoticeSettingsRow />
-      <div className="settings-row settings-privacy" data-privacy>
-        <div><strong>{t("general.privacyTitle")}</strong>
-          <ul className="settings-privacy-list">{PRIVACY_LINES.map(key => <li key={key}>{t(`general.${key}`)}</li>)}</ul>
-        </div>
+    </section>
+    <section className="settings-general-block" aria-labelledby="settings-about-title">
+      <h2 id="settings-about-title" className="settings-caption-label">{t("general.aboutTitle")}</h2>
+      <div className="settings-privacy" data-privacy>
+        <h3>{t("general.privacyTitle")}</h3>
+        <dl className="settings-privacy-list">{PRIVACY_LINES.map(key => {
+          // The lead phrase before the colon names where it goes; the rest says what.
+          const text = t(`general.${key}`);
+          const split = text.indexOf(":");
+          return <div key={key}><dt>{split > 0 ? text.slice(0, split) : text}</dt><dd>{split > 0 ? text.slice(split + 1).trim() : ""}</dd></div>;
+        })}</dl>
       </div>
+      <NoticeSettingsRow />
     </section>
   </div>;
 }

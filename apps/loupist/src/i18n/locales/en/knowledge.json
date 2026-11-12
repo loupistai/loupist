@@ -509,7 +509,7 @@
     "changedBecause": "Changed because: {{rationale}}",
     "earlier": "Earlier changes ({{count}})",
     "new": "New",
-    "inUse": "In use. Keep it to stop seeing 'New', or archive it.",
+    "inUse": "Your Loupist already uses this method. Keep it, or archive it to stop.",
     "chatOrigin": "Saved from Chat · {{date}}",
     "createdToast": "Your Loupist learned a method: {{title}}",
     "refinedToast": "Your Loupist refined a method: {{title}}",
@@ -521,7 +521,8 @@
     "unknownDate": "Date unavailable",
     "showMore": "Show more",
     "showLess": "Show less",
-    "openError": "Could not open this method. Try View again."
+    "openError": "Could not open this method. Try View again.",
+    "changedOn": "Changed {{date}}: {{rationale}}"
   },
   "journal": {
     "notes": "Journal & notes",

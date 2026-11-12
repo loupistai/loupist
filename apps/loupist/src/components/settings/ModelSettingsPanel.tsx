@@ -248,7 +248,7 @@ export function ModelSettingsPanel({
       <section aria-labelledby="connected-provider-title" className="grid gap-3">
         <div className="settings-section-heading">
           <div>
-            <h2 id="connected-provider-title" className="font-heading text-base font-medium">
+            <h2 id="connected-provider-title" className="sr-only">
               {i18n.t("settings:modelSettingsPanel.modelProviders")}</h2>
           </div>
           {cards.length ? (

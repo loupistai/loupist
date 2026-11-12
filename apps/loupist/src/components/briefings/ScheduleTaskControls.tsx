@@ -4,6 +4,8 @@ import type { LoupistBridge, ScheduledTask } from "@/types";
 import { errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
+import { MoreHorizontalIcon } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 
 type Busy = "status" | "run" | "delete" | null;
@@ -34,17 +36,27 @@ export function ScheduleTaskControls({ bridge, task, title, running, onChanged, 
   const canToggle = task.status !== "completed";
   // The briefing is turned off, not deleted; the results task is paused, not deleted.
   const canDelete = task.kind === "custom";
+  // A proposed task is not running yet: turning it on is its primary action, as Resume is.
+  const paused = nextStatus === "active";
+  const statusButton = (variant: "default" | "ghost") => <Button variant={variant} size="sm" disabled={busy !== null} data-schedule-status={nextStatus}
+    onClick={() => void act("status", () => bridge.scheduledTaskSetStatus({ ...identity, expected_revision: task.revision, status: nextStatus }), t("schedule.statusFailed")).then(ok => { if (ok) onChanged(); })}>
+    {busy === "status" ? <Spinner /> : null}{statusLabel}
+  </Button>;
   return <div className="schedule-task-controls" data-print="omit">
+    {/* Active: Run now, then a quiet Pause. Paused: Resume is the one filled button. Delete sits in More. */}
     <div className="schedule-task-actions">
-      {canToggle ? <Button variant="outline" size="sm" disabled={busy !== null} data-schedule-status={nextStatus}
-        onClick={() => void act("status", () => bridge.scheduledTaskSetStatus({ ...identity, expected_revision: task.revision, status: nextStatus }), t("schedule.statusFailed")).then(ok => { if (ok) onChanged(); })}>
-        {busy === "status" ? <Spinner /> : null}{statusLabel}
-      </Button> : null}
-      <Button variant="outline" size="sm" disabled={busy !== null || running} data-schedule-run-now
+      {paused && canToggle ? statusButton("default") : null}
+      <Button variant="outline" size="sm" disabled={busy !== null || running} data-schedule-run-now title={t("schedule.runNowCost")}
         onClick={() => void act("run", () => bridge.scheduledTaskRunNow(identity), t("schedule.runNowFailed")).then(ok => { if (ok) onChanged(); })}>
-        {busy === "run" ? <Spinner /> : null}{running ? t("schedule.runningNow") : t("schedule.runNow")}
+        {busy === "run" || running ? <Spinner /> : null}{running ? t("schedule.runningNow") : t("schedule.runNow")}
       </Button>
-      {canDelete ? <Button variant="ghost" size="sm" disabled={busy !== null || running} title={running ? t("schedule.deleteWhileRunning") : undefined} onClick={() => { setError(null); setConfirming(true); }}>{t("schedule.delete")}</Button> : null}
+      {!paused && canToggle ? statusButton("ghost") : null}
+      {canDelete ? <DropdownMenu>
+        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={t("schedule.moreActions", { title })} disabled={busy !== null}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem disabled={running} onSelect={() => { setError(null); setConfirming(true); }}>{running ? t("schedule.deleteWhileRunning") : t("schedule.deleteEllipsis")}</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu> : null}
     </div>
     {error && !confirming ? <p className="inline-error" role="alert">{error}</p> : null}
     <p className="briefings-meta schedule-task-change">{t("schedule.changeHint")}{onAskHome ? <> <Button variant="link" className="schedule-task-ask" onClick={() => onAskHome(t("schedule.changePrompt", { title }))}>{t("schedule.changeAsk")}</Button></> : null}</p>
@@ -53,7 +65,7 @@ export function ScheduleTaskControls({ bridge, task, title, running, onChanged, 
         <DialogHeader><DialogTitle>{t("schedule.deleteTitle", { title })}</DialogTitle><DialogDescription>{t("schedule.deleteBody")}</DialogDescription></DialogHeader>
         <DialogBody>{error ? <p className="inline-error" role="alert">{error}</p> : null}</DialogBody>
         <DialogFooter>
-          <Button variant="outline" disabled={busy === "delete"} onClick={() => setConfirming(false)}>{t("schedule.cancel")}</Button>
+          <Button variant="outline" autoFocus disabled={busy === "delete"} onClick={() => setConfirming(false)}>{t("schedule.cancel")}</Button>
           <Button variant="destructive" disabled={busy === "delete"} data-schedule-delete-confirm
             onClick={() => void act("delete", () => bridge.scheduledTaskDelete({ ...identity, expected_revision: task.revision }), t("schedule.deleteFailed")).then(ok => { if (ok) { setConfirming(false); onDeleted(); } })}>
             {busy === "delete" ? <Spinner /> : null}{t("schedule.delete")}

@@ -119,7 +119,10 @@
     "waitingReconnect": "Waiting: sign-in needs reconnect",
     "spending": "Scheduled tasks use your AI account each run. Watching uses none. Both run only while Loupist is open or in the menu bar.",
     "morningBriefing": "Turn on a morning briefing",
-    "morningBriefingPrompt": "Turn on a weekday morning briefing at 8"
+    "morningBriefingPrompt": "Turn on a weekday morning briefing at 8",
+    "runNowCost": "Uses your AI account",
+    "moreActions": "More actions for {{title}}",
+    "deleteEllipsis": "Delete…"
   },
   "sections": {
     "changed": "What changed",
