@@ -56,7 +56,7 @@
 .needs-attention-text { flex: 1 1 auto; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow-wrap: break-word; line-height: var(--gg-leading-control); color: var(--gg-color-text-secondary); }
 .needs-attention-text strong { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); }
 .needs-attention-dot { flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: var(--gg-radius-full); background: var(--gg-color-text-tertiary); }
-.needs-attention-row:is([data-kind="approval"], [data-kind="question"], [data-kind="lineCrossed"]) .needs-attention-dot { background: var(--gg-color-warning); }
+.needs-attention-row:is([data-kind="approval"], [data-kind="question"], [data-kind="lineCrossed"]) .needs-attention-dot { background: var(--gg-color-accent); }
 /* Unread results take the info color so they never read as the amber "waiting on you" dot. */
 .needs-attention-row:is([data-kind="briefingConflict"], [data-kind="unreadResults"], [data-kind="watchAlerts"]) .needs-attention-dot { background: var(--gg-color-info); }
 .needs-attention-more { display: block; margin: var(--gg-space-1) 0 0; padding: 0 var(--gg-space-2); border: 0; background: transparent; color: var(--gg-color-text-tertiary); font: inherit; font-size: var(--gg-text-meta); text-align: left; }
@@ -65,7 +65,7 @@ button.needs-attention-more:hover { color: var(--gg-color-text-primary); }
 [data-collapsible="icon"] .needs-attention { display: none; }
 /* Loupist and chat status dots: amber waits for you, grey finished while you were away. */
 .loupist-status-dot { flex: none; width: 8px; height: 8px; margin-right: var(--gg-space-3); border-radius: var(--gg-radius-full); background: var(--gg-color-text-tertiary); }
-.loupist-status-dot[data-state="waiting"] { background: var(--gg-color-warning); }
+.loupist-status-dot[data-state="waiting"] { background: var(--gg-color-accent); }
 .loupist-chat-button .loupist-status-dot { margin-right: 0; margin-left: auto; }
 /* X15: unsent composer text; X12: a private chat in the badge slot. */
 .loupist-draft-dot { flex: none; width: 6px; height: 6px; border-radius: var(--gg-radius-full); background: var(--gg-color-text-tertiary); }

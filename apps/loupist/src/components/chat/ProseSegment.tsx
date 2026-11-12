@@ -7,6 +7,10 @@ import { usePacedText } from "../../chat/usePacedText";
 import type { ChatMessage } from "../../types";
 import { SafeMessageResponse } from "./SafeMessageResponse";
 
+/** A numbered citation never starts a line on its own: the space before it does not break. */
+const CITATION_GAP = /[ \t]+(\[\d{1,3}\]\(#evidence-)/gu;
+const bindCitations = (text: string) => text.replace(CITATION_GAP, "\u00a0$1");
+
 type Props = {
   text: string;
   streaming: boolean;
@@ -29,7 +33,7 @@ export const ProseSegment = memo(function ProseSegment({ text, streaming, tone, 
   return (
     <Message from="assistant" className="max-w-full">
       <MessageContent className={`message-content overflow-visible${tone === "narration" ? " message-narration" : ""}`}>
-        <SafeMessageResponse text={visible} isAnimating={streaming} caret={caret} numberChecks={checks} workspacePath={workspacePath} />
+        <SafeMessageResponse text={bindCitations(visible)} isAnimating={streaming} caret={caret} numberChecks={checks} workspacePath={workspacePath} />
       </MessageContent>
     </Message>
   );

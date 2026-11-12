@@ -67,7 +67,7 @@ function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide:
     <div className="approval-card-actions">
       <Button type="button" disabled={busy} onClick={() => void decide("once")}>{t("approvalCard.allowOnce")}</Button>
       <Button type="button" variant="outline" disabled={busy} onClick={() => void decide("deny")}>{t("approvalCard.notNow")}</Button>
-      <Button type="button" variant="ghost" className="approval-card-always" disabled={busy} onClick={() => void decide("always")}>{t("approvalCard.always")}</Button>
+      <Button type="button" variant="ghost" className="approval-card-always" aria-description={t("approvalCard.always")} disabled={busy} onClick={() => void decide("always")}>{t("approvalCard.alwaysShort")}</Button>
     </div>
     {failed ? <p role="alert" className="approval-card-error">{t("approvalCard.error")}</p> : null}
   </section>;

@@ -928,6 +928,7 @@
     "readOnly": "이 연결은 요청 내용을 받아요. 이 도구는 데이터를 읽기만 해요.",
     "allowOnce": "이번만 허용",
     "always": "이 연결은 항상 허용",
+    "alwaysShort": "항상 허용",
     "notNow": "나중에",
     "allowedOnce": "이번만 허용함 · {{tool}}",
     "alwaysAllowed": "항상 허용 · {{tool}} ({{connection}})",

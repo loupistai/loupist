@@ -40,7 +40,7 @@ function WaitingQuestion({ question, onAnswer }: { question: ChatQuestion; onAns
     <div className="question-card-options" role="group" aria-label={t("questionCard.options")}>
       {question.options.map((option, index) => {
         const recommended = question.recommended === index;
-        return <Button key={index} type="button" variant={recommended ? "default" : "outline"} className="question-card-option"
+        return <Button key={index} type="button" variant="outline" className="question-card-option" data-recommended={recommended || undefined}
           disabled={busy} onClick={() => void answer({ choice: index })}>
           <span className="question-card-option-label">
             {option.label}

@@ -24,7 +24,8 @@ it("answers with an option, marks the recommended one and shows the wait", async
   expect(within(card).getByText(/^waiting 0:1\d$/)).toBeVisible();
   const options = within(within(card).getByRole("group", { name: "Options" })).getAllByRole("button");
   expect(options.map((option) => option.textContent)).toEqual(["Last 4 quartersRecommendedTrailing twelve months", "Last 3 years"]);
-  expect(options[0]).toHaveAttribute("data-variant", "default");
+  expect(options[0]).toHaveAttribute("data-recommended");
+  expect(options[0]).toHaveAttribute("data-variant", "outline");
   expect(options[1]).toHaveAttribute("data-variant", "outline");
   await user.click(options[1]);
   expect(answer).toHaveBeenCalledWith({ loupist_id: "loupist-one", request_id: "q-1", choice: 1 });

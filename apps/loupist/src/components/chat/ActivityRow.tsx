@@ -195,9 +195,9 @@ const ActionRow = memo(function ActionRow({
         ) : target ? (
           <span className="chat-progress-target" data-testid="chat-progress-target" title={target}>{target}</span>
         ) : null}
+        {glyph}
         <StepNames item={item} />
       </div>
-      {glyph}
       {/* A security rule, not a failure: said calmly in the step, with no way around it. */}
       {paused ? <div className="chat-step-paused" role="note">
         <p>{t(`chatProgressTimeline.paused.${pausedWhat(item)}`)}</p>
@@ -258,7 +258,7 @@ function PlanList({ plan, nested, renderSteps }: {
 }
 
 const statusGlyph = (status: ChatProgressStatus): ReactNode => {
-  if (status === "succeeded") return <span className="chat-progress-status"><CheckIcon role="img" aria-label={t("chatProgressTimeline.planDone")} /></span>;
+  // Success is the norm and needs no mark; a failed or stopped step says so beside its target.
   if (status === "failed") return <span className="chat-progress-status"><TriangleAlertIcon aria-label={t("chatProgressTimeline.failed")} /></span>;
   if (status === "stopped") return <span className="chat-progress-status"><CircleStopIcon aria-label={t("chatProgressTimeline.stopped")} /></span>;
   return null;
@@ -359,11 +359,11 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
         aria-controls={expanded ? detailsId : undefined}
         onClick={() => { conversation?.holdScrollPosition(); setUserChoice(!expanded); }}
       >
-        {live ? <span className="chat-progress-live" data-heartbeat={row.stalled || undefined} aria-hidden="true" /> : <ListTreeIcon aria-hidden="true" />}
+        <ListTreeIcon aria-hidden="true" data-live={live || undefined} data-heartbeat={live && row.stalled ? "" : undefined} />
         <span className="chat-progress-heading" data-testid="chat-progress-heading">
           {row.kind === "live" ? row.label : <>
             {row.label}
-            {row.issues ? <span className="chat-work-count"> · {row.issues}</span> : null}
+            {row.issues ? <span className="chat-work-count"> · <span className="chat-work-issues">{row.issues}</span></span> : null}
             {/* Under a second a duration would read "0:00"; the summary stands alone. */}
             {row.durationMs !== undefined && row.durationMs >= 1000 ? <span className="chat-work-count"> · <span className="chat-progress-elapsed">{clockLabel(row.durationMs)}</span></span> : null}
           </>}

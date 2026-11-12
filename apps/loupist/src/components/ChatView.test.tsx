@@ -101,7 +101,8 @@ it("keeps a saved Chat readable without a model and opens settings instead of se
   expect(composer()).toHaveValue("Draft");
   await user.type(composer(), " more");
   expect(onDraftChange).toHaveBeenLastCalledWith("Draft more");
-  expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  expect(screen.getByTestId("composer-model-menu")).toHaveAccessibleName("Connect an AI account");
   await user.click(screen.getByRole("button", { name: "Open Settings" }));
   expect(onOpenModelSettings).toHaveBeenCalledOnce();
   expect(actions.submit).not.toHaveBeenCalled();

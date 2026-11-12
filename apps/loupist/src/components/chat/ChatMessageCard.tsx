@@ -1,3 +1,4 @@
+import { sourceIdentityLabel } from "../../chat/evidence";
 import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { Disclosure } from "../ui/disclosure";
 import { ApprovalCards } from "./ApprovalCard";
@@ -441,7 +442,7 @@ function ChatMessageCardComponent({
       {message.role === "assistant" ? <TurnFooter footer={view.footer} now={now} announce={view.announce} guiding={guiding}>
         {settled ? <>
           {settled.sources.length > 0 ? (
-            <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<>{t("chatMessageCard.sourceCount", { formattedCount: formatNumber(settled.sources.length) })}</>}>
+            <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<><span>{t("chatMessageCard.sourceCount", { formattedCount: formatNumber(settled.sources.length) })}</span><span className="message-sources-site"> · {sourceIdentityLabel(settled.sources[0]!)}{settled.sources.length > 1 ? ` +${formatNumber(settled.sources.length - 1)}` : ""}</span></>}>
               <ol>{settled.sources.map((evidence, index) => <SourceRow key={evidence.id} evidence={evidence} number={index + 1} />)}</ol>
             </Disclosure>
           ) : null}

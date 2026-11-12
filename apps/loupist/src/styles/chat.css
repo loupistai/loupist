@@ -308,33 +308,36 @@ svg foreignObject .katex:has(> math) {
 }
 
 .message.assistant .message-content [data-streamdown^="heading-"] {
-  margin: 1.2em 0 0.45em;
+  margin: var(--gg-space-7) 0 var(--gg-space-2);
   color: var(--gg-color-text-primary);
   font-weight: var(--gg-weight-semibold);
   letter-spacing: -0.01em;
 }
 
+.message.assistant .message-content [data-streamdown^="heading-"]:first-child { margin-top: 0; }
+
+/* A real heading scale, so a long answer has scannable structure (chat design change 9). */
 .message.assistant .message-content [data-streamdown="heading-1"] {
+  font-size: var(--gg-text-heading);
+  line-height: var(--gg-leading-heading);
+}
+
+.message.assistant .message-content [data-streamdown="heading-2"] {
   font-size: var(--gg-text-title);
   line-height: var(--gg-leading-title);
 }
 
-.message.assistant .message-content [data-streamdown="heading-2"] {
+.message.assistant .message-content [data-streamdown="heading-3"] {
   font-size: var(--gg-text-subtitle);
   line-height: var(--gg-leading-subtitle);
-}
-
-.message.assistant .message-content [data-streamdown="heading-3"] {
-  font-size: var(--gg-text-reading);
-  line-height: var(--gg-leading-reading);
 }
 
 .message.assistant .message-content [data-streamdown="heading-4"],
 .message.assistant .message-content [data-streamdown="heading-5"],
 .message.assistant .message-content [data-streamdown="heading-6"] {
-  font-size: var(--gg-text-body);
-  line-height: var(--gg-leading-body);
-  color: var(--gg-color-text-secondary);
+  font-size: var(--gg-text-reading);
+  line-height: var(--gg-leading-reading);
+  color: var(--gg-color-text-primary);
 }
 
 .message.assistant .message-content [data-streamdown="unordered-list"],
@@ -390,6 +393,10 @@ svg foreignObject .katex:has(> math) {
   max-width: 100%;
   margin: 1em 0;
   overflow-x: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 /* A wide table scrolls inside its frame instead of squeezing columns; figures never split. */
@@ -409,15 +416,18 @@ svg foreignObject .katex:has(> math) {
 .message.assistant .message-content [data-streamdown="table-cell"] {
   max-width: 36ch;
   padding: var(--gg-space-2) var(--gg-space-3);
-  border: 1px solid var(--gg-color-border-subtle);
+  border: 0;
+  border-bottom: 1px solid var(--gg-color-border-subtle);
   text-align: left;
   vertical-align: top;
 }
 
+/* Ruled rows like the grid card: no cell boxes, no filled header (chat design change 10). */
 .message.assistant .message-content [data-streamdown="table-header-cell"] {
-  background: var(--gg-color-bg-hover);
+  background: transparent;
+  border-bottom-color: var(--gg-color-border-default);
   color: var(--gg-color-text-secondary);
-  font-weight: var(--gg-weight-semibold);
+  font-weight: var(--gg-weight-medium);
   white-space: nowrap;
 }
 
@@ -498,9 +508,12 @@ svg foreignObject .katex:has(> math) {
   white-space: nowrap;
 }
 
-.chat-progress[data-tone="problem"] .chat-progress-heading {
+.chat-progress[data-tone="problem"] .chat-work-issues {
   color: var(--gg-color-negative);
 }
+
+/* The live row header is the list icon in primary ink; amber stays on the turn status and the status pill. */
+.chat-progress-toggle > svg[data-live] { color: var(--gg-color-text-primary); }
 
 .chat-progress-chevron {
   width: 14px;
@@ -645,8 +658,8 @@ svg foreignObject .katex:has(> math) {
 }
 
 .chat-plan-item[data-plan-status="active"] .chat-plan-dot {
-  border-color: var(--gg-color-accent);
-  background: var(--gg-color-accent);
+  border-color: var(--gg-color-text-primary);
+  background: var(--gg-color-text-primary);
 }
 
 .chat-plan-item[data-plan-status="done"] .chat-plan-row {
@@ -1066,7 +1079,9 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .chat-receipt-text { display: inline-flex; align-items: center; width: max-content; max-width: 100%; min-height: var(--gg-size-control-sm); }
 .chat-receipt .chat-receipt-segment { display: inline-flex; align-items: center; width: max-content; max-width: 100%; min-height: var(--gg-size-control-sm); text-align: start; text-decoration: none; }
 .chat-receipt .chat-receipt-segment:hover { color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: currentColor; }
-.chat-receipt .chat-receipt-segment[data-learned="true"], .chat-receipt-text[data-learned="true"] { color: var(--gg-color-accent-ink); }
+/* One amber per footer: only the receipt's leading segment takes the accent ink; the rest stay neutral. */
+.chat-receipt .chat-receipt-segment, .chat-receipt-text { color: var(--gg-color-text-secondary); }
+.chat-receipt .chat-receipt-item:first-child :is(.chat-receipt-segment, .chat-receipt-text[data-learned="true"]) { color: var(--gg-color-accent-ink); }
 /* The one segment that asks the user to act reads as an action, not a fact. */
 .chat-receipt [data-receipt="proposals"] .chat-receipt-segment { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); }
 
@@ -1770,6 +1785,8 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .chat-dialog > .inline-error { margin: 0 var(--gg-space-6) 18px; }
 .message-sources { border: 0; background: transparent; max-width: none; font-size: var(--gg-text-meta); }
 .message-sources > summary { width: 100%; padding: 10px var(--gg-space-3); color: var(--gg-color-text-secondary); cursor: pointer; }
+.message-action-bar > .message-sources > summary { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); }
+.message-sources-site { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-regular); }
 .message-sources[open] > summary { border-bottom: 1px solid var(--gg-color-border-subtle); }
 .message-sources > ol { margin: 0; padding: 6px var(--gg-space-3); max-height: var(--gg-size-mini-map); overflow-y: auto; overscroll-behavior: contain; }
 .message-sources[open] { flex: 1 0 100%; }
@@ -1968,11 +1985,11 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .chat-rail-chip:hover { background: var(--gg-color-bg-hover); border-color: var(--gg-color-border-default); }
 .chat-rail-chip .map-swatch { width: 8px; height: 8px; }
 /* "Needs your OK": one row that leads to the approval card in the answer, where the buttons are. */
-.chat-rail-needs { background: var(--gg-color-warning-soft); }
+.chat-rail-needs { background: var(--gg-color-accent-soft); }
 .chat-rail-needs-row { display: flex; align-items: center; gap: var(--gg-space-2); width: 100%; min-height: 44px; padding: var(--gg-space-2) var(--gg-space-4); border: 0; background: transparent; color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer; }
 .chat-rail-needs-row:hover .chat-rail-needs-show { text-decoration: underline; }
-.chat-rail-needs-dot { flex: none; width: 8px; height: 8px; border-radius: var(--gg-radius-full); background: var(--gg-color-warning); }
-.chat-rail-needs-title { flex: none; color: var(--gg-color-warning); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
+.chat-rail-needs-dot { flex: none; width: 8px; height: 8px; border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
+.chat-rail-needs-title { flex: none; color: var(--gg-color-accent-ink); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
 .chat-rail-needs-row .chat-rail-card-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; text-align: left; }
 .chat-rail-needs-show { flex: none; color: var(--gg-color-accent-ink); font-size: var(--gg-text-meta); }
 /* Compact context lives in the header, where it cannot cover an answer or chart. */
@@ -2051,7 +2068,7 @@ button.sent-image { cursor: zoom-in; }
 
 /* Approval card (D3): one read-only tool waits for the user's OK; it settles into one line. */
 .approval-cards { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 var(--gg-space-3); }
-.approval-card { display: grid; gap: var(--gg-space-2); max-width: 640px; padding: var(--gg-space-4); border: 1px solid var(--gg-color-warning); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.approval-card { display: grid; gap: var(--gg-space-2); max-width: none; padding: var(--gg-space-4); border: 1px solid var(--gg-color-accent); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .approval-card header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gg-space-3); }
 .approval-card header strong { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-medium); }
 .approval-card-clock { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -2072,7 +2089,6 @@ button.sent-image { cursor: zoom-in; }
 
 /* Approval card (D3): the two everyday answers side by side, the lasting one below. */
 .approval-card-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
-.approval-card-actions > .approval-card-always { flex-basis: 100%; justify-content: flex-start; }
 .approval-card:focus { outline: none; }
 .approval-card:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
 /* Under the step that waits (S8, D3): indented with the step's text; a waiting card lifts the list's height cap. */
@@ -2083,7 +2099,7 @@ button.sent-image { cursor: zoom-in; }
 .chat-progress-approvals .approval-card { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 /* Question card (ask_user): the agent asks one thing mid-reply; options, the recommended one marked, and free text. It settles into one line. */
 .question-cards { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 var(--gg-space-3); }
-.question-card { display: grid; gap: var(--gg-space-3); max-width: 640px; padding: var(--gg-space-4); border: 1px solid var(--gg-color-accent); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.question-card { display: grid; gap: var(--gg-space-3); max-width: none; padding: var(--gg-space-4); border: 1px solid var(--gg-color-accent); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .question-card header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gg-space-3); }
 .question-card header strong { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-medium); }
 .question-card-clock { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -2163,3 +2179,6 @@ button.sent-image { cursor: zoom-in; }
 /* Watch all n: one press watches what you follow with its class defaults. */
 .watch-all-offer { display: grid; justify-items: start; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .watch-all-offer p { margin: 0; }
+
+/* The recommended answer is an outlined option with a primary edge, not a filled slab (chat design change 12). */
+.question-card .question-card-option[data-recommended] { border-color: var(--gg-color-text-primary); }

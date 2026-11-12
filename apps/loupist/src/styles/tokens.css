@@ -282,7 +282,7 @@
 .gg-num, table, .chat-receipt, .map-stats, .briefing-sections, .needs-attention, .command-palette-row small, .market-status { font-variant-numeric: tabular-nums; }
 :root:lang(ko) { word-break: keep-all; overflow-wrap: anywhere; }
 /* The UI font has no Hangul: Apple SD Gothic Neo rounds 450/520 up to Medium/SemiBold, so Korean reads heavier than Latin. */
-:root:lang(ko) { --gg-weight-regular: 400; --gg-weight-medium: 500; }
+:root:lang(ko) { --gg-weight-regular: 400; --gg-weight-medium: 500; --gg-size-prose-measure: 62ch; --gg-leading-reading: 28px; }
 * { box-sizing: border-box; }
 html, body, #root { min-height: 100%; margin: 0; }
 body {

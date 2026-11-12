@@ -35,7 +35,7 @@ it("switches the morning message language without changing the Loupist name", as
   await act(async () => { await i18n.changeLanguage("en-XA"); });
   expect(screen.getByText("My research")).toBeVisible();
   const buttons = screen.getAllByRole("button");
-  expect(buttons).toHaveLength(3);
+  expect(buttons).toHaveLength(4);
   expect(screen.getByRole("article").querySelector(".morning-lead")?.textContent).toMatch(/^⟦.*⟧$/);
   for (const button of buttons) expect(button.textContent).toMatch(/^⟦.*⟧$/);
   fireEvent.click(buttons[0]!);
