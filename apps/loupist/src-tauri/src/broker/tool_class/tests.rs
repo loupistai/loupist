@@ -142,7 +142,9 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         );
         let after_text = if mcp {
             AfterText::CustomPaused
-        } else if SCHEDULE_CHANGES.contains(&method) {
+        } else if SCHEDULE_CHANGES.contains(&method)
+            || matches!(method, M::ScheduleDelete | M::ScheduleStop)
+        {
             AfterText::Paused
         } else {
             AfterText::Open

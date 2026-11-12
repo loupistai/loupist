@@ -920,7 +920,8 @@ fn char_windows(text: &str, size: usize) -> impl Iterator<Item = String> + '_ {
 /// Every network read, connection call and standing-work change
 /// (`ToolMethod::safety`).
 fn outbound_capable(method: ToolMethod, _params: &Value) -> bool {
-    method.safety().reach == Reach::Outbound
+    let safety = method.safety();
+    safety.reach == Reach::Outbound || safety.after_text == AfterText::Paused
 }
 
 /// The weaker tier keeps research reads (web, market data, Memory, files,
@@ -1110,6 +1111,8 @@ mod tests {
             // Its model-chosen id is a path segment on api.llama.fi.
             ToolMethod::DefillamaRead,
             ToolMethod::ScheduleRunNow,
+            ToolMethod::ScheduleDelete,
+            ToolMethod::ScheduleStop,
         ] {
             assert!(matches!(
                 taint.enforce(method, &injected),
@@ -1196,6 +1199,8 @@ mod tests {
             (ToolMethod::ScheduleUpdate, json!({})),
             (ToolMethod::ScheduleSetStatus, json!({})),
             (ToolMethod::ScheduleRunNow, json!({})),
+            (ToolMethod::ScheduleDelete, json!({})),
+            (ToolMethod::ScheduleStop, json!({})),
         ] {
             assert!(
                 matches!(

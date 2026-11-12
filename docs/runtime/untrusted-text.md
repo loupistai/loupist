@@ -9,7 +9,8 @@ tier pauses and which results raise a tier are their `ToolMethod::safety` rows
 `web_fetch`, `dart_filing_read` or bundled OpenBB data result outside the reviewed
 numeric-only list (`NUMERIC_ONLY_OPENBB_TOOLS`; profiles, filing documents, transcripts and
 news raise it, prices and statements do not), Rust refuses custom-connection calls
-and schedule create, update, status and Run now for the rest of the turn with
+and every schedule change, including create, update, status, Run now, delete and
+stop, for the rest of the turn with
 `untrusted_text_paused`. `run_python` stays allowed on every host, without a card or override.
 Native `write` and `edit` refuse an instruction file, and a file with another
 name on disk (a hard link), for the reply; native file tools stay inside the
@@ -25,7 +26,8 @@ checked against it.
 The model's copy of that text, and of custom-connection results, is wrapped in
 `<<untrusted id=… source="…">>` … `<<end untrusted id=…>>` with a random
 per-delivery id; retained captures keep the original bytes. A custom-connection
-result still raises the stronger outbound pause above.
+result still raises the stronger outbound pause above, including local schedule
+deletion and stopping.
 
 Third-party text that comes back from retained material raises the tier and is
 wrapped the same way (`tool_executor/returning.rs`). A `world_read` of a saved

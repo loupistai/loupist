@@ -752,6 +752,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn third_party_text_pauses_delete_and_stop_without_changing_tasks() {
+        let temp = tempfile::tempdir().unwrap();
+        let (executor, policy) = fixture(&temp, true, "home-loupist-a");
+        let task = executor
+            .execute(
+                &policy,
+                ToolMethod::ScheduleCreate,
+                create("review", "fresh"),
+            )
+            .await
+            .unwrap();
+        executor.capture.turn_taint.mark_untrusted_text();
+        for (method, params) in [
+            (
+                ToolMethod::ScheduleDelete,
+                json!({"task_id":task["task_id"],"expected_revision":task["revision"]}),
+            ),
+            (
+                ToolMethod::ScheduleStop,
+                json!({"task_id":task["task_id"],"run_id":"not-started"}),
+            ),
+        ] {
+            assert!(
+                matches!(
+                    executor.execute(&policy, method, params).await,
+                    Err(BrokerError::UntrustedTextPaused)
+                ),
+                "{method:?}"
+            );
+        }
+        let stored = service::get(
+            &executor.state,
+            "loupist-a",
+            task["task_id"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(json!(stored.status), task["status"]);
+        assert_eq!(json!(stored.revision), task["revision"]);
+    }
+
+    #[tokio::test]
     async fn schedule_tools_manage_multiple_tasks_with_memory_off_and_preserve_settings() {
         let temp = tempfile::tempdir().unwrap();
         let (executor, policy) = fixture(&temp, true, "home-loupist-a");
