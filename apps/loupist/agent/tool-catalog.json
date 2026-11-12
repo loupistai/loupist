@@ -654,6 +654,7 @@
           },
           "entities": {
             "type": "array",
+            "description": "Map entity ids this judgment is about, exactly as a world_search or world_read result returned them in this reply. Omit it when the company or asset is not in the Map; never pass a name or ticker.",
             "maxItems": 30,
             "uniqueItems": true,
             "items": {
