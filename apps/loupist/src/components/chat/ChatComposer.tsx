@@ -25,6 +25,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useInputModality } from "@/lib/inputModality";
+import { skillPresentation } from "@/lib/agentSkills";
 import { formatNumber } from "@/i18n/format";
 import { composeSubmission, composerChipInlineText, contextGroupLabel, rankText, type ComposerChip, type ContextOption } from "../../chat/composerChips";
 import type { FileUIPart } from "ai";
@@ -626,12 +627,14 @@ export function ChatComposer({
     const query = activeTrigger.query;
     const commandQuery = query.trim().toLowerCase();
     const skillOptions = skills.flatMap((skill) => {
-      const score = rankText(query, [skill.name, skill.description, skill.id]);
+      // Bundled Skills show their localized name, as Settings › Skills does; the chip still invokes the id.
+      const { name } = skillPresentation(skill);
+      const score = rankText(query, [name, skill.name, skill.description, skill.id]);
       return score ? [{
         id: `skill:${skill.id}`,
         kind: "skill" as const,
-        label: skill.name,
-        name: skill.name,
+        label: name,
+        name,
         // Bundled Skills read a short line for people; the agent-facing description stays in the prompt metadata.
         detail: (t as unknown as (key: string, options: { defaultValue: string }) => string)(`skillBlurb.${skill.id}`, { defaultValue: skill.description }),
         group: t("chatComposer.skills"),
