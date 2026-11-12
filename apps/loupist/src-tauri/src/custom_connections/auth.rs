@@ -395,6 +395,15 @@ impl AuthorizationAttempt {
     }
 
     pub fn validate_callback(&self, callback: &Url) -> Result<String, ConnectionError> {
+        if callback.scheme() != "http"
+            || callback.host_str() != Some("127.0.0.1")
+            || !callback.username().is_empty()
+            || callback.password().is_some()
+            || callback.fragment().is_some()
+            || callback.path() != "/callback"
+        {
+            return Err(ConnectionError::InvalidAuthorization);
+        }
         let mut query = BTreeMap::new();
         for (key, value) in callback.query_pairs() {
             if query.insert(key.into_owned(), value.into_owned()).is_some() {
@@ -526,6 +535,20 @@ async fn receive_callback(
             }
             let request =
                 std::str::from_utf8(&bytes).map_err(|_| ConnectionError::InvalidAuthorization)?;
+            let expected_host = listener
+                .local_addr()
+                .map_err(|_| ConnectionError::Authorization)?
+                .to_string();
+            let hosts: Vec<_> = request
+                .lines()
+                .skip(1)
+                .filter_map(|line| line.split_once(':'))
+                .filter(|(name, _)| name.eq_ignore_ascii_case("host"))
+                .map(|(_, value)| value.trim())
+                .collect();
+            if hosts != [expected_host.as_str()] {
+                return Err(ConnectionError::InvalidAuthorization);
+            }
             let target = request
                 .lines()
                 .next()
@@ -826,6 +849,70 @@ mod tests {
                 .append_pair("iss", &meta.issuer);
             assert!(attempt.validate_callback(&wrong_state).is_err());
         }
+    }
+
+    #[test]
+    fn callback_origin_and_path_must_match_the_loopback_receiver() {
+        let attempt = AuthorizationAttempt::new(&metadata("https://issuer.example"));
+        for (base, allowed) in [
+            ("http://127.0.0.1:1234/callback", true),
+            ("https://127.0.0.1/callback", false),
+            ("http://evil.example/callback", false),
+            ("http://127.0.0.1.evil.example/callback", false),
+            ("http://user@127.0.0.1/callback", false),
+            ("http://127.0.0.1/other", false),
+            ("http://127.0.0.1/callback#fragment", false),
+        ] {
+            let mut callback = Url::parse(base).unwrap();
+            callback
+                .query_pairs_mut()
+                .append_pair("state", &attempt.state)
+                .append_pair("code", "fixture")
+                .append_pair("iss", &attempt.issuer);
+            assert_eq!(
+                attempt.validate_callback(&callback).is_ok(),
+                allowed,
+                "{base}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn callback_refuses_foreign_and_duplicate_host_headers_without_consuming_attempt() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let attempt = AuthorizationAttempt::new(&metadata("https://issuer.example"));
+        let mut callback = Url::parse(&format!("http://{address}/callback")).unwrap();
+        callback
+            .query_pairs_mut()
+            .append_pair("state", &attempt.state)
+            .append_pair("code", "fixture")
+            .append_pair("iss", &attempt.issuer);
+        let client = async {
+            for host in [
+                "evil.example".to_owned(),
+                format!("{address}\r\nHost: {address}"),
+            ] {
+                let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+                stream
+                    .write_all(
+                        format!(
+                            "GET {}?{} HTTP/1.1\r\nHost: {host}\r\n\r\n",
+                            callback.path(),
+                            callback.query().unwrap()
+                        )
+                        .as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+                let mut reply = String::new();
+                stream.read_to_string(&mut reply).await.unwrap();
+                assert!(reply.starts_with("HTTP/1.1 400"));
+            }
+            assert!(reqwest::get(callback).await.unwrap().status().is_success());
+        };
+        let (result, ()) = tokio::join!(receive_callback(&listener, &attempt), client);
+        assert_eq!(result.unwrap(), "fixture");
     }
 
     #[tokio::test]
