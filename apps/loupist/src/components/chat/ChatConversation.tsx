@@ -70,8 +70,6 @@ type Props = {
   bridge?: LoupistBridge;
   /** The active run, for the status pill shown while the reader is scrolled up. */
   run?: ChatRunStatus;
-  /** The Loupist's focus, for the morning message's questions. */
-  loupistFocus?: string;
   /** The Loupist's home Thread: results arrive here and the morning message closes it. */
   home?: boolean;
   /** An empty topic Chat offers starter questions unless its composer already holds a question (Look back). */
@@ -112,7 +110,6 @@ export function ChatConversation({
   onTeachFeedback,
   feedbackBusy = false,
   run,
-  loupistFocus,
   home = false,
   offerQuestions = true,
   asOf,
@@ -208,7 +205,6 @@ export function ChatConversation({
     bridge={bridge}
     loupistId={loupistId}
     loupistName={loupistName}
-    focus={loupistFocus}
     onAsk={onSuggestion}
     deliveredRunIds={home ? deliveredRunIds : undefined}
     onSettled={() => setMorningSettled(true)}

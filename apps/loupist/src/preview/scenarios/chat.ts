@@ -21,6 +21,13 @@ export const chatScenarios: PreviewScenario[] = [
     ...base(id, title, () => select('textarea[data-chat-composer]') && select('.morning-message[aria-busy="false"] .morning-ask')),
     setup: bridge => prepareMorningFixture(bridge, state),
   })),
+  // First run: nothing followed and no briefing on, so the home message offers three first moves.
+  { ...base("thread-first-run-setup", "Morning message: a new user's first moves", () => select('.morning-message[aria-busy="false"] [data-morning-setup]')),
+    setup: async bridge => {
+      await prepareMorningFixture(bridge, "first-day");
+      bridge.watchlistList = async () => [];
+      bridge.briefingSettingsGet = async () => ({ enabled: false, task: null, schedule: { kind: "weekly", days: [1, 2, 3, 4, 5], hour: 8, minute: 0, timezone: "UTC" } });
+    } },
   // W15.9e: the event strip above the lead, and the same message with nothing ahead (no strip).
   { ...base("thread-upcoming", "Morning message: what is coming up for what you follow", () => select('.morning-message[aria-busy="false"] .morning-upcoming li:nth-child(5) .morning-upcoming-row')), setup: bridge => prepareUpcomingFixture(bridge, "events") },
   { ...base("thread-upcoming-none", "Morning message: nothing ahead, so no event strip", () => {

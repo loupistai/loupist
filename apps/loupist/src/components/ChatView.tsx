@@ -859,7 +859,6 @@ export function ChatView({
     onWorldChanged={onWorldChanged}
     onSuggestion={askFromMorningMessage}
     onQuote={onChipsChange ? quoteToComposer : undefined}
-    loupistFocus={loupist.philosophy}
     loupistTemplate={loupist.template}
     guiding={guidingTexts}
     home={activeThread?.home}

@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { ArrowRightIcon } from "lucide-react";
 import type { ChatEvidenceRef, LoupistBridge, LoupistCapabilityBinding, LoupistTemplateId } from "../../types";
 import type { GrowthEvent, JournalRecord, KnowledgeMap } from "../../contracts/knowledge";
-import type { InboxItem } from "../../contracts/scheduled";
+import type { BriefingSettings, InboxItem } from "../../contracts/scheduled";
 import type { WatchlistEntry } from "../../contracts/userContext";
 import { lastSeenAt } from "../../app/loupistVisit";
 import { firstSentence, localDayMs, morningMessage, sinceDayOptions, type CheckBullet, type FollowedBullet, type MorningQuestion } from "../../chat/morningMessage";
@@ -18,6 +18,7 @@ import { localAssetName } from "../assets/assetName";
 import { datedWatchSentence, newestFirst } from "../assets/watchText";
 import type { WatchEvent } from "../../contracts/watch";
 import { useSeenAfter } from "./ThreadWatch";
+import { HoldingsSheet } from "../holdings/HoldingsSheet";
 
 const t = i18n.getFixedT(null, "chat");
 /** The Briefings tab owns the name of the scheduled briefing. */
@@ -70,7 +71,6 @@ type Props = {
   bridge: LoupistBridge;
   loupistId: string;
   loupistName: string;
-  focus?: string;
   /** Puts the question into the composer; it never sends. */
   onAsk: (question: string) => void;
   /**
@@ -94,7 +94,7 @@ type Props = {
  * last visit, the latest briefing, Journal checks, and three questions, all
  * from data on this computer. It is not saved; the first message replaces it.
  */
-export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, mode = "full", deliveredRunIds, onSettled, asOf, template }: Props) {
+export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "full", deliveredRunIds, onSettled, asOf, template }: Props) {
   const go = useGo();
   const openAsset: OpenAssetPage | null = go ? (target) => go({ kind: "asset", target }) : null;
   const openMap = () => go?.({ kind: "page", location: { loupistId, surface: "world", view: { followCurrent: true, whatsNew: true } } });
@@ -139,13 +139,21 @@ export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, m
 
   const sinceLabel = lastSeenAtMs === undefined ? "" : formatDate(lastSeenAtMs, sinceDayOptions(lastSeenAtMs, nowMs));
   const briefing = inbox.value && deliveredRunIds?.includes(inbox.value.runId) ? null : inbox.value;
+  // A free-text focus reads badly inside "What matters in … this week?"; a preset names its subject.
+  const focusSubject = template && template !== "custom" ? tDynamic(`today.focusSubject.${template}`) : undefined;
   const message = useMemo(() => morningMessage({
-    language, nowMs, lastSeenAtMs, focus,
+    language, nowMs, lastSeenAtMs, focus: focusSubject,
     map: map.value, events: events.value, briefing, journal: journal.value, watchlist: watchlist.value, assets: assets.value, watchEvents: alerts.value, upcoming: upcoming.value,
-  }, sinceLabel), [language, nowMs, lastSeenAtMs, focus, map.value, events.value, briefing, journal.value, watchlist.value, assets.value, alerts.value, upcoming.value, sinceLabel]);
+  }, sinceLabel), [language, nowMs, lastSeenAtMs, focusSubject, map.value, events.value, briefing, journal.value, watchlist.value, assets.value, alerts.value, upcoming.value, sinceLabel]);
+
+  // First run: nothing followed and no briefing yet, so the home message teaches three first moves.
+  const offersSetup = mode === "full" && !asOf;
+  const briefingSettings = useLoad<BriefingSettings | null>(async () => offersSetup ? await bridge.briefingSettingsGet({ loupistId }).catch(() => null) : null, `briefing:${loupistId}:${offersSetup}`);
+  const [holdingsOpen, setHoldingsOpen] = useState(false);
+  const setup = offersSetup && watchlist.value?.length === 0 && !inbox.value && briefingSettings.value?.enabled === false;
 
   const changedLoading = map.status === "loading" || events.status === "loading";
-  const allSettled = [map, events, inbox, journal, watchlist, assets, alerts, upcoming, connections].every((load) => load.status !== "loading");
+  const allSettled = [map, events, inbox, journal, watchlist, assets, alerts, upcoming, connections, briefingSettings].every((load) => load.status !== "loading");
   // One name per asset in this language, from the Map and pages already read for this message.
   const nameOf = (asset: Pick<AssetDelta, "assetId" | "symbol" | "market" | "name" | "entityId">) => localAssetName(asset, { nodes: map.value?.nodes, pages: assets.value }, language);
   // Alerts shown in the bullet for a second are seen and leave Needs attention.
@@ -237,6 +245,17 @@ export function MorningMessage({ bridge, loupistId, loupistName, focus, onAsk, m
       {message.upcoming.length && map.status !== "loading" && assets.status !== "loading" ? <UpcomingStrip events={message.upcoming} loupistId={loupistId} nameOf={nameOf} onOpenAsset={openAsset} onOpenJournal={openJournal} /> : null}
       {allSettled ? <p className="morning-lead">{lead}</p> : leadSlow ? <p className="morning-lead"><span className="morning-skeleton" /></p> : null}
       {bullets.length ? <ul className="morning-bullets">{bullets.map((bullet) => <li key={bullet.key}>{bullet.node}</li>)}</ul> : null}
+      {allSettled && setup ? <section className="morning-setup" data-morning-setup aria-labelledby={`${reasonIds}-setup`}>
+        <p className="morning-ask-label" id={`${reasonIds}-setup`}>{t("today.setup.label")}</p>
+        <p className="morning-setup-body">{tBriefings("emptyBody")}</p>
+        <ul className="morning-setup-chips">
+          {(["follow", "briefing", "principle"] as const).map((key) => <li key={key}>
+            <button type="button" className="morning-setup-chip" data-setup={key} onClick={() => onAsk(t(`today.setup.${key}`))}>{t(`today.setup.${key}`)}</button>
+          </li>)}
+        </ul>
+        <button type="button" className="morning-link" data-setup="holdings" onClick={() => setHoldingsOpen(true)}>{t("today.setup.holdings")}</button>
+        <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={setHoldingsOpen} />
+      </section> : null}
       {ask}
     </article>
   );

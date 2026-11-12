@@ -991,7 +991,7 @@
     "checkDue": "{{date}}까지 확인할 것: {{claim}}",
     "checkDueToday": "오늘 확인할 것: {{claim}}",
     "checkLate": "{{date}} <0>기한 지남</0>: {{claim}}",
-    "review": "확인",
+    "review": "검토",
     "reviewCheck": "확인할 것 검토하기",
     "youCouldAsk": "이렇게 물어볼 수 있어요",
     "askGreeting": "무엇을 리서치해 볼까요?",
@@ -1027,6 +1027,23 @@
       "exDividend": "배당락일",
       "recordDate": "배당 기준일",
       "check": "확인할 것: {{claim}}"
+    },
+    "setup": {
+      "label": "시작하기",
+      "follow": "AAPL과 005930을 팔로우해 줘",
+      "briefing": "평일 아침 8시에 브리핑을 켜 줘",
+      "principle": "기억해 줘: 마진 회복을 믿기 전에 증설 비용이 일시적인지 확인하기",
+      "holdings": "보유 자산 가져오기(CSV)"
+    },
+    "focusSubject": {
+      "portfolio": "내 포트폴리오",
+      "semiconductors": "반도체",
+      "dividends": "배당주",
+      "technology": "미국 빅테크",
+      "crypto": "크립토",
+      "macro": "매크로와 금리",
+      "commodities": "원자재",
+      "realAssets": "실물자산"
     }
   },
   "toolProgress": {

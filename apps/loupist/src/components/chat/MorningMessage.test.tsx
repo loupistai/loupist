@@ -167,4 +167,40 @@ describe("Morning message", () => {
     expect(screen.getByRole("button", { name: "한울정밀" })).toBeVisible();
     expect(within(screen.getByRole("region", { name: "이렇게 물어볼 수 있어요" })).getAllByRole("button")[0]).toHaveTextContent(/^목요일 이후 한울정밀에 무슨 변화가 있었어\?/);
   });
+  it("teaches three first moves when nothing is followed and no briefing is on, filling the composer without sending", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const empty = bridge({
+      inboxList: vi.fn(async () => ({ items: [], nextCursor: null })),
+      briefingSettingsGet: vi.fn(async () => ({ enabled: false, schedule: null, task: null })),
+    } as unknown as Partial<LoupistBridge>);
+    const { handlers } = renderMessage(empty);
+    const setup = await screen.findByRole("region", { name: "Get set up" });
+    const chips = within(setup).getAllByRole("button");
+    expect(chips.map((chip) => chip.textContent)).toEqual([
+      "Follow AAPL and 005930",
+      "Turn on a weekday morning briefing at 8",
+      "Remember: check whether capacity costs are temporary before trusting margin recovery",
+      "Import holdings (CSV)",
+    ]);
+    await user.click(chips[1]!);
+    expect(handlers.onAsk).toHaveBeenCalledWith("Turn on a weekday morning briefing at 8");
+  });
+
+  it("leaves setup out once a briefing is on, and asks about a preset's subject but not a free-text focus", async () => {
+    const on = bridge({
+      knowledgeGrowthEvents: vi.fn(async () => ({ events: [], nextCursor: null })),
+      inboxList: vi.fn(async () => ({ items: [], nextCursor: null })),
+      journalList: vi.fn(async () => []),
+      briefingSettingsGet: vi.fn(async () => ({ enabled: true, schedule: null, task: null })),
+    } as unknown as Partial<LoupistBridge>);
+    const handlers = { onAsk: vi.fn() };
+    const preset = renderWithOpen(<MorningMessage bridge={on} loupistId="loupist" loupistName="Chip Loupist" template="semiconductors" {...handlers} />);
+    await screen.findByRole("region", { name: "You could ask" });
+    expect(screen.queryByRole("region", { name: "Get set up" })).toBeNull();
+    expect(screen.getByText("What matters in semiconductors this week?")).toBeVisible();
+    preset.unmount();
+    renderWithOpen(<MorningMessage bridge={on} loupistId="loupist" loupistName="Desk" template="custom" {...handlers} />);
+    await screen.findByRole("region", { name: "You could ask" });
+    expect(screen.queryByText(/^What matters in /)).toBeNull();
+  });
 });
