@@ -101,8 +101,8 @@ pub(crate) fn fixed_request_spacing() -> futures_util::future::BoxFuture<'static
 pub enum FinanceDataError {
     #[error("finance data request is invalid: {0}")]
     InvalidQuery(&'static str),
-    #[error("finance data provider request failed: {0}")]
-    Network(#[from] reqwest::Error),
+    #[error("finance data provider request failed")]
+    Network(#[source] reqwest::Error),
     #[error("finance data provider network request failed: {0}")]
     NetworkSafe(&'static str),
     /// The request never reached the provider: DNS, connect or no route.
@@ -135,6 +135,14 @@ pub enum FinanceDataError {
     KisResponseContract { operation: String, detail: String },
     #[error("finance data configuration is invalid: {0}")]
     Configuration(String),
+}
+
+impl From<reqwest::Error> for FinanceDataError {
+    fn from(error: reqwest::Error) -> Self {
+        // Provider URLs can carry credentials in their query. Keep those out
+        // of both model-facing Display text and developer Debug diagnostics.
+        Self::Network(error.without_url())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
