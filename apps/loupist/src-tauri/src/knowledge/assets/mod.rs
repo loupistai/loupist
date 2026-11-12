@@ -2375,9 +2375,20 @@ pub fn page_view(
     since_ms: i64,
     context: &ViewContext,
 ) -> KnowledgeResult<AssetPageView> {
-    let mut page = get_page(tx, loupist_id, asset_id)?.ok_or(KnowledgeError::NotFound)?;
     let world = world(tx, loupist_id)?;
-    let map = match &world {
+    Ok(page_view_with_world(tx, loupist_id, asset_id, since_ms, context, world.as_ref())?.0)
+}
+
+fn page_view_with_world(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    asset_id: &str,
+    since_ms: i64,
+    context: &ViewContext,
+    world: Option<&WorldSnapshotBody>,
+) -> KnowledgeResult<(AssetPageView, PageRecord)> {
+    let mut page = get_page(tx, loupist_id, asset_id)?.ok_or(KnowledgeError::NotFound)?;
+    let map = match world {
         Some(body) => {
             let matched = match_entity(body, &page);
             set_entity(
@@ -2506,7 +2517,7 @@ pub fn page_view(
         }
     });
     let since_day = day_of_ms(since_ms);
-    Ok(AssetPageView {
+    let view = AssetPageView {
         asset_id: page.asset_id.clone(),
         symbol: page.symbol.clone(),
         market: page.market.clone(),
@@ -2532,7 +2543,8 @@ pub fn page_view(
         refreshed_at_ms: page.refreshed_at_ms,
         created_at_ms: page.created_at_ms,
         revision: page.revision,
-    })
+    };
+    Ok((view, page))
 }
 
 /// Deltas for one asset or for every page, ordered for the Thread and briefings:
@@ -2781,20 +2793,16 @@ pub fn model_read(
     };
     // A reason or line the user wrote after the cutoff was not known then.
     let written = |at_ms: i64| as_of.is_none_or(|cutoff| day_of_ms(at_ms) <= cutoff);
-    let view = page_view(
+    let world = world(tx, loupist_id)?;
+    let (view, page) = page_view_with_world(
         tx,
         loupist_id,
         asset_id,
         chrono::Utc::now().timestamp_millis() - 30 * DAY_MS,
         context,
+        world.as_ref(),
     )?;
-    let delta = delta_for(
-        tx,
-        loupist_id,
-        &get_page(tx, loupist_id, asset_id)?.ok_or(KnowledgeError::NotFound)?,
-        world(tx, loupist_id)?.as_ref(),
-        0,
-    )?;
+    let delta = delta_for(tx, loupist_id, &page, world.as_ref(), 0)?;
     let rows: Vec<Value> = delta
         .rows
         .iter()
