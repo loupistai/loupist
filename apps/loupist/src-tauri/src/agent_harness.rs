@@ -1016,16 +1016,13 @@ impl AgentHostContext {
     }
 }
 
-/// Map composer `@entry_id` mentions onto runtime component ids that the agent
-/// extension can preload. Unknown or disabled ids are ignored.
+/// Built-ins and enabled web research are active on every surface. Composer
+/// mentions additionally preload enabled data connections; unknown ids are ignored.
 pub fn preload_component_ids_for_mentions(
     mentioned_entry_ids: &[String],
     capability_ids: &[String],
     profile: &AgentRuntimeProfile,
 ) -> Result<Vec<String>, AgentHarnessError> {
-    if mentioned_entry_ids.is_empty() {
-        return Ok(Vec::new());
-    }
     let enabled = capability_ids
         .iter()
         .cloned()
@@ -1036,7 +1033,12 @@ pub fn preload_component_ids_for_mentions(
         .iter()
         .map(|entry| (entry.id.as_str(), entry))
         .collect::<std::collections::BTreeMap<_, _>>();
-    let mut preload = std::collections::BTreeSet::new();
+    let mut preload = profile
+        .components
+        .iter()
+        .filter(|component| component.connection.is_none() || component.id == "web-research")
+        .map(|component| component.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
     for entry_id in mentioned_entry_ids {
         if !enabled.contains(entry_id) {
             continue;
@@ -2152,11 +2154,41 @@ mod tests {
             &profile,
         )
         .unwrap();
-        assert_eq!(preload, ["openbb", "opendart"]);
+        assert!(preload.contains(&"openbb".into()) && preload.contains(&"opendart".into()));
+        assert!(profile
+            .components
+            .iter()
+            .filter(|component| component.connection.is_none())
+            .all(|component| preload.contains(&component.id)));
         let mentioned = mentioned_connections(&["fred.macro".into(), "missing".into()], &profile);
         assert_eq!(mentioned.len(), 1);
         assert_eq!(mentioned[0].capability_id, "openbb");
         assert_eq!(mentioned[0].provider_ids, ["fred"]);
+    }
+
+    #[test]
+    fn every_surface_preloads_builtins_but_unattended_tools_stay_allowlisted() {
+        let profile =
+            AgentRuntimeProfile::new("chat", true, true, &["community.web-research".into()])
+                .unwrap();
+        let scheduled = profile.clone().with_schedule_management(false);
+        for profile in [profile, scheduled] {
+            let preload = preload_component_ids_for_mentions(&[], &[], &profile).unwrap();
+            assert!(profile
+                .components
+                .iter()
+                .filter(|c| c.connection.is_none() || c.id == "web-research")
+                .all(|c| preload.contains(&c.id)));
+            for tool in profile
+                .core_tool_names
+                .iter()
+                .chain(profile.components.iter().flat_map(|c| c.tool_names.iter()))
+            {
+                if !profile.core_tool_names.iter().any(|name| name == "read") {
+                    assert!(crate::briefings::policy::allowed_name(tool), "{tool}");
+                }
+            }
+        }
     }
 
     #[test]

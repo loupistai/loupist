@@ -25,6 +25,10 @@ research. The data does not become a user instruction.
 Native file guidance names only admitted file/instruction/Skill paths. Bundled
 Skill reads have their own read-only root; adjacent agent internals stay private.
 
+Built-in capability packs and enabled web research preload on every surface;
+unattended profiles still expose only their fixed allowlist. The runtime index
+lists data connections only, and only connections need `capability_load`.
+
 ## Investment judgment
 
 The Loupist answers investment-judgment questions with its own clear or conditional

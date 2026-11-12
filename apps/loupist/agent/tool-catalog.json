@@ -264,7 +264,7 @@
         "running": "Preparing a research tool",
         "done": "Prepared a research tool"
       },
-      "description": "Activate one enabled connection or built-in pack by exact id. Reuse tools already loaded in this Chat. Load the same id again when the host says those tools are unavailable or tells you to reconnect. Loading cannot grant permissions."
+      "description": "Load one data connection from the runtime section by its exact id before the first use of its tools in this Chat. Every other tool in your list is already active and never needs loading. Load the same id again only when a tool result says the connection stopped or tells you to reconnect. Loading cannot grant permissions."
     },
     {
       "name": "connection_setup",
@@ -3315,7 +3315,7 @@
       "permission": "always",
       "component": "documents",
       "label": "Publish a Markdown artifact",
-      "description": "Stage a Markdown document in this Chat for reading beside the conversation. Use for a useful standalone document, not raw command output or calculation logs, which appear in work progress. Use ordinary workspace files for local reports and exports. A turn may publish up to 4 distinct documents or charts; do not publish the same artifact twice. Use mode=revise only after artifact_read of expected_revision. Use the lazily loaded chart_publish tool for charts. The artifact is saved only if the turn completes.",
+      "description": "Stage a Markdown document in this Chat for reading beside the conversation. Use for a useful standalone document, not raw command output or calculation logs, which appear in work progress. Use ordinary workspace files for local reports and exports. A turn may publish up to 4 distinct documents or charts; do not publish the same artifact twice. Use mode=revise only after artifact_read of expected_revision. Use chart_publish for charts. The artifact is saved only if the turn completes.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,

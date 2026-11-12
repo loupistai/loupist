@@ -1257,29 +1257,26 @@
           "memory": "off",
           "turns": [
             {
-              "user": "Load the datasets capability, convert data/brindle-units.csv to JSON if dataset_import needs JSON, then call dataset_import and dataset_query. Report the sum of the units column. End with a JSON object {\"metrics\":{\"total_units\": <number>}} and no text after it.",
+              "user": "Convert data/brindle-units.csv to outputs/brindle-units.json, import that JSON with dataset_import, then query only the units column with dataset_query. Report the sum of the units column. End with a JSON object {\"metrics\":{\"total_units\": <number>}} and no text after it.",
               "expect": {
                 "trace": [
                   {
-                    "assert": "capability_loaded",
-                    "id": "datasets",
-                    "metric": "tool_validity"
+                    "assert": "tool_called",
+                    "tool": "dataset_import",
+                    "metric": "task_success",
+                    "args": {
+                      "path": "outputs/brindle-units.json"
+                    }
                   },
                   {
-                    "assert": "tool_called_before",
-                    "tools": [
-                      "capability_load",
-                      "dataset_import"
-                    ],
-                    "metric": "tool_validity"
-                  },
-                  {
-                    "assert": "tool_called_before",
-                    "tools": [
-                      "capability_load",
-                      "dataset_query"
-                    ],
-                    "metric": "tool_validity"
+                    "assert": "tool_called",
+                    "tool": "dataset_query",
+                    "metric": "task_success",
+                    "args": {
+                      "columns": [
+                        "units"
+                      ]
+                    }
                   }
                 ],
                 "answer": [
@@ -1321,27 +1318,22 @@
           "memory": "off",
           "turns": [
             {
-              "user": "Load the charts capability, then chart_publish one line chart titled Brindle quarterly revenue from these rows: 2025Q1 12, 2025Q2 15, 2025Q3 14, 2025Q4 18. The units are USD millions.",
+              "user": "Use chart_publish to publish one line chart titled Brindle quarterly revenue from these rows: 2025Q1 12, 2025Q2 15, 2025Q3 14, 2025Q4 18. The units are USD millions.",
               "expect": {
                 "trace": [
                   {
-                    "assert": "capability_loaded",
-                    "id": "charts",
-                    "metric": "tool_validity"
-                  },
-                  {
-                    "assert": "tool_called_before",
-                    "tools": [
-                      "capability_load",
-                      "chart_publish"
-                    ],
-                    "metric": "tool_validity"
+                    "assert": "tool_called",
+                    "tool": "chart_publish",
+                    "metric": "task_success",
+                    "args": {
+                      "title": "Brindle quarterly revenue"
+                    }
                   }
                 ],
                 "rubric": [
                   {
                     "id": "calls-chart-publish",
-                    "criterion": "The answer loads the charts capability and publishes one line chart of the four Brindle quarters.",
+                    "criterion": "The answer publishes one line chart of the four Brindle quarters.",
                     "metric": "task_success"
                   }
                 ]
@@ -1371,34 +1363,24 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "Load the file-capture capability and call workspace_capture on data/sable-harvest.md, then load memory-save and source_save it as a Source titled Sable harvest note. End with a JSON object {\"metrics\":{\"boxes\": <number>}} and no text after it.",
+              "user": "Call workspace_capture on data/sable-harvest.md, then source_save it as a Source titled Sable harvest note. End with a JSON object {\"metrics\":{\"boxes\": <number>}} and no text after it.",
               "expect": {
                 "trace": [
                   {
-                    "assert": "capability_loaded",
-                    "id": "file-capture",
-                    "metric": "tool_validity"
+                    "assert": "tool_called",
+                    "tool": "workspace_capture",
+                    "metric": "task_success",
+                    "args": {
+                      "path": "data/sable-harvest.md"
+                    }
                   },
                   {
-                    "assert": "tool_called_before",
-                    "tools": [
-                      "capability_load",
-                      "workspace_capture"
-                    ],
-                    "metric": "tool_validity"
-                  },
-                  {
-                    "assert": "capability_loaded",
-                    "id": "memory-save",
-                    "metric": "tool_validity"
-                  },
-                  {
-                    "assert": "tool_called_before",
-                    "tools": [
-                      "capability_load",
-                      "source_save"
-                    ],
-                    "metric": "tool_validity"
+                    "assert": "tool_called",
+                    "tool": "source_save",
+                    "metric": "task_success",
+                    "args": {
+                      "title": "Sable harvest note"
+                    }
                   }
                 ],
                 "answer": [
@@ -1734,13 +1716,7 @@
               "user": "Answer only from what had been published by 2026-03-10. Read https://fictional.example/noeul-paper/mill-update-march-2 and https://fictional.example/noeul-paper/mill-update-march-18, then tell me the Gwangyang mill's annual capacity as it was known then, in thousand tonnes.",
               "as_of": "2026-03-10",
               "expect": {
-                "trace": [
-                  {
-                    "assert": "capability_loaded",
-                    "id": "web-research",
-                    "metric": "tool_validity"
-                  }
-                ],
+                "trace": [],
                 "answer": [
                   {
                     "assert": "answer_not_matching",
@@ -2957,11 +2933,6 @@
                   {
                     "assert": "capability_loaded",
                     "id": "opendart",
-                    "metric": "tool_validity"
-                  },
-                  {
-                    "assert": "capability_loaded",
-                    "id": "web-research",
                     "metric": "tool_validity"
                   },
                   {
