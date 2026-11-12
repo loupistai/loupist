@@ -199,6 +199,11 @@ describe("Loupist · Chat workspace", () => {
     expect(within(workspace).getAllByRole("tab", { name: "example.com" })).toHaveLength(2);
 
     const address = within(workspace).getByRole("textbox", { name: "Web address" });
+    // Enter submits the address; Tab moves on to a visible control, not the screen-reader submit.
+    address.focus();
+    await user.tab();
+    expect(within(workspace).getByRole("button", { name: "Open" })).not.toHaveFocus();
+    expect(document.activeElement).toHaveAccessibleName(/Saved passage|Open in system browser/);
     await user.clear(address);
     await user.type(address, "example.org/next");
     await user.click(within(workspace).getByRole("button", { name: "Open" }));

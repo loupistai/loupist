@@ -37,6 +37,8 @@ export function mockWatchKinds(market: string, enabled: readonly WatchKind[] = [
 export class MockWatch implements WatchBridge {
   private readonly settings = new Map<string, WatchSettings>();
   private readonly events = new Map<string, WatchEvent[]>();
+  /** Per Loupist, the assets with a stored decision (see `decidedIn`). */
+  private readonly decided = new Map<string, Set<string>>();
   private readonly listeners = new Set<(event: { loupistId: string }) => void>();
   /** Preview: Check now resolves only when this is false. */
   checkHold = false;
@@ -51,6 +53,7 @@ export class MockWatch implements WatchBridge {
   /** Installs a Loupist's watch settings (and its alerts, newest first). */
   install(loupistId: string, settings: Partial<WatchSettings>, events: WatchEvent[] = []) {
     this.settings.set(loupistId, { loupistId, paused: false, consentOff: false, checking: false, watched: [], notWatched: [], ...clone(settings) });
+    this.decided.delete(loupistId);
     this.events.set(loupistId, clone(events));
     this.emit(loupistId);
   }
@@ -86,6 +89,7 @@ export class MockWatch implements WatchBridge {
     if (asset.revision !== request.expectedRevision) throw commandError("conflict", "The setting changed. Reload and try again.");
     const kind = asset.kinds.find(item => item.kind === request.kind);
     if (!kind) throw new Error("This kind does not apply to this asset.");
+    this.decidedIn(request.loupistId, settings).add(asset.assetId);
     if (kind.needsConnection && request.enabled) throw new Error(`Turn on ${kind.needsConnection.name} first.`);
     kind.enabled = request.enabled;
     asset.revision += 1;
@@ -105,28 +109,43 @@ export class MockWatch implements WatchBridge {
     return this.watchSettingsList({ loupistId });
   }
 
-  /** Mirrors the host's "Watch all": consent on, class defaults for assets with every kind off. */
+  /**
+   * Mirrors the host's "Watch all" (`apply_defaults_with_consent`): consent on, and the
+   * class defaults for each followed asset with no decision yet; an asset the user already
+   * decided on keeps its switches. Defaults are on whether or not their connection is, and
+   * every watched kind still missing one is reported in `needsConnections`.
+   */
   async watchDefaultsApply({ loupistId }: WatchDefaultsApplyRequest): Promise<WatchDefaultsApplyResult> {
     const settings = await this.current(loupistId);
+    const decided = this.decidedIn(loupistId, settings);
     settings.consentOff = false;
+    // Equity defaults; a class's kinds start off unless the Loupist was made from its template, which the mock does not know.
     const defaults = new Set<WatchKind>(["filings", "results", "dividends"]);
-    const needs = new Map<string, WatchDefaultsApplyResult["needsConnections"][number]>();
     for (const asset of [...settings.notWatched]) {
-      for (const kind of asset.kinds) {
-        if (!defaults.has(kind.kind)) continue;
-        if (kind.needsConnection) {
-          const key = `${kind.kind}:${kind.needsConnection.id}`;
-          const entry = needs.get(key) ?? { kind: kind.kind, connection: kind.needsConnection, assetIds: [] };
-          entry.assetIds.push(asset.assetId); needs.set(key, entry);
-        } else kind.enabled = true;
-      }
-      if (!asset.kinds.some(kind => kind.enabled)) continue;
+      if (decided.has(asset.assetId)) continue;
+      decided.add(asset.assetId);
+      for (const kind of asset.kinds) kind.enabled = defaults.has(kind.kind);
       asset.revision += 1;
+      if (!asset.kinds.some(kind => kind.enabled)) continue;
       settings.notWatched = settings.notWatched.filter(item => item !== asset);
       settings.watched.push(asset);
     }
+    const needs = new Map<string, WatchDefaultsApplyResult["needsConnections"][number]>();
+    for (const asset of settings.watched) for (const kind of asset.kinds) {
+      if (!kind.enabled || !kind.needsConnection) continue;
+      const key = `${kind.kind}:${kind.needsConnection.id}`;
+      const entry = needs.get(key) ?? { kind: kind.kind, connection: kind.needsConnection, assetIds: [] };
+      entry.assetIds.push(asset.assetId); needs.set(key, entry);
+    }
     this.emit(loupistId);
     return { watchedAssets: settings.watched.length, needsConnections: [...needs.values()] };
+  }
+
+  /** Assets with a stored decision, as the host's `knowledge_watch_settings` rows: watched ones, and any switch the user set. */
+  private decidedIn(loupistId: string, settings: WatchSettings) {
+    let decided = this.decided.get(loupistId);
+    if (!decided) { decided = new Set(settings.watched.map(asset => asset.assetId)); this.decided.set(loupistId, decided); }
+    return decided;
   }
 
   async watchCheckNow({ loupistId }: { loupistId: string }): Promise<{ newAlerts: number; settings: WatchSettings }> {

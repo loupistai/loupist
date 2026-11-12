@@ -208,7 +208,7 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
     })}
     {toggleFailed ? <p className="inline-error" role="alert">{t("watch.toggleFailed")}</p> : null}
     {[...needed].map(([kind, connection]) => <p key={kind} className="watching-hint">{t("watch.kindNeeds", { kind: watchKindColumn(kind), connection })}</p>)}
-    {settings.watched.length > rows.length ? <Button variant="ghost" size="sm" onClick={() => setAllRows(true)}>{t("watch.showAll")}</Button> : null}
+    {listed.length > rows.length ? <Button variant="ghost" size="sm" onClick={() => setAllRows(true)}>{t("watch.showAll")}</Button> : null}
 
     <section className="watching-section" aria-labelledby="watching-recent">
       <h3 id="watching-recent" className="schedule-section-label">{t("watch.recent")}</h3>

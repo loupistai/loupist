@@ -43,16 +43,17 @@ const WORKS_BEST_WITH: Partial<Record<LoupistTemplateId, readonly { id: string; 
 
 type Load<T> = { status: "loading" | "done" | "failed"; value?: T };
 
-function useLoad<T>(read: () => Promise<T>, key: string): Load<T> {
+/** A new `key` starts over; a new `revision` reads again behind the value already shown. */
+function useLoad<T>(read: () => Promise<T>, key: string, revision = 0): Load<T> {
   const [state, setState] = useState<Load<T> & { key: string }>({ key, status: "loading" });
   useEffect(() => {
     let current = true;
-    setState({ key, status: "loading" });
+    setState((previous) => previous.key === key ? previous : { key, status: "loading" });
     void read().then((value) => { if (current) setState({ key, status: "done", value }); })
-      .catch(() => { if (current) setState({ key, status: "failed" }); });
+      .catch(() => { if (current) setState((previous) => previous.key === key && previous.status === "done" ? previous : { key, status: "failed" }); });
     return () => { current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `read` closes over the same inputs as `key`.
-  }, [key]);
+  }, [key, revision]);
   return state.key === key ? state : { status: "loading" };
 }
 
@@ -92,6 +93,8 @@ type Props = {
   accountConnected?: boolean;
   onConnectAccount?: () => void;
   onOpenFollowing?: () => void;
+  /** Bumped each time Home is shown again: the checklist's reads run again, so a step done elsewhere ticks off. */
+  refreshRevision?: number;
 };
 
 /**
@@ -99,7 +102,7 @@ type Props = {
  * last visit, the latest briefing, Journal checks, and three questions, all
  * from data on this computer. It is not saved; the first message replaces it.
  */
-export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "full", deliveredRunIds, onSettled, asOf, template, accountConnected = true, onConnectAccount, onOpenFollowing }: Props) {
+export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "full", deliveredRunIds, onSettled, asOf, template, accountConnected = true, onConnectAccount, onOpenFollowing, refreshRevision = 0 }: Props) {
   const go = useGo();
   const openAsset: OpenAssetPage | null = go ? (target) => go({ kind: "asset", target }) : null;
   const openMap = () => go?.({ kind: "page", location: { loupistId, surface: "world", view: { followCurrent: true, whatsNew: true } } });
@@ -127,7 +130,7 @@ export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "
     return page.items.find((item) => item.kind === "briefing" && item.status === "succeeded") ?? null;
   }, `inbox:${loupistId}`);
   const journal = useLoad<JournalRecord[]>(() => bridge.journalList({ loupistId }), `journal:${loupistId}`);
-  const watchlist = useLoad<WatchlistEntry[]>(() => bridge.watchlistList(), "watchlist");
+  const watchlist = useLoad<WatchlistEntry[]>(() => bridge.watchlistList(), "watchlist", refreshRevision);
   // Followed assets change only "since" a visit; a first visit has none.
   const assets = useLoad<AssetDelta[]>(async () => lastSeenAtMs === undefined ? [] : (await bridge.assetDelta?.({ loupistId, sinceMs: lastSeenAtMs }).catch(() => [])) ?? [], `assets:${loupistId}:${lastSeenAtMs ?? "first"}`);
   // Alerts the first check of the day found go here instead of a separate Thread message.
@@ -152,14 +155,7 @@ export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "
   }, sinceLabel), [language, nowMs, lastSeenAtMs, focusSubject, map.value, events.value, briefing, journal.value, watchlist.value, assets.value, alerts.value, upcoming.value, sinceLabel]);
 
   // First run: nothing followed and no briefing yet, so the home message teaches three first moves.
-  const offersSetup = mode === "full" && !asOf;
-  const briefingSettings = useLoad<BriefingSettings | null>(async () => offersSetup ? await bridge.briefingSettingsGet({ loupistId }).catch(() => null) : null, `briefing:${loupistId}:${offersSetup}`);
-  const principles = useLoad<number | null>(async () => offersSetup ? (await bridge.principleList?.({ loupistId }).catch(() => null))?.length ?? null : null, `principles:${loupistId}:${offersSetup}`);
-  const [setupHidden, setSetupHidden] = useState(() => setupHiddenFor(loupistId));
-  const hideSetup = () => { rememberSetupHidden(loupistId); setSetupHidden(true); };
-  // Each step ticks off by itself; the checklist stays until all three are done or it is hidden.
-  const setupDone = { follow: (watchlist.value?.length ?? 0) > 0, principle: (principles.value ?? 0) > 0, briefing: briefingSettings.value?.enabled === true };
-  const setup = offersSetup && !setupHidden && briefingSettings.value != null && !(setupDone.follow && setupDone.principle && setupDone.briefing);
+  const { briefingSettings, principles, done: setupDone, open: setup, hide: hideSetup } = useSetup(bridge, loupistId, mode === "full" && !asOf, watchlist, refreshRevision);
 
   const changedLoading = map.status === "loading" || events.status === "loading";
   const allSettled = [map, events, inbox, journal, watchlist, assets, alerts, upcoming, connections, briefingSettings, principles].every((load) => load.status !== "loading");
@@ -267,6 +263,37 @@ export function MorningMessage({ bridge, loupistId, loupistName, onAsk, mode = "
       {ask}
     </article>
   );
+}
+
+/**
+ * The checklist's state. Each step ticks off by itself; the checklist stays until all
+ * three are done or it is hidden, and `revision` reads the steps again without a flash.
+ */
+function useSetup(bridge: LoupistBridge, loupistId: string, offers: boolean, watchlist: Load<WatchlistEntry[]>, revision: number) {
+  const briefingSettings = useLoad<BriefingSettings | null>(async () => offers ? await bridge.briefingSettingsGet({ loupistId }).catch(() => null) : null, `briefing:${loupistId}:${offers}`, revision);
+  const principles = useLoad<number | null>(async () => offers ? (await bridge.principleList?.({ loupistId }).catch(() => null))?.length ?? null : null, `principles:${loupistId}:${offers}`, revision);
+  const [hidden, setHidden] = useState(() => setupHiddenFor(loupistId));
+  const hide = () => { rememberSetupHidden(loupistId); setHidden(true); };
+  const done = { follow: (watchlist.value?.length ?? 0) > 0, principle: (principles.value ?? 0) > 0, briefing: briefingSettings.value?.enabled === true };
+  const open = offers && !hidden && briefingSettings.value != null && !(done.follow && done.principle && done.briefing);
+  return { briefingSettings, principles, done, open, hide };
+}
+
+type SetupProps = Pick<Props, "bridge" | "loupistId" | "loupistName" | "onAsk" | "accountConnected" | "onConnectAccount" | "onOpenFollowing" | "refreshRevision">;
+
+/**
+ * Home's checklist once the Thread has messages: the morning message gives way to the
+ * conversation, but the steps still open stay below it until they are done or hidden.
+ */
+export function HomeSetup({ bridge, loupistId, loupistName, onAsk, accountConnected = true, onConnectAccount, onOpenFollowing, refreshRevision = 0 }: SetupProps) {
+  const labelId = useId();
+  const watchlist = useLoad<WatchlistEntry[]>(async () => bridge.watchlistList(), "watchlist", refreshRevision);
+  const { done, open, hide } = useSetup(bridge, loupistId, true, watchlist, refreshRevision);
+  if (!open || watchlist.status === "loading") return null;
+  return <article className="message assistant morning-message" aria-label={t("today.label", { loupist: loupistName })}>
+    <SetupChecklist labelId={labelId} bridge={bridge} done={done} accountConnected={accountConnected}
+      onAsk={onAsk} onConnectAccount={onConnectAccount} onOpenFollowing={onOpenFollowing} onHide={hide} />
+  </article>;
 }
 
 /** "What you follow:" up to three assets, each with its verdict and most material row, dated and numbered across the message. */

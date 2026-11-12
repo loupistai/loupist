@@ -18,14 +18,20 @@ export function MapLibrary({ bridge, catalog, location, onOpen, onAsk, onChanged
 }) {
   const { t } = useTranslation("knowledge");
   const savedState = libraryState(bridge, location.loupistId);
-  const [tab, setTab] = useState<LibraryTab>(() => location.surface === "note" ? noteTab(location, savedState.tab) : savedState.tab);
+  // A pending request ("New Journal entry", even with the Map closed) beats the note the reader still shows.
+  const [tab, setTab] = useState<LibraryTab>(() => location.surface === "note" && !savedState.requested ? noteTab(location, savedState.tab) : savedState.tab);
   const [views, setViews] = useState(savedState.views);
-  useEffect(() => { Object.assign(libraryState(bridge, location.loupistId), { tab, views }); }, [bridge, location.loupistId, tab, views]);
-  useLibraryRequests(bridge, location.loupistId, state => { setTab(state.tab); setViews(state.views); });
+  useEffect(() => { Object.assign(libraryState(bridge, location.loupistId), { tab, views, requested: false }); }, [bridge, location.loupistId, tab, views]);
+  useLibraryRequests(bridge, location.loupistId, state => { state.requested = false; setTab(state.tab); setViews(state.views); });
   const surface = librarySurface(tab);
   const saved = views[tab] ?? { loupistId: location.loupistId, surface };
   const current = { ...saved, recordId: location.surface === surface ? location.recordId : undefined, revisionId: location.surface === surface ? location.revisionId : undefined, selection: location.surface === surface ? location.selection : undefined };
-  const patch = (next: KnowledgeLocation) => setViews(v => ({ ...v, [tab]: next }));
+  // Also written straight to the session store: a scroll offset saved as the compact Library closes outlives this component.
+  const patch = (next: KnowledgeLocation) => {
+    const state = libraryState(bridge, location.loupistId);
+    state.views = { ...state.views, [tab]: next };
+    setViews(v => ({ ...v, [tab]: next }));
+  };
   const shared = { bridge, catalog, location: current, query: current.view?.search ?? "", onQueryChange: (search: string) => patch({ ...current, view: { ...current.view, search } }), onPatch: patch, onOpen, onAsk, onChanged };
   return <aside className="map-library" data-testid="map-library" aria-label={t("map.library")}>
     <header><h2>{t("map.library")}</h2><Button variant="ghost" size="icon-sm" aria-label={t("map.closeLibrary")} onClick={onClose}><XIcon /></Button></header>

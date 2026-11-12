@@ -45,7 +45,7 @@ export function ResearchLibrary({ bridge, location, query, onQueryChange, refres
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a request arrives, not on every location change
   }, [journalNew]);
   const selectedId = location.selection?.kind === "research" ? location.selection.recordId : location.selection?.kind === "journal" ? location.selection.journalId : undefined;
-  const onLibraryScroll = useSettledScroll(top => patchView({ researchLibraryScrollTop: top }), location.loupistId);
+  const onLibraryScroll = useSettledScroll(top => patchView({ researchLibraryScrollTop: top }), location.loupistId, compact);
   const onReaderScroll = useSettledScroll(top => patchView({ readerScrollTop: top }), `${location.loupistId}:${selectedId ?? ""}`);
   useEffect(() => {
     let active = true;

@@ -1650,6 +1650,9 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 }
 .chat-artifact-block-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--gg-space-1); min-width: 0; margin-left: auto; }
 .chat-artifact-block-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+/* A failed copy or save sits just before the actions, outside the bar a narrow card hides. */
+.chat-artifact-block-header > .chat-artifact-block-error { margin-left: auto; }
+.chat-artifact-block-header > .chat-artifact-block-error ~ :is(.chat-artifact-block-actions, .chat-artifact-block-more) { margin-left: 0; }
 /* Short windows keep room for the composer and the answer around the card.
    The plot gives up a header so pinning the thread to the bottom does not slice the title. */
 .chat-artifact-block-body { position: relative; min-width: 0; height: min(240px, calc(40vh - 32px)); min-height: 160px; }

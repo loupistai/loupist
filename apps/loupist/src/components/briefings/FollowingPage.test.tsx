@@ -75,3 +75,33 @@ it("watches every followed asset with the class defaults in one step", async () 
   const watching = screen.getByRole("article", { name: "Watching" });
   expect(within(watching).getAllByRole("table").length).toBeGreaterThan(0);
 });
+
+it("says when Watching settings could not load and loads them again on retry", async () => {
+  const { user } = await fixture(async bridge => {
+    await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" });
+    vi.spyOn(bridge, "watchSettingsList").mockRejectedValueOnce(new Error("store busy"));
+  });
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Couldn't load Watching settings.");
+  await user.click(within(alert).getByRole("button", { name: "Try again" }));
+  expect(await screen.findByRole("checkbox", { name: "Filings, Apple" })).toBeVisible();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("drops the Adding to the map note once the Map has read what was followed", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const status = vi.fn().mockResolvedValueOnce({ state: "queued", assets: 1 }).mockResolvedValueOnce({ state: "running", assets: 1 }).mockResolvedValue({ state: "done", assets: 1 });
+    const { user } = await fixture(async bridge => { vi.spyOn(bridge, "knowledgeFollowedStatus").mockImplementation(status); });
+    await user.type(screen.getByRole("textbox", { name: "Add something to follow" }), "005930");
+    await user.click(screen.getByRole("button", { name: "Follow" }));
+    expect(await screen.findByText("Adding to the map…")).toBeVisible();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(screen.getByText("Adding to the map…")).toBeVisible();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await waitFor(() => expect(screen.queryByText("Adding to the map…")).toBeNull());
+    expect(status).toHaveBeenCalledTimes(3);
+  } finally {
+    vi.useRealTimers();
+  }
+});

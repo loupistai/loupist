@@ -208,6 +208,7 @@
     "intro": "What you follow is shared by all your Loupists. Each Loupist chooses what to watch for.",
     "empty": "Add a company, fund or coin to follow. Following is not a holding or a trade.",
     "loadFailed": "Couldn't load what you follow.",
+    "watchLoadFailed": "Couldn't load Watching settings.",
     "importHoldings": "Import holdings…",
     "watchAll": "Watch all {{n}}",
     "watchAllDetail": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",

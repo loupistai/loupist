@@ -14,7 +14,7 @@ import { datasetTsv } from "../artifacts/ArtifactData";
 import { useChatExecution } from "./ChatExecutionContext";
 import { ChartBoundary } from "../artifacts/ChartBoundary";
 import { ChartSnapshotContext, type ChartSnapshotSlot } from "../charts/chartSnapshot";
-import { SaveChartPng, useSaveChartPng, type SavePng } from "../charts/SaveChartPng";
+import { useSaveChartPng } from "../charts/SaveChartPng";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const t = i18n.getFixedT(null, "chat");
@@ -84,6 +84,8 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain 
   }, [artifactId, revision, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
 
   const title = block.kind === "ready" ? (view.status === "ready" ? view.view.artifact.title : block.artifact.title) : block.title;
+  // The card owns the save, so a failure stays visible after the "…" menu closes.
+  const png = useSaveChartPng(snapshot, title, (request) => scope ? scope.bridge.exportSave(request) : Promise.reject(new Error("no chat scope")));
   const building = block.kind === "building" || (block.kind === "ready" && block.updating);
   const current = view.status === "ready" && block.kind === "ready" ? view.view : null;
   // The answer recorded the revision it published; a newer stored one belongs to a later answer.
@@ -149,8 +151,10 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain 
             <span className="chat-artifact-block-shimmer" aria-hidden="true" />
           </span>
         ) : loaded ? (
-          <><div className="chat-artifact-block-actions">
-            {copyError ? <span className="chat-artifact-block-error" role="alert">{t("chatBlock.couldNotCopy")}</span> : null}
+          <>{/* Outside the bar and the menu, which take turns being hidden by width. */}
+          {copyError ? <span className="chat-artifact-block-error" role="alert">{t("chatBlock.couldNotCopy")}</span>
+            : png.failed ? <span className="chat-artifact-block-error" role="alert">{t("chartExport.couldNotSave")}</span> : null}
+          <div className="chat-artifact-block-actions">
             {wide ? <Button type="button" variant="ghost" size="sm" aria-pressed={isExpanded} onClick={() => setExpanded((value) => !value)}>
               {isExpanded ? <Minimize2Icon aria-hidden="true" /> : <Maximize2Icon aria-hidden="true" />}
               {isExpanded ? t("chatBlock.collapse") : t("chatBlock.expand")}
@@ -159,7 +163,7 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain 
             {dataset ? <Button type="button" variant="ghost" size="sm" onClick={() => void copyData()}>
               {copied ? t("chatBlock.copied") : t("chatBlock.copyData")}
             </Button> : null}
-            {dataset && scope ? <SaveChartPng textOnly slot={snapshot} title={title} onSave={(request) => scope.bridge.exportSave(request)} /> : null}
+            {dataset && scope ? <Button type="button" variant="ghost" size="sm" disabled={png.busy} onClick={() => void png.save()}>{t("chartExport.savePng")}</Button> : null}
             {onAsk ? <Button
               type="button"
               variant="ghost"
@@ -172,7 +176,7 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain 
               {t("chatBlock.ask")}
             </Button> : null}
           </div>
-          <ChartCardMore copy={dataset ? () => void copyData() : undefined} png={dataset && scope ? { slot: snapshot, title, onSave: (request) => scope.bridge.exportSave(request) } : undefined}
+          <ChartCardMore copy={dataset ? () => void copyData() : undefined} png={dataset && scope ? png : undefined}
             ask={onAsk ? () => onAsk(chatArtifactRef(loaded)) : undefined} askDisabled={askDisabled} /></>
         ) : null}
       </header>
@@ -191,7 +195,7 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain 
 
 /** The chart card's actions folded into one "…" menu under 720 px, as the table card's are. */
 function ChartCardMore({ copy, png, ask, askDisabled }: {
-  copy?: () => void; png?: { slot: ChartSnapshotSlot; title: string; onSave: SavePng }; ask?: () => void; askDisabled?: boolean;
+  copy?: () => void; png?: { save: () => Promise<void>; busy: boolean }; ask?: () => void; askDisabled?: boolean;
 }) {
   useTranslation("chat");
   return <div className="chat-artifact-block-more">
@@ -199,14 +203,10 @@ function ChartCardMore({ copy, png, ask, askDisabled }: {
       <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon-sm" aria-label={t("grid.more")}><EllipsisIcon aria-hidden="true" /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {copy ? <DropdownMenuItem onSelect={copy}>{t("chatBlock.copyData")}</DropdownMenuItem> : null}
-        {png ? <SavePngItem {...png} /> : null}
+        {png ? <DropdownMenuItem disabled={png.busy} onSelect={() => void png.save()}>{t("chartExport.savePng")}</DropdownMenuItem> : null}
         {ask ? <DropdownMenuItem disabled={askDisabled} onSelect={ask}>{t("chatBlock.ask")}</DropdownMenuItem> : null}
       </DropdownMenuContent>
     </DropdownMenu>
   </div>;
 }
 
-function SavePngItem({ slot, title, onSave }: { slot: ChartSnapshotSlot; title: string; onSave: SavePng }) {
-  const { save, busy } = useSaveChartPng(slot, title, onSave);
-  return <DropdownMenuItem disabled={busy} onSelect={() => void save()}>{t("chartExport.savePng")}</DropdownMenuItem>;
-}

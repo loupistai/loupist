@@ -90,7 +90,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
   const currentScope = useRef(scopeKey);
   currentScope.current = scopeKey;
   const reading = !compact && Boolean(selected?.sourceId || selected?.spanId);
-  const onLibraryScroll = useSettledScroll((top) => patchView({ sourceScrollTop: top }), scopeKey);
+  const onLibraryScroll = useSettledScroll((top) => patchView({ sourceScrollTop: top }), scopeKey, compact);
   const onReaderScroll = useSettledScroll((top) => patchView({ readerScrollTop: top }), scopeKey);
   const readSelectedSource = useCallback(() => bridge.knowledgeSourceRead({
     loupistId: location.loupistId, recordId: location.recordId!, revisionId: location.revisionId!,

@@ -82,8 +82,9 @@ export function BrowserWorkspaceView({
           aria-busy={creating || undefined}
           onChange={(event) => onAddressChange(event.target.value)}
         />
-        {/* Enter in the address navigates; the submit stays for assistive technology only (chat design change 22). */}
-        <button type="submit" className="sr-only" disabled={creating}>{t("browserWorkspaceView.open")}</button>
+        {/* Enter in the address navigates; the submit stays for assistive technology only (chat design change 22),
+            out of the Tab order so keyboard focus never lands on a control it cannot see. */}
+        <button type="submit" className="sr-only" tabIndex={-1} disabled={creating}>{t("browserWorkspaceView.open")}</button>
         {onViewSaved && !tab.error ? <Button type="button" variant="ghost" size="sm" className="browser-saved-passage" onClick={onViewSaved}>{t("browserWorkspaceView.savedPassage")}</Button> : null}
         <Button
           type="button"

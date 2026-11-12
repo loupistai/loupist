@@ -3,7 +3,7 @@ import { formatDate, formatNumber } from "@/i18n/format";
 import { useCallback, useEffect, useId, useState } from "react";
 import { XIcon } from "lucide-react";
 import type { LoupistBridge, LoupistSummary } from "../../types";
-import type { KnowledgeMapNode } from "../../contracts/knowledge";
+import type { FollowedState, KnowledgeMapNode } from "../../contracts/knowledge";
 import type { HoldingsSummary, WatchlistEntry } from "../../contracts/userContext";
 import type { WatchDefaultsApplyResult } from "../../contracts/watch";
 import { watchKindColumn } from "../assets/watchText";
@@ -39,6 +39,10 @@ function holdingsLine(holdings: HoldingsSummary | null) {
     : tk("memoryPage.about.kindNone");
   return tk("memoryPage.about.holdingsByKind", { stocks: kind(holdings.stocks), crypto: kind(holdings.crypto) });
 }
+
+/** How often "Adding to the map…" asks whether the read has settled. */
+const FOLLOWED_POLL_MS = 3_000;
+const followedPending = (state: FollowedState) => state === "queued" || state === "running" || state === "waiting";
 
 const sameName = (left: string | null | undefined, right: string) => Boolean(left) && left!.trim().toLocaleLowerCase() === right.trim().toLocaleLowerCase();
 /** A followed asset by the name the Map uses: its node's local name when one matches, else the stored display name. */
@@ -77,7 +81,7 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
   const [holdingsOpen, setHoldingsOpen] = useState(false);
   const [applying, setApplying] = useState(false);
   const [needs, setNeeds] = useState<WatchDefaultsApplyResult["needsConnections"]>([]);
-  const { settings, setSettings, reload: reloadWatch } = useWatchSettings(bridge, loupistId);
+  const { settings, setSettings, reload: reloadWatch, failed: watchFailed } = useWatchSettings(bridge, loupistId);
   const openAsset = useAssetPageOpener();
   const headingId = useId(), listId = useId(), holdingsId = useId();
   const refresh = useCallback(() => setReload(value => value + 1), []);
@@ -94,6 +98,19 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
     return () => { live = false; };
   }, [bridge, loupistId, reload]);
 
+  // "Adding to the map…" lasts while the Map is reading what was followed: one cheap status
+  // read every few seconds, and the line goes once the read settles (or cannot be checked).
+  useEffect(() => {
+    if (!mapping) return;
+    let live = true;
+    const timer = window.setInterval(() => {
+      void bridge.knowledgeFollowedStatus({ loupistId })
+        .then(status => { if (live && !followedPending(status.state)) setMapping(false); })
+        .catch(() => { if (live) setMapping(false); });
+    }, FOLLOWED_POLL_MS);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [bridge, loupistId, mapping]);
+
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true); setError(null);
     try { await action(); refresh(); void reloadWatch(); }
@@ -107,7 +124,7 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
       await bridge.watchlistAdd({ symbol, market, loupistId }); setAdding("");
       // One cheap status read: say so quietly while the Map is still reading what was followed.
       const status = await bridge.knowledgeFollowedStatus({ loupistId }).catch(() => null);
-      setMapping(status?.state === "queued" || status?.state === "running" || status?.state === "waiting");
+      setMapping(Boolean(status && followedPending(status.state)));
     });
   };
   // "Watch all": consent and the class defaults for every followed asset with no decision yet.
@@ -163,7 +180,8 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
       {t("following.needsConnection", { kind: watchKindColumn(item.kind), connection: item.connection.name })}
       {onOpenConnections ? <> <Button variant="link" size="sm" onClick={() => onOpenConnections(item.connection.id)}>{t("following.openConnections")}</Button></> : null}
     </li>)}</ul> : null}
-    {settings && watchlist?.length ? <WatchingReader bridge={bridge} loupist={loupist} settings={settings} onSettings={setSettings} embedded /> : null}
+    {settings && watchlist?.length ? <WatchingReader bridge={bridge} loupist={loupist} settings={settings} onSettings={setSettings} embedded />
+      : watchFailed && watchlist?.length ? <div role="alert" className="inline-error" data-watch-load-failed><span>{t("following.watchLoadFailed")}</span> <Button variant="outline" size="sm" onClick={() => void reloadWatch()}>{t("retry")}</Button></div> : null}
     </div>
     {/* Side column at wide sizes, after the list when compact: holdings are counts and dates only. */}
     <aside className="following-side" aria-labelledby={holdingsId}>
