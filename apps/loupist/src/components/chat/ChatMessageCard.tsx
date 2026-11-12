@@ -197,7 +197,7 @@ type Props = {
   /** Briefings open the outline of a long answer (X16). */
   outlineOpen?: boolean;
   onRetry?: () => void;
-  /** The newest answer keeps its action row visible; earlier ones show it on hover or focus (X1). */
+  /** The newest answer, or the newest question, keeps its action row visible; earlier ones show it on hover or focus (X1). */
   latest?: boolean;
   /** A stop was requested for this reply and the host has not confirmed it yet. */
   stopping?: boolean;

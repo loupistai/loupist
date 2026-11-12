@@ -2188,6 +2188,9 @@ button.sent-image { cursor: zoom-in; }
 /* The recommended answer is an outlined option with a primary edge, not a filled slab (chat design change 12). */
 .question-card .question-card-option[data-recommended] { border-color: var(--gg-color-text-primary); }
 
+/* 28. Edit stays under the newest question; earlier questions reveal it on hover or focus, in reserved space. */
+.message.user:not([data-latest]) .message-action-bar { opacity: 0; }
+.message.user:not([data-latest]):is(:hover, :focus-within) .message-action-bar { opacity: 1; }
 /* 34. Scheduled work says it uses the AI account, before its buttons. */
 .message-schedule-spending { margin: 0; padding: 0 var(--gg-space-4); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 /* 27. A long Loupist name does not take over the answer's meta row. */

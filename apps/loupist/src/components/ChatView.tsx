@@ -989,7 +989,7 @@ export function ChatView({
         <ChatComposer
           key={activeThread?.id ?? "draft"}
           attachmentDraft={draft}
-          placeholder={t("chatComposer.askLoupistToAddContextForCommands", { loupistName: loupist.name })}
+          placeholder={[...loupist.name].length > 24 ? t("chatComposer.askYourLoupist") : t("chatComposer.askLoupistToAddContextForCommands", { loupistName: loupist.name })}
           prompt={prompt}
           privateChat={privateChat}
           isRunning={isRunning}

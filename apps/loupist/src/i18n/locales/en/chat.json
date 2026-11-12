@@ -93,6 +93,7 @@
     "send": "Send",
     "messageLoupist": "Message Loupist",
     "askLoupistToAddContextForCommands": "Ask {{loupistName}}…",
+    "askYourLoupist": "Ask your Loupist…",
     "newChat": "New chat",
     "model": "Model",
     "attachFiles": "Attach files",

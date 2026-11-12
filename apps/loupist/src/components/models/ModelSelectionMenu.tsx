@@ -71,6 +71,8 @@ const keepMenuOpen = (event: Event) => {
   event.preventDefault();
 };
 
+const SEARCH_FROM = 8;
+
 export function ModelSelectionMenu({
   models,
   providers,
@@ -167,7 +169,8 @@ export function ModelSelectionMenu({
         >
           <div className="model-menu-header">
             <strong>{contextLabel}</strong>
-            <Input autoFocus type="search" aria-label={i18n.t("settings:modelSelectionMenu.searchModels")} placeholder={i18n.t("settings:modelSelectionMenu.searchProvidersOrModels")} value={query}
+            {/* Fewer than eight models fit at a glance: the search field would only add a row (chat design 35). */}
+            {models.length >= SEARCH_FROM ? <Input autoFocus type="search" aria-label={i18n.t("settings:modelSelectionMenu.searchModels")} placeholder={i18n.t("settings:modelSelectionMenu.searchProvidersOrModels")} value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -179,7 +182,7 @@ export function ModelSelectionMenu({
                 }
                 if (event.key === "Enter") event.preventDefault();
                 if (event.key !== "Escape" && event.key !== "Tab") event.stopPropagation();
-              }} />
+              }} /> : null}
           </div>
           <div className="model-menu-catalog" role="menu" aria-label={i18n.t("settings:modelSelectionMenu.availableModels")}>
           {auto && models.length ? <>

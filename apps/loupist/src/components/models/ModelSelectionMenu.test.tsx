@@ -10,7 +10,7 @@ const providers: ModelProviderOption[] = [{
   status: { state: "connected", credential_kind: "api_key", notice: null, last_limit_at_ms: null, connected_at_ms: null, used_by: { schedules: 0, chat_default: false, world_models: 0 } },
 }];
 
-const models: ConfiguredModel[] = ["General", "Research fast", "Research deep"].map((name) => ({
+const models: ConfiguredModel[] = ["General", "Research fast", "Research deep", "Draft", "Quick", "Summary", "Long context", "Vision"].map((name) => ({
   id: name, name, model: name, provider: "provider", input: ["text"], reasoning: true,
   context_window: 1000, max_tokens: 100, thinking_levels: ["low", "medium"],
   thinking_level_map: { low: "low", medium: "medium" }, run_controls: [], credential_source: "saved",

@@ -307,7 +307,7 @@ export function ChatConversation({
               onEarlierVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "earlier", onSwitchVersion) : undefined}
               onLaterVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "later", onSwitchVersion) : undefined}
               onRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") ? onRetry : undefined}
-              latest={message.role === "assistant" && index === lastAssistantIndex}
+              latest={message.role === "assistant" ? index === lastAssistantIndex : index === lastUserIndex}
               providerName={message.status === "error" ? providerLabel?.(message.execution_model?.provider) : undefined}
               retryAttempt={index === messages.length - 1 ? retryAttempt : undefined}
               onProviderAction={index === messages.length - 1 ? onProviderAction : undefined}

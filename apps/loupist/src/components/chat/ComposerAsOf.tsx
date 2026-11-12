@@ -42,9 +42,9 @@ export function AsOfDatePanel({ initial, onSet, onCancel, onBack }: {
       onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); set(); } }} />
     {error ? <p id={errorId} className="composer-asof-error" role="alert">{error}</p> : null}
     <div className="composer-asof-quick">
-      <Button type="button" variant="ghost" size="sm" onClick={() => setValue(quickAsOf("month"))}>{t("asOf.quickMonth")}</Button>
-      <Button type="button" variant="ghost" size="sm" onClick={() => setValue(quickAsOf("yearStart"))}>{t("asOf.quickYearStart")}</Button>
-      <Button type="button" variant="ghost" size="sm" onClick={() => setValue(quickAsOf("year"))}>{t("asOf.quickYear")}</Button>
+      <Button type="button" variant="outline" size="sm" onClick={() => setValue(quickAsOf("month"))}>{t("asOf.quickMonth")}</Button>
+      <Button type="button" variant="outline" size="sm" onClick={() => setValue(quickAsOf("yearStart"))}>{t("asOf.quickYearStart")}</Button>
+      <Button type="button" variant="outline" size="sm" onClick={() => setValue(quickAsOf("year"))}>{t("asOf.quickYear")}</Button>
     </div>
     <p className="composer-asof-explain">{t("asOf.explain")}</p>
     <div className="composer-asof-actions">

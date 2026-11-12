@@ -93,6 +93,7 @@
     "send": "보내기",
     "messageLoupist": "루피스트에게 메시지",
     "askLoupistToAddContextForCommands": "{{loupistName}}에게 질문…",
+    "askYourLoupist": "루피스트에게 질문…",
     "newChat": "새 대화",
     "model": "모델",
     "attachFiles": "파일 첨부",
