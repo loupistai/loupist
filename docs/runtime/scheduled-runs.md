@@ -87,9 +87,8 @@ Each scheduled task is `custom`, `briefing` or `earnings` (the automatic
 Loupist has at most one briefing,
 with a continuing Memory-enabled Chat titled Briefings. The default briefing is
 08:00 Monday through Friday in the device time zone. Rust builds that prompt at
-run time from the date, elapsed time since the previous run, followed symbol and
-market identities, at most 40 World growth summaries of 240 characters (never a "What you follow" Source), at most
-30 principles inside the ordinary 6,000-character budget, at most five due
+run time from the date, elapsed time since the previous run, at most 40 World
+growth summaries of 240 characters (never a "What you follow" Source), and at most five due
 Journal pointers, and `assetDeltas`: up to 24 followed assets with a material
 asset-page change since the previous run (or seven days), three rows each, which
 also fill `BriefingContext.assets`; `earnings`: at most eight results events, those
@@ -102,6 +101,15 @@ context also keeps at most 20 entity ids for disputed claims in that window
 that touch a followed company or its one-hop neighbors. The reader can open the
 Map with the conflicting-evidence filter. Omitted referenced nodes are recovered
 with bounded exact World reads.
+
+The briefing JSON does not repeat the envelope's instructions, tone, followed
+companies, holdings or principles. A coverage block names up to 60 followed
+assets without a check in the last 30 minutes (including assets the refresh did
+not reach) and up to 60 watcher routes whose latest status is failed or needs a
+connection, with omitted counts. A failed coverage read is explicit; missing
+evidence never means no change. The prompt directs factual deltas, results,
+principle/judgment conflicts, bounded open questions and supported unattended
+Memory saves; a refusal names the unavailable tool and asks the run to continue.
 
 After its durable claim and Chat admission, a briefing (scheduled or Run now)
 [refreshes](../knowledge/asset-pages.md#asset-pages) followed assets once for that

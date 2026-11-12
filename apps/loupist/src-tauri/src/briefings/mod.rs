@@ -352,6 +352,47 @@ fn system_language() -> String {
     .into()
 }
 
+/// Gaps remain explicit even when no material delta was produced.
+fn coverage(
+    state: &AppState,
+    loupist_id: &str,
+    now: i64,
+) -> Result<serde_json::Value, CommandError> {
+    let context = crate::commands::assets::view_context(state)?;
+    let followed = crate::commands::assets::followed(&context);
+    crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
+        let routes = crate::knowledge::watch::routes(tx, loupist_id)?;
+        let mut missing = Vec::new();
+        let mut failed = Vec::new();
+        for asset in &followed {
+            let id = crate::knowledge::assets::asset_id(&asset.symbol, &asset.market);
+            let page = crate::knowledge::assets::get_page(tx, loupist_id, &id)?;
+            if page
+                .as_ref()
+                .and_then(|page| page.refreshed_at_ms)
+                .is_none_or(|at| at < now.saturating_sub(30 * 60_000))
+            {
+                missing.push(serde_json::json!({"symbol":asset.symbol,"market":asset.market,"name":asset.name}));
+            }
+            for route in routes
+                .get(&id)
+                .into_iter()
+                .flatten()
+                .filter(|route| matches!(route.status.as_str(), "failed" | "needs_connection"))
+            {
+                failed.push(serde_json::json!({"symbol":asset.symbol,"market":asset.market,"route":route.route.as_str(),"status":route.status,"connection":route.connection,"checkedAtMs":route.checked_at_ms}));
+            }
+        }
+        let omitted_assets = missing.len().saturating_sub(60);
+        let omitted_routes = failed.len().saturating_sub(60);
+        missing.truncate(60);
+        failed.truncate(60);
+        Ok(
+            serde_json::json!({"notChecked":missing,"routes":failed,"omittedAssets":omitted_assets,"omittedRoutes":omitted_routes}),
+        )
+    })
+}
+
 pub(crate) fn build_prompt(
     state: &AppState,
     loupist_id: &str,
@@ -362,12 +403,6 @@ pub(crate) fn build_prompt(
     let disputed_entity_ids =
         conflicts::entity_ids(state, loupist_id, previous.unwrap_or(0), now, &context)?;
     let context = crate::agent_harness::followed_companies(context);
-    let profile = state
-        .store
-        .get_loupist(loupist_id)
-        .map_err(map_store)?
-        .ok_or_else(|| CommandError::not_found("Loupist"))?;
-    let instructions = crate::agent_harness::loupist_instructions(&profile.instructions);
     let config = crate::commands::loupist_configuration(state, loupist_id)?;
     let language = if config.appearance.language == "system" {
         system_language()
@@ -410,23 +445,7 @@ pub(crate) fn build_prompt(
             .map_err(|e| CommandError::internal(e.to_string()))?;
         let all = crate::knowledge::principles::principle_list(&tx, loupist_id, false)
             .map_err(|e| CommandError::internal(e.to_string()))?;
-        let mut active = crate::knowledge::principles::principles_context(&all).1;
-        for principle in &mut active {
-            let id = principle.record_id.clone();
-            let wrap = |field: &str, text: &str| shared.wrap_lens_field(&id, field, text);
-            if let Some(wrapped) = wrap("statement", &principle.statement) {
-                principle.statement = wrapped;
-            }
-            for (field, value) in [
-                ("why", &mut principle.why),
-                ("example", &mut principle.example),
-            ] {
-                if let Some(wrapped) = value.as_deref().and_then(|text| wrap(field, text)) {
-                    *value = Some(wrapped);
-                }
-            }
-        }
-        active
+        crate::knowledge::principles::principles_context(&all).1
     };
     let rows = context["symbols"]
         .as_array()
@@ -534,12 +553,6 @@ pub(crate) fn build_prompt(
             })
             .collect(),
     };
-    let symbols = |flag: &str| {
-        rows.iter()
-            .filter(|item| item[flag] == true)
-            .map(|item| serde_json::json!({"symbol": item["symbol"], "market": item["market"]}))
-            .collect::<Vec<_>>()
-    };
     let mut world_growth =
         serde_json::to_value(&growth).map_err(|e| CommandError::internal(e.to_string()))?;
     shared.mark_delivery(&mut world_growth);
@@ -548,12 +561,9 @@ pub(crate) fn build_prompt(
         "appLanguage":language,
         "previousBriefingAtMs":previous,
         "timeSincePreviousBriefingMs":previous.map(|at| now.saturating_sub(at)),
-        "Instructions from the user for this Loupist": instructions,
-        "Loupist tone": profile.tone,
-        "followedCompaniesHint": crate::agent_harness::FOLLOWED_COMPANIES_HINT,
-        "watchlist":symbols("watching"), "holdings":symbols("holding"),
-        "principles": principles, "worldGrowth":world_growth, "dueJournalReviews":due_reviews, "assetDeltas": asset_prompt,
-        "earnings": earnings_prompt, "watchAlerts": watch_prompt
+        "worldGrowth":world_growth, "dueJournalReviews":due_reviews, "assetDeltas": asset_prompt,
+        "earnings": earnings_prompt, "watchAlerts": watch_prompt,
+        "coverage": coverage(state, loupist_id, now).unwrap_or_else(|_| serde_json::json!({"unavailable":true}))
     });
     let prompt = format!(
         "{PROMPT}\n{}",
