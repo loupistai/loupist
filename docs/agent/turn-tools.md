@@ -35,7 +35,11 @@ The general `schedules` tools are independent of Memory. `schedule_watch` and
 `schedule_briefing` read and save Memory settings, so their executor guards require
 both Memory access and Save learning; a Private chat or either missing grant
 refuses them before any read or write, even though their catalog permission is
-`always`. Other schedule tools keep their existing permission classes. Their run
+`always`. Generic `schedule_set_status` and `schedule_run_now` also require both
+grants when their saved target is a Briefing task, before any status mutation or
+run admission; custom tasks remain independent of Memory. Generic update and
+delete already refuse host-authored Briefing tasks. Other schedule tools keep
+their existing permission classes. Their run
 receipts expose control metadata (IDs, status, times and a fixed failure notice);
 briefing context and answer summaries stay in the run's Chat, because they can
 contain Memory and third-party text. Read current IDs/revisions

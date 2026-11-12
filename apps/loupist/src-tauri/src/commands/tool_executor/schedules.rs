@@ -134,6 +134,15 @@ fn memory_schedule_refusal() -> BrokerError {
     BrokerError::invalid("memory", "This needs Memory reads and saving, which are off for this Chat. Tell the user it was not changed.")
 }
 
+fn require_task_memory(policy: &ToolPolicy, task: &Task) -> Result<(), BrokerError> {
+    if task.kind == crate::scheduled_tasks::types::TaskKind::Briefing
+        && (!policy.use_memory || !policy.propose_memory_updates)
+    {
+        return Err(memory_schedule_refusal());
+    }
+    Ok(())
+}
+
 fn schedule_context_refusal() -> BrokerError {
     BrokerError::invalid("schedule", "This reply has no scheduling context. Continue without scheduling and tell the user it was not changed; they can ask again in their next message.")
 }
@@ -476,6 +485,8 @@ impl AppToolExecutor {
             }
             ToolMethod::ScheduleSetStatus => {
                 let request: StatusRequest = decode(params)?;
+                let task = service::get(state, loupist, &request.task_id).map_err(error)?;
+                require_task_memory(policy, &task)?;
                 let action = match request.status {
                     TaskStatus::Paused => ScheduleAction::Paused,
                     TaskStatus::Active => ScheduleAction::Resumed,
@@ -483,14 +494,12 @@ impl AppToolExecutor {
                         return Err(BrokerError::invalid("status", "active or paused"))
                     }
                 };
-                if request.status == TaskStatus::Active {
-                    let task = service::get(state, loupist, &request.task_id).map_err(error)?;
-                    if task.awaiting_confirmation
-                        && task.proposed_in_message_id.as_deref()
-                            == self.capture.source_message_id.as_deref()
-                    {
-                        return Err(BrokerError::Execution("The user turns this task on with Turn on in the card under your reply. Tell them it is waiting for their OK; it can be turned on for them in a later reply if they ask.".into()));
-                    }
+                if request.status == TaskStatus::Active
+                    && task.awaiting_confirmation
+                    && task.proposed_in_message_id.as_deref()
+                        == self.capture.source_message_id.as_deref()
+                {
+                    return Err(BrokerError::Execution("The user turns this task on with Turn on in the card under your reply. Tell them it is waiting for their OK; it can be turned on for them in a later reply if they ask.".into()));
                 }
                 (
                     service::set_status(
@@ -513,6 +522,8 @@ impl AppToolExecutor {
             }
             ToolMethod::ScheduleRunNow => {
                 let request: ReadRequest = decode(params)?;
+                let task = service::get(state, loupist, &request.task_id).map_err(error)?;
+                require_task_memory(policy, &task)?;
                 service::run_now(state, loupist, &request.task_id)
                     .await
                     .map_err(error)?;
@@ -749,6 +760,119 @@ mod tests {
             service::list(&executor.state, "loupist-a").unwrap().len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn generic_briefing_controls_require_both_memory_grants_before_any_effect() {
+        use crate::scheduled_tasks::types::TaskKind;
+        let temp = tempfile::tempdir().unwrap();
+        let (executor, mut policy) = fixture(&temp, true, "home-loupist-a");
+        let draft = TaskDraft {
+            title: "Briefings".into(),
+            prompt: "Read saved research".into(),
+            schedule: Schedule::Daily {
+                hour: 9,
+                minute: 0,
+                timezone: "Asia/Seoul".into(),
+            },
+            target: TaskTarget::Dedicated,
+            model_profile_id: "fixture".into(),
+            thinking_level: "medium".into(),
+            run_options: BTreeMap::new(),
+            use_memory: true,
+            update_memory: true,
+            status: TaskStatus::Paused,
+        };
+        let task = executor
+            .state
+            .store
+            .scheduled_task_create_kind(
+                "loupist-a",
+                "briefing-loupist-a",
+                draft.clone(),
+                TaskKind::Briefing,
+                1,
+            )
+            .unwrap();
+        for (read, save) in [(false, false), (true, false), (false, true)] {
+            policy.use_memory = read;
+            policy.propose_memory_updates = save;
+            for (method, params) in [
+                (
+                    ToolMethod::ScheduleSetStatus,
+                    json!({"task_id":task.id,"expected_revision":task.revision,"status":"active"}),
+                ),
+                (
+                    ToolMethod::ScheduleSetStatus,
+                    json!({"task_id":task.id,"expected_revision":task.revision,"status":"paused"}),
+                ),
+                (ToolMethod::ScheduleRunNow, json!({"task_id":task.id})),
+            ] {
+                assert!(
+                    matches!(executor.execute(&policy, method, params).await,
+                    Err(BrokerError::InvalidArguments { ref field, .. }) if field == "memory"),
+                    "{method:?}: read={read}, save={save}"
+                );
+            }
+            let stored = service::get(&executor.state, "loupist-a", &task.id).unwrap();
+            assert_eq!(stored.revision, task.revision);
+            assert_eq!(stored.status, task.status);
+            assert!(service::runs(&executor.state, "loupist-a", &task.id)
+                .unwrap()
+                .is_empty());
+        }
+        // Both grants pass the status gate; custom tasks still need neither grant.
+        for (kind, read, save) in [
+            (TaskKind::Briefing, true, true),
+            (TaskKind::Custom, false, false),
+        ] {
+            policy.use_memory = read;
+            policy.propose_memory_updates = save;
+            let task = if kind == TaskKind::Briefing {
+                task.clone()
+            } else {
+                executor
+                    .state
+                    .store
+                    .scheduled_task_create(
+                        "loupist-a",
+                        TaskDraft {
+                            use_memory: false,
+                            update_memory: false,
+                            ..draft.clone()
+                        },
+                        1,
+                    )
+                    .unwrap()
+            };
+            let updated = executor
+                .execute(
+                    &policy,
+                    ToolMethod::ScheduleSetStatus,
+                    json!({"task_id":task.id,"expected_revision":task.revision,"status":"active"}),
+                )
+                .await
+                .unwrap();
+            assert_eq!(updated["status"], "active");
+            // A durable in-flight claim proves Run now reaches the service after
+            // the grant gate without launching a process or making provider calls.
+            executor
+                .state
+                .store
+                .scheduled_task_claim_with("loupist-a", &task.id, 1_000, true, |_| Ok(()))
+                .unwrap()
+                .unwrap();
+            assert!(
+                matches!(executor.execute(&policy, ToolMethod::ScheduleRunNow, json!({"task_id":task.id})).await,
+                Err(BrokerError::Execution(ref message)) if message == "This scheduled task is already running")
+            );
+            assert_eq!(
+                service::runs(&executor.state, "loupist-a", &task.id)
+                    .unwrap()
+                    .len(),
+                1
+            );
+        }
     }
 
     #[tokio::test]
