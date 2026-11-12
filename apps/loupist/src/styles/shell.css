@@ -379,6 +379,7 @@ html[data-desktop-platform="macos"] .app-shell {
 /* Command palette (X7): one search across chats, names, principles, briefings and actions. */
 .dialog-surface.command-palette { top: 96px; translate: -50% 0; padding: 0; gap: 0; border-radius: var(--gg-radius-lg); background: var(--gg-color-bg-raised); display: flex; flex-direction: column; max-height: min(560px, calc(100dvh - 128px)); overflow: hidden; }
 .command-palette-input { flex: none; width: 100%; height: 52px; padding: 0 var(--gg-space-5); border: 0; border-bottom: 1px solid var(--gg-color-border-subtle); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); outline: none; }
+.command-palette-input::-webkit-search-cancel-button { display: none; }
 .command-palette-list { flex: 1; min-height: 0; margin: 0; padding: var(--gg-space-2) 0; list-style: none; overflow: auto; }
 .command-palette-list ul { margin: 0; padding: 0; list-style: none; }
 .command-palette-group { margin: var(--gg-space-2) var(--gg-space-5) var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); }
