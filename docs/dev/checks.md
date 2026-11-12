@@ -18,7 +18,8 @@ packaging is also in scope; those run outside this gate. Plain `scripts/verify.s
 runs every scope whatever changed.
 
 From `apps/loupist/`, `npm run check:web`, `check:rust` and `check:python` run
-one scope without reinstalling dependencies; `check:harness` runs the
+one scope without reinstalling dependencies. Web and harness checks reject npm
+inventories that differ from the checked-in locks. `check:harness` runs the
 credential-free Pi/eval contracts also included in web. `npm run check` runs all
 three scopes one after another (web → python → rust). Rust includes feature-gated
 headless contracts without paid calls.
@@ -258,15 +259,13 @@ Keep the Pi package family on the same exact version and follow the pins in
 `scripts/pi-security.json` when updating dependencies.
 Dependency security floors and platform-specific findings are recorded in
 [dependency review](dependencies.md#dependency-security-review). The native
-dependency set requires Rust 1.90 or newer; use CI's pinned toolchain.
+dependency set requires Rust 1.97 or newer; use CI's pinned toolchain.
 
 ```sh
 python3 apps/loupist/scripts/stage-embed-assets.py
 python3 apps/loupist/scripts/stage_python_runtime.py --ensure
 # Complete platform staging also includes embeddings and the Python runtime:
 sh apps/loupist/scripts/stage-macos-arm64.sh
-# Windows compatibility staging:
-pwsh apps/loupist/scripts/stage-windows-x64.ps1
 ```
 
 `stage-macos-arm64.sh` signs `loupist-python-worker` with the hardened runtime

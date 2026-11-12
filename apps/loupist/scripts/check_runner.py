@@ -35,7 +35,6 @@ SCOPES = ("web", "python", "rust")
 REPOSITORY = "repository"
 RETENTION_SECONDS = 7 * 24 * 3600
 NODE_VERSION = 'const pin=require("node:fs").readFileSync("../../.nvmrc","utf8").trim(); const min=pin.split(".").map(Number), v=process.versions.node.split(".").map(Number); if(v[0]!==min[0]||v[1]<min[1]||(v[1]===min[1]&&v[2]<min[2]))throw Error(`Node ${pin}+ LTS (${min[0]}.x) required`); console.log(process.version)'
-INSTALLED = 'for (const p of process.argv.slice(1)) if (!require("node:fs").existsSync(p)) throw Error(`Locked dependencies missing: ${p}; run setup.sh first`)'
 PROCESS_TOOLS = 'import shutil, sys; missing = [name for name in ("ps", "pgrep", "lsof") if shutil.which(name) is None]; sys.exit("Missing host process tools: " + ", ".join(missing) + "; on Debian/Ubuntu install procps and lsof" if missing else 0)'
 SHELL_SYNTAX = 'for script; do IFS= read -r interpreter < "$script"; case "$interpreter" in *bash) bash -n "$script" ;; *) sh -n "$script" ;; esac || exit; done'
 MODULE_SYNTAX = 'for module; do node --check "$module" || exit; done'
@@ -77,7 +76,7 @@ def node(name, arguments):
 
 
 def web_plan(harness, install):
-    lockfiles = ["node_modules/.package-lock.json"]
+    install_roots = ["."]
     commands = [step("node-version", ["node", "-e", NODE_VERSION])]
     if install:
         commands.append(step("install-app", ["npm", "ci"]))
@@ -101,11 +100,14 @@ def web_plan(harness, install):
             )
         )
     if not harness:
-        lockfiles.append("e2e/node_modules/.package-lock.json")
+        install_roots.append("e2e")
         if install:
             commands.append(step("install-e2e", ["npm", "ci"], APP / "e2e"))
     commands.append(
-        step("installed-dependencies", ["node", "-e", INSTALLED, *lockfiles])
+        step(
+            "installed-dependencies",
+            ["node", "scripts/check-installed-dependencies.mjs", *install_roots],
+        )
     )
     if harness:
         tests = contract_tests(harness_only=True)
@@ -744,7 +746,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if os.name != "posix":
         parser.error(
-            "use this check gate on macOS/Linux; Windows has its own compatibility workflow"
+            "use this check gate on macOS/Linux; Windows is not supported in this release"
         )
     if not shutil.which("git"):
         parser.error("git is required for source evidence")
