@@ -129,7 +129,9 @@ Message validation allows them only on answers and checks their bounds.
 A settled turn with acknowledged Memory writes but no answer text can receive a
 host-composed receipt summary. Unfinished tools, provider/process failures and
 storage errors do not qualify. Host diagnostics are bounded/redacted and exclude
-raw credential-bearing payloads.
+raw credential-bearing payloads. A failed commit keeps a content-free
+[phase and reason category](../dev/diagnostics.md#diagnostics) in the local run log
+and eval trace; the host never copies the raw storage error into that category.
 
 Pi's `agent_settled` remains the completion barrier; a visible final text chunk
 alone cannot commit Chat or Memory, bypass Stop, or discard acknowledged steering.

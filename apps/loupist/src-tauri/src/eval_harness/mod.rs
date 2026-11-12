@@ -1012,6 +1012,18 @@ async fn run_turn(
         result["status"] = json!("failed");
         result["error"] = trace::bounded_json(&json!(error));
     }
+    if message.is_some_and(|message| message.status == crate::domain::ChatMessageStatus::Error) {
+        let profile = state
+            .store
+            .get_loupist(&chat.loupist_id)?
+            .ok_or("eval Loupist missing")?;
+        if let Ok(Some(failure)) = crate::runs::log::memory_commit_failure(
+            &Path::new(&profile.workspace_root).join(".loupist"),
+            &run_id,
+        ) {
+            result["memory_commit_failure"] = serde_json::to_value(failure)?;
+        }
+    }
     // Observe canonical state independently of tool output or the assistant’s claim.
     result["lens"] = trace::lens_state(state, chat, message.map(|m| m.id.as_str()))?;
     result["scheduled_tasks"] = json!(state.store.scheduled_tasks_list(&chat.loupist_id)?.iter().map(|task| {

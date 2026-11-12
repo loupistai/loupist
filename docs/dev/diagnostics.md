@@ -43,6 +43,16 @@ this attempt, and `stageMs`, the time paid calls took per extraction stage (call
 sent together overlap, so the sum can exceed the duration); Chat entries carry `openbbFirstCallMs`, the
 duration of the turn's first OpenBB call including any cold start.
 
+A failed Chat commit also records `memoryCommitFailure { stage, reason }`. Both
+values come from fixed host enums: the stage identifies the first failed commit
+phase (for example `research` or `lens`), and the reason categorizes its code
+(for example `journal_entity` or `storage`; unrecognized codes become `other`).
+It contains no error text, arguments, paths or secrets. The eval trace copies
+this category from the terminal host log for that exact run as
+`memory_commit_failure`; it never accepts a Pi-authored cause. Older log entries
+without the field remain readable, and missing diagnostics do not change the
+eval result.
+
 The logger never takes prompts, answer or Source text, file contents, holdings
 quantities, credential/header values, or raw error bodies. It applies the shared
 credential detector to metadata strings and map keys.
