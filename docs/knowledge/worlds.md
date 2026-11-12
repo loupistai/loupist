@@ -115,7 +115,7 @@ identity: an old worker cannot record calls or publish after reclamation.
 After a quarantine the graph worker queues the recovery itself
 (`recover_world_unattended`): the rebuild calls no model, re-queues the jobs that
 never ran, and enqueues Sources saved during the quarantine. If that rebuild fails,
-the next one waits for World processing recovery in Loupist settings, so a broken
+the next one waits for Map building recovery in Loupist settings, so a broken
 rebuild cannot loop.
 Only a committed `reconcile_required` receipt may add a generation to quarantine;
 a rolled-back attempt cannot leave a quarantine without a recovery receipt.
@@ -124,8 +124,8 @@ while paused; recovery rebuilds remain runnable while extraction is paused.
 
 ### Keeping the Mac awake
 
-Settings → World processing offers one application-wide choice, off by default:
-keep this Mac awake while the World is processing (`keep_awake` in the host
+Loupist settings → Map building offers one application-wide choice, off by default:
+keep this Mac awake during Map building (`keep_awake` in the host
 `application_settings` row, read once at startup). Rust holds a single
 `PreventUserIdleSystemSleep` IOKit assertion exactly while the choice is on, World
 jobs are running and the Mac is not on battery or UPS power; an unknown power source
@@ -181,7 +181,7 @@ stored. Every change validates, applies at once and writes a `schema_extended` o
   one without touching the newer kinds. A kind a later change added or removed
   stays as that change left it, even under the same name; a change with nothing
   else left to reverse offers no Undo. A preset or review change also posts one
-  Bot message, "Your map now also tracks ...", in the labels the user sees, with
+  Home message, "Your map now also tracks ...", in the labels the user sees, with
   Undo. A chat change, a preset applied from chat included, is already in the reply. Settings shows these under
   [What the map tracks](../ui/map-lens.md#what-the-map-tracks).
 
@@ -230,7 +230,7 @@ claims about a pending page only once that Source is among them. Then
 not withdrawn, keeping each claim's direction and endpoint roles, to a name the seed
 could not reach within two hops before, with at least one hop on a claim this
 publication added. Seeds are the followed assets that `resolve_followed` matches
-exactly (an ambiguous symbol seeds nothing; the watchlist and holdings are read from
+exactly (an ambiguous symbol seeds nothing; the followed list and holdings are read from
 the app database before the Loupist transaction opens) plus the nodes open idea
 pages are anchored to. A middle node with more than 40 neighbours is never walked
 through, and a Place or Metric node is neither a far name nor a middle: a shared
@@ -238,7 +238,7 @@ country or a reported number is not a connection. The score prefers a far name i
 low-degree middles, parallel support and recent claims. Work is bounded (claims per
 node, expansions per publication, 50 candidates), and a result says when it was
 cut short. `knowledge_connections` keeps one row per (seed, far) pair for ever, with
-`status` moving `new → shown → opened | dismissed | filed`; the Bot shows at most
+`status` moving `new → shown → opened | dismissed | filed`; Home shows at most
 three a day ([link posts](../ui/home-thread.md#home-thread)). A link is new to this
 Loupist, never a claim that the market missed it.
 

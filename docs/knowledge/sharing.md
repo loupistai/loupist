@@ -4,7 +4,7 @@ A pack is a folder, ZIP or public GitHub repo of selected Memory. Scan and licen
 
 ## This release
 
-Pack sharing stays in the program. The user app leaves out Share on Lens and in Settings › Loupists, the Gallery, "use a link or file", pack review, the list of packs already added, and suggestions from those packs. A `loupist://import` link is dismissed, and no dialog opens. There is no settings switch, and no address opens those screens. World and Lens reading stay, including "Shared · {pack}" on a name or page that already came from a pack. Map image and replay export stay; that control is also labeled Share. Importing a local Loupist folder stays. Rust (`src-tauri/src/sharing/`, `src-tauri/src/knowledge/shared_pack.rs`) still owns the format, scans, network calls and storage. The screens in `src/components/sharing/` stay, and the development preview harness can still open them. Set `SHARING_UI_IN_RELEASE` in `src/sharing/releaseVisibility.ts` to show the entry points again.
+Pack sharing stays in the program. The user app leaves out Share on Lens and in Settings › Loupists, the Gallery, "use a link or file", pack review, the list of packs already added, and suggestions from those packs. A `loupist://import` link is dismissed, and no dialog opens. There is no settings switch, and no address opens those screens. Map and Lens reading stay, including "Shared · {pack}" on a name or page that already came from a pack. Map image and replay export stay under More → Export. Importing a local Loupist folder stays. Rust (`src-tauri/src/sharing/`, `src-tauri/src/knowledge/shared_pack.rs`) still owns the format, scans, network calls and storage. The screens in `src/components/sharing/` stay, and the development preview harness can still open them. Set `SHARING_UI_IN_RELEASE` in `src/sharing/releaseVisibility.ts` to show the entry points again.
 
 ## Sharing
 
@@ -24,7 +24,7 @@ principles, and the Map's names, relationships and Sources, each section switcha
 Sources travel as references (title, host, URL, EDGAR or DART filing ID, DOI, publication
 date) without bytes or quotes. Record IDs never leave: items carry keys derived from the
 pack ID, and `lens:` links keep only their label. The export reads nothing else, so
-holdings, the watchlist, Journal, Chats, notes, retained bytes, datasets, artifacts,
+holdings, what you follow, Journal, Chats, notes, retained bytes, datasets, artifacts,
 Skills, the Loupist's instructions, connections, schedules and settings never enter a
 pack. An oversized method stays in the selection until explicitly left out. Export validates the finished pack with the importer’s bounds and refuses content that would not import, including Markdown over 64 KiB or a JSONL record over 8 KiB; the error names the oversized items by title and key. Stored Source URLs are normalized before validation, retaining URLs with stray surrounding whitespace.
 

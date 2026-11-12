@@ -287,7 +287,7 @@ method alone does not demonstrate improved later work; use
 [evaluation](../../apps/loupist/evals/README.md) to test transfer. Loupist settings
 shows Learn methods from new information and the ten most recent reviews. A
 successful review announces the method and links to its document in Lens. When
-that Loupist's Map is visible, the World entities it applies to glow for four
+that Loupist's Map is visible, the Map entities it applies to glow for four
 seconds, suppressed under reduced motion. An
 unacknowledged learned publication stays marked New for seven days.
 
@@ -295,7 +295,7 @@ unacknowledged learned publication stays marked New for seven days.
 
 User principles are Lens records of kind `principle` with a statement, optional
 why and example, and user origin (`settings`, `feedback` or `chat`), or `shared` for one
-accepted from a [shared Loupist](sharing.md#sharing). The Lens panel shows the statement, its origin and application history. Asking the Bot for a change uses the admitted Memory tools. A principle linked from a World entity opens in Lens. An origin Chat
+accepted from a [shared Loupist](sharing.md#sharing). The Lens panel shows the statement, its origin and application history. Asking your Loupist in Home for a change uses the admitted Memory tools. A principle linked from a Map entity opens in Lens. An origin Chat
 link opens that conversation without changing its draft. Saved answer corrections
 can become principles. Feedback and the Memory row offer Undo, which archives, and
 View, which selects the principle in Lens. Direct creation accepts a

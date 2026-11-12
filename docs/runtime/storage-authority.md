@@ -11,9 +11,14 @@
 | OpenBB MCP worker | Loupist-scoped read-only financial data under captured connector grants |
 
 Native file tools run as the user. Rust decides every file call before it runs
-and never asks. File tools reach the Loupist folder, this run's scratch and this
-Chat's attachments, and refuse the app's private data (credentials, the database,
-Pi runtime files), home credential locations and everything outside the folder.
+and never asks. File tools reach the Loupist folder, this run's scratch, this
+Chat's attachments and the bounded global instruction paths: global `AGENTS.md`
+and `skills/**`. The sealed bundled agent `skills/` root also admits read, ls,
+find and grep, never write or edit; the adjacent prompt, extension and catalog stay
+private. A declared bundled path that resolves outside that root through `..` or a
+symlink is refused even if its target would otherwise be admitted. Other private
+app data (credentials, databases, Pi runtime files), home credential locations and
+paths outside the admitted roots are refused.
 `run_python` is the only agent code execution tool. It does not inherit the host
 environment, the network or a shell
 ([Native tool permissions](permissions.md)). Its guest view of the workspace is
@@ -66,7 +71,7 @@ workspace instruction files still follow the [workspace contract](chat-turns.md#
 | `<workspace>/.loupist/loupist.sqlite3` | Loupist profile, Chats, Memory/growth events, asset pages, results events, watch settings and alerts, graph jobs, the derived World index (`world_index_*`: entity and claim vectors, FTS5), datasets, artifacts, sharing records and scheduled definitions/history |
 | `<workspace>/.loupist/knowledge-blobs/` | Retained material referenced by that Loupist's database |
 | `<workspace>/.loupist/packs/` | Files of each [shared pack](../knowledge/sharing.md#sharing) added, by import and version |
-| Global `catalog.sqlite3` | Folder registrations, environment identity, model-provider status, the watchlist, holdings snapshots, read-only wallet addresses and other shared host state |
+| Global `catalog.sqlite3` | Folder registrations, environment identity, model-provider status, what you follow, holdings snapshots, read-only wallet addresses and other shared host state |
 | Private Chat runtime | Disposable Pi session cache, output spill files and process leases |
 | Native credential store | Environment-scoped release connector secrets and the GitHub sharing token; debug builds keep both in process memory |
 
