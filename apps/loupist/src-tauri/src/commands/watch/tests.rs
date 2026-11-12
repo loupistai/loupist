@@ -1176,3 +1176,113 @@ async fn class_starting_points_survive_a_skipped_delivery_phase() {
     assert_eq!(alerts["loupist-crypto"], 0);
     assert!(events(&state, "loupist-crypto").is_empty());
 }
+
+#[tokio::test]
+async fn shared_routes_use_only_granted_loupists_and_fan_out_to_every_granted_recipient() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a", "loupist-b", "loupist-c"]);
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    for id in ["loupist-a", "loupist-b", "loupist-c"] {
+        defaults(&state, id);
+    }
+    let runtime = Runtime::default();
+    let mut reader = Scripted::default();
+    reader.ungranted.insert("loupist-a".into());
+    reader.script(
+        "equity_fundamental_filings",
+        Some("MORR"),
+        sec(vec![sec_row(
+            "10-Q",
+            day(-1),
+            "baseline",
+            "Quarterly report",
+        )]),
+    );
+    let at = Utc::now();
+    run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+        .await
+        .unwrap();
+    assert_eq!(reader.calls_to("equity_fundamental_filings"), 1);
+    assert!(reader.calls.iter().all(|(id, ..)| id == "loupist-b"));
+    for id in ["loupist-b", "loupist-c"] {
+        assert!(!with_assets(&state, id, false, |tx| assets::observations(
+            tx,
+            id,
+            &page_id("MORR", "NASDAQ")
+        ))
+        .unwrap()
+        .is_empty());
+    }
+    assert!(
+        with_assets(&state, "loupist-a", false, |tx| assets::observations(
+            tx,
+            "loupist-a",
+            &page_id("MORR", "NASDAQ")
+        ))
+        .unwrap()
+        .is_empty()
+    );
+    // Even when the granted reader fails, a recipient without the grant is
+    // missing a connection, not treated as having attempted that read.
+    reader.offline = true;
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        at + Duration::hours(2),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    let route = with_assets(&state, "loupist-a", false, |tx| {
+        watch::route_state(tx, "loupist-a", &page_id("MORR", "NASDAQ"), Route::Filings)
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(route.status, "needs_connection");
+}
+
+#[tokio::test]
+async fn an_idle_minute_does_not_write_or_advance_the_last_check() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    defaults(&state, "loupist-a");
+    let runtime = Runtime::default();
+    let mut reader = Scripted::default();
+    let at = Utc::now();
+    run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+        .await
+        .unwrap();
+    let before = state
+        .store
+        .lock_loupist("loupist-a")
+        .unwrap()
+        .total_changes();
+    let checked = settings_view(&state, &runtime, "loupist-a")
+        .unwrap()
+        .last_checked_ms;
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        at + Duration::minutes(1),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        state
+            .store
+            .lock_loupist("loupist-a")
+            .unwrap()
+            .total_changes(),
+        before
+    );
+    assert_eq!(
+        settings_view(&state, &runtime, "loupist-a")
+            .unwrap()
+            .last_checked_ms,
+        checked
+    );
+}

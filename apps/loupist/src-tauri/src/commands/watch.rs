@@ -863,6 +863,8 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
         .collect();
     keys.sort();
     let mut prior_baseline: BTreeMap<(String, String, Route), bool> = BTreeMap::new();
+    let mut touched = BTreeSet::new();
+    let mut admitted_routes = BTreeSet::new();
     // Class signals found by this pass's reads, per Loupist, before the switches filter them.
     let mut class_found: BTreeMap<String, Vec<NewWatchEvent>> = BTreeMap::new();
     for (_, key) in keys {
@@ -884,14 +886,15 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
         let Some(read) = route_read(key.route, &first.page, today) else {
             continue;
         };
-        // The first Loupist that holds the grant makes the read for everyone.
-        let mut reading = None;
+        // Capture every recipient's own grants before choosing the reader.
+        // Initializing only the first session leaves the others unadmitted.
+        let mut granted = BTreeSet::new();
         for want in &list {
             if reader.ensure(state, &want.loupist_id) && reader.granted(&want.loupist_id, &read) {
-                reading = Some(want.loupist_id.clone());
-                break;
+                granted.insert(want.loupist_id.clone());
             }
         }
+        let reading = granted.first().cloned();
         let outcome = match &reading {
             Some(id) => {
                 runtime.count_read(now_ms);
@@ -907,8 +910,15 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
         };
         let mut copies: HashMap<String, Value> = HashMap::new();
         for want in &list {
-            let granted = reader.granted(&want.loupist_id, &read);
-            let result = match (&outcome, granted) {
+            let allowed = granted.contains(&want.loupist_id);
+            if allowed {
+                admitted_routes.insert((
+                    want.loupist_id.clone(),
+                    want.page.asset_id.clone(),
+                    key.route,
+                ));
+            }
+            let result = match (&outcome, allowed) {
                 (ReadOutcome::Ok { payload, provider }, true) => {
                     let payload = if Some(&want.loupist_id) == reading.as_ref() {
                         payload.clone()
@@ -952,7 +962,7 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
                             .extend(found)
                     })
                 }
-                (ReadOutcome::Ok { .. }, false) => record(
+                (_, false) => record(
                     state,
                     want,
                     key.route,
@@ -972,14 +982,17 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
                     record(state, want, key.route, "failed", connection, now_ms)
                 }
             };
-            if let Err(error) = result {
-                eprintln!("Watch check could not record a read: {}", error.code);
+            match result {
+                Ok(()) => {
+                    touched.insert(want.loupist_id.clone());
+                }
+                Err(error) => eprintln!("Watch check could not record a read: {}", error.code),
             }
         }
     }
     // Dates, releases and IR notices, then alerts and delivery, per Loupist.
     let mut alerts = BTreeMap::new();
-    for loupist_id in &checked {
+    for loupist_id in checked.iter().filter(|id| touched.contains(*id)) {
         let Ok(_activity) = state
             .maintenance
             .admit_kind(MaintenanceActivityKind::MemoryMutation)
@@ -1003,7 +1016,13 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
                         .unwrap_or(true)
                 };
                 for event in detect_events(tx, loupist_id, page, today, now_ms, &baseline)? {
-                    if !switch.enabled(event.kind) {
+                    if !switch.enabled(event.kind)
+                        || !admitted_routes.contains(&(
+                            loupist_id.clone(),
+                            page.asset_id.clone(),
+                            kind_route(event.kind, is_korean_market(&page.market)),
+                        ))
+                    {
                         continue;
                     }
                     if watch::insert_event(tx, loupist_id, &event, now_ms)?.is_some() {
