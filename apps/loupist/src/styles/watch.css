@@ -113,3 +113,13 @@
   .following-body { grid-template-columns: minmax(0, 1fr); }
 }
 .following-main .watching-reader.briefings-reader { padding: 0; margin: 0; max-width: none; }
+
+/* F1/F3: Watching's status and controls sit in the Following header; privacy is the last line of the side column. */
+.following-head { display: grid; gap: var(--gg-space-1); }
+.watching-status-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); }
+.watching-status-row .watching-status { margin: 0; flex: 1 1 24ch; }
+.watching-status-row [role="alert"], .watching-status-row [role="status"] { flex-basis: 100%; margin: 0; }
+.following-privacy { margin: var(--gg-space-3) 0 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
+@container following-pane (max-width: 900px) {
+  .following-intro[data-has-follows] { display: none; }
+}

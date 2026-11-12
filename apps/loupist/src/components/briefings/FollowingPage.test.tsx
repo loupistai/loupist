@@ -49,7 +49,8 @@ it("lists follows and holdings as counts only, removes a follow, and imports hol
   expect(document.body).not.toHaveTextContent("500");
   await user.click(screen.getByRole("button", { name: "Stop following Apple" }));
   expect(remove).toHaveBeenCalledWith({ symbol: "AAPL", market: "NASDAQ" });
-  await user.click(screen.getByRole("button", { name: "Import holdings…" }));
+  // With holdings imported, the action reads Update….
+  await user.click(screen.getByRole("button", { name: "Update…" }));
   expect(await screen.findByRole("dialog")).toBeVisible();
 });
 

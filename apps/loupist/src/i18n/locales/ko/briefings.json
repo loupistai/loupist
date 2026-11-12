@@ -207,6 +207,8 @@
     "watchAllFailed": "지켜보기를 켜지 못했어요. 다시 시도해 주세요.",
     "holdingsTitle": "보유 자산",
     "needsConnection": "{{kind}}: {{connection}} 연결 필요",
-    "openConnections": "데이터 연결"
+    "openConnections": "데이터 연결",
+    "updateHoldings": "업데이트…",
+    "noHoldings": "가져온 내역이 없어요. 수량과 금액은 이 Mac에만 남아요."
   }
 }

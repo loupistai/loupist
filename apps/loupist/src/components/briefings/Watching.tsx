@@ -5,7 +5,7 @@ import type { LoupistBridge, LoupistSummary } from "../../types";
 import type { AssetEvidence } from "../../contracts/assets";
 import { WATCH_KIND_GROUPS, type WatchAsset, type WatchEvent, type WatchKind, type WatchSettings } from "../../contracts/watch";
 import { Button } from "../ui/button";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, RefreshCwIcon } from "lucide-react";
 import { Spinner } from "../ui/spinner";
 import { useAssetPageOpener } from "../assets/assetOpener";
 import { useAssetNames } from "../assets/assetName";
@@ -68,6 +68,46 @@ function MatrixScroll({ group, label, children }: { group: string; label: string
   return <div ref={ref} className="watching-matrix-scroll" role="region" tabIndex={0} data-group={group} data-overflows={overflows || undefined} aria-label={label}>{children}</div>;
 }
 
+/**
+ * Watching's status line and its two controls. Pausing and checking are host work on this
+ * computer; neither starts a model run. Paused, Resume is the filled button and Check now waits.
+ */
+export function WatchingStatus({ bridge, loupist, settings, onSettings }: {
+  bridge: LoupistBridge; loupist: LoupistSummary; settings: WatchSettings; onSettings?: (next: WatchSettings) => void;
+}) {
+  useTranslation("briefings");
+  const loupistId = loupist.id;
+  const [busy, setBusy] = useState<"pause" | "check" | null>(null);
+  const [controlError, setControlError] = useState<string | null>(null);
+  const [checked, setChecked] = useState<number | null>(null);
+  const togglePause = async () => {
+    setBusy("pause"); setControlError(null); setChecked(null);
+    try { onSettings?.(await bridge.watchPauseSet({ loupistId, paused: !settings.paused })); }
+    catch { setControlError(t("watch.pauseFailed")); }
+    finally { setBusy(null); }
+  };
+  const checkNow = async () => {
+    setBusy("check"); setControlError(null); setChecked(null);
+    try { const result = await bridge.watchCheckNow({ loupistId }); setChecked(result.newAlerts); onSettings?.(result.settings); }
+    catch { setControlError(t("watch.checkFailed")); }
+    finally { setBusy(null); }
+  };
+  const nothing = settings.watched.length === 0;
+  const status = settings.paused ? <><strong className="watching-paused">{t("watch.statusPaused")}</strong> · {t("watch.pausedDetail", { loupist: loupist.name })}</>
+    : settings.consentOff ? t("watch.consentOff")
+      : nothing ? t("watch.nothingWatched")
+        : settings.lastCheckedMs ? t("watch.cadence", { loupist: loupist.name, time: formatTime(settings.lastCheckedMs) })
+          : t("watch.cadenceFirst", { loupist: loupist.name });
+  return <div className="watching-status-row">
+    <p className="briefings-meta watching-status" data-paused={settings.paused || undefined}>{status}</p>
+    {!settings.consentOff && !nothing ? <div className="watching-controls">
+      <Button variant="outline" size="sm" data-watch-check disabled={busy !== null || settings.paused || settings.checking} onClick={() => void checkNow()}>{busy === "check" || settings.checking ? <Spinner /> : <RefreshCwIcon aria-hidden="true" />}{busy === "check" || settings.checking ? t("watch.checking") : t("watch.checkNow")}</Button>
+      <Button variant={settings.paused ? "default" : "ghost"} size="sm" data-watch-pause={settings.paused ? "resume" : "pause"} disabled={busy !== null} onClick={() => void togglePause()}>{busy === "pause" ? <Spinner /> : null}{settings.paused ? t("watch.resume") : t("schedule.pause")}</Button>
+    </div> : null}
+    {controlError ? <p className="inline-error" role="alert">{controlError}</p> : checked !== null ? <p className="briefings-meta" role="status">{checked ? t("watch.found", { count: checked, formattedCount: formatNumber(checked) }) : t("watch.nothingNew")}</p> : null}
+  </div>;
+}
+
 export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, embedded = false }: {
   bridge: LoupistBridge;
   loupist: LoupistSummary;
@@ -80,7 +120,6 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
 }) {
   useTranslation(["briefings", "assets", "chat"]);
   const loupistId = loupist.id;
-  const [busy, setBusy] = useState<"pause" | "check" | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [toggleFailed, setToggleFailed] = useState(false);
   const toggle = async (asset: WatchAsset, kind: WatchKind, enabled: boolean) => {
@@ -88,21 +127,6 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
     try { onSettings?.(await bridge.watchSettingSet({ loupistId, assetId: asset.assetId, kind, enabled, expectedRevision: asset.revision })); }
     catch { setToggleFailed(true); }
     finally { setToggling(null); }
-  };
-  const [controlError, setControlError] = useState<string | null>(null);
-  const [checked, setChecked] = useState<number | null>(null);
-  // Pausing and checking are host work on this computer; neither starts a model run.
-  const togglePause = async () => {
-    setBusy("pause"); setControlError(null); setChecked(null);
-    try { onSettings?.(await bridge.watchPauseSet({ loupistId, paused: !settings.paused })); }
-    catch { setControlError(t("watch.pauseFailed")); }
-    finally { setBusy(null); }
-  };
-  const checkNow = async () => {
-    setBusy("check"); setControlError(null); setChecked(null);
-    try { const result = await bridge.watchCheckNow({ loupistId }); setChecked(result.newAlerts); onSettings?.(result.settings); void loadEvents(); }
-    catch { setControlError(t("watch.checkFailed")); }
-    finally { setBusy(null); }
   };
   const openAsset = useAssetPageOpener();
   const names = useAssetNames(bridge, loupistId);
@@ -138,29 +162,15 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
   const needed = new Map<WatchKind, string>();
   for (const asset of rows) for (const state of asset.kinds) if (state.needsConnection && !needed.has(state.kind)) needed.set(state.kind, connectionText(state.needsConnection.name));
   const numbers = citationNumbers(alerts.map(event => event.evidence));
-  const noWatchedAssets = settings.watched.length === 0;
   const openPage = (event: Pick<WatchEvent, "assetId" | "name" | "symbol" | "market">) => openAsset?.({ loupistId, assetId: event.assetId, name: nameOf(event) });
   const openEvidence = (event: WatchEvent) => (evidence: AssetEvidence) => { if (evidence.url) void bridge.openExternalUrl(evidence.url); else openPage(event); };
-  const status = settings.paused ? <><strong className="watching-paused">{t("watch.statusPaused")}</strong> · {t("watch.pausedDetail", { loupist: loupist.name })}</>
-    : settings.consentOff ? t("watch.consentOff")
-      : noWatchedAssets ? t("watch.nothingWatched")
-    : settings.lastCheckedMs ? t("watch.cadence", { loupist: loupist.name, time: formatTime(settings.lastCheckedMs) })
-      : t("watch.cadenceFirst", { loupist: loupist.name });
-
   return <article className="briefings-reader watching-reader" aria-label={t("watch.title")}>
     {!embedded && onBack ? <Button variant="ghost" className="briefings-back" onClick={onBack}>{t("schedule.back")}</Button> : null}
-    <header className="watching-head">
-      <div>
-        <h2>{t("watch.title")}</h2>
-        <p className="briefings-meta watching-status" data-paused={settings.paused || undefined}>{status}</p>
-      </div>
-      {!settings.consentOff && !noWatchedAssets ? <div className="watching-controls">
-        <Button variant="outline" size="sm" data-watch-pause={settings.paused ? "resume" : "pause"} disabled={busy !== null} onClick={() => void togglePause()}>{busy === "pause" ? <Spinner /> : null}{settings.paused ? t("watch.resume") : t("schedule.pause")}</Button>
-        <Button variant="outline" size="sm" data-watch-check disabled={busy !== null || settings.paused || settings.checking} onClick={() => void checkNow()}>{busy === "check" || settings.checking ? <Spinner /> : null}{busy === "check" || settings.checking ? t("watch.checking") : t("watch.checkNow")}</Button>
-      </div> : null}
+    {embedded ? null : <><header className="watching-head">
+      <h2>{t("watch.title")}</h2>
+      <WatchingStatus bridge={bridge} loupist={loupist} settings={settings} onSettings={onSettings} />
     </header>
-    {controlError ? <p className="inline-error" role="alert">{controlError}</p> : checked !== null ? <p className="briefings-meta" role="status">{checked ? t("watch.found", { count: checked, formattedCount: formatNumber(checked) }) : t("watch.nothingNew")}</p> : null}
-    <p className="watching-privacy">{t("watch.privacy")}</p>
+    <p className="watching-privacy">{t("watch.privacy")}</p></>}
     {/* Each matrix scrolls sideways inside its own box; the asset column stays. With more than one class, each table names its class. */}
     {groups.map(group => {
       const label = tDynamic(`watch.group.${group.id}`);

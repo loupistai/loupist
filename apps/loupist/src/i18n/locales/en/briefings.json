@@ -214,6 +214,8 @@
     "watchAllFailed": "Couldn't turn on Watching. Try again.",
     "holdingsTitle": "Your holdings",
     "needsConnection": "{{kind}}: needs {{connection}}",
-    "openConnections": "Data connections"
+    "openConnections": "Data connections",
+    "updateHoldings": "Update…",
+    "noHoldings": "None imported. Quantities and values stay on this Mac."
   }
 }

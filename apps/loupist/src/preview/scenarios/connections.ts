@@ -6,7 +6,7 @@ import { base, click, hasLayout, select, settings, until, type PreviewScenario }
 export const connectionScenarios: PreviewScenario[] = [
   ...["connections-custom-empty", "connections-custom-list", "connection-add-url-signin", "connection-add-json-review", "connection-review-tools", "connection-detail", "chat-needs-approval"].map((id): PreviewScenario => ({
     id, title: id, setup: bridge => prepareCustomConnectionFixture(bridge, id),
-    landmark: () => select(id === "chat-needs-approval" ? ".approval-cards" : id === "connection-detail" ? ".custom-detail" : id === "connection-add-url-signin" ? "[data-custom-signing-in]" : id === "connection-add-json-review" || id === "connection-review-tools" ? ".custom-add .custom-tools" : ".custom-connections"),
+    landmark: () => select(id === "chat-needs-approval" ? ".approval-cards" : id === "connection-detail" ? ".custom-detail" : id === "connection-add-url-signin" ? "[data-custom-signing-in]" : id === "connection-add-json-review" || id === "connection-review-tools" ? ".custom-add .custom-tools" : id === "connections-custom-empty" ? "[data-custom-connections] > summary" : "[data-custom-connections][open] .custom-rows"),
     enter: async root => {
       if (id === "chat-needs-approval") {
         await until(() => select(".approval-cards"), "Approval activity did not load");

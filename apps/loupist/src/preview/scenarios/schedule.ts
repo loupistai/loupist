@@ -8,7 +8,7 @@ export const scheduleScenarios: PreviewScenario[] = [
   // W15.23 and W15.6c: the Schedule tab manages scheduled work; results arrive in the home Thread.
   ...([
     ["schedule-list", "Scheduled tasks with saved names, cadence and a task menu", ".schedule-list"],
-    ["schedule-watching-setup", "Asset watch history keeps the saved choices read-only", ".watching-reader .watching-status"],
+    ["schedule-watching-setup", "Schedule's Watching row opens Following with its status and controls", "[data-testid=following-page] .watching-status"],
     ["schedule-empty", "Nothing scheduled yet", ".schedule-list .schedule-empty"],
     ["schedule-create", "Request scheduled work in Bot", ".composer-shell textarea"],
     ["schedule-active-filter", "Active filter hides a paused task", "[data-schedule-filter='active']"],

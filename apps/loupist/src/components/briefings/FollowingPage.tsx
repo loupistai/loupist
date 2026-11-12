@@ -16,7 +16,7 @@ import { Spinner } from "../ui/spinner";
 import { useAssetPageOpener } from "../assets/assetOpener";
 import { useWatchSettings } from "../assets/WatchFor";
 import { HoldingsSheet } from "../holdings/HoldingsSheet";
-import { WatchingReader } from "./Watching";
+import { WatchingReader, WatchingStatus } from "./Watching";
 import "@/styles/watch.css";
 // Chips, the add form and meta lines share the Lens page's styles.
 import "@/styles/memory-page.css";
@@ -124,7 +124,9 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
     {onBack ? <Button variant="ghost" className="briefings-back" onClick={onBack}>{t("schedule.back")}</Button> : null}
     <header className="following-head">
       <h1 id={headingId}>{t("following.title")}</h1>
-      <p className="briefings-meta">{t("following.intro")}</p>
+      {settings ? <WatchingStatus bridge={bridge} loupist={loupist} settings={settings} onSettings={setSettings} /> : null}
+      {/* The intro explains an empty page; with names listed it would only push them down when compact. */}
+      <p className="briefings-meta following-intro" data-has-follows={watchlist?.length ? true : undefined}>{t("following.intro")}</p>
     </header>
 
     <div className="following-body">
@@ -154,7 +156,7 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
 
     {offerWatchAll && watchlist?.length ? <div className="settings-row following-watch-all" data-watch-all>
       <p className="settings-row-description">{t("following.watchAllDetail")}</p>
-      <Button disabled={applying} onClick={() => void watchAll()}>{applying ? <Spinner /> : null}{t("following.watchAll", { n: formatNumber(undecided || watchlist.length) })}</Button>
+      <Button variant={settings?.paused ? "outline" : "default"} disabled={applying} onClick={() => void watchAll()}>{applying ? <Spinner /> : null}{t("following.watchAll", { n: formatNumber(undecided || watchlist.length) })}</Button>
     </div> : null}
 
     {needs.length ? <ul className="following-needs" data-watch-needs>{needs.map(item => <li key={`${item.kind}:${item.connection.id}`}>
@@ -166,8 +168,9 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
     {/* Side column at wide sizes, after the list when compact: holdings are counts and dates only. */}
     <aside className="following-side" aria-labelledby={holdingsId}>
       <h2 id={holdingsId} className="following-caption">{t("following.holdingsTitle")}</h2>
-      <p className="memory-meta" data-holdings-kinds>{holdingsLine(holdings)}</p>
-      <Button variant="outline" size="sm" className="memory-holdings-update" data-testid="memory-holdings-update" onClick={() => setHoldingsOpen(true)}>{t("following.importHoldings")}</Button>
+      <p className="memory-meta" data-holdings-kinds>{holdings?.stocks || holdings?.crypto ? holdingsLine(holdings) : t("following.noHoldings")}</p>
+      <Button variant="outline" size="sm" className="memory-holdings-update" data-testid="memory-holdings-update" onClick={() => setHoldingsOpen(true)}>{holdings?.stocks || holdings?.crypto ? t("following.updateHoldings") : t("following.importHoldings")}</Button>
+      <p className="following-privacy">{t("watch.privacy")}</p>
       <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={open => { setHoldingsOpen(open); if (!open) refresh(); }} />
     </aside>
     </div>
