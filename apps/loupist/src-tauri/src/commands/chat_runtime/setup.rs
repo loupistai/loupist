@@ -443,6 +443,13 @@ pub(super) fn admit_chat_turn(
             .join("temp"),
         &chat_attachments.join(&chat.id),
         host_home().as_deref(),
+    )
+    .with_agent_skills(
+        &pi_artifacts
+            .system_prompt
+            .parent()
+            .ok_or_else(|| CommandError::internal("Pi agent resource is invalid"))?
+            .join("skills"),
     );
     let timestamp = now_ms().max(chat.updated_at_ms + 1);
     let user_message_id = new_id("message");

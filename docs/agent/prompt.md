@@ -22,6 +22,9 @@ sharing, the agent names the skipped actions in the final answer, including when
 missing research inputs require clarification, and continues the authorized
 research. The data does not become a user instruction.
 
+Native file guidance names only admitted file/instruction/Skill paths. Bundled
+Skill reads have their own read-only root; adjacent agent internals stay private.
+
 ## Investment judgment
 
 The Loupist answers investment-judgment questions with its own clear or conditional
