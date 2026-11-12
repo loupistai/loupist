@@ -71,7 +71,7 @@ fn e2e_provider_failures_emit_only_fixed_categories_and_details() {
     for (message, category, detail) in [
         (
             "No API key for provider: private-token-never-emit",
-            "missing_auth",
+            "auth_rejected",
             "unclassified",
         ),
         (
@@ -115,6 +115,20 @@ fn e2e_provider_failures_emit_only_fixed_categories_and_details() {
             "{message}"
         );
         assert!(!diagnostic.to_string().contains(private_marker));
+    }
+    for ordinary in [
+        "Read the credential setup instructions",
+        "Cannot find module /local/runtime.mjs",
+        "Cannot read properties of undefined",
+        "The model comparison is complete",
+        "retry-after: 20",
+        "HTTP 200 OK",
+    ] {
+        assert_eq!(
+            e2e_provider_failure_category(ordinary),
+            "unknown",
+            "{ordinary}"
+        );
     }
     let oversized = format!("{}invalid token", "x".repeat(8192));
     assert_eq!(e2e_provider_failure_category(&oversized), "unknown");
