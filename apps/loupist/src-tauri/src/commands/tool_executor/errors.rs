@@ -19,6 +19,7 @@ pub(super) fn store_error(error: crate::store::StoreError) -> BrokerError {
         | crate::store::StoreError::Json(_)
         | crate::store::StoreError::PrivateStorage(_)
         | crate::store::StoreError::Upgrade(_)
+        | crate::store::StoreError::Invalid(_)
         | crate::store::StoreError::LockPoisoned => BrokerError::Execution(
             "Local data is unavailable. Try again or restart Loupist.".into(),
         ),
@@ -51,6 +52,7 @@ mod tests {
                 private,
             ))),
             store_error(crate::store::StoreError::Upgrade(private.into())),
+            store_error(crate::store::StoreError::Invalid(private.into())),
             store_error(crate::store::StoreError::Sqlite(
                 rusqlite::Error::InvalidParameterName(private.into()),
             )),

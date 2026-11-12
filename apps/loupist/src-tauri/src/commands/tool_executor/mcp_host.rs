@@ -1285,7 +1285,7 @@ fn ensure_inventory_contains_no_protected_values(
         .map_err(|_| BrokerError::Execution("MCP tool inventory was invalid".into()))?;
     if contains_protected_value(&inventory, sensitive_values) {
         return Err(BrokerError::Execution(
-            "MCP tool inventory contained protected credential data".into(),
+            "MCP tool inventory contained protected private data".into(),
         ));
     }
     Ok(())
