@@ -27,6 +27,8 @@ it("connects then requires a choice for every eligible tool before Done", async 
   await user.type(screen.getByRole("textbox", { name: "Server URL" }), "https://research.example/mcp");
   await user.click(screen.getByRole("button", { name: "Connect" }));
   expect(await screen.findByRole("button", { name: "Done" })).toBeDisabled();
+  // Why Done waits is said beside Done, not below the tool list.
+  expect(screen.getByRole("button", { name: "Done" }).parentElement).toHaveTextContent("Choose for each tool");
   expect(screen.getByText("Read prices")).toBeVisible();
   expect(screen.getByText("read_prices")).toBeVisible();
   await user.click(within(screen.getByRole("radiogroup", { name: "Approval for Read prices" })).getByRole("radio", { name: "Allow" }));
@@ -34,6 +36,7 @@ it("connects then requires a choice for every eligible tool before Done", async 
   await user.click(within(screen.getByRole("radiogroup", { name: "Approval for Read filings" })).getByRole("radio", { name: "Don’t allow" }));
   expect(screen.getByRole("button", { name: "Done" })).toBeEnabled();
   expect(screen.queryByRole("radiogroup", { name: "Approval for Place order" })).toBeNull();
+  expect(screen.queryByText(/Choose for each tool/)).toBeNull();
   const enable = vi.spyOn(bridge, "customConnectionSetEnabled");
   await user.click(screen.getByRole("button", { name: "Done" }));
   expect(onClose).toHaveBeenCalledOnce();

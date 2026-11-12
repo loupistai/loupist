@@ -25,8 +25,10 @@ function Tool({ tool, busy, onChoice }: { tool: CustomToolCard; busy: boolean; o
   </li>;
 }
 
-export function ToolReview({ bridge, connection, loupistId, onChanged, busy = false, onError }: {
+export function ToolReview({ bridge, connection, loupistId, onChanged, busy = false, onError, hint = true }: {
   bridge: CustomConnectionsBridge; connection: CustomConnection; loupistId: string; onChanged: (record: CustomConnection) => void; busy?: boolean; onError: () => void;
+  /** False when the caller says "Choose for each tool" beside its own Done button. */
+  hint?: boolean;
 }) {
   const [saving, setSaving] = useState(false);
   const { t } = useTranslation("settings");
@@ -38,8 +40,14 @@ export function ToolReview({ bridge, connection, loupistId, onChanged, busy = fa
   }
   return <>
     <ul className="custom-tools" aria-label={t("custom.tools")}>{connection.tools.map(tool => <Tool key={`${connection.id}:${loupistId}:${tool.name}:${tool.definition_hash}`} tool={tool} busy={busy || saving || !loupistId} onChoice={choice => void choose(tool, choice)} />)}</ul>
-    {reviewComplete(connection) ? null : <p className="custom-meta" role="status">{t("custom.chooseEach")}</p>}
+    {hint && !reviewComplete(connection) ? <ReviewHint /> : null}
   </>;
+}
+
+/** Why Done waits: shown where the user looks for Done. */
+export function ReviewHint() {
+  const { t } = useTranslation("settings");
+  return <p className="custom-meta custom-review-hint" role="status">{t("custom.chooseEach")}</p>;
 }
 
 export function reviewComplete(connection: CustomConnection) {
