@@ -32,7 +32,9 @@ updates:
         update-types: [minor, patch]
 
   - package-ecosystem: cargo
-    directory: /apps/loupist/src-tauri
+    directories:
+      - /apps/loupist/src-tauri
+      - /apps/loupist/python-worker
     schedule:
       interval: weekly
       day: monday
