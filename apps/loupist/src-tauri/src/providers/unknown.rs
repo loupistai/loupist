@@ -24,6 +24,9 @@ pub(crate) fn profile_provider(profile_id: &str) -> &str {
 /// Runs once at startup. A failure leaves the rest of startup alone; admission
 /// still treats an unknown provider's model as gone.
 pub(crate) fn delete_unknown_provider_state(state: &AppState) {
+    if super::connection::cleanup_support_files(&state.artifacts.app_data_dir).is_err() {
+        eprintln!("Loupist could not remove an interrupted provider request");
+    }
     if delete_with(state, &known_provider).is_err() {
         eprintln!("Loupist could not remove settings for a provider this build does not offer");
     }

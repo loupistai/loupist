@@ -1054,14 +1054,54 @@ fn create_support_files(app_data_dir: &Path) -> Result<SupportFiles, CommandErro
     let directory = root.join(Uuid::new_v4().simple().to_string());
     create_private_directory(&directory)
         .map_err(|error| CommandError::internal(error.to_string()))?;
-    let result = directory.join("result.json");
-    ensure_private_regular_file(&result)
-        .map_err(|error| CommandError::internal(error.to_string()))?;
-    Ok(SupportFiles {
+    let files = SupportFiles {
+        result: directory.join("result.json"),
         directory,
-        result,
         request: None,
-    })
+    };
+    ensure_private_regular_file(&files.result)
+        .map_err(|error| CommandError::internal(error.to_string()))?;
+    Ok(files)
+}
+
+/// Startup recovery, before any support operation can own one of these files.
+/// Unlink only our two known files in UUID directories; never follow a symlink.
+pub(crate) fn cleanup_support_files(app_data_dir: &Path) -> std::io::Result<()> {
+    let root = app_data_dir.join("provider-support");
+    let entries = match std::fs::read_dir(&root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    // A forged root cannot redirect cleanup outside the private app directory.
+    if !std::fs::symlink_metadata(&root)?.file_type().is_dir() {
+        return Err(std::io::Error::other("invalid provider support directory"));
+    }
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if name.len() != 32
+            || !name.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || !entry.file_type()?.is_dir()
+        {
+            continue;
+        }
+        for file in ["request.json", "result.json"] {
+            match std::fs::remove_file(entry.path().join(file)) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        }
+        // Preserve unexpected contents, rather than recursively deleting them.
+        match std::fs::remove_dir(entry.path()) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn create_search_support_files(
@@ -1069,9 +1109,9 @@ pub(crate) fn create_search_support_files(
 ) -> Result<SupportFiles, CommandError> {
     let mut files = create_support_files(app_data_dir)?;
     let request = files.directory.join("request.json");
-    ensure_private_regular_file(&request)
-        .map_err(|error| CommandError::internal(error.to_string()))?;
     files.request = Some(request);
+    ensure_private_regular_file(files.request.as_ref().unwrap())
+        .map_err(|error| CommandError::internal(error.to_string()))?;
     Ok(files)
 }
 
@@ -1610,6 +1650,42 @@ pub(crate) async fn eval_models(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn support_requests_are_removed_on_drop_and_recovered_after_a_crash() {
+        let root = tempfile::tempdir().unwrap();
+        let files = create_search_support_files(root.path()).unwrap();
+        let directory = files.directory.clone();
+        std::fs::write(files.request.as_ref().unwrap(), b"private request").unwrap();
+        drop(files);
+        assert!(!directory.exists());
+        let files = create_search_support_files(root.path()).unwrap();
+        let directory = files.directory.clone();
+        std::fs::write(files.request.as_ref().unwrap(), b"interrupted request").unwrap();
+        std::mem::forget(files); // Simulate a process exit that skipped destructors.
+        cleanup_support_files(root.path()).unwrap();
+        assert!(!directory.exists());
+        cleanup_support_files(root.path()).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn request_recovery_does_not_follow_directory_symlinks_or_remove_unrelated_files() {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let support = root.path().join("provider-support");
+        std::fs::create_dir(&support).unwrap();
+        let request = external.path().join("request.json");
+        std::fs::write(&request, b"keep").unwrap();
+        std::os::unix::fs::symlink(external.path(), support.join("a".repeat(32))).unwrap();
+        let unrelated = support.join("not-a-support-run");
+        std::fs::create_dir(&unrelated).unwrap();
+        std::fs::write(unrelated.join("request.json"), b"keep").unwrap();
+        cleanup_support_files(root.path()).unwrap();
+        assert_eq!(std::fs::read(&request).unwrap(), b"keep");
+        assert!(unrelated.join("request.json").exists());
+    }
+
 
     #[test]
     fn authorization_urls_are_locked_to_cataloged_oauth_hosts() {
