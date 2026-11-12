@@ -31,6 +31,8 @@ it("keeps profile, chat, learning and skills on one page with changes scoped to 
   await waitFor(() => expect(learning).toHaveBeenCalledWith({ loupistId: "loupist-quality", learnMethods: !enabled }));
   await user.click(within(page).getByRole("button", { name: "Skills & connections" }));
   await user.click(within(page).getByRole("button", { name: "Manage skills" }));
+  // Writing a Skill sits under Advanced.
+  await user.click((await waitFor(() => page.querySelector<HTMLElement>("[data-skills-advanced] > summary")!)));
   expect(await within(page).findByRole("button", { name: "Create skill" })).toBeVisible();
   expect(within(page).queryByRole("combobox", { name: "Available to" })).toBeNull();
   expect((await bridge.configRead({ scope: { kind: "global" } })).explicit).toEqual({});
