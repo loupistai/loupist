@@ -285,8 +285,15 @@ fn results_report_both_snapshot_omissions_and_writeback_truncation() {
         stdout_truncated: false,
         stderr_truncated: false,
     };
-    let result = super::result_value(&outcome, &report, true, &[]);
-    assert_eq!(result["stderr"], "guest warning\nSome workspace changes were not copied back.\nSome files were left out of the snapshot because they are too large.\n");
+    let result = super::result_value(
+        &outcome,
+        &report,
+        2,
+        &["notes/left-out.csv".into()],
+        false,
+        &[],
+    );
+    assert_eq!(result["stderr"], "guest warning\nSome workspace changes were not copied back.\nSome files or folders were left out of the snapshot because of its limits.\n");
 }
 
 #[test]
@@ -439,17 +446,105 @@ fn snapshot_leaves_out_links_hidden_files_and_oversized_files() {
     );
 }
 
+fn snapshot_timestamp(path: &Path, seconds: u64) {
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_times(
+            fs::FileTimes::new()
+                .set_modified(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)),
+        )
+        .unwrap();
+}
+
 #[test]
-fn snapshot_refuses_a_tree_over_the_byte_budget() {
+fn snapshot_file_selection_is_deterministic_with_outputs_then_recency_then_path() {
+    let fixture = sample();
+    fs::create_dir(workspace(&fixture).join("outputs")).unwrap();
+    fs::write(workspace(&fixture).join("outputs/old.txt"), "output").unwrap();
+    snapshot_timestamp(&workspace(&fixture).join("outputs/old.txt"), 1);
+    for index in (0..super::MAX_SNAPSHOT_FILES + 10).rev() {
+        let path = workspace(&fixture).join(format!("notes/file-{index:05}.txt"));
+        fs::write(&path, "data").unwrap();
+        snapshot_timestamp(&path, 100);
+    }
+    fs::write(workspace(&fixture).join("notes/recent.txt"), "recent").unwrap();
+    snapshot_timestamp(&workspace(&fixture).join("notes/recent.txt"), 200);
+    let first = prepare(&fixture);
+    let second = prepare(&fixture);
+    assert_eq!(first.omitted, second.omitted);
+    assert_eq!(first.omitted_count, second.omitted_count);
+    assert!(first.omitted_count >= 10);
+    assert!(!first.scan_truncated);
+    for path in [
+        "outputs/old.txt",
+        "notes/recent.txt",
+        "notes/file-00000.txt",
+    ] {
+        assert!(snap_file(&first, path).is_file(), "{path}");
+    }
+    assert!(!snap_file(&first, "notes/file-02009.txt").exists());
+    assert!(first.writeback().unwrap().changed.is_empty());
+    assert_eq!(host_text(&fixture, "notes/file-02009.txt"), "data");
+}
+
+#[test]
+fn python_runs_large_folders_and_reports_both_file_and_byte_omissions() {
+    for files in [true, false] {
+        let fixture = sample();
+        if files {
+            for index in 0..super::MAX_SNAPSHOT_FILES + 2 {
+                fs::write(
+                    workspace(&fixture).join(format!("notes/f-{index:05}.txt")),
+                    "x",
+                )
+                .unwrap();
+            }
+        } else {
+            for index in 0..5 {
+                let path = workspace(&fixture).join(format!("notes/block-{index}.bin"));
+                fs::File::create(path)
+                    .unwrap()
+                    .set_len(super::MAX_FILE_BYTES)
+                    .unwrap();
+            }
+        }
+        let value = run_python(&fixture, "from pathlib import Path\nprint('large-folder-ok')\nPath('/workspace/outputs/completed.txt').write_text('done')", 120);
+        assert_eq!(value["status"], "completed", "{value}");
+        assert!(value["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("large-folder-ok"));
+        assert!(value["snapshot_omitted_count"].as_u64().unwrap() > 0);
+        assert!(!value["snapshot_omitted_paths"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert_eq!(host_text(&fixture, "outputs/completed.txt"), "done");
+        assert!(!value.to_string().contains(TOKEN));
+    }
+}
+
+#[test]
+fn snapshot_omits_files_over_the_byte_budget_instead_of_refusing_the_folder() {
     let fixture = sample();
     let notes = workspace(&fixture).join("notes");
     let payload = vec![0u8; super::MAX_FILE_BYTES as usize];
     for name in ["a.bin", "b.bin", "c.bin", "d.bin"] {
         fs::write(notes.join(name), &payload).unwrap();
+        snapshot_timestamp(&notes.join(name), 100);
     }
     fs::write(notes.join("e.bin"), b"e").unwrap();
-    let error = super::snapshot::prepare(&fixture.roots).expect_err("budget");
-    assert_eq!(error.message, "workspace snapshot is too large");
+    snapshot_timestamp(&notes.join("e.bin"), 200);
+    let prepared = prepare(&fixture);
+    assert!(prepared.omitted_count > 0);
+    assert!(snap_file(&prepared, "notes/e.bin").is_file());
+    let copied = ["a.bin", "b.bin", "c.bin", "d.bin"]
+        .iter()
+        .filter(|name| snap_file(&prepared, &format!("notes/{name}")).exists())
+        .count();
+    assert!(copied < 4);
 }
 
 #[test]
@@ -747,7 +842,10 @@ fn directory_traversal_and_writable_roots_are_bounded() {
     for index in 0..super::MAX_WRITABLE_DIRS {
         fs::create_dir(workspace(&fixture).join(format!("folder-{index}"))).unwrap();
     }
-    assert!(super::snapshot::prepare(&fixture.roots).is_err());
+    let prepared = prepare(&fixture);
+    assert!(prepared.writable_names().len() <= super::MAX_WRITABLE_DIRS);
+    assert!(prepared.scan_truncated);
+    assert!(prepared.omitted_count > 0);
 }
 
 #[test]
