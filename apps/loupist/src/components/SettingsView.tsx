@@ -3,7 +3,6 @@ import { MarketplaceView } from "./marketplace/MarketplaceView";
 import { LoupistAvatar } from "./app/AppHeader";
 import i18n, { useTranslation } from "../i18n";
 import { SkillsSettings } from "./settings/SkillsSettings";
-import { RefreshCwIcon } from "lucide-react";
 import { Button } from "./ui/button";
 import { PageHeader } from "./ui/page-header";
 import type { LanguagePreference } from "../i18n/useLanguage";
@@ -18,7 +17,7 @@ import { UpdateSettingsCard } from "./settings/UpdateSettingsCard";
 import type { useAppUpdate } from "./settings/useAppUpdate";
 import type { ConfigScope, LoupistSummary, LoupistBridge } from "../types";
 import { AgentSettings, ConfigurationDiagnostics } from "./settings/AgentSettings";
-import { notifyConfigurationChanged, type useConfiguration } from "../app/useConfiguration";
+import type { useConfiguration } from "../app/useConfiguration";
 import { useState } from "react";
 import { sharingReleaseVisible } from "../sharing/releaseVisibility";
 import { ShareSheet } from "./sharing/ShareSheet";
@@ -90,7 +89,7 @@ export function SettingsView({
         ) : null}
 
         {section === "appearance" ? (
-          <><AppearanceSettings language={language} onLanguageChange={onLanguageChange} theme={theme} onThemeChange={onThemeChange} disabled={appearanceConfiguration.busy || !appearanceConfiguration.snapshot || Boolean(appearanceConfiguration.snapshot.diagnostics.length)} />{appearanceConfiguration.error ? <p role="alert" className="inline-error">{appearanceConfiguration.error}</p> : null}<ConfigurationDiagnostics snapshot={appearanceConfiguration.snapshot} /><div className="settings-footnote"><span>{i18n.t("settings:settingsView.savedAutomaticallyForAllLoupistsOnThisDevice")}</span><Button type="button" variant="ghost" size="sm" disabled={appearanceConfiguration.busy} onClick={() => notifyConfigurationChanged()}><RefreshCwIcon /> {i18n.t("settings:settingsView.reload")}</Button></div></>
+          <><AppearanceSettings language={language} onLanguageChange={onLanguageChange} theme={theme} onThemeChange={onThemeChange} disabled={appearanceConfiguration.busy || !appearanceConfiguration.snapshot || Boolean(appearanceConfiguration.snapshot.diagnostics.length)} />{appearanceConfiguration.error ? <p role="alert" className="inline-error">{appearanceConfiguration.error}</p> : null}<ConfigurationDiagnostics snapshot={appearanceConfiguration.snapshot} /><p className="settings-footnote"><span>{i18n.t("settings:settingsView.savedAutomaticallyForAllLoupistsOnThisDevice")}</span></p></>
         ) : null}
 
         {section === "keyboard" ? <KeyboardSettings /> : null}

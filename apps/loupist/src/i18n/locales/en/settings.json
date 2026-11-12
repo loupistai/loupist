@@ -37,8 +37,7 @@
     }
   },
   "settingsView": {
-    "savedAutomaticallyForAllLoupistsOnThisDevice": "Saved automatically for all Loupists on this device.",
-    "reload": "Reload"
+    "savedAutomaticallyForAllLoupistsOnThisDevice": "Saved automatically for all Loupists on this device."
   },
   "agentSettings": {
     "performanceGroup": "Response speed",

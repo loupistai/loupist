@@ -73,10 +73,10 @@ export function UpdateSettingsCard({
             <dt>{i18n.t("settings:updateSettingsCard.currentVersion")}</dt>
             <dd>{updateState?.current_version ?? i18n.t("settings:updateSettingsCard.loading")}</dd>
           </div>
-          <div>
+          {offer?.version ? <div>
             <dt>{i18n.t("settings:updateSettingsCard.availableVersion")}</dt>
-            <dd>{offer?.version ?? "—"}</dd>
-          </div>
+            <dd>{offer.version}</dd>
+          </div> : null}
         </dl>
 
         {updateState?.supported === false ? (

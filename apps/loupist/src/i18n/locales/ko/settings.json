@@ -38,8 +38,7 @@
     }
   },
   "settingsView": {
-    "savedAutomaticallyForAllLoupistsOnThisDevice": "이 기기의 모든 루피스트에 자동으로 저장돼요.",
-    "reload": "새로고침"
+    "savedAutomaticallyForAllLoupistsOnThisDevice": "이 기기의 모든 루피스트에 자동으로 저장돼요."
   },
   "agentSettings": {
     "performanceGroup": "응답 속도",
