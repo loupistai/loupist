@@ -164,7 +164,7 @@ pub fn pack_remove(
     let _activity = state
         .maintenance
         .admit_kind(MaintenanceActivityKind::MemoryMutation)?;
-    with_tx(state, &request.loupist_id, |tx, blobs| {
+    let imports = with_tx(state, &request.loupist_id, |tx, blobs| {
         remove(
             tx,
             blobs,
@@ -174,7 +174,9 @@ pub fn pack_remove(
             crate::commands::now_ms(),
         )?;
         list_imports(tx, &request.loupist_id)
-    })
+    })?;
+    super::add::prune_copies(state, &request.loupist_id, &request.import_id);
+    Ok(imports)
 }
 
 #[derive(Debug, Deserialize)]
