@@ -579,3 +579,101 @@ fn a_new_focus_rewrites_only_the_perspective_focus_section() {
         "the same or an empty focus changes nothing"
     );
 }
+
+#[test]
+fn methods_stay_in_a_sixty_line_index_crowded_by_eighty_subject_pages() {
+    use crate::knowledge::lens_page::{FilingOrigin, LensOp, PageDelta, PageKind, PageTarget};
+    let (_dir, state) = fixture();
+    let expected = with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+        let write = KnowledgeWrite::bind(tx, blobs);
+        let origin = FilingOrigin::User {
+            chat_id: None,
+            message_id: None,
+        };
+        let mut expected = Vec::new();
+        for index in 0..3 {
+            let use_when = format!(
+                "Use method {index} to check durable cash flow.\n\n{}",
+                "Exact fallback context. ".repeat(12)
+            );
+            let page = write.file_section(
+                "loupist-a",
+                PageKind::Method,
+                &format!("Method {index}"),
+                "use-when",
+                &use_when,
+                &origin,
+                index + 1,
+            )?;
+            let summary = if index == 2 {
+                use_when
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .chars()
+                    .take(160)
+                    .collect()
+            } else {
+                let text = format!(
+                    "Method {index} summary: {}",
+                    "Preserve this method context. ".repeat(7)
+                );
+                write.file(
+                    "loupist-a",
+                    &origin,
+                    vec![PageDelta {
+                        target: PageTarget::Existing {
+                            record_id: page.record_id.clone(),
+                        },
+                        ops: vec![LensOp::Summary { text: text.clone() }],
+                    }],
+                    index + 10,
+                )?;
+                text
+            };
+            expected.push((page.record_id, summary));
+        }
+        for index in 0..80 {
+            write.file_section(
+                "loupist-a",
+                PageKind::Subject,
+                &format!("Subject {index}"),
+                "notes",
+                "More recent subject research.",
+                &origin,
+                index + 100,
+            )?;
+        }
+        Ok(expected)
+    })
+    .unwrap();
+    let context = host_memory_context(&state, "loupist-a", "").unwrap();
+    assert_eq!(context.lens_total, 83);
+    assert_eq!(context.lens_shown, LENS_INDEX_LINES);
+    assert_eq!(
+        context
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == "lens")
+            .count(),
+        LENS_INDEX_LINES
+    );
+    assert!(context
+        .entries
+        .iter()
+        .take(3)
+        .all(|entry| entry.lens_kind == Some(crate::knowledge::lens_page::LensKind::Method)));
+    for (id, summary) in expected {
+        assert_eq!(
+            context
+                .entries
+                .iter()
+                .find(|entry| entry.id == id)
+                .unwrap()
+                .summary,
+            summary
+        );
+    }
+    // The remaining budget preserves the old newest-first subject order.
+    assert_eq!(context.entries[3].title, "Subject 79");
+}
