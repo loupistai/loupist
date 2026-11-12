@@ -659,13 +659,13 @@
       "pages": "Pages"
     },
     "row": {
-      "used_one": "used {{formattedCount}} time · last {{date}}",
-      "used_other": "used {{formattedCount}} times · last {{date}}",
-      "taught": "taught {{date}} · not used yet",
-      "learned_one": "learned {{date}} · applied {{formattedCount}} time",
-      "learned_other": "learned {{date}} · applied {{formattedCount}} times",
-      "learnedOnly": "learned {{date}}",
-      "neverUsed": "not used yet"
+      "used_one": "Used {{formattedCount}} time · last {{date}}",
+      "used_other": "Used {{formattedCount}} times · last {{date}}",
+      "taught": "Taught {{date}} · not used yet",
+      "learned_one": "Learned {{date}} · applied {{formattedCount}} time",
+      "learned_other": "Learned {{date}} · applied {{formattedCount}} times",
+      "learnedOnly": "Learned {{date}}",
+      "neverUsed": "Not used yet"
     },
     "perspective": "Perspective",
     "perspectiveDescription": "The overall view your Loupist starts from.",

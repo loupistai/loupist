@@ -28,7 +28,7 @@ it("opens on Pages with your principles grouped in, shows where one was used, an
   expect(within(tabs).getByRole("tab", { name: /Pages/ })).toHaveAttribute("aria-selected", "true");
   // Lens is Pages and History; what you follow lives on the Following page.
   expect(within(tabs).getAllByRole("tab").map(tab => tab.textContent)).toEqual([expect.stringMatching(/^Pages/), expect.stringMatching(/^History/)]);
-  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Principle, used 4 times/ }));
+  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Principle, Used 4 times/ }));
   const reader = within(page).getByRole("complementary", { name: /Prefer companies that publish segment margins/ });
   await user.click(within(reader).getByRole("button", { name: "Hanul margin review" }));
   expect(handlers.onOpenChat).toHaveBeenCalledWith("chat-margin");
