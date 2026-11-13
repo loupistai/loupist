@@ -15,11 +15,20 @@ const CORPORATE_SUFFIX = /(?:\s+주식회사|\s*\(주\)|\s*,?\s+Co\.,\s*Ltd\.|\s
 // as a Product, Event or a user-defined kind. A digit/period alone is not enough.
 const MEASUREMENT_NAME = /(?:\b(?:USD|KRW|EUR|GBP|JPY|CNY|RMB|CAD|AUD|CHF)\s*[+−-]?\d|[$€£₩¥]\s*[+−-]?\d|\d[\d,.]*\s*(?:%|퍼센트|bps\b|basis points\b|million\b|billion\b|trillion\b|thousand\b|percent\b|tonnes\b|tons\b|barrels\b|widgets\b|units\b|GWh\b|MWh\b|kWh\b|GW\b|MW\b|kg\b|km\b|억원|조원|만원|천원|원|달러|백만|천만|십억|백억|억|조|만|톤|명|대|개|주|건|배)|\d[\d,.]*\s+(?:shares|employees|patients|vehicles|dollars|euros|people)\b|\b(?:revenue|net income|operating (?:profit|income|margin)|earnings per share|market share|net (?:profit|loss)|sales volume|production capacity|yield)\b\s*[:=]?\s*[+−-]?\d|(?:매출액|순이익|영업이익|점유율|생산량|생산능력|주당순이익)\s*[:=]?\s*[+−-]?\d)/iu;
 const COUPON_SECURITY = /^\d+(?:\.\d+)?%\s+(?:(?:notes|bonds)\s+(?:due\s+)?20\d{2}|20\d{2}년\s+만기\s+채권)$/iu;
+const OCCURRENCE = /(?:\b(?:contract|agreement|acquisition|merger|takeover|buyout|ipo|offering|issuance|launch|lawsuit|ruling|accident|outage|appointment|resignation|termination|earnings (?:call|release)|guidance change|rating (?:action|upgrade|downgrade)|rate (?:cut|hike))\b|계약|협약|인수|합병|기업공개|출시|소송|판결|사고|정전|선임|사임|해지|실적발표|금리인하|금리인상)/iu;
+const CONTRACT_MEASUREMENT = /(?:\b(?:contract|agreement)\s+(?:total\s+)?(?:value|amount|size)\b|계약의?\s*(?:총\s*)?(?:금액|가액|규모))/iu;
+const EVENT_GENERIC_WORDS = new Set('a an the and or of for to with between by on at in from as effective dated date reported published signed announced worth valued value amount total supply purchase loan license licensing stock share bond capital earnings call release contract agreement acquisition merger takeover buyout ipo offering issuance launch lawsuit ruling accident outage appointment resignation termination guidance change rating action upgrade downgrade rate cut hike year years fiscal fy q january february march april may june july august september october november december utc gmt usd krw eur gbp jpy cny rmb cad aud chf million billion trillion thousand k m b bn tn co corp corporation inc incorporated ltd limited llc company 공급 구매 계약 공급계약 계약체결 체결 협약 인수 합병 기업공개 출시 소송 판결 사고 정전 선임 사임 해지 실적발표 실적발표회 금리인하 금리인상 원 달러 억원 조원 만원 천원 억 조 만 천 년 월 일 분기'.split(' '));
+
+function qualifiedOccurrence(name) {
+  return OCCURRENCE.test(name) && !CONTRACT_MEASUREMENT.test(name)
+    && [...name.matchAll(/[a-z]+|[가-힣]+/giu)].some(([word]) => !EVENT_GENERIC_WORDS.has(word.toLowerCase()));
+}
 
 export function isMeasurementNode(node) {
   const name = String(node?.name ?? '').normalize('NFKC').trim();
   if (node?.kind === 'Metric') return true;
   if (node?.kind === 'Asset' && COUPON_SECURITY.test(name)) return false;
+  if (node?.kind === 'Event' && qualifiedOccurrence(name)) return false;
   if (/^\d+$/u.test(name)) return !['Organization', 'Asset'].includes(node?.kind) || name.length > 12;
   if (/^[+−-]?\d[\d,.]*$/u.test(name)) return true;
   return MEASUREMENT_NAME.test(name) || /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T ].*)?$/u.test(name);

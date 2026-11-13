@@ -448,5 +448,65 @@
   "kind": "Policy",
   "entity": true,
   "measurement": false
+ },
+ {
+  "name": "Cedar and Elm signed a three-year supply agreement (reported on 14 September 2026)",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Acme acquisition of Beta for USD 12.4 million in 2026",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "시더와 엘름의 2026년 공급계약 4,800억원",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "KRW 480 billion supply contract",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "2026년 4,800억원 공급계약",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Acme contract value USD 42 million in 2026",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "시더 2026년 계약금액 4,800억원",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Acme Q4 FY2026 net income USD 42 million",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Cedar acquisition of Elm USD 42 million in 2026",
+  "kind": "Metric",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Cedar acquisition of Elm USD 42 million in 2026",
+  "kind": "Product",
+  "entity": false,
+  "measurement": true
  }
 ]

@@ -219,7 +219,9 @@ including custom kinds, and legacy `Metric` nodes, divided by all nodes. It repo
 zero for a known empty snapshot and null for a missing snapshot; pooled values use
 node counts. The detector recognizes English and Korean quantities, units and
 dated measurements while preserving numbered products, tickers, securities and
-named events. `entity-name-corpus-v1.json` is a deterministic classifier fixture,
+named events. Qualified actual occurrences remain events when a title contains
+a monetary qualifier or verb; a contract-value measurement does not gain that
+exception. `entity-name-corpus-v1.json` is a deterministic classifier fixture,
 not a model-visible Source or a changed ontology corpus. The adoption check requires
 zero measurement nodes, alongside numeric fidelity so dropping figures cannot pass.
 

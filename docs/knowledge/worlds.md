@@ -63,6 +63,10 @@ rewritten, and existing measurement nodes and their claims stay as stored.
 Named or uniquely qualified dated occurrences remain Event entities alongside
 their participants and quantitative claims. Their identifying names use actors,
 action and date or period; reported amounts stay in claims.
+A qualified occurrence title can contain a verb or a monetary qualifier without
+becoming a measurement. Admission requires an actual occurrence term and a named
+participant or subject beyond generic action, date and unit words; a contract's
+value or amount remains a measurement.
 
 ### Queue and interruptions
 
