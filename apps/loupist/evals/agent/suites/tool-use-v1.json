@@ -688,7 +688,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2022,7 +2023,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -2092,7 +2094,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2458,7 +2461,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -2527,7 +2531,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2627,7 +2632,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2716,7 +2722,9 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko",
+      "clock": "2026-11-13T12:00:00+09:00"
     },
     {
       "split": "capability",
@@ -2788,7 +2796,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2867,7 +2876,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -2938,7 +2948,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -3020,7 +3031,9 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko",
+      "clock": "2026-11-13T12:00:00+09:00"
     },
     {
       "split": "capability",
@@ -3093,7 +3106,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -3167,7 +3181,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -3237,7 +3252,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -3301,7 +3317,8 @@
         }
       ],
       "replay": "replay/opendart-plan-comparison.json",
-      "replay_needs": "dart_company_lookup resolves 솔숲식품/Solsup Foods/990221 to 99022100, 이슬물류/Iseul Logistics/990552 to 99055200 and 한빛화학/Hanbit Chem/990777 to 99077700. dart_financials fiscal_year 2025, report_period annual: Solsup consolidated revenue 452300000000, operating_income 38100000000, net_income 21400000000 KRW (filed 2026-03-18); Iseul has no consolidated statements (OpenDART 013) and separate revenue 128400000000, operating_income 7600000000, net_income 4900000000 KRW (filed 2026-03-20); Hanbit consolidated revenue 286500000000, operating_income 31400000000, net_income 19800000000 KRW (filed 2026-03-19). No other company, year or basis."
+      "replay_needs": "dart_company_lookup resolves 솔숲식품/Solsup Foods/990221 to 99022100, 이슬물류/Iseul Logistics/990552 to 99055200 and 한빛화학/Hanbit Chem/990777 to 99077700. dart_financials fiscal_year 2025, report_period annual: Solsup consolidated revenue 452300000000, operating_income 38100000000, net_income 21400000000 KRW (filed 2026-03-18); Iseul has no consolidated statements (OpenDART 013) and separate revenue 128400000000, operating_income 7600000000, net_income 4900000000 KRW (filed 2026-03-20); Hanbit consolidated revenue 286500000000, operating_income 31400000000, net_income 19800000000 KRW (filed 2026-03-19). No other company, year or basis.",
+      "language": "en"
     },
     {
       "split": "capability",
@@ -3341,7 +3358,8 @@
         }
       ],
       "replay": "replay/opendart-plan-dividend.json",
-      "replay_needs": "dart_company_lookup resolves Solsup Foods, 솔숲식품 or 990221 to 99022100. dart_dividends 99022100 for year 2022, 2023, 2024 or 2025 returns that annual report's dividend table (the year and the two before): dividend per common share 250, 250, 200, 250, 250 and 300 KRW for FY2020 to FY2025; total cash dividends 5000, 5000, 4000, 5000, 5000 and 6000 million KRW; consolidated net income attributable to owners 16500, 17800, 9400, 16900, 19500 and 21000 million KRW; consolidated payout 30.3, 28.1, 42.6, 29.6, 25.6 and 28.6%; cash yield 1.6, 1.5, 1.6, 1.5, 1.3 and 1.4%. For 2025 the cash dividend decision 20260205990221 gives the record date 2025-12-31. dart_financials 99022100 FY2025 annual consolidated returns revenue 452300000000, net income attributable to owners 21000000000, operating cash flow 52600000000 and purchases of property, plant and equipment -18900000000 KRW, so free cash flow is 33.7bn and the dividend about 17.8% of it. FY2022 is the one cut (250 to 200 KRW); dividend per share grew 3.7% a year over FY2020–FY2025. The FY2021 dividend endpoint also returns the 2021 and 2020 values carried by the FY2022 filing, with the older comparison unavailable."
+      "replay_needs": "dart_company_lookup resolves Solsup Foods, 솔숲식품 or 990221 to 99022100. dart_dividends 99022100 for year 2022, 2023, 2024 or 2025 returns that annual report's dividend table (the year and the two before): dividend per common share 250, 250, 200, 250, 250 and 300 KRW for FY2020 to FY2025; total cash dividends 5000, 5000, 4000, 5000, 5000 and 6000 million KRW; consolidated net income attributable to owners 16500, 17800, 9400, 16900, 19500 and 21000 million KRW; consolidated payout 30.3, 28.1, 42.6, 29.6, 25.6 and 28.6%; cash yield 1.6, 1.5, 1.6, 1.5, 1.3 and 1.4%. For 2025 the cash dividend decision 20260205990221 gives the record date 2025-12-31. dart_financials 99022100 FY2025 annual consolidated returns revenue 452300000000, net income attributable to owners 21000000000, operating cash flow 52600000000 and purchases of property, plant and equipment -18900000000 KRW, so free cash flow is 33.7bn and the dividend about 17.8% of it. FY2022 is the one cut (250 to 200 KRW); dividend per share grew 3.7% a year over FY2020–FY2025. The FY2021 dividend endpoint also returns the 2021 and 2020 values carried by the FY2022 filing, with the older comparison unavailable.",
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -3500,6 +3518,60 @@
       ],
       "replay": "replay/opendart-dataset-ratio.json",
       "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision. The margin is 38100000000 / 452300000000 = 8.4236%."
+    },
+    {
+      "id": "T-056",
+      "title": "A matching rate for another entity is not evidence",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "web",
+        "en"
+      ],
+      "split": "capability",
+      "connections": [
+        "web-research"
+      ],
+      "replay": "replay/web-southmere-rate.json",
+      "replay_needs": "The supplied page names Southmere only, never Northmere.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What is the Northmere Reserve Bank's policy rate now? Use only this page: https://fictional.example/rates/southmere-decision-2026-10",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "Southmere"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "Northmere[^.\\n]{0,80}4\\.25"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "correct-entity",
+                    "criterion": "The answer says the page is about the Southmere Central Bank and does not cover the Northmere Reserve Bank, and does not give 4.25% as Northmere’s rate.",
+                    "metric": "connection_honesty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "language": "en"
     }
   ]
 }

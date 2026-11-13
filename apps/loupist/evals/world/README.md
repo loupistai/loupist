@@ -157,7 +157,8 @@ Evaluator-only `checks` are excluded from the runner's inputs.
 | Suite | Role |
 | --- | --- |
 | `implicit-memory-corpus-v2.json` | Small smoke suite (3 scenarios) |
-| `implicit-memory-regression-v3.json` | Improvement set (12 scenarios, 41 turns): quotations, corrections, long-message paging, separate methods, presentation preferences, conditional exceptions, temporary overrides, conflicting publishers, quoted untrusted instructions |
+| `implicit-memory-regression-v4.json` | Current improvement set: subject filing permitted, method/principle/perspective precision scoped by `lens_kinds` |
+| `implicit-memory-regression-v3.json` | Earlier improvement set (12 scenarios, 41 turns): quotations, corrections, long-message paging, separate methods, presentation preferences, conditional exceptions, temporary overrides, conflicting publishers, quoted untrusted instructions |
 | `implicit-memory-validation-v3.json` | Earlier validation (8 scenarios): similar names, ended relationships, units, language transfer, exclusions, missing versus zero, permission transitions, Unicode quotations; its results are spent |
 | `implicit-memory-promoted-v4.json` | Two failed v3 validation cases promoted to regression |
 | `implicit-memory-validation-v4.json` | Current frozen validation (3 scenarios): Spanish-to-Korean recall, absent identifier then exact recall, source-backed method learning |
@@ -178,6 +179,13 @@ node apps/loupist/evals/world/memory-grade.mjs \
   --suite apps/loupist/evals/world/implicit-memory-regression-v3.json \
   --traces <NEW-memory.jsonl> --out <NEW-memory-report.json> --trials 3
 ```
+
+Lens retrieval accepts an acknowledged exact read, or the current revision of
+a principle delivered in this turn’s context and linked in the final answer
+([user principles](../../../../docs/knowledge/lens.md#user-principles)). Methods
+and subject pages require exact reads. Old traces without `lens_receipts` are
+unknown when no exact read is present. Reports split accepted retrieval evidence
+into `exact_read` and `context_link` counts.
 
 The grader checks retained original bytes, evidence-backed World endpoints, learned
 Lens identity and revision, exact acknowledged reads, new-Chat answers and unchanged

@@ -441,6 +441,9 @@ baseline was collected for this repair.
 
 ### Lens lifecycle
 
+LL-011 hands over a document in Home, expects one retained Source and one subject
+page without an explicit filing request, then checks recall in a read-only Chat.
+
 After every turn the runner records `lens.pages`: each Lens page as the store holds
 it (kind, title, summary, sections with heading, Markdown, basis kinds and origin)
 and `ops_this_turn`, the log entries the turn's own reply wrote. Memory assertions
@@ -491,6 +494,9 @@ For uncued acquisition, Lens refinement, conversation recall and save restraint 
 the [Memory evaluation loop](world/README.md#uncued-memory-loop).
 
 ### Scheduling evaluation
+
+S-008 changes the existing daily followed-name briefing to weekdays and requires
+exactly one host briefing throughout; no custom task is created.
 
 `agent/suites/scheduling-v1.json` covers multi-task creation, selective changes,
 pause/resume/delete, discussion without creation, explicit time zones, one-time
@@ -760,3 +766,15 @@ attempt, and totals stay null when any attempt is unknown. `cost_per_successful_
 is null until every attempt has a cost and every selected task is fully reviewed.
 Same-model pairs require identical model, effort, `comparison_config_hash`, dataset,
 condition, task, repeat and phase; external product groups stay separate.
+
+Replay fixtures use containment for event windows, optional query filters and
+explicit provider/endpoint `otherwise` empty answers. Unknown providers and
+endpoints remain fail-closed; `replay_fallbacks` exposes every fallback used.
+The fixture lint checks listed receipts and three containing windows. Scenario
+`clock` pins model `live_time` only (T-045/T-049); host refresh windows retain the
+wall clock. Scenario `language` sets the disposable app language; otherwise a
+single `en`/`ko` tag supplies it. Asset fixtures still expire on 2027-03-18.
+`cites_result.tool` accepts one tool or a list of acceptable original/page tools.
+Plan grading treats folder listings and bundled Skill references as preparation;
+workspace reads and grep still count as research. T-056 rejects a rate citation
+whose entity differs from the question.

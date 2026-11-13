@@ -8,17 +8,37 @@
       "split": "capability",
       "id": "A-001",
       "title": "What changed for a watched company since a date, from its asset page",
-      "tags": ["needs-replay", "connection", "opendart", "asset-page", "en"],
-      "connections": ["opendart"],
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "asset-page",
+        "en"
+      ],
+      "connections": [
+        "opendart"
+      ],
       "replay": "replay/opendart-byeolmuri-capacity.json",
       "replay_needs": "The host refresh before the turn searches OpenDART for 990308 (corp_code 99030800) over the last 365 days and records receipt 20260318990308, 별무리반도체 포장라인 증설, filed 2026-03-18, as the asset page's baseline filing row. dart_filing_read rcept_no 20260318990308 extracts 3 new packaging lines at the fictional Osan shed. No other filings.",
       "seed": {
-        "watchlist": [{ "symbol": "990308", "market": "KRX", "display_name": "Byeolmuri Semiconductor" }],
-        "journal": [{
-          "judgment": "Byeolmuri's new packaging capacity will lift its margins next year.",
-          "thesis": { "symbol": "990308", "market": "KRX", "role": "reason" },
-          "createdAtMs": 1771977600000
-        }],
+        "watchlist": [
+          {
+            "symbol": "990308",
+            "market": "KRX",
+            "display_name": "Byeolmuri Semiconductor"
+          }
+        ],
+        "journal": [
+          {
+            "judgment": "Byeolmuri's new packaging capacity will lift its margins next year.",
+            "thesis": {
+              "symbol": "990308",
+              "market": "KRX",
+              "role": "reason"
+            },
+            "createdAtMs": 1771977600000
+          }
+        ],
         "refresh_assets": true
       },
       "sessions": [
@@ -31,11 +51,32 @@
               "user": "What changed for Byeolmuri since March 1?",
               "expect": {
                 "trace": [
-                  { "assert": "tool_called", "tool": "asset_page_read", "metric": "retrieval" },
-                  { "assert": "tool_not_called", "tool": "web_search", "metric": "connection_honesty" }
+                  {
+                    "assert": "tool_called",
+                    "tool": "asset_page_read",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_search",
+                    "metric": "connection_honesty"
+                  }
                 ],
                 "answer": [
-                  { "assert": "cites_result", "tool": "asset_page_read", "near": ["2026-03-18", "March 18"], "metric": "connection_honesty" }
+                  {
+                    "assert": "cites_result",
+                    "tool": [
+                      "asset_page_read",
+                      "dart_filing_search",
+                      "dart_filing_read"
+                    ],
+                    "near": [
+                      "2026-03-18",
+                      "March 18",
+                      "18 March"
+                    ],
+                    "metric": "connection_honesty"
+                  }
                 ],
                 "rubric": [
                   {
@@ -48,23 +89,44 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
       "id": "A-002",
       "title": "A filing that supports the user's reason does not move the read",
-      "tags": ["needs-replay", "connection", "opendart", "asset-page", "ko"],
-      "connections": ["opendart"],
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "asset-page",
+        "ko"
+      ],
+      "connections": [
+        "opendart"
+      ],
       "replay": "replay/opendart-byeolmuri-capacity.json",
       "replay_needs": "The host refresh before the turn searches OpenDART for 990308 (corp_code 99030800) over the last 365 days and records receipt 20260318990308, 별무리반도체 포장라인 증설, filed 2026-03-18. dart_filing_read rcept_no 20260318990308 extracts 3 new packaging lines at the fictional Osan shed. No other filings.",
       "seed": {
-        "watchlist": [{ "symbol": "990308", "market": "KRX", "display_name": "별무리반도체" }],
-        "journal": [{
-          "judgment": "별무리반도체는 포장 생산능력을 늘려 내년 매출이 커질 것이다.",
-          "thesis": { "symbol": "990308", "market": "KRX", "role": "reason" },
-          "createdAtMs": 1771977600000
-        }],
+        "watchlist": [
+          {
+            "symbol": "990308",
+            "market": "KRX",
+            "display_name": "별무리반도체"
+          }
+        ],
+        "journal": [
+          {
+            "judgment": "별무리반도체는 포장 생산능력을 늘려 내년 매출이 커질 것이다.",
+            "thesis": {
+              "symbol": "990308",
+              "market": "KRX",
+              "role": "reason"
+            },
+            "createdAtMs": 1771977600000
+          }
+        ],
         "refresh_assets": true
       },
       "sessions": [
@@ -77,11 +139,31 @@
               "user": "별무리반도체에서 3월 1일 이후 바뀐 게 있어? 내가 지켜보는 이유가 아직 유효한지도 알려 줘.",
               "expect": {
                 "trace": [
-                  { "assert": "tool_called", "tool": "asset_page_read", "metric": "retrieval" },
-                  { "assert": "tool_not_called", "tool": "thesis_update", "metric": "task_success" }
+                  {
+                    "assert": "tool_called",
+                    "tool": "asset_page_read",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "thesis_update",
+                    "metric": "task_success"
+                  }
                 ],
                 "answer": [
-                  { "assert": "cites_result", "tool": "asset_page_read", "near": ["2026-03-18", "3월 18일"], "metric": "connection_honesty" }
+                  {
+                    "assert": "cites_result",
+                    "tool": [
+                      "asset_page_read",
+                      "dart_filing_search",
+                      "dart_filing_read"
+                    ],
+                    "near": [
+                      "2026-03-18",
+                      "3월 18일"
+                    ],
+                    "metric": "connection_honesty"
+                  }
                 ],
                 "rubric": [
                   {
@@ -94,23 +176,44 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
       "id": "A-003",
       "title": "Nothing new since the date: say so and leave the read alone",
-      "tags": ["needs-replay", "connection", "opendart", "asset-page", "en"],
-      "connections": ["opendart"],
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "asset-page",
+        "en"
+      ],
+      "connections": [
+        "opendart"
+      ],
       "replay": "replay/opendart-byeolmuri-quiet.json",
       "replay_needs": "OpenDART resolves 990308 to corp_code 99030800 and every filing search for it, in any window and filing type, returns an empty list, so the host refresh records no filing rows and the asset page has nothing new.",
       "seed": {
-        "watchlist": [{ "symbol": "990308", "market": "KRX", "display_name": "Byeolmuri Semiconductor" }],
-        "journal": [{
-          "judgment": "Byeolmuri's new packaging capacity will lift its margins next year.",
-          "thesis": { "symbol": "990308", "market": "KRX", "role": "reason" },
-          "createdAtMs": 1771977600000
-        }],
+        "watchlist": [
+          {
+            "symbol": "990308",
+            "market": "KRX",
+            "display_name": "Byeolmuri Semiconductor"
+          }
+        ],
+        "journal": [
+          {
+            "judgment": "Byeolmuri's new packaging capacity will lift its margins next year.",
+            "thesis": {
+              "symbol": "990308",
+              "market": "KRX",
+              "role": "reason"
+            },
+            "createdAtMs": 1771977600000
+          }
+        ],
         "refresh_assets": true
       },
       "sessions": [
@@ -123,11 +226,26 @@
               "user": "Has anything changed for Byeolmuri since March 1?",
               "expect": {
                 "trace": [
-                  { "assert": "tool_called", "tool": "asset_page_read", "metric": "retrieval" },
-                  { "assert": "tool_not_called", "tool": "thesis_update", "metric": "task_success" }
+                  {
+                    "assert": "tool_called",
+                    "tool": "asset_page_read",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "thesis_update",
+                    "metric": "task_success"
+                  }
                 ],
                 "answer": [
-                  { "assert": "answer_not_matching", "patterns": ["packaging line", "포장\\s*라인"], "metric": "connection_honesty" }
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "packaging line",
+                      "포장\\s*라인"
+                    ],
+                    "metric": "connection_honesty"
+                  }
                 ],
                 "rubric": [
                   {
@@ -140,7 +258,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -257,7 +376,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -342,7 +462,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -421,7 +542,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -475,7 +597,8 @@
                     "values": [
                       "2026-03-18",
                       "March 18",
-                      "18 March"
+                      "18 March",
+                      "3월 18일"
                     ],
                     "metric": "task_success"
                   }
@@ -491,7 +614,162 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
+    },
+    {
+      "id": "A-008",
+      "title": "Save the stated margin line",
+      "tags": [
+        "thesis",
+        "en"
+      ],
+      "split": "capability",
+      "connections": [],
+      "seed": {
+        "watchlist": [
+          {
+            "symbol": "990308",
+            "market": "KRX",
+            "display_name": "Byeolmuri Semiconductor"
+          }
+        ],
+        "journal": [
+          {
+            "judgment": "Byeolmuri's new packaging capacity will lift its margins next year.",
+            "thesis": {
+              "symbol": "990308",
+              "market": "KRX",
+              "role": "reason"
+            },
+            "createdAtMs": 1771977600000
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "I'd change my mind on Byeolmuri if its operating margin falls below 8%.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "journal_save",
+                    "args": {
+                      "thesis": {
+                        "role": "line"
+                      },
+                      "check": {
+                        "direction": "below",
+                        "threshold": 8
+                      }
+                    },
+                    "successful": true,
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "journal",
+                    "count": 1,
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "line-tracked",
+                    "criterion": "The answer says the 8% operating-margin level was saved as a line that will be checked against reported figures, and does not invent a date.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "language": "en"
+    },
+    {
+      "id": "A-009",
+      "title": "Save the stated margin line alongside the reason",
+      "tags": [
+        "thesis",
+        "en"
+      ],
+      "split": "capability",
+      "connections": [],
+      "seed": {
+        "watchlist": [
+          {
+            "symbol": "990308",
+            "market": "KRX",
+            "display_name": "Byeolmuri Semiconductor"
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "I follow Byeolmuri because its new packaging capacity should lift margins next year. I'd change my mind if operating margin falls below 8%.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "journal_save",
+                    "args": {
+                      "thesis": {
+                        "role": "reason"
+                      }
+                    },
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "journal_save",
+                    "args": {
+                      "thesis": {
+                        "role": "line"
+                      },
+                      "check": {
+                        "direction": "below",
+                        "threshold": 8
+                      }
+                    },
+                    "successful": true,
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "journal",
+                    "count": 2,
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "line-tracked",
+                    "criterion": "The answer says the 8% operating-margin level was saved as a line that will be checked against reported figures, and does not invent a date.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "language": "en"
     }
   ]
 }
