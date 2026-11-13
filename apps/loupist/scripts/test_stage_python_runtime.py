@@ -222,6 +222,27 @@ class PythonRuntimeTests(unittest.TestCase):
             record["files"][stage.BINARY], stage.digest(destination / stage.BINARY)
         )
 
+    def test_worker_mode_preserves_runtime_and_limits_timestamp_to_developer_id(self):
+        for mode, identity, timestamp in [
+            ("developer-id", "Example", True),
+            ("self-signed", "A" * 40, False),
+            ("ad-hoc", "-", False),
+        ]:
+            with (
+                self.subTest(mode),
+                patch.dict(
+                    os.environ,
+                    {
+                        "LOUPIST_MACOS_SIGNING_MODE": mode,
+                        "APPLE_SIGNING_IDENTITY": identity,
+                    },
+                ),
+            ):
+                command = stage.codesign_command(Path("/worker"))
+                self.assertIn("runtime", command)
+                self.assertIn("--entitlements", command)
+                self.assertEqual("--timestamp" in command, timestamp)
+
     def test_linux_stage_does_not_sign(self):
         destination = self.stage_runtime("linux", "x86_64", elf_x86_64())
         self.assertEqual(self.signed, [])
@@ -452,7 +473,14 @@ class PythonRuntimeTests(unittest.TestCase):
             )[0],
         )
         release = (repo / ".github/workflows/release.yml").read_text()
-        self.assertIn('"resources/python-runtime/": "python-runtime"', release)
+        self.assertIn("scripts/check-release-configuration.py", release)
+        overlay = json.loads(
+            (stage.APP / "src-tauri/tauri.release.conf.json").read_text()
+        )
+        self.assertEqual(
+            overlay["bundle"]["resources"]["resources/python-runtime/"],
+            "python-runtime",
+        )
         macos = (stage.APP / "scripts/stage-macos-arm64.sh").read_text()
         self.assertIn("stage_python_runtime.py", macos)
         bundle = (stage.APP / "scripts/check-macos-app-bundle.sh").read_text()

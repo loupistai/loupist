@@ -9,6 +9,7 @@
     "keepRunningAutomatic": "브리핑이나 지켜보기를 켜서 함께 켜졌어요. 여기서 끌 수 있어요.",
     "loadFailed": "이 설정을 불러오지 못했어요.",
     "saveFailed": "이 설정을 바꾸지 못했어요. 다시 시도해 주세요.",
+    "betaNotice": "베타 버전입니다. Loupist가 서명했으며 Apple 공증은 받지 않았습니다.",
     "aboutTitle": "정보 및 개인정보",
     "privacyTitle": "이 Mac 밖으로 나가는 것",
     "privacyStays": "이 Mac에 남는 것: 대화, 자료, 지도, 렌즈, 저널, 보유 자산. 모두 루피스트 폴더에 저장돼요. 루피스트 계정도 동기화도 없어요.",

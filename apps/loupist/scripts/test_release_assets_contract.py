@@ -49,10 +49,45 @@ class ReleaseAssetsContractTest(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.assets = self.root / "release-assets"
+        self.profile = self.root / "profile.json"
+        profile = json.loads((SCRIPTS.parent / "release-profile.json").read_text())
+        profile["channel"] = "stable"
+        write_json(self.profile, profile)
+        signing = {
+            "mode": "self-signed",
+            "notarized": False,
+            "team_id": None,
+            "certificate_sha256": profile["macos_signing"]["certificate_sha256"],
+            "designated_requirement": 'identifier "com.monarchjuno.loupist" and certificate root = H"'
+            + profile["macos_signing"]["certificate_sha1"]
+            + '"',
+        }
+        self.report = self.root / "signing-report.json"
+        write_json(
+            self.report,
+            {"macos_signing": signing, "updater_public_key": "fixture updater key"},
+        )
 
     def script(self, name: str, *arguments: str, ok: bool = True):
+        if name == "finalize-release-assets.py":
+            arguments = (*arguments, "--signing-report", self.report)
+        if name == "release-qualification.py" and arguments[0] in {"write", "verify"}:
+            arguments = (*arguments, "--profile", self.profile)
+            if arguments[0] == "write" and "--update-check" not in arguments:
+                arguments = (
+                    *arguments,
+                    "--update-check",
+                    "candidate-on-isolated-machine",
+                    "--product-acceptance",
+                    "clean-isolated-machine",
+                )
         completed = subprocess.run(
-            [sys.executable, str(SCRIPTS / name), *map(str, arguments)],
+            [
+                sys.executable,
+                *(["-I"] if name == "verify-release-assets.py" else []),
+                str(SCRIPTS / name),
+                *map(str, arguments),
+            ],
             check=False,
             text=True,
             capture_output=True,
@@ -257,6 +292,7 @@ class ReleaseAssetsContractTest(unittest.TestCase):
             sealed["product_acceptance"],
             {
                 "macos-aarch64": {
+                    "method": "clean-isolated-machine",
                     "result": "passed",
                     "evidence_url": acceptance,
                     "candidate_set_sha256": digest,
@@ -320,6 +356,123 @@ class ReleaseAssetsContractTest(unittest.TestCase):
         ):
             with self.subTest(message):
                 self.refused(message, *rc_sequence(candidate, tags))
+
+    def test_signing_metadata_is_closed_and_dry_run_is_opt_in(self):
+        assets = self.assemble()
+        path = assets / "RELEASE-METADATA.json"
+        original = json.loads(path.read_text())
+        verify = ["verify-release-assets.py", *RELEASE, "--assets", assets]
+        self.script(
+            *verify,
+            "--expected-certificate-sha256",
+            original["macos_signing"]["certificate_sha256"],
+        )
+        self.refused("differs from", *verify, "--expected-certificate-sha256", "0" * 64)
+        for mutation, message in [
+            (lambda v: v.pop("macos_signing"), "schema"),
+            (lambda v: v["macos_signing"].update(notarized=True), "no notarization"),
+            (
+                lambda v: v["macos_signing"].update(team_id="ABCDE12345"),
+                "no notarization",
+            ),
+            (lambda v: v["macos_signing"].update(extra=True), "unexpected fields"),
+            (lambda v: v["macos_signing"].update(mode="dry-run-ephemeral"), "dry-run"),
+        ]:
+            value = json.loads(json.dumps(original))
+            mutation(value)
+            write_json(path, value)
+            self.rewrite_checksums()
+            self.refused(message, *verify)
+        self.script(*verify, "--allow-dry-run")
+        write_json(path, original)
+        self.rewrite_checksums()
+        self.script(*verify, "--profile", self.profile)
+
+    def test_burned_rc_tags_may_be_skipped_but_missing_or_published_tags_may_not(self):
+        published = self.root / "published.txt"
+        existing = self.root / "existing.txt"
+        published.write_text("v1.2.3-rc.1\n")
+        existing.write_text("v1.2.3-rc.1\nv1.2.3-rc.2\n")
+        args = [
+            "release-qualification.py",
+            "rc-sequence",
+            "--candidate-tag",
+            "v1.2.3-rc.3",
+            "--published-tags",
+            published,
+            "--existing-tags",
+            existing,
+        ]
+        self.script(*args)
+        existing.write_text("v9.9.9-rc.2\n")
+        self.refused("expected rc.2", *args)
+        published.write_text("v1.2.3-rc.3\n")
+        self.refused("above every published", *args)
+
+    def test_beta_qualification_records_omissions_and_requires_public_disclosure(self):
+        assets = self.assemble()
+        profile = json.loads(self.profile.read_text())
+        profile["channel"] = "beta"
+        write_json(self.profile, profile)
+        metadata = ["--release-metadata", assets / "RELEASE-METADATA.json"]
+        digest = self.script(
+            "release-qualification.py", "digest", *metadata
+        ).stdout.strip()
+        receipt = self.root / "qualification.json"
+        notes = self.root / "draft.json"
+        omitted = "Candidate update not performed; substitute RC update in a separate account."
+        args = [
+            "release-qualification.py",
+            "write",
+            *QUALIFY,
+            *metadata,
+            "--previous-tag",
+            "v0.0.1-rc.1",
+            "--macos-candidate-set-sha256",
+            digest,
+            "--macos-product-acceptance-evidence-url",
+            "https://example.test/acceptance",
+            "--update-check",
+            "not-performed-on-candidate",
+            "--product-acceptance",
+            "separate-user-account",
+            "--output",
+            receipt,
+        ]
+        self.refused("unperformed checks", *args)
+        self.script(*args, "--unperformed-checks", omitted)
+        value = json.loads(receipt.read_text())
+        self.assertEqual(value["schema_version"], 2)
+        self.assertEqual(value["platforms"]["macos-aarch64"]["result"], "not_performed")
+        self.assertEqual(
+            value["product_acceptance"]["macos-aarch64"]["result"], "passed"
+        )
+        verify = [
+            "release-qualification.py",
+            "verify",
+            *QUALIFY,
+            *metadata,
+            "--receipt",
+            receipt,
+            "--release-json",
+            notes,
+        ]
+        write_json(notes, {"name": "Loupist 0.0.1 (Beta)", "body": omitted})
+        self.script(*verify)
+        value["platforms"]["macos-aarch64"]["result"] = "passed"
+        write_json(receipt, value)
+        self.refused("differs from the recorded method", *verify)
+        value["platforms"]["macos-aarch64"]["result"] = "not_performed"
+        write_json(receipt, value)
+        write_json(notes, {"name": "Loupist 0.0.1", "body": omitted})
+        self.refused("end in (Beta)", *verify)
+        write_json(
+            notes, {"name": "Loupist 0.0.1 (Beta)", "body": "Checked everything"}
+        )
+        self.refused("verbatim", *verify)
+        profile["channel"] = "stable"
+        write_json(self.profile, profile)
+        self.refused("stable channel", *args, "--unperformed-checks", omitted)
 
 
 if __name__ == "__main__":

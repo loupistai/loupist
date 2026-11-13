@@ -50,6 +50,7 @@ const allowedTerms = new Map([
 // Technical literals and subscription names are exceptions only at the exact
 // catalog key where they are required. Keep a reason with every exception.
 const exceptions = new Map([
+  ["settings.general.betaNotice", { terms: ["Apple"], reason: "Company name in the Beta notarization notice" }],
   ["settings.custom.pasteJson", { terms: ["JSON"], reason: "Literal data format the user pastes" }],
   ["settings.custom.commandWarning", { terms: ["name"], reason: "Literal package@version example (name@1.2.3)" }],
   ["app.navigation.agentDefaultsReasoningThinkingRetryTokensContextConfiguration", { terms: ["TOML"], reason: "Search keyword for the configuration file format" }],

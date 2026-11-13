@@ -54,7 +54,7 @@ The composer’s **+** menu has one **Private chat** switch. With it off, Chat c
 
 ## Install
 
-The first release targets macOS 13 or newer on Apple Silicon only. Windows, Intel Macs, and Linux are not supported in this release. Signed installers will be published through [GitHub Releases](https://github.com/loupistai/loupist/releases); until an installer is available, use the [development setup](apps/loupist/README.md). See [installation.md](installation.md) for installation instructions. Releases require macOS signing and notarization. The app accepts only updates signed by the Loupist updater key.
+Download [Loupist for macOS 13+ on Apple Silicon (Beta)](https://github.com/loupistai/loupist/releases/latest/download/Loupist-macOS-arm64.dmg); Windows, Intel Macs and Linux are not supported. This Beta is signed with Loupist's own certificate and is not notarized by Apple, so first launch needs a one-time approval: see [installation and download verification](installation.md).
 
 ## Security model
 

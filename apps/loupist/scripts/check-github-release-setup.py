@@ -21,11 +21,15 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from urllib.parse import quote
 
+from release_profile import ALL_SECRETS, MODE_SECRETS, UPDATER_SECRETS, load_profile
+
 
 OFFICIAL_REPOSITORY = "loupistai/loupist"
 EXPECTED_DEFAULT_BRANCH = "main"
-REQUIRED_ENVIRONMENTS = ("release", "release-qualification", "stable-release")
-TAG_TRIGGERED_ENVIRONMENTS = frozenset(REQUIRED_ENVIRONMENTS)
+TAG_TRIGGERED_ENVIRONMENTS = frozenset(
+    ("release", "release-qualification", "stable-release")
+)
+REQUIRED_ENVIRONMENTS = (*sorted(TAG_TRIGGERED_ENVIRONMENTS), "release-dry-run")
 REPOSITORY_PATTERN = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 SECRET_REFERENCE = re.compile(r"\bsecrets\.([A-Z][A-Z0-9_]*)\b")
 GITHUB_ACTIONS_INTEGRATION_ID = 15368
@@ -86,6 +90,42 @@ def required_release_secret_names(workflow: Path) -> set[str]:
     if not names:
         raise AuditError(f"release workflow {workflow} does not reference any secrets")
     return names
+
+
+def mode_release_secret_names(workflow: Path, profile: dict) -> set[str]:
+    if required_release_secret_names(workflow) != ALL_SECRETS:
+        raise AuditError(
+            "release workflow secret references differ from the union of all signing modes"
+        )
+    return UPDATER_SECRETS | MODE_SECRETS[profile["macos_signing"]["mode"]]
+
+
+def single_maintainer_self_review(environment: dict, collaborators: object) -> bool:
+    if not isinstance(collaborators, list):
+        return False
+    maintainers = [
+        item
+        for item in collaborators
+        if isinstance(item, dict)
+        and isinstance(item.get("permissions"), dict)
+        and (
+            item["permissions"].get("admin") is True
+            or item["permissions"].get("maintain") is True
+        )
+    ]
+    if len(maintainers) != 1 or not isinstance(maintainers[0].get("id"), int):
+        return False
+    for rule in environment.get("protection_rules", []):
+        if (
+            rule.get("type") == "required_reviewers"
+            and rule.get("prevent_self_review") is False
+        ):
+            return any(
+                item.get("type") == "User"
+                and item.get("reviewer", {}).get("id") == maintainers[0]["id"]
+                for item in rule.get("reviewers", [])
+            )
+    return False
 
 
 def matches_ref_pattern(pattern: str, ref: str, default_ref: str) -> bool:
@@ -542,6 +582,7 @@ def audit_release_setup(
     main_legacy_protection: object | None,
     immutable_releases: object | None,
     environments: object,
+    collaborators: object = None,
 ) -> list[Finding]:
     """Evaluate supplied public metadata without performing network I/O."""
 
@@ -671,8 +712,25 @@ def audit_release_setup(
                 f"environment {name}",
                 "required release environment is missing",
             )
-        elif name == "stable-release" and not environment_requires_independent_reviewer(
-            environment
+        elif name == "release-dry-run":
+            if (
+                environment.get("protection_rules")
+                or environment.get("deployment_branch_policy") is not None
+            ):
+                add(
+                    "error",
+                    f"environment {name}",
+                    "dry-run environment must have no reviewers or deployment restrictions",
+                )
+            else:
+                add(
+                    "pass",
+                    f"environment {name}",
+                    "unprotected disposable-key dry-run environment exists",
+                )
+        elif name == "stable-release" and not (
+            environment_requires_independent_reviewer(environment)
+            or single_maintainer_self_review(environment, collaborators)
         ):
             add(
                 "error",
@@ -717,6 +775,14 @@ def audit_release_setup(
                 detail,
             )
 
+    stable_environment = configured_environments.get("stable-release", {})
+    if single_maintainer_self_review(stable_environment, collaborators):
+        add(
+            "warn",
+            "single-maintainer promotion",
+            "stable-release permits self-review while exactly one admin/maintain collaborator exists; restore independent review when another maintainer joins",
+        )
+
     release_secrets = secret_names_for_environment(environment_secrets, "release")
     missing_secrets = sorted(required_secrets - release_secrets)
     if missing_secrets:
@@ -743,12 +809,22 @@ def audit_release_setup(
             secret_names_for_environment(environment_secrets, "stable-release"),
         ),
     )
+    secret_scopes += (
+        (
+            "environment release-dry-run",
+            secret_names_for_environment(environment_secrets, "release-dry-run"),
+        ),
+    )
     for scope, names in secret_scopes:
         if not isinstance(names, set) or not all(
             isinstance(name, str) and name for name in names
         ):
             raise AuditError(f"secret names for {scope} are invalid")
-        leaked_names = sorted(required_secrets & names)
+        leaked_names = sorted(
+            names
+            if scope == "environment release-dry-run"
+            else (ALL_SECRETS | required_secrets) & names
+        )
         subject = f"{scope} secret isolation"
         if leaked_names:
             add(
@@ -819,7 +895,20 @@ def load_ruleset_details(gh: str, repository: str, summaries: object) -> list[ob
 def remote_audit(repository: str, workflow: Path, gh: str) -> list[Finding]:
     if REPOSITORY_PATTERN.fullmatch(repository) is None:
         raise AuditError("--repository must be an owner/name pair")
-    required_secrets = required_release_secret_names(workflow)
+    required_secrets = mode_release_secret_names(workflow, load_profile())
+    collaborators = []
+    page = 1
+    while True:
+        batch = gh_api(
+            gh,
+            f"/repos/{repository}/collaborators?affiliation=all&per_page=100&page={page}",
+        )
+        if not isinstance(batch, list):
+            raise AuditError("collaborators response must be an array")
+        collaborators.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
     repository_data = gh_api(gh, f"/repos/{repository}")
     rulesets = load_ruleset_details(
         gh,
@@ -872,6 +961,7 @@ def remote_audit(repository: str, workflow: Path, gh: str) -> list[Finding]:
         main_legacy_protection=main_protection,
         immutable_releases=immutable_releases,
         environments=environments,
+        collaborators=collaborators,
     )
 
 

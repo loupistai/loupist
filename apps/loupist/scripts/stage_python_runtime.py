@@ -266,7 +266,9 @@ def codesign_command(executable: Path) -> list[str]:
         "--entitlements",
         str(WORKER / "Entitlements.plist"),
     ]
-    if identity != "-":
+    from macos_release_signing import signing_mode
+
+    if identity != "-" and signing_mode() == "developer-id":
         command.append("--timestamp")
     command.append(str(executable))
     return command

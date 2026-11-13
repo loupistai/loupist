@@ -12,8 +12,8 @@ on:
         required: true
         type: string
       macos_update_evidence_url:
-        description: HTTPS evidence for a clean macOS N-1 to N in-app update
-        required: true
+        description: HTTPS evidence for the recorded update method or substitute test
+        required: false
         type: string
       macos_candidate_set_sha256:
         description: SHA-256 of candidate SHA256SUMS used by the macOS update test
@@ -23,16 +23,27 @@ on:
         description: Credential-free HTTPS evidence for the clean signed macOS Chat and Memory acceptance flow
         required: true
         type: string
-      confirm_macos_update:
-        description: I verified install, in-app update, restart, and retained data on macOS
+      update_check:
+        description: How the in-app update to this exact candidate was checked
         required: true
-        default: false
-        type: boolean
-      confirm_macos_product_acceptance:
-        description: I verified the V1 Chat and Memory acceptance flow on the clean signed macOS candidate
+        type: choice
+        options:
+          - candidate-on-isolated-machine
+          - candidate-in-virtual-machine
+          - not-performed-on-candidate
+      product_acceptance:
+        description: Where clean product acceptance was performed
         required: true
-        default: false
-        type: boolean
+        type: choice
+        options:
+          - clean-isolated-machine
+          - clean-virtual-machine
+          - separate-user-account
+          - not-performed
+      unperformed_checks:
+        description: One plain-text line describing checks not performed and substitute evidence
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -74,13 +85,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_TAG: ${{ inputs.candidate_tag }}
           PREDECESSOR_TAG: ${{ inputs.predecessor_tag }}
-          CONFIRM_MACOS: ${{ inputs.confirm_macos_update }}
-          CONFIRM_MACOS_PRODUCT_ACCEPTANCE: ${{ inputs.confirm_macos_product_acceptance }}
         run: |
           set -euo pipefail
           [[ "$CANDIDATE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-          test "$CONFIRM_MACOS" = true
-          test "$CONFIRM_MACOS_PRODUCT_ACCEPTANCE" = true
           test "$GITHUB_REF_TYPE" = tag
           test "$GITHUB_REF_NAME" = "$CANDIDATE_TAG"
           LATEST_RESPONSE="$RUNNER_TEMP/latest-release-response.txt"
@@ -197,14 +204,14 @@ jobs:
             --tag "$CANDIDATE_TAG" \
             --repository "$GITHUB_REPOSITORY" \
             --source-commit "$SOURCE_COMMIT" \
-            --assets candidate-assets
+            --profile apps/loupist/release-profile.json --assets candidate-assets
           apps/loupist/scripts/verify-release-attestations.sh \
             candidate-assets \
             "$GITHUB_REPOSITORY" \
             "$SOURCE_COMMIT" \
             "refs/tags/$CANDIDATE_TAG"
 
-      - name: Verify macOS signature, notarization, and mounted identity
+      - name: Verify recorded signing mode and mounted identity
         if: matrix.platform == 'macos'
         shell: bash
         env:
@@ -213,8 +220,6 @@ jobs:
           set -euo pipefail
           DMG="candidate-assets/Loupist-macOS-arm64.dmg"
           hdiutil verify "$DMG" >/dev/null
-          codesign --verify --strict --verbose=2 "$DMG"
-          xcrun stapler validate "$DMG"
           MACOS_BUNDLE_VERSION="$(
             python3 - candidate-assets/RELEASE-METADATA.json <<'PY'
           import json
@@ -243,8 +248,8 @@ jobs:
           hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MOUNT_DIR" >/dev/null
           DMG_ATTACHED=true
           APP="$MOUNT_DIR/Loupist.app"
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          xcrun stapler validate "$APP"
+          python3 apps/loupist/scripts/macos_release_signing.py verify-bundle \
+            --app "$APP" --dmg "$DMG" --metadata candidate-assets/RELEASE-METADATA.json
           python3 apps/loupist/scripts/check-macos-bundle-version.py \
             --tauri-config apps/loupist/src-tauri/tauri.conf.json \
             --source-plist apps/loupist/src-tauri/Info.plist \
@@ -317,7 +322,7 @@ jobs:
             --tag "$CANDIDATE_TAG" \
             --repository "$GITHUB_REPOSITORY" \
             --source-commit "$SOURCE_COMMIT" \
-            --assets candidate-assets
+            --profile apps/loupist/release-profile.json --assets candidate-assets
           apps/loupist/scripts/verify-release-attestations.sh \
             candidate-assets \
             "$GITHUB_REPOSITORY" \
@@ -335,6 +340,9 @@ jobs:
           CANDIDATE_TAG: ${{ inputs.candidate_tag }}
           PREDECESSOR_TAG: ${{ inputs.predecessor_tag }}
           MACOS_EVIDENCE_URL: ${{ inputs.macos_update_evidence_url }}
+          UPDATE_CHECK: ${{ inputs.update_check }}
+          PRODUCT_ACCEPTANCE: ${{ inputs.product_acceptance }}
+          UNPERFORMED_CHECKS: ${{ inputs.unperformed_checks }}
           MACOS_CANDIDATE_SET_SHA256: ${{ inputs.macos_candidate_set_sha256 }}
           MACOS_PRODUCT_ACCEPTANCE_EVIDENCE_URL: ${{ inputs.macos_product_acceptance_evidence_url }}
           SOURCE_COMMIT: ${{ needs.identify.outputs.source_commit }}
@@ -349,10 +357,13 @@ jobs:
             --release-id "$RELEASE_ID" \
             --release-metadata candidate-assets/RELEASE-METADATA.json \
             --workflow-run-id "$GITHUB_RUN_ID" \
+            --update-check "$UPDATE_CHECK" --product-acceptance "$PRODUCT_ACCEPTANCE" \
+            --unperformed-checks "$UNPERFORMED_CHECKS" \
             --macos-evidence-url "$MACOS_EVIDENCE_URL" \
             --macos-candidate-set-sha256 "$MACOS_CANDIDATE_SET_SHA256" \
             --macos-product-acceptance-evidence-url "$MACOS_PRODUCT_ACCEPTANCE_EVIDENCE_URL" \
             --output qualification/qualification.json
+          cat qualification/qualification.json >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload qualification receipt
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
