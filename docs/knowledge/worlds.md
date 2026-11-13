@@ -232,6 +232,13 @@ resolver must select the same assertion as explicitly ended or replaced, and the
 earlier claim must start before that boundary; different relation labels or
 endpoints do not by themselves establish a replacement. Denials, rumours,
 allegations and unrelated later facts do not establish an ending.
+End-bounded resolution supplies the relation, participant identities and stored
+validity beside the fact text, distinguishing an open relationship described in
+the past tense from a historical event. A different explicit end cannot disappear
+through verbatim or model-selected deduplication; ending an older claim still
+requires the resolver to select it and the time guards to pass. Other resolutions
+keep their existing fact-only requests. Restating an earlier start with an explicit
+end closes the old interval at the end, preserving the stated start.
 
 ### Discovery after publication
 

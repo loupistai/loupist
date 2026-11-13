@@ -318,6 +318,47 @@ fn labels_py(labels: &[String]) -> Py {
     Py::strings(labels.iter())
 }
 
+fn has_end(edge: &Edge) -> bool {
+    edge.invalid_at.is_some()
+}
+
+/// Validity context is needed to distinguish an open relationship described in
+/// the past tense from a separate historical event. Ordinary resolution keeps
+/// its existing fact-only input.
+fn resolution_fact(edge: &Edge, idx: Option<usize>, with_validity: bool) -> Py {
+    let mut fields = Vec::new();
+    if let Some(idx) = idx {
+        fields.push(("idx", Py::Int(idx as i64)));
+    }
+    fields.push(("fact", Py::str(edge.fact.as_str())));
+    if with_validity {
+        fields.extend([
+            ("relation_type", Py::str(edge.name.as_str())),
+            ("source_id", Py::str(edge.source.as_str())),
+            ("target_id", Py::str(edge.target.as_str())),
+            (
+                "valid_at",
+                edge.valid_at
+                    .as_ref()
+                    .map_or(Py::None, |t| Py::str(isoformat(t))),
+            ),
+            (
+                "invalid_at",
+                edge.invalid_at
+                    .as_ref()
+                    .map_or(Py::None, |t| Py::str(isoformat(t))),
+            ),
+            (
+                "expired_at",
+                edge.expired_at
+                    .as_ref()
+                    .map_or(Py::None, |t| Py::str(isoformat(t))),
+            ),
+        ]);
+    }
+    Py::dict(fields)
+}
+
 fn attributes_py(attributes: &[(String, Value)]) -> Vec<(String, Py)> {
     attributes
         .iter()
@@ -1020,6 +1061,7 @@ impl Run<'_, '_> {
                 candidate.source == edge.source
                     && candidate.target == edge.target
                     && normalize_exact(&candidate.fact) == fact
+                    && (!has_end(&edge) || candidate.invalid_at == edge.invalid_at)
             }) {
                 if !self.edges[found].episodes.contains(&self.episode.key) {
                     let key = self.episode.key.clone();
@@ -1028,15 +1070,13 @@ impl Run<'_, '_> {
                 decisions[position] = Some(Decision::Verbatim(found));
                 continue;
             }
+            let ending = has_end(&edge);
             let existing = Py::List(
                 related
                     .iter()
                     .enumerate()
                     .map(|(idx, candidate)| {
-                        Py::dict([
-                            ("idx", Py::Int(idx as i64)),
-                            ("fact", Py::str(self.edges[*candidate].fact.as_str())),
-                        ])
+                        resolution_fact(&self.edges[*candidate], Some(idx), ending)
                     })
                     .collect(),
             );
@@ -1045,17 +1085,22 @@ impl Run<'_, '_> {
                     .iter()
                     .enumerate()
                     .map(|(idx, candidate)| {
-                        Py::dict([
-                            ("idx", Py::Int((related.len() + idx) as i64)),
-                            ("fact", Py::str(self.edges[*candidate].fact.as_str())),
-                        ])
+                        resolution_fact(&self.edges[*candidate], Some(related.len() + idx), ending)
                     })
                     .collect(),
             );
-            pending.push((
-                position,
-                prompts::resolve_edge(&existing, &invalidation, &edge.fact),
-            ));
+            let fact = if ending {
+                resolution_fact(&edge, None, true).repr()
+            } else {
+                edge.fact.clone()
+            };
+            let mut messages = prompts::resolve_edge(&existing, &invalidation, &fact);
+            if ending {
+                messages[0]
+                    .content
+                    .push_str(prompts::END_VALIDITY_INSTRUCTIONS);
+            }
+            pending.push((position, messages));
         }
         let mut batches = Vec::new();
         for batch in edge_batches(pending) {
@@ -1171,6 +1216,14 @@ impl Run<'_, '_> {
                         .iter()
                         .filter_map(|id| usize::try_from(*id).ok())
                         .filter(|id| *id < related.len())
+                        // Reusing an open candidate would discard the new end
+                        // before contradiction handling can apply it. A model
+                        // selection is still required to invalidate that candidate.
+                        .filter(|id| {
+                            !has_end(&self.edges[*index])
+                                || self.edges[related[*id]].invalid_at
+                                    == self.edges[*index].invalid_at
+                        })
                         .collect();
                     let mut resolved = *index;
                     if let Some(first) = duplicate_ids.first() {
@@ -1256,12 +1309,20 @@ impl Run<'_, '_> {
         // A termination often states only the end of the old relationship. It
         // does not establish a new start. The resolver must still select the
         // same assertion as superseded; an end instant alone selects nothing.
-        let boundary = self.edges[resolved]
-            .valid_at
-            .or(self.edges[resolved].invalid_at);
-        let resolved_valid = boundary.as_ref().map(to_utc);
-        let resolved_invalid = self.edges[resolved].invalid_at.as_ref().map(to_utc);
+        let resolved_start = self.edges[resolved].valid_at;
+        let resolved_end = self.edges[resolved].invalid_at;
+        let resolved_invalid = resolved_end.as_ref().map(to_utc);
         for candidate in candidates {
+            // Restating the same start while adding an end closes the old
+            // interval at that end, not at its own start. A replacement with
+            // a different start keeps the existing start-boundary rule.
+            let boundary =
+                if resolved_end.is_some() && resolved_start == self.edges[*candidate].valid_at {
+                    resolved_end
+                } else {
+                    resolved_start.or(resolved_end)
+                };
+            let resolved_valid = boundary.as_ref().map(to_utc);
             let edge_invalid = self.edges[*candidate].invalid_at.as_ref().map(to_utc);
             let edge_valid = self.edges[*candidate].valid_at.as_ref().map(to_utc);
             if matches!((edge_invalid, resolved_valid), (Some(a), Some(b)) if a <= b)

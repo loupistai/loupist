@@ -194,6 +194,18 @@ pub(crate) const EDGE_BATCH_INSTRUCTIONS: &str = concat!(
     "cases. Return every case under its exact key, with no extra keys."
 );
 
+pub(crate) const END_VALIDITY_INSTRUCTIONS: &str = concat!(
+    "\nFor this end-bounded fact, compare the represented relationships and their validity ",
+    "intervals, not merely whether an earlier sentence remains historically true. ",
+    "Historical wording for a start does not turn an open relationship interval into ",
+    "a point event: an explicit ending of that same relationship closes its validity. ",
+    "Separate historical event participation remains true. Use the supplied relation ",
+    "and participant identities to distinguish those cases; labels alone prove nothing. ",
+    "Bounds are proposed extraction data, not independent proof. A denial, allegation, ",
+    "rumour, hypothesis or forecast still cannot establish an ending. An open fact is ",
+    "not a duplicate of a fact with a different explicit end."
+);
+
 /// The worker's one-call attribute instruction.
 pub(crate) const ATTRIBUTE_INSTRUCTIONS: &str = concat!(
     "Fill only fields the source states. ",

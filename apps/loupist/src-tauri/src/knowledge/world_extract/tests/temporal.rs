@@ -12,7 +12,11 @@ fn assertion(id: &str, fact: &str, start: Option<&str>, end: Option<&str>) -> Ed
         target: "company".into(),
         name: "LEADS".into(),
         fact: fact.into(),
-        episodes: vec!["old_source".into()],
+        episodes: vec![if id == "new" {
+            EPISODE_KEY.into()
+        } else {
+            "old_source".into()
+        }],
         valid_at: start.and_then(instant),
         invalid_at: end.and_then(instant),
         expired_at: None,
@@ -20,12 +24,22 @@ fn assertion(id: &str, fact: &str, start: Option<&str>, end: Option<&str>) -> Ed
     }
 }
 
-fn resolve(old: Edge, new: Edge, contradicted: bool, other: bool) -> Vec<Edge> {
+fn resolve_reply(
+    old: Edge,
+    new: Edge,
+    contradicted: bool,
+    other: bool,
+    duplicate: bool,
+) -> Vec<Edge> {
+    let ending = new.invalid_at.is_some();
+    let start = old.valid_at;
+    let end = new.invalid_at;
+    let incompatible_end = old.invalid_at != new.invalid_at;
     let case = case("resolve_edges_single");
     let (schema, instructions) = schema_and_instructions(&case);
     let (episode, previous) = episode(&case);
     let mut host = Host::new(&json!({"responses": [{
-        "duplicate_facts": [], "contradicted_facts": if contradicted { vec![0] } else { vec![] }
+        "duplicate_facts": if duplicate { vec![0] } else { vec![] }, "contradicted_facts": if contradicted { vec![0] } else { vec![] }
     }]}));
     let mut infer = |request| host.reply(request);
     let mut bridge = Bridge::new(config(&case), &mut infer);
@@ -46,11 +60,43 @@ fn resolve(old: Edge, new: Edge, contradicted: bool, other: bool) -> Vec<Edge> {
     } else {
         (vec![vec![old_index]], vec![vec![]])
     };
-    let (_, invalidated, _) = harness.decide_edges(&[new_index], related, others).unwrap();
-    invalidated
+    let (resolved, invalidated, _) = harness.decide_edges(&[new_index], related, others).unwrap();
+    if duplicate && ending && incompatible_end {
+        assert_eq!(harness.edge(resolved[0]).uuid, "new");
+        assert_eq!(harness.edge(resolved[0]).invalid_at, end);
+        assert_eq!(harness.edge(old_index).episodes, ["old_source"]);
+    }
+    let result = invalidated
         .iter()
         .map(|i| harness.edge(*i).clone())
-        .collect()
+        .collect();
+    drop(harness);
+    drop(bridge);
+    if ending {
+        let messages = host.calls[0]["messages"].as_array().unwrap();
+        let content = messages[1]["content"].as_str().unwrap();
+        for key in [
+            "relation_type",
+            "source_id",
+            "target_id",
+            "valid_at",
+            "invalid_at",
+            "expired_at",
+        ] {
+            assert!(content.contains(key), "missing validity context {key}");
+        }
+        for t in [start, end].into_iter().flatten() {
+            assert!(
+                content.contains(&text::isoformat(&t)),
+                "missing stated boundary"
+            );
+        }
+    }
+    result
+}
+
+fn resolve(old: Edge, new: Edge, contradicted: bool, other: bool) -> Vec<Edge> {
+    resolve_reply(old, new, contradicted, other, false)
 }
 
 const START: &str = "2026-02-02T10:00:00Z";
@@ -119,4 +165,47 @@ fn termination_requires_an_ordered_instant_and_a_resolver_selection() {
         let new = assertion("new", fact, None, Some(END));
         assert!(resolve(old, new, false, false).is_empty(), "{fact}");
     }
+}
+
+#[test]
+fn a_duplicate_selection_cannot_discard_a_new_explicit_end() {
+    for selected in [false, true] {
+        let old = assertion("old", "Cedar began supplying Elm.", Some(START), None);
+        let new = assertion("new", "Cedar stopped supplying Elm.", None, Some(END));
+        let invalidated = resolve_reply(old, new, selected, false, true);
+        assert_eq!(invalidated.len(), usize::from(selected));
+        if selected {
+            assert_eq!(invalidated[0].invalid_at, instant(END));
+        }
+    }
+}
+
+#[test]
+fn a_verbatim_fact_cannot_hide_a_new_explicit_end() {
+    let fact = "Cedar supplies Elm.";
+    let old = assertion("old", fact, Some(START), None);
+    let new = assertion("new", fact, None, Some(END));
+    let invalidated = resolve(old, new, true, false);
+    assert_eq!(invalidated.len(), 1);
+    assert_eq!(invalidated[0].invalid_at, instant(END));
+}
+
+#[test]
+fn a_restated_start_with_an_end_closes_the_existing_interval() {
+    let old = assertion(
+        "old",
+        "Cedar supplies Elm from its contract start.",
+        Some(START),
+        None,
+    );
+    let new = assertion(
+        "new",
+        "Cedar supplied Elm for the stated interval.",
+        Some(START),
+        Some(END),
+    );
+    let invalidated = resolve_reply(old, new, true, false, true);
+    assert_eq!(invalidated.len(), 1);
+    assert_eq!(invalidated[0].valid_at, instant(START));
+    assert_eq!(invalidated[0].invalid_at, instant(END));
 }
