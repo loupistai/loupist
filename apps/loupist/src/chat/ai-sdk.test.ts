@@ -1,5 +1,5 @@
 import { readUIMessageStream } from "ai";
-import { applyChatProgressPatch, applyChatProgressSnapshot, fromLoupistUIMessage, TauriChatTransport, toLoupistUIMessage } from "./ai-sdk";
+import { applyChatProgressPatch, applyChatProgressSnapshot, fromLoupistUIMessage, fromStoreKeepingAnswers, TauriChatTransport, toLoupistUIMessage } from "./ai-sdk";
 import type { LoupistUIMessage } from "./ai-sdk";
 import type { ChatMessage, ChatSendRequest, ChatStreamEvent, LoupistBridge } from "../types";
 import { evidenceFixture } from "../test/evidenceFixtures";
@@ -247,5 +247,26 @@ describe("native stream transport", () => {
       return { run_id };
     }).sendMessages({ ...request, body });
     expect((await project(stream as ReadableStream<never>)).at(-1)!.tool_refusals).toEqual(tool_refusals);
+  });
+});
+
+describe("reconciling with the saved Chat", () => {
+  it("keeps the ids of messages already on screen, so a stopped turn does not remount or move", () => {
+    const asked: LoupistUIMessage = { id: "client-user-1", role: "user", parts: [{ type: "text", text: "Explain margins." }] };
+    const answering: LoupistUIMessage = { id: "client-assistant-1", role: "assistant", metadata: { status: "streaming", answer_key: "answer-1" }, parts: [{ type: "text", text: "Margins" }] };
+    const earlier = toLoupistUIMessage({ id: "msg-0", role: "assistant", content: "Hello.", created_at: "2026-11-13T00:00:00Z" });
+    const stored: ChatMessage[] = [
+      { id: "msg-0", role: "assistant", content: "Hello.", created_at: "2026-11-13T00:00:00Z" },
+      { id: "msg-1", role: "user", content: "Explain margins.", created_at: "2026-11-13T00:01:00Z" },
+      { id: "msg-2", role: "assistant", content: "Margins", status: "aborted", created_at: "2026-11-13T00:01:01Z" },
+    ];
+    const next = fromStoreKeepingAnswers([earlier, asked, answering], stored);
+    expect(next.map((message) => message.id)).toEqual(["msg-0", "client-user-1", "client-assistant-1"]);
+    expect(next.map((message) => fromLoupistUIMessage(message).id)).toEqual(["msg-0", "msg-1", "msg-2"]);
+    expect(next[2]?.metadata?.answer_key).toBe("answer-1");
+    expect(fromLoupistUIMessage(next[2]!).status).toBe("aborted");
+    // A different question in that place is a different message.
+    const replaced = fromStoreKeepingAnswers([earlier, { ...asked, parts: [{ type: "text", text: "Something else" }] }], stored.slice(0, 2));
+    expect(replaced.map((message) => message.id)).toEqual(["msg-0", "msg-1"]);
   });
 });

@@ -219,12 +219,26 @@ const dataUrlPayload = (file: FileUIPart) => {
  * without it a refresh remounts the answer and replays its reveal.
  */
 export function fromStoreKeepingAnswers(current: readonly LoupistUIMessage[], stored: readonly ChatMessage[]): LoupistUIMessage[] {
-  const answerKeys = new Map(current.flatMap((message) =>
-    message.metadata?.answer_key ? [[message.metadata.native_message_id ?? message.id, message.metadata.answer_key]] : []));
-  return stored.map((message) => {
+  const storedIds = new Set(stored.map((message) => message.id));
+  // A message sent or streamed here has a client id until the saved Chat names it; it keeps
+  // that id (its view's key) when the saved message in its place is the same one.
+  const clientId = (message: ChatMessage, index: number) => {
+    const shown = current[index];
+    if (!shown || shown.metadata?.native_message_id || storedIds.has(shown.id) || shown.role !== message.role) return undefined;
+    if (message.role === "user" && fromLoupistUIMessage(shown).content !== message.content) return undefined;
+    return shown.id;
+  };
+  const answerKeys = new Map(current.flatMap((message, index) => {
+    const key = message.metadata?.answer_key;
+    if (!key) return [];
+    const native = message.metadata?.native_message_id ?? (stored[index] && clientId(stored[index], index) ? stored[index].id : message.id);
+    return [[native, key]];
+  }));
+  return stored.map((message, index) => {
     const ui = toLoupistUIMessage(message);
     const answerKey = answerKeys.get(message.id);
-    return answerKey ? { ...ui, metadata: { ...ui.metadata, answer_key: answerKey } } : ui;
+    const keptId = clientId(message, index);
+    return { ...ui, ...(keptId ? { id: keptId } : {}), ...(answerKey ? { metadata: { ...ui.metadata, answer_key: answerKey } } : {}) };
   });
 }
 
