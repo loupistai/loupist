@@ -22,6 +22,8 @@ def run(*args: str, **kwargs) -> subprocess.CompletedProcess:
         check=False,
         capture_output=kwargs.pop("capture_output", True),
         text=True,
+        encoding="utf-8",
+        errors="replace",
         **kwargs,
     )
     if result.returncode:

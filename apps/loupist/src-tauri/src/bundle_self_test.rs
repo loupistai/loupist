@@ -99,6 +99,10 @@ async fn check_helpers(resources: &Path, scratch: &Path) -> Result<(), String> {
         .remove("openbb")
         .ok_or("bundled OpenBB manifest is unavailable")?;
     let working = scratch.join("openbb");
+    // The sidecar refuses a scratch directory that is not private (mode 0700);
+    // the app creates it this way before every run.
+    crate::fs::artifact_trust::ensure_private_directory(&working)
+        .map_err(|_| "OpenBB helper preflight: scratch directory is not private")?;
     let (session, tools) = McpSession::spawn(McpLaunchConfig {
         server_id: "openbb".into(), executable: runtime.executable, arguments: Vec::new(),
         private_working_dir: working.clone(), lease_dir: leases,
@@ -180,5 +184,30 @@ mod tests {
             .unwrap()
             .unwrap_err()
             .contains("release build"));
+    }
+
+    /// The same helper sequence the release build runs from the mounted DMG,
+    /// against the runtimes staged in this checkout. Debug builds have no
+    /// signature gate, so this covers everything except the signer check: the
+    /// first release dry run failed here on a scratch directory the sidecar
+    /// refused. Skipped where the runtimes are not staged.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_helper_sequence_passes_against_the_staged_runtimes() {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let staged = manifest.join("resources/pi-runtime");
+        if !staged.join("loupist-pi").is_file() || !staged.join("openbb/loupist-openbb").is_file() {
+            eprintln!("skipped: runtimes are not staged in this checkout");
+            return;
+        }
+        let temporary =
+            crate::fs::artifact_trust::private_temporary_directory("loupist-helper-test-").unwrap();
+        let resources = temporary.path().join("Resources");
+        std::fs::create_dir(&resources).unwrap();
+        std::os::unix::fs::symlink(&staged, resources.join("pi-runtime")).unwrap();
+        std::os::unix::fs::symlink(manifest.join("../agent"), resources.join("loupist-agent"))
+            .unwrap();
+        let scratch = temporary.path().join("state");
+        crate::fs::artifact_trust::ensure_private_directory(&scratch).unwrap();
+        check_helpers(&resources, &scratch).await.unwrap();
     }
 }

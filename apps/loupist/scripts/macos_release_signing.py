@@ -21,7 +21,15 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(*command: str, check: bool = True) -> subprocess.CompletedProcess:
-    result = subprocess.run(list(map(str, command)), capture_output=True, text=True)
+    # `file -b` and `codesign -d` can print bytes that are not UTF-8 (a copyright
+    # sign in a description, a path in another encoding); never fail on them.
+    result = subprocess.run(
+        list(map(str, command)),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     if check and result.returncode:
         raise RuntimeError(f"{command[0]} failed: {result.stdout}{result.stderr}")
     return result
@@ -64,8 +72,24 @@ def macho_files(root: Path) -> list[Path]:
     )
 
 
+def framework_directories(root: Path) -> list[Path]:
+    return sorted(
+        path
+        for path in root.rglob("*.framework")
+        if path.is_dir() and not path.is_symlink()
+    )
+
+
 def sign_runtime(root: Path, kind: str, mode: str, identity: str) -> None:
     main = root / ("loupist-pi" if kind == "pi" else "loupist-openbb")
+    frameworks = framework_directories(root)
+    if frameworks:
+        # codesign treats a file inside a flat *.framework as a bundle and
+        # refuses it; the runtime must be built on a non-framework Python.
+        raise ValueError(
+            "runtime contains a framework bundle that cannot be signed in place: "
+            + ", ".join(str(path.relative_to(root)) for path in frameworks)
+        )
     files = macho_files(root)
     if main not in files:
         raise ValueError(f"missing Mach-O main executable: {main}")
