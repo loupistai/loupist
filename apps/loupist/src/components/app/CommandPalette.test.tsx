@@ -172,3 +172,11 @@ it("lists every shortcut the app handles on Settings › Keyboard", () => {
   expect(rows).toHaveLength(SHORTCUTS.length);
   expect(screen.getByRole("row", { name: /Command palette/ })).toBeInTheDocument();
 });
+
+it("names an untitled research session as the sidebar does", () => {
+  render(<CommandPalette open bridge={new MockLoupistBridge({ delay_ms: 0 })} loupists={[loupist]} selectedLoupistId={loupist.id}
+    threadsByLoupist={{ [loupist.id]: [thread("t9", "", "2026-10-29T00:00:00Z")] }} attention={[]} actions={[]}
+    onOpenAttention={vi.fn()} onOpenThread={vi.fn()} onOpenMapNode={vi.fn()} onOpenPrinciple={vi.fn()} onOpenBriefing={vi.fn()} onOpenChange={vi.fn()} />);
+  const list = screen.getByRole("listbox", { name: "Command palette" });
+  expect(within(list).getAllByRole("option")[0]).toHaveTextContent("Untitled research session");
+});
