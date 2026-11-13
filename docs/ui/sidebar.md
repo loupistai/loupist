@@ -28,7 +28,8 @@ alerts delivered but not yet on screen (`watchAlerts`: one row per Loupist with 
 opening its home Thread), and dated Journal checks due within seven days or overdue. The renderer
 writes each as one sentence naming the Loupist (and the connection or check claim),
 wrapping to two lines. Each Loupist row
-shows one status: amber dot for waiting on the user, then the running spinner, the
+shows one status: amber dot for waiting on the user, then a still running ring (the
+header avatar's run ring is still too: while a reply runs, only its live line loops), the
 unread badge, and a grey dot for a run that finished out of sight.
 `attention_notify` builds an OS notification body from the stored answer, only with
 the user's notification permission and at most once per chat per minute; it is
