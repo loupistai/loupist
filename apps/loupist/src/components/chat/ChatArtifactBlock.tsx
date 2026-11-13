@@ -63,7 +63,9 @@ export const ChatArtifactBlock = memo(function ChatArtifactBlock({ block, onAsk,
   const wide = useWideWindow();
   const [expanded, setExpanded] = useState(false);
   const staged = block.kind === "ready" ? block.staged : undefined;
-  const [view, setView] = useState<ViewState>(() => staged ? { status: "ready", view: staged } : { status: "loading" });
+  const [read, setView] = useState<ViewState>(() => staged ? { status: "ready", view: staged } : { status: "loading" });
+  // Staged content draws in the render that delivers it: a card that was preparing never shows a Loading frame first.
+  const view: ViewState = staged ? { status: "ready", view: staged } : read;
   const [attempt, setAttempt] = useState(0);
   // The drawn chart leaves its snapshot here for "Save as PNG…".
   const [snapshot] = useState<ChartSnapshotSlot>(() => ({ current: null }));

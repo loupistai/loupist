@@ -382,7 +382,9 @@ export const ChatGridBlock = memo(function ChatGridBlock({ block, onAsk, askDisa
   useTranslation("chat");
   const scope = useChatExecution();
   const staged = block.kind === "ready" ? block.staged : undefined;
-  const [view, setView] = useState<ViewState>(() => staged ? { status: "ready", view: staged } : { status: "loading" });
+  const [read, setView] = useState<ViewState>(() => staged ? { status: "ready", view: staged } : { status: "loading" });
+  // Staged content draws in the render that delivers it: a card that was preparing never shows a Loading frame first.
+  const view: ViewState = staged ? { status: "ready", view: staged } : read;
   const [attempt, setAttempt] = useState(0);
   const artifactId = block.kind === "ready" ? block.artifact.artifact_id : null;
   const revision = block.kind === "ready" ? block.artifact.revision : null;

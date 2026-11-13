@@ -87,6 +87,18 @@ it("draws a chart the host delivered before the commit at once, and keeps it whe
   expect(await screen.findByText("compact-chart")).toBeVisible();
 });
 
+it("never draws a Loading frame between a preparing card and its delivered chart", async () => {
+  const { container, rerender } = render(withScope(<ChatArtifactBlock block={{ kind: "building", key: "chart:chart-1", title: "Operating margin", stepId: "step" }} />, vi.fn()));
+  const added: string[] = [];
+  const observer = new MutationObserver((records) => { for (const record of records) for (const node of record.addedNodes) added.push(node.textContent ?? ""); });
+  observer.observe(container, { childList: true, subtree: true, characterData: true });
+  rerender(withScope(<ChatArtifactBlock block={{ kind: "ready", key: "chart:chart-1", artifact: ref, updating: false, staged: view }} />, vi.fn()));
+  await Promise.resolve();
+  observer.disconnect();
+  expect(added.join("|")).not.toMatch(/Loading/);
+  expect(await screen.findByText("compact-chart")).toBeVisible();
+});
+
 it("copies prices a provider stored as 32-bit floats with their real digits, not the widening noise", async () => {
   const widened = { ...dataset, rows: [["Q2", Math.fround(225.3)], ["Q3", 1234.5678], ["Q4", 394_328_000_000]] };
   const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
