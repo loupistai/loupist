@@ -1538,7 +1538,9 @@ button.chat-progress-names:hover { text-decoration: underline; }
   .turn-ledger-chevron { transition: none; }
   .turn-live[data-sheen] .turn-live-label { animation: none; background: none; color: var(--gg-color-text-primary); }
   .turn-tick-out { display: none; }
-  :is(.turn-live, .turn-ledger-chips, .turn-block)[data-leaving] { display: none; }
+  :is(.turn-live, .turn-ledger-chips)[data-leaving] { display: none; }
+  /* A leaving card is hidden at once but keeps its room until it is removed, inside the turn's held height. */
+  .turn-block[data-leaving] { visibility: hidden; }
 }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @container chat-reading (max-width: 760px) {
@@ -1631,7 +1633,7 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 /* Blocks that arrive while the reader watches: the ledger fades in, chips, cards and questions rise in. */
 .turn-ledger[data-enter] { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; }
 .turn-ledger-chip[data-enter], .turn-block[data-enter] { animation: turn-rise-in var(--gg-motion-normal) var(--gg-ease-out) both; }
-/* A card still preparing when the reply stops fades out where it stood, then is removed. */
+/* A card the stopped reply takes away (preparing or filled) fades out where it stood, then is removed. */
 .turn-block[data-leaving] { pointer-events: none; animation: turn-fade-out var(--gg-motion-fast) var(--gg-ease-in) both; }
 /* The outline trigger keeps its 28 px target without growing the 24 px row it arrives in at commit. */
 .message-meta-late { display: inline-flex; align-items: center; margin-block: -2px; }

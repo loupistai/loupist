@@ -56,8 +56,11 @@ answer is written below, so nothing moves at commit, where only the stored refer
 (`artifact`) follows. A stopped or failed reply saved nothing, so its staged cards go. A failed publish
 the model then calls again (chart or table, under any title) leaves no card of its own:
 the retry's card stands for it and the ledger keeps the failed step. A
-card still preparing when the reply stops fades out in place (120 ms; at once under
-reduced motion) and is then removed;
+card the stopped reply takes away, still preparing or already filled from its staged
+content, fades out in place as it was drawn (the same element, never mounted again;
+120 ms; hidden at once under reduced motion) and is then removed. The turn holds the
+height it had when the card began to leave (`--turn-hold`), so the removal never
+shrinks the scroll range under the reader;
 an answer that says "the chart below" can be wrong until the prompt says otherwise. A
 question or approval is a block where it was asked, and settles into its one line in
 the same place; answering a question holds the turn at its height (`--turn-hold`) while
