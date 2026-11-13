@@ -121,6 +121,10 @@ and every material table cell are linked; years, dates, counts and the user's ow
 assumptions stay plain. Rust [checks those links](../analysis/number-checks.md#number-checks) when the
 reply commits, and the [evaluation](../../apps/loupist/evals/README.md#agent-evals)
 assertion `numbers_linked` measures them.
+A market data read that returned no rows (an empty `results`, or OpenBB's empty
+reply) reaches the model as it came but gets no `citation_url` and is not one of the
+answer's Sources; a failed read never is (`mcp_call` in
+`tool_executor/mcp_host.rs`).
 
 For a local original, native `read` returns the file text; `workspace_capture`
 returns the host's `citation_url` alongside that text, outside any third-party

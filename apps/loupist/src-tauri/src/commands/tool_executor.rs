@@ -229,6 +229,9 @@ struct PendingToolCapture {
     web_sources: HashMap<String, crate::web::WebSource>,
     web_fetch_snapshots: HashMap<String, RunWebFetchSnapshot>,
     run_results: BTreeMap<String, CapturedRunResult>,
+    /// Run results that host reads resolve but the answer never lists as
+    /// Sources (a market data read that returned no rows).
+    unlisted_results: BTreeSet<String>,
     staged_sources: Vec<StagedSource>,
     staged_reads: Vec<StagedKnowledgeRead>,
     note_reads: BTreeSet<String>,
@@ -633,8 +636,10 @@ impl ToolCapture {
         };
         let call_id = pending.call_id.clone();
         let mut delivered_evidence = Vec::new();
-        for (_, captured) in std::mem::take(&mut pending.run_results) {
-            delivered_evidence.push(evidence::project(&captured.result));
+        for (result_ref, captured) in std::mem::take(&mut pending.run_results) {
+            if !pending.unlisted_results.contains(&result_ref) {
+                delivered_evidence.push(evidence::project(&captured.result));
+            }
             registry
                 .insert_captured(captured)
                 .expect("staged run result budget was checked before delivery");
