@@ -38,3 +38,9 @@ after the undone move's fact date; the other direction is unconstrained. Every
 Loupist move and Undo writes a `thesis_moved` [growth event](growth.md#growth-event-log). A
 crossed line also posts one Home message and a Needs attention row until the
 page is opened ([Architecture](asset-pages.md#asset-pages)).
+
+A user-stated level is a line with a check (no date required), rather than text
+inside a reason. A reply may stage one reason and one checked line for the same
+asset in either order; its Memory transaction writes the reason first and saves
+both or neither. Other second Journal entries and third entries remain refused.
+When a turn reads a line’s metric, record it through `thesis_update lineReading`.

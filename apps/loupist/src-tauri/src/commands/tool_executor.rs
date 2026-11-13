@@ -175,8 +175,8 @@ pub(super) struct ToolCapture {
     /// Standing Lens body admitted with the turn envelope. This is not a tool ACK.
     pub(super) context_reads: Mutex<Vec<StagedKnowledgeRead>>,
     pub(super) staged_research: Mutex<Option<StagedResearch>>,
-    /// One Journal save or review per turn, reserved until delivery is discarded.
-    journal_delivery: Mutex<Option<String>>,
+    /// One Journal entry or a same-asset reason/line pair; reserve until discarded.
+    journal_delivery: Mutex<Vec<(String, StagedResearchJournal)>>,
     pub(super) staged_principles: Mutex<Vec<StagedPrinciple>>,
     /// Checked thesis updates, committed with the reply.
     pub(in crate::commands) staged_theses: Mutex<Vec<crate::knowledge::assets::ThesisUpdate>>,
@@ -236,6 +236,7 @@ struct PendingToolCapture {
     staged_reads: Vec<StagedKnowledgeRead>,
     note_reads: BTreeSet<String>,
     research: Option<StagedResearch>,
+    thesis_pair: Option<StagedResearchJournal>,
     principles: Vec<StagedPrinciple>,
     theses: Vec<crate::knowledge::assets::ThesisUpdate>,
     earnings: Vec<earnings::EarningsSave>,
@@ -441,6 +442,7 @@ pub(super) struct StagedResearchJournal {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct StagedResearch {
+    pub(super) thesis_pair: Option<StagedResearchJournal>,
     pub(super) observations: String,
     pub(super) interpretation: String,
     pub(super) assumptions: String,
@@ -611,9 +613,7 @@ impl ToolCapture {
     async fn discard_delivery(&self, delivery_id: &str) {
         self.pending_deliveries.lock().await.remove(delivery_id);
         let mut journal = self.journal_delivery.lock().await;
-        if journal.as_deref() == Some(delivery_id) {
-            *journal = None;
-        }
+        journal.retain(|(delivery, _)| delivery != delivery_id);
         drop(journal);
         // A thesis update that was never delivered frees its asset again.
         self.thesis_assets
@@ -699,7 +699,11 @@ impl ToolCapture {
             let mut staged = self.staged_research.lock().await;
             if let Some(existing) = staged.as_mut() {
                 if research.journal.is_some() {
-                    existing.journal = research.journal.take();
+                    if existing.journal.is_some() {
+                        existing.thesis_pair = research.journal.take();
+                    } else {
+                        existing.journal = research.journal.take();
+                    }
                 }
                 if research.working_note.is_some() {
                     existing.working_note = research.working_note;
@@ -710,6 +714,30 @@ impl ToolCapture {
                 }
             } else {
                 *staged = Some(research);
+            }
+        }
+        if let Some(journal) = pending.thesis_pair {
+            let mut staged = self.staged_research.lock().await;
+            if let Some(existing) = staged.as_mut() {
+                if existing.journal.is_some() {
+                    existing.thesis_pair = Some(journal);
+                } else {
+                    existing.journal = Some(journal);
+                }
+            } else {
+                *staged = Some(StagedResearch {
+                    journal: Some(journal),
+                    thesis_pair: None,
+                    working_note: None,
+                    observations: String::new(),
+                    interpretation: String::new(),
+                    assumptions: String::new(),
+                    evaluation: String::new(),
+                    source_reads: Vec::new(),
+                    world_reads: Vec::new(),
+                    lens_reads: Vec::new(),
+                    previous_note_ids: Vec::new(),
+                });
             }
         }
         if !pending.theses.is_empty() {
@@ -1186,7 +1214,7 @@ impl AppToolExecutor {
                     result["next"] = json!("Captured, not retained. If the user named or attached this file as material for the answer, call source_save with this result_ref before replying.");
                 }
                 Ok(result)
-            },
+            }
             ToolMethod::PythonRun => self.python_run(params).await,
         }?;
         // Holdings redaction over every tool result (D9): an account read

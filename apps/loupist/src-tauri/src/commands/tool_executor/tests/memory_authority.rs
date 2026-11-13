@@ -693,7 +693,7 @@ async fn journal_world_links_and_checks_are_refused_before_a_save_slot_is_reserv
         let message = error.to_string();
         assert!(message.contains("journal"), "{message}");
         assert!(!message.contains("do-not-echo"), "{message}");
-        assert!(capture.journal_delivery.lock().await.is_none());
+        assert!(capture.journal_delivery.lock().await.is_empty());
         assert!(capture.staged_research.lock().await.is_none());
         assert!(!capture
             .pending_deliveries
@@ -720,4 +720,93 @@ async fn journal_world_links_and_checks_are_refused_before_a_save_slot_is_reserv
         .unwrap()
         .journal
         .is_some());
+}
+
+fn thesis_request(symbol: &str, role: &str) -> Value {
+    let mut request = json!({"judgment":format!("My {role} for {symbol}"),
+        "thesis":{"symbol":symbol,"market":"NASDAQ","role":role}});
+    if role == "line" {
+        request["check"] = json!({"claim":"Operating margin below 8%", "metric":"operating margin", "direction":"below", "threshold":8, "unit":"%"});
+    }
+    request
+}
+
+#[tokio::test]
+async fn thesis_pair_reserves_only_one_reason_and_one_checked_line_for_the_same_asset() {
+    for roles in [["reason", "line"], ["line", "reason"]] {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = seeded_state(&temporary);
+        let executor = executor_for(&state, bound_capture(Some("user"), "chat-a"));
+        let policy = policy(true, true);
+        let first = executor
+            .stage_journal(&policy, thesis_request("NVDA", roles[0]), "first", false)
+            .await
+            .unwrap();
+        assert_eq!(first["saved_as"], roles[0]);
+        if roles[0] == "line" {
+            assert!(first["next"].as_str().unwrap().contains("no saved reason"));
+        }
+        executor.capture.commit_delivery("first").await;
+        // Same role, another asset, a review and a line without a check cannot use the extra slot.
+        for request in [
+            thesis_request("NVDA", roles[0]),
+            thesis_request("AMD", roles[1]),
+            {
+                let mut request = thesis_request("NVDA", "line");
+                request.as_object_mut().unwrap().remove("check");
+                request
+            },
+        ] {
+            assert!(executor
+                .stage_journal(&policy, request, "refused", false)
+                .await
+                .is_err());
+        }
+        let second = executor
+            .stage_journal(&policy, thesis_request("NVDA", roles[1]), "second", false)
+            .await
+            .unwrap();
+        assert_eq!(second["saved_as"], roles[1]);
+        if roles[1] == "line" {
+            assert!(!second["next"].as_str().unwrap().contains("no saved reason"));
+        }
+        executor.capture.commit_delivery("second").await;
+        assert!(executor
+            .stage_journal(&policy, thesis_request("NVDA", "reason"), "third", false)
+            .await
+            .is_err());
+        let staged = executor.capture.staged_research.lock().await;
+        assert!(staged.as_ref().unwrap().journal.is_some());
+        assert!(staged.as_ref().unwrap().thesis_pair.is_some());
+        assert_eq!(executor.capture.journal_delivery.lock().await.len(), 2);
+    }
+}
+
+#[tokio::test]
+async fn discarded_thesis_deliveries_release_their_slots_and_save_nothing() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = executor_for(&state, bound_capture(Some("user"), "chat-a"));
+    let policy = policy(true, true);
+    executor
+        .stage_journal(&policy, thesis_request("NVDA", "reason"), "first", false)
+        .await
+        .unwrap();
+    executor
+        .stage_journal(&policy, thesis_request("NVDA", "line"), "second", false)
+        .await
+        .unwrap();
+    executor.capture.discard_delivery("first").await;
+    executor.capture.discard_delivery("second").await;
+    assert!(executor.capture.staged_research.lock().await.is_none());
+    assert!(executor.capture.journal_delivery.lock().await.is_empty());
+    executor
+        .stage_journal(
+            &policy,
+            thesis_request("AMD", "reason"),
+            "replacement",
+            false,
+        )
+        .await
+        .unwrap();
 }

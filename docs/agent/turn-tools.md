@@ -160,7 +160,12 @@ that the app computes every difference.
 
 `journal_save` accepts `thesis {symbol, market, role}` for a reason or line the user
 stated; a `line` needs a check, whose `byDate` is then optional, and a thesis entry
-needs no `sourceReads`, `worldReads` or `lensReads`. `SYSTEM.md` tells the agent to
+needs no `sourceReads`, `worldReads` or `lensReads`. One reply may save one reason
+and one checked line for the same asset, in either order; the commit writes the
+reason first, atomically with the line and Chat. Other second entries and any
+third entry are refused. Thesis receipts add `saved_as` (`reason` or `line`) and
+`next`: only a line is tested against figures, and a line without an active or
+staged reason asks for one because readings need it. `SYSTEM.md` tells the agent to
 read the page for a followed asset, save the user's stated reasons and lines with
 `thesis`, and move the read one step only on a dated original fact read in the turn,
 never to agree with the user and never under an as-of date. It also points the agent at
