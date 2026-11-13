@@ -6,6 +6,7 @@ import hashlib
 import os
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import ssl
 import subprocess
@@ -77,7 +78,23 @@ subjectKeyIdentifier=hash
             "pass:fixture",
         )
         der = ssl.PEM_cert_to_DER_cert(certificate.read_text())
-        sha1 = hashlib.sha1(der).hexdigest().upper()
+        # Apple's SHA-1 identity identifier comes from the X.509 tool, not Python.
+        fingerprint = credentials.run(
+            "/usr/bin/openssl",
+            "x509",
+            "-in",
+            certificate,
+            "-noout",
+            "-fingerprint",
+            "-sha1",
+        ).stdout
+        match = re.fullmatch(
+            r"SHA1 Fingerprint=((?:[0-9A-F]{2}:){19}[0-9A-F]{2})\s*",
+            fingerprint,
+            re.IGNORECASE,
+        )
+        assert match, "openssl did not report a SHA-1 fingerprint"
+        sha1 = match.group(1).replace(":", "").upper()
         profile = {
             "macos_signing": {
                 "mode": "self-signed",
