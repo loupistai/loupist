@@ -111,13 +111,17 @@ const PEEK = 0.45;
 
 /**
  * Sizes measure columns so that, when not all fit, the next one peeks in at
- * the right edge, and counts the columns still hidden past that edge.
+ * the right edge, and counts the columns still hidden past that edge. `widest`
+ * is the widest value or period line the columns hold: a column is never
+ * narrower than that (up to 168 px), so a long amount such as
+ * "333,605,938,000,000원" never runs into the next column.
  */
-export function columnFit(viewport: number, first: number, columns: number, scrollLeft = 0) {
+export function columnFit(viewport: number, first: number, columns: number, scrollLeft = 0, widest = 0) {
+  const least = Math.min(MEASURE_MAX, Math.max(MEASURE_MIN, Math.ceil(widest)));
   const room = viewport - first;
-  if (columns <= 0 || room <= 0 || first + columns * MEASURE_MIN <= viewport) return { width: undefined, hidden: 0 };
-  const shown = Math.max(1, Math.floor(room / MEASURE_MIN - PEEK));
-  const width = Math.min(MEASURE_MAX, Math.max(MEASURE_MIN, room / (shown + PEEK)));
+  if (columns <= 0 || room <= 0 || first + columns * least <= viewport) return { width: undefined, hidden: 0 };
+  const shown = Math.max(1, Math.floor(room / least - PEEK));
+  const width = Math.min(MEASURE_MAX, Math.max(least, room / (shown + PEEK)));
   const whole = Math.floor((scrollLeft + room + 1) / width);
   return { width, hidden: Math.max(0, columns - whole) };
 }
@@ -134,7 +138,14 @@ function useScrollEdges(columns: number) {
     const node = ref.current;
     if (!node) return;
     const first = node.querySelector<HTMLElement>(".grid-card-asset-head")?.offsetWidth ?? 0;
-    const next = columnFit(node.clientWidth, first, columns, node.scrollLeft);
+    // A value or period line, with its cell's inline padding: what a column must hold without running over.
+    let widest = 0;
+    for (const line of node.querySelectorAll<HTMLElement>(".grid-card-value > *, .grid-card-period")) {
+      const cell = line.closest<HTMLElement>("td, th");
+      const style = cell ? getComputedStyle(cell) : null;
+      widest = Math.max(widest, line.offsetWidth + (style ? Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight) : 0));
+    }
+    const next = columnFit(node.clientWidth, first, columns, node.scrollLeft, widest);
     setFit((current) => (current.width === next.width && current.hidden === next.hidden ? current : next));
     const start = node.scrollLeft > 1;
     const end = node.scrollWidth - node.clientWidth - node.scrollLeft > 1;

@@ -216,6 +216,17 @@ describe("wide grids", () => {
     expect(columnFit(766, 176, 8, 8 * wide.width! + 176 - 766).hidden).toBe(0);
   });
 
+  it("never makes a column narrower than its widest value, so a long amount does not run into the next one", () => {
+    // Four 112 px columns would fit, but "333,605,938,000,000원" with its padding needs 159 px: the grid scrolls instead.
+    const fit = columnFit(766, 176, 4, 0, 159);
+    expect(fit.width).toBeGreaterThanOrEqual(159);
+    expect(fit.hidden).toBe(1);
+    // Roomy enough for every column at that width: the columns share the row.
+    expect(columnFit(1000, 176, 4, 0, 159)).toEqual({ width: undefined, hidden: 0 });
+    // Wider than a column may be: held at 168 px.
+    expect(columnFit(766, 176, 4, 0, 400).width).toBe(168);
+  });
+
   it("breaks a slash term only after its slash", () => {
     expect(headerLabel("Net debt/EBITDA")).toBe("Net\u00a0debt/\u200bEBITDA");
     expect(headerLabel("Operating margin")).toBe("Operating margin");
