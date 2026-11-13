@@ -403,6 +403,8 @@ async fn empty_custom_reads_stay_unlisted_but_still_pause_outbound_calls() {
     };
     for (reply, empty) in [
         (json!({"content":[{"type":"text","text":" "}]}), true),
+        (json!({"content":[],"structuredContent":{}}), true),
+        (json!({"content":[],"structuredContent":{"data":[]}}), true),
         (
             json!({"content":[],"structuredContent":{"results":[]}}),
             true,
