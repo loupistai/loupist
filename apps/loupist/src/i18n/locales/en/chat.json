@@ -94,7 +94,7 @@
     "messageLoupist": "Message Loupist",
     "askLoupistToAddContextForCommands": "Ask {{loupistName}}…",
     "askYourLoupist": "Ask your Loupist…",
-    "newChat": "New chat",
+    "newChat": "New research",
     "model": "Model",
     "attachFiles": "Attach files",
     "manageSkillsAndConnections": "Manage skills and connections",
@@ -399,8 +399,8 @@
   },
   "messageSchedules": {
     "draftFilesFailed": "Could not save draft attachments on this Mac.",
-    "needsTime": "Answer in Home",
-    "handedToBot": "Sent to Home · {{status}}",
+    "needsTime": "Answer in Bot",
+    "handedToBot": "Handed to Bot · {{status}}",
     "scheduledTasks": "Scheduled tasks",
     "deleted": "Deleted",
     "runStarted": "Run started",
@@ -908,8 +908,6 @@
     "couldNotReadOrSendTheAttachedMessageYour": "Could not read or send the attached message. Your draft and files have been kept. Try again, or remove and reattach the files.",
     "uploadFiles": "Upload files",
     "whatWouldYouLikeToKnow": "What would you like to know?",
-    "stop": "Stop",
-    "submit": "Submit",
     "fileSizeLimit": "Files larger than {{value1}} MB were not added."
   },
   "aiSdk": {
@@ -1890,7 +1888,7 @@
     "incomplete": "Could not finish reviewing earlier conversation"
   },
   "watchAll": {
-    "action_one": "Watch it",
+    "actionOne": "Watch {{name}}",
     "action_other": "Watch all {{formattedCount}}",
     "note": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",
     "done_one": "Watching {{formattedCount}} name. Change it in <0>Following</0>.",

@@ -84,7 +84,7 @@
 .schedule-task[data-current="true"] { background: var(--gg-color-bg-hover); }
 .schedule-task-detail .schedule-section-label { margin-left: 0; margin-right: 0; }
 .schedule-task-detail .schedule-history .briefings-item { padding-left: 0; }
-.schedule-task-prompt { margin: var(--gg-space-3) 0 0; color: var(--gg-color-text-secondary); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.schedule-task-prompt { margin: 0; color: var(--gg-color-text-secondary); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .briefing-ahead > li > button, .briefing-changes .briefing-row-link { height: auto; min-height: var(--gg-size-control-sm); padding: 0; text-align: left; white-space: normal; }
 .briefing-changes .briefing-row-link { font-size: var(--gg-text-meta); color: var(--gg-color-accent-ink); font-weight: var(--gg-weight-regular); }
 

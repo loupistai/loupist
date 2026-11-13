@@ -21,8 +21,11 @@ per-episode anchor limit). The followed list and processing settings keep at mos
 Unfollowing or selling removes nothing; following again adds nothing.
 
 Following shares the followed list across Loupists and opens assets, holdings
-import, per-Loupist Watch-for choices and recent alerts. A bare six-digit page
-input means KRX. In Chat, [`loupist_setup`](../agent/turn-tools.md#turn-tools) uses
+import, per-Loupist Watch-for choices and recent alerts. Each followed asset is one
+row of the Watching table with a menu (Open asset page, Stop following, which calls
+`watchlist_remove` without confirmation); follows the table cannot list, or all of
+them when Watching settings fail to load, keep a row with the same menu above the
+add field. A bare six-digit page input means KRX. In Chat, [`loupist_setup`](../agent/turn-tools.md#turn-tools) uses
 the same `follow` and `watchlist_remove` functions; an unspecified market stays
 unknown, and an asset followed under any market is not added twice. Its receipt
 lists additions and removals. Following starts no automatic checks on a new

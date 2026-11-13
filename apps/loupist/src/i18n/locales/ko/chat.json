@@ -94,7 +94,7 @@
     "messageLoupist": "루피스트에게 메시지",
     "askLoupistToAddContextForCommands": "{{loupistName}}에게 질문…",
     "askYourLoupist": "루피스트에게 질문…",
-    "newChat": "새 대화",
+    "newChat": "새 리서치",
     "model": "모델",
     "attachFiles": "파일 첨부",
     "manageSkillsAndConnections": "스킬 및 연결 관리",
@@ -373,8 +373,8 @@
   },
   "messageSchedules": {
     "draftFilesFailed": "첨부파일을 이 Mac에 임시 저장하지 못했어요.",
-    "needsTime": "홈에서 답하기",
-    "handedToBot": "홈으로 보냄 · {{status}}",
+    "needsTime": "봇에서 시간 확인",
+    "handedToBot": "봇에 전달됨 · {{status}}",
     "scheduledTasks": "예약 작업",
     "deleted": "삭제됨",
     "runStarted": "실행 시작",
@@ -871,8 +871,6 @@
     "couldNotReadOrSendTheAttachedMessageYour": "첨부된 메시지를 읽거나 보내지 못했어요. 초안과 파일은 유지되어 있어요. 다시 시도하거나 파일을 제거한 뒤 다시 첨부해 주세요.",
     "uploadFiles": "파일 업로드",
     "whatWouldYouLikeToKnow": "무엇이 궁금한가요?",
-    "stop": "중지",
-    "submit": "제출",
     "fileSizeLimit": "{{value1}}MB보다 큰 파일은 추가하지 않았어요."
   },
   "aiSdk": {
@@ -1183,8 +1181,8 @@
       "done": "질문함"
     },
     "research_open": {
-      "running": "새 대화를 여는 중",
-      "done": "새 대화를 열었음"
+      "running": "리서치 세션 여는 중",
+      "done": "리서치 세션 열었음"
     },
     "worldbank_series": {
       "running": "거시 데이터 읽는 중",
@@ -1833,6 +1831,7 @@
     "incomplete": "이전 대화를 끝까지 확인하지 못했어요"
   },
   "watchAll": {
+    "actionOne": "{{name}} 지켜보기",
     "action_other": "관심 자산 {{formattedCount}}개 모두 지켜보기",
     "note": "관심 자산의 공시, 실적 발표일, 배당을 루피스트가 열려 있는 동안 매시간 확인해요. AI 사용량은 들지 않고, 데이터 제공처에는 이름만 보내요.",
     "done_other": "관심 자산 {{formattedCount}}개를 지켜보고 있어요. <0>관심 자산</0>에서 바꿀 수 있어요.",

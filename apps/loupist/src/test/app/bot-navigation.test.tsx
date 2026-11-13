@@ -9,9 +9,9 @@ it("keeps the research draft while moving between a session, Bot and its read-on
   const sessionTitle = "How should we read the margin decline?";
   const composer = () => screen.getByRole("textbox", { name: "Message Loupist" });
   await user.type(composer(), "Compare inventory days");
-  await user.click(screen.getByRole("button", { name: "Home" }));
+  await user.click(screen.getByRole("button", { name: "Bot" }));
   expect(composer()).not.toHaveValue("Compare inventory days");
-  await user.click(screen.getByRole("button", { name: "Options for Home" }));
+  await user.click(screen.getByRole("button", { name: "Options for Bot" }));
   await user.click(screen.getByRole("menuitem", { name: "Scheduled tasks" }));
   const history = await screen.findByRole("region", { name: "Schedule" });
   expect(within(history).queryByRole("textbox")).toBeNull();
@@ -37,7 +37,7 @@ it("opens the chosen Loupist's Bot and preserves the previous Loupist's session 
   const composer = () => screen.getByRole("textbox", { name: "Message Loupist" });
   await user.type(composer(), "Compare yesterday's filing");
   await chooseLoupist(user, "Cycle Reader");
-  expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
   expect(selectedLoupistButton()).toHaveTextContent("Cycle Reader");
   expect(composer()).toHaveValue("");
   await chooseLoupist(user, "Quality Compounder");
@@ -56,7 +56,7 @@ it("opens a new user's Bot after the notice and skips watchlist and scheduling s
   await user.click(await screen.findByRole("checkbox", { name: "I understand" }));
   await user.click(screen.getByRole("button", { name: "Get started" }));
   await user.click(await screen.findByRole("button", { name: "Create Loupist" }));
-  expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
   expect(screen.getByRole("textbox", { name: "Message Loupist" })).toBeEnabled();
   expect(create).toHaveBeenCalledTimes(1);
   expect(schedule).not.toHaveBeenCalled();

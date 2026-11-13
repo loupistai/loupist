@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatArtifactRef, ChatMessage, ChatProgressItem } from "../types";
-import { chartBlocks } from "./chartBlocks";
+import { chartBlocks, sameBlock } from "./chartBlocks";
 
 const chart = (overrides: Partial<ChatArtifactRef> = {}): ChatArtifactRef => ({
   artifact_id: "chart-1", revision: 1, kind: "chart", title: "Margin vs utilization", digest: "a".repeat(64), ...overrides,
@@ -14,6 +14,15 @@ const message = (overrides: Partial<ChatMessage>): ChatMessage => ({
 });
 
 describe("chartBlocks", () => {
+  it("tells a block derived again for the next word of the answer from one that draws a different card", () => {
+    const streaming = (extra: Partial<ChatMessage>) => chartBlocks(message({ status: "streaming", progress: { startedAtMs: 0, items: [step("succeeded")], finishedAtMs: null }, ...extra }))[0]!;
+    const filled = streaming({ artifact_refs: [chart()], content: "Margin" });
+    expect(sameBlock(filled, streaming({ artifact_refs: [chart()], content: "Margin fell" }))).toBe(true);
+    expect(sameBlock(filled, streaming({ artifact_refs: [chart({ revision: 2 })] }))).toBe(false);
+    expect(sameBlock(filled, streaming({}))).toBe(false);
+    expect(sameBlock(streaming({}), streaming({ content: "More" }))).toBe(true);
+  });
+
   it("reserves a card while a chart is being published and fills it in place", () => {
     const running = chartBlocks(message({ status: "streaming", progress: { startedAtMs: 0, items: [step("running")], finishedAtMs: null } }));
     expect(running).toEqual([{ kind: "building", key: "building:step-running", title: "Margin vs utilization", stepId: "step-running" }]);

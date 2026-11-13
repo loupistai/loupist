@@ -1,7 +1,7 @@
 import i18n from "@/i18n";
 import type { NumberCheck, SensitivityCard } from "../contracts/chat";
 import { morrowWithGrid, previewSensitivityGrid } from "../preview/korea";
-import { changePrompt, inputValue, sensitivityParagraphs, sensitivityTsv } from "./sensitivity";
+import { changePrompt, heldSensitivityParagraphs, inputValue, sensitivityParagraphs, sensitivityTsv } from "./sensitivity";
 
 const GRID = "ev_grid01";
 const OTHER = "ev_statements";
@@ -19,6 +19,25 @@ it("takes the paragraph that is only the grid link out of the text and keeps lat
     [`Revenue was [₩452.3bn](#evidence-${OTHER}).`, 1, [[0, "₩452.3bn"]]],
     [`Margin was [8.4%](#evidence-${OTHER}) [1](#evidence-${OTHER}).`, undefined, [[0, "8.4%"]]],
   ]);
+});
+
+it("holds, while the answer streams, the paragraph Rust will make a card, split as the settled answer is", () => {
+  const evidence = [
+    { id: GRID, title: "Reverse DCF grid", kind: "derived", tool_name: "calculate", calc_operation: "reverse_dcf", retrieved_at: "2026-04-17T06:00:00Z", excerpt: "", excerpt_truncated: false, content_sha256: "c".repeat(64), warnings: [] },
+    { id: OTHER, title: "Statements", kind: "original", tool_name: "dart_financials", retrieved_at: "2026-04-17T06:00:00Z", excerpt: "", excerpt_truncated: false, content_sha256: "c".repeat(64), warnings: [] },
+  ] as Parameters<typeof heldSensitivityParagraphs>[1];
+  const intro = `Revenue was [₩452.3bn](#evidence-${OTHER}).`;
+  // The link is still open: nothing is held yet (the hold-back rules hide the open link itself).
+  expect(heldSensitivityParagraphs(`${intro}\n\n[Solsup Foods](#evidence-${GRID.slice(0, 5)}`, evidence)).toHaveLength(1);
+  // Closed and alone so far: held, with nothing after it yet.
+  expect(heldSensitivityParagraphs(`${intro}\n\n[Solsup Foods](#evidence-${GRID})`, evidence)).toEqual([{ text: intro, held: GRID }]);
+  // Text continues on the same paragraph: it was an inline link after all.
+  expect(heldSensitivityParagraphs(`${intro}\n\n[Solsup Foods](#evidence-${GRID}) needs 7.3%`, evidence)).toHaveLength(1);
+  const content = `${intro}\n\n[Solsup Foods](#evidence-${GRID})\n\nThe middle case needs 7.3%.`;
+  const settled = sensitivityParagraphs(content, [card(1)]).segments;
+  expect(heldSensitivityParagraphs(content, evidence)).toEqual(settled.map((segment) => ({ text: segment.text, held: segment.card?.evidence_id })));
+  // A lone link to an ordinary result stays text.
+  expect(heldSensitivityParagraphs(`${intro}\n\n[Statements](#evidence-${OTHER})`, evidence)).toHaveLength(1);
 });
 
 it("leaves the text alone when the listed link is inside a sentence or points elsewhere", () => {

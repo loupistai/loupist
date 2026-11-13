@@ -1,6 +1,6 @@
 # Home Thread
 
-The persistent home Thread appears as Home (홈). Each Loupist has one Home. Other chats have separate titles and drafts. The app restores the selected conversation and its unsent draft on restart, including attached files, the exact inline references, the selected work, Skills and the as-of date. Scheduled results, crossed lines, watcher alerts and the morning message are host posts, not model calls.
+The persistent home Thread appears as Bot (봇). Each Loupist has one Bot. Research sessions have separate titles and drafts. The app restores the selected conversation and its unsent draft on restart, including attached files, the exact inline references, the selected work, Skills and the as-of date. Scheduled results, crossed lines, watcher alerts and the morning message are host posts, not model calls.
 
 Each Loupist has one persisted home Thread (`home-{loupist}`), created on workspace load
 with the Loupist's Chat defaults; rename and delete refuse it. Opening a Loupist lands
@@ -84,7 +84,7 @@ briefing on), each open step with a chip that fills the composer without sending
 Connect an AI account, its Follow step opens the Following page, and chips that need a model
 are disabled. Once the Thread has a user message the first message gives way, but the
 checklist stays below the conversation while a step is open. Its steps are read again each
-time Home is shown, so a company followed on Following ticks off on return. The focus question names a preset's subject ("What matters in semiconductors
+time Bot is shown, so a company followed on Following ticks off on return. The focus question names a preset's subject ("What matters in semiconductors
 this week?"); a Loupist with a free-text focus does not get it. A first
 visit counts what there is to look at instead of naming a day; general questions fill
 the list when the Loupist has little to point at. A Thread with no user-written message yet

@@ -306,7 +306,9 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
         {focusTask.latest_run && ["failed", "interrupted"].includes(focusTask.latest_run.status) ? <p className="inline-error schedule-task-error" role="status">{t("schedule.lastFailed", { reason: t(`failure.${briefingFailure(focusTask.latest_run.error ?? focusTask.last_error)}`) })}{briefingFailure(focusTask.latest_run.error ?? focusTask.last_error) === "auth" && onOpenModelSettings ? <> <Button variant="link" onClick={onOpenModelSettings}>{t("failure.models")}</Button></> : null}</p> : null}
         <ScheduleTaskControls key={`${focusTask.id}:${focusTask.revision}`} bridge={bridge} task={focusTask} title={displayTitle(focusTask)} running={focusTask.latest_run?.status === "running"} onAskHome={onAskHome}
           onChanged={() => { void load(); void loadHistory(focusTask.id); }} onDeleted={() => { setFocusExplicit(false); setFocusTaskId(null); void load(); }} />
-        {focusTask.kind === "custom" && focusTask.prompt ? <p className="schedule-task-prompt">{focusTask.prompt}</p> : null}
+        {/* A prompt that only repeats the title says nothing new; any other prompt is labelled as the request. */}
+        {focusTask.kind === "custom" && focusTask.prompt?.trim() && ![focusTask.title.trim(), displayTitle(focusTask).trim()].includes(focusTask.prompt.trim())
+          ? <><h3 className="schedule-section-label">{t("schedule.prompt")}</h3><p className="schedule-task-prompt">{focusTask.prompt}</p></> : null}
         <h3 className="schedule-section-label">{t("schedule.runs")}</h3>
         {(history[focusTask.id] ?? []).length ? <ol className="schedule-history" aria-label={t("schedule.history", { title: displayTitle(focusTask) })}>{(history[focusTask.id] ?? []).slice(0, HISTORY_ROWS).map(runRow)}</ol>
           : <p className="briefings-meta">{t("schedule.noRuns")}</p>}

@@ -11,6 +11,19 @@ export type ChartBlock =
 /** A grid's reserved, filled or failed block takes the same states as a chart's. */
 export type GridBlock = ChartBlock;
 
+/**
+ * Two derivations of one block that draw the same card. Blocks are derived
+ * again on every update of a streaming reply; a card compares them by value so
+ * a table already filled is not redrawn for each word of the answer.
+ */
+export function sameBlock(left: ChartBlock, right: ChartBlock): boolean {
+  if (left === right) return true;
+  if (left.key !== right.key || left.kind !== right.kind || left.stepId !== right.stepId) return false;
+  if (left.kind !== "ready" || right.kind !== "ready") return left.kind !== "ready" && right.kind !== "ready" && left.title === right.title;
+  const [a, b] = [left.artifact, right.artifact];
+  return left.updating === right.updating && a.artifact_id === b.artifact_id && a.revision === b.revision && a.digest === b.digest && a.title === b.title && a.kind === b.kind;
+}
+
 /** The host names each step's tool, so a chart step is told from a grid or document step exactly. */
 const isPublish = (tool: string) => (item: ChatProgressItem): item is ToolItem =>
   item.kind === "tool" && item.toolName === tool;

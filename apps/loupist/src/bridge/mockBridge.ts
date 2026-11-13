@@ -31,6 +31,11 @@ import { defaultRunOptions } from "../lib/modelSelection";
 import { executionModelLock, initialModelCatalog, listProviderModels, mockProviderStatus } from "./mock/models";
 import { commandError } from "./mock/commandError";
 
+/** The bundled Skills' own files, loaded on demand when a detail opens. */
+const bundledSkillSources = import.meta.glob<string>("../../agent/skills/*/SKILL.md", { query: "?raw", import: "default" });
+/** The SKILL.md body after its front matter, as `skills.rs` returns it. */
+const skillBody = (source: string) => source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").replace(/^\n+/, "");
+
 export class MockLoupistBridge implements Contract.LoupistBridge {
   private noticeVersion = CURRENT_NOTICE_VERSION;
   async noticeSettingsGet() { return { notice_acknowledged_version: this.noticeVersion }; }
@@ -458,7 +463,10 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     const entry = (await this.skillsList(request)).skills.find((s) => (s.path ?? s.id) === request.key);
     if (!entry) throw new Error("Skill not found.");
     const stored = entry.path ? this.customSkills.get(entry.path) : undefined;
-    return stored ? { ...structuredClone(stored.document), skill: entry } : { skill: entry, instructions: entry.description, files: ["SKILL.md"] };
+    if (stored) return { ...structuredClone(stored.document), skill: entry };
+    // A bundled Skill reads its real SKILL.md body, as the host does: the description lives only in the front matter.
+    const source = entry.source === "bundled" ? await bundledSkillSources[`../../agent/skills/${entry.id}/SKILL.md`]?.() : undefined;
+    return { skill: entry, instructions: source ? skillBody(source) : entry.description, files: ["SKILL.md"] };
   }
   async skillsCreate(request: Contract.SkillCreateRequest): Promise<Contract.SkillCatalog> {
     const configuration = await this.configRead(request);

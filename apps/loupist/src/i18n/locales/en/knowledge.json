@@ -1,7 +1,7 @@
 {
   "lensWorkspace": {
     "markdownSource": "View Markdown",
-    "discussInChat": "Ask your Loupist to revise",
+    "discussInChat": "Ask Bot to revise",
     "defaultPerspective": "Default perspective"
   },
   "researchLibrary": {
@@ -206,7 +206,7 @@
     "couldNotSaveWorldProcessingSettings": "Could not save Map building settings.",
     "couldNotRecoverWorldProcessing": "Could not recover Map building.",
     "worldProcessingSettings": "Map building settings",
-    "processingSendsSavedSourceTextToYourSelectedProviderAnd": "Processing sends saved source text to your selected provider and uses your plan or API balance.",
+    "processingSendsSavedSourceTextToYourSelectedProviderAnd": "Processing sends saved source text to your selected AI provider and uses your plan or API balance.",
     "worldProcessingReadiness": "Map building readiness",
     "recoveryRestoresTheLastConfirmedWorldAndKeepsYourSaved": "Recovery restores the last confirmed map and keeps your saved sources. The interrupted processing will not be retried. Recovery does not use a model.",
     "restoringConfirmedWorldData": "Restoring confirmed map data…",
@@ -702,7 +702,7 @@
       "remove": "Stop following {{name}}",
       "addLabel": "Add something to follow",
       "addPlaceholder": "Ticker, e.g. AAPL or 005930",
-      "addHint": "Or tell your Loupist in Home: “follow NVDA”.",
+      "addHint": "Or tell Bot: “follow NVDA”.",
       "addingToMap": "Adding to the map…",
       "add": "Follow",
       "noHoldings": "No holdings imported",

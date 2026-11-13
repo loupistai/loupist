@@ -69,4 +69,10 @@ export type WatchSettingsView = {
   lastCheckedMs?: number,
   watched: Array<WatchAssetView>,
   notWatched: Array<WatchAssetView>,
+  /**
+   * Listed assets with no saved choice in this Loupist, in follow order: the
+   * ones Watch all (`watch_defaults_apply`) gives class defaults. An asset
+   * the user switched fully off is decided and is not here.
+   */
+  undecidedAssetIds: Array<string>,
 };

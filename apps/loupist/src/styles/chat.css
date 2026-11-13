@@ -946,8 +946,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .composer-footer {
   flex-wrap: wrap;
 }
-/* When the tools wrap, the send control stays at the trailing edge of its row. */
-.composer-submit { margin-left: auto; }
 
 .composer-run-actions {
   display: inline-flex;
@@ -1018,12 +1016,28 @@ button.chat-progress-names:hover { text-decoration: underline; }
   background: var(--gg-color-action);
 }
 
-/* Send and Stop share one tile at the trailing edge: each arrives in place with a short fade and scale. */
-.composer-submit > svg, .composer-stop-action > svg { animation: composer-tile-in var(--gg-motion-fast) var(--gg-ease-out) both; }
-@keyframes composer-tile-in { from { opacity: 0; transform: scale(0.8); } }
-.composer-run-actions > :not(.composer-stop-action) { animation: turn-fade-in var(--gg-motion-fast) var(--gg-ease-out) both; }
+/* Send and Stop are one 28 px tile at the trailing edge: the same button, its two icons cross-fading in place. */
+.composer-tile {
+  position: relative;
+  width: var(--gg-size-control-sm);
+  height: var(--gg-size-control-sm);
+  padding: 0;
+  transition: background-color var(--gg-motion-fast) var(--gg-ease-out), color var(--gg-motion-fast) var(--gg-ease-out), opacity var(--gg-motion-fast) var(--gg-ease-out), box-shadow var(--gg-motion-fast) var(--gg-ease-out);
+}
+.composer-tile-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transition: opacity var(--gg-motion-fast) var(--gg-ease-out), transform var(--gg-motion-fast) var(--gg-ease-out);
+}
+.composer-tile-icon > svg { width: 14px; height: 14px; }
+.composer-tile-icon[data-icon="stop"] > svg { fill: currentColor; }
+.composer-tile[data-state="send"] > [data-icon="stop"],
+.composer-tile[data-state="stop"] > [data-icon="send"] { opacity: 0; transform: scale(0.8); }
+.composer-run-actions > :not(.composer-tile) { animation: turn-fade-in var(--gg-motion-fast) var(--gg-ease-out) both; }
 /* After a press the tile dims and ignores presses until the host confirms the stop. */
-.composer-stop-action { transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
 .composer-stopping .composer-stop-action { opacity: 0.55; pointer-events: none; }
 
 /* Once Send next is the primary control, Stop stays a square outline beside it. */
@@ -1510,7 +1524,7 @@ button.chat-progress-names:hover { text-decoration: underline; }
   .turn-ledger-chevron { transition: none; }
   .turn-live[data-sheen] .turn-live-label { animation: none; background: none; color: var(--gg-color-text-primary); }
   .turn-tick-out { display: none; }
-  :is(.turn-live, .turn-ledger-chips)[data-leaving] { display: none; }
+  :is(.turn-live, .turn-ledger-chips, .turn-block)[data-leaving] { display: none; }
 }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @container chat-reading (max-width: 760px) {
@@ -1603,6 +1617,8 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 /* Blocks that arrive while the reader watches: the ledger fades in, chips, cards and questions rise in. */
 .turn-ledger[data-enter] { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; }
 .turn-ledger-chip[data-enter], .turn-block[data-enter] { animation: turn-rise-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+/* A card still preparing when the reply stops fades out where it stood, then is removed. */
+.turn-block[data-leaving] { pointer-events: none; animation: turn-fade-out var(--gg-motion-fast) var(--gg-ease-in) both; }
 .message-meta-late { display: inline-flex; align-items: center; }
 .message-meta-late[data-enter] { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; }
 
@@ -1615,6 +1631,18 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .message-table-pending > i::before { width: 24%; }
 .message-table-pending > i::after { width: 38%; }
 .message-table-pending > i:first-child::before, .message-table-pending > i:first-child::after { background: var(--gg-color-border-subtle); }
+/* A Mermaid diagram holds a 240 px ruled frame while the reply streams; the diagram renders into it at commit. */
+.message-diagram-pending { display: grid; grid-template-rows: repeat(4, 1fr); height: 240px; margin-block: 1rem; padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
+.message-diagram-pending > i { border-bottom: 1px solid var(--gg-color-border-subtle); }
+.message-diagram-pending > i:last-child { border-bottom: 0; }
+.message-content [data-streamdown="mermaid-block"] { min-height: 240px; }
+/* A sensitivity card holds a ruled frame of its reserved height while the reply streams; the card fills it at commit. */
+.sensitivity-slot { --sensitivity-reserve: 408px; }
+.sensitivity-pending { display: grid; grid-template-rows: 36px repeat(5, 1fr); box-sizing: border-box; height: var(--sensitivity-reserve); margin-block: var(--gg-space-3); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
+.sensitivity-pending > i { border-bottom: 1px solid var(--gg-color-border-subtle); }
+.sensitivity-pending > i:first-child { border-bottom-color: var(--gg-color-border-default); }
+.sensitivity-pending > i:last-child { border-bottom: 0; }
+.sensitivity-slot[data-held] > .sensitivity-card { box-sizing: border-box; min-height: var(--sensitivity-reserve); }
 /* Headings and tables arrive whole, with one fade. */
 .message.assistant .message-content[data-streaming] :is([data-streamdown^="heading-"], [data-streamdown="table-wrapper"]) { animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
 /* The receipt shares the row with Sources and Copy; its lists open below the line. */

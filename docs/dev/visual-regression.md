@@ -57,7 +57,7 @@ scenarios require their chart canvas in a browser. It then waits for rendered Ma
 fonts, settled lazy requests and DOM, and unchanged Map canvas pixels. Readable Markdown
 fallbacks must disappear before capture, even when their text has no formatting markers.
 Preview framing waits for rendered content and fonts before scrolling the target into view;
-Home alert and results previews also wait for morning content to finish its automatic scroll.
+Bot alert and results previews also wait for morning content to finish its automatic scroll.
 Reduced motion is forced through Chrome media emulation;
 the app's CSS guards own animations and transitions. Before each screenshot, one browser
 snapshot checks running CSS animations and transitions: infinite effects or more than 1 ms

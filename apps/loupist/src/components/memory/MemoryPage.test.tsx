@@ -32,7 +32,7 @@ it("opens on Pages with your principles grouped in, shows where one was used, an
   const reader = within(page).getByRole("complementary", { name: /Prefer companies that publish segment margins/ });
   await user.click(within(reader).getByRole("button", { name: "Hanul margin review" }));
   expect(handlers.onOpenChat).toHaveBeenCalledWith("chat-margin");
-  await user.click(within(reader).getByRole("button", { name: "Ask your Loupist to revise" }));
+  await user.click(within(reader).getByRole("button", { name: "Ask Bot to revise" }));
   expect(handlers.onAsk).toHaveBeenCalledWith(expect.objectContaining({ recordId, kind: "lens" }));
 });
 
@@ -132,11 +132,11 @@ it("shows the home Thread as Bot in Used in and in History, never its stored tit
   const threads = [{ id: "home-chat", loupist_id: loupist.id, home: true, title: "Thread", updated_at: "2026-10-28T00:00:00Z", use_memory: true, update_memory: true, messages: [] }];
   render(<TooltipProvider><MemoryPage bridge={bridge} loupist={loupist} threads={threads} initialItem={recordId} {...handlers} /></TooltipProvider>);
   const reader = await screen.findByRole("complementary", { name: "Check cash before profit." });
-  await user.click(within(reader).getByRole("button", { name: "Home" }));
+  await user.click(within(reader).getByRole("button", { name: "Bot" }));
   expect(handlers.onOpenChat).toHaveBeenCalledWith("home-chat");
   expect(within(reader).queryByText("Thread")).toBeNull();
   await user.click(screen.getByRole("tab", { name: /History/ }));
-  expect(await screen.findByRole("button", { name: /Filed after: Home/ })).toBeVisible();
+  expect(await screen.findByRole("button", { name: /Filed after: Bot/ })).toBeVisible();
   expect(screen.queryByText(/Thread/)).toBeNull();
 });
 

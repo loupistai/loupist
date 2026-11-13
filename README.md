@@ -18,7 +18,7 @@ A Loupist is a research companion for what you invest in: it watches the assets 
 
 A Loupist carries research across conversations. It reads primary filings, runs the valuation math itself, challenges its prior views, and turns each piece of research into knowledge it uses again — in later companies, later markets, and later reviews.
 
-Each Loupist works in its own local folder, created by the app or opened from one you already have. Reports, code and data stay in that folder; `.loupist/` keeps its Chats and Memory with retained source bytes and immutable revisions. Close the app and copy the whole folder, including `.loupist/`, to preserve or move a Loupist. Lens pages contain Markdown. The app runs on your machine with a supported provider API key or account sign-in. There is no Loupist account or sync.
+Each Loupist works in its own local folder, created by the app or opened from one you already have. Reports, code and data stay in that folder; `.loupist/` keeps its conversations and Memory with retained source bytes and immutable revisions. Close the app and copy the whole folder, including `.loupist/`, to preserve or move a Loupist. Lens pages contain Markdown. The app runs on your machine with a supported provider API key or account sign-in. There is no Loupist account or sync.
 
 ## Teach a principle, see it applied
 
@@ -26,18 +26,18 @@ Each Loupist works in its own local folder, created by the app or opened from on
 
 **Later** — *"Compare these companies’ margin recoveries."* In a new Chat, the Loupist can apply the saved principle and relevant learned method. Open Lens beside Chat to inspect a revised method’s dated Then / Now summaries and evidence.
 
-Follow companies or import holdings as research context, receive dated briefings in Home, inspect their runs in Schedule, and keep your own judgments and later checks in a Journal.
+Follow companies or import holdings as research context, receive dated briefings in Bot, inspect their runs in Schedule, and keep your own judgments and later checks in a Journal.
 
 ## What makes it a Loupist
 
 - **It carries lessons forward.** Ordinary research can retain Sources and refine research methods. A later relevant turn reads those revisions; historical inputs remain available in private research records.
 - **Primary filings, two markets, one conversation.** OpenBB brings SEC EDGAR, FRED, keyless market data, and configured data vendors into the same chat as native OpenDART, World Bank, KRX, and the Korea Investment read catalog. Credentials are stored locally; requests go to the selected providers.
 - **Its own math.** Pi's native file tools let the Loupist read and edit files in that folder. `run_python` runs numerical code in a pinned offline Python runtime with no shell and no network. Research scripts and results stay in that folder, and charts can preserve exact data revisions.
-- **Records you own.** A Loupist folder preserves its Chats, retained originals and referenced tool activity. Open a copied folder to restore that Loupist. Each Loupist owns its Sources, Map, Lens, notes and private judgments. Tool results appear in Chat progress; files, charts, documents and saved Memory open beside the conversation. Removing a Loupist unregisters it; its folder, Chats and Memory remain available to reopen.
+- **Records you own.** A Loupist folder preserves its research sessions, retained originals and referenced tool activity. Open a copied folder to restore that Loupist. Each Loupist owns its Sources, Map, Lens, notes and private judgments. Tool results appear in Chat progress; files, charts, documents and saved Memory open beside the conversation. Removing a Loupist unregisters it; its folder, Chats and Memory remain available to reopen.
 
 ## How a Loupist remembers
 
-The sidebar shows **Home · Following · Map · Lens · Schedule**, with Settings below. Map and Lens open beside Chat; the header also opens Chat materials. Map opens the Library, with **Sources · Journal · Notes** tabs. Lens holds principles, perspectives, methods, topics and ideas. Briefings and scheduled chats run while the app is open or in the menu bar. Memory is the umbrella name for everything a Loupist keeps. A quality-compounder Loupist and a deep-value Loupist keep their own sources, knowledge, and perspective.
+The sidebar shows **Bot · Following · Map · Lens · Schedule**, with Settings below. Map and Lens open beside Chat; the header also opens Chat materials. Map opens the Library, with **Sources · Journal · Notes** tabs. Lens holds principles, perspectives, methods, topics and ideas. Briefings and scheduled chats run while the app is open or in the menu bar. Memory is the umbrella name for everything a Loupist keeps. A quality-compounder Loupist and a deep-value Loupist keep their own sources, knowledge, and perspective.
 
 | Kind | What it holds |
 | --- | --- |

@@ -40,7 +40,7 @@ it.each([false, true])("applies current Memory defaults to a new Chat unless the
   const chatSend = vi.spyOn(bridge, "chatSend");
   await openApp(bridge);
   await user.click(newChatButton());
-  await screen.findByRole("heading", { name: "Untitled chat" });
+  await screen.findByRole("heading", { name: "Untitled research session" });
   if (explicit) {
     await togglePrivateChat();
     await togglePrivateChat();

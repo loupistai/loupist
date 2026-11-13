@@ -45,7 +45,7 @@ import { useGo } from "../navigation/Open";
 import { MessageSchedules } from "./MessageSchedules";
 import { EarningsChatCard } from "./EarningsChatCard";
 import { earningsCards } from "../../chat/earningsLinks";
-import { sensitivityParagraphs, type SensitivitySegment } from "../../chat/sensitivity";
+import { heldSensitivityParagraphs, sensitivityParagraphs, type SensitivitySegment } from "../../chat/sensitivity";
 import { SensitivityCard } from "./SensitivityCard";
 import { ChatArtifactBlock } from "./ChatArtifactBlock";
 import { chartBlocks, gridBlocks, type ChartBlock } from "../../chat/chartBlocks";
@@ -325,7 +325,8 @@ function ChatMessageCardComponent({
   }, [message.role, message.progress?.items, message.content, workspacePath]);
   // Charts render as cards in the answer; documents stay in the outputs row and open the panel.
   // A setup card, a failed chart or a failed table offers the question again; it fills the composer and never sends.
-  const askAgain = onFillComposer && previousQuestion ? () => onFillComposer(previousQuestion) : undefined;
+  const askAgainNow = useCallback(() => { if (onFillComposer && previousQuestion) onFillComposer(previousQuestion); }, [onFillComposer, previousQuestion]);
+  const askAgain = onFillComposer && previousQuestion ? askAgainNow : undefined;
   const charts = useMemo(() => chartBlocks(message), [message]);
   // Grid answers and conflict cards render in the answer too, after its charts.
   const grids = useMemo(() => gridBlocks(message), [message]);
@@ -333,7 +334,8 @@ function ChatMessageCardComponent({
   // A paragraph that only links to a grid result renders as the sensitivity card where the
   // paragraph stood, and one that only links to a results snapshot as the compact results card.
   // Rust counted the links of the answer as written, so the grid paragraphs come out first.
-  const answerText = complete ? copyText : null;
+  const answerSegment = view.segments.find((segment) => segment.kind === "prose" && segment.tone === "answer");
+  const answerText = complete && answerSegment?.kind === "prose" ? answerSegment.text : null;
   const settledAnswer = useMemo(() => {
     if (message.role !== "assistant" || answerText === null) return null;
     const grids = sensitivityParagraphs(answerText, message.sensitivity_cards, message.number_checks);
@@ -351,10 +353,11 @@ function ChatMessageCardComponent({
     ? t("chatMessageCard.responseTime", { value1: responseDuration(message.performance.totalMs) })
     : undefined;
   const tokenLines = responseTokenLines(message.performance);
-  const prose = (segment: { key: string; text: string; streaming: boolean; tone: "answer" | "note"; short?: boolean; checks?: ChatMessage["number_checks"] }) =>
+  // `drains`: this piece's last word releases the commit; an answer split around a held card drains at its last piece.
+  const prose = (segment: { key: string; text: string; streaming: boolean; tone: "answer" | "note"; short?: boolean; checks?: ChatMessage["number_checks"] }, drains = true) =>
     <ProseSegment key={segment.key} text={segment.text} streaming={segment.streaming} tone={segment.tone} short={segment.short} checks={segment.checks}
       // A note a tool call followed shows what it received at once, so the ledger under it never moves.
-      halted={halted || segment.tone === "note"} paused={stopping} onDrained={segment.tone === "answer" ? releaseCommit : undefined} workspacePath={workspacePath} />;
+      halted={halted || segment.tone === "note"} paused={stopping} onDrained={segment.tone === "answer" && drains ? releaseCommit : undefined} workspacePath={workspacePath} />;
   const cardBlocks = (tool: "chart_publish" | "grid_publish") => tool === "chart_publish" ? charts : grids;
   const placedSteps = new Set(view.segments.flatMap((segment) => segment.kind === "card" ? [segment.itemId] : []));
   const renderBlock = (tool: "chart_publish" | "grid_publish", block: ChartBlock, key: string) => tool === "chart_publish"
@@ -372,7 +375,8 @@ function ChatMessageCardComponent({
         case "card": {
           // The card stands where its publish step started; the frame keeps its place as it fills.
           const block = cardBlocks(segment.tool).find((entry) => entry.stepId === segment.itemId);
-          if (block) transcript.push(<TurnBlock key={segment.key} kind="card">{renderBlock(segment.tool, block, segment.key)}</TurnBlock>);
+          const tool = segment.tool;
+          transcript.push(<TurnCard key={segment.key} block={block} render={(shown) => renderBlock(tool, shown, segment.key)} />);
           continue;
         }
         case "question":
@@ -394,12 +398,24 @@ function ChatMessageCardComponent({
           if (piece.text) transcript.push(prose({ key: index ? `${segment.key}:${index}` : segment.key, text: piece.text, streaming: false, tone: "answer", checks: piece.numberChecks }));
           if (piece.card) {
             const card = piece.card;
-            transcript.push(<SensitivityCard key={`grid-${card.evidence_id}-${index}`} grid={card} subject={card.subject}
+            transcript.push(<SensitivitySlot key={`grid-${card.evidence_id}-${index}`}><SensitivityCard grid={card} subject={card.subject}
               evidence={evidenceRefs.find(item => item.id === card.evidence_id)} evidenceRefs={evidenceRefs} asOf={message.as_of}
-              onChangeRates={onFillComposer} />);
+              onChangeRates={onFillComposer} /></SensitivitySlot>);
           }
         });
         continue;
+      }
+      // While it is written, a paragraph Rust will make a sensitivity card is held behind the card's frame, split
+      // exactly as the settled answer is, so the card fills that frame at commit and no text moves or is replaced.
+      if (segment.tone === "answer" && !settledAnswer) {
+        const pieces = heldSensitivityParagraphs(segment.text, evidenceRefs);
+        if (pieces.length > 1 || pieces[0]?.held) {
+          pieces.forEach((piece, index) => {
+            if (piece.text) transcript.push(prose({ key: index ? `${segment.key}:${index}` : segment.key, text: piece.text, streaming: segment.streaming, tone: "answer" }, index === pieces.length - 1));
+            if (piece.held) transcript.push(<SensitivitySlot key={`grid-${piece.held}-${index}`} />);
+          });
+          continue;
+        }
       }
       transcript.push(prose(segment));
     }
@@ -534,6 +550,40 @@ function ChatMessageCardComponent({
 function TurnBlock({ kind, children }: { kind: "card" | "ask"; children: ReactNode }) {
   const arrived = useArrived();
   return <div className="turn-block" data-turn-item={kind} data-enter={arrived || undefined}>{children}</div>;
+}
+
+/**
+ * Where a sensitivity card stands. While the reply streams it is a ruled frame
+ * of the card's reserved height; at commit the card fills it, keeping at least
+ * that height, so nothing below moves. A card read later has no frame to keep.
+ */
+function SensitivitySlot({ children }: { children?: ReactNode }) {
+  const [held] = useState(!children);
+  return <div className="sensitivity-slot" data-turn-item="card" data-held={held || undefined}>
+    {children ?? <div className="sensitivity-pending" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div>}
+  </div>;
+}
+
+/** A card's exit (`--gg-motion-fast`): a card still preparing when the reply stops fades out where it stood. */
+export const CARD_LEAVE_MS = 120;
+
+/**
+ * A card where its publish step started. When its block goes away (the reply
+ * stopped while it was preparing), the frame the reader saw fades out in place
+ * and is then removed (DIRECTION 5.7); under reduced motion it goes at once.
+ */
+function TurnCard({ block, render }: { block: ChartBlock | undefined; render: (block: ChartBlock) => ReactNode }) {
+  const [last, setLast] = useState(block);
+  if (block && (block.key !== last?.key || block.kind !== last.kind)) setLast(block);
+  const leaving = !block && last ? last : undefined;
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = window.setTimeout(() => setLast(undefined), CARD_LEAVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [leaving]);
+  if (block) return <TurnBlock kind="card">{render(block)}</TurnBlock>;
+  if (!leaving) return null;
+  return <div className="turn-block" data-turn-item="card" data-leaving="" aria-hidden="true" inert>{render(leaving)}</div>;
 }
 
 /** The outline and details triggers arrive at commit; the meta row already has their height. */

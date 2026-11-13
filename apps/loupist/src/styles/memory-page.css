@@ -59,8 +59,6 @@
 
 .memory-card { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-5); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .memory-card h2 { margin: 0; font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-semibold); }
-.memory-chips { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); margin: 0; padding: 0; list-style: none; }
-.memory-chips li { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-height: var(--gg-size-control-sm); padding-left: var(--gg-space-3); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-hover); font-size: var(--gg-text-control); }
 .memory-follow-add { display: flex; gap: var(--gg-space-2); max-width: 420px; }
 .memory-meta { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .memory-history section + section { margin-top: var(--gg-space-4); }

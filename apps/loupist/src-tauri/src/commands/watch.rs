@@ -1754,6 +1754,10 @@ pub struct WatchSettingsView {
     pub last_checked_ms: Option<i64>,
     pub watched: Vec<WatchAssetView>,
     pub not_watched: Vec<WatchAssetView>,
+    /// Listed assets with no saved choice in this Loupist, in follow order: the
+    /// ones Watch all (`watch_defaults_apply`) gives class defaults. An asset
+    /// the user switched fully off is decided and is not here.
+    pub undecided_asset_ids: Vec<String>,
 }
 
 /// The Loupist's switches, connections and last alerts, for the asset page
@@ -1792,9 +1796,14 @@ pub(crate) fn settings_view(
     })?;
     let mut watched = Vec::new();
     let mut not_watched = Vec::new();
+    let mut undecided_asset_ids = Vec::new();
     for (page, kinds, last_alert) in assets {
         let korean = is_korean_market(&page.market);
         let switch = switches.get(&page.asset_id).cloned().unwrap_or_default();
+        // `watch::apply_defaults` treats any stored switch as a decision.
+        if switch.kinds.is_empty() {
+            undecided_asset_ids.push(page.asset_id.clone());
+        }
         let states = routes.get(&page.asset_id).cloned().unwrap_or_default();
         let kind_views: Vec<KindStateView> = kinds
             .into_iter()
@@ -1857,6 +1866,7 @@ pub(crate) fn settings_view(
         last_checked_ms: watch_state.last_checked_ms,
         watched,
         not_watched,
+        undecided_asset_ids,
     })
 }
 

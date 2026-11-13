@@ -5,11 +5,11 @@
 - Introduce Loupist, a local-first financial research desktop app for macOS 13 or newer on Apple Silicon. Windows, Intel Macs and Linux are not supported in this release.
 - Connect an AI account with a supported provider API key or sign-in; no Loupist account or cloud sync is required.
 - Read filings, market data and economic series through read-only Data connections, including OpenBB, OpenDART, KRX and Korea Investment.
-- Keep each Loupist’s Chats, retained Sources, Map, Lens, research notes and Journal in its own local folder, which can be copied and reopened.
-- Find Home, Following, Map, Lens and Schedule in the sidebar; Following brings followed assets, holdings import, Watch-for choices and recent alerts together.
+- Keep each Loupist’s research sessions, retained Sources, Map, Lens, research notes and Journal in its own local folder, which can be copied and reopened.
+- Find Bot, Following, Map, Lens and Schedule in the sidebar; Following brings followed assets, holdings import, Watch-for choices and recent alerts together.
 - Follow assets without starting automatic checks; Watch all turns on class defaults, and Watching offers Pause/Resume and Check now without AI usage.
 - Teach principles and develop reusable methods in Lens, with editable pages, dated revision comparisons and evidence; open Sources, Journal and Notes separately in the Library.
-- Look around before connecting an AI account, go Back during setup, and choose a template and name, then change avatar and tone later in settings; Home keeps a three-step checklist for following, teaching a principle and turning on a briefing.
+- Look around before connecting an AI account, go Back during setup, and choose a template and name, then change avatar and tone later in settings; Bot keeps a three-step checklist for following, teaching a principle and turning on a briefing.
 - Run numerical analysis in a pinned offline Python worker with no shell, network, process spawning or host environment; read and edit research files in the selected folder and open results beside Chat.
 - Open Private chat from the composer’s + menu to skip Memory reads and saves together; chat history is still saved and messages still go to the AI provider.
 - Run scheduled chats and briefings while the app is open or in the menu bar; inspect runs, pause or resume tasks, Run now, and delete custom tasks from Schedule.

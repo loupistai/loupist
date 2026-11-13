@@ -564,6 +564,45 @@ describe("the in-progress reply", () => {
     expect(order()).toEqual(["tools", "card", "prose"]);
   });
 
+  it("holds a sensitivity card's paragraph behind its frame while streaming, and fills that frame at commit", async () => {
+    const { previewSensitivityGrid } = await import("../../preview/korea");
+    const grid = evidenceFixture({ id: "ev_grid01", title: "Reverse DCF grid", kind: "derived", tool_name: "calculate", calc_operation: "reverse_dcf", url: undefined });
+    const content = "The price assumes growth.\n\n[Solsup Foods](#evidence-ev_grid01)\n\nThe middle case needs 7.3%.";
+    const live = answer({ status: "streaming", phase: "writing", content: "", evidence_refs: [grid], draft: { id: "c9", answerLength: 0, settled: false }, progress: { startedAtMs: 0, finishedAtMs: null, items: [{ id: "c9", kind: "commentary", text: content }] } });
+    const { view, ...props } = renderAnswer(live);
+    const article = view.container.querySelector("article")!;
+    const slot = article.querySelector(".sensitivity-slot")!;
+    expect(slot.querySelector(".sensitivity-pending")).not.toBeNull();
+    expect(article).not.toHaveTextContent("Solsup Foods");
+    const before = slot.previousElementSibling;
+    const settled = answer({ content, answer_key: "c9", evidence_refs: [grid], sensitivity_cards: [{ ...previewSensitivityGrid("none"), link_index: 0, evidence_id: "ev_grid01", subject: "Solsup Foods" }] });
+    view.rerender(<TooltipProvider><ChatMessageCard {...props} message={settled} /></TooltipProvider>);
+    await waitFor(() => expect(slot.querySelector(".sensitivity-card")).not.toBeNull());
+    // The same frame, in the same place, after the same paragraph element: nothing read moved or was replaced.
+    expect(article.querySelector(".sensitivity-slot")).toBe(slot);
+    expect(slot).toHaveAttribute("data-held");
+    expect(slot.previousElementSibling).toBe(before);
+    expect(slot.querySelector(".sensitivity-pending")).toBeNull();
+  });
+
+  it("fades a card still preparing out where it stood when the reply stops, then removes it", async () => {
+    vi.useFakeTimers();
+    try {
+      const live = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, finishedAtMs: null, items: [chartStep("running")] } });
+      const { view, ...props } = renderAnswer(live);
+      const article = view.container.querySelector("article")!;
+      const card = () => article.querySelector(':scope > [data-turn-item="card"]');
+      expect(card()).not.toHaveAttribute("data-leaving");
+      const stopped = { ...chartStep("running"), status: "stopped" as const, finishedAtMs: 5 };
+      view.rerender(<TooltipProvider><ChatMessageCard {...props} message={answer({ status: "aborted", content: "", progress: { startedAtMs: 0, finishedAtMs: 5, items: [stopped] } })} /></TooltipProvider>);
+      expect(card()).toHaveAttribute("data-leaving");
+      expect(card()).toHaveAttribute("aria-hidden", "true");
+      expect(screen.queryByRole("region", { name: "Chart: Margins" })).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(130); });
+      expect(card()).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("reads Writing until the answer's last words are shown, at most 400 ms after the host finished", async () => {
     vi.useFakeTimers();
     try {

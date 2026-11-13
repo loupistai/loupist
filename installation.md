@@ -8,7 +8,7 @@ Signed installers will be published through [GitHub Releases](https://github.com
 
 1. Download the signed `.dmg` for `aarch64-apple-darwin` from the latest `loupistai/loupist` GitHub Release.
 2. Verify the published SHA-256 checksum.
-3. Drag Loupist to Applications and launch it normally. The release must pass Apple notarization and stapling checks. On first launch, acknowledge the AI notice, connect an AI account or choose Look around first, and create a Loupist to reach Home.
+3. Drag Loupist to Applications and launch it normally. The release must pass Apple notarization and stapling checks. On first launch, acknowledge the AI notice, connect an AI account or choose Look around first, and create a Loupist to reach Bot.
 
 Windows, Intel Macs, and Linux are not supported in the first release.
 

@@ -18,7 +18,7 @@ export const onboardingScenarios: PreviewScenario[] = [
     await click("[data-notice-acknowledgment]", root);
     await click("[data-onboarding-start]", root);
   }), setup: bridge => prepareFixture(bridge, "loupist") },
-  { ...base("onboarding-bot", "First launch opens Home after the notice", () => document.getElementById("current-location")?.textContent === i18n.t("app:thread.title") ? select(".chat-layout") : null, async root => {
+  { ...base("onboarding-bot", "First launch opens Bot after the notice", () => document.getElementById("current-location")?.textContent === i18n.t("app:thread.title") ? select(".chat-layout") : null, async root => {
     await click("[data-notice-acknowledgment]", root);
     await click("[data-onboarding-start]", root);
     await click("[data-onboarding-create]", root);

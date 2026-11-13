@@ -173,7 +173,7 @@ export async function preferEnglish(browser) {
       failure = state.language.error;
       return true;
     }
-    return state.lang === "en" && /Get started|Connect your AI account|Create your first Loupist|New Loupist|Home|Following|\bChats\b/.test(state.text);
+    return state.lang === "en" && /Get started|Connect your AI account|Create your first Loupist|New Loupist|Bot|Following|Research sessions/.test(state.text);
   }, {
     timeout: 20_000,
     interval: 150,
@@ -189,7 +189,7 @@ export async function selectedLoupistTitle(browser) {
 }
 
 /**
- * Open Home, Following, Map, Lens, Schedule or Settings. Settings replaces the header tabs, so
+ * Open Bot, Following, Map, Lens, Schedule or Settings. Settings replaces the header tabs, so
  * it is left through its sidebar footer first.
  */
 export async function openMainTab(browser, tab, timeout = 15_000) {

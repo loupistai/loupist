@@ -13,7 +13,8 @@ const tb = i18n.getFixedT(null, "briefings");
  * "Watch all n" (product direction F5): on a new install following watches nothing,
  * so the first follow receipt and the Following page offer to watch every followed
  * asset with its class defaults in one press (`watch_defaults_apply`). Hidden once
- * something is watched, or when nothing followed can be watched. A kind that needs a
+ * something is watched, or when every followed asset already has a decision (an asset
+ * switched fully off is not offered again). A kind that needs a
  * data connection says so after the press.
  */
 export function WatchAllOffer({ bridge, loupistId, refreshKey, onOpenFollowing, onOpenConnections }: {
@@ -43,8 +44,11 @@ export function WatchAllOffer({ bridge, loupistId, refreshKey, onOpenFollowing, 
       </li>)}</ul> : null}
     </div>;
   }
-  const count = settings.notWatched.length;
+  // Only assets with no decision yet: one switched fully off stays off.
+  const count = settings.undecidedAssetIds.length;
   if (settings.watched.length > 0 || count === 0) return null;
+  // One asset is offered by name rather than as "Watch all 1".
+  const only = count === 1 ? settings.notWatched.find(asset => asset.assetId === settings.undecidedAssetIds[0]) : undefined;
   const run = async () => {
     setState("busy");
     try { setResult(await bridge.watchDefaultsApply({ loupistId })); setState("done"); }
@@ -53,7 +57,7 @@ export function WatchAllOffer({ bridge, loupistId, refreshKey, onOpenFollowing, 
   return <div className="watch-all-offer follow-watch-offer" data-watch-all="offer">
     <p>{t("watchAll.note")}</p>
     <Button type="button" size="sm" disabled={state === "busy"} aria-busy={state === "busy" || undefined} onClick={() => void run()}>
-      {t("watchAll.action", { count, formattedCount: formatNumber(count) })}
+      {only ? t("watchAll.actionOne", { name: only.name }) : t("watchAll.action", { count, formattedCount: formatNumber(count) })}
     </Button>
     {state === "failed" ? <p className="inline-error" role="alert">{t("watchAll.failed")}</p> : null}
   </div>;

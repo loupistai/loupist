@@ -38,7 +38,7 @@ Office originals need Add source and an exact saved Source read. The Word Skill 
 publishing capability. Settings owns imports; no model Skill downloads or installs
 instructions.
 
-Settings → Skills lists research Skills first and keeps Skill Creator, Add skill and Create skill under an Advanced disclosure (open while searching). It offers search/filter, instruction/file details, toggles, reset,
+Settings → Skills lists research Skills first and keeps Skill Creator, Add skill and Create skill under an Advanced disclosure (open while searching); a Loupist's Skills & connections list likewise puts Skill Creator last, under an Advanced heading. It offers search/filter, instruction/file details, toggles, reset,
 owned-skill create/edit/delete and import. Personal Skills live at global
 `skills/<id>/`; Loupist Skills at `<workspace>/.loupist/skills/<id>/`. Each has `SKILL.md`
 with frontmatter and optional supporting files. Included and other-scope Skills

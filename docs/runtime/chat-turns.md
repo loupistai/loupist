@@ -90,7 +90,7 @@ Rust independently gates Memory reads and writes. Search, Skill selection and
 renderer inspection do not grant exact-read or write authority. Broker delivery
 uses acknowledgment and a commit barrier; an indeterminate barrier aborts the turn.
 One successful host transaction publishes the completed Chat and authorized Memory
-changes, graph jobs and artifacts. In Home, changes to [Home memory](../ui/home-thread.md#bot-memory)
+changes, graph jobs and artifacts. In Bot, changes to [Bot memory](../ui/home-thread.md#bot-memory)
 (tool `bot_memory`) and its review queue ride in the same Chat compare-and-swap. It also records acknowledged Lens delivery receipts
 and usage, including principles actually attached to bounded context when the turn
 saves no new Memory. The host records each receipt's kind and revision; model text

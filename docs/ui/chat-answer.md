@@ -49,7 +49,9 @@ with its nested steps, every step and note in order (label, target, Failed or St
 and a duration of a second or more), and results. A plan or Memory reads with no step of
 their own place the ledger before the live answer, where it stays. A chart or table
 card stands where its publish step started (`chartBlocks`/`gridBlocks` give each block
-its `stepId`), so a card made before the answer sits above it, live and after reload;
+its `stepId`), so a card made before the answer sits above it, live and after reload. A
+card still preparing when the reply stops fades out in place (120 ms; at once under
+reduced motion) and is then removed;
 an answer that says "the chart below" can be wrong until the prompt says otherwise. A
 question or approval is a block where it was asked, and settles into its one line in
 the same place. The card, the status pill and the ledger read the view alone; the pill
@@ -73,6 +75,9 @@ their height; next steps and the as-of note render below the footer. The commit 
 waits until the answer's last received word is shown, at most 400 ms after the host's
 `completed`, and changes no wrapping and no position of anything already read. On
 older answers only Copy and feedback wait for hover; Sources and a failure stay visible.
+Copy takes every piece of prose the page shows, in page order: each note that stayed on
+the page, then the answer. A short note that gave its place is in the timeline only and
+is not copied.
 
 The renderer draws the reply's shell (name, time and "Starting") as soon as the
 question is sent, 120 ms after the question rises in, without waiting for the host.
@@ -122,7 +127,15 @@ Under reduced motion it reveals whole sentences or blocks at most four times a s
 `stableMarkdown` holds a heading until its line ends and a table whole until a line that
 is not a row follows it (a 100 px ruled placeholder stands in meanwhile, so rows never
 arrive one by one and columns never re-flow), plus an open link or evidence link, an
-open `$$` run and a marker that just opened. The rendered text therefore only grows;
+open `$$` run and a marker that just opened. A paragraph that is only a link to a
+`reverse_dcf` or `dcf_grid` result (the one Rust makes a sensitivity card at the end) is
+held behind a ruled frame of the card's reserved height (408 px) from the moment its
+link closes, split exactly as the settled answer splits around its cards
+(`heldSensitivityParagraphs`); at commit the card fills that frame, keeping at least its
+height, so no text the reader saw moves or is replaced. If more text follows on that
+paragraph it is text again. A Mermaid fence is a 240 px ruled frame while the reply
+streams and until the diagram renderer has loaded; the diagram block keeps at least that
+height, and if the renderer fails the code shows. The rendered text therefore only grows;
 `streamingMarkdown.test.tsx` replays the live scenario one character at a time to hold
 that. Each released word fades in over 220 ms through Streamdown's `animated` option
 (opacity only, 20 ms apart, the spans removed when the stream ends;
@@ -131,6 +144,11 @@ no caret. Streamdown's table, code and diagram controls are hidden while the tex
 streams. Code and math plugins load once into a module-level store, so a second answer
 renders highlighted on its first paint and a plugin arriving mid-answer re-renders
 blocks in place.
+
+Each update of a streaming reply redraws only that reply. Earlier answers keep their render
+because every callback a card receives keeps its identity across app renders, the run flags
+reach only the cards that use them, a filled chart or table card compares its block by value
+(`sameBlock`), and Bot's setup steps under the thread are memoized.
 
 `scripts/probe-streaming.mjs` plays a live preview scenario (`chat-live-research`,
 `-stopped`, `-failed`, `-question`, `-quick`) on a real clock and records the live

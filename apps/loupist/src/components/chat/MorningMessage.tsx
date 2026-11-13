@@ -1,6 +1,6 @@
 import { formatDate, formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation, Trans } from "@/i18n";
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { ArrowRightIcon, CheckIcon, CircleIcon } from "lucide-react";
 import type { ChatEvidenceRef, LoupistBridge, LoupistCapabilityBinding, LoupistTemplateId } from "../../types";
 import type { GrowthEvent, JournalRecord, KnowledgeMap } from "../../contracts/knowledge";
@@ -285,7 +285,8 @@ type SetupProps = Pick<Props, "bridge" | "loupistId" | "loupistName" | "onAsk" |
  * Home's checklist once the Thread has messages: the morning message gives way to the
  * conversation, but the steps still open stay below it until they are done or hidden.
  */
-export function HomeSetup({ bridge, loupistId, loupistName, onAsk, accountConnected = true, onConnectAccount, onOpenFollowing, refreshRevision = 0 }: SetupProps) {
+// Memoized: it sits under the thread, so a reply streaming above it must not redraw it.
+export const HomeSetup = memo(function HomeSetup({ bridge, loupistId, loupistName, onAsk, accountConnected = true, onConnectAccount, onOpenFollowing, refreshRevision = 0 }: SetupProps) {
   const labelId = useId();
   const watchlist = useLoad<WatchlistEntry[]>(async () => bridge.watchlistList(), "watchlist", refreshRevision);
   const { done, open, hide } = useSetup(bridge, loupistId, true, watchlist, refreshRevision);
@@ -294,7 +295,7 @@ export function HomeSetup({ bridge, loupistId, loupistName, onAsk, accountConnec
     <SetupChecklist labelId={labelId} bridge={bridge} done={done} accountConnected={accountConnected}
       onAsk={onAsk} onConnectAccount={onConnectAccount} onOpenFollowing={onOpenFollowing} onHide={hide} />
   </article>;
-}
+});
 
 /** "What you follow:" up to three assets, each with its verdict and most material row, dated and numbered across the message. */
 function FollowedLine({ bullet, loupistId, loupistName, nameOf, onOpenAsset }: {

@@ -1,6 +1,6 @@
 # Sidebar
 
-The header selects a Loupist. The sidebar is the map of the product, in this order: Search, New chat (the only new-chat control, with its shortcut at the row's end; its tooltip says a chat digs into one question and that briefings and alerts stay in Home), Needs attention, then one row each for Home (⌘1), Following, Map (⌘2), Lens (⌘3) and Schedule (⌘4, with the selected Loupist's unread scheduled results as a count), then Chats, then Settings in the footer. Map and Lens open their panel beside the chat and show as current while it is open; Following opens the `following` page (`AppTab` in `src/app/navigation.ts`, no ⌘ key). With no chats, the Chats list says what a new chat is for instead of showing a bare heading. Below 900px it opens as a sheet, and the page behind it wraps into the visible strip so a line is not sliced. The header in that strip hides the panel-kind label and keeps the selected Loupist name inside the profile row. Settings replaces it. The command palette, exports and print live here too.
+The header selects a Loupist. The sidebar is the map of the product, in this order: Search, New research (the only control that starts a research session, with its shortcut at the row's end; its tooltip says new research digs into one question and that briefings and alerts stay in Bot), Needs attention, then one row each for Bot (⌘1), Following, Map (⌘2), Lens (⌘3) and Schedule (⌘4, with the selected Loupist's unread scheduled results as a count), then Research sessions, then Settings in the footer. Map and Lens open their panel beside the chat and show as current while it is open; Following opens the `following` page (`AppTab` in `src/app/navigation.ts`, no ⌘ key). With no research sessions, the Research sessions list says what new research is for instead of showing a bare heading. Below 900px it opens as a sheet, and the page behind it wraps into the visible strip so a line is not sliced. The header in that strip hides the panel-kind label and keeps the selected Loupist name inside the profile row. Settings replaces it. The command palette, exports and print live here too.
 On macOS the window controls sit in a full-width titlebar, 44px tall so its contents share the traffic lights' vertical center (those buttons are placed at y 22). The sidebar and its divider start below that bar.
 The shell owns the viewport height. Its body uses the space remaining below the titlebar, and the desktop sidebar is positioned inside that body; it does not subtract a separate titlebar-height estimate from the viewport. The frame, sidebar footer and chat composer stay inside the body when the bar grows. Header sizing has one rule rather than competing fixed heights at each breakpoint.
 The right end of the header selects Map, Lens, or Chat materials, followed by top/bottom and left/right split controls. At 1100px and wider, the space before those controls shows the trading status of the markets the user follows (at most two, plus a count of the rest). It hides on a narrower window. There the other profiles keep their avatars in the row, and the selected name stays within 240px.
@@ -40,8 +40,8 @@ Native menu events reach React through the typed bridge's `onMenuAction` subscri
 Keyboard shortcuts come from one table (`src/app/shortcuts.ts`) that both the global
 handler and Settings › Keyboard read. Top-level destinations come from
 `APP_DESTINATIONS` in `src/app/navigation.ts`: ⌘1–⌘4 in the header, the palette's
-open rows, the native View menu ids and the test helpers read it. The first one, Home,
-also selects the Loupist's home Thread, so ⌘1 from a topic Chat goes Home. Chat and Scheduled
+open rows, the native View menu ids and the test helpers read it. The first one, Bot,
+also selects the Loupist's home Thread, so ⌘1 from a topic Chat goes Bot. Chat and Scheduled
 tasks are pages (`APP_PAGES`, which also names each page's location heading); Map
 and Lens open their panel beside the Chat. A new page adds one destination row and
 one page entry. `src/app/useAppSurface.ts` holds the page and the layers over it
@@ -50,7 +50,7 @@ sidebar, the workspace panel and the stage may show. ⌘K opens the command pale
 sidebar search and the "n more" row of Needs attention). The narrow navigation
 sheet is not a modal, so ⌘K, the tab keys and the panel shortcut still work
 while that sheet is open, and ⌘B still closes it. The search field keeps its 52px height and the result list scrolls. Results are grouped into Needs
-attention, Chats, What you follow (opens the asset page), Map names, Principles,
+attention, Research sessions, What you follow (opens the asset page), Map names, Principles,
 Briefings and Actions, four rows per group. Actions include Import holdings…, which opens the holdings sheet, and New Journal entry, which opens the Map's Library on its Journal tab with the new-entry form open. Map names, Principles and Briefings come from every available Loupist, at most eight (the active one first, then sidebar order), each read through its own `knowledge_map`, `principle_list` and `inbox_list` when the palette opens; a Loupist that has not answered within 2 s is left out of that opening. In each group the active Loupist's rows come first and every row names its Loupist; opening another Loupist's result selects that Loupist first.
 "/" focuses the composer when no text field has focus.
 

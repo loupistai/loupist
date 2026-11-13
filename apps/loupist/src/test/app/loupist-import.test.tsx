@@ -30,7 +30,7 @@ it("requires a chosen and trusted folder, then imports, selects the Loupist and 
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Open a Loupist folder" })).toBeNull());
   expect(importLoupist).toHaveBeenCalledExactlyOnceWith({ workspace_path: folder });
   expect(selectedLoupistButton()).toHaveTextContent("Restored Loupist");
-  expect(screen.getByRole("button", {name:"Home",current:"page"})).toBeVisible();
+  expect(screen.getByRole("button", {name:"Bot",current:"page"})).toBeVisible();
   expect(createLoupist).not.toHaveBeenCalled();
 });
 

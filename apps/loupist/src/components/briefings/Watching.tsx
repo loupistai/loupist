@@ -108,7 +108,7 @@ export function WatchingStatus({ bridge, loupist, settings, onSettings }: {
   </div>;
 }
 
-export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, onOpenConnections, embedded = false }: {
+export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, onOpenConnections, rowMenu, embedded = false }: {
   bridge: LoupistBridge;
   loupist: LoupistSummary;
   settings: WatchSettings;
@@ -119,6 +119,8 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
   onSettings?: (next: WatchSettings) => void;
   /** Opens Settings › Data connections at the connection a column needs. */
   onOpenConnections?: (connectionId: string) => void;
+  /** The Following page's menu beside each asset's name. */
+  rowMenu?: (asset: WatchAsset, name: string) => ReactNode;
 }) {
   useTranslation(["briefings", "assets", "chat"]);
   const loupistId = loupist.id;
@@ -188,7 +190,7 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
           <tbody>{group.rows.map(asset => {
             const name = nameOf(asset);
             return <tr key={asset.assetId} data-asset={asset.assetId}>
-              <th scope="row" className="watching-asset-cell"><span className="watching-asset">{embedded && openAsset ? <button type="button" className="watching-asset-open" onClick={() => openPage(asset)}>{name}</button> : <strong>{name}</strong>}<small className="gg-num">{asset.symbol} · {asset.market}</small></span></th>
+              <th scope="row" className="watching-asset-cell"><span className="watching-asset-line"><span className="watching-asset">{embedded && openAsset ? <button type="button" className="watching-asset-open" onClick={() => openPage(asset)}>{name}</button> : <strong>{name}</strong>}<small className="gg-num">{asset.symbol} · {asset.market}</small></span>{rowMenu?.(asset, name)}</span></th>
               {group.kinds.map(kind => <td key={kind} className="watching-kind">
                 {(() => {
                   const state = asset.kinds.find(item => item.kind === kind);

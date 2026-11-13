@@ -152,8 +152,8 @@ async function createLoupist() {
   await selectLoupist(NEW_LOUPIST);
 }
 
-// A saved Chat with no messages is listed as "Untitled chat"; "New chat" names the command.
-const EMPTY_CHAT = "Untitled chat";
+// A saved Chat with no messages is listed as "Untitled research session"; "New research" names the command.
+const EMPTY_CHAT = "Untitled research session";
 
 /** The composer's /new command creates and opens a saved, empty Chat. */
 async function createChatFromComposer() {
@@ -162,7 +162,7 @@ async function createChatFromComposer() {
   const composer = await displayed("#main-panel-chat textarea[data-chat-composer]");
   await composer.click();
   await composer.setValue("/new");
-  await (await displayed('[role="listbox"] [role="option"][aria-label="New chat"]')).click();
+  await (await displayed('[role="listbox"] [role="option"][aria-label="New research"]')).click();
   await browser.waitUntil(async () => (await chatTitles()).filter((title) => title === EMPTY_CHAT).length === before.filter((title) => title === EMPTY_CHAT).length + 1, {
     timeout: 15_000, timeoutMsg: "The /new command did not save a Chat",
   });
@@ -338,10 +338,13 @@ async function verifyPrinciple() {
   assert.equal((await history.$$("h4")).length, 2, "The revised method did not show Then and Now");
 }
 
+/** Following lists each followed asset as a Watching row (or, when it cannot be watched, in the list above the add field). */
+const FOLLOWED = "[data-testid=following-page] .following-main";
+
 async function verifyFollowedAndHoldings({ copied }) {
   await openMemorySegment("about");
-  const chips = await browser.$("[data-testid=memory-about] [data-testid=memory-chips]");
-  const names = (await chips.isExisting()) ? await chips.getText() : "";
+  const list = await browser.$(FOLLOWED);
+  const names = (await list.isExisting()) ? await list.getText() : "";
   assert.equal(names.includes("NWHLD"), !copied, "Followed assets belong to app data, not a copied Loupist folder");
   const summary = await (await displayed("[data-holdings-kinds]")).getText();
   if (copied) assert.doesNotMatch(summary, /3 assets/u, "Global holdings followed a copied folder");
@@ -353,14 +356,15 @@ async function followAndImportHoldings() {
   const follow = async symbol => {
     await setField("[data-testid=memory-follow-add] input", `${symbol}:US`);
     await (await displayed('[data-testid=memory-follow-add] button[type="submit"]')).click();
-    await waitForText(await displayed("[data-testid=memory-chips]"), symbol);
+    await waitForText(await displayed(FOLLOWED), symbol);
   };
   await follow("LMHLD");
-  await (await displayed('button[aria-label="Stop following LMHLD"]')).click();
-  // The list is not rendered while nothing is followed.
+  // Each followed row's menu: Open asset page, Stop following.
+  await (await displayed('button[aria-label="More actions for LMHLD"]')).click();
+  await (await visibleWithText('[role="menuitem"]', "Stop following LMHLD")).click();
   await browser.waitUntil(async () => {
-    const chips = await browser.$("[data-testid=memory-chips]");
-    return !(await chips.isExisting()) || !(await chips.getText()).includes("LMHLD");
+    const list = await browser.$(FOLLOWED);
+    return !(await list.isExisting()) || !(await list.getText()).includes("LMHLD");
   }, { timeout: 10_000, timeoutMsg: "LMHLD stayed in what you follow" });
   await follow("NWHLD");
   await (await displayed("button[data-testid=memory-holdings-update]")).click();

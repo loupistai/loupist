@@ -39,6 +39,8 @@ export class MockWatch implements WatchBridge {
   private readonly events = new Map<string, WatchEvent[]>();
   /** Per Loupist, the assets with a stored decision (see `decidedIn`). */
   private readonly decided = new Map<string, Set<string>>();
+  /** Loupists whose list follows the watchlist (nothing was installed). */
+  private readonly derived = new Set<string>();
   private readonly listeners = new Set<(event: { loupistId: string }) => void>();
   /** Preview: Check now resolves only when this is false. */
   checkHold = false;
@@ -52,25 +54,37 @@ export class MockWatch implements WatchBridge {
 
   /** Installs a Loupist's watch settings (and its alerts, newest first). */
   install(loupistId: string, settings: Partial<WatchSettings>, events: WatchEvent[] = []) {
-    this.settings.set(loupistId, { loupistId, paused: false, consentOff: false, checking: false, watched: [], notWatched: [], ...clone(settings) });
+    const { undecidedAssetIds, ...rest } = clone(settings);
+    const installed: WatchSettings = { loupistId, paused: false, consentOff: false, checking: false, watched: [], notWatched: [], undecidedAssetIds: [], ...rest };
+    this.settings.set(loupistId, installed);
+    this.derived.delete(loupistId);
     this.decided.delete(loupistId);
+    // Without a list, watched assets are decided and the others are not, as after a first Watch all.
+    if (undecidedAssetIds) this.decided.set(loupistId, new Set([...installed.watched, ...installed.notWatched].map(asset => asset.assetId).filter(id => !undecidedAssetIds.includes(id))));
     this.events.set(loupistId, clone(events));
     this.emit(loupistId);
   }
 
   private emit(loupistId: string) { for (const listener of this.listeners) listener({ loupistId }); }
 
-  /** Without installed settings, every followed equity, coin and futures market is listed with every kind off. */
+  /**
+   * Without installed settings, every followed equity, coin and futures market is listed
+   * (every kind off until chosen) and, as the host's list, follows and unfollows show on the next read.
+   */
   private async current(loupistId: string) {
     let settings = this.settings.get(loupistId);
-    if (!settings) {
-      const followed = (await this.watchlist()).filter(entry => !NOT_WATCHED.has(entry.market.trim().toUpperCase()));
-      settings = {
-        loupistId, paused: false, consentOff: false, checking: false, watched: [],
-        notWatched: followed.map(entry => ({ assetId: mockAssetId(entry.symbol, entry.market), symbol: entry.symbol, market: entry.market, name: entry.displayName?.trim() || entry.symbol, kinds: mockWatchKinds(entry.market, [], entry.symbol), revision: 1 })),
-      };
-      this.settings.set(loupistId, settings);
-    }
+    if (settings && !this.derived.has(loupistId)) return settings;
+    const followed = (await this.watchlist()).filter(entry => !NOT_WATCHED.has(entry.market.trim().toUpperCase()));
+    const known = new Map([...settings?.watched ?? [], ...settings?.notWatched ?? []].map(asset => [asset.assetId, asset]));
+    const assets = followed.map(entry => known.get(mockAssetId(entry.symbol, entry.market))
+      ?? { assetId: mockAssetId(entry.symbol, entry.market), symbol: entry.symbol, market: entry.market, name: entry.displayName?.trim() || entry.symbol, kinds: mockWatchKinds(entry.market, [], entry.symbol), revision: 1 });
+    const watched = new Set(settings?.watched ?? []);
+    // Updated in place: a running Check now holds this object.
+    settings ??= { loupistId, paused: false, consentOff: false, checking: false, watched: [], notWatched: [], undecidedAssetIds: [] };
+    settings.watched = assets.filter(asset => watched.has(asset));
+    settings.notWatched = assets.filter(asset => !watched.has(asset));
+    this.settings.set(loupistId, settings);
+    this.derived.add(loupistId);
     return settings;
   }
 
@@ -78,7 +92,10 @@ export class MockWatch implements WatchBridge {
     const settings = await this.current(loupistId);
     const events = this.events.get(loupistId) ?? [];
     const withAlert = (asset: WatchAsset) => ({ ...asset, lastAlert: asset.lastAlert ?? events.find(event => event.assetId === asset.assetId) });
-    return clone({ ...settings, watched: settings.watched.map(withAlert), notWatched: settings.notWatched.map(withAlert) });
+    // As the host: an asset is undecided until a switch is set or Watch all gives it defaults.
+    const decided = this.decidedIn(loupistId, settings);
+    const undecidedAssetIds = [...settings.watched, ...settings.notWatched].map(asset => asset.assetId).filter(id => !decided.has(id));
+    return clone({ ...settings, watched: settings.watched.map(withAlert), notWatched: settings.notWatched.map(withAlert), undecidedAssetIds });
   }
 
   async watchSettingSet(request: WatchSettingSetRequest): Promise<WatchSettings> {

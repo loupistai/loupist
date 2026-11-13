@@ -2,7 +2,7 @@
   "_status": "translated",
   "lensWorkspace": {
     "markdownSource": "마크다운 보기",
-    "discussInChat": "루피스트에게 수정 요청",
+    "discussInChat": "봇에게 수정 요청",
     "defaultPerspective": "기본 관점"
   },
   "researchLibrary": {
@@ -692,7 +692,7 @@
       "remove": "{{name}} 관심 해제",
       "addLabel": "관심 자산 추가",
       "addPlaceholder": "티커, 예: 005930 또는 AAPL",
-      "addHint": "홈에서 루피스트에게 “NVDA 관심 자산에 추가해 줘”라고 말해도 돼요.",
+      "addHint": "봇에게 “NVDA 관심 자산에 추가해 줘”라고 말해도 돼요.",
       "addingToMap": "지도에 추가하는 중…",
       "add": "추가",
       "noHoldings": "가져온 보유 자산 없음",

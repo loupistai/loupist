@@ -31,7 +31,7 @@ describe("Loupist · Memory reading", () => {
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("heading", { name: "Compare independent accounts" })).toHaveFocus();
     expect(calls.mock.calls[1][0]).toEqual(calls.mock.calls[0][0]);
-    await user.click(screen.getByRole("button", { name: "Ask your Loupist to revise" }));
+    await user.click(screen.getByRole("button", { name: "Ask Bot to revise" }));
     expect(onAsk).toHaveBeenCalledWith(expect.objectContaining({ kind: "lens", label: "Compare independent accounts" }));
   });
 

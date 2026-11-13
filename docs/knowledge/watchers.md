@@ -1,6 +1,6 @@
 # Watchers
 
-A watcher checks a saved condition on a cadence and posts an alert to Home. It does
+A watcher checks a saved condition on a cadence and posts an alert to Bot. It does
 not notify the operating system. On a new install, nothing is watched until
 the user chooses Watch all or switches an applicable Watch-for kind on. Following
 an asset alone starts no checks.
@@ -66,6 +66,9 @@ no saved choice. Existing per-asset choices stay intact, and a repeated call cha
 nothing. It returns `watchedAssets` and `needsConnections` grouped by kind and
 connection with their `assetIds`; it changes no Chat privacy or as-of state. Other
 watch kinds keep their choices. Creating a new briefing leaves watch consent unchanged.
+`watch_settings_list` names those assets with no saved choice in `undecidedAssetIds`
+(an asset switched fully off is decided), and Following and the first follow receipt
+offer Watch all only for them, hiding it when there are none.
 [Watch kinds](watchers.md#watchers) map to routes: filings (holders, and every
 Korean kind except flows; OpenDART, or SEC filings through OpenBB), insider trades
 (`sec`, `fmp` or `intrinio` only), the earnings calendar (`nasdaq`, `fmp` or `tmx`; one
@@ -101,7 +104,7 @@ due this pass. Delivery uses that Loupist's saved route status: `needs_connectio
 withholds the route's alerts and keeps the page's scan point behind them until the
 grant is restored. The first
 check after launch, or the day's first check, hands its alerts to the morning message;
-later ones post in [Home](../ui/home-thread.md). No OS notification is sent for a watch
+later ones post in [Bot](../ui/home-thread.md). No OS notification is sent for a watch
 event. Following, also opened by Schedule's Watching row, offers Pause or Resume
 and Check now (unavailable while paused), and reports how many new alerts a check
 found. It fades the right edge of a class table only when that table is wider than

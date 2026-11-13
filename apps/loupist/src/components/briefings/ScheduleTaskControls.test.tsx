@@ -46,7 +46,7 @@ it("resumes a paused task, keeps the briefing undeletable, and shows a failure w
 
 it("hands time and prompt changes to Home as a draft", async () => {
   const { onAskHome, user } = setup(task());
-  expect(screen.getByText(/To change a task's time or prompt, tell your Loupist in Home/)).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "Ask in Home" }));
+  expect(screen.getByText(/To change a task's time or prompt, tell Bot/)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Ask in Bot" }));
   expect(onAskHome).toHaveBeenCalledWith("Change my scheduled task “Chip news”: ");
 });

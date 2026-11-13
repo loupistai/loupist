@@ -36,7 +36,7 @@ restores the previous step and records the user's own move. After an Undo, movin
 the read the same way again, including by a line crossing, needs evidence dated
 after the undone move's fact date; the other direction is unconstrained. Every
 Loupist move and Undo writes a `thesis_moved` [growth event](growth.md#growth-event-log). A
-crossed line also posts one Home message and a Needs attention row until the
+crossed line also posts one Bot message and a Needs attention row until the
 page is opened ([Architecture](asset-pages.md#asset-pages)).
 
 A user-stated level is a line with a check (no date required), rather than text

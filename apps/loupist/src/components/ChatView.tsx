@@ -41,6 +41,10 @@ import { retainedEvidenceFor } from "../chat/links";
 import { OpenProvider, useOpenLayer, type OpenLayer } from "./navigation/Open";
 
 const NO_CHIPS: ComposerChip[] = [];
+/** Keeps the list the answers already hold when a reload returns the same Skills, so no answer redraws. */
+const sameOptions = (current: ComposerOption[], next: ComposerOption[]) =>
+  current.length === next.length && current.every((option, index) => option.id === next[index]!.id && option.name === next[index]!.name && option.description === next[index]!.description)
+    ? current : next;
 import { searchComposerContext } from "../chat/searchComposerContext";
 import type { RecoveredChatRun } from "../chat/loupistRunRegistry";
 import { ChatComposer } from "./chat/ChatComposer";
@@ -495,7 +499,7 @@ export function ChatView({
     ])
       .then(([skills, bindings, marketplace]) => {
         if (cancelled) return;
-        setComposerSkills(
+        setComposerSkills((current) => sameOptions(current,
           skills
             .filter((skill) => skill.enabled)
             .map((skill) => ({
@@ -503,11 +507,11 @@ export function ChatView({
               name: skill.name,
               description: skill.description,
             })),
-        );
+        ));
         const entriesById = new Map(
           marketplace.catalog.entries.map((entry) => [entry.id, entry]),
         );
-        setComposerPlugins(
+        setComposerPlugins((current) => sameOptions(current,
           bindings.flatMap((binding) => {
             if (!binding.enabled) return [];
             const entry = entriesById.get(binding.entry_id);
@@ -521,7 +525,7 @@ export function ChatView({
               },
             ];
           }),
-        );
+        ));
       })
       .catch(() => {
         if (cancelled) return;

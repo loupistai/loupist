@@ -42,3 +42,25 @@ it("shows the answer of a run left open while it runs once the run finishes", as
   // Read once it has been on screen for a second.
   await vi.waitFor(() => expect(markRead).toHaveBeenCalledWith({ loupistId: loupist.id, runIds: ["run-1"] }), { timeout: 2_000 });
 });
+
+it("labels a task's prompt in its detail, and hides one that only repeats the title", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const finished: ScheduledRun = { ...running, status: "succeeded", finished_at_ms: Date.now() };
+  const same = { ...task(finished), prompt: "Chip news" } as ScheduledTaskListItem;
+  const asked = { ...task(finished), id: "task-2", title: "Morning review", prompt: "Summarize new Hanul Precision filings." } as ScheduledTaskListItem;
+  vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([same, asked]);
+  vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([]);
+  render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} />);
+
+  await user.click(await screen.findByRole("button", { name: /Morning review/ }));
+  const detail = await screen.findByRole("article", { name: "Morning review" });
+  expect(within(detail).getByRole("heading", { level: 3, name: "Prompt" })).toBeVisible();
+  expect(within(detail).getByText("Summarize new Hanul Precision filings.")).toBeVisible();
+
+  await user.click(within(detail).getByRole("button", { name: /Schedule/ }));
+  await user.click(await screen.findByRole("button", { name: /^Chip news/ }));
+  const repeated = await screen.findByRole("article", { name: "Chip news" });
+  expect(within(repeated).queryByRole("heading", { name: "Prompt" })).toBeNull();
+  expect(within(repeated).getAllByText("Chip news")).toHaveLength(1);
+});

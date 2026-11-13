@@ -90,7 +90,9 @@ walk the focal's neighbors clockwise, Enter selects, Shift+Enter re-centers,
 Backspace steps back (ten steps) and 1, 2 and 0 set the scope. On a scope or focal change, names leaving fade out and names entering fade in over 120 ms (instant with reduced motion); leaving names take no clicks while they fade. A drawing of at most
 30 names labels every name where space allows. Label priority is the focal name,
 then watched and held names, then the ten best-connected names; these stay named
-when zoomed out and may lie across their own spokes.
+when zoomed out and may lie across their own spokes. A Journal ring keeps its
+ordinary place in that order; at a pane edge its name also tries the side toward
+the drawing and shortens before it is dropped (`components/map/labels.ts`).
 For the 1,000-name All view, keep relationship lookup for label placement indexed
 by endpoint and reuse selection and learned-neighbor sets until their inputs change.
 The native frame probe targets p95 at or below 33 ms without dropping those labels.

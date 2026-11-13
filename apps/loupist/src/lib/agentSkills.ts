@@ -17,6 +17,8 @@ const BUNDLED_SKILLS: BundledSkill[] = (Object.keys(englishSettings.bundledSkill
 export const AGENT_SKILLS: ReadonlyArray<BundledSkill> = BUNDLED_SKILLS.filter((skill) => !skill.fixed);
 export const FIXED_AGENT_SKILLS: ReadonlyArray<BundledSkill> = BUNDLED_SKILLS.filter((skill) => skill.fixed);
 export const DEFAULT_AGENT_SKILL_IDS = AGENT_SKILLS.map((skill) => skill.id);
+/** Tools for making and installing Skills: both Skills lists keep them last, under "Advanced". */
+export const SKILL_TOOLING_IDS: ReadonlySet<string> = new Set(["skill-creator"]);
 
 /** Localize bundled UI metadata only; installed Skill content keeps its own language. */
 type SkillIdentity = Pick<AgentSkillSummary, "id" | "name" | "description"> & { source?: string };
