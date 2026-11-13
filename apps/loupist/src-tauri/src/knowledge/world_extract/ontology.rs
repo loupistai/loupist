@@ -48,7 +48,7 @@ const PLACE: &str = "A country, region, state, city or named facility such as a 
 const TECHNOLOGY: &str = "A science, technique, process, material or standard that more than one organization can\nuse, such as EUV lithography, hybrid bonding, GLP-1 agonism or proof-of-stake.\n\nNot a Technology: a specific product built with it (Product), or the company that\ndevelops it (Organization).";
 const SEGMENT: &str = "An industry, market segment or value-chain stage, such as advanced packaging, Seoul office\nleasing or L2 sequencing.\n\nNot a Segment: a single company (Organization), or a specific product (Product).";
 const POLICY: &str = "A standing law, regulation, tariff, sanction, export control, subsidy or tax program, or\na central bank's policy setting.\n\nThe enactment, change, ruling or announcement of a policy on a date is an Event; the rule\nitself is the Policy.";
-const EVENT: &str = "A dated or datable occurrence: an acquisition or other deal, earnings release, guidance\nchange, product launch, lawsuit or ruling, accident or outage, rating action, executive\nchange, or policy announcement.\n\nName it with the actor, the action and the date or period the source gives. Preserve\nwhether it is completed, announced, expected, rumored, alleged or denied. Not an Event: a\nreported number; keep it as a claim on its subject.";
+const EVENT: &str = "A dated or datable occurrence: an acquisition or other deal, earnings release, guidance\nchange, product launch, lawsuit or ruling, accident or outage, rating action, executive\nchange, or policy announcement.\n\nName it with the actor, the action and the date or period the source gives. Preserve\nwhether it is completed, announced, expected, rumored, alleged or denied. Not an Event: a\nreported number; keep it as a claim on its subject.\n\nA named or uniquely qualified dated occurrence remains an Event when the source reports its value. Name it by actors, action and date or period; keep amounts and measured values in claims, not in its identifying name.";
 const METRIC: &str = concat!(
     "Legacy measurement-node type retained for existing Maps. Never extract new Metric nodes.",
     " A reported amount, value, unit, period or sentence is a claim about its subject, not an",
@@ -342,8 +342,10 @@ const EXTRACTION_INSTRUCTIONS: &str = concat!(
     "as both source_entity_name and target_entity_name. Do not invent a second entity for a ",
     "quantity, dated measurement, figure with a unit or sentence. Preserve the metric, exact ",
     "value, unit or currency, reporting period, basis and status in the claim text. Named ",
-    "products and securities may contain numbers; dated named occurrences may be Event ",
-    "entities. Do not omit a fact merely ",
+    "products and securities may contain numbers. Extract a named or uniquely qualified ",
+    "dated occurrence as an Event, alongside its participants and quantitative claims. ",
+    "Use actors, action and the source's date or period in the event name, keeping amounts ",
+    "and measured values in claims instead. Do not omit a fact merely ",
     "because it describes one organization rather than two named people. Do not ",
     "calculate missing values. Include explicit identifying codes in entity names; ",
     "different codes identify different entities even when their display names ",

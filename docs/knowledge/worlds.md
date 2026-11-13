@@ -60,6 +60,9 @@ names, tickers, security maturities, fiscal entities and named events remain val
 A `REPORTS` claim from an admitted subject to a newly rejected value node keeps
 its full text and uses the subject in both roles. Other relationships are not
 rewritten, and existing measurement nodes and their claims stay as stored.
+Named or uniquely qualified dated occurrences remain Event entities alongside
+their participants and quantitative claims. Their identifying names use actors,
+action and date or period; reported amounts stay in claims.
 
 ### Queue and interruptions
 

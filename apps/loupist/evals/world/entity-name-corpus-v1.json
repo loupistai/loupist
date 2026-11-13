@@ -424,5 +424,17 @@
   "kind": "Entity",
   "entity": false,
   "measurement": true
+ },
+ {
+  "name": "Cedar and Elm agreement signed on September 14, 2026",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "시더와 엘름의 계약 체결 (2026년 9월 14일)",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
  }
 ]
