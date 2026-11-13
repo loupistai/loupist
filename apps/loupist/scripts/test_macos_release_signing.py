@@ -355,6 +355,12 @@ class SigningTests(unittest.TestCase):
             )
             self.assertIn("--ci", calls.call_args_list[-1].args)
 
+    def test_tool_output_that_is_not_utf8_does_not_stop_a_check(self):
+        # The first dry run died decoding `file -b` output with a 0xa9 byte.
+        result = signing.run("/usr/bin/printf", "Mach-O \\251 universal")
+        self.assertIn("Mach-O", result.stdout)
+        self.assertIn("universal", result.stdout)
+
     def test_a_framework_bundle_in_a_runtime_is_refused_before_signing(self):
         # A host framework Python makes PyInstaller ship Python.framework, which
         # codesign cannot sign in place; staging builds on uv's standalone Python.

@@ -21,7 +21,15 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(*command: str, check: bool = True) -> subprocess.CompletedProcess:
-    result = subprocess.run(list(map(str, command)), capture_output=True, text=True)
+    # `file -b` and `codesign -d` can print bytes that are not UTF-8 (a copyright
+    # sign in a description, a path in another encoding); never fail on them.
+    result = subprocess.run(
+        list(map(str, command)),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     if check and result.returncode:
         raise RuntimeError(f"{command[0]} failed: {result.stdout}{result.stderr}")
     return result
