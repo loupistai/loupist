@@ -51,8 +51,8 @@
   },
   "useThreadActions": {
     "couldNotCreateANewChat": "Could not create a new chat.",
-    "couldNotRenameThisSession": "Could not rename this chat.",
-    "couldNotDeleteThisSession": "Could not delete this chat."
+    "couldNotRenameThisSession": "Could not rename this session.",
+    "couldNotDeleteThisSession": "Could not delete this session."
   },
   "appNavigation": {
     "settingsNavigation": "Settings navigation",
@@ -80,7 +80,7 @@
     "homeDescriptor": "Chat, briefings, and alerts"
   },
   "loupistNavigationGroup": {
-    "hasActiveSessions": "{{label}} has chats running"
+    "hasActiveSessions": "{{label}} has active sessions"
   },
   "macTitlebarControls": {
     "showOrHideSidebar": "Show or hide sidebar",
@@ -123,7 +123,7 @@
     "keyboardDescription": "Shortcuts for working without the mouse."
   },
   "emptyChat": {
-    "newChat": "Untitled chat"
+    "newChat": "Untitled research session"
   },
   "workspaceUiState": {
     "untitled": "Untitled"
@@ -147,19 +147,19 @@
     "workspaceControls": "Workspace panels",
     "splitTopBottom": "Split top and bottom",
     "splitLeftRight": "Split left and right",
-    "sessions": "Chats",
-    "sessionsEmpty": "Start a new chat to dig into one question. Briefings and alerts stay in Home.",
-    "newResearch": "New chat",
-    "newResearchHint": "New chat: dig into one question. Briefings and alerts stay in Home.",
+    "sessions": "Research sessions",
+    "sessionsEmpty": "Start new research to dig into one question. Briefings and alerts stay in Bot.",
+    "newResearch": "New research",
+    "newResearchHint": "New research: dig into one question. Briefings and alerts stay in Bot.",
     "principles": "Research principles",
     "taskHistory": "Scheduled tasks",
     "moreActions": "More",
     "loupists": "Loupists",
     "newLoupist": "New Loupist",
-    "newChat": "New chat",
+    "newChat": "New research",
     "settings": "Settings",
     "search": "Search",
-    "newChatShortcut": "New chat {{shortcut}}",
+    "newChatShortcut": "New research {{shortcut}}",
     "updateAvailable": "Update available",
     "loupistSettings": "Loupist settings",
     "removeLoupist": "Remove Loupist…",
@@ -167,7 +167,7 @@
     "close": "Close",
     "tabs": {
       "lens": "Lens",
-      "chat": "Home",
+      "chat": "Bot",
       "map": "Map",
       "schedule": "Schedule",
       "following": "Following"
@@ -311,7 +311,7 @@
     "approval": "{{loupist}} needs your approval"
   },
   "thread": {
-    "title": "Home"
+    "title": "Bot"
   },
   "palette": {
     "title": "Command palette",
@@ -320,7 +320,7 @@
     "moreIn": "More from {{group}}",
     "groups": {
       "attention": "Needs attention",
-      "chats": "Chats",
+      "chats": "Research sessions",
       "following": "What you follow",
       "map": "Map",
       "principles": "Principles",
@@ -328,14 +328,14 @@
       "actions": "Actions"
     },
     "actions": {
-      "newChat": "New chat",
-      "openChat": "Open Home",
+      "newChat": "New research",
+      "openChat": "Open Bot",
       "openMap": "Open Map",
       "openLens": "Open Lens",
       "openSchedule": "Open schedule",
       "importHoldings": "Import holdings…",
       "newJournalEntry": "New Journal entry",
-      "allChats": "All chats",
+      "allChats": "All research sessions",
       "togglePanel": "Show or hide the panel",
       "settings": "Settings",
       "keyboard": "Keyboard shortcuts",

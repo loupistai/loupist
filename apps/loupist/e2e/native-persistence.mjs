@@ -152,8 +152,8 @@ async function createLoupist() {
   await selectLoupist(NEW_LOUPIST);
 }
 
-// A saved Chat with no messages is listed as "Untitled chat"; "New chat" names the command.
-const EMPTY_CHAT = "Untitled chat";
+// A saved Chat with no messages is listed as "Untitled research session"; "New research" names the command.
+const EMPTY_CHAT = "Untitled research session";
 
 /** The composer's /new command creates and opens a saved, empty Chat. */
 async function createChatFromComposer() {
@@ -162,7 +162,7 @@ async function createChatFromComposer() {
   const composer = await displayed("#main-panel-chat textarea[data-chat-composer]");
   await composer.click();
   await composer.setValue("/new");
-  await (await displayed('[role="listbox"] [role="option"][aria-label="New chat"]')).click();
+  await (await displayed('[role="listbox"] [role="option"][aria-label="New research"]')).click();
   await browser.waitUntil(async () => (await chatTitles()).filter((title) => title === EMPTY_CHAT).length === before.filter((title) => title === EMPTY_CHAT).length + 1, {
     timeout: 15_000, timeoutMsg: "The /new command did not save a Chat",
   });

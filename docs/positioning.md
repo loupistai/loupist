@@ -14,7 +14,7 @@ Loupist"; ko 루피스트). It claims care, not authority: an examiner, not an a
 
 Loupist is for individual investors investigating companies, industries and
 markets. It combines provider-backed Chat, read-only data connections, local
-calculation and retained Memory. Each Loupist is a local folder with multiple Chats.
+calculation and retained Memory. Each Loupist is a local folder with multiple research sessions.
 Source retains material, Map connects claims, Lens holds principles and editable research pages,
 and the Journal holds the user's own judgments.
 
@@ -31,7 +31,7 @@ a proposed change and a committed save. Do not call a retrieval hit, record coun
 or saved method proof of better analysis; evaluation must test subsequent work.
 
 Call the agent "your Loupist" or its name, a research companion (ko 리서치 동료).
-Home is a place. The sidebar shows Home · Following · Map · Lens · Schedule.
+Bot is a place. The sidebar shows Bot · Following · Map · Lens · Schedule.
 Map and Lens open beside Chat; the header also opens Chat materials. Map contains
 the [Library](ui/map-lens.md#map-and-library), with Sources · Journal · Notes tabs.
 Lens holds principles, perspectives, methods, topics and ideas. Use World only in
@@ -48,7 +48,7 @@ uses the same meanings.
 | Term | What the interface says |
 | --- | --- |
 | Loupist | A research companion for one topic. It remembers what you read together and learns how you like to research. |
-| Home / 홈; Chat / 대화 | The standing conversation; a separate conversation for one question. |
+| Bot / 봇; research session / 리서치 세션 | The standing conversation; a separate conversation for one question. |
 | Following / 관심 자산; Holdings / 보유 자산 | What you follow, shared across Loupists; what you hold. Following is not a trade. |
 | Watching / 지켜보기 | Automatic checks while the app is running; their results are alerts (알림). |
 | Map / 지도 | Connections from Sources; background reading is Map building (지도 구성). |

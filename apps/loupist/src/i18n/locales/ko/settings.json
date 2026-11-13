@@ -589,9 +589,9 @@
     "action": "동작",
     "keys": "키",
     "actions": {
-      "newChat": "새 대화",
+      "newChat": "새 리서치",
       "palette": "명령 팔레트",
-      "tabs": "홈 · 지도 · 렌즈 · 예약",
+      "tabs": "봇 · 지도 · 렌즈 · 예약",
       "panel": "패널 보이기/숨기기",
       "settings": "설정",
       "send": "보내기",

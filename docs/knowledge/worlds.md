@@ -181,7 +181,7 @@ stored. Every change validates, applies at once and writes a `schema_extended` o
   one without touching the newer kinds. A kind a later change added or removed
   stays as that change left it, even under the same name; a change with nothing
   else left to reverse offers no Undo. A preset or review change also posts one
-  Home message, "Your map now also tracks ...", in the labels the user sees, with
+  Bot message, "Your map now also tracks ...", in the labels the user sees, with
   Undo. A chat change, a preset applied from chat included, is already in the reply. Settings shows these under
   [What the map tracks](../ui/map-lens.md#what-the-map-tracks).
 
@@ -238,7 +238,7 @@ country or a reported number is not a connection. The score prefers a far name i
 low-degree middles, parallel support and recent claims. Work is bounded (claims per
 node, expansions per publication, 50 candidates), and a result says when it was
 cut short. `knowledge_connections` keeps one row per (seed, far) pair for ever, with
-`status` moving `new → shown → opened | dismissed | filed`; Home shows at most
+`status` moving `new → shown → opened | dismissed | filed`; Bot shows at most
 three a day ([link posts](../ui/home-thread.md#home-thread)). A link is new to this
 Loupist, never a claim that the market missed it.
 

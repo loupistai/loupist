@@ -588,9 +588,9 @@
     "action": "Action",
     "keys": "Keys",
     "actions": {
-      "newChat": "New chat",
+      "newChat": "New research",
       "palette": "Command palette",
-      "tabs": "Home · Map · Lens · Schedule",
+      "tabs": "Bot · Map · Lens · Schedule",
       "panel": "Show or hide the panel",
       "settings": "Settings",
       "send": "Send",

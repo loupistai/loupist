@@ -16,7 +16,7 @@ async function discussLens(user: User) {
   await user.click(await mainTab(/Lens/));
   const lens = await screen.findByRole("region", { name: /What .* knows/ });
   await user.click(await within(lens).findByRole("button", {name:/Compare independent accounts/}));
-  await user.click(await within(lens).findByRole("button", { name: "Ask your Loupist to revise" }));
+  await user.click(await within(lens).findByRole("button", { name: "Ask Bot to revise" }));
 }
 
 describe("World and Lens in the single Chat flow", () => {
@@ -119,7 +119,7 @@ describe("World and Lens in the single Chat flow", () => {
     const user = userEvent.setup();
     const bridge = await openApp();
     const chatSend = vi.spyOn(bridge, "chatSend");
-    await user.click(screen.getByRole("button",{name:"Home"}));
+    await user.click(screen.getByRole("button",{name:"Bot"}));
     await user.type(composer(), "Keep this research question.");
     await discussLens(user);
     const first = (composer() as HTMLTextAreaElement).value;

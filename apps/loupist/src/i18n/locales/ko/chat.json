@@ -94,7 +94,7 @@
     "messageLoupist": "루피스트에게 메시지",
     "askLoupistToAddContextForCommands": "{{loupistName}}에게 질문…",
     "askYourLoupist": "루피스트에게 질문…",
-    "newChat": "새 대화",
+    "newChat": "새 리서치",
     "model": "모델",
     "attachFiles": "파일 첨부",
     "manageSkillsAndConnections": "스킬 및 연결 관리",
@@ -373,8 +373,8 @@
   },
   "messageSchedules": {
     "draftFilesFailed": "첨부파일을 이 기기에 임시 저장하지 못했어요.",
-    "needsTime": "홈에서 답하기",
-    "handedToBot": "홈으로 보냄 · {{status}}",
+    "needsTime": "봇에서 시간 확인",
+    "handedToBot": "봇에 전달됨 · {{status}}",
     "scheduledTasks": "예약 작업",
     "deleted": "삭제됨",
     "runStarted": "실행 시작",
@@ -1181,8 +1181,8 @@
       "done": "질문함"
     },
     "research_open": {
-      "running": "새 대화를 여는 중",
-      "done": "새 대화를 열었음"
+      "running": "리서치 세션 여는 중",
+      "done": "리서치 세션 열었음"
     },
     "worldbank_series": {
       "running": "거시 데이터 읽는 중",

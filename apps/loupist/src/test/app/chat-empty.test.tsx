@@ -15,11 +15,11 @@ describe("Loupist · New Chat", () => {
     await user.click(newChatButton());
     await user.type(composer(), "Compare the next earnings report");
     await chooseLoupist(user, "Contrarian Value");
-    await screen.findByRole("heading", { name: "Home" });
+    await screen.findByRole("heading", { name: "Bot" });
     expect(composer()).toHaveValue("");
     await chooseLoupist(user, "Quality Compounder");
     await user.click(newChatButton());
-    expect(await screen.findByRole("heading", { name: "Untitled chat", level: 1 })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Untitled research session", level: 1 })).toBeVisible();
     expect(composer()).toHaveValue("Compare the next earnings report");
     expect(create).not.toHaveBeenCalled();
   });
@@ -29,7 +29,7 @@ describe("Loupist · New Chat", () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const create = vi.spyOn(bridge, "chatCreate");
     render(<App bridge={bridge} />);
-    expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
     const message = await screen.findByRole("article", { name: "Message from Quality Compounder" });
     // The first visit has no "since"; it counts what there is to look at.
     expect(await within(message).findByText(/^(One thing|\d+ things) to look at\.$/)).toBeVisible();
@@ -60,7 +60,7 @@ describe("Loupist · New Chat", () => {
       eventId: "event-apple", loupistId: "loupist-quality", atMs: Date.now(), kind: "entity_added", subjectId: "map-entity-00", recordId: null,
       originChatId: null, originMessageId: null, actor: "loupist", summary: "", beforeSummary: null, afterSummary: null,
     }] });
-    await user.click(screen.getByRole("button", { name: "Home" }));
+    await user.click(screen.getByRole("button", { name: "Bot" }));
     const message = await screen.findByRole("article", { name: "Message from Quality Compounder" });
     expect(await within(message).findByText(/^2 things since /)).toBeVisible();
     expect(growth).toHaveBeenCalledWith(expect.objectContaining({ loupistId: "loupist-quality", sinceMs: expect.any(Number) }));

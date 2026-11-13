@@ -18,7 +18,7 @@ it("says what Following is and what to add when nothing is followed", async () =
   expect(screen.getByRole("heading", { name: "Following" })).toBeVisible();
   expect(screen.getByText("What you follow is shared by all your Loupists. Each Loupist chooses what to watch for.")).toBeVisible();
   expect(await screen.findByText("Add a company, fund or coin to follow. Following is not a holding or a trade.")).toBeVisible();
-  expect(screen.getByText("Or tell your Loupist in Home: “follow NVDA”.")).toBeVisible();
+  expect(screen.getByText("Or tell Bot: “follow NVDA”.")).toBeVisible();
 });
 
 it("follows a bare six-digit code on KRX and notes the Map is still adding it", async () => {

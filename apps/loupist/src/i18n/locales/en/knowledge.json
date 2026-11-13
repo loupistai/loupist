@@ -1,7 +1,7 @@
 {
   "lensWorkspace": {
     "markdownSource": "View Markdown",
-    "discussInChat": "Ask your Loupist to revise",
+    "discussInChat": "Ask Bot to revise",
     "defaultPerspective": "Default perspective"
   },
   "researchLibrary": {
@@ -701,7 +701,7 @@
       "remove": "Stop following {{name}}",
       "addLabel": "Add something to follow",
       "addPlaceholder": "Ticker, e.g. AAPL or 005930",
-      "addHint": "Or tell your Loupist in Home: “follow NVDA”.",
+      "addHint": "Or tell Bot: “follow NVDA”.",
       "addingToMap": "Adding to the map…",
       "add": "Follow",
       "noHoldings": "No holdings imported",

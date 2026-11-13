@@ -1,6 +1,6 @@
 # Onboarding
 
-Creating or importing a Loupist finishes in Home. Failed creation stays on Create; a failed notice save leaves the shell notice gate available to retry. Onboarding opens with no Loupist, or for a new profile with neither an AI account nor an acknowledged notice. Removing the last AI account leaves saved Chats and research readable; new answers need an account.
+Creating or importing a Loupist finishes in Bot. Failed creation stays on Create; a failed notice save leaves the shell notice gate available to retry. Onboarding opens with no Loupist, or for a new profile with neither an AI account nor an acknowledged notice. Removing the last AI account leaves saved Chats and research readable; new answers need an account.
 
 Welcome requires acknowledgment of the AI notice and offers trusted folder import.
 Connect offers an AI account or Look around first. Back returns to the previous
@@ -24,7 +24,7 @@ background source reading builds the Map and learns methods using the AI account
 and can be turned off in Loupist settings. An existing Loupist skips Create;
 an existing AI account skips Connect. Onboarding creates no schedule.
 
-Home shows a checklist: follow something, teach a principle, get a morning
+Bot shows a checklist: follow something, teach a principle, get a morning
 briefing, plus Import holdings (CSV). Steps complete independently; it stays until
 all three are done or hidden. Buttons fill the composer without sending. Without
 an AI account, Connect leads, Follow opens Following, and the other steps wait.

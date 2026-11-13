@@ -24,9 +24,9 @@ it("lists the home Thread first, lands on it, and opens a delivered result's own
   const markRead = vi.spyOn(bridge, "inboxMarkRead").mockResolvedValue();
   render(<App bridge={bridge} />);
 
-  expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
   const chats = document.querySelector<HTMLElement>(".loupist-navigation")!;
-  expect(within(chats).getAllByRole("button")[0]).toHaveAccessibleName("Home");
+  expect(within(chats).getAllByRole("button")[0]).toHaveAccessibleName("Bot");
   // The home Thread has no rename or delete menu.
   expect(screen.queryByRole("button", { name: "Options for Thread" })).toBeNull();
 
@@ -43,16 +43,16 @@ it("lists and selects a new topic chat under the Thread, and its title says whic
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   render(<App bridge={bridge} />);
-  expect(await screen.findByRole("heading", { name: "Home", level: 1 })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Bot", level: 1 })).toBeVisible();
   const chats = document.querySelector<HTMLElement>(".loupist-navigation")!;
-  await user.click(screen.getByRole("button", { name: "New chat" }));
-  expect(await screen.findByRole("heading", { name: "Untitled chat", level: 1 })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "New research" }));
+  expect(await screen.findByRole("heading", { name: "Untitled research session", level: 1 })).toBeVisible();
   const rows = [...chats.querySelectorAll(".loupist-chat-button[data-thread-id]")];
-  expect(rows[0]).toHaveAccessibleName("Home");
-  expect(rows[1]).toHaveAccessibleName("Untitled chat");
-  expect(within(chats).getByRole("button", { name: "Untitled chat" })).toHaveAttribute("aria-current", "page");
+  expect(rows[0]).toHaveAccessibleName("Bot");
+  expect(rows[1]).toHaveAccessibleName("Untitled research session");
+  expect(within(chats).getByRole("button", { name: "Untitled research session" })).toHaveAttribute("aria-current", "page");
   // An unsent chat has nothing to rename or delete yet.
-  expect(within(chats).queryByRole("button", { name: "Options for New chat" })).toBeNull();
+  expect(within(chats).queryByRole("button", { name: "Options for Untitled research session" })).toBeNull();
 });
 
 const handoffCard = (status: "running" | "done", content: string): ChatMessage => ({
@@ -92,7 +92,7 @@ it("shows a hand-off the host finished in the open Bot and its session without r
     return { run_id: sent.run_id };
   });
   render(<App bridge={bridge} />);
-  expect(await screen.findByRole("heading", { name: "Home" })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
   await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), ask.content);
   await user.click(screen.getByRole("button", { name: "Send" }));
   expect(await screen.findByText(reply.content)).toBeVisible();
@@ -111,7 +111,7 @@ it("shows a hand-off the host finished in the open Bot and its session without r
   stored.unreadable = true;
   await hostWrote();
   expect(await screen.findByText(answer.content, undefined, { timeout: 5000 })).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "Home" }));
+  await user.click(screen.getByRole("button", { name: "Bot" }));
   const finished = await screen.findByRole("article", { name: "Research: Hynix HBM supply" });
   expect(within(finished).getByText("Done")).toBeVisible();
   expect(within(finished).getByText(answer.content)).toBeVisible();

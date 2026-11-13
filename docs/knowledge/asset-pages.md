@@ -70,7 +70,7 @@ class changes and Undo hold a Memory-mutation maintenance activity.
 A refresh makes no model call. It runs the class's planned reads (at most four; a
 Korean equity adds up to two capital decisions and, when due, its investor flows:
 [Korean asset rows](../analysis/korea.md#korean-asset-rows)) through the ordinary tool executor
-(`AppToolExecutor::for_host`, policy without Memory, in Home) with the
+(`AppToolExecutor::for_host`, policy without Memory, in Bot) with the
 Loupist's captured connection grants: native OpenDART, KRX and Korea Investment reads
 need their own grant and the unattended allowlist; OpenBB reads need a grant the bundled runtime serves and use a provider the Loupist enabled
 (the requested one, then a fixed preference order). Identical reads from the last 30

@@ -52,8 +52,8 @@
   },
   "useThreadActions": {
     "couldNotCreateANewChat": "새 대화를 만들지 못했어요. 다시 시도해 주세요.",
-    "couldNotRenameThisSession": "대화 이름을 바꾸지 못했어요. 다시 시도해 주세요.",
-    "couldNotDeleteThisSession": "대화를 삭제하지 못했어요. 다시 시도해 주세요."
+    "couldNotRenameThisSession": "리서치 세션 이름을 바꾸지 못했어요. 다시 시도해 주세요.",
+    "couldNotDeleteThisSession": "리서치 세션을 삭제하지 못했어요. 다시 시도해 주세요."
   },
   "appNavigation": {
     "settingsNavigation": "설정 탐색",
@@ -81,7 +81,7 @@
     "homeDescriptor": "대화, 브리핑, 알림"
   },
   "loupistNavigationGroup": {
-    "hasActiveSessions": "{{label}}에서 진행 중인 대화가 있어요"
+    "hasActiveSessions": "{{label}}에서 진행 중인 리서치 세션이 있어요"
   },
   "macTitlebarControls": {
     "showOrHideSidebar": "사이드바 표시/숨기기",
@@ -124,7 +124,7 @@
     "keyboardDescription": "마우스 없이 작업하는 단축키예요."
   },
   "emptyChat": {
-    "newChat": "제목 없는 대화"
+    "newChat": "제목 없는 리서치 세션"
   },
   "workspaceUiState": {
     "untitled": "제목 없음"
@@ -148,19 +148,19 @@
     "workspaceControls": "작업 패널",
     "splitTopBottom": "상하 분할",
     "splitLeftRight": "좌우 분할",
-    "sessions": "대화",
-    "sessionsEmpty": "질문 하나를 깊게 파려면 새 대화를 시작하세요. 브리핑과 알림은 홈에 남아요.",
-    "newResearch": "새 대화",
-    "newResearchHint": "새 대화: 질문 하나를 깊게 파요. 브리핑과 알림은 홈에 남아요.",
+    "sessions": "리서치 세션",
+    "sessionsEmpty": "질문 하나를 깊게 파려면 새 리서치를 시작하세요. 브리핑과 알림은 봇에 남아요.",
+    "newResearch": "새 리서치",
+    "newResearchHint": "새 리서치: 질문 하나를 깊게 파요. 브리핑과 알림은 봇에 남아요.",
     "principles": "원칙",
     "taskHistory": "예약",
     "moreActions": "더 보기",
     "loupists": "루피스트",
     "newLoupist": "새 루피스트",
-    "newChat": "새 대화",
+    "newChat": "새 리서치",
     "settings": "설정",
     "search": "검색",
-    "newChatShortcut": "새 대화 {{shortcut}}",
+    "newChatShortcut": "새 리서치 {{shortcut}}",
     "updateAvailable": "업데이트 가능",
     "loupistSettings": "루피스트 설정",
     "removeLoupist": "루피스트 제거…",
@@ -168,7 +168,7 @@
     "close": "닫기",
     "tabs": {
       "lens": "렌즈",
-      "chat": "홈",
+      "chat": "봇",
       "map": "지도",
       "schedule": "예약",
       "following": "관심 자산"
@@ -307,7 +307,7 @@
     "approval": "{{loupist}} 승인 필요"
   },
   "thread": {
-    "title": "홈"
+    "title": "봇"
   },
   "palette": {
     "title": "명령 팔레트",
@@ -316,7 +316,7 @@
     "moreIn": "{{group}} 더 보기",
     "groups": {
       "attention": "확인 필요",
-      "chats": "대화",
+      "chats": "리서치 세션",
       "following": "관심 자산",
       "map": "지도",
       "principles": "원칙",
@@ -324,14 +324,14 @@
       "actions": "동작"
     },
     "actions": {
-      "newChat": "새 대화",
-      "openChat": "홈 열기",
+      "newChat": "새 리서치",
+      "openChat": "봇 열기",
       "openMap": "지도 열기",
       "openLens": "렌즈 열기",
       "openSchedule": "예약 열기",
       "importHoldings": "보유 자산 가져오기…",
       "newJournalEntry": "새 저널 항목",
-      "allChats": "모든 대화",
+      "allChats": "모든 리서치 세션",
       "togglePanel": "패널 보이기/숨기기",
       "settings": "설정",
       "keyboard": "키보드 단축키",

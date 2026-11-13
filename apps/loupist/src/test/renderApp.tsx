@@ -34,7 +34,7 @@ export const openChat = async (title = "How should we read the margin decline?")
 
 export const mainTab = async (name: RegExp) => {
   const labels = [...APP_DESTINATIONS.map(destination => destination.label), "Loupist settings", "Connections", APP_PAGES.settings.label];
-  // Tests name the home destination "Chat" (its id) or "Home" (its label).
+  // Tests name the standing conversation "Chat" (its id) or "Bot" (its label).
   const label = name.test("Chat") ? APP_DESTINATIONS[0]!.label : labels.find(candidate => name.test(candidate));
   const settingsBack = document.querySelector<HTMLButtonElement>("[data-loupist-settings-back]");
   if (settingsBack) fireEvent.click(settingsBack);
@@ -65,13 +65,13 @@ export const mainTab = async (name: RegExp) => {
     const close = document.querySelector<HTMLButtonElement>("[data-workspace-close]");
     if (close) fireEvent.click(close);
     const last = JSON.parse(localStorage.getItem("loupist.lastConversation") ?? "null");
-    return (last && document.querySelector<HTMLButtonElement>(`[data-thread-id="${CSS.escape(last[1])}"]`)) || screen.getByRole("button", { name:"Home" });
+    return (last && document.querySelector<HTMLButtonElement>(`[data-thread-id="${CSS.escape(last[1])}"]`)) || screen.getByRole("button", { name:"Bot" });
   }
   fireEvent.keyDown(document.querySelector<HTMLButtonElement>("[data-bot-menu]")!, { key: "Enter" });
   return screen.findByRole("menuitem", { name: "Scheduled tasks" });
 };
 
-export const newChatButton = () => screen.getByRole("button", { name: "New chat" });
+export const newChatButton = () => screen.getByRole("button", { name: "New research" });
 
 export const savedSurface = (name: string) => screen.getByRole("tab", { name });
 
@@ -93,7 +93,7 @@ export const chooseLoupist = async (
 };
 
 export const loupistIsRunning = (name: string) => {
-  return Boolean(screen.queryByRole("status", { name: `${name} has chats running` }));
+  return Boolean(screen.queryByRole("status", { name: `${name} has active sessions` }));
 };
 
 export const waitForLoupistRunning = async (name: string, running = true) => {

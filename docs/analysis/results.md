@@ -81,7 +81,7 @@ a low–high range as base-unit decimal strings, unit, currency, kind (`guidance
 `consensus`, `broker_estimate`, `implied`, `reported`), stage (`preliminary`, `final`),
 provider, evidence, fact date, the cutoff of a late capture and origin (`host`, `chat`,
 `briefing`). `knowledge_earnings_tone` keeps one call-tone sentence with its quotes, and
-`knowledge_earnings_notices` the Home messages owed. Every row cites its evidence;
+`knowledge_earnings_notices` the Bot messages owed. Every row cites its evidence;
 [differences and revisions](results.md#results-before-and-after) are computed when the
 card is read and never stored from model text. Holdings never enter these tables.
 
