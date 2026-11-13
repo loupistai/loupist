@@ -154,8 +154,16 @@ fn revision_error(error: crate::app::CommandError) -> BrokerError {
     }
 }
 
+fn normalized_title(title: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    crate::knowledge::world_extract::casefold(&title.nfkc().collect::<String>())
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn compact(task: &Task) -> Value {
-    json!({"task_id":task.id,"title":task.title,"revision":task.revision,"status":task.status,
+    json!({"task_id":task.id,"title":task.title,"kind":task.kind.as_str(),"revision":task.revision,"status":task.status,
         "schedule":task.schedule,"session_mode": match task.target { TaskTarget::NewChat=>"fresh", TaskTarget::Dedicated=>"continue", TaskTarget::ExistingChat{..}=>"existing_chat" },
         "next_run_at":task.next_run_at_ms.and_then(DateTime::from_timestamp_millis).map(|t|t.to_rfc3339()),
         "last_error":task.last_error.as_ref().map(|_| RUN_FAILED),"awaiting_confirmation":task.awaiting_confirmation})
@@ -305,7 +313,7 @@ impl AppToolExecutor {
                 return Ok(
                     json!({"tasks":tasks,"pending_questions":if is_bot { crate::scheduled_tasks::questions::pending(state,loupist).map_err(error)?.into_iter().map(|q| json!({"handoff_id":q.receipt.task_id,"title":q.receipt.title,"prompt":q.prompt,"question":q.receipt.question})).collect::<Vec<_>>() } else { vec![] },"total":items.len(),"local_timezone":iana_time_zone::get_timezone().ok(),
                     "current_time":Utc::now().to_rfc3339(),"execution":"local_app_open","max_concurrent_runs":4,
-                    "notice":"Includes active, paused and completed tasks in this Loupist. Read a task before changing it. Runs need Loupist open; missed recurring times catch up once."}),
+                    "notice":"Includes active, paused and completed tasks in this Loupist. Read a task before changing it. Runs need Loupist open; missed recurring times catch up once. A request for work a listed task already does changes that task; it is not a new one."}),
                 );
             }
             ToolMethod::ScheduleRead => {
@@ -442,6 +450,21 @@ impl AppToolExecutor {
                     draft.run_options.clone_from(&q.run_options);
                     draft.use_memory &= q.use_memory;
                     draft.update_memory &= q.update_memory;
+                }
+                let normalized = normalized_title(&draft.title);
+                if let Some(existing) =
+                    service::list(state, loupist)
+                        .map_err(error)?
+                        .iter()
+                        .find(|item| {
+                            is_bot
+                                && item.task.id != id
+                                && item.task.kind == crate::scheduled_tasks::types::TaskKind::Custom
+                                && item.task.status != TaskStatus::Completed
+                                && normalized_title(&item.task.title) == normalized
+                        })
+                {
+                    return Err(BrokerError::invalid("title", format!("\"{}\" already exists as task {} ({}). To change it, call schedule_read then schedule_update; if it already does what the user asked, change nothing and say so; for a separate task use a title that says how it differs.", draft.title, existing.task.id, existing.task.status.as_str())));
                 }
                 let task = service::create(state, loupist, draft, Some(&id)).map_err(error)?;
                 if let Some(q) = origin {
@@ -650,6 +673,67 @@ mod tests {
     }
     fn create(key: &str, mode: &str) -> Value {
         json!({"request_key":key,"title":format!("Review {key}"),"prompt":"Summarize the local report.","schedule":{"kind":"weekly","days":[1,2,3,4,5],"hour":9,"minute":0,"timezone":"Asia/Seoul"},"session_mode":mode,"status":"active"})
+    }
+
+    #[test]
+    fn schedule_title_normalization_keeps_distinct_work_distinct() {
+        for (a, b) in [
+            ("  ＦＯＯ  report ", "foo report"),
+            ("Straße", "STRASSE"),
+            ("ABC\tweekly", "abc weekly"),
+        ] {
+            assert_eq!(normalized_title(a), normalized_title(b));
+        }
+        for (a, b) in [
+            ("Revenue", "Revenue detail"),
+            ("a-b", "a b"),
+            ("café", "cafe"),
+            ("US earnings", "UK earnings"),
+        ] {
+            assert_ne!(normalized_title(a), normalized_title(b));
+        }
+    }
+
+    #[tokio::test]
+    async fn duplicate_title_refusal_preserves_retries_and_distinct_same_time_tasks() {
+        let temp = tempfile::tempdir().unwrap();
+        let (executor, policy) = fixture(&temp, true, "home-loupist-a");
+        let mut request = create("one", "fresh");
+        request["title"] = json!("  ＲＥＶＩＥＷ  Straße ");
+        let first = executor
+            .execute(&policy, ToolMethod::ScheduleCreate, request.clone())
+            .await
+            .unwrap();
+        assert_eq!(first["kind"], "custom");
+        let retry = executor
+            .execute(&policy, ToolMethod::ScheduleCreate, request)
+            .await
+            .unwrap();
+        assert_eq!(retry["task_id"], first["task_id"]);
+        let mut duplicate = create("two", "fresh");
+        duplicate["title"] = json!("review STRASSE");
+        let error = executor
+            .execute(&policy, ToolMethod::ScheduleCreate, duplicate)
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(first["task_id"].as_str().unwrap()),
+            "{error}"
+        );
+        executor
+            .execute(
+                &policy,
+                ToolMethod::ScheduleCreate,
+                create("different-work", "fresh"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            service::list(&executor.state, "loupist-a").unwrap().len(),
+            2
+        );
     }
 
     #[tokio::test]

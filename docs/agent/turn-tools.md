@@ -43,7 +43,12 @@ their existing permission classes. Their run
 receipts expose control metadata (IDs, status, times and a fixed failure notice);
 briefing context and answer summaries stay in the run's Chat, because they can
 contain Memory and third-party text. Read current IDs/revisions
-before editing and keep a stable creation key within the turn. Agent modes are
+before editing and keep a stable creation key within the turn. List receipts
+include task `kind` (`briefing`, `earnings`, `custom`); use `schedule_briefing`
+to change the one host briefing. A request for existing work updates that task
+or leaves it unchanged. A new custom task created in Home with a live title (NFKC, case-folded,
+whitespace collapsed) is refused, while same-key retries and distinct titles
+at the same time remain valid. Agent modes are
 fresh history or the task's own dedicated Chat; scheduled runs cannot mutate
 schedules. Use [Scheduled Chats](../runtime/scheduled-runs.md#scheduled-chats) and the
 [scheduling evaluation](../../apps/loupist/evals/README.md#scheduling-evaluation).
