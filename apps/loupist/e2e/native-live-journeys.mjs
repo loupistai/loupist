@@ -325,6 +325,20 @@ async function pythonStep(article) {
   return null;
 }
 
+/**
+ * Reload the webview and wait for the new document. The pinned driver's refresh
+ * returns before navigation starts, so the old shell would satisfy waitForShell
+ * and the next step would land on the blank page that is loading.
+ */
+async function reloadApp() {
+  await browser.execute(() => { window.__loupistBeforeReload = true; });
+  await browser.refresh();
+  await browser.waitUntil(async () => !(await browser.execute(() => window.__loupistBeforeReload === true).catch(() => true)), {
+    timeout: 30_000, interval: 100, timeoutMsg: "The webview did not reload",
+  });
+  await waitForShell(browser, 30_000);
+}
+
 async function answerText() {
   const articles = await browser.$$("article.message.assistant[data-message-id]");
   const last = articles.at(-1);
@@ -445,8 +459,7 @@ try {
     assert.match(JSON.stringify(memory), /Cobalt Finch/u, "The Loupist did not retain the preference");
     const progress = (await collectWorkProgress(browser, { latestOnly: true })).flatMap((section) => section.rows);
     assert.ok(progress.some((row) => row.category === "memory" && row.status === "succeeded"), "No successful memory activity was visible");
-    await browser.refresh();
-    await waitForShell(browser, 30_000);
+    await reloadApp();
     await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
     memory = await retainedLoupistMemory();
     assert.match(JSON.stringify(memory), /Cobalt Finch/u, "The retained preference disappeared on reload");
@@ -940,8 +953,7 @@ try {
       } else assert.ok(followUp?.hasFirstQuestion && followUp.hasFirstAnswer, "The second request lost the first turn's context");
       assert.equal(followUp.bearer, true);
       await shot("07-custom-follow-up");
-      await browser.refresh();
-      await waitForShell(browser, 30_000);
+      await reloadApp();
       await waitForText(await displayed("#main-panel-chat"), "Earlier I said: Hello from the custom provider.");
       assert.match(await answerText(), /Earlier I said: Hello from the custom provider\./u, "The completed answer did not survive reload");
       await shot("07-custom-reloaded");
