@@ -76,7 +76,9 @@ motion) while its fill eases to the action colour. With nothing typed, Send is a
 tile whose arrow uses the tertiary text colour, at least 3:1 against the tile in both
 themes; while a reply runs, Stop is a filled square. Stop ("Stop response", Esc in its tooltip) dims to
 55% after a press and ignores presses until the host confirms. Focus stays in the
-textarea through send, stop and commit.
+textarea through send, stop and commit, including the first message of a new research
+session: the saved Chat it creates keeps the draft's composer and thread instead of
+mounting new ones.
 After a reply saves a Source, a running World job, or a queued job whose processing is ready, shows “Reviewing sources…” in the Learned row, including when it is folded. A queued job blocked by a disconnected provider, paused processing or another readiness condition shows the useful status or action, such as “Reconnect your AI account” or “Source review is paused”, without a spinner. If readiness cannot be read, it says “Waiting to review sources”. Polling continues so reconnecting or resuming processing updates the row. In a narrow chat the
 compact context card shows the same status above the transcript, with approval requests alongside it. As
 jobs finish, their additions become available in the row. When all work settles,

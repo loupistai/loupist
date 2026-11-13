@@ -246,6 +246,8 @@ export function ChatView({
   }, [draftSession]);
   const messagesRef = useRef<ChatMessage[]>([]);
   const creatingThread = useRef(false);
+  /** While the first message creates the saved Chat from a new session's draft: the Chats that existed before. */
+  const promotingDraft = useRef<Set<string> | null>(null);
   const [isCreatingThread, setIsCreatingThread] = useState(false);
   const [configurationReadError, setConfigurationReadError] = useState<string | null>(null);
   // Edit forks (X18): the sent message being edited; sending sets the old version aside first.
@@ -394,8 +396,29 @@ export function ChatView({
     }
     return options;
   }, [messages, loupist.id]);
+  // The chat's view identity. A new research session keeps its draft's identity when its
+  // first message creates the saved Chat, so the composer keeps focus and the thread
+  // does not remount; opening another chat or another new session starts a fresh view.
+  const draftSerial = useRef(0);
+  const shownThreadId = useRef(activeThread?.id);
+  const promotedViews = useRef(new Map<string, string>());
+  const draftViewKey = () => `draft:${draftSerial.current}`;
+  if (shownThreadId.current !== activeThread?.id) {
+    const from = shownThreadId.current;
+    shownThreadId.current = activeThread?.id;
+    if (activeThread && !isEmptyChatThreadId(activeThread.id) && isEmptyChatThreadId(from)
+      && promotingDraft.current && !promotingDraft.current.has(activeThread.id)) {
+      promotingDraft.current = null;
+      promotedViews.current.set(activeThread.id, draftViewKey());
+    } else if (!activeThread || isEmptyChatThreadId(activeThread.id)) {
+      draftSerial.current += 1;
+    }
+  }
+  const viewKey = activeThread && !isEmptyChatThreadId(activeThread.id)
+    ? promotedViews.current.get(activeThread.id) ?? activeThread.id
+    : draftViewKey();
   // The lightbox's "Add to question": the image goes into this chat's composer tray, never sent.
-  const composerKey = activeThread?.id ?? "draft";
+  const composerKey = viewKey;
   const [incomingFiles, setIncomingFiles] = useState<IncomingFiles & { composerKey: string } | null>(null);
   const incomingSequence = useRef(0);
   const addToQuestion = useCallback((file: File) => {
@@ -667,15 +690,18 @@ export function ChatView({
     if (!targetThread) {
       if (creatingThread.current) return false;
       creatingThread.current = true;
+      promotingDraft.current = activeThread && isEmptyChatThreadId(activeThread.id) ? new Set(threads.map((thread) => thread.id)) : null;
       setIsCreatingThread(true);
       try {
+        const draftView = promotingDraft.current ? draftViewKey() : null;
         targetThread = (await onCreateThread()) ?? undefined;
+        if (targetThread && draftView && !promotingDraft.current?.has(targetThread.id)) promotedViews.current.set(targetThread.id, draftView);
         if (targetThread) {
           memoryChoices.current = { loupistId: loupist.id, threadId: targetThread.id, privateChat: item.privateChat };
           setPrivateChat(item.privateChat);
         }
       }
-      finally { creatingThread.current = false; setIsCreatingThread(false); }
+      finally { creatingThread.current = false; promotingDraft.current = null; setIsCreatingThread(false); }
     }
     if (!targetThread) return false;
     updateQueued(targetThread.id, (items) => [...items, item]);
@@ -854,7 +880,7 @@ export function ChatView({
       setThreads(current => current.map(thread => thread.id === updated.id ? { ...thread, set_aside_memory: updated.set_aside_memory ?? [] } : thread));
     },
   }), [setAsideIds, firstDeclinedMessageId, saveOff, activeThread?.id, bridge, loupist.id, setThreads]);
-  const conversation = <ChatExecutionProvider key={`${loupist.id}:${activeThread?.id ?? "draft"}`} value={executionScope}><WorkspaceFileProvider value={executionScope}><ArtifactReadLinksProvider messages={visibleConversation.messages}><ChatSetAsideProvider value={setAside}><ChatConversation
+  const conversation = <ChatExecutionProvider key={`${loupist.id}:${viewKey}`} value={executionScope}><WorkspaceFileProvider value={executionScope}><ArtifactReadLinksProvider messages={visibleConversation.messages}><ChatSetAsideProvider value={setAside}><ChatConversation
     active={active}
     messages={visibleConversation.messages}
     messageKeys={visibleConversation.messageKeys}
@@ -904,7 +930,7 @@ export function ChatView({
     <OpenProvider open={open}>
     <section className="chat-layout" aria-label={t("chatView.chatWithLoupist")}>
       <div className="chat-workspace" ref={chatWorkspaceRef} data-rail={chatRailMode}>
-        <ChatLightboxProvider key={activeThread?.id ?? "draft"} messages={visibleConversation.messages} onRead={readAttachment} onAddToQuestion={addToQuestion}>
+        <ChatLightboxProvider key={viewKey} messages={visibleConversation.messages} onRead={readAttachment} onAddToQuestion={addToQuestion}>
         {activeRecoveredRun ? <header className="workspace-heading is-status">
           <div className="workspace-chat-title">
             <div className="thread-statuses">
@@ -923,7 +949,7 @@ export function ChatView({
         <ChatRail mode={chatRailMode} data={rail} actions={railActions} />
         <div className="chat-reading-pane">
         <ChatWorkingContext
-          key={`${loupist.id}:${activeThread?.id ?? "draft"}`}
+          key={`${loupist.id}:${viewKey}`}
           bridge={bridge}
           loupistId={loupist.id}
           chatId={activeThread?.id ?? ""}
@@ -991,7 +1017,7 @@ export function ChatView({
           <button type="button" onClick={() => { setEditing(null); setPrompt(""); }}>{t("chatBranch.cancel")}</button>
         </p> : null}
         <ChatComposer
-          key={activeThread?.id ?? "draft"}
+          key={viewKey}
           attachmentDraft={draft}
           placeholder={[...loupist.name].length > 24 ? t("chatComposer.askYourLoupist") : t("chatComposer.askLoupistToAddContextForCommands", { loupistName: loupist.name })}
           prompt={prompt}
