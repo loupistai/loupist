@@ -325,7 +325,8 @@ function ChatMessageCardComponent({
   }, [message.role, message.progress?.items, message.content, workspacePath]);
   // Charts render as cards in the answer; documents stay in the outputs row and open the panel.
   // A setup card, a failed chart or a failed table offers the question again; it fills the composer and never sends.
-  const askAgain = onFillComposer && previousQuestion ? () => onFillComposer(previousQuestion) : undefined;
+  const askAgainNow = useCallback(() => { if (onFillComposer && previousQuestion) onFillComposer(previousQuestion); }, [onFillComposer, previousQuestion]);
+  const askAgain = onFillComposer && previousQuestion ? askAgainNow : undefined;
   const charts = useMemo(() => chartBlocks(message), [message]);
   // Grid answers and conflict cards render in the answer too, after its charts.
   const grids = useMemo(() => gridBlocks(message), [message]);

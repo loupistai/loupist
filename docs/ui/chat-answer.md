@@ -136,6 +136,11 @@ streams. Code and math plugins load once into a module-level store, so a second 
 renders highlighted on its first paint and a plugin arriving mid-answer re-renders
 blocks in place.
 
+Each update of a streaming reply redraws only that reply. Earlier answers keep their render
+because every callback a card receives keeps its identity across app renders, the run flags
+reach only the cards that use them, a filled chart or table card compares its block by value
+(`sameBlock`), and Home's setup steps under the thread are memoized.
+
 `scripts/probe-streaming.mjs` plays a live preview scenario (`chat-live-research`,
 `-stopped`, `-failed`, `-question`, `-quick`) on a real clock and records the live
 labels, ledger texts, text update gaps and sizes, any block that moves down, every

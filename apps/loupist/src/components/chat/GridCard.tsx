@@ -5,12 +5,12 @@ import { formatDate, formatNumber } from "@/i18n/format";
 import "@/styles/grid.css";
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon, ChevronDownIcon, EllipsisIcon } from "lucide-react";
 import { Popover } from "radix-ui";
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import type { AssetsGrid, ChatArtifactRef, ChatArtifactView, ChatEvidenceRef, ConflictGrid, GridEmptyCell, GridValueCell } from "../../types";
-import type { GridBlock } from "../../chat/chartBlocks";
+import { sameBlock, type GridBlock } from "../../chat/chartBlocks";
 import { GRID_SCHEMA } from "../../contracts/chat";
 import { citationNumber } from "../../chat/numberChecks";
 import { citationLabel, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
@@ -369,7 +369,7 @@ const BUILDING_ROWS = 3;
  * A grid or conflict card in the answer itself. The block keeps its reserved
  * frame from the moment the Loupist starts building the table until it fills.
  */
-export function ChatGridBlock({ block, onAsk, askDisabled, onAskAgain }: {
+export const ChatGridBlock = memo(function ChatGridBlock({ block, onAsk, askDisabled, onAskAgain }: {
   /** A failed table puts the question that asked for it back in the composer. */
   onAskAgain?: () => void;
   block: GridBlock;
@@ -425,4 +425,4 @@ export function ChatGridBlock({ block, onAsk, askDisabled, onAskAgain }: {
     </div></header>
     <div className="grid-card-state">{state}</div>
   </section>;
-}
+}, (before, after) => sameBlock(before.block, after.block) && before.onAsk === after.onAsk && before.askDisabled === after.askDisabled && before.onAskAgain === after.onAskAgain);

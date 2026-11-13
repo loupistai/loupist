@@ -7,7 +7,7 @@ import type { LoupistUIMessage } from "../chat/ai-sdk";
 import type { RecoveredChatRun } from "../chat/loupistRunRegistry";
 import { chatSessionKey } from "../chat/sessionRegistry";
 import { resolveConfiguredModelRunSelection } from "../lib/modelSelection";
-import type { ChatThread, LoupistBridge, LoupistSummary, ModelRunSelection } from "../types";
+import type { ChatArtifactRef, ChatThread, LoupistBridge, LoupistSummary, ModelRunSelection } from "../types";
 import type { ChatDraft, useChatDrafts } from "./useChatDrafts";
 import type { useChatSessions } from "./useChatSessions";
 import type { useConfiguration } from "./useConfiguration";
@@ -117,6 +117,26 @@ export function useChatViewModel({
     }
   }, [persistedThreadId, runRegistry, selectedLoupistId]);
 
+  // Every answer card receives these; a new function on each app render would redraw every card while a reply streams.
+  const { refresh: refreshDrafts } = drafts;
+  const { selectArtifactForChat } = workspace;
+  const readWorldJob = useCallback(
+    (jobId: string) => bridge.knowledgeGraphJob({ loupistId: selectedLoupistId ?? "", jobId }),
+    [bridge, selectedLoupistId],
+  );
+  const selectArtifact = useCallback(
+    (artifact: ChatArtifactRef) => { if (effectiveChatKey) selectArtifactForChat(effectiveChatKey, artifact); },
+    [effectiveChatKey, selectArtifactForChat],
+  );
+  const changeDraft = useCallback((prompt: string) => {
+    if (!activeDraft || !effectiveChatKey || !effectiveThreadId) return;
+    activeDraft.prompt = prompt;
+    refreshDrafts();
+  }, [activeDraft, effectiveChatKey, effectiveThreadId, refreshDrafts]);
+  const changeAsOf = useCallback((asOf: string | undefined) => {
+    if (activeDraft) { activeDraft.asOf = asOf; refreshDrafts(); }
+  }, [activeDraft, refreshDrafts]);
+
   if (!selectedLoupist || !activeChat) return null;
   const loupistId = selectedLoupist.id;
   const { snapshot } = configuration;
@@ -158,23 +178,19 @@ export function useChatViewModel({
     knowledgePins: activeDraft?.pins ?? [],
     onRemoveKnowledgePin: (pin) => { if (activeDraft) drafts.removePin(activeDraft, pin); },
     onAddKnowledgePin: (pin) => { if (activeDraft) drafts.addPin(activeDraft, pin); },
-    onSelectArtifact: (artifact) => { if (effectiveChatKey) workspace.selectArtifactForChat(effectiveChatKey, artifact); },
+    onSelectArtifact: selectArtifact,
     onConsumeKnowledgePins: (pins) => { if (activeDraft) pins.forEach((pin) => drafts.removePin(activeDraft, pin)); },
-    onReadWorldJob: (jobId) => bridge.knowledgeGraphJob({ loupistId, jobId }),
+    onReadWorldJob: readWorldJob,
     onWorldChanged: refreshKnowledge,
     progressFocus,
     onAbortRecoveredRun: abortVisibleRecoveredChat,
     draft: activeDraft ?? undefined,
     sessionDrafts: drafts.getSession(loupistId),
     initialPrompt: activeDraft?.prompt ?? "",
-    onDraftChange: (prompt) => {
-      if (!activeDraft || !effectiveChatKey || !effectiveThreadId) return;
-      activeDraft.prompt = prompt;
-      drafts.refresh();
-    },
+    onDraftChange: changeDraft,
     onRenameThread: threadActions.renameThread,
     onChipsChange: (chips) => { if (activeDraft) { activeDraft.chips = chips; drafts.refresh(); } },
-    onAsOfChange: (asOf) => { if (activeDraft) { activeDraft.asOf = asOf; drafts.refresh(); } },
+    onAsOfChange: changeAsOf,
     onTurnComplete: refreshKnowledge,
     modelSetupMessage: model.needsVisibleModels ? i18n.t("app:app.showOrLoadAModelInSettings") : undefined,
     onOpenModelSettings,

@@ -296,7 +296,7 @@ export function ChatConversation({
               message={message}
               onSaveFeedback={onSaveFeedback}
               onTeachFeedback={onTeachFeedback}
-              feedbackBusy={feedbackBusy}
+              feedbackBusy={message.role === "assistant" && feedbackBusy}
               loupistId={loupistId}
               chatId={chatId}
               loupistName={loupistName}
@@ -310,12 +310,13 @@ export function ChatConversation({
               onReadWorldJob={onReadWorldJob}
               onWorldChanged={onWorldChanged}
               onAskArtifact={onAskArtifact}
-              askArtifactDisabled={run?.running}
+              // Run flags reach only the cards that use them, so a send or a commit redraws no other answer.
+              askArtifactDisabled={hasCards(message) && run?.running}
               onReadAttachment={onReadAttachment}
               mentionSkills={mentionSkills}
               mentionPlugins={mentionPlugins}
               onEditUser={message.role === "user" && onEditUser ? editUser : undefined}
-              editDisabled={Boolean(run?.running)}
+              editDisabled={message.role === "user" && Boolean(run?.running)}
               onEarlierVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "earlier", onSwitchVersion) : undefined}
               onLaterVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "later", onSwitchVersion) : undefined}
               onRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") ? onRetry : undefined}
@@ -356,6 +357,10 @@ function turnGroups(messages: readonly ChatMessage[]): Array<{ start: number | n
   });
   return turns;
 }
+
+/** An answer that draws a chart or table card, whose Ask button waits while a reply runs. */
+const hasCards = (message: ChatMessage) => message.role === "assistant" && (Boolean(message.artifact_refs?.length)
+  || (message.progress?.items ?? []).some((item) => item.kind === "tool" && (item.toolName === "chart_publish" || item.toolName === "grid_publish")));
 
 /** A finished answer, as the "New since you left" divider counts them. */
 const settledAnswer = (message: ChatMessage) => message.role === "assistant" && message.status === "complete";

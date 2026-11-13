@@ -2,12 +2,12 @@ import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import i18n, { useTranslation } from "@/i18n";
 import { useGo } from "../navigation/Open";
 import { formatAsOf } from "../../chat/asOf";
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, memo, Suspense, useEffect, useState, type ReactNode } from "react";
 import { EllipsisIcon, Maximize2Icon, Minimize2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatArtifactRef, ChatArtifactView } from "../../types";
-import type { ChartBlock } from "../../chat/chartBlocks";
+import { sameBlock, type ChartBlock } from "../../chat/chartBlocks";
 import { CHART_SCHEMA } from "../../contracts/chat";
 import { chatArtifactRef } from "../artifacts/ArtifactContent";
 import { datasetTsv } from "../artifacts/ArtifactData";
@@ -55,7 +55,7 @@ type ViewState = { status: "loading" } | { status: "ready"; view: ChatArtifactVi
  * Loupist starts building it until the chart is drawn, so the thread never jumps.
  * Each answer draws its retained revision and notes when a newer version exists.
  */
-export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain }: Props) {
+export const ChatArtifactBlock = memo(function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain }: Props) {
   const go = useGo();
   useTranslation("chat");
   const scope = useChatExecution();
@@ -190,7 +190,8 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain 
       <div className="chat-artifact-block-body">{body}</div>
     </section>
   );
-}
+}, (before, after) => sameBlock(before.block, after.block) && before.onAsk === after.onAsk && before.askDisabled === after.askDisabled
+  && before.asOf === after.asOf && before.onAskAgain === after.onAskAgain);
 
 /** The chart card's actions folded into one "…" menu under 720 px, as the table card's are. */
 function ChartCardMore({ copy, png, ask, askDisabled }: {
