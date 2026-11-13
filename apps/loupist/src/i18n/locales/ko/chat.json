@@ -1851,5 +1851,8 @@
     "minutes": "{{m}}분 {{s}}초",
     "stepSeconds": "{{value}}초",
     "more": "+{{formattedCount}}"
+  },
+  "citedNote": {
+    "source": "출처"
   }
 }

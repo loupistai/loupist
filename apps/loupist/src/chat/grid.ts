@@ -1,5 +1,6 @@
 import i18n from "@/i18n";
 import type { AssetsGrid, ChatEvidenceRef, GridCell, GridEmptyCell, GridEmptyReason, GridValueCell } from "../types";
+import { citedPlainText } from "./citedText";
 import { sourceIdentityLabel } from "./evidence";
 import { exportFootnote, needsChecking } from "./numberChecks";
 
@@ -82,6 +83,12 @@ export function currencyOf(value: string): string {
   return "";
 }
 
+/** A model-written note for a file: each citation target becomes its source's name. */
+const noteText = (note: string, evidenceRefs: readonly ChatEvidenceRef[]) => citedPlainText(note, (id) => {
+  const evidence = evidenceRefs.find((item) => item.id === id);
+  return evidence ? evidence.provider ?? sourceIdentityLabel(evidence) : t("citedNote.source");
+});
+
 const isoDay = (evidence: ChatEvidenceRef | undefined) => (evidence?.published_at ?? evidence?.retrieved_at ?? "").slice(0, 10);
 
 /**
@@ -96,7 +103,7 @@ export function gridCsv(grid: AssetsGrid, evidenceRefs: readonly ChatEvidenceRef
       const cell = grid.cells[rowIndex]?.[columnIndex];
       const base = [row.label, row.symbol, row.market, column.label, column.period ?? "", column.basis ?? ""];
       if (!cell || isEmptyCell(cell)) {
-        lines.push([...base, "", column.unit, "", cell?.empty ?? "not_checked", "", "", cell?.note ?? ""]);
+        lines.push([...base, "", column.unit, "", cell?.empty ?? "not_checked", "", "", cell?.note ? noteText(cell.note, evidenceRefs) : ""]);
         return;
       }
       const evidence = evidenceRefs.find((item) => item.id === cell.evidence_id);
@@ -146,7 +153,7 @@ export function gridMarkdown(title: string, grid: AssetsGrid, evidenceRefs: read
     lines.push(`| ${[row.label, ...cells].map(markdownCell).join(" | ")} |`);
   });
   lines.push("");
-  for (const note of grid.notes ?? []) lines.push(note, "");
+  for (const note of grid.notes ?? []) lines.push(noteText(note, evidenceRefs), "");
   if (footnotes.length) lines.push(...footnotes, "");
   lines.push(`_${t("grid.exportNotice")}_`, "");
   return lines.join("\n");

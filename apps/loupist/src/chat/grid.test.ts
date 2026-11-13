@@ -97,6 +97,17 @@ describe("grid answers", () => {
     expect(lines.filter(Boolean).at(-1)).toBe("_Made with Loupist. AI can be wrong. Not a licensed financial adviser._");
   });
 
+  it("names the source of a citation target a note carries in an export, never its raw id", () => {
+    const cited: AssetsGrid = { ...grid, notes: [`Revenue from #evidence-${DART.id}; margin [as filed](#evidence-${MARGIN.id}); old #evidence-ev_gone.`],
+      cells: [grid.cells[0]!, [{ empty: "not_reported", note: `Separate only (#evidence-${DART.id}).` }, grid.cells[1]![1]!], grid.cells[2]!] };
+    const markdown = gridMarkdown("Dividend payers", cited, [DART, MARGIN]);
+    expect(markdown).toContain("Revenue from OpenDART; margin as filed; old source.");
+    expect(markdown).not.toContain("#evidence-");
+    const csv = gridCsv(cited, [DART, MARGIN]);
+    expect(csv).toContain("Separate only (OpenDART).");
+    expect(csv).not.toContain("#evidence-");
+  });
+
   it("names the currency a printed amount uses", () => {
     expect(currencyOf("₩452.3bn")).toBe("KRW");
     expect(currencyOf("4,523억 원")).toBe("KRW");

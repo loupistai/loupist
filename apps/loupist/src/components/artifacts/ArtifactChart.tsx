@@ -4,6 +4,7 @@ import { lazy, Suspense, useId } from "react";
 import type { ChartDataset, ChartDocument } from "../../types";
 import { Spinner } from "../ui/spinner";
 import { datasetRows } from "../charts/dataset";
+import { CitedNote } from "../chat/CitedNote";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -79,7 +80,7 @@ export default function ArtifactChart({ chart, dataset, theme, onAskRange, compa
           )}
         </Suspense>
       </div>
-      {chart.note ? <figcaption className="artifact-chart-note">{chart.note}</figcaption> : null}
+      {chart.note ? <figcaption className="artifact-chart-note"><CitedNote text={chart.note} /></figcaption> : null}
     </figure>
   );
 }

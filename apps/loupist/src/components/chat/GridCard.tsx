@@ -21,6 +21,7 @@ import { formatAsOf } from "../../chat/asOf";
 import { useChatExecution } from "./ChatExecutionContext";
 import { NumberChip } from "./NumberChip";
 import { CitationChip } from "./CitationChip";
+import { CitedNote } from "./CitedNote";
 import { useGo, useOpenProps } from "../navigation/Open";
 
 const t = i18n.getFixedT(null, "chat");
@@ -53,7 +54,7 @@ function EmptyCell({ cell, spoken }: { cell: GridEmptyCell; spoken: string }) {
       </button>
     </Popover.Trigger>
     <Popover.Portal>
-      <Popover.Content className="grid-card-note" side="top" align="start" sideOffset={4} onOpenAutoFocus={(event) => event.preventDefault()}>{cell.note}</Popover.Content>
+      <Popover.Content className="grid-card-note" side="top" align="start" sideOffset={4} onOpenAutoFocus={(event) => event.preventDefault()}><CitedNote text={cell.note} /></Popover.Content>
     </Popover.Portal>
   </Popover.Root>;
 }
@@ -278,7 +279,7 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
         {t("grid.moreColumns", { count: scroll.fit.hidden, formattedCount: formatNumber(scroll.fit.hidden) })}<ArrowRightIcon aria-hidden="true" />
       </button> : null}
     </div>
-    {grid.notes?.length ? <div className="grid-card-notes">{grid.notes.slice(0, 3).map((note, index) => <p key={index}>{note}</p>)}</div> : null}
+    {grid.notes?.length ? <div className="grid-card-notes">{grid.notes.slice(0, 3).map((note, index) => <p key={index}><CitedNote text={note} evidenceRefs={evidenceRefs} /></p>)}</div> : null}
   </section>;
 }
 
