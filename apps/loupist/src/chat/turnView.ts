@@ -262,6 +262,8 @@ function ledgerChips(actions: ActionItem[], evidenceById: Map<string, ChatEviden
       continue;
     }
     const tool = item.toolName ?? "";
+    // Loading a research tool reads nothing the answer can cite.
+    if (tool === "capability_load") continue;
     if (item.operation === "calculate" || tool === "run_python") add({ key: `calculation:${item.id}`, kind: "calculation", label: capitalized(readNoun("calculate")) });
     else if (item.category === "memory" && item.operation === "read") add({ key: `memory:${item.id}`, kind: "memory", label: capitalized(readNoun(tool)) });
     else if (item.category === "finance" && item.operation === "read") add({ key: `data:${item.id}`, kind: "data", label: capitalized(readNoun(tool)) });

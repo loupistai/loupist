@@ -132,6 +132,13 @@ describe("the ledger", () => {
     ]);
   });
 
+  it("gives no chip to loading a research tool, which reads nothing the answer can cite", () => {
+    const load = step("load", { toolName: "capability_load", category: "finance", operation: "read", action: "Prepared a research tool" });
+    const statements = step("fin", { toolName: "dart_financials", category: "finance", operation: "read" });
+    const turn = view(message({ phase: "tool", progress: { startedAtMs: start, items: [load, statements], finishedAtMs: null } }));
+    expect(ledger(turn)?.ledger.chips.map((chip) => chip.label)).toEqual(["Financial statements"]);
+  });
+
   it("never opens by itself and has no alarm state", () => {
     const turn = view(message({ status: "complete", content: "Done.", progress: { startedAtMs: start, finishedAtMs: start + 100, items: [{ ...search, status: "failed" }] } }));
     expect(ledger(turn)).not.toHaveProperty("autoExpand");

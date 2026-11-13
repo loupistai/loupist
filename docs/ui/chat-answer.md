@@ -40,7 +40,7 @@ happened; later notes do not open a second one. `plan_update` and `ask_user` are
 counted and have no row: the plan and the question stand for them. The ledger is one
 button: while the reply runs it says the step count ("10 steps", or "Plan 2 of 3 ·
 {item}") and gathers what the answer can cite as chips in arrival order (each site a
-step read, data series, saved notes, calculations; five, or three in a turn narrower
+step read, data series, saved notes, calculations; loading a research tool gets none; five, or three in a turn narrower
 than 560 px, then "+N"); when the turn settles the same line becomes the receipt
 ("Worked 30s · 10 steps · 3 sources", "Stopped after 12s · …") and the chips fade out. A
 failed attempt is said in words (" · 1 failed attempt"), never in red, and the ledger
