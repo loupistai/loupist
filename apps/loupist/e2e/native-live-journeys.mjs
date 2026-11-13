@@ -303,6 +303,28 @@ async function sendPrompt(text, attachment) {
   return { firstTokenMs, totalMs: Date.now() - started };
 }
 
+/**
+ * The Python step of one reply as the reader sees it: "running" while its
+ * timeline row runs and the live line names it, "done" once the row has
+ * finished, otherwise null. The pinned driver's getText is textContent, which
+ * runs the live label into the clock ("Running Python0:12"), so read the
+ * row's and the live line's own elements instead of the article's text.
+ */
+async function pythonStep(article) {
+  for (const row of await article.$$("[data-testid=chat-progress-row]")) {
+    const action = await row.$("[data-testid=chat-progress-action]");
+    if (!(await action.isExisting())) continue;
+    const label = (await action.getText()).trim();
+    const status = await row.getAttribute("data-progress-status");
+    if (label === "Ran Python" && status !== "running") return "done";
+    if (label !== "Running Python" || status !== "running") continue;
+    const live = await article.$("[data-testid=turn-live]");
+    const line = (await live.isExisting()) ? await live.getText() : "";
+    return line.startsWith("Running Python") ? "running" : null;
+  }
+  return null;
+}
+
 async function answerText() {
   const articles = await browser.$$("article.message.assistant[data-message-id]");
   const last = articles.at(-1);
@@ -1001,23 +1023,22 @@ try {
         if (await toggle.isExisting() && (await toggle.getAttribute("aria-expanded")) !== "true" && await toggle.isDisplayed().catch(() => false)) {
           await toggle.click();
         }
-        const text = await latest.getText();
-        return /\bRunning Python\b/u.test(text) && !/\bRan Python\b/u.test(text);
+        return (await pythonStep(latest)) === "running";
       }, { timeout: 180_000, interval: 250, timeoutMsg: "Running Python did not appear" });
       // The guest writes in a private snapshot. The host file appears only after
       // writeback, so wait out the write, then stop during the sleep.
       const runningSince = Date.now();
       await browser.waitUntil(async () => {
         const latest = (await browser.$$("article.message.assistant[data-message-id]")).at(-1);
-        const text = latest ? await latest.getText() : "";
-        if (/\bRan Python\b/u.test(text)) {
+        const python = latest ? await pythonStep(latest) : null;
+        if (python === "done") {
           throw new Error("Python finished before Stop, so the pre-cancel write was not isolated");
         }
         let stillRunning = false;
         for (const button of await browser.$$('button[aria-label="Stop response"]')) {
           if (await button.isDisplayed().catch(() => false)) stillRunning = true;
         }
-        return stillRunning && /\bRunning Python\b/u.test(text) && Date.now() - runningSince >= 20_000;
+        return stillRunning && python === "running" && Date.now() - runningSince >= 20_000;
       }, { timeout: 45_000, interval: 250, timeoutMsg: "Running Python did not stay up long enough to write before cancel" });
       let liveStop = null;
       for (const button of await browser.$$('button[aria-label="Stop response"]')) {
