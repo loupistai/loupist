@@ -40,7 +40,7 @@ impl Schema {
     }
 }
 
-const ORGANIZATION: &str = "A named company, fund manager, bank, exchange, regulator, government body, central bank,\nindustry body or other institution.\n\nA listed company is an Organization even when the source refers to it by its shares or\nticker; record the ticker as an attribute instead of creating a separate share entity.\nNot an Organization: a product or brand (Product); an index, fund share, bond, commodity or\ncurrency (Asset); a country or city (Place); a law or program (Policy).";
+const ORGANIZATION: &str = "A named company, fund manager, bank, exchange, regulator, government body, central bank,\nindustry body or other institution.\n\nA listed company is an Organization even when the source refers to it by its shares or\nticker; record the ticker as an attribute instead of creating a separate share entity.\nNot an Organization: a product or brand (Product); an index, fund share, bond, commodity or\ncurrency (Asset); a country or city (Place); a law or program (Policy).\n\nClassify an institution by its stated role, not by what it issues or oversees. The institution itself remains an Organization; its publications, products and rules are separate entities.";
 const PERSON: &str = "A named individual: an executive, director, founder, investor, official, analyst or\nother person.\n\nNot a Person: a job title without a name, or a group of people (Organization).";
 const ASSET: &str = "A tradable, benchmark or held instrument other than one company's ordinary shares: a market\nindex, ETF or fund share, bond, commodity, currency or currency pair, cryptocurrency,\ninterest-rate benchmark, prediction-market contract, property or other real asset, or a\nprivate deal or stake.\n\nNot an Asset: the issuing or managing company (Organization), or a company's ordinary\nshares (record the ticker on the Organization).";
 const PRODUCT: &str = "A named product, service, component or material that an organization makes or sells.\n\nA specific technical term can identify a Product without a brand or model number. Use the\nsource's domain and qualifiers to distinguish its meaning. Retain only products explicitly\ninvolved in a source claim; do not invent a taxonomy or extract vague marketing qualities.\nNot a Product: the company that makes it (Organization); a science, technique, process or\nstandard that more than one organization can use (Technology); an industry or value-chain\nstage (Segment).";
@@ -341,7 +341,9 @@ const EXTRACTION_INSTRUCTIONS: &str = concat!(
     "observation as a REPORTS claim on the subject it measures: use the subject's exact name ",
     "as both source_entity_name and target_entity_name. Do not invent a second entity for a ",
     "quantity, dated measurement, figure with a unit or sentence. Preserve the metric, exact ",
-    "value, unit or currency, reporting period, basis and status in the claim text. Named ",
+    "value, unit or currency, reporting period, basis and status in the claim text. Keep the ",
+    "specific metric name and each stated counterparty role in the same claim as its value. ",
+    "Named ",
     "products and securities may contain numbers. Extract a named or uniquely qualified ",
     "dated occurrence as an Event, alongside its participants and quantitative claims. ",
     "Use actors, action and the source's date or period in the event name, keeping amounts ",

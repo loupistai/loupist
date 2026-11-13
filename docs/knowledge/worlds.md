@@ -66,7 +66,9 @@ action and date or period; reported amounts stay in claims.
 A qualified occurrence title can contain a verb or a monetary qualifier without
 becoming a measurement. Admission requires an actual occurrence term and a named
 participant or subject beyond generic action, date and unit words; a contract's
-value or amount remains a measurement.
+value or amount remains a measurement. Institutions keep their Organization role
+separate from what they issue or oversee, and quantitative claims keep their
+specific metric names and stated counterparty roles beside the value.
 
 ### Queue and interruptions
 
