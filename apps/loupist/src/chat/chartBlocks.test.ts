@@ -75,6 +75,18 @@ describe("chartBlocks", () => {
     expect(chartBlocks(message({ role: "user", artifact_refs: [chart()] }))).toEqual([]);
   });
 
+  it("drops a failed card once the model publishes again in the same reply, and keeps it when nothing followed", () => {
+    const failed = step("failed", { target: "Margins, first try" });
+    const retry = (status: "running" | "succeeded") => step(status, { id: "retry" });
+    const progress = (...items: ChatProgressItem[]) => ({ startedAtMs: 0, items, finishedAtMs: null });
+    expect(chartBlocks(message({ status: "streaming", progress: progress(failed, retry("running")) })).map((block) => block.key)).toEqual(["building:retry"]);
+    expect(chartBlocks(message({ artifact_refs: [chart()], progress: progress(failed, retry("succeeded")) })).map((block) => block.key)).toEqual(["chart:chart-1"]);
+    // A retry that failed too leaves one failed card, the last one.
+    expect(chartBlocks(message({ progress: progress(failed, step("failed", { id: "again" })) })).map((block) => block.key)).toEqual(["failed:again"]);
+    // A later table does not stand in for a chart.
+    expect(chartBlocks(message({ progress: progress(failed, step("succeeded", { id: "table", toolName: "grid_publish" })) })).map((block) => block.key)).toEqual(["failed:step-failed"]);
+  });
+
   it("recognizes a chart step by its tool name, not by its wording", () => {
     // Another tool with the chart's wording is not a chart step, and a chart step reads as one in any wording.
     const lookalike = step("running", { id: "lookalike", toolName: "grid_publish" });

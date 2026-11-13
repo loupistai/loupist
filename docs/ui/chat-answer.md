@@ -53,7 +53,9 @@ its `stepId`), so a card made before the answer sits above it, live and after re
 card fills as its publish call is delivered: Rust sends the staged content
 (`artifact_staged`, a `ChatArtifactView`, never stored) and the card draws it while the
 answer is written below, so nothing moves at commit, where only the stored reference
-(`artifact`) follows. A stopped or failed reply saved nothing, so its staged cards go. A
+(`artifact`) follows. A stopped or failed reply saved nothing, so its staged cards go. A failed publish
+the model then calls again (chart or table, under any title) leaves no card of its own:
+the retry's card stands for it and the ledger keeps the failed step. A
 card still preparing when the reply stops fades out in place (120 ms; at once under
 reduced motion) and is then removed;
 an answer that says "the chart below" can be wrong until the prompt says otherwise. A

@@ -80,8 +80,11 @@ function artifactBlocks(message: ChatMessage, kind: ChatArtifactKind, tool: stri
   const publishes = isPublish(tool);
   // The first step that published each title owns its card; a later step under the same title updates it.
   const stepOfTitle = new Map<string, string>();
-  for (const item of message.progress?.items ?? []) {
-    if (!publishes(item)) continue;
+  const steps = (message.progress?.items ?? []).filter(publishes);
+  // A failed call the model then made again (under any title, however it went) is a retry: the
+  // retry's card stands for it, so at most the last attempt shows; the ledger keeps every failed step.
+  const retried = (index: number) => index < steps.length - 1;
+  for (const [index, item] of steps.entries()) {
     const title = titleOf(item);
     const published = title !== "" && readyTitles.has(title);
     if (published && !stepOfTitle.has(title)) stepOfTitle.set(title, item.id);
@@ -90,7 +93,7 @@ function artifactBlocks(message: ChatMessage, kind: ChatArtifactKind, tool: stri
       else pending.push({ kind: "building", key: `building:${item.id}`, title, stepId: item.id });
     } else if (item.status === "succeeded" && streaming && !published) {
       pending.push({ kind: "building", key: `building:${item.id}`, title, stepId: item.id });
-    } else if (item.status === "failed" && !published) {
+    } else if (item.status === "failed" && !published && !retried(index)) {
       pending.push({ kind: "failed", key: `failed:${item.id}`, title, stepId: item.id });
     }
   }
