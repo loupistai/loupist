@@ -27,11 +27,11 @@ function renderPalette(extra: { attention?: AttentionItem[]; actions?: PaletteAc
 it("shows recent chats and actions with an empty query, filters as the user types, and runs the highlighted row with the keyboard", async () => {
   const user = userEvent.setup();
   const newChat = vi.fn();
-  const handlers = renderPalette({ actions: [{ id: "new-chat", label: "New chat", keys: "⌘N", run: newChat }] });
+  const handlers = renderPalette({ actions: [{ id: "new-chat", label: "New research", keys: "⌘N", run: newChat }] });
   const list = screen.getByRole("listbox", { name: "Command palette" });
   // Three recent chats, newest first, then the actions.
   expect(within(list).getAllByRole("option").map((row) => row.textContent)).toEqual([
-    expect.stringContaining("Hanul margin review"), expect.stringContaining("Inventory days"), expect.stringContaining("Supplier map"), expect.stringContaining("New chat"),
+    expect.stringContaining("Hanul margin review"), expect.stringContaining("Inventory days"), expect.stringContaining("Supplier map"), expect.stringContaining("New research"),
   ]);
   const input = screen.getByRole("combobox", { name: "Command palette" });
   await user.type(input, "dividend");

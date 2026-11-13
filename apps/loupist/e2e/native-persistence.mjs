@@ -183,10 +183,10 @@ async function renameChat(from, to) {
     timeout: 5_000, timeoutMsg: "The Chat options menu did not open",
   });
   await (await visibleWithText('[role="menuitem"]', "Rename")).click();
-  const dialog = await dialogByTitle(browser, "Rename Chat");
+  const dialog = await dialogByTitle(browser, "Rename research session");
   await setField("#rename-thread-name", to);
   await clickButton("Save", dialog);
-  await waitGone(dialog, "The Rename Chat dialog did not close");
+  await waitGone(dialog, "The Rename research session dialog did not close");
   await browser.$(chatRow(to)).waitForExist({ timeout: 15_000, timeoutMsg: `Chat was not renamed to ${to}` });
 }
 

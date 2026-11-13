@@ -118,7 +118,7 @@
     "shortcutClose": "close",
     "escapeKey": "esc",
     "versionLabel": "Version {{version}}",
-    "startAFreshConversation": "Start a fresh conversation",
+    "startAFreshConversation": "Start a research session",
     "chooseTheModel": "Choose the model",
     "changeWhatThisMessageRemembers": "Toggle private chat",
     "chooseWhatThisLoupistCanUse": "Choose what this Loupist can use",
@@ -229,7 +229,7 @@
     "rate_limited": "Your AI account was busy.",
     "offline": "Couldn't reach your AI account.",
     "provider_unavailable": "Your AI account's service had a problem.",
-    "context_too_long": "This chat is too long for the model. Start a new chat, or remove large attachments.",
+    "context_too_long": "This chat is too long for the model. Start new research, or remove large attachments.",
     "needs_reconnect": "The sign-in to your AI account stopped working.",
     "plan_limit": "Your ChatGPT plan is at its limit.",
     "plan_not_eligible": "This ChatGPT plan can't be used in other apps.",
@@ -843,7 +843,7 @@
     "couldNotStartTheResponse": "Could not start the response.",
     "guidanceSentToTheActiveResponse": "Guidance sent to the active response.",
     "couldNotSteerTheActiveResponse": "Could not steer the active response.",
-    "nativeChatDidNotFinishSavingTheStoppedResponse": "Native Chat did not finish saving the stopped response.",
+    "nativeChatDidNotFinishSavingTheStoppedResponse": "The app did not finish saving the stopped response.",
     "couldNotStopTheResponse": "Could not stop the response.",
     "theAttachedFilesFromThatRequestCouldNotBe": "The attached files from that request could not be read.",
     "couldNotTryThatResponseAgain": "Could not try that response again.",
@@ -851,7 +851,7 @@
     "theReplyDidNotStartCheckTheConversationBeforeTryingAgain": "The reply did not start. Check the conversation before trying again."
   },
   "runRegistry": {
-    "savedChatNotRefreshed": "The response finished, but the saved Chat could not be refreshed yet.",
+    "savedChatNotRefreshed": "The response finished, but the saved conversation could not be refreshed yet.",
     "couldNotStopTheRecoveredResponse": "Could not stop the recovered response."
   },
   "workspace": {
@@ -916,7 +916,7 @@
     "aMessageOrAttachmentIsRequired": "A message or attachment is required.",
     "thisReplyGotOutOfStepWithTheConversation": "This reply got out of step with the conversation. Check the chat before trying again.",
     "couldNotStartTheResponse": "Could not start the response.",
-    "theScheduledStreamBelongsToAnotherChat": "The scheduled stream belongs to another Chat.",
+    "theScheduledStreamBelongsToAnotherChat": "The scheduled stream belongs to another conversation.",
     "responseStopped": "Response stopped.",
     "stoppedByUser": "Stopped by user"
   },
@@ -1443,7 +1443,7 @@
     "offlineReads": "Some data couldn't be fetched because a source or the network couldn't be reached. Check your connection, then ask again.",
     "couldNotReach": "Couldn't reach {{provider}}. Check your connection, then try again.",
     "providerUnavailable": "{{provider}} is having trouble right now. Try again in a moment.",
-    "contextTooLong": "This chat is too long for the model. Start a new chat, or remove large attachments.",
+    "contextTooLong": "This chat is too long for the model. Start new research, or remove large attachments.",
     "yourProvider": "your AI account",
     "waitingOffline": "Waiting to send until you're back online.",
     "planLimit": "Your ChatGPT plan is at its limit. Loupist won't retry on its own.",

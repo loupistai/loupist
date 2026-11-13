@@ -36,7 +36,7 @@ it("opens an exact journal inline with source, World, and Lens revision links", 
   expect(props.onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ surface: "world", recordId: "world-protocols", revisionId: expect.any(String) }));
   fireEvent.click(screen.getByRole("button", { name: "Open Lens 1" }));
   expect(props.onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ surface: "lens", recordId: "lens-compare-accounts", revisionId: "rev-lens-1" }));
-  fireEvent.click(screen.getByRole("button", { name: "Open originating Chat" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open originating conversation" }));
   expect(props.onAsk).toHaveBeenCalledWith(expect.objectContaining({ kind: "journal", loupistId: "loupist-quality", objectId: "journal-http" }), "chat-quality-1");
 });
 

@@ -48,7 +48,7 @@ it("opens a principle's origin Chat and applications, and edits it in the inspec
   const openChat = vi.fn(), select = vi.fn(), close = vi.fn();
   render(<MapInspector bridge={bridge} location={{ loupistId, surface: "world" }} node={node} map={map} onClose={close} onSelect={select} onOpen={vi.fn()} onAsk={vi.fn()} onOpenChat={openChat} />);
   expect(await screen.findByText("Profit is not cash.")).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "Open Chat" }));
+  await user.click(screen.getByRole("button", { name: "Open conversation" }));
   expect(openChat).toHaveBeenCalledWith("original-chat");
   await user.click(screen.getByRole("button", { name: map.nodes[0].label }));
   expect(select).toHaveBeenCalledWith(map.nodes[0]);

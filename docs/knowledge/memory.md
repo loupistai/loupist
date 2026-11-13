@@ -68,7 +68,7 @@ require a fresh preview. Rust records the reset in History.
 The composer’s + menu exposes one per-chat switch, Private chat; an eye-off chip
 marks it while on and can turn it off. Ordinary Chat
 submits both Memory read and save as true; Private chat submits both as false.
-Loupist settings and Chat defaults use a positive Remember new chats switch, on
+Loupist settings and Chat defaults use a positive Remember new conversations switch, on
 by default. Turning it off stores `chat.use_memory` and `chat.update_memory` as
 false for new Chats and leaves existing Chats unchanged. Private chat still
 persists its transcript, sends messages to the AI provider and does not undo native

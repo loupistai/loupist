@@ -50,7 +50,7 @@
     "couldNotReloadModelSettings": "Could not reload model settings."
   },
   "useThreadActions": {
-    "couldNotCreateANewChat": "Could not create a new chat.",
+    "couldNotCreateANewChat": "Could not start new research.",
     "couldNotRenameThisSession": "Could not rename this session.",
     "couldNotDeleteThisSession": "Could not delete this session."
   },
@@ -315,7 +315,7 @@
   },
   "palette": {
     "title": "Command palette",
-    "placeholder": "Search chats, names, principles, briefings…",
+    "placeholder": "Search research sessions, names, principles, briefings…",
     "empty": "Nothing matches.",
     "moreIn": "More from {{group}}",
     "groups": {

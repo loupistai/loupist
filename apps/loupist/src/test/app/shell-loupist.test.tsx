@@ -62,7 +62,7 @@ describe("Loupist · Shell and Loupist", () => {
     await user.click(screen.getByRole("button", { name: "Options for How should we read the margin decline?" }));
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
     fireEvent.keyDown(window, { key: "n", metaKey: true });
-    expect(screen.getByRole("dialog", { name: "Delete Chat?" })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "Delete research session?" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.keyDown(window, { key: "n", metaKey: true });
     expect(await screen.findByRole("heading", { name: "Untitled research session" })).toBeVisible();
@@ -112,7 +112,7 @@ describe("Loupist · Shell and Loupist", () => {
     const rename = vi.spyOn(bridge, "chatRename").mockRejectedValueOnce(new Error("Session is busy. Try again."));
     await user.click(screen.getByRole("button", { name: "Options for How should we read the margin decline?" }));
     await user.click(screen.getByRole("menuitem", { name: "Rename" }));
-    const dialog = screen.getByRole("dialog", { name: "Rename Chat" });
+    const dialog = screen.getByRole("dialog", { name: "Rename research session" });
     const name = within(dialog).getByRole("textbox", { name: "Name" });
     await user.clear(name);
     await user.type(name, "분기 검토");
@@ -122,7 +122,7 @@ describe("Loupist · Shell and Loupist", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("Session is busy. Try again.");
     expect(name).toHaveValue("분기 검토");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Rename Chat" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Rename research session" })).not.toBeInTheDocument());
     expect(screen.getByRole("button", { name: "분기 검토" })).toBeVisible();
   });
 
@@ -133,7 +133,7 @@ describe("Loupist · Shell and Loupist", () => {
     const openDelete = async () => {
       await user.click(screen.getByRole("button", { name: "Options for How should we read the margin decline?" }));
       await user.click(screen.getByRole("menuitem", { name: "Delete" }));
-      return screen.getByRole("dialog", { name: "Delete Chat?" });
+      return screen.getByRole("dialog", { name: "Delete research session?" });
     };
     const dialog = await openDelete();
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));

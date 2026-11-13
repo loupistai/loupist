@@ -25,7 +25,7 @@ describe("Agent configuration", () => {
     const fixture = await setup();
     const existing = (await fixture.bridge.loupistSelect("loupist-quality")).threads[0];
     render(<Settings {...fixture} />);
-    const privacy = await screen.findByRole("switch", { name: "Remember new chats" });
+    const privacy = await screen.findByRole("switch", { name: "Remember new conversations" });
     expect(privacy).toBeChecked();
     await user.click(privacy);
     await waitFor(async () => expect((await fixture.bridge.configRead({ scope: { kind: "global" } })).effective.chat.update_memory).toBe(false));
@@ -33,13 +33,13 @@ describe("Agent configuration", () => {
     expect(thread).toMatchObject({ use_memory: false, update_memory: false });
     expect((await fixture.bridge.loupistSelect("loupist-quality")).threads.find((item) => item.id === existing.id)).toMatchObject({ use_memory: existing.use_memory, update_memory: existing.update_memory });
     await user.selectOptions(screen.getByLabelText("Settings apply to"), "loupist-quality");
-    await waitFor(() => expect(screen.getByRole("switch", { name: "Remember new chats" })).toBeEnabled());
-    expect(screen.getByRole("switch", { name: "Remember new chats" })).not.toBeChecked();
-    await user.click(screen.getByRole("switch", { name: "Remember new chats" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Remember new conversations" })).toBeEnabled());
+    expect(screen.getByRole("switch", { name: "Remember new conversations" })).not.toBeChecked();
+    await user.click(screen.getByRole("switch", { name: "Remember new conversations" }));
     await waitFor(async () => expect((await fixture.bridge.configRead({ scope: { kind: "project", loupistId: "loupist-quality" } })).effective.chat.update_memory).toBe(true));
     expect(await fixture.bridge.chatCreate({ loupist_id: "loupist-quality" })).toMatchObject({ use_memory: true, update_memory: true });
-    await user.click(screen.getByRole("button", { name: "Reset Remember new chats" }));
-    await waitFor(() => expect(screen.getByRole("switch", { name: "Remember new chats" })).not.toBeChecked());
+    await user.click(screen.getByRole("button", { name: "Reset Remember new conversations" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Remember new conversations" })).not.toBeChecked());
     const reset = await fixture.bridge.configRead({ scope: { kind: "project", loupistId: "loupist-quality" } });
     expect(reset.explicit?.chat?.use_memory).toBeUndefined();
     expect(reset.explicit?.chat?.update_memory).toBeUndefined();

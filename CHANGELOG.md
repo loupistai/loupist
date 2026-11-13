@@ -12,7 +12,7 @@
 - Look around before connecting an AI account, go Back during setup, and choose a template and name, then change avatar and tone later in settings; Bot keeps a three-step checklist for following, teaching a principle and turning on a briefing.
 - Run numerical analysis in a pinned offline Python worker with no shell, network, process spawning or host environment; read and edit research files in the selected folder and open results beside Chat.
 - Open Private chat from the composer’s + menu to skip Memory reads and saves together; chat history is still saved and messages still go to the AI provider.
-- Run scheduled chats and briefings while the app is open or in the menu bar; inspect runs, pause or resume tasks, Run now, and delete custom tasks from Schedule.
+- Run scheduled research and briefings while the app is open or in the menu bar; inspect runs, pause or resume tasks, Run now, and delete custom tasks from Schedule.
 - Retry recurring briefings at their next occurrence before pausing after three consecutive failures; a successful run clears the streak, and missing AI credentials pause immediately.
 - Read bundled Skills and their references again without allowing changes to them; built-in tools need no loading step, while Data connections keep their grants.
 - Update the local SQLite database engine with its security fix, refuse sharing when a required saved-credential scan fails, and save AI API keys through private process input instead of a process environment.

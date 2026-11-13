@@ -169,7 +169,7 @@ after third-party text. On the Bot, `bot_memory` replaces
 [working notes](../knowledge/sources-notes.md#working-notes-and-journal), and a
 working note the Bot saved earlier stays in Library.
 
-**Privacy, dates and deletion.** "Don't remember this chat" and Remember new chats
+**Privacy, dates and deletion.** Private chat and Remember new conversations
 cover Bot memory: a private Bot turn neither receives nor changes it and its
 message is never queued, like the rest of saved Memory. Under an
 [as-of date](../analysis/point-in-time.md#point-in-time-answers) the Bot sees its
