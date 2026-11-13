@@ -648,10 +648,19 @@ try {
       const item = document.querySelector("#main-panel-schedule .schedule-history .briefings-item");
       return item && item.getClientRects().length ? { text: item.textContent ?? "", unread: item.getAttribute("data-unread") } : null;
     });
-    await browser.waitUntil(async () => {
-      const run = await firstRun();
-      return Boolean(run) && !/Preparing/i.test(run.text);
-    }, { timeout: 720_000, interval: 2_000, timeoutMsg: `Briefing did not finish: ${await bodySnippet()}` });
+    try {
+      await browser.waitUntil(async () => {
+        const run = await firstRun();
+        return Boolean(run) && !/Preparing/i.test(run.text);
+      }, { timeout: 720_000, interval: 2_000 });
+    } catch (error) {
+      // Report the state at the deadline, and the Loupist's reply to the run request.
+      const schedule = await bodySnippet();
+      await openDestination(browser, "chat");
+      await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
+      const rows = (await collectWorkProgress(browser, { latestOnly: true })).flatMap((section) => section.rows);
+      throw new Error(`Briefing did not finish: ${schedule}\nLatest Loupist reply: ${scrub(await answerText()).slice(0, 1_500)}\nIts activity: ${JSON.stringify(rows)}`, { cause: error });
+    }
     assert.equal((await firstRun())?.unread, "true", "A finished briefing should arrive unread");
     await shot("05-briefing-unread");
     await (await displayed("#main-panel-schedule .schedule-history .briefings-item")).click();
