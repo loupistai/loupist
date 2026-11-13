@@ -74,6 +74,8 @@ async function scrollThreadUp() {
   const thread = await until(() => select(".message-scroll"), "Thread did not appear");
   if (!hasLayout()) return;
   await until(() => thread.scrollHeight - thread.clientHeight > 120, "Thread did not overflow");
+  // The reader's own wheel: it ends the send glide, which would otherwise carry a bare scrollTop back.
+  thread.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, bubbles: true }));
   thread.scrollTop = 0;
   thread.dispatchEvent(new Event("scroll"));
   // Let the pill's 180 ms entrance finish before the capture.
