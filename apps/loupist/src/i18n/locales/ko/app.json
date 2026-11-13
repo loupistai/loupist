@@ -51,7 +51,7 @@
     "couldNotReloadModelSettings": "모델 설정을 다시 불러오지 못했어요. 연결 상태를 확인해 주세요."
   },
   "useThreadActions": {
-    "couldNotCreateANewChat": "새 대화를 만들지 못했어요. 다시 시도해 주세요.",
+    "couldNotCreateANewChat": "새 리서치를 시작하지 못했어요. 다시 시도해 주세요.",
     "couldNotRenameThisSession": "리서치 세션 이름을 바꾸지 못했어요. 다시 시도해 주세요.",
     "couldNotDeleteThisSession": "리서치 세션을 삭제하지 못했어요. 다시 시도해 주세요."
   },
@@ -311,7 +311,7 @@
   },
   "palette": {
     "title": "명령 팔레트",
-    "placeholder": "대화, 이름, 원칙, 브리핑 검색…",
+    "placeholder": "리서치 세션, 이름, 원칙, 브리핑 검색…",
     "empty": "일치하는 항목이 없어요.",
     "moreIn": "{{group}} 더 보기",
     "groups": {

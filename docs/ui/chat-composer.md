@@ -72,7 +72,9 @@ there while late content (images, tables, the morning message) arrives.
 Send and Stop are one 28 px tile at the composer's trailing edge (`ComposerTile`): the
 same button stays mounted from idle to running and back, so its box never changes, and
 its two icons cross-fade in place (opacity and a 0.8 scale, 120 ms; a swap under reduced
-motion) while its fill eases to the action colour. Stop ("Stop response", Esc in its tooltip) dims to
+motion) while its fill eases to the action colour. With nothing typed, Send is a quiet
+tile whose arrow uses the tertiary text colour, at least 3:1 against the tile in both
+themes; while a reply runs, Stop is a filled square. Stop ("Stop response", Esc in its tooltip) dims to
 55% after a press and ignores presses until the host confirms. Focus stays in the
 textarea through send, stop and commit.
 After a reply saves a Source, a running World job, or a queued job whose processing is ready, shows “Reviewing sources…” in the Learned row, including when it is folded. A queued job blocked by a disconnected provider, paused processing or another readiness condition shows the useful status or action, such as “Reconnect your AI account” or “Source review is paused”, without a spinner. If readiness cannot be read, it says “Waiting to review sources”. Polling continues so reconnecting or resuming processing updates the row. In a narrow chat the

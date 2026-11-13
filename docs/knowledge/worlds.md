@@ -117,14 +117,19 @@ It requeues only that span's unfunded tail, sharing the new allowance; it refuse
 active, uncertain, quarantined, stale-revision or user-paused work. Duplicate clicks
 while queued cannot refill it. If this attempt exhausts its allowance again it
 stops again; only another explicit Source retry can fund it. Resuming Map building,
-settings changes and restarts never refill a spent allowance. The Source reader
-needs a dedicated retry action wired to this bridge call; its existing settings
-button continues to manage global processing.
-Its Library row and Chat status then read "Map building stopped for this source"; a row reads "Map
+settings changes and restarts never refill a spent allowance.
+Its Library row, Source reader and Chat status then read "Map building stopped for this source"; a row reads "Map
 building paused" only while the user has paused Map building (`source_processing`
 and `knowledge_graph_job` report such a job as `paused`, an exhausted one keeps
 `paused_budget`). Chat reads parked jobs once on opening and offers Refresh status
 without scheduling work.
+Only in `paused_budget` do those three places offer a neutral "Try again", which
+says it uses one more allowance of the Map building setting's model requests per
+source and is the only renderer caller of this bridge action
+(`components/knowledge/SourceRetry.tsx`). It is disabled while the host decides,
+shows the host's refusal inline, and on success refreshes the row or reader and
+follows the returned job like other Map building progress. The reader's settings
+button continues to manage global processing.
 Revision and growth-event timestamps reflect extraction completion.
 
 An attempt that publishes nothing ends one of three ways (`finish_unpublished` in

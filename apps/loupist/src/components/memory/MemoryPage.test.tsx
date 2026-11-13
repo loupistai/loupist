@@ -49,7 +49,7 @@ it("says learning is paused when nothing new is saved, and Resume turns both swi
   await user.click(within(banner.closest("[role=status]")!).getByRole("button", { name: "Resume" }));
   expect(learn).toHaveBeenCalledWith({ loupistId: loupist.id, learnMethods: true });
   await waitFor(() => expect(screen.queryByText(/Learning is paused/)).toBeNull());
-  expect(screen.queryByRole("switch", { name: "Remember new chats" })).toBeNull();
+  expect(screen.queryByRole("switch", { name: "Remember new conversations" })).toBeNull();
   const config = await bridge.configRead({ scope: { kind: "project", loupistId: loupist.id } });
   expect(config.effective.chat.use_memory && config.effective.chat.update_memory).toBe(true);
 });

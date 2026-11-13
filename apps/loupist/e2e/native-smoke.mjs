@@ -214,9 +214,9 @@ try {
     await displayed('[data-testid=loupist-chat-button][data-thread-id="__empty-chat__"][aria-current="page"]');
     const afterFirst = (await browser.$$("[data-testid=loupist-chat-button]")).length;
     await clickControl(browser, newChatLabel);
-    // An unsent topic Chat shows as one draft row under Home; a second New chat reuses it.
-    assert.ok(afterFirst <= before + 1, "An unsent Chat shows at most one draft row");
-    assert.equal((await browser.$$("[data-testid=loupist-chat-button]")).length, afterFirst, "A second New chat must reuse the unsent Chat");
+    // An unsent research session shows as one draft row under Bot; a second New research reuses it.
+    assert.ok(afterFirst <= before + 1, "An unsent research session shows at most one draft row");
+    assert.equal((await browser.$$("[data-testid=loupist-chat-button]")).length, afterFirst, "A second New research must reuse the unsent research session");
     await (await displayed("[data-header-loupist-settings]")).click();
     const sheet = await displayed("[data-testid=loupist-settings-page]");
     await waitForText(sheet, "Loupist settings");

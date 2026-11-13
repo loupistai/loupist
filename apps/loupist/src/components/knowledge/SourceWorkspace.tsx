@@ -21,6 +21,7 @@ import { pinForSource } from "../../knowledge/location";
 import { sourceOrigin, sourceTitle } from "../../knowledge/hostSource";
 import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { relationName } from "../map/relations";
+import { SourceRetry } from "./SourceRetry";
 
 const originLabel = (): Record<SourceClass, string> => ({
   publisher_document: i18n.t("knowledge:sourceWorkspace.publisherDocument"), dataset: i18n.t("knowledge:sourceWorkspace.dataset"), user_statement: i18n.t("knowledge:sourceWorkspace.userStatement"),
@@ -165,6 +166,33 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [bridge, detail?.processing?.jobId, location.loupistId, processing, refreshDetail, scopeKey]);
 
+  // Jobs a row's "Try again" started: followed until they settle, then the catalog refreshes.
+  const [followedJobs, setFollowedJobs] = useState<readonly string[]>([]);
+  useEffect(() => setFollowedJobs([]), [location.loupistId]);
+  useEffect(() => {
+    if (!followedJobs.length) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void Promise.all(followedJobs.map((jobId) => bridge.knowledgeGraphJob({ loupistId: location.loupistId, jobId }).then((job) => job.status, () => "queued"))).then((statuses) => {
+        if (cancelled) return;
+        const still = followedJobs.filter((_, index) => statuses[index] === "queued" || statuses[index] === "running");
+        if (still.length !== followedJobs.length) changedRef.current();
+        setFollowedJobs(still);
+      });
+    }, 2500);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [bridge, followedJobs, location.loupistId]);
+  const retrySource = (recordId: string) => () => bridge.knowledgeGraphRetrySource({ loupistId: location.loupistId, recordId });
+  const rowRetried = (job: { jobId: string; status: string }) => {
+    changedRef.current();
+    if (job.status === "queued" || job.status === "running") setFollowedJobs((jobs) => jobs.includes(job.jobId) ? jobs : [...jobs, job.jobId]);
+  };
+  const readerRetried = (job: { status: string }) => {
+    setProcessing(job.status);
+    changedRef.current();
+    void refreshDetail();
+  };
+
   const search = query.normalize("NFKC").trim().toLowerCase();
   const matching = catalog.sources.flatMap((record) => record.objects.map((item) => ({ record, item })))
     .filter(({ item }) => !search || `${sourceTitle(item)} ${item.summary ?? ""} ${sourceOrigin(item) ?? ""}`.normalize("NFKC").toLowerCase().includes(search));
@@ -204,6 +232,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
               {quietStatus(item.processing?.status) ? null : <span className="source-row-status" data-attention={needsAttention(item.processing?.status) || undefined}>{isProcessing(item.processing?.status) ? <Spinner /> : item.processing?.status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceProcessingLabel(item.processing?.status)}</span>}</small>
             </span>
           </Button>
+          {item.processing?.status === "paused_budget" ? <SourceRetry key={item.processing.jobId ?? "retry"} retry={retrySource(record.recordId)} onRetried={rowRetried} /> : null}
         </li>)}
       </ul>
     </div> : null}
@@ -222,7 +251,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
         {span ? <section className="source-passage-section" aria-label={t("sourceWorkspace.savedPassage")}><h3>{t("sourceWorkspace.savedPassage")}</h3>{textMedia(span.mediaType) && readableText ? <blockquote className="knowledge-passage" data-testid="knowledge-passage" data-quote-source={readerOnly ? `source:${detail.sourceId}:${span.spanId}` : undefined} data-quote-retained-source={readerOnly ? JSON.stringify({ loupistId: location.loupistId, recordId: detail.recordId, revisionId: detail.revisionId, sourceId: detail.sourceId, spanId: span.spanId, worldRecordId: selected?.worldRecordId, worldRevisionId: selected?.worldRevisionId, purpose: "renderer_inspection" }) : undefined}>{readableText}</blockquote> : <p>{t("sourceWorkspace.theOriginalFileIsSavedATextPreviewIsUnavailable")}</p>}{span.presentation && (span.presentation.contentOffset > 0 || span.presentation.nextOffset !== null) ? <p className="knowledge-hint">{t("sourceWorkspace.thisIsASavedSectionOfALongerDocument")}</p> : null}{span.presentation?.extractionTruncated ? <p className="knowledge-hint">{t("sourceWorkspace.textExtractionStoppedBeforeTheEndOfTheDocument")}</p> : null}</section> : <p>{t("sourceWorkspace.onlyTheSourceDetailsWereSavedNoPassageIsAvailable")}</p>}
         {span && !textMedia(span.mediaType) ? <div className="knowledge-inspector-actions"><Button variant="outline" disabled={exporting} onClick={() => void exportFile()}>{exporting ? t("sourceWorkspace.exporting") : detail.material === "original" ? t("sourceWorkspace.exportOriginalFile") : t("sourceWorkspace.exportSavedFile")}</Button>{exported ? <span role="status">{t("sourceWorkspace.fileExported")}</span> : null}{exportError ? <p role="alert">{exportError}</p> : null}</div> : null}
         {detail.spans.length > 1 ? <div className="knowledge-inspector-actions" aria-label={t("sourceWorkspace.sourcePassages")}>{detail.spans.map((item, index) => <Button key={item.spanId} variant={item.spanId === span?.spanId ? "secondary" : "ghost"} onClick={() => onOpen({ ...location, selection: { ...selected, kind: "source", sourceId: detail.sourceId, spanId: item.spanId } })}>{t("sourceWorkspace.passage", { index: formatNumber(index + 1) })}</Button>)}</div> : null}
-        <div className="source-processing-status" data-attention={needsAttention(processing) || undefined}><div><span className="source-reader-eyebrow">{t("sourceWorkspace.worldProcessing")}</span><p role="status">{isProcessing(processing) ? <Spinner /> : null}{sourceProcessingLabel(processing)}</p>{detail.processing?.error ? <p className="knowledge-hint">{detail.processing.error}</p> : null}</div>{onManageProcessing ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.worldProcessingSettings")} title={t("sourceWorkspace.worldProcessingSettings")} onClick={onManageProcessing}><Settings2Icon /></Button> : null}</div>
+        <div className="source-processing-status" data-attention={needsAttention(processing) || undefined}><div><span className="source-reader-eyebrow">{t("sourceWorkspace.worldProcessing")}</span><p role="status">{isProcessing(processing) ? <Spinner /> : null}{sourceProcessingLabel(processing)}</p>{detail.processing?.error ? <p className="knowledge-hint">{detail.processing.error}</p> : null}{processing === "paused_budget" ? <SourceRetry retry={retrySource(detail.recordId)} onRetried={readerRetried} /> : null}</div>{onManageProcessing ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.worldProcessingSettings")} title={t("sourceWorkspace.worldProcessingSettings")} onClick={onManageProcessing}><Settings2Icon /></Button> : null}</div>
         {detailRefreshError ? <div className="knowledge-inspector-actions"><p role="alert">{detailRefreshError}</p><Button variant="outline" disabled={detailRefreshing} onClick={() => void refreshDetail()}>{detailRefreshing ? t("sourceWorkspace.refreshingSource") : t("sourceWorkspace.refreshSourceDetails")}</Button></div> : null}
         {detail.relatedClaims.length ? <details className="source-related-claims" aria-label={t("sourceWorkspace.relatedRelationships")}><summary>{t("sourceWorkspace.relationshipsUsingThisSource")}<span>{formatNumber(detail.relatedClaims.length)}</span></summary><ul aria-label={t("sourceWorkspace.relatedRelationships")}>{detail.relatedClaims.map((claim) => <li key={`${claim.worldRecordId}:${claim.worldRevisionId}:${claim.claimId}`}><Button variant="ghost" onClick={() => onOpen({ loupistId: location.loupistId, surface: "world", recordId: claim.worldRecordId, revisionId: claim.worldRevisionId, objectId: claim.claimId, selection: { kind: "claim", id: claim.claimId } })}>{claim.proposition}<small>{relationName(claim.relation, t)}</small></Button></li>)}</ul></details> : null}
         {detail.derivation ? <p>{detail.derivation}</p> : null}

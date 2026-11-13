@@ -1,6 +1,6 @@
 # Scheduled runs
 
-Scheduled work reuses ordinary Chat admission. Scheduled chats and briefings use the AI account each run; Watching uses none.
+Scheduled work reuses ordinary Chat admission. Scheduled research and briefings use the AI account each run; Watching uses none.
 The process has to be running, including while the window is hidden. The Schedule page is [Schedule](../ui/schedule.md).
 
 ## Process lifetime

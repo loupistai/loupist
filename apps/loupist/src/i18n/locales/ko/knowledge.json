@@ -74,6 +74,12 @@
     "principles": "원칙",
     "limitations": "한계"
   },
+  "sourceRetry": {
+    "tryAgain": "다시 시도",
+    "tryingAgain": "다시 시도하는 중…",
+    "usesOneMoreAllowance": "지도 구성에서 정한 자료당 최대 모델 요청 수만큼 한 번 더 써요.",
+    "couldNotTryAgain": "이 자료를 다시 시도하지 못했어요."
+  },
   "sourceWorkspace": {
     "publisherDocument": "발행처 문서",
     "dataset": "데이터셋",
@@ -670,7 +676,7 @@
       "originFeedback": "{{date}}에 “도움이 안 됐어요”를 누르고 이 원칙을 적었어요.",
       "originChat": "{{date}}에 대화에서 저장했어요.",
       "originSettings": "{{date}}에 직접 추가했어요.",
-      "untitledChat": "제목 없는 대화",
+      "untitledChat": "제목 없는 리서치 세션",
       "why": "이유",
       "example": "예시",
       "procedure": "절차",

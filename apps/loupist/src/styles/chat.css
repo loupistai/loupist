@@ -821,8 +821,9 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .composer-private-item > svg { margin-top: 2px; }
 .composer-private-item-copy { display: grid; min-width: 0; }
 .composer-private-item-copy small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); white-space: normal; }
-/* Change 5: an empty composer's Send is a quiet tile; typing turns it the action color. */
-.composer-submit:disabled { opacity: 1; background: var(--gg-color-bg-hover); color: var(--gg-color-text-disabled); }
+/* Change 5: an empty composer's Send is a quiet tile; typing turns it the action color.
+   Its arrow stays at least 3:1 against the tile in both themes (tertiary: 4.9:1 light, 5.4:1 dark). */
+.composer-submit:disabled { opacity: 1; background: var(--gg-color-bg-hover); color: var(--gg-color-text-tertiary); }
 /* Change 6: without an AI account, Connect takes the send slot as the one filled button. */
 .composer-footer > .composer-model-menu { margin-left: auto; padding-inline: var(--gg-space-3); background: var(--gg-color-action); color: var(--gg-color-action-ink); font-weight: var(--gg-weight-medium); }
 .composer-footer > .composer-model-menu:hover { background: var(--gg-color-action); color: var(--gg-color-action-ink); opacity: .9; }
@@ -1136,6 +1137,17 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .memory-update-change > small {
   color: var(--gg-color-text-secondary);
 }
+
+/* "Try again" for a Source that stopped: a neutral action on its own line under the status. */
+.world-status-retry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--gg-space-2);
+  margin-top: 2px;
+}
+
+.world-status-retry [role="alert"] { flex-basis: 100%; }
 
 .composer-assist {
   position: absolute;

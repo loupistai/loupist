@@ -146,7 +146,8 @@ export function MessageMemoryRow({
               {change.basis ? <small>{t("messageMemoryRow.basis", { value: change.basis })}</small> : null}
               {change.futureUse ? <small>{t("messageMemoryRow.nextUse", { value: change.futureUse })}</small> : null}
             </> : null}
-            <WorldProcessingStatus active={active && expanded} jobId={change.worldJobId} initialStatus={change.worldStatus} readJob={onReadWorldJob} onChanged={onWorldChanged} />
+            <WorldProcessingStatus active={active && expanded} jobId={change.worldJobId} initialStatus={change.worldStatus} readJob={onReadWorldJob} onChanged={onWorldChanged}
+              retrySource={change.kind === "Source" && bridge ? () => bridge.knowledgeGraphRetrySource({ loupistId, recordId: change.recordId }) : undefined} />
             {learned && location && go ? <button type="button" onClick={() => go({ kind: "page", location })}>{t("messageMemoryRow.openIn", { value: t("workspaceEvidence.kind.world") })}</button> : null}
           </li>;
         })}

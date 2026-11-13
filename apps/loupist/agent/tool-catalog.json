@@ -2295,8 +2295,8 @@
       "progress": {
         "category": "capability",
         "operation": "generic",
-        "running": "Opening a new chat",
-        "done": "Opened a new chat"
+        "running": "Opening a research session",
+        "done": "Opened a research session"
       }
     },
     {

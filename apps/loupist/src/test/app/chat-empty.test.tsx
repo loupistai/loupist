@@ -88,7 +88,7 @@ describe("Loupist · New Chat", () => {
     await user.click(headerAction("Loupist settings"));
     expect(await screen.findByRole("textbox", { name: "Name" })).toHaveValue("Quality Compounder");
     await user.click(screen.getByRole("button", { name: "Chat defaults" }));
-    expect(await screen.findByRole("switch", { name: "Remember new chats" })).toBeVisible();
+    expect(await screen.findByRole("switch", { name: "Remember new conversations" })).toBeVisible();
     await user.click(await mainTab(/Chat/));
     expect(composer()).toHaveValue("Keep this question");
     await user.type(composer(), " /");

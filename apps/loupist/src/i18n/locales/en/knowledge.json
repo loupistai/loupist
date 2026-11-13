@@ -73,6 +73,12 @@
     "principles": "Principles",
     "limitations": "Limitations"
   },
+  "sourceRetry": {
+    "tryAgain": "Try again",
+    "tryingAgain": "Trying again…",
+    "usesOneMoreAllowance": "Uses one more allowance of model requests per source, as set in Map building.",
+    "couldNotTryAgain": "Could not try this source again."
+  },
   "sourceWorkspace": {
     "publisherDocument": "Publisher document",
     "dataset": "Dataset",
@@ -491,9 +497,9 @@
     "options": "Options for {{statement}}",
     "loading": "Loading principles…",
     "kind": "Principle · yours",
-    "chatOrigin": "Saved from a Chat on {{date}}",
+    "chatOrigin": "Saved from a conversation on {{date}}",
     "libraryOrigin": "Added in the Library on {{date}}",
-    "openChat": "Open Chat",
+    "openChat": "Open conversation",
     "unavailable": "This principle is unavailable."
   },
   "learning": {
@@ -512,7 +518,7 @@
     "earlier": "Earlier changes ({{count}})",
     "new": "New",
     "inUse": "Your Loupist already uses this method. Keep it, or archive it to stop.",
-    "chatOrigin": "Saved from Chat · {{date}}",
+    "chatOrigin": "Saved from a conversation · {{date}}",
     "createdToast": "Your Loupist learned a method: {{title}}",
     "refinedToast": "Your Loupist refined a method: {{title}}",
     "view": "View",
@@ -556,7 +562,7 @@
     "edit": "Edit",
     "archive": "Archive",
     "restore": "Restore",
-    "openChat": "Open originating Chat",
+    "openChat": "Open originating conversation",
     "entities": "Linked entities",
     "unknownEntity": "Name unavailable",
     "outcome": "Outcome",
@@ -678,9 +684,9 @@
       "usedIn": "Used in",
       "origin": "Where it came from",
       "originFeedback": "You said “Not helpful” on {{date}} and wrote this principle.",
-      "originChat": "Saved from Chat on {{date}}.",
+      "originChat": "Saved from a conversation on {{date}}.",
       "originSettings": "You added this on {{date}}.",
-      "untitledChat": "Untitled chat",
+      "untitledChat": "Untitled research session",
       "why": "Why",
       "example": "Example",
       "procedure": "Procedure",

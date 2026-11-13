@@ -18,7 +18,7 @@ it("keeps profile, chat, learning and skills on one page with changes scoped to 
   expect(within(page).getByRole("textbox", { name: "Instructions for this Loupist" })).toBeVisible();
   await user.click(within(page).getByRole("button", { name: "Chat defaults" }));
   expect(within(page).queryByRole("combobox", { name: "Settings apply to" })).toBeNull();
-  await user.click(await within(page).findByRole("switch", { name: "Remember new chats" }));
+  await user.click(await within(page).findByRole("switch", { name: "Remember new conversations" }));
   await waitFor(() => expect(update).toHaveBeenCalledWith(expect.objectContaining({
     scope: { kind: "project", loupistId: "loupist-quality" },
     set: { chat: { use_memory: false, update_memory: false } },
