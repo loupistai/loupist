@@ -307,7 +307,13 @@ pub(crate) const WORLD_FACT_POLICY: &str = concat!(
     "retracted or replaced by a dated change. Different attributed reports can coexist. ",
     "A disputed report, forecast, allegation or denial is not proof that another ",
     "report or the underlying relationship has ended. A denial alone cannot invalidate ",
-    "an unresolved allegation, and an allegation alone cannot invalidate a contract."
+    "an unresolved allegation, and an allegation alone cannot invalidate a contract.",
+    " A fact stating that a relationship ended explicitly supersedes the earlier ongoing ",
+    "assertion, even though the original appointment, agreement or other historical event ",
+    "still happened. Select that earlier assertion in contradicted_facts; the host will close",
+    " its validity at the explicit end instant. Do not require the termination to restate the",
+    " original start. A new holder, endpoint or relation label is not by itself proof of ",
+    "replacement; compare the actual assertion and its qualifiers.",
 );
 
 const EXTRACTION_INSTRUCTIONS: &str = concat!(

@@ -1248,9 +1248,14 @@ impl Run<'_, '_> {
     /// `resolve_edge_contradictions`.
     fn contradictions(&mut self, resolved: usize, candidates: &[usize]) -> Vec<usize> {
         let mut invalidated = Vec::new();
-        let resolved_valid = self.edges[resolved].valid_at.as_ref().map(to_utc);
+        // A termination often states only the end of the old relationship. It
+        // does not establish a new start. The resolver must still select the
+        // same assertion as superseded; an end instant alone selects nothing.
+        let boundary = self.edges[resolved]
+            .valid_at
+            .or(self.edges[resolved].invalid_at);
+        let resolved_valid = boundary.as_ref().map(to_utc);
         let resolved_invalid = self.edges[resolved].invalid_at.as_ref().map(to_utc);
-        let resolved_valid_raw = self.edges[resolved].valid_at;
         for candidate in candidates {
             let edge_invalid = self.edges[*candidate].invalid_at.as_ref().map(to_utc);
             let edge_valid = self.edges[*candidate].valid_at.as_ref().map(to_utc);
@@ -1261,7 +1266,7 @@ impl Run<'_, '_> {
             }
             if matches!((edge_valid, resolved_valid), (Some(a), Some(b)) if a < b) {
                 let edge = &mut self.edges[*candidate];
-                edge.invalid_at = resolved_valid_raw;
+                edge.invalid_at = boundary;
                 if edge.expired_at.is_none() {
                     edge.expired_at = Some(now());
                 }

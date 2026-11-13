@@ -206,9 +206,14 @@ names and anchor entities add emphasis on top of the core schema. Editing this g
 observation period and validity remain distinct. Extraction preserves quantitative
 units and basis, directed roles and conflicting attributed reports; source content
 is data, not extraction instructions. Temporal bounds require explicit effective
-instants; date-only precision is retained in the fact text. Invalidation needs
+instants; date-only precision is retained in the fact text. A replacement needs
 ordered start instants on both claims, so a date-only correction can be retained
-without structurally ending the earlier claim.
+without structurally ending the earlier claim. An explicit termination can instead
+close an earlier claim at its end instant without restating a start instant. The
+resolver must select the same assertion as explicitly ended or replaced, and the
+earlier claim must start before that boundary; different relation labels or
+endpoints do not by themselves establish a replacement. Denials, rumours,
+allegations and unrelated later facts do not establish an ending.
 
 ### Discovery after publication
 

@@ -240,7 +240,9 @@ attempt, as in the ontology grader.
 
 Version 1 is retained as a date-only probe. The evidence policy forbids inventing
 an exact midnight instant from a calendar date, while the inherited Graphiti
-invalidation rule requires start instants on both claims. Version 2 makes those
+replacement rule requires start instants on both claims. An explicit termination
+can close a selected earlier assertion at its end instant without inventing a
+new start; the earlier start must precede that end. Version 2 makes those
 instants explicit, and removes unrelated prior-role history from the CEO Source
 so every old-pair claim concerns the leadership being replaced. Its oracle keeps
 the same checks and acceptance criteria; comparisons require matching v2 corpus

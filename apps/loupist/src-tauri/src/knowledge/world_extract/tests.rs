@@ -16,6 +16,7 @@ use crate::knowledge::graph_inference::{InferenceDisposition, InferenceReply};
 
 mod indexing;
 mod jobs;
+mod temporal;
 
 const GOLDEN: &str = include_str!("golden/stages.json");
 const EPISODE_KEY: &str = "ep_golden";
