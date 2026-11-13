@@ -360,7 +360,8 @@ async function followAndImportHoldings() {
   };
   await follow("LMHLD");
   // Each followed row's menu: Open asset page, Stop following.
-  await (await displayed('button[aria-label="More actions for LMHLD"]')).click();
+  await displayed('button[aria-label="More actions for LMHLD"]');
+  await clickControl(browser, 'button[aria-label="More actions for LMHLD"]');
   await (await visibleWithText('[role="menuitem"]', "Stop following LMHLD")).click();
   await browser.waitUntil(async () => {
     const list = await browser.$(FOLLOWED);
