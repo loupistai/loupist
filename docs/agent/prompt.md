@@ -39,7 +39,9 @@ covers user saves/reviews; Lens covers methods/library maintenance. The source
 prompt retains `safety:locked` annotations for review, but launch strips those
 comments while preserving every enclosed instruction.
 
-User-facing names are Home (홈), the Map (지도) and Schedule. Internal Bot/World
+User-facing names are Bot (봇), research session (리서치 세션), the Map (지도),
+Schedule and Market data platform (시장 데이터 플랫폼). Answers, questions,
+plan labels and scheduled prompts never write World or OpenBB; internal
 identifiers and tool names are unchanged. Unattended research cannot publish a
 comparison grid, so its linked-number comparison table stays Markdown.
 

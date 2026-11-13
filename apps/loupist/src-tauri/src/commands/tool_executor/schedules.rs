@@ -394,7 +394,7 @@ impl AppToolExecutor {
                     }
                     let _ = crate::chat::home::deliver_finished_runs(state, loupist);
                     return Ok(
-                        json!({"handed_off":true,"scheduled":false,"notice":"Home will ask for the missing details. Keep the user in this session and do not repeat the question here."}),
+                        json!({"handed_off":true,"scheduled":false,"notice":"Bot will ask for the missing details. Keep the user in this session and do not repeat the question here."}),
                     );
                 }
                 let origin = if let Some(ref key) = request.handoff_id {
@@ -1206,7 +1206,7 @@ mod tests {
             assert!(result["notice"]
                 .as_str()
                 .unwrap()
-                .starts_with("Home will ask"));
+                .starts_with("Bot will ask"));
         }
         assert!(service::list(&topic.state, "loupist-a").unwrap().is_empty());
         let home = crate::chat::home::ensure_home_thread(&topic.state, "loupist-a").unwrap();

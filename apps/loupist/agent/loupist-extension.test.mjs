@@ -1068,7 +1068,7 @@ test("first provider request omits on-demand schemas and measures the active too
   t.diagnostic(`first-provider-tools ${JSON.stringify(measurements)}`);
 });
 
-test("Home's weekday morning briefing chip loads schedules and submits within one user turn", async (t) => {
+test("Bot's weekday morning briefing chip loads schedules and submits within one user turn", async (t) => {
   const schedule = { kind: "weekly", days: [1, 2, 3, 4, 5], hour: 8, minute: 0, timezone: "Asia/Seoul" };
   const frames = await startToolBroker(t, () => ({ enabled: true, schedule }));
   const call = (name, args) => fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });

@@ -1164,10 +1164,10 @@
     },
     {
       "id": "LL-011",
-      "title": "A document handed over in Home is retained and filed to one subject page without being asked",
+      "title": "A document handed over in Bot is retained and filed to one subject page without being asked",
       "tags": [
         "create",
-        "home"
+        "bot"
       ],
       "split": "capability",
       "connections": [],
