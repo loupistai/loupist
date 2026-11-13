@@ -167,6 +167,8 @@ export type GridCardProps = {
   onExport?: GridExport;
   onAsk?: () => void;
   askDisabled?: boolean;
+  /** The table filled a frame the reader watched being prepared: its rows fade in a moment apart. */
+  filled?: boolean;
 };
 
 /**
@@ -174,7 +176,7 @@ export type GridCardProps = {
  * a number chip Rust checked, empty cells with their reason, sortable columns
  * and exports that keep each cell's source or formula.
  */
-export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabled }: GridCardProps) {
+export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabled, filled = false }: GridCardProps) {
   useTranslation("chat");
   const go = useGo();
   const scope = useChatExecution();
@@ -209,7 +211,7 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
   };
   const sortLabel = (column: number) => sort?.column !== column ? t("grid.sortNone") : sort.direction === "desc" ? t("grid.sortDesc") : t("grid.sortAsc");
 
-  return <section ref={card} className="grid-card" data-layout="assets" aria-label={t("grid.label", { title })}>
+  return <section ref={card} className="grid-card" data-layout="assets" data-filled={filled || undefined} aria-label={t("grid.label", { title })}>
     <header className="grid-card-header">
       <div className="grid-card-heading">
         <h3 className="grid-card-title" title={title}>{title}</h3>
@@ -360,8 +362,8 @@ export function ConflictCard({ title, conflict, evidenceRefs }: ConflictCardProp
 
 type ViewState = { status: "loading" } | { status: "ready"; view: ChatArtifactView } | { status: "unavailable" };
 
-/** Reserved height while building: min(rows × 40 + 96, 420); rows are unknown until the table arrives. */
-const BUILDING_ROWS = 4;
+/** Rows reserved while building; the real count is unknown until the table arrives, so the frame may grow when it fills. */
+const BUILDING_ROWS = 3;
 
 /**
  * A grid or conflict card in the answer itself. The block keeps its reserved
@@ -395,26 +397,32 @@ export function ChatGridBlock({ block, onAsk, askDisabled, onAskAgain }: {
   const title = block.kind === "ready" ? (view.status === "ready" ? view.view.artifact.title : block.artifact.title) : block.title;
   const loaded = view.status === "ready" && block.kind === "ready" && !block.updating ? view.view : null;
   const payload = loaded?.revision.payload;
+  const building = block.kind === "building" || (block.kind === "ready" && block.updating);
+  // A table that was preparing while the reader watched fills with a fade, rows a moment apart; one read later is drawn at once.
+  const [wasBuilding, setWasBuilding] = useState(building);
+  if (building && !wasBuilding) setWasBuilding(true);
   if (loaded && payload?.kind === "grid" && payload.schema === GRID_SCHEMA && scope) {
     const evidenceRefs = loaded.evidence_refs ?? [];
     if (payload.grid.layout === "conflict") {
       return <ConflictCard title={title} conflict={payload.grid} evidenceRefs={evidenceRefs} />;
     }
-    return <GridCard title={title} grid={payload.grid} evidenceRefs={evidenceRefs}
+    return <GridCard title={title} grid={payload.grid} evidenceRefs={evidenceRefs} filled={wasBuilding}
       onExport={(request) => scope.bridge.exportSave(request)}
       onAsk={onAsk ? () => onAsk(chatArtifactRef(loaded)) : undefined} askDisabled={askDisabled} />;
   }
-  const building = block.kind === "building" || (block.kind === "ready" && block.updating);
   let state: ReactNode;
-  if (building) state = <p role="status">{t("grid.building")}<span className="chat-artifact-block-shimmer" aria-hidden="true" /></p>;
+  // Ruled paper at the real row heights, still: the header rule and three rows, one bar per cell.
+  if (building) state = <div className="grid-card-ruled" aria-hidden="true">{Array.from({ length: BUILDING_ROWS + 1 }, (_, row) => <i key={row}><b /><b /><b /><b /></i>)}</div>;
   else if (block.kind === "failed") state = <div role="alert"><p>{t("grid.failed")}</p>{onAskAgain ? <Button type="button" variant="ghost" size="sm" data-ask-again onClick={onAskAgain}>{t("chatBlock.askAgain")}</Button> : null}</div>;
   else if (view.status === "unavailable" || loaded) {
     state = <div role="alert"><p>{t("grid.unavailable")}</p>{scope ? <Button type="button" variant="outline" size="sm" onClick={() => setAttempt((value) => value + 1)}>{t("grid.retry")}</Button> : null}</div>;
   } else state = <p role="status"><Spinner />{t("grid.loading")}</p>;
   return <section className="grid-card grid-card-reserved" data-state={building ? "building" : block.kind === "failed" ? "failed" : "loading"}
-    aria-label={t("grid.label", { title })} aria-busy={building || undefined}
-    style={{ minHeight: `${Math.min(BUILDING_ROWS * 40 + 96, 420)}px` }}>
-    <header className="grid-card-header"><div className="grid-card-heading"><h3 className="grid-card-title" title={title}>{title}</h3></div></header>
+    aria-label={t("grid.label", { title })} aria-busy={building || undefined}>
+    <header className="grid-card-header"><div className="grid-card-heading">
+      <h3 className="grid-card-title" title={title}>{title}</h3>
+      {building ? <span className="grid-card-preparing" role="status">{t("grid.building")}</span> : null}
+    </div></header>
     <div className="grid-card-state">{state}</div>
   </section>;
 }

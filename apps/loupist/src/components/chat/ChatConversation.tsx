@@ -211,8 +211,6 @@ export function ChatConversation({
     setWasActive(active);
     if (active) setHomeRevision(homeRevision + 1);
   }
-  // The morning message loads after the Thread first scrolls; its arrival is part of the scroll revision.
-  const [morningSettled, setMorningSettled] = useState(false);
   const morning = (mode: "full" | "news" | "questions") => bridge ? <MorningMessage
     key={`${loupistId}:${mode}`}
     mode={mode}
@@ -225,19 +223,21 @@ export function ChatConversation({
     onOpenFollowing={onOpenFollowing}
     refreshRevision={homeRevision}
     deliveredRunIds={home ? deliveredRunIds : undefined}
-    onSettled={() => setMorningSettled(true)}
     asOf={asOf}
     template={loupistTemplate}
   /> : null;
-  // Growth inside a reply is followed by the scroll owner's ResizeObserver; only
-  // a new message, a settled reply or the morning message needs a layout pass.
-  const scrollRevision = useMemo(() => [
-    messages.length,
-    messageKeys.at(-1) ?? "",
-    messages.at(-1)?.status ?? "",
-    morningSettled ? "morning" : "",
-  ].join(":"), [messageKeys, messages, morningSettled]);
   const latestPromptKey = messageKeys[lastUserIndex] ?? messages[lastUserIndex]?.id ?? "";
+  // Messages already here when the thread opened are drawn settled; a question sent now rises in.
+  const [openedWith] = useState(() => new Set(messageKeys));
+  const last = messages.at(-1);
+  // The reply's shell appears as soon as the question is sent, before the host starts (DIRECTION 5.1).
+  const shellAt = run?.running && last?.role === "user" && !last.steer ? latestPromptKey : "";
+  const shell = useMemo<ChatMessage | null>(() => shellAt
+    ? { id: `pending-reply:${shellAt}`, role: "assistant", status: "streaming", content: "", created_at: new Date().toISOString() }
+    : null, [shellAt]);
+  const turns = useMemo(() => turnGroups(messages), [messages]);
+  // The latest turn keeps a viewport of room below its question while it is the one being read.
+  const reserve = Boolean(shell) || last?.status === "streaming" || (lastUserIndex >= 0 && !openedWith.has(latestPromptKey));
   const lastAssistantIndex = messages.reduce((last, message, index) => (message.role === "assistant" ? index : last), -1);
   // The user's question each answer replies to, offered again by a setup card once the connection is ready.
   const previousQuestions = useMemo(() => {
@@ -258,10 +258,10 @@ export function ChatConversation({
       onFocus={revealFocused}
       aria-label={t("chatConversation.conversation")}
       aria-relevant="additions"
-      scrollRevision={scrollRevision}
       scrollResetKey={latestPromptKey}
+      running={Boolean(run?.running) || last?.status === "streaming"}
       autoScroll={messages.length > 0}
-      footer={messages.length > 0 ? <ChatStatusPill message={messages.at(-1)?.role === "assistant" ? messages.at(-1) : undefined} run={run} /> : null}
+      footer={messages.length > 0 ? <ChatStatusPill message={last?.role === "assistant" ? last : undefined} run={run} /> : null}
     >
       {onQuote && active ? <QuoteAsk onQuote={onQuote} /> : null}
       <ConversationContent className="conversation-content">
@@ -269,7 +269,11 @@ export function ChatConversation({
           // The empty home Thread greets; an empty topic Chat only offers questions.
           home ? morning("full") : offerQuestions ? morning("questions") : null
         ) : (<>
-          {messages.map((message, index) => <Fragment key={messageKeys[index] ?? message.id}>
+          {turns.map((turn, turnIndex) => {
+            const latestTurn = turnIndex === turns.length - 1;
+            return <section key={turn.start === null ? "lead" : messageKeys[turn.start] ?? messages[turn.start]?.id} className="turn" data-turn=""
+              data-turn-latest={latestTurn || undefined} data-turn-reserve={(latestTurn && reserve) || undefined}>
+          {turn.indexes.map((index) => { const message = messages[index]!; return <Fragment key={messageKeys[index] ?? message.id}>
             {dividers[index]?.map((divider) => <ChatDivider key={divider.kind} divider={divider} onPassed={divider.kind === "new" ? clearNewSince : undefined} />)}
             {message.watch ? (
             <ThreadWatch message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} active={active} />
@@ -322,9 +326,13 @@ export function ChatConversation({
               note={message.role === "assistant" && message.replaced_model && message.execution_model?.name
                 ? t("chatError.modelGone", { old: message.replaced_model, new: message.execution_model.name })
                 : undefined}
+              entering={message.role === "user" && !message.steer && !openedWith.has(messageKeys[index] ?? message.id)}
             />
           )}
-          </Fragment>)}
+          </Fragment>; })}
+            {latestTurn && shell ? <ChatMessageCard key={shell.id} bridge={bridge} active={active} message={shell} loupistId={loupistId} chatId={chatId} loupistName={loupistName}
+              workspacePath={workspacePath} guiding={guiding} stopping={Boolean(run?.stopping)} onReadAttachment={onReadAttachment} entering /> : null}
+          </section>; })}
           {home && !hasUserMessage ? morning("full") : home && !repliedThisVisit ? morning("news") : null}
           {/* The first message replaces the morning message, not the steps still open. */}
           {home && hasUserMessage && bridge && !asOf ? <HomeSetup key={loupistId} bridge={bridge} loupistId={loupistId} loupistName={loupistName}
@@ -333,6 +341,20 @@ export function ChatConversation({
       </ConversationContent>
     </Conversation>
   );
+}
+
+/**
+ * The thread as turns: each question (not a steer) starts one and holds every
+ * message up to the next. Messages before the first question form a lead group.
+ */
+function turnGroups(messages: readonly ChatMessage[]): Array<{ start: number | null; indexes: number[] }> {
+  const turns: Array<{ start: number | null; indexes: number[] }> = [];
+  messages.forEach((message, index) => {
+    if (message.role === "user" && !message.steer) turns.push({ start: index, indexes: [index] });
+    else if (turns.length) turns.at(-1)!.indexes.push(index);
+    else turns.push({ start: null, indexes: [index] });
+  });
+  return turns;
 }
 
 /** A finished answer, as the "New since you left" divider counts them. */

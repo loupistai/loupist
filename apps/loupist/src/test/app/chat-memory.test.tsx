@@ -84,8 +84,9 @@ describe("Loupist · Chat memory", () => {
     });
     await openApp(bridge);
     expect(screen.queryByText("INTERNAL_MEMORY_EXCERPT")).not.toBeInTheDocument();
-    await userEvent.click(within(screen.getByLabelText("Work progress")).getByRole("button"));
-    await userEvent.click(screen.getByText("Consulted 1 saved note"));
+    const toggle = within(screen.getByLabelText("Work progress")).getByRole("button");
+    await userEvent.click(toggle);
+    await userEvent.click(screen.getAllByText("Consulted 1 saved note").find((element) => !toggle.contains(element))!);
     expect(within(screen.getByLabelText("Used in this answer")).getByText("INTERNAL_MEMORY_TITLE")).toBeVisible();
   });
 

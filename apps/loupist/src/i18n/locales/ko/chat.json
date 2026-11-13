@@ -228,7 +228,8 @@
     "plan_limit": "ChatGPT 요금제 한도에 도달했어요.",
     "plan_not_eligible": "이 ChatGPT 요금제는 다른 앱에서 쓸 수 없어요.",
     "out_of_credit": "AI 계정의 크레딧이 떨어졌어요.",
-    "model_gone": "이 모델은 더 이상 제공되지 않아요."
+    "model_gone": "이 모델은 더 이상 제공되지 않아요.",
+    "failedKept": "지금까지의 단계와 글은 남겨 두었어요."
   },
   "chatModelMenu": {
     "modelSettingsForThisMessage": "이 메시지의 모델 설정",
@@ -411,32 +412,18 @@
     "saved": "자료를 저장했어요"
   },
   "chatStatusPill": {
-    "jumpToLatest": "최신으로 이동"
+    "jumpToLatest": "최신으로 이동",
+    "failed": "답변을 끝내지 못했어요"
   },
   "turn": {
-    "writing": "메시지 작성 중",
-    "thinkingItThrough": "생각을 정리하는 중",
-    "waitingForNextStep": "다음 단계를 기다리는 중",
-    "waitingForModel": "응답을 기다리는 중",
-    "stoppedCount": "{{stoppedCount}}개 중지",
-    "pausedCount": "{{pausedCount}}개 일시 중지",
+    "writing": "답변 작성 중",
     "research": {
-      "activity": "리서치 기록",
-      "calculations": "계산",
-      "sources": "자료 조사",
-      "finance": "금융 데이터",
-      "memory": "저장된 리서치",
-      "outputs": "리서치 결과물",
-      "failedAttempt_other": "실행 {{count}}건 실패",
-      "unavailable_other": "조회 {{count}}건 건너뜀",
-      "unavailableAsOf_other": "{{date}} 기준 조회 {{count}}건 건너뜀",
-      "declined": "승인 거절",
-      "expired": "승인 요청 만료"
+      "failedAttempt_other": "실행 {{count}}건 실패"
     },
-    "readSources_other": "자료 {{formattedCount}}개 읽음",
-    "working": "작업 중",
     "stillWorking": "계속 작업 중",
-    "waitingForYou": "확인을 기다리는 중"
+    "waitingForYou": "확인을 기다리는 중",
+    "starting": "시작하는 중",
+    "thinking": "생각하는 중"
   },
   "browserWorkspaceView": {
     "goBack": "뒤로",
@@ -962,7 +949,7 @@
     "view": "보기"
   },
   "chatBlock": {
-    "building": "만드는 중…",
+    "building": "준비 중",
     "couldNotBuildChart": "차트를 만들지 못했어요.",
     "askAgain": "다시 요청",
     "updatedSince": "이 답변 뒤에 바뀌었어요.",
@@ -1696,7 +1683,7 @@
     "moreColumnsLabel_one": "항목 {{formattedCount}}개 더 보기",
     "moreColumnsLabel_other": "항목 {{formattedCount}}개 더 보기",
     "knownAsOf": "{{date}} 기준",
-    "building": "만드는 중…",
+    "building": "준비 중",
     "failed": "이 표를 만들지 못했어요",
     "retry": "다시 시도",
     "sortDesc": "높은 순",
@@ -1850,5 +1837,16 @@
     "note": "관심 자산의 공시, 실적 발표일, 배당을 루피스트가 열려 있는 동안 매시간 확인해요. AI 사용량은 들지 않고, 데이터 제공처에는 이름만 보내요.",
     "done_other": "관심 자산 {{formattedCount}}개를 지켜보고 있어요. <0>관심 자산</0>에서 바꿀 수 있어요.",
     "failed": "지켜보기를 켜지 못했어요. 다시 시도해 주세요."
+  },
+  "ledger": {
+    "steps_other": "{{formattedCount}}단계",
+    "plan": "계획 {{n}}개 중 {{k}}번째 · {{label}}",
+    "worked": "{{duration}} 작업",
+    "stoppedAfter": "{{duration}} 후 중지",
+    "sources_other": "자료 {{formattedCount}}개",
+    "seconds": "{{s}}초",
+    "minutes": "{{m}}분 {{s}}초",
+    "stepSeconds": "{{value}}초",
+    "more": "+{{formattedCount}}"
   }
 }

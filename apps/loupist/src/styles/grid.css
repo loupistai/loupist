@@ -153,6 +153,27 @@ button.grid-card-empty:focus-visible { outline: 2px solid var(--gg-color-focus);
 
 /* Building, failed and unavailable states keep the reserved frame (S6). */
 .grid-card-reserved { align-content: start; }
+.grid-card-reserved .grid-card-heading { display: flex; align-items: baseline; gap: var(--gg-space-3); }
+.grid-card-preparing { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+/* Ruled paper at the real row heights (a 36 px header, 40 px rows), one still bar per cell. */
+.grid-card-state:has(> .grid-card-ruled) { display: block; min-height: 0; }
+.grid-card-ruled { display: grid; grid-template-rows: 36px; grid-auto-rows: 40px; width: 100%; justify-self: stretch; align-self: start; }
+.grid-card-ruled > i { display: grid; grid-template-columns: 1.6fr repeat(3, 1fr); align-items: center; gap: var(--gg-space-4); border-bottom: 1px solid var(--gg-color-border-subtle); }
+.grid-card-ruled > i:first-child { border-bottom-color: var(--gg-color-border-default); }
+.grid-card-ruled > i:last-child { border-bottom: 0; }
+.grid-card-ruled b { display: block; width: 48%; height: var(--gg-space-2); justify-self: end; border-radius: var(--gg-radius-full); background: var(--gg-color-border-default); }
+.grid-card-ruled b:first-child { width: 62%; justify-self: start; }
+.grid-card-ruled > i:first-child b { background: var(--gg-color-border-subtle); }
+/* A table filling a frame the reader watched: content fades in, rows 24 ms apart, at most eight staggered. */
+.grid-card[data-filled] { animation-duration: var(--gg-motion-settle); }
+.grid-card[data-filled] tbody tr { animation: grid-card-in var(--gg-motion-settle) var(--gg-ease-out) both; animation-delay: calc(24ms * min(var(--grid-row, 8), 8)); }
+.grid-card[data-filled] tbody tr:nth-child(1) { --grid-row: 1; }
+.grid-card[data-filled] tbody tr:nth-child(2) { --grid-row: 2; }
+.grid-card[data-filled] tbody tr:nth-child(3) { --grid-row: 3; }
+.grid-card[data-filled] tbody tr:nth-child(4) { --grid-row: 4; }
+.grid-card[data-filled] tbody tr:nth-child(5) { --grid-row: 5; }
+.grid-card[data-filled] tbody tr:nth-child(6) { --grid-row: 6; }
+.grid-card[data-filled] tbody tr:nth-child(7) { --grid-row: 7; }
 .grid-card-state { display: grid; place-items: center; min-height: 120px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); text-align: center; }
 .grid-card-state p { display: inline-flex; align-items: center; gap: var(--gg-space-2); margin: 0; }
 .grid-card-state [role="alert"] { display: grid; justify-items: center; gap: var(--gg-space-2); }

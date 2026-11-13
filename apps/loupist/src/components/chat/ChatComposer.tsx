@@ -494,7 +494,7 @@ function ComposerRunActions({
       <PromptInputButton
         aria-label={t("chatComposer.stopResponse")}
         className="composer-stop-action"
-        tooltip={t("chatComposer.stopResponse")}
+        tooltip={{ content: t("chatComposer.stopResponse"), shortcut: shortcutFor("stop") }}
         variant={showSend ? "outline" : "default"}
         onClick={onAbort}
       >

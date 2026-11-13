@@ -143,8 +143,8 @@ describe("native stream transport", () => {
     const answers = projections.map((message) => {
       const turn = deriveTurnView({ message, now: 2, lastActivityAt: 2, stopping: false, retry: { attempt: 1, offered: false } });
       const prose = turn.segments.filter((segment) => segment.kind === "prose");
-      // Narration stays narration: only the draft and its settled text read as the answer.
-      if (message.progress) expect(prose.filter((segment) => segment.tone === "narration").map((segment) => segment.text)).toEqual(["Checking."]);
+      // A note stays a note: only the draft and its settled text read as the answer.
+      if (message.progress) expect(prose.filter((segment) => segment.tone === "note").map((segment) => segment.text)).toEqual(["Checking."]);
       return prose.filter((segment) => segment.tone === "answer");
     });
     expect(answers.every((segments) => segments.length <= 1 && segments.every((segment) => segment.key === draft.id))).toBe(true);

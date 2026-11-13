@@ -207,7 +207,11 @@ describe("Loupist · Chat evidence", () => {
     expect(within(panel).getByRole("article", { name: `Research source: ${evidence.title}` })).toHaveTextContent(evidence.excerpt);
     // Opening the same citation twice keeps one saved passage.
     expect(within(panel).getByRole("button", { name: "Back" })).toBeDisabled();
-    expect(screen.getByText("Unknown source", { exact: true }).closest("a, button")).toBeNull();
+    // Revealed words are wrapped one by one while the reply streams; the unissued citation is still not a control.
+    const unknown = [...document.querySelectorAll(".message.assistant .message-content *")]
+      .find((element) => element.textContent === "Unknown source" && ![...element.children].some((child) => child.textContent === "Unknown source"));
+    expect(unknown).toBeDefined();
+    expect(unknown!.closest("a, button")).toBeNull();
     await emit({ type: "evidence", run_id: request.run_id, evidence });
 
     const persisted: ChatMessage = { id: "assistant-evidence", role: "assistant", status: "complete", content: answer, created_at: "2026-10-11T03:01:00Z", evidence_refs: [structuredClone(evidence)] };

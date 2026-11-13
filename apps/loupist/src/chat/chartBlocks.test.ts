@@ -16,11 +16,13 @@ const message = (overrides: Partial<ChatMessage>): ChatMessage => ({
 describe("chartBlocks", () => {
   it("reserves a card while a chart is being published and fills it in place", () => {
     const running = chartBlocks(message({ status: "streaming", progress: { startedAtMs: 0, items: [step("running")], finishedAtMs: null } }));
-    expect(running).toEqual([{ kind: "building", key: "building:step-running", title: "Margin vs utilization" }]);
+    expect(running).toEqual([{ kind: "building", key: "building:step-running", title: "Margin vs utilization", stepId: "step-running" }]);
     const finishedBeforeEvent = chartBlocks(message({ status: "streaming", progress: { startedAtMs: 0, items: [step("succeeded")], finishedAtMs: null } }));
     expect(finishedBeforeEvent.map((block) => block.kind)).toEqual(["building"]);
+    // The filled card keeps the step it belongs to, so it stays where that step started.
     const filled = chartBlocks(message({ status: "streaming", artifact_refs: [chart()], progress: { startedAtMs: 0, items: [step("succeeded")], finishedAtMs: null } }));
-    expect(filled).toEqual([{ kind: "ready", key: "chart:chart-1", artifact: chart(), updating: false }]);
+    expect(filled).toEqual([{ kind: "ready", key: "chart:chart-1", artifact: chart(), updating: false, stepId: "step-succeeded" }]);
+    expect(chartBlocks(message({ artifact_refs: [chart()] }))).toEqual([{ kind: "ready", key: "chart:chart-1", artifact: chart(), updating: false, stepId: undefined }]);
   });
 
   it("ignores documents, keeps the latest chart revision, and marks a chart being revised", () => {
@@ -33,12 +35,12 @@ describe("chartBlocks", () => {
         step("running", { id: "doc-step", toolName: "artifact_publish", action: "Saved a Chat document", running: "Saving a Chat document", target: "Research note" }),
       ], finishedAtMs: null },
     }));
-    expect(blocks).toEqual([{ kind: "ready", key: "chart:chart-1", artifact: chart({ revision: 2 }), updating: true }]);
+    expect(blocks).toEqual([{ kind: "ready", key: "chart:chart-1", artifact: chart({ revision: 2 }), updating: true, stepId: "step-running" }]);
   });
 
   it("shows a failed chart only when nothing was published under its title, and drops leftovers after the reply", () => {
     expect(chartBlocks(message({ progress: { startedAtMs: 0, items: [step("failed")], finishedAtMs: null } }))).toEqual([
-      { kind: "failed", key: "failed:step-failed", title: "Margin vs utilization" },
+      { kind: "failed", key: "failed:step-failed", title: "Margin vs utilization", stepId: "step-failed" },
     ]);
     expect(chartBlocks(message({ progress: { startedAtMs: 0, items: [step("succeeded")], finishedAtMs: null } }))).toEqual([]);
     expect(chartBlocks(message({ role: "user", artifact_refs: [chart()] }))).toEqual([]);

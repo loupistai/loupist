@@ -133,13 +133,21 @@
   --gg-motion-fast: 120ms;
   --gg-motion-normal: 180ms;
   --gg-motion-slow: 280ms;
-  --gg-motion-heartbeat: 1s;
-  --gg-motion-shimmer: 2s;
+  /* The in-progress reply (docs/ui/chat-answer.md#motion): one word or block, the colour or card settling, controls arriving together, one sheen cycle. */
+  --gg-motion-word: 220ms;
+  --gg-motion-word-stagger: 20ms;
+  --gg-motion-settle: 240ms;
+  --gg-motion-stagger: 30ms;
+  --gg-motion-sheen: 2400ms;
   --gg-motion-map-enter: 600ms;
   --gg-motion-map-stagger: 40ms;
   --gg-ease-out: cubic-bezier(0.2, 0, 0, 1);
   --gg-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --gg-ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --gg-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  /* A line of text replaced in place, and a block that arrives. */
+  --gg-shift-tick: 6px;
+  --gg-shift-enter: 8px;
   --gg-z-sticky: 10;
   --gg-z-sidebar: 20;
   --gg-z-panel: 30;
@@ -341,8 +349,11 @@ button:disabled { cursor: not-allowed; opacity: 0.48; }
     --gg-motion-fast: 0ms;
     --gg-motion-normal: 0ms;
     --gg-motion-slow: 0ms;
-    --gg-motion-heartbeat: 0ms;
-    --gg-motion-shimmer: 0ms;
+    --gg-motion-word: 0ms;
+    --gg-motion-word-stagger: 0ms;
+    --gg-motion-settle: 0ms;
+    --gg-motion-stagger: 0ms;
+    --gg-motion-sheen: 0ms;
     --gg-motion-map-enter: 0ms;
     --gg-motion-map-stagger: 0ms;
   }

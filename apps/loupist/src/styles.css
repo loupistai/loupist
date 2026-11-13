@@ -24,6 +24,7 @@
 @import "./styles/lens-link.css";
 @import "tw-animate-css";
 @import "./styles/vendor/shadcn.css";
+@import "./styles/vendor/streamdown-animate.css";
 @import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));

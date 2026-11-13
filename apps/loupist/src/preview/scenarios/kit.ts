@@ -185,7 +185,7 @@ export async function submitPrompt(root: HTMLElement, prompt = previewKo() ? "í•
 
 /** jsdom has no scroll geometry; those runs check the scenario reaches the thread. */
 // The live dot is aria-hidden, so landmarks use its visible run header.
-export const runningHeader = () => select(".message.assistant.streaming .chat-progress") ?? select(".message.assistant.streaming");
+export const runningHeader = () => select(".message.assistant.streaming .turn-live") ?? select(".message.assistant.streaming");
 
 /** This chat's research map: four names around one hub, with `events` as the growth this chat added. */
 export function chatResearchMap(bridge: PreviewBridge, events: () => GrowthEvent[], names = ["Hanul Precision", "Morrow Components", "Capacity utilization", "Operating margin"]) {
