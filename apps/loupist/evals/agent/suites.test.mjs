@@ -846,3 +846,13 @@ test('wrong-entity web scenario refuses attribution even when the number matches
   assert.ok(grade(suite,[trace]).results.every(row=>row.pass===true));
   assert.equal(grade(suite,[{...trace,answer:'Southmere is mentioned; Northmere has a 4.25% policy rate.'}]).results.find(row=>row.assert==='answer_not_matching').pass,false);
 });
+
+test('an explicitly requested method page cannot be replaced by a principle', () => {
+  const suite=loaded.find(file=>file.name==='learning-v1.json').json;
+  const scenario=suite.scenarios.find(s=>s.id==='L-029');const session=scenario.sessions[0];
+  for(const [kind,pass] of [['lens',true],['principle',false]]) {
+    const trace=observedTurn(suite,scenario,session,0,{answer:'{"metrics":{"eps":1.5}}',memory_commits:[{kind,title:'Headline share count'}]});
+    const results=grade(suite,[trace]).results.filter(row=>row.assert==='committed');
+    assert.equal(results.length,2);assert.ok(results.every(row=>row.pass===pass));
+  }
+});

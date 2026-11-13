@@ -12,7 +12,7 @@ Skill covers how to write a method and how to review the library.
 
 ## Teach or correct a method
 
-A method is its own page, kind `method`, titled after what it checks. Only the user creates or changes one in a turn: by teaching a procedure with steps, by correcting a method page that exists, or by asking you to keep a check you worked out or to save a method page. A rule that fits in a sentence or two ("from now on divide by the average share count") is a principle: save it with `principle_save` and file no method for it. Never file a method from your own analysis, general knowledge or a single company's case; that belongs on the subject or idea page.
+A method is its own page, kind `method`, titled after what it checks. Only the user creates or changes one in a turn: by teaching a procedure with steps, by correcting a method page that exists, or by asking you to keep a check you worked out or to save a method page. A rule that fits in a sentence or two ("from now on divide by the average share count") is a principle: save it with `principle_save` and file no method for it, unless the user explicitly asks for a method page; then file only that page with `lens_file`. Never file a method from your own analysis, general knowledge or a single company's case; that belongs on the subject or idea page.
 
 1. Search first (`lens_search`), then `lens_read` the method you would change.
 2. Extend an existing method only when the new rule refines that same method;

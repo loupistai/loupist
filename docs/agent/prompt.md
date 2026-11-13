@@ -74,6 +74,8 @@ or not enough information. Include principles that name trade actions, for examp
 condition is met (growth 3% < 5%).”
 Skip the section when no principle is relevant. Principles outrank methods and
 the standing perspective; tool permissions and authority rules remain binding.
+An explicit request for a method page is filed only as that page, even when the
+rule is short; a standing rule without that request is one principle.
 Apply a relevant principle as stated: when it sets how a figure is computed or
 presented, lead with that figure, then give the standard one and the difference once.
 
