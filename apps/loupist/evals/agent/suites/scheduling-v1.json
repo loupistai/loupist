@@ -960,6 +960,105 @@
           ]
         }
       ]
+    },
+    {
+      "id": "S-008",
+      "title": "A repeated followed-name briefing updates the single host briefing",
+      "tags": [
+        "regression",
+        "en"
+      ],
+      "split": "regression",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Brief me on what I follow every day at 8am Seoul time.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_briefing",
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 1,
+                    "tasks": [
+                      {
+                        "title": "Briefings",
+                        "status": "active",
+                        "schedule": {
+                          "kind": "daily",
+                          "hour": 8,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul"
+                        }
+                      }
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Every weekday at 8am, brief me on my followed names.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "schedule_create",
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 1,
+                    "tasks": [
+                      {
+                        "title": "Briefings",
+                        "status": "active",
+                        "schedule": {
+                          "kind": "weekly",
+                          "hour": 8,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ]
+                        }
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_briefing",
+                    "successful": true,
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "existing-briefing-updated",
+                    "criterion": "The answer says a briefing already existed at 8:00 every day and now runs on weekdays at 8:00; it does not say a second briefing or task was created.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "language": "en"
     }
   ]
 }

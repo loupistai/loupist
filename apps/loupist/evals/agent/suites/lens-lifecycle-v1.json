@@ -5,7 +5,7 @@
   "description": "Lens lifecycle: research turns file subject pages from retained originals, later Chats read and reuse them, newer originals revise the same page (including a stale premise, an alias and a small update that must keep earlier detail), one case never becomes a method, read-only and light turns file nothing, and a method applies only where it fits.",
   "budget": {
     "maxInputTokensPerTurn": 1000000,
-    "maxTurns": 69
+    "maxTurns": 75
   },
   "scenarios": [
     {
@@ -334,7 +334,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "id": "LL-003",
@@ -581,7 +582,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "id": "LL-005",
@@ -1152,6 +1154,111 @@
                     "id": "dated",
                     "criterion": "The answer gives the 450 million USD capex plan, says it comes from Ardent's 12 February 2026 outlook, and does not claim the plan is unchanged or still current today.",
                     "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LL-011",
+      "title": "A document handed over in Bot is retained and filed to one subject page without being asked",
+      "tags": [
+        "create",
+        "bot"
+      ],
+      "split": "capability",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Here is Garnet Row Freight's Q3 2026 update. Give me the main points.",
+              "attachments": [
+                {
+                  "filename": "garnet-row-q3-2026.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nGarnet Row Freight Q3 2026 update (published 22 October 2026)\n\n- Revenue: 318 million USD, up 7% year on year.\n- Operating margin: 6.4%, down from 8.1% a year earlier.\n- Cause named by management: driver wage settlements effective 1 July 2026.\n- Fleet: 2,150 tractors; average age 4.2 years.\n- FY2026 capex guidance: 95 million USD, unchanged.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "garnet",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])6[.,]4(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "max": 0,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "garnet",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])6[.,]4(?![\\d])"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "recall",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "What was Garnet Row Freight's operating margin last quarter, and why did it fall?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "garnet",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "boundary"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "6.4"
+                    ],
+                    "metric": "carry_forward"
                   }
                 ]
               }

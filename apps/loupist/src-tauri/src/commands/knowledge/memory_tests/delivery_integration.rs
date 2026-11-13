@@ -26,6 +26,7 @@ fn finalized_learning_report_opens_canonical_sources_lens_and_journal() {
     let (_, lens_delivery) =
         host_prepare_read(&state, "loupist-a", &empty_read(&lens.record_id)).unwrap();
     let research = StagedResearch {
+        thesis_pair: None,
         source_reads: Vec::new(),
         world_reads: Vec::new(),
         lens_reads: Vec::new(),

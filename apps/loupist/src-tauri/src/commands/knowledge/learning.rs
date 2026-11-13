@@ -108,7 +108,16 @@ pub(in crate::commands) fn persist_saved_turn_sources(
             }),
         });
     }
-    let staged_journal = research.and_then(|item| item.journal.as_ref());
+    let mut staged_journal = research.and_then(|item| item.journal.as_ref());
+    let mut thesis_pair = research.and_then(|item| item.thesis_pair.as_ref());
+    if thesis_pair.is_some_and(|journal| {
+        journal
+            .thesis
+            .as_ref()
+            .is_some_and(|(thesis, _)| thesis.role == crate::knowledge::assets::ThesisRole::Reason)
+    }) {
+        std::mem::swap(&mut staged_journal, &mut thesis_pair);
+    }
     if staged_journal.is_none() && research.is_none() {
         return Ok(SavedTurn { changes, retained });
     }
@@ -447,6 +456,41 @@ pub(in crate::commands) fn persist_saved_turn_sources(
             }),
         })
         .map_err(map_knowledge)?;
+    if let Some(pair) = thesis_pair {
+        let journal = crate::knowledge::journal::create(
+            tx,
+            loupist_id,
+            crate::knowledge::journal::JournalInput {
+                judgment: pair.judgment.clone(),
+                reasoning: pair.reasoning.clone(),
+                entities: pair.entities.clone(),
+                check: pair.check.clone(),
+                thesis: pair.thesis.as_ref().map(|(thesis, _)| thesis.clone()),
+            },
+            pair.at_ms,
+        )
+        .map_err(map_knowledge)?;
+        changes.push(MemoryUpdateChange {
+            outcomes: Vec::new(),
+            world_job_id: None,
+            world_status: None,
+            record_id: journal.journal_id.clone(),
+            kind: "Journal".into(),
+            operation: "create".into(),
+            title: journal.judgment.clone(),
+            lesson: "Saved the user’s stated line.".into(),
+            basis: "Acknowledged research submission".into(),
+            future_use: "Check the stated level against reported figures.".into(),
+            knowledge: Some(KnowledgeReference {
+                kind: "journal".into(),
+                record_id: String::new(),
+                revision_id: String::new(),
+                object_id: journal.journal_id,
+                span_id: None,
+                receipt_id: None,
+            }),
+        });
+    }
     if let Some(journal) = saved.journal {
         changes.push(MemoryUpdateChange {
             outcomes: Vec::new(),

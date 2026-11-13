@@ -31,14 +31,15 @@ export function calculationChipAssertion(assertion) {
   return assertion;
 }
 
-/** `cites_result` names one tool and optional nearby strings (the material value as written). */
+/** `cites_result` names one tool or a list and optional nearby strings (the material value as written). */
 export function citationAssertion(assertion) {
-  if (typeof assertion.tool !== 'string' || !assertion.tool) throw new Error('cites_result requires a tool');
+  const tools = Array.isArray(assertion.tool) ? assertion.tool : [assertion.tool];
+  if (!tools.length || tools.some((tool) => typeof tool !== 'string' || !tool)) throw new Error('cites_result requires a tool or a list of tools');
   const near = assertion.near ?? [];
   if (!Array.isArray(near) || near.some((value) => typeof value !== 'string' || !value || value.length > 80)) {
     throw new Error('cites_result near must be nonempty strings of at most 80 characters');
   }
-  return { tool: assertion.tool, near };
+  return { tools, near };
 }
 
 /** `numbers_linked` may name printed numbers that must have a matched or rounded check. */

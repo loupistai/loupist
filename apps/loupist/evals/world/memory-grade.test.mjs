@@ -12,7 +12,7 @@ const lens = record('lens', 'method', 'method-v1', { markdown: '85%를 초과할
 const revised = record('lens', 'method', 'method-v2', { markdown: '90%를 초과할 때만 2점. 직원 출근율에는 적용하지 않음.' });
 const state = (...records) => ({ records });
 const row = (before = state(base), after = state(base, lens)) => ({ status: 'completed', before_chat: before, after_chat: after,
-  chat_trace: { status: 'completed', answer: '2점입니다.', memory_commits: [], memory_reads: [], tool_calls: [] } });
+  chat_trace: { status: 'completed', answer: '2점입니다.', memory_commits: [], memory_reads: [], lens_receipts: [], tool_calls: [] } });
 const scenario = { workspace_files: { 'report.txt': 'Fictional source. Buyer buys sensors from Supplier.\n' } };
 
 function source() {
@@ -290,4 +290,71 @@ test('percentage-point notation stays distinct from a percentage', () => {
   assert.equal(grade('5%포인트'), true, 'the literal notation remains available');
   current.chat_trace.answer = '매출은 5% 상승했습니다.';
   assert.equal(grade('5%p'), false, 'a relative percent is not a percentage-point change');
+});
+
+test('scoped Lens precision allows subject creates and rejects method or principle changes', () => {
+  for (const kind of ['subject', 'method', 'principle']) for (const assertion of ['no_commit', 'records_unchanged']) {
+    const trace = row(state(base), state(base, lens));
+    trace.chat_trace.lens = { pages: [{ record_id: 'method', kind }] };
+    trace.chat_trace.memory_commits = [{ kind: kind === 'principle' ? 'principle' : 'lens', record_id: 'method' }];
+    const check = { assert: assertion, kind: 'lens', lens_kinds: ['method', 'principle', 'perspective'] };
+    assert.equal(evaluateMemoryCheck(check, trace, scenario).pass, kind === 'subject');
+    delete trace.chat_trace.lens;
+    assert.equal(evaluateMemoryCheck(check, trace, scenario).pass, null);
+  }
+});
+
+test('context retrieval requires the current learned principle delivered and linked as a whole target', () => {
+  const trace = row(state(base, lens), state(base, lens));
+  const check = { assert: 'memory_read', kind: 'lens', reference_step: 'learn' };
+  const prior = new Map([['learn', row()]]);
+  trace.chat_trace.answer = '[My rule](lens:method) — meets.';
+  trace.chat_trace.lens_receipts = [{ record_id: 'method', revision_id: 'method-v1', kind: 'principle', delivery: 'context' }];
+  const evaluate = item => evaluateMemoryCheck(check, item, scenario, prior);
+  assert.equal(evaluate(trace).pass, true);
+  assert.equal(evaluate(trace).retrieval_evidence, 'context_link');
+  for (const mutate of [
+    t => { t.chat_trace.answer = 'method'; },
+    t => { t.chat_trace.answer = '`[rule](lens:method)`'; },
+    t => { t.chat_trace.answer = '[rule](lens:method-other)'; },
+    t => { t.chat_trace.lens_receipts = []; },
+    t => { t.chat_trace.lens_receipts[0].revision_id = 'stale'; },
+    t => { t.chat_trace.lens_receipts[0].kind = 'method'; },
+    t => { t.chat_trace.lens_receipts[0].kind = 'subject'; },
+    t => { t.chat_trace.lens_receipts[0].record_id = 'base'; },
+    t => { delete t.chat_trace.lens_receipts[0].revision_id; },
+    t => { t.chat_trace.lens_receipts[0].delivery = 'exact_read'; },
+  ]) { const copy = structuredClone(trace); mutate(copy); assert.equal(evaluate(copy).pass, false); }
+  delete trace.chat_trace.lens_receipts;
+  assert.equal(evaluate(trace).pass, null, 'old trace cannot establish context retrieval');
+});
+
+test('Lens kind scopes validate only real Lens kinds on Lens checks', () => {
+  const suite = { schema: 'loupist-world-suite/1', suite:'scoped', version:1, scenarios:[{id:'case',steps:[{id:'step',user:'What is there?',role:'probe',memory:'remember',checks:[]}]}] };
+  const checks = suite.scenarios[0].steps[0].checks;
+  for (const kind of ['principle','perspective','method','subject','idea']) {
+    checks[0] = {assert:'no_commit',kind:'lens',lens_kinds:[kind],metric:'save_precision'}; validateMemorySuite(suite);
+  }
+  for (const invalid of [{kind:'source',lens_kinds:['subject']},{kind:'lens',lens_kinds:['note']},{kind:'lens',lens_kinds:'subject'},{kind:'lens',lens_kinds:[]}]) {
+    checks[0] = {assert:'no_commit',metric:'save_precision',...invalid}; assert.throws(()=>validateMemorySuite(suite),/lens_kinds/);
+  }
+});
+
+test('a principle revision fails both scoped precision checks', () => {
+  const trace=row(state(base,lens),state(base,revised));
+  trace.chat_trace.lens={pages:[{record_id:'method',kind:'principle'}]};
+  trace.chat_trace.memory_commits=[{kind:'principle',record_id:'method',operation:'revise'}];
+  for(const assertion of ['no_commit','records_unchanged']) assert.equal(evaluateMemoryCheck({assert:assertion,kind:'lens',lens_kinds:['principle','method','perspective']},trace,scenario).pass,false);
+});
+
+test('reports separate exact-read and context-link retrieval counts', () => {
+  const {suite,traces}=completeFixture();
+  suite.scenarios[0].steps[0].checks=[{assert:'memory_read',kind:'lens',metric:'retrieval'}];
+  for(let i=1;i<traces.length;i+=2){traces[i].before_chat=state(base,lens);traces[i].after_chat=state(base,lens);}
+  traces[1].chat_trace.memory_reads=[{kind:'lens',record_id:'method',access:'exact_read'}];
+  traces[3].chat_trace.lens_receipts=[{record_id:'method',revision_id:'method-v1',kind:'principle',delivery:'context'}];
+  traces[3].chat_trace.answer='[Rule](lens:method) — meets.';
+  const report=memoryReport(suite,traces,{suiteSha256:'digest'});
+  assert.deepEqual(report.retrieval_evidence,{exact_read:1,context_link:1});
+  assert.deepEqual({...report.metrics.retrieval,rate_lower_bound:undefined},{passed:2,failed:1,unknown:0,total:3,rate_lower_bound:undefined});
 });

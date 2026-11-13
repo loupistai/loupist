@@ -237,8 +237,8 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
           } else if (item.assert === 'answer_not_matching') {
             answerPatterns(item);
           } else if (item.assert === 'cites_result') {
-            const { tool } = citationAssertion(item);
-            assert.ok(toolNames.has(tool), `${where} unknown tool ${tool}`);
+            const { tools } = citationAssertion(item);
+            for (const tool of tools) assert.ok(toolNames.has(tool), `${where} unknown tool ${tool}`);
           } else if (item.assert === 'numbers_linked') {
             numbersLinkedAssertion(item);
           } else if (item.assert === 'calculation_chip') {

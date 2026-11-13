@@ -21,14 +21,14 @@ supplied by the user, is enough for `artifact_read`. Call `artifact_list` only t
 discover an unknown target id.
 [Connections](../capabilities/connections.md) owns IDs and credential behavior.
 
-`research_open` (always permitted, no component, Home only, one per reply) hands a
+`research_open` (always permitted, no component, Bot only, one per reply) hands a
 question that needs depth or several steps to a separate Chat: `title`, `question`,
 `brief`, `pins` of `{lens}` or `{world}` ids and a `requestKey`. It stages; the reply's
 commit inserts one `chat_handoffs` row and the separate Chat in the same transaction, a
 repeated key creates nothing, and a reply that does not finish hands nothing off. After
 the commit the host runs that Chat once through ordinary Chat admission with the
-unattended allowlist and the Home turn's model and Memory flags, and Home shows a
-`handoff` card ([Home](../ui/home-thread.md#home-thread)). A separate Chat or an
+unattended allowlist and the Bot turn's model and Memory flags, and Bot shows a
+`handoff` card ([Bot](../ui/home-thread.md#home-thread)). A separate Chat or an
 unattended run does not list the tool and the broker refuses it by surface.
 
 The general `schedules` tools are independent of Memory. `schedule_watch` and
@@ -43,7 +43,12 @@ their existing permission classes. Their run
 receipts expose control metadata (IDs, status, times and a fixed failure notice);
 briefing context and answer summaries stay in the run's Chat, because they can
 contain Memory and third-party text. Read current IDs/revisions
-before editing and keep a stable creation key within the turn. Agent modes are
+before editing and keep a stable creation key within the turn. List receipts
+include task `kind` (`briefing`, `earnings`, `custom`); use `schedule_briefing`
+to change the one host briefing. A request for existing work updates that task
+or leaves it unchanged. A new custom task created in Bot with a live title (NFKC, case-folded,
+whitespace collapsed) is refused, while same-key retries and distinct titles
+at the same time remain valid. Agent modes are
 fresh history or the task's own dedicated Chat; scheduled runs cannot mutate
 schedules. Use [Scheduled Chats](../runtime/scheduled-runs.md#scheduled-chats) and the
 [scheduling evaluation](../../apps/loupist/evals/README.md#scheduling-evaluation).
@@ -106,7 +111,7 @@ change, and applies it with the reply together with the asking message; a stoppe
 reply applies nothing, and a change whose name the map gained since staging is
 skipped and listed in the answer's `memory_update.skippedKinds`. [Worlds](../knowledge/worlds.md#presets-changes-and-undo) owns the rules.
 
-`loupist_setup` (Memory save in `memory-save`, Home and interactive Chats only, one call
+`loupist_setup` (Memory save in `memory-save`, Bot and interactive Chats only, one call
 per reply, refused in scheduled and delegated runs by the unattended allowlist and by
 the chat surface) sets a Loupist up from what the user says. It takes `follow` (at most
 ten `{symbol, market?, name?}`), `unfollow` (at most ten `{symbol, market?}`), `focus`
@@ -128,7 +133,7 @@ are listed in `skippedKinds`. `SYSTEM.md` tells the agent to call it in the repl
 the user says what they research, what to follow or picks a starting point, and never
 to send them to settings.
 
-`connection_setup` (core, Home and interactive Chats only, three calls per reply) takes
+`connection_setup` (core, Bot and interactive Chats only, three calls per reply) takes
 one `id`: a catalog entry id (`fred.macro`), the entry's English or Korean display name,
 or a plugin id or group name (`World Bank`, `세계은행`) that covers exactly one entry,
 compared case-insensitively with `-`, `_` and `.` read as spaces
@@ -160,7 +165,12 @@ that the app computes every difference.
 
 `journal_save` accepts `thesis {symbol, market, role}` for a reason or line the user
 stated; a `line` needs a check, whose `byDate` is then optional, and a thesis entry
-needs no `sourceReads`, `worldReads` or `lensReads`. `SYSTEM.md` tells the agent to
+needs no `sourceReads`, `worldReads` or `lensReads`. One reply may save one reason
+and one checked line for the same asset, in either order; the commit writes the
+reason first, atomically with the line and Chat. Other second entries and any
+third entry are refused. Thesis receipts add `saved_as` (`reason` or `line`) and
+`next`: only a line is tested against figures, and a line without an active or
+staged reason asks for one because readings need it. `SYSTEM.md` tells the agent to
 read the page for a followed asset, save the user's stated reasons and lines with
 `thesis`, and move the read one step only on a dated original fact read in the turn,
 never to agree with the user and never under an as-of date. It also points the agent at
@@ -193,7 +203,7 @@ projects it into the reply's progress plan, keeps each step's first activation
 time and marks unfinished steps Not done when the run ends. It creates no evidence
 and touches no Memory, and scheduled runs may call it.
 
-`ask_user` (core, Home and interactive Chats only, two calls per reply) lets the agent
+`ask_user` (core, Bot and interactive Chats only, two calls per reply) lets the agent
 settle a real fork without ending the reply. It takes `question` (1-300 characters),
 `options` (2-4 of `{label` 1-60 characters, unique ignoring case; `description?` up to
 160`}`) and `recommended?` (an index into `options`); Rust refuses by field

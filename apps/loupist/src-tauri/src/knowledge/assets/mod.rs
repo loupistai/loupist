@@ -2839,7 +2839,7 @@ pub fn model_read(
         "note": if as_of.is_some() {
             "As-of read: only rows and line readings dated on or before the cutoff. The Loupist's read is today's view, so it is left out, and thesis_update is refused in an as-of answer."
         } else {
-            "Rows are host observations from structured tool reads, each with its fact date and source. To move the read, call thesis_update with evidence you read in this turn."
+            "Rows are host observations from structured tool reads, each with its fact date and source. To move the read, call thesis_update with evidence you read in this turn. When this turn reads a figure for a line's metric, record it with thesis_update lineReading."
         }
     }))
 }

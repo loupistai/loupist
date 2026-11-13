@@ -387,5 +387,17 @@
         "text": "<!doctype html><html><head><title>Noeul Paper expands Gwangyang mill</title><meta property=\"article:published_time\" content=\"2026-03-18T09:00:00Z\"></head><body><article><h1>Noeul Paper expands Gwangyang mill</h1><p>Fictional Noeul Paper said on 18 March 2026 that the Gwangyang mill expansion raised capacity to 455 thousand tonnes a year.</p></article></body></html>"
       }
     }
+  ],
+  "otherwise": [
+    {
+      "provider": "web-search",
+      "url_prefix": "",
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    }
   ]
 }

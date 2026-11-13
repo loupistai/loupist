@@ -568,8 +568,12 @@ async fn build_turn_envelope(
     let lens_catalog = host_memory
         .as_ref()
         .map(|memory| (memory.lens_shown, memory.lens_total));
+    #[cfg(feature = "eval-harness")]
+    let now = crate::eval_harness::clock::now();
+    #[cfg(not(feature = "eval-harness"))]
+    let now = Utc::now();
     let turn_envelope = agent_harness::turn_envelope_block(
-        Utc::now(),
+        now,
         use_memory,
         &learned_index,
         charter.as_deref(),
@@ -582,7 +586,7 @@ async fn build_turn_envelope(
     )
     .unwrap_or_else(|_| {
         serde_json::to_string(&serde_json::json!({
-            "live_time": agent_harness::live_time_envelope(Utc::now())
+            "live_time": agent_harness::live_time_envelope(now)
         }))
         .unwrap_or_else(|_| r#"{"live_time":{"not_evidence":true}}"#.into())
     });

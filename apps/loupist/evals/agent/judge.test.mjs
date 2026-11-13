@@ -299,6 +299,32 @@ test('a judged Lens commit carries the stored page kind and basis', () => {
   assert.deepEqual(items.map((item) => [item.memory_item.page_kind ?? null, item.memory_item.page_basis ?? null]), [['subject', ['page', 'span']], [null, null]]);
 });
 
+test('Journal judge packets preserve committed checks in both callers without inventing absent legacy fields', () => {
+  const suite = { schema: 'loupist-agent-suite/1', suite: 'journal', version: 1, scenarios: [{ id: 'J', sessions: [{ id: 'train', role: 'train', memory: 'remember', turns: [{ user: 'Record my check.', expect: { rubric: [{ id: 'recorded', criterion: 'The user check was recorded.' }] } }] }] }] };
+  const check = { claim: 'Customer share stays below 60%.', metric: 'customer share', direction: 'below', threshold: 60, unit: 'percent', byDate: '2026-12-15', confidence: 70 };
+  const trace = { schema: 'loupist-agent-trace/1', run_id: 'r', suite: 'journal', scenario_id: 'J', session_id: 'train', session_role: 'train', memory_mode: 'remember', turn_index: 0, trial: 0, user: 'Record my check.', status: 'completed', answer: 'Recorded.',
+    tool_calls: [{ name: 'journal_save', args: { check: structuredClone(check) }, outcome: 'ok', result: { status: 'staged', durable: false } }],
+    memory_commits: [{ kind: 'journal', record_id: 'jnl_a', operation: 'create', judgment: 'I will hold.', reasoning: 'User supplied evidence.', check }] };
+  const packet = (row) => buildJudgeInput(suite, judgeItems(suite, [row]).find(item => item.kind === 'rubric'), [row]);
+  const evidence = packet(trace).trace_summary.memory_commits[0];
+  assert.deepEqual(evidence.check, check);
+  assert.equal(evidence.judgment, 'I will hold.');
+  assert.equal(evidence.reasoning, 'User supplied evidence.');
+  assert.equal(Object.hasOwn(evidence, 'prediction'), false);
+  assert.equal(Object.hasOwn(evidence, 'outcome'), false);
+  const saved = judgeItems(suite, [trace]).find(item => item.kind === 'save_precision').memory_item;
+  assert.deepEqual(saved.check, check);
+  const changed = structuredClone(trace); changed.memory_commits[0].check.threshold = 61;
+  const key = row => judgeCacheKey({ input: packet(row), criterion: 'recorded', model: 'fixture' });
+  assert.notEqual(key(changed), key(trace));
+  const absent = structuredClone(trace); delete absent.memory_commits[0].check;
+  assert.equal(Object.hasOwn(packet(absent).trace_summary.memory_commits[0], 'check'), false, 'staged tool arguments do not replace missing commit evidence');
+  absent.memory_commits[0].prediction = { claim: 'Legacy observation' };
+  absent.memory_commits[0].outcome = null;
+  assert.deepEqual(packet(absent).trace_summary.memory_commits[0].prediction, { claim: 'Legacy observation' });
+  assert.equal(packet(absent).trace_summary.memory_commits[0].outcome, null);
+});
+
 test('judge input carries the stored Lens pages so a stale current value is visible', () => {
   const suite = { schema: 'loupist-agent-suite/1', suite: 'lens', version: 1, scenarios: [{ id: 'LC', sessions: [{ id: 'train', role: 'train', memory: 'remember', turns: [{ user: 'Update.', expect: { rubric: [{ id: 'current', criterion: 'The page states 14 ships as current.' }] } }] }] }] };
   const page = (markdown) => ({ record_id: 'rec_a', kind: 'subject', title: 'Dongjin', summary: '', archived: false,

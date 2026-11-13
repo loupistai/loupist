@@ -74,6 +74,10 @@ default) without shell, web or user configuration, for agents on an xAI model. J
 of the same run and trial, without additional truncation. Same-family judging
 (requested or observed agent model vs judge) exits 2 unless `--allow-same-family`.
 Every Memory commit in a training session is also judged for `save_precision`.
+Journal evidence includes the committed `judgment`, `reasoning` and `check`,
+including its entered confidence and date. Fields absent from a trace stay absent;
+staged tool arguments do not fill missing commit evidence. Legacy `prediction` and
+`outcome` fields are included only when the trace actually recorded them.
 Positive save checks accompany restraint checks where the scenario permits a
 save; an idle agent must fail the positive control. Disabled/read-only writes and
 prompt-injection refusals use `boundary`, separately from reusable-save quality.
@@ -441,6 +445,9 @@ baseline was collected for this repair.
 
 ### Lens lifecycle
 
+LL-011 hands over a document in Home, expects one retained Source and one subject
+page without an explicit filing request, then checks recall in a read-only Chat.
+
 After every turn the runner records `lens.pages`: each Lens page as the store holds
 it (kind, title, summary, sections with heading, Markdown, basis kinds and origin)
 and `ops_this_turn`, the log entries the turn's own reply wrote. Memory assertions
@@ -491,6 +498,9 @@ For uncued acquisition, Lens refinement, conversation recall and save restraint 
 the [Memory evaluation loop](world/README.md#uncued-memory-loop).
 
 ### Scheduling evaluation
+
+S-008 changes the existing daily followed-name briefing to weekdays and requires
+exactly one host briefing throughout; no custom task is created.
 
 `agent/suites/scheduling-v1.json` covers multi-task creation, selective changes,
 pause/resume/delete, discussion without creation, explicit time zones, one-time
@@ -760,3 +770,19 @@ attempt, and totals stay null when any attempt is unknown. `cost_per_successful_
 is null until every attempt has a cost and every selected task is fully reviewed.
 Same-model pairs require identical model, effort, `comparison_config_hash`, dataset,
 condition, task, repeat and phase; external product groups stay separate.
+
+Replay fixtures use containment for event windows, optional query filters and
+explicit provider/endpoint `otherwise` empty answers. A `web-search` fallback
+uses an empty `url_prefix` because native search requests carry a query object,
+not a URL; its trace URL is null. Unknown providers and
+endpoints remain fail-closed; `replay_fallbacks` exposes every fallback used.
+Multi-event lists include the needed partial-window responses after their full
+response, so an earlier as-of query receives only the events in that window.
+The fixture lint checks listed receipts and three containing windows. Scenario
+`clock` pins model `live_time` only (T-045/T-049); host refresh windows retain the
+wall clock. Scenario `language` sets the disposable app language; otherwise a
+single `en`/`ko` tag supplies it. Asset fixtures still expire on 2027-03-18.
+`cites_result.tool` accepts one tool or a list of acceptable original/page tools.
+Plan grading treats folder listings and bundled Skill references as preparation;
+workspace reads and grep still count as research. T-056 rejects a rate citation
+whose entity differs from the question.

@@ -3,6 +3,7 @@ pub(crate) mod artifacts;
 mod batch;
 #[cfg(test)]
 mod citations;
+pub(crate) mod clock;
 pub mod concurrent;
 #[cfg(test)]
 mod dart_replay_tests;
@@ -93,6 +94,10 @@ impl Budget {
 }
 #[derive(Deserialize, Serialize)]
 struct Scenario {
+    #[serde(default)]
+    pub clock: Option<String>,
+    #[serde(default)]
+    pub language: Option<String>,
     pub id: String,
     pub title: String,
     #[serde(default)]
@@ -1043,6 +1048,7 @@ async fn run_turn(
     }).collect::<Vec<_>>());
     result["started_at"] = json!(started);
     result["duration_ms"] = json!(clock.elapsed().as_millis() as u64);
+    result["replay_fallbacks"] = json!(replay::take_fallbacks());
     Ok(result)
 }
 /// Atomically replace a complete JSONL snapshot after each record. An interruption
@@ -1154,6 +1160,9 @@ pub async fn run(options: Options) -> Result<()> {
     'scenarios: for (scenario, inputs) in inputs {
         let mut harness = harness.clone();
         harness["scenario_input_sha256"] = json!(inputs.sha256);
+        harness["clock"] = json!(scenario.clock);
+        harness["language"] = json!(scenario.language);
+        let _clock = clock::install(scenario.clock.as_deref())?;
         for trial in 0..options.trials {
             if options.resume
                 && batch::complete(
@@ -1193,7 +1202,24 @@ pub async fn run(options: Options) -> Result<()> {
             // Only this disposable app profile is changed; paid eval attempts never retry.
             fs::write(
                 state.artifacts.app_data_dir.join("config.toml"),
-                frozen.config_toml(),
+                if let Some(language) = scenario.language.as_deref().or_else(|| {
+                    if scenario.tags.iter().any(|tag| tag == "en") {
+                        Some("en")
+                    } else if scenario.tags.iter().any(|tag| tag == "ko") {
+                        Some("ko")
+                    } else {
+                        None
+                    }
+                }) {
+                    if !matches!(language, "en" | "ko") {
+                        return Err("scenario language must be en or ko".into());
+                    }
+                    let mut config = frozen.config_toml().parse::<toml_edit::Document>()?;
+                    config["appearance"]["language"] = toml_edit::value(language);
+                    config.to_string()
+                } else {
+                    frozen.config_toml()
+                },
             )?;
             state.eval_pi_agent_dir = Some(options.pi_agent_dir.clone());
             Arc::make_mut(&mut state.artifacts).pi = Some(pi.clone());

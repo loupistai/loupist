@@ -17,6 +17,7 @@ fn fixture() -> (tempfile::TempDir, AppState) {
 
 fn staged(markdown: &str, expected: Option<&str>) -> StagedResearch {
     StagedResearch {
+        thesis_pair: None,
         source_reads: Vec::new(),
         world_reads: Vec::new(),
         lens_reads: Vec::new(),

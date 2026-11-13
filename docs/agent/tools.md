@@ -92,11 +92,10 @@ and `xai.mjs` have their own. Rust offers a provider's search only when the
 adapter needs a resolvable credential before any request.
 
 `calculate` (`calculations` pack) is the host arithmetic tool. Its contract is in
-[Calculation](../analysis/calculation.md#calculation). `SYSTEM.md` sends common arithmetic to
-`calculate` before `run_python`. The financial Skills route numeric work through
-`calculate`, then OpenBB's local `quantitative_*`, `technical_*` and
-`econometrics_*` tools, then `dataset_export` plus `run_python` for what those
-cannot do.
+[Calculation](../analysis/calculation.md#calculation). For sourced figures,
+`SYSTEM.md` uses `calculate` when it has the operation, otherwise `run_python`
+once. `sum` supports addition; plain subtraction and multiplication use Python.
+One-step arithmetic on numbers the user typed needs neither tool.
 
 A `dcf_grid` or `reverse_dcf` result shows as a [sensitivity card](../analysis/calculation.md#sensitivity-cards)
 when the answer links it alone in a paragraph with the company name as the link text;
@@ -116,7 +115,7 @@ link whose text is only the number with its unit or currency and whose target is
 exact `citation_url` it came from: a data result or passage for a figure read from a
 source (for a web page, a `web_fetch` passage whose `find` phrase contains the
 number), a `calculate` result for a derived figure, with each sourced input named in
-`input_sources`. Arithmetic never happens in prose; the first mention in a paragraph
+`input_sources`. Figures derived from sources use a tool; the first mention in a paragraph
 and every material table cell are linked; years, dates, counts and the user's own
 assumptions stay plain. Rust [checks those links](../analysis/number-checks.md#number-checks) when the
 reply commits, and the [evaluation](../../apps/loupist/evals/README.md#agent-evals)
@@ -138,3 +137,10 @@ checked number links as inline evidence, independently of the Source footer.
 ## Code
 
 - Prompt / tools: `agent/SYSTEM.md`, `agent/tool-catalog.json`, `src-tauri/src/broker.rs`
+
+A named or attached original used for answer facts is captured and retained with
+`source_save` when saving is on, even after a native read; calculation-only inputs,
+scripts, scratch output and files the user says not to keep are excluded. One-step
+arithmetic on user-typed numbers needs no tool; sourced figures use `calculate`
+when supported, otherwise `run_python` once. Before citing a web passage, check
+that it names the sentence’s entity and period, as well as its number.

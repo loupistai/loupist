@@ -95,6 +95,7 @@ fn research(
     lens_reads: Vec<String>,
 ) -> StagedResearch {
     StagedResearch {
+        thesis_pair: None,
         source_reads: Vec::new(),
         world_reads: Vec::new(),
         lens_reads: Vec::new(),
@@ -316,6 +317,7 @@ fn a_followed_asset_reason_commits_without_a_memory_read() {
         name: "NVDA".into(),
     };
     let reason = StagedResearch {
+        thesis_pair: None,
         journal: Some(StagedResearchJournal {
             thesis: Some((
                 crate::knowledge::assets::JournalThesis {
@@ -362,6 +364,107 @@ fn a_followed_asset_reason_commits_without_a_memory_read() {
     )
     .is_err());
     assert_eq!(count(&store, "SELECT COUNT(*) FROM knowledge_journals"), 1);
+}
+
+#[test]
+fn followed_asset_thesis_pair_commits_reason_before_line_atomically_in_both_orders() {
+    for reverse in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SqliteStore::open_in_memory().unwrap();
+        store.create_loupist(&loupist_profile("loupist-a")).unwrap();
+        store.create_chat(&chat("chat-1", "loupist-a")).unwrap();
+        let blobs = BlobStore::open(directory.path().join("blobs")).unwrap();
+        let mut reason = research(Vec::new(), Vec::new(), Vec::new());
+        let journal = reason.journal.as_mut().unwrap();
+        journal.check = None;
+        journal.thesis = Some((
+            crate::knowledge::assets::JournalThesis {
+                asset_id: crate::knowledge::assets::asset_id("NVDA", "NASDAQ"),
+                role: crate::knowledge::assets::ThesisRole::Reason,
+            },
+            crate::knowledge::assets::AssetIdentity {
+                symbol: "NVDA".into(),
+                market: "NASDAQ".into(),
+                name: "NVDA".into(),
+            },
+        ));
+        let mut line = journal.clone();
+        line.thesis.as_mut().unwrap().0.role = crate::knowledge::assets::ThesisRole::Line;
+        line.check = Some(crate::knowledge::JournalCheck {
+            claim: "Margin below 8%".into(),
+            metric: "operating margin".into(),
+            direction: "below".into(),
+            threshold: 8.0,
+            unit: Some("%".into()),
+            by_date: None,
+            confidence: None,
+        });
+        reason.thesis_pair = Some(line);
+        if reverse {
+            std::mem::swap(&mut reason.journal, &mut reason.thesis_pair);
+        }
+        // A failed reply rolls back both rows and the new asset page.
+        let current = store.get_chat("chat-1").unwrap().unwrap();
+        let mut failed = current.clone();
+        failed.messages.push(message("failed", 30));
+        assert!(store
+            .replace_chat_with(&current, &failed, |tx| {
+                persist_saved_turn(
+                    tx,
+                    &blobs,
+                    "loupist-a",
+                    "chat-1",
+                    "failed",
+                    30,
+                    &[],
+                    true,
+                    &[],
+                    &[],
+                    Some(&reason),
+                )
+                .map_err(|e| StoreError::Invalid(e.to_string()))?;
+                Err(StoreError::Invalid("failed reply".into()))
+            })
+            .is_err());
+        assert_eq!(count(&store, "SELECT COUNT(*) FROM knowledge_journals"), 0);
+        let changes = save_turn(
+            &store,
+            &blobs,
+            "loupist-a",
+            "chat-1",
+            "saved",
+            true,
+            &[],
+            &[],
+            Some(&reason),
+        )
+        .unwrap();
+        assert_eq!(
+            changes
+                .iter()
+                .filter(|change| change.kind == "Journal")
+                .count(),
+            2
+        );
+        assert_eq!(count(&store, "SELECT COUNT(*) FROM knowledge_journals"), 2);
+        let mut connection = store.lock_loupist("loupist-a").unwrap();
+        let tx = connection.transaction().unwrap();
+        let first_role: String = tx.query_row("SELECT json_extract(body_json, '$.thesis.role') FROM knowledge_journals ORDER BY rowid LIMIT 1", [], |row| row.get(0)).unwrap();
+        assert_eq!(
+            first_role, "reason",
+            "even a line-first call writes its reason first"
+        );
+        let rows = crate::knowledge::journal::list(&tx, "loupist-a").unwrap();
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row
+                    .check
+                    .as_ref()
+                    .is_some_and(|check| check.threshold == 8.0 && check.by_date.is_none()))
+                .count(),
+            1
+        );
+    }
 }
 
 #[test]
@@ -707,6 +810,7 @@ fn journals_keep_the_acknowledged_snapshot_and_refuse_unacknowledged_or_foreign_
     assert!(save("loupist-a", "turn-unacked", &[], &cited).is_err());
     assert!(save("loupist-b", "turn-foreign", &reads, &cited).is_err());
     let analysis = StagedResearch {
+        thesis_pair: None,
         journal: None,
         ..research(Vec::new(), Vec::new(), Vec::new())
     };
@@ -874,6 +978,7 @@ fn staged_source_refs_freeze_note_inputs_and_world_jobs_only_on_commit() {
     crate::knowledge::store_settings(&store.lock().unwrap(), "loupist-a", &settings).unwrap();
     let source = staged("Original issuer claim, not the researcher's conclusion.");
     let note = StagedResearch {
+        thesis_pair: None,
         source_reads: vec![source.request_ref.clone()],
         journal: None,
         working_note: Some(crate::knowledge::WorkingNoteDraft {

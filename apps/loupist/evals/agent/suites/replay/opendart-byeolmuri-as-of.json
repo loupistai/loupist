@@ -18,9 +18,17 @@
         "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20260331&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20"
       },
       "query_match": {
-        "bgn_de": "ignore",
-        "end_de": "ignore",
-        "page_count": "ignore"
+        "bgn_de": {
+          "at_most": "20260305"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore",
+        "pblntf_ty": "optional"
       },
       "response": {
         "status": 200,
@@ -64,9 +72,16 @@
         "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20260331&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20&pblntf_ty=B"
       },
       "query_match": {
-        "bgn_de": "ignore",
-        "end_de": "ignore",
-        "page_count": "ignore"
+        "bgn_de": {
+          "at_most": "20260305"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
       },
       "response": {
         "status": 200,
@@ -110,9 +125,16 @@
         "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260101&end_de=20260331&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20&pblntf_ty=I"
       },
       "query_match": {
-        "bgn_de": "ignore",
-        "end_de": "ignore",
-        "page_count": "ignore"
+        "bgn_de": {
+          "at_most": "20260305"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
       },
       "response": {
         "status": 200,
@@ -153,6 +175,92 @@
     {
       "provider": "opendart.disclosures",
       "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260318&end_de=20260318&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore",
+        "pblntf_ty": "optional"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99030800",
+              "corp_cls": "Y",
+              "corp_name": "별무리반도체",
+              "stock_code": "990308",
+              "report_nm": "별무리반도체 포장라인 증설",
+              "rcept_no": "20260318990308",
+              "flr_nm": "별무리반도체",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260305&end_de=20260305&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260305"
+        },
+        "end_de": {
+          "at_least": "20260305"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore",
+        "pblntf_ty": "optional"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99030800",
+              "corp_cls": "Y",
+              "corp_name": "별무리반도체",
+              "stock_code": "990308",
+              "report_nm": "별무리반도체 검사장비 도입",
+              "rcept_no": "20260305990308",
+              "flr_nm": "별무리반도체",
+              "rcept_dt": "20260305",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
         "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20260305990308"
       },
       "response": {
@@ -170,6 +278,28 @@
         "status": 200,
         "content_type": "application/zip",
         "body_base64": "UEsDBBQAAAAAAAAAYVxUkBt+hAEAAIQBAAASAAAAMjAyNjAzMTg5OTAzMDgueG1sPD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48RE9DVU1FTlQ+PERPQ1VNRU5ULU5BTUU+67OE66y066as67CY64+E7LK0IO2PrOyepeudvOyduCDspp3shKQ8L0RPQ1VNRU5ULU5BTUU+PEJPRFk+PFNFQ1RJT04tMT48VElUTEU+7Iug6recIOyLnOyEpCDtiKzsnpA8L1RJVExFPjxQPuuzhOustOumrOuwmOuPhOyytOuKlCDqsIDsg4HsnZgg7Jik7IKwIOywveqzoOyXkCDtj6zsnqUg65287J24IDPqsJzrpbwg7Iug7ISk7ZWp64uI64ukLjwvUD48UD5GaWN0aW9uYWwgQnllb2xtdXJpIFNlbWljb25kdWN0b3Igd2lsbCBhZGQgMyBwYWNrYWdpbmcgbGluZXMgYXQgdGhlIGZpY3Rpb25hbCBPc2FuIHNoZWQuPC9QPjwvU0VDVElPTi0xPjwvQk9EWT48L0RPQ1VNRU5UPlBLAQIUAxQAAAAAAAAAYVxUkBt+hAEAAIQBAAASAAAAAAAAAAAAAACAAQAAAAAyMDI2MDMxODk5MDMwOC54bWxQSwUGAAAAAAEAAQBAAAAAtAEAAAAA"
+      }
+    }
+  ],
+  "otherwise": [
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/list.json?",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/document.xml?",
+      "response": {
+        "status": 200,
+        "content_type": "application/xml",
+        "text": "<result><status>013</status><message>조회된 데이타가 없습니다.</message></result>"
       }
     }
   ]

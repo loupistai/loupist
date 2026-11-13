@@ -230,7 +230,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -410,7 +411,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -504,7 +506,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -689,7 +692,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -784,7 +788,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -836,12 +841,19 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall"
                   },
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
                     "metric": "save_precision"
                   }
                 ],
@@ -897,7 +909,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -949,12 +962,19 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall"
                   },
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
                     "metric": "save_precision"
                   }
                 ],
@@ -1013,7 +1033,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1065,12 +1086,19 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall"
                   },
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
                     "metric": "save_precision"
                   }
                 ],
@@ -1126,7 +1154,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1210,7 +1239,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1297,7 +1327,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1381,7 +1412,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1465,7 +1497,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1699,7 +1732,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1898,7 +1932,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1982,7 +2017,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2028,15 +2064,21 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall",
                     "min": 1
                   },
                   {
                     "assert": "committed",
-                    "kind": "lens",
-                    "metric": "save_precision",
-                    "min": 1
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -2079,7 +2121,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2125,15 +2168,21 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall",
                     "min": 1
                   },
                   {
                     "assert": "committed",
-                    "kind": "lens",
-                    "metric": "save_precision",
-                    "min": 1
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -2179,7 +2228,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2226,15 +2276,21 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall",
                     "min": 1
                   },
                   {
                     "assert": "committed",
-                    "kind": "lens",
-                    "metric": "save_precision",
-                    "min": 1
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -2315,7 +2371,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2560,7 +2617,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2641,7 +2699,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2922,7 +2981,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     }
   ],
   "budget": {

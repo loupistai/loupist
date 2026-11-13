@@ -86,10 +86,10 @@ impl ChatSurface {
 
     fn hint(&self) -> &'static str {
         match self {
-            Self::Bot => "This is Home, the Loupist's one continuing conversation with the user. Answer directly and briefly from Memory and a few reads. When the user asks for depth or the request needs multi-step work, call research_open to hand it to a research session and tell the user the session title; otherwise offer it. With saving on, bot_memory keeps what this conversation should carry forward.",
-            Self::Session => "This is a research session: work in depth and file what you establish. A scheduling request goes to Home through schedule_handoff.",
-            Self::Scheduled => "This is an unattended scheduled run: only pre-approved tools are available, nobody is present to answer a question, and the result is delivered to Home.",
-            Self::Delegated { .. } => "This is a research session Home handed off: nobody is present to answer a question, so work it through with the tools allowed and finish with a complete answer whose first paragraph can stand alone in Home.",
+            Self::Bot => "This is Bot, the Loupist's one continuing conversation with the user. Answer directly and briefly from Memory and a few reads. When the user asks for depth or the request needs multi-step work, call research_open to hand it to a research session and tell the user the session title; otherwise offer it. With saving on, bot_memory keeps what this conversation should carry forward, and an answer here that rests on an original it read is filed with lens_file as in a session.",
+            Self::Session => "This is a research session: work in depth and file what you establish. A scheduling request goes to Bot through schedule_handoff.",
+            Self::Scheduled => "This is an unattended scheduled run: only pre-approved tools are available, nobody is present to answer a question, and the result is delivered to Bot.",
+            Self::Delegated { .. } => "This is a research session Bot handed off: nobody is present to answer a question, so work it through with the tools allowed and finish with a complete answer whose first paragraph can stand alone in Bot.",
         }
     }
 
@@ -196,8 +196,8 @@ mod tests {
             let block = surface.envelope_block();
             assert_eq!(block["surface"], surface.name());
             let hint = block["hint"].as_str().unwrap();
-            assert!(hint.contains("Home"));
-            assert!(!hint.contains("Bot"));
+            assert!(hint.contains("Bot"));
+            assert!(!hint.contains("Home"));
         }
     }
 }

@@ -32,8 +32,9 @@ export const JUDGE_SCHEMA = {
 
 const canonical = (value) => JSON.parse(canonicalJson(value));
 const observedFields = (value, fields) => Object.fromEntries(fields.map((field) => [field, value[field] ?? null]));
-const commitEvidence = (commit) => observedFields(commit,
-  ['kind', 'record_id', 'title', 'summary', 'change_summary', 'operation', 'prediction', 'outcome']);
+const commitEvidence = (commit) => Object.fromEntries(
+  ['kind', 'record_id', 'title', 'summary', 'change_summary', 'operation', 'judgment', 'reasoning', 'check', 'prediction', 'outcome']
+    .filter(field => Object.hasOwn(commit, field)).map(field => [field, commit[field]]));
 /** A Lens commit names only "lens"; the stored page tells a subject page from a method. */
 function savedItemEvidence(commit, trace) {
   const evidence = commitEvidence(commit);

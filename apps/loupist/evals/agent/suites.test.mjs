@@ -682,7 +682,7 @@ test('tightened principle, shared-method and retailer checks reject the user tex
 
 test('every scheduling turn needs the requested successful action even when saved state already matches', () => {
   const suite = loaded.find(file => file.name === 'scheduling-v1.json').json;
-  assert.equal(suite.scenarios.length, 7);
+  assert.equal(suite.scenarios.length, 8);
   for (const scenario of suite.scenarios) for (const session of scenario.sessions) session.turns.forEach((turn, index) => {
     const call = turn.expect.trace.find(item => item.assert === 'tool_called' && item.successful === true);
     assert.ok(call, `${scenario.id}/${session.id}#${index}`);
@@ -796,5 +796,63 @@ test('S-005 fails an executed deletion even when the saved-state snapshot still 
     const trace = observedTurn(suite, scenario, session, 1, { scheduled_tasks, tool_calls: [{ name: 'schedule_list', outcome: 'ok', args: {} }, ...extra] });
     const rows = grade(suite, [trace]).results;
     assert.equal(rows.find(row => row.assert === 'tool_not_called').pass, pass);
+  }
+});
+
+test('one taught sentence accepts one principle and rejects a duplicate method', () => {
+  const suite=loaded.find(file=>file.name==='learning-v1.json').json;
+  for(const id of ['L-011','L-012','L-013','L-026','L-027','L-028']) {
+    const scenario=suite.scenarios.find(s=>s.id===id);const session=scenario.sessions.find(s=>s.id==='train-1');
+    for(const [memory_commits,pass] of [[[{kind:'principle'}],true],[[{kind:'lens'}],true],[[{kind:'principle'},{kind:'lens'}],false],[[],false]]) {
+      const result=grade(suite,[observedTurn(suite,scenario,session,1,{memory_commits})]).results.find(row=>row.metric==='save_precision');
+      assert.equal(result.pass,pass,id);
+    }
+  }
+});
+
+test('asset change citations accept the dated original and Korean briefing date', () => {
+  const suite=loaded.find(file=>file.name==='assets-v1.json').json;
+  for(const id of ['A-001','A-002']) {
+    const scenario=suite.scenarios.find(s=>s.id===id);const session=scenario.sessions[0];
+    const url='#evidence-ev_'+'e'.repeat(32);
+    const trace=observedTurn(suite,scenario,session,0,{answer:`18 March [filing](${url})`,tool_calls:[{name:'dart_filing_read',args:{},outcome:'ok',result:{citation_url:url}}]});
+    if(id==='A-002')trace.answer=`2026-03-18 [filing](${url})`;
+    assert.equal(grade(suite,[trace]).results.find(row=>row.assert==='cites_result').pass,true,id);
+  }
+  const scenario=suite.scenarios.find(s=>s.id==='A-007');
+  assert.equal(grade(suite,[observedTurn(suite,scenario,scenario.sessions[0],0,{answer:'2026년 3월 18일자 포장라인 증설 공시'})]).results.find(row=>row.assert==='contains_any').pass,true);
+});
+
+test('new asset scenarios require a checked line and count each committed Journal entry', () => {
+  const suite=loaded.find(file=>file.name==='assets-v1.json').json;
+  for(const id of ['A-008','A-009']) {
+    const scenario=suite.scenarios.find(s=>s.id===id);const session=scenario.sessions[0];
+    const count=id==='A-009'?2:1;
+    const line={name:'journal_save',outcome:'ok',args:{thesis:{role:'line'},check:{direction:'below',threshold:8}}};
+    const reason={name:'journal_save',outcome:'ok',args:{thesis:{role:'reason'}}};
+    const trace=observedTurn(suite,scenario,session,0,{tool_calls:count===2?[reason,line]:[line],memory_commits:Array.from({length:count},()=>({kind:'journal'}))});
+    assert.ok(grade(suite,[trace]).results.every(row=>row.pass===true),id);
+    const wrong=structuredClone(trace);wrong.tool_calls.at(-1).args.thesis.role='reason';
+    assert.ok(grade(suite,[wrong]).results.some(row=>row.pass===false),id);
+    const partial={...trace,memory_commits:trace.memory_commits.slice(1)};
+    assert.equal(grade(suite,[partial]).results.find(row=>row.assert==='committed').pass,false,id);
+  }
+});
+
+test('wrong-entity web scenario refuses attribution even when the number matches', () => {
+  const suite=loaded.find(file=>file.name==='tool-use-v1.json').json;
+  const scenario=suite.scenarios.find(s=>s.id==='T-056');const session=scenario.sessions[0];
+  const trace=observedTurn(suite,scenario,session,0,{answer:'This page covers Southmere. It does not cover Northmere.'});
+  assert.ok(grade(suite,[trace]).results.every(row=>row.pass===true));
+  assert.equal(grade(suite,[{...trace,answer:'Southmere is mentioned; Northmere has a 4.25% policy rate.'}]).results.find(row=>row.assert==='answer_not_matching').pass,false);
+});
+
+test('an explicitly requested method page cannot be replaced by a principle', () => {
+  const suite=loaded.find(file=>file.name==='learning-v1.json').json;
+  const scenario=suite.scenarios.find(s=>s.id==='L-029');const session=scenario.sessions[0];
+  for(const [kind,pass] of [['lens',true],['principle',false]]) {
+    const trace=observedTurn(suite,scenario,session,0,{answer:'{"metrics":{"eps":1.5}}',memory_commits:[{kind,title:'Headline share count'}]});
+    const results=grade(suite,[trace]).results.filter(row=>row.assert==='committed');
+    assert.equal(results.length,2);assert.ok(results.every(row=>row.pass===pass));
   }
 });

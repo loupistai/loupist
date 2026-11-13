@@ -445,17 +445,21 @@ function evaluateAnswerAssertion(assertion, trace) {
     return resultOf(trace, assertion, !hit, hit ? `matches forbidden pattern ${hit}` : 'matches none of the forbidden patterns');
   }
   if (assertion.assert === 'cites_result') {
-    const { tool, near } = citationAssertion(assertion);
+    const { tools, near } = citationAssertion(assertion);
     const calls = toolCalls(trace);
     if (calls === null) return resultOf(trace, assertion, null, 'tool call evidence unavailable');
-    if (!calls.some((call) => call.name === tool)) return resultOf(trace, assertion, false, `${tool} was not called`);
-    const urls = returnedCitationUrls(calls, tool);
-    if (urls === null) return resultOf(trace, assertion, null, `${tool} results unavailable`);
+    const called = tools.filter(tool => calls.some(call => call.name === tool));
+    if (!called.length) return resultOf(trace, assertion, false, `${tools.join(' | ')} was not called`);
+    const sets = called.map(tool => returnedCitationUrls(calls, tool));
+    const unavailable = sets.some(urls => urls === null);
+    if (sets.every(urls => urls === null)) return resultOf(trace, assertion, null, 'tool results unavailable');
+    const urls = new Set(sets.filter(Boolean).flatMap(urls => [...urls]));
     const paragraphs = citingParagraphs(answer, urls);
-    const cited = near.length === 0 ? paragraphs : paragraphs.filter((paragraph) => near.some((value) => paragraph.includes(value)));
+    const cited = near.length === 0 ? paragraphs : paragraphs.filter(paragraph => near.some(value => paragraph.includes(value)));
+    if (!cited.length && unavailable) return resultOf(trace, assertion, null, 'some tool results unavailable');
     return resultOf(trace, assertion, cited.length > 0, cited.length > 0
-      ? `cites ${tool}${near.length ? ' beside the value' : ''}`
-      : paragraphs.length > 0 ? `cites ${tool} but not beside ${near.join(' | ')}` : `no citation_url from ${tool}`);
+      ? `cites ${called.join(' | ')}${near.length ? ' beside the value' : ''}`
+      : paragraphs.length > 0 ? `cites result but not beside ${near.join(' | ')}` : `no citation_url from ${called.join(' | ')}`);
   }
   if (assertion.assert === 'prediction') {
     const issues = predictionIssues(parsePredictionBlock(answer));
