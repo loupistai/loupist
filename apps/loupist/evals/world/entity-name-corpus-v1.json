@@ -436,5 +436,17 @@
   "kind": "Event",
   "entity": true,
   "measurement": false
+ },
+ {
+  "name": "Revenue Procedure 2026-1",
+  "kind": "Policy",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "2026 회계연도 예산법",
+  "kind": "Policy",
+  "entity": true,
+  "measurement": false
  }
 ]

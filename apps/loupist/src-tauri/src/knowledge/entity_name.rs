@@ -12,7 +12,7 @@ static MEASUREMENT: LazyLock<Regex> = LazyLock::new(|| {
         r"GWh\b|MWh\b|kWh\b|GW\b|MW\b|kg\b|km\b|억원|조원|만원|천원|원|달러|백만|천만|십억|백억|억|조|만|톤|명|대|개|주|건|배)|",
         r"\d[\d,.]*\s+(?:shares|employees|patients|vehicles|dollars|euros|people)\b|",
         r"\b(?:revenue|net income|operating (?:profit|income|margin)|earnings per share|market share|",
-        r"net (?:profit|loss)|sales volume|production capacity|yield)\b[^;\n]*\d|",
+        r"net (?:profit|loss)|sales volume|production capacity|yield)\b\s*[:=]?\s*[+−-]?\d|",
         r"(?:매출액|순이익|영업이익|점유율|생산량|생산능력|주당순이익)\s*[:=]?\s*[+−-]?\d)"
     )).expect("measurement name pattern")
 });

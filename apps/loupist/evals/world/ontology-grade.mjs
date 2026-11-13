@@ -13,7 +13,7 @@ const CORPORATE_SUFFIX = /(?:\s+주식회사|\s*\(주\)|\s*,?\s+Co\.,\s*Ltd\.|\s
 
 // Independent of the extractor: detect value nodes even if they were mislabeled
 // as a Product, Event or a user-defined kind. A digit/period alone is not enough.
-const MEASUREMENT_NAME = /(?:\b(?:USD|KRW|EUR|GBP|JPY|CNY|RMB|CAD|AUD|CHF)\s*[+−-]?\d|[$€£₩¥]\s*[+−-]?\d|\d[\d,.]*\s*(?:%|퍼센트|bps\b|basis points\b|million\b|billion\b|trillion\b|thousand\b|percent\b|tonnes\b|tons\b|barrels\b|widgets\b|units\b|GWh\b|MWh\b|kWh\b|GW\b|MW\b|kg\b|km\b|억원|조원|만원|천원|원|달러|백만|천만|십억|백억|억|조|만|톤|명|대|개|주|건|배)|\d[\d,.]*\s+(?:shares|employees|patients|vehicles|dollars|euros|people)\b|\b(?:revenue|net income|operating (?:profit|income|margin)|earnings per share|market share|net (?:profit|loss)|sales volume|production capacity|yield)\b[^;\n]*\d|(?:매출액|순이익|영업이익|점유율|생산량|생산능력|주당순이익)\s*[:=]?\s*[+−-]?\d)/iu;
+const MEASUREMENT_NAME = /(?:\b(?:USD|KRW|EUR|GBP|JPY|CNY|RMB|CAD|AUD|CHF)\s*[+−-]?\d|[$€£₩¥]\s*[+−-]?\d|\d[\d,.]*\s*(?:%|퍼센트|bps\b|basis points\b|million\b|billion\b|trillion\b|thousand\b|percent\b|tonnes\b|tons\b|barrels\b|widgets\b|units\b|GWh\b|MWh\b|kWh\b|GW\b|MW\b|kg\b|km\b|억원|조원|만원|천원|원|달러|백만|천만|십억|백억|억|조|만|톤|명|대|개|주|건|배)|\d[\d,.]*\s+(?:shares|employees|patients|vehicles|dollars|euros|people)\b|\b(?:revenue|net income|operating (?:profit|income|margin)|earnings per share|market share|net (?:profit|loss)|sales volume|production capacity|yield)\b\s*[:=]?\s*[+−-]?\d|(?:매출액|순이익|영업이익|점유율|생산량|생산능력|주당순이익)\s*[:=]?\s*[+−-]?\d)/iu;
 const COUPON_SECURITY = /^\d+(?:\.\d+)?%\s+(?:(?:notes|bonds)\s+(?:due\s+)?20\d{2}|20\d{2}년\s+만기\s+채권)$/iu;
 
 export function isMeasurementNode(node) {
