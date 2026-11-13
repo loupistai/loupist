@@ -40,7 +40,10 @@
 .watching-hint { margin: calc(-1 * var(--gg-space-2)) 0 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 /* Paused reads at a glance: the word itself, then the matrix dimmed. */
 .watching-status[data-paused] .watching-paused { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-semibold); }
-.watching-asset { display: grid; }
+.watching-asset { display: grid; min-width: 0; }
+/* Following: the row menu sits beside the name, inside the column that stays put. */
+.watching-asset-line { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-1); }
+.watching-asset-line .following-row-menu { flex: none; color: var(--gg-color-text-secondary); }
 .watching-asset strong { font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); }
 .watching-asset small, .watching-last { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 
@@ -106,6 +109,10 @@
 .following-caption { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
 .following-caption:lang(ko) { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); letter-spacing: 0; text-transform: none; }
 .following-empty { margin: 0 0 var(--gg-space-3); color: var(--gg-color-text-secondary); }
+/* Follows the Watching table cannot list: a name and its menu per row. */
+.following-unlisted { display: grid; margin: 0 0 var(--gg-space-3); padding: 0; list-style: none; }
+.following-unlisted li { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-2); min-height: 36px; border-bottom: 1px solid var(--gg-color-border-subtle); font-size: var(--gg-text-control); }
+.following-unlisted .following-row-menu { flex: none; color: var(--gg-color-text-secondary); }
 .following-watch-all { align-items: center; }
 .following-watch-all p { flex: 1 1 24ch; max-width: 60ch; margin: 0; }
 .following-needs { display: grid; gap: var(--gg-space-1); margin: 0; padding: 0; list-style: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }

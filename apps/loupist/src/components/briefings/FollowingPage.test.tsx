@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { LoupistSummary } from "../../types";
+import { AssetPageOpenerProvider } from "../assets/assetOpener";
 import { FollowingPage, parseFollow } from "./FollowingPage";
 
 async function fixture(setup?: (bridge: MockLoupistBridge) => Promise<void>) {
@@ -35,23 +36,52 @@ it("parses what to follow without guessing a market for other symbols", () => {
   expect(parseFollow("005930:kosdaq")).toEqual({ symbol: "005930", market: "KOSDAQ" });
 });
 
-it("lists follows and holdings as counts only, removes a follow, and imports holdings", async () => {
+it("lists follows and holdings as counts only, removes a follow from its row menu, and imports holdings", async () => {
   const { bridge, user } = await fixture(async bridge => {
     await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" });
     const preview = await bridge.holdingsImportCsv({ path: "/tmp/holdings.csv" });
     await bridge.holdingsCommitCsv({ previewId: preview.previewId });
   });
   const remove = vi.spyOn(bridge, "watchlistRemove");
-  expect(await screen.findByText("Apple · AAPL")).toBeVisible();
+  const row = (await screen.findByRole("rowheader", { name: /Apple/ })).closest("tr")!;
   expect(await screen.findByText(/^Stocks and funds: 1 asset · .* · Crypto: none/)).toBeVisible();
   // Quantities and values never reach this page.
   expect(document.body).not.toHaveTextContent("2.5");
   expect(document.body).not.toHaveTextContent("500");
-  await user.click(screen.getByRole("button", { name: "Stop following Apple" }));
+  await user.click(within(row as HTMLElement).getByRole("button", { name: "More actions for Apple" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Stop following Apple" }));
   expect(remove).toHaveBeenCalledWith({ symbol: "AAPL", market: "NASDAQ" });
+  await waitFor(() => expect(screen.queryByRole("rowheader", { name: /Apple/ })).toBeNull());
   // With holdings imported, the action reads Update….
   await user.click(screen.getByRole("button", { name: "Update…" }));
   expect(await screen.findByRole("dialog")).toBeVisible();
+});
+
+it("gives each followed asset one row with a menu, and no second list of the same names", async () => {
+  const opened = vi.fn();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const [loupist] = await bridge.loupistList() as LoupistSummary[];
+  for (const entry of await bridge.watchlistList()) await bridge.watchlistRemove({ symbol: entry.symbol, market: entry.market });
+  await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" });
+  // A currency cannot be watched, so it keeps a row above the add field with the same menu.
+  await bridge.watchlistAdd({ symbol: "USDKRW", market: "FX", displayName: "Dollar won" });
+  const remove = vi.spyOn(bridge, "watchlistRemove");
+  const user = userEvent.setup();
+  render(<AssetPageOpenerProvider value={opened}><FollowingPage bridge={bridge} loupist={loupist!} /></AssetPageOpenerProvider>);
+  const row = (await screen.findByRole("rowheader", { name: /Apple/ })).closest("tr") as HTMLElement;
+  const menu = within(row).getByRole("button", { name: "More actions for Apple" });
+  expect(menu).toHaveClass("size-7");
+  expect(screen.getAllByText("Apple")).toHaveLength(1);
+  expect(screen.queryByText("Apple · AAPL")).toBeNull();
+  await user.click(menu);
+  await user.click(await screen.findByRole("menuitem", { name: "Open asset page" }));
+  expect(opened).toHaveBeenCalledWith(expect.objectContaining({ loupistId: loupist!.id, name: "Apple" }));
+  const unlisted = screen.getByTestId("following-unlisted");
+  expect(within(unlisted).getByText("Dollar won · USDKRW")).toBeVisible();
+  await user.click(within(unlisted).getByRole("button", { name: "More actions for Dollar won" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Stop following Dollar won" }));
+  expect(remove).toHaveBeenCalledWith({ symbol: "USDKRW", market: "FX" });
+  await waitFor(() => expect(screen.queryByTestId("following-unlisted")).toBeNull());
 });
 
 it("lists every followed asset with a Watch-for box per kind that saves on change", async () => {

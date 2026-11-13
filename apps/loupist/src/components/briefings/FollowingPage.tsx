@@ -1,11 +1,10 @@
 import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber } from "@/i18n/format";
 import { useCallback, useEffect, useId, useState } from "react";
-import { XIcon } from "lucide-react";
 import type { LoupistBridge, LoupistSummary } from "../../types";
 import type { FollowedState, KnowledgeMapNode } from "../../contracts/knowledge";
 import type { HoldingsSummary, WatchlistEntry } from "../../contracts/userContext";
-import type { WatchDefaultsApplyResult } from "../../contracts/watch";
+import type { WatchAsset, WatchDefaultsApplyResult } from "../../contracts/watch";
 import { watchKindColumn } from "../assets/watchText";
 import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { entityLabel } from "../../knowledge/mapItems";
@@ -17,6 +16,7 @@ import { useAssetPageOpener } from "../assets/assetOpener";
 import { useWatchSettings } from "../assets/WatchFor";
 import { HoldingsSheet } from "../holdings/HoldingsSheet";
 import { WatchingReader, WatchingStatus } from "./Watching";
+import { FollowedMenu } from "./FollowedMenu";
 import "@/styles/watch.css";
 // Chips, the add form and meta lines share the Lens page's styles.
 import "@/styles/memory-page.css";
@@ -117,6 +117,13 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
     catch (cause) { setError(errorMessage(cause, tk("memoryPage.actionError"))); }
     finally { setBusy(false); }
   };
+  // The same call the follow list always made; following is shared, so there is nothing to confirm.
+  const stopFollowing = (entry: Pick<WatchlistEntry, "symbol" | "market">) => void run(() => bridge.watchlistRemove({ symbol: entry.symbol, market: entry.market }));
+  const sameListing = (entry: Pick<WatchlistEntry, "symbol" | "market">, asset: Pick<WatchAsset, "symbol" | "market">) => sameName(entry.symbol, asset.symbol) && sameName(entry.market, asset.market);
+  // Each followed asset is a row of the Watching table with its own menu. Follows the table cannot
+  // list (currencies, rates, prediction markets), or every follow when Watching did not load, keep a row here.
+  const listed = settings ? [...settings.watched, ...settings.notWatched] : null;
+  const unlisted = !watchlist ? [] : listed ? watchlist.filter(entry => !listed.some(asset => sameListing(entry, asset))) : watchFailed ? watchlist : [];
   const add = () => {
     const { symbol, market } = parseFollow(adding);
     if (!symbol) return;
@@ -159,16 +166,17 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
       <h2 id={listId} className="sr-only">{tk("memoryPage.about.follow")}</h2>
       {loadFailed ? <div role="alert" className="inline-error"><span>{t("following.loadFailed")}</span> <Button variant="outline" size="sm" onClick={refresh}>{t("retry")}</Button></div>
         : watchlist === null ? <p role="status" className="briefings-meta"><Spinner /> {t("loading")}</p>
-          : watchlist.length ? <ul className="memory-chips" data-testid="memory-chips">
-            {watchlist.map(entry => {
+          : watchlist.length ? (unlisted.length ? <ul className="following-unlisted" data-testid="following-unlisted">
+            {unlisted.map(entry => {
               const name = followedName(entry, nodes);
               const label = name ? `${name} · ${entry.symbol}` : entry.symbol;
               return <li key={`${entry.symbol}:${entry.market}`}>
                 {openAsset ? <button type="button" className="memory-chip-open" onClick={() => openAsset({ loupistId, symbol: entry.symbol, market: entry.market, name: name ?? undefined })}>{label}</button> : <span>{label}</span>}
-                <Button variant="ghost" size="icon-sm" disabled={busy} aria-label={tk("memoryPage.about.remove", { name: name ?? entry.symbol })} onClick={() => void run(() => bridge.watchlistRemove({ symbol: entry.symbol, market: entry.market }))}><XIcon /></Button>
+                <FollowedMenu name={name ?? entry.symbol} disabled={busy} onStop={() => stopFollowing(entry)}
+                  onOpen={openAsset ? () => openAsset({ loupistId, symbol: entry.symbol, market: entry.market, name: name ?? undefined }) : undefined} />
               </li>;
             })}
-          </ul> : <p className="following-empty" data-following-empty>{t("following.empty")}</p>}
+          </ul> : null) : <p className="following-empty" data-following-empty>{t("following.empty")}</p>}
       <form className="memory-follow-add" data-testid="memory-follow-add" onSubmit={event => { event.preventDefault(); add(); }}>
         <Input aria-label={tk("memoryPage.about.addLabel")} placeholder={tk("memoryPage.about.addPlaceholder")} value={adding} onChange={event => setAdding(event.target.value)} />
         <Button type="submit" size="sm" variant="outline" disabled={busy || !adding.trim()}>{tk("memoryPage.about.add")}</Button>
@@ -187,7 +195,9 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
       {t("following.needsConnection", { kind: watchKindColumn(item.kind), connection: item.connection.name })}
       {onOpenConnections ? <> <Button variant="link" size="sm" onClick={() => onOpenConnections(item.connection.id)}>{t("following.openConnections")}</Button></> : null}
     </li>)}</ul> : null}
-    {settings && watchlist?.length ? <WatchingReader bridge={bridge} loupist={loupist} settings={settings} onSettings={setSettings} onOpenConnections={onOpenConnections} embedded />
+    {settings && watchlist?.length ? <WatchingReader bridge={bridge} loupist={loupist} settings={settings} onSettings={setSettings} onOpenConnections={onOpenConnections} embedded
+      rowMenu={(asset, name) => <FollowedMenu name={name} disabled={busy} onStop={() => stopFollowing(watchlist.find(entry => sameListing(entry, asset)) ?? asset)}
+        onOpen={openAsset ? () => openAsset({ loupistId, assetId: asset.assetId, name }) : undefined} />} />
       : watchFailed && watchlist?.length ? <div role="alert" className="inline-error" data-watch-load-failed><span>{t("following.watchLoadFailed")}</span> <Button variant="outline" size="sm" onClick={() => void reloadWatch()}>{t("retry")}</Button></div> : null}
     </div>
     {/* Side column at wide sizes, after the list when compact: holdings are counts and dates only. */}
