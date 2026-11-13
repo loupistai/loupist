@@ -167,9 +167,12 @@ pub(in crate::commands) fn persist_saved_turn_sources(
         ));
     }
     let earlier_cites = staged_journal.map(|item| item.earlier.len()).unwrap_or(0);
+    // A reason or line is the user's own words about a followed asset; its asset
+    // page is the context, so `journal_save` stages it without a read.
     if save_journal
         && staged_journal.is_some_and(|journal| {
-            journal.source_reads.is_empty()
+            journal.thesis.is_none()
+                && journal.source_reads.is_empty()
                 && journal.world_reads.is_empty()
                 && journal.lens_reads.is_empty()
         })

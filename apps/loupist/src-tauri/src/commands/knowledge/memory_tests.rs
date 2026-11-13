@@ -302,6 +302,69 @@ async fn world_catalog_exposes_only_current_content_with_loupist_isolation() {
 }
 
 #[test]
+fn a_followed_asset_reason_commits_without_a_memory_read() {
+    // journal_save stages a thesis reason with no reads (the asset page is its
+    // context); the reply commit must accept what staging accepted.
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStore::open_in_memory().unwrap();
+    store.create_loupist(&loupist_profile("loupist-a")).unwrap();
+    store.create_chat(&chat("chat-1", "loupist-a")).unwrap();
+    let blobs = BlobStore::open(directory.path().join("blobs")).unwrap();
+    let identity = crate::knowledge::assets::AssetIdentity {
+        symbol: "NVDA".into(),
+        market: "NASDAQ".into(),
+        name: "NVDA".into(),
+    };
+    let reason = StagedResearch {
+        journal: Some(StagedResearchJournal {
+            thesis: Some((
+                crate::knowledge::assets::JournalThesis {
+                    asset_id: crate::knowledge::assets::asset_id("NVDA", "NASDAQ"),
+                    role: crate::knowledge::assets::ThesisRole::Reason,
+                },
+                identity,
+            )),
+            check: None,
+            judgment: "Data-center growth slows in 2027 as capex normalizes.".into(),
+            ..research(Vec::new(), Vec::new(), Vec::new())
+                .journal
+                .unwrap()
+        }),
+        ..research(Vec::new(), Vec::new(), Vec::new())
+    };
+    let changes = save_turn(
+        &store,
+        &blobs,
+        "loupist-a",
+        "chat-1",
+        "turn-1",
+        true,
+        &[],
+        &[],
+        Some(&reason),
+    )
+    .unwrap();
+    assert!(changes.iter().any(|change| change.kind == "Journal"));
+    assert_eq!(count(&store, "SELECT COUNT(*) FROM knowledge_journals"), 1);
+
+    // An entry that is not a reason or line still needs an acknowledged read.
+    let unread = research(Vec::new(), Vec::new(), Vec::new());
+    assert!(save_turn(
+        &store,
+        &blobs,
+        "loupist-a",
+        "chat-1",
+        "turn-2",
+        true,
+        &[],
+        &[],
+        Some(&unread),
+    )
+    .is_err());
+    assert_eq!(count(&store, "SELECT COUNT(*) FROM knowledge_journals"), 1);
+}
+
+#[test]
 fn saved_turn_memory_commits_with_the_chat_and_follows_its_policy() {
     let directory = tempfile::tempdir().unwrap();
     let store = SqliteStore::open_in_memory().unwrap();
