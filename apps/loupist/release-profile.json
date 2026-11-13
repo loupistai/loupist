@@ -1,0 +1,9 @@
+{
+  "channel": "beta",
+  "macos_signing": {
+    "mode": "self-signed",
+    "certificate_common_name": "Loupist Self-Signed Code Signing 2026",
+    "certificate_sha1": "A960F0F3F63A82489D1C9A2E0A6D4E6B00945C07",
+    "certificate_sha256": "442CD7BF39BD3866E5B72565375E013D2D1E3643976307761CE6E40A78EB5B8F"
+  }
+}

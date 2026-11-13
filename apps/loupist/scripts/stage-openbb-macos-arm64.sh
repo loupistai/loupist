@@ -54,7 +54,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 set -- "$PYTHON_BIN" "$OPENBB_ROOT/build_sidecar.py" --distpath "$TEMP_ROOT/dist"
-if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+if [ -n "${APPLE_SIGNING_IDENTITY:-}" ] && [ "${LOUPIST_MACOS_SIGNING_MODE:-developer-id}" = developer-id ]; then
     set -- "$@" --codesign-identity "$APPLE_SIGNING_IDENTITY"
 else
     echo "Building an unsigned/ad-hoc OpenBB staging runtime."
@@ -82,6 +82,10 @@ fi
 sh "$SCRIPT_DIR/check-macos-minimum-version.sh" \
     "$MACOS_MINIMUM_VERSION" \
     "$BUILT_RUNTIME"
+
+if [ "${LOUPIST_MACOS_SIGNING_MODE:-}" = self-signed ]; then
+    python3 "$SCRIPT_DIR/macos_release_signing.py" sign-runtime --kind openbb --runtime "$BUILT_RUNTIME"
+fi
 
 cp -R "$BUILT_RUNTIME/." "$NEW_RESOURCE/"
 if [ -e "$OLD_RESOURCE" ]; then

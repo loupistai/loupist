@@ -8,6 +8,7 @@
     "keepRunningAutomatic": "On because a briefing or Watching is active. You can turn it off here.",
     "loadFailed": "Couldn't load this setting.",
     "saveFailed": "Couldn't change this setting. Try again.",
+    "betaNotice": "Beta. This build is signed by Loupist and is not notarized by Apple.",
     "aboutTitle": "About & privacy",
     "privacyTitle": "What leaves this Mac",
     "privacyStays": "Stays on this Mac: chats, sources, Map, Lens, Journal and holdings, in each Loupist's folder. No Loupist account, no sync.",

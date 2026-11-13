@@ -42,6 +42,7 @@ export function ApplicationSettings({ bridge }: { bridge: LoupistBridge }) {
     </section>
     <section className="settings-general-block" aria-labelledby="settings-about-title">
       <h2 id="settings-about-title" className="settings-caption-label">{t("general.aboutTitle")}</h2>
+      <p className="settings-row-description">{t("general.betaNotice")}</p>
       <div className="settings-privacy" data-privacy>
         <h3>{t("general.privacyTitle")}</h3>
         <dl className="settings-privacy-list">{PRIVACY_LINES.map(key => {

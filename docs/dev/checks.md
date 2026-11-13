@@ -278,7 +278,29 @@ and include the comparison and measurement method in the PR. Runtime file bytes,
 Tauri's app-size report and a compressed installer are different measurements.
 When `APPLE_SIGNING_IDENTITY` is set, `--ensure` reapplies that identity even when
 the runtime was previously cached with an ad-hoc signature. Distribution checks
-also require the Python worker's signature to chain to Apple.
+branch on `LOUPIST_MACOS_SIGNING_MODE`: unset preserves local/CI behavior,
+`developer-id` requires an Apple chain, and `self-signed` requires the pinned leaf.
+
+| Executable | Developer ID | Self-signed Beta | Mode unset |
+| --- | --- | --- | --- |
+| App (Tauri) | Runtime, no entitlements, notarized | Runtime, no entitlements | Local linker signature |
+| Python worker | Runtime, worker entitlement, timestamp | Runtime, worker entitlement, no timestamp | Ad-hoc runtime and worker entitlement |
+| Pi | Runtime, Pi entitlements, timestamp | Certificate, no runtime or entitlements | Upstream signature |
+| Other Pi Mach-O | Runtime, timestamp | Certificate, no runtime or entitlements | Untouched |
+| OpenBB | PyInstaller identity, runtime, timestamp | PyInstaller ad-hoc, then sign every Mach-O without runtime, main executable last | PyInstaller ad-hoc |
+| DMG | Signed, notarized and stapled | Signed, no ticket | Unsigned |
+
+Without a Team ID, library validation prevents a hardened Pi/OpenBB process from
+loading its own libraries. Self-signed staging therefore omits hardened runtime
+for those processes; the app and Python worker retain it. A release app without a
+Team ID admits only helpers with its own actual leaf
+certificate hash. Ad-hoc apps have no certificate and cannot run bundled helpers,
+so ad-hoc is not selectable in `release-profile.json`. Local unsigned staging
+remains available. The signed bundle check also starts the app's headless
+`--check-bundled-helpers` preflight, which uses its real Pi RPC, bundled MCP and
+`run_python` launch paths before any Tauri/app-profile initialization. No signing experiment may touch another user's keychains or
+trust settings. Release signing facts are checked by `macos_release_signing.py`
+and recorded in the release metadata; see [signing modes](../release.md#signing-modes-and-rehearsal).
 
 The release and package-smoke resource maps list the same production agent files
 explicitly and exclude `*.test.mjs`. Tauri reads both overlays directly, so their

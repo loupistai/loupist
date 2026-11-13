@@ -7,9 +7,15 @@ import argparse
 import hashlib
 import json
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
+
+# Only the trusted script directory is importable under python -I.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from release_profile import validate_signing_record, load_profile, match_profile
 
 
 RELEASE_VERSION = re.compile(
@@ -68,6 +74,9 @@ def main() -> int:
     parser.add_argument("--tag", required=True)
     parser.add_argument("--repository", required=True)
     parser.add_argument("--source-commit")
+    parser.add_argument("--profile", type=Path)
+    parser.add_argument("--allow-dry-run", action="store_true")
+    parser.add_argument("--expected-certificate-sha256")
     parser.add_argument("--assets", required=True, type=Path)
     arguments = parser.parse_args()
 
@@ -118,6 +127,7 @@ def main() -> int:
         "source_commit",
         "workflow_run_id",
         "macos_bundle_version",
+        "macos_signing",
         "updater_manifest",
         "artifacts",
         "download_aliases",
@@ -154,6 +164,15 @@ def main() -> int:
         or MACOS_BUNDLE_VERSION.fullmatch(macos_bundle_version) is None
     ):
         raise RuntimeError("release metadata macOS bundle version is invalid")
+
+    validate_signing_record(
+        metadata["macos_signing"],
+        allow_dry_run=arguments.allow_dry_run,
+        expected_certificate=arguments.expected_certificate_sha256,
+    )
+
+    if arguments.profile:
+        match_profile(metadata["macos_signing"], load_profile(arguments.profile))
 
     expected_artifacts = {
         name: {"sha256": sha256(arguments.assets / name)} for name in canonical

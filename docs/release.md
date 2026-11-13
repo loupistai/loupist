@@ -40,10 +40,85 @@ so the failed attempt published nothing under that number.
    `release-qualification.py`.
 5. Promote the qualified stable draft with `promote-release.yml`. `stable-release` is the environment that approves that promotion. Promotion does not build or upload files.
 
+## Signing modes and rehearsal
+
+`apps/loupist/release-profile.json` is part of the tag: `channel` is `beta` or
+`stable`, and `macos_signing.mode` is `self-signed` or `developer-id`.
+The default Beta pins the public certificate's SHA-1 and SHA-256 and common name;
+`apps/loupist/release-signing-certificate.pem` contains only that public certificate.
+Switching modes requires a source change and a new tag, never a mutable repository
+variable. Local staging with no mode keeps its existing behavior.
+
+| Mode | Release credentials | Package assertions |
+| --- | --- | --- |
+| Self-signed | Three updater secrets and `LOUPIST_SELF_SIGNED_CERTIFICATE`, `LOUPIST_SELF_SIGNED_CERTIFICATE_PASSWORD` | Pinned certificate root and leaf, no Apple team or stapled ticket, per-executable runtime flags and entitlements |
+| Developer ID | Three updater secrets and six `LOUPIST_APPLE_*` secrets | Apple chain and team, notarization and stapling, existing sidecar entitlements |
+
+The updater secrets are `LOUPIST_UPDATER_PUBLIC_KEY`,
+`LOUPIST_TAURI_SIGNING_PRIVATE_KEY`, and
+`LOUPIST_TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. All modes retain updater signatures,
+the closed asset manifest, checksums, and build provenance. `RELEASE-METADATA.json`
+schema 1 records `macos_signing`: mode, notarized, team ID or null, certificate
+SHA-256, and the app's designated requirement. A release with an Apple Team ID
+admits only
+helpers with that team; a teamless signed release requires the helper's actual
+leaf certificate SHA-256 to match the running app's own signature. Ad-hoc apps
+cannot establish a shared signer and refuse all bundled helpers; ad-hoc mode is
+therefore not selectable for a release. Unsigned development/CI staging remains
+available, without claiming release runtime trust. Qualification compares these
+facts to both the tag's profile and the mounted app. No unnotarized build claims
+Apple notarization; Gatekeeper output is recorded without gating on runner policy.
+
+Before tagging, after a green exact-commit main run and the read-only setup audit:
+
+```sh
+gh workflow run release.yml --ref main -f dry_run=true
+# Optional: -f run_full_ci=true
+```
+
+The rehearsal builds with a certificate and updater key generated inside the job,
+imports the certificate through the real base64/keychain path, stages and signs,
+verifies the mounted DMG and runs sidecar checks, assembles and verifies all assets,
+and runs the app's headless `--check-bundled-helpers` entry point from the mounted
+image through the real Pi, MCP and Python host launch paths. It uploads
+`loupist-assembled-release` and `loupist-signing-report` for one day.
+It uses `release-dry-run`, receives no release secrets, and publishes or attests
+nothing. Metadata mode `dry-run-ephemeral` is accepted only with the explicit
+`verify-release-assets.py --allow-dry-run` flag and cannot be qualified/promoted.
+Tag identity, RC sequencing, changelog and exact-commit CI gates are skipped only
+for rehearsal. Version consistency, market calendar, resource/configuration checks
+and build-number allocation still run. A normal tag run repeats full CI; rehearsal
+does so only when requested. A dry run must be green before the first tag, and
+after workflow, staging or Tauri configuration changes.
+
+For a tag whose push started nothing, dispatch the existing tag explicitly:
+`gh workflow run release.yml --ref vX.Y.Z-rc.N -f dry_run=false`.
+A non-dry dispatch from a branch is refused. A burned RC tag may be skipped only
+if every skipped number exists as a tag without a published release, and the new
+number exceeds every published RC. Never move or delete the burned tag. An
+installed RC whose next candidate was burned can still update through the stable
+feed, though it will not see a later RC. A burned stable tag requires a higher
+patch version. Publication asks for `release` approval separately from building;
+inspect build verification before approving it.
+
+Keep the updater key and bundle identifier when moving to Developer ID. Change
+the profile to `developer-id` (certificate fields may be null for an unpinned
+Developer ID leaf), configure its six secrets, remove the Beta About line and
+update install instructions in that same release. Qualify the new path through
+RCs: its notarization and sidecar signing have not yet been exercised on a runner.
+When Developer ID is first used, require `anchor apple generic` together with Team
+ID equality in the runtime helper check; Team ID equality alone does not establish
+an Apple signer because a self-signed certificate can carry a team identifier.
+The identity change can ask once for access to each saved Data/custom connection
+secret and GitHub sharing token. Choosing Always Allow settles it. AI sign-ins
+are files and are unaffected. The ad-hoc release fallback was removed because it
+cannot satisfy helper trust.
+
 ## Candidate update qualification
 
 Run an in-app update qualification only on disposable, isolated macOS Apple Silicon
-test machines. Do not redirect `github.com` or trust a test certificate on a
+test machines, including a disposable macOS virtual machine on Apple Silicon
+with its own hosts file and keychain. Record the method used. Do not redirect `github.com` or trust a test certificate on a
 developer's daily-use machine or on a production network.
 
 1. Download the unchanged stable draft assets and run `verify-release-assets.py`
@@ -80,9 +155,54 @@ developer's daily-use machine or on a production network.
    connector credentials must never appear in that evidence.
 6. Dispatch `release-qualification.yml` from the candidate `vX.Y.Z` tag (not
    `main`) with the macOS update-evidence URL, product-acceptance URL,
-   candidate-set digest, and both confirmation flags. Its receipt seals the exact
+   candidate-set digest, `update_check`, `product_acceptance`, and
+   `unperformed_checks`. Its receipt seals the exact
    tested asset set; use its successful run ID to dispatch `promote-release.yml` from that same candidate
    tag.
+
+Qualification schema 2 records the channel and signing mode, method and result
+(`passed` or `not_performed`) for each check, evidence URLs, the sealed candidate
+digest, and one plain-text `unperformed_checks` line. It never labels a substitute
+RC update as a test of the candidate. The workflow prints the receipt in its summary.
+
+| Input | Allowed values |
+| --- | --- |
+| `update_check` | `candidate-on-isolated-machine`, `candidate-in-virtual-machine`, `not-performed-on-candidate` |
+| `product_acceptance` | `clean-isolated-machine`, `clean-virtual-machine`, `separate-user-account`, `not-performed` |
+
+`channel: stable` requires the first value of each choice. Beta requires product
+acceptance; it can record an unperformed candidate update with an explicit
+explanation and substitute evidence (for example, a real RC-to-RC update before
+promotion and RC-to-stable immediately afterward). VM methods are available for
+Beta; the stable channel retains its stricter
+isolated-machine choices. An evidence URL is required
+for each performed check; an unperformed update may carry a substitute evidence
+URL or be empty. Beta always requires a non-empty `unperformed_checks` line,
+including an explicit statement when no checks were omitted. Other channels
+require it whenever either choice differs from its first value. A VM records its
+actual method, never isolated-machine.
+For Beta promotion the current draft title must end in `(Beta)` and its body must
+contain the whole explanation line, allowing whitespace normalization and the
+`- Not checked:` presentation prefix; a substring does not qualify. RC notes say
+they are unqualified candidates and contain no acceptance placeholders.
+Edit the stable draft notes before qualification and
+promotion. Neither workflow replaces the candidate bytes. Their first end-to-end
+execution requires a real draft and cannot be established by the build rehearsal.
+
+Example Beta qualification after acceptance in a separate macOS account:
+
+```sh
+gh workflow run release-qualification.yml --ref v0.1.0 \
+  -f candidate_tag=v0.1.0 -f predecessor_tag=v0.1.0-rc.2 \
+  -f macos_candidate_set_sha256=<SHA256-of-SHA256SUMS> \
+  -f update_check=not-performed-on-candidate \
+  -f "macos_update_evidence_url=https://github.com/loupistai/loupist/issues/<number>" \
+  -f product_acceptance=separate-user-account \
+  -f "macos_product_acceptance_evidence_url=https://github.com/loupistai/loupist/issues/<number>" \
+  -f unperformed_checks='<actual omitted checks and substitute test>'
+gh workflow run promote-release.yml --ref v0.1.0 \
+  -f candidate_tag=v0.1.0 -f qualification_run_id=<successful-run-id>
+```
 
 The public download link is `releases/latest/download/Loupist-macOS-arm64.dmg`; do not advertise a Windows installer. The app feed is `https://github.com/loupistai/loupist/releases/latest/download/latest.json`. Install and restart need explicit user confirmation. A release build sets `requireSignedVersion`, and the app treats any other updater configuration as unsupported. The signature's trusted comment has to carry the same version as `latest.json`. A rewritten feed cannot pair a new version number with an older signed package.
 

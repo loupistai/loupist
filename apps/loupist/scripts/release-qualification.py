@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse
 
+from release_profile import load_profile, match_profile, validate_signing_record
+
 
 STABLE_TAG = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 RC_TAG = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-rc\.([1-9]\d*)$")
@@ -78,42 +80,44 @@ def validate_release_sequence(
         )
 
 
-def validate_rc_release_sequence(candidate_tag: str, published_tags: list[str]) -> None:
-    """Keep a prerelease line contiguous for the fixed next-RC update feed.
+def validate_rc_release_sequence(
+    candidate_tag: str,
+    published_tags: list[str],
+    existing_tags: list[str] | None = None,
+) -> None:
+    """Allow gaps only for immutable RC tags that never published a release.
 
-    An installed ``vX.Y.Z-rc.N`` checks only ``rc.(N + 1)`` and the stable
-    feed.  Publishing a later RC while skipping a number would strand that
-    installed client, so release creation must preserve a complete sequence.
+    A skipped next-RC endpoint remains absent; installed copies still check the
+    stable feed. A missing tag is never evidence of a burned candidate.
     """
-
     candidate = RC_TAG.fullmatch(candidate_tag)
     if candidate is None:
         raise RuntimeError(
             "release candidate must be a canonical vMAJOR.MINOR.PATCH-rc.N tag"
         )
-    base = candidate.groups()[:3]
-    candidate_sequence = int(candidate.group(4))
-    sequences: set[int] = set()
+    base, sequence = candidate.groups()[:3], int(candidate.group(4))
+    published = set()
     for tag in published_tags:
         stable = STABLE_TAG.fullmatch(tag)
-        if stable is not None and stable.groups() == base:
+        if stable and stable.groups() == base:
             raise RuntimeError(
                 "cannot publish a release candidate after its matching stable release"
             )
-        published = RC_TAG.fullmatch(tag)
-        if published is not None and published.groups()[:3] == base:
-            sequences.add(int(published.group(4)))
-
-    ordered_sequences = sorted(sequences)
-    expected_published = list(range(1, len(ordered_sequences) + 1))
-    if ordered_sequences != expected_published:
+        match = RC_TAG.fullmatch(tag)
+        if match and match.groups()[:3] == base:
+            published.add(int(match.group(4)))
+    if sequence <= max(published, default=0):
+        raise RuntimeError("release candidate must be above every published RC")
+    tags = set(existing_tags or [])
+    prefix = "v" + ".".join(base) + "-rc."
+    missing = [
+        n
+        for n in range(1, sequence)
+        if n not in published and prefix + str(n) not in tags
+    ]
+    if missing:
         raise RuntimeError(
-            "published release candidates for this version must be contiguous from rc.1"
-        )
-    expected_candidate = len(ordered_sequences) + 1
-    if candidate_sequence != expected_candidate:
-        raise RuntimeError(
-            f"release candidate must be the next contiguous tag: expected rc.{expected_candidate}"
+            f"release candidate must be contiguous unless each gap is an existing unpublished tag: expected rc.{missing[0]}"
         )
 
 
@@ -196,11 +200,68 @@ def validate_identity(
         or MACOS_BUNDLE_VERSION.fullmatch(metadata["macos_bundle_version"]) is None
     ):
         raise RuntimeError("release metadata identity does not match qualification")
+    validate_signing_record(metadata.get("macos_signing"))
     return candidate_tag.removeprefix("v")
+
+
+UPDATE_METHODS = {
+    "candidate-on-isolated-machine",
+    "candidate-in-virtual-machine",
+    "not-performed-on-candidate",
+}
+PRODUCT_METHODS = {
+    "clean-isolated-machine",
+    "clean-virtual-machine",
+    "separate-user-account",
+    "not-performed",
+}
+
+
+def validate_methods(channel: str, update: str, product: str, unperformed: str) -> None:
+    if update not in UPDATE_METHODS or product not in PRODUCT_METHODS:
+        raise RuntimeError("unknown qualification method")
+    if (
+        not isinstance(unperformed, str)
+        or any(ord(c) < 32 for c in unperformed)
+        or len(unperformed.splitlines()) > 1
+    ):
+        raise RuntimeError("unperformed checks must be one line of plain text")
+    if channel == "stable" and (
+        update != "candidate-on-isolated-machine" or product != "clean-isolated-machine"
+    ):
+        raise RuntimeError("stable channel requires both isolated-machine checks")
+    if channel == "beta" and product == "not-performed":
+        raise RuntimeError("Beta requires product acceptance")
+    if channel == "beta" and not normalized_disclosure(unperformed):
+        raise RuntimeError(
+            "Beta requires a non-empty unperformed checks line, including when all checks were performed"
+        )
+    if (
+        update != "candidate-on-isolated-machine" or product != "clean-isolated-machine"
+    ) and not unperformed.strip():
+        raise RuntimeError(
+            "unperformed checks are required for these qualification methods"
+        )
+
+
+def check_result(method: str, url: str, digest: str, *, product: bool = False) -> dict:
+    absent = method == ("not-performed" if product else "not-performed-on-candidate")
+    return {
+        "method": method,
+        "result": "not_performed" if absent else "passed",
+        "evidence_url": evidence_url(
+            url, "product acceptance evidence URL" if product else "macOS evidence URL"
+        )
+        if url or not absent
+        else "",
+        "candidate_set_sha256": digest,
+    }
 
 
 def write_receipt(arguments: argparse.Namespace) -> int:
     metadata = load_metadata(arguments.release_metadata)
+    profile = load_profile(arguments.profile)
+    match_profile(metadata.get("macos_signing"), profile)
     candidate_digest = candidate_set_sha256(arguments.release_metadata)
     candidate_version = validate_identity(
         candidate_tag=arguments.candidate_tag,
@@ -210,11 +271,21 @@ def write_receipt(arguments: argparse.Namespace) -> int:
         release_id=arguments.release_id,
         metadata=metadata,
     )
-    run_id = positive_integer(
-        arguments.workflow_run_id, "qualification workflow run id"
+    validate_methods(
+        profile["channel"],
+        arguments.update_check,
+        arguments.product_acceptance,
+        arguments.unperformed_checks,
+    )
+    required_candidate_digest(
+        arguments.macos_candidate_set_sha256,
+        "macOS candidate-set digest",
+        candidate_digest,
     )
     receipt = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "channel": profile["channel"],
+        "macos_signing_mode": profile["macos_signing"]["mode"],
         "repository": arguments.repository,
         "candidate_tag": arguments.candidate_tag,
         "candidate_version": candidate_version,
@@ -223,29 +294,22 @@ def write_receipt(arguments: argparse.Namespace) -> int:
         "draft_release_id": arguments.release_id,
         "release_metadata_sha256": sha256(arguments.release_metadata),
         "candidate_set_sha256": candidate_digest,
-        "qualification_workflow_run_id": run_id,
+        "qualification_workflow_run_id": positive_integer(
+            arguments.workflow_run_id, "qualification workflow run id"
+        ),
+        "unperformed_checks": arguments.unperformed_checks,
         "platforms": {
-            "macos-aarch64": {
-                "result": "passed",
-                "evidence_url": evidence_url(
-                    arguments.macos_evidence_url, "macOS evidence URL"
-                ),
-                "candidate_set_sha256": required_candidate_digest(
-                    arguments.macos_candidate_set_sha256,
-                    "macOS candidate-set digest",
-                    candidate_digest,
-                ),
-            },
+            "macos-aarch64": check_result(
+                arguments.update_check, arguments.macos_evidence_url, candidate_digest
+            )
         },
         "product_acceptance": {
-            "macos-aarch64": {
-                "result": "passed",
-                "evidence_url": evidence_url(
-                    arguments.macos_product_acceptance_evidence_url,
-                    "macOS product acceptance evidence URL",
-                ),
-                "candidate_set_sha256": candidate_digest,
-            },
+            "macos-aarch64": check_result(
+                arguments.product_acceptance,
+                arguments.macos_product_acceptance_evidence_url,
+                candidate_digest,
+                product=True,
+            )
         },
     }
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
@@ -256,11 +320,20 @@ def write_receipt(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def normalized_disclosure(line: str) -> str:
+    line = line.strip()
+    if line.startswith(("- ", "* ")):
+        line = line[2:]
+    if line.startswith("Not checked:"):
+        line = line.removeprefix("Not checked:")
+    return " ".join(line.split())
+
+
 def verify_receipt(arguments: argparse.Namespace) -> int:
     metadata = load_metadata(arguments.release_metadata)
-    receipt = json.loads(arguments.receipt.read_text(encoding="utf-8"))
-    if not isinstance(receipt, dict):
-        raise RuntimeError("qualification receipt must be a JSON object")
+    profile = load_profile(arguments.profile)
+    match_profile(metadata.get("macos_signing"), profile)
+    receipt = load_metadata(arguments.receipt)
     required = {
         "schema_version",
         "repository",
@@ -274,9 +347,12 @@ def verify_receipt(arguments: argparse.Namespace) -> int:
         "qualification_workflow_run_id",
         "platforms",
         "product_acceptance",
+        "channel",
+        "macos_signing_mode",
+        "unperformed_checks",
     }
-    if set(receipt) != required or receipt["schema_version"] != 1:
-        raise RuntimeError("qualification receipt schema is not exactly version 1")
+    if set(receipt) != required or receipt["schema_version"] != 2:
+        raise RuntimeError("qualification receipt schema is not exactly version 2")
     candidate_version = validate_identity(
         candidate_tag=arguments.candidate_tag,
         previous_tag=receipt["qualified_predecessor_tag"],
@@ -285,13 +361,16 @@ def verify_receipt(arguments: argparse.Namespace) -> int:
         release_id=arguments.release_id,
         metadata=metadata,
     )
+    digest = candidate_set_sha256(arguments.release_metadata)
     expected_scalars = {
+        "channel": profile["channel"],
+        "macos_signing_mode": profile["macos_signing"]["mode"],
         "repository": arguments.repository,
         "candidate_tag": arguments.candidate_tag,
         "candidate_version": candidate_version,
         "source_commit": arguments.source_commit,
         "draft_release_id": arguments.release_id,
-        "candidate_set_sha256": candidate_set_sha256(arguments.release_metadata),
+        "candidate_set_sha256": digest,
         "release_metadata_sha256": sha256(arguments.release_metadata),
         "qualification_workflow_run_id": positive_integer(
             arguments.workflow_run_id, "qualification workflow run id"
@@ -300,50 +379,46 @@ def verify_receipt(arguments: argparse.Namespace) -> int:
     for key, expected in expected_scalars.items():
         if receipt[key] != expected:
             raise RuntimeError(f"qualification receipt field does not match: {key}")
-    expected_platforms = {"macos-aarch64"}
-    platforms = receipt["platforms"]
-    if not isinstance(platforms, dict) or set(platforms) != expected_platforms:
-        raise RuntimeError("qualification receipt must cover macOS Apple Silicon")
-    for platform, result in platforms.items():
+    methods = []
+    for section, product in [("platforms", False), ("product_acceptance", True)]:
+        results = receipt[section]
+        if not isinstance(results, dict) or set(results) != {"macos-aarch64"}:
+            raise RuntimeError("qualification receipt must cover macOS Apple Silicon")
+        result = results["macos-aarch64"]
         if not isinstance(result, dict) or set(result) != {
+            "method",
             "result",
             "evidence_url",
             "candidate_set_sha256",
         }:
-            raise RuntimeError(f"qualification result is malformed: {platform}")
-        if result["result"] != "passed":
-            raise RuntimeError(f"qualification did not pass: {platform}")
-        evidence_url(result["evidence_url"], f"{platform} evidence URL")
+            raise RuntimeError("qualification result is malformed")
+        methods.append(result["method"])
         required_candidate_digest(
             result["candidate_set_sha256"],
-            f"{platform} candidate-set digest",
-            receipt["candidate_set_sha256"],
+            "product acceptance candidate-set digest"
+            if product
+            else "macOS candidate-set digest",
+            digest,
         )
-    product_acceptance = receipt["product_acceptance"]
-    if (
-        not isinstance(product_acceptance, dict)
-        or set(product_acceptance) != expected_platforms
-    ):
-        raise RuntimeError(
-            "qualification receipt must cover clean signed product acceptance on macOS Apple Silicon"
-        )
-    for platform, result in product_acceptance.items():
-        if not isinstance(result, dict) or set(result) != {
-            "result",
-            "evidence_url",
-            "candidate_set_sha256",
-        }:
-            raise RuntimeError(f"product acceptance result is malformed: {platform}")
-        if result["result"] != "passed":
-            raise RuntimeError(f"product acceptance did not pass: {platform}")
-        evidence_url(
-            result["evidence_url"], f"{platform} product acceptance evidence URL"
-        )
-        required_candidate_digest(
-            result["candidate_set_sha256"],
-            f"{platform} product acceptance candidate-set digest",
-            receipt["candidate_set_sha256"],
-        )
+        if result != check_result(
+            result["method"], result["evidence_url"], digest, product=product
+        ):
+            raise RuntimeError("qualification result differs from the recorded method")
+    validate_methods(profile["channel"], *methods, receipt["unperformed_checks"])
+    if profile["channel"] == "beta":
+        if arguments.release_json is None:
+            raise RuntimeError("Beta promotion requires current draft title and notes")
+        release = load_metadata(arguments.release_json)
+        if not isinstance(release.get("name"), str) or not release["name"].endswith(
+            "(Beta)"
+        ):
+            raise RuntimeError("Beta draft title must end in (Beta)")
+        if not isinstance(release.get("body"), str) or normalized_disclosure(
+            receipt["unperformed_checks"]
+        ) not in {normalized_disclosure(line) for line in release["body"].splitlines()}:
+            raise RuntimeError(
+                "Beta draft notes must contain the whole unperformed_checks line verbatim after whitespace normalization"
+            )
     return 0
 
 
@@ -365,9 +440,16 @@ def validate_sequence(arguments: argparse.Namespace) -> int:
 def validate_rc_sequence(arguments: argparse.Namespace) -> int:
     if arguments.published_tags.is_symlink() or not arguments.published_tags.is_file():
         raise RuntimeError("published release tags must be a regular file")
+    if arguments.existing_tags and (
+        arguments.existing_tags.is_symlink() or not arguments.existing_tags.is_file()
+    ):
+        raise RuntimeError("existing RC tags must be a regular file")
     validate_rc_release_sequence(
         arguments.candidate_tag,
         arguments.published_tags.read_text(encoding="utf-8").splitlines(),
+        arguments.existing_tags.read_text(encoding="utf-8").splitlines()
+        if arguments.existing_tags
+        else [],
     )
     return 0
 
@@ -384,7 +466,17 @@ def main() -> int:
     write.add_argument("--release-id", required=True)
     write.add_argument("--release-metadata", required=True, type=Path)
     write.add_argument("--workflow-run-id", required=True)
-    write.add_argument("--macos-evidence-url", required=True)
+    write.add_argument("--macos-evidence-url", default="")
+    write.add_argument("--update-check", choices=sorted(UPDATE_METHODS), required=True)
+    write.add_argument(
+        "--product-acceptance", choices=sorted(PRODUCT_METHODS), required=True
+    )
+    write.add_argument("--unperformed-checks", default="")
+    write.add_argument(
+        "--profile",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "release-profile.json",
+    )
     write.add_argument("--macos-candidate-set-sha256", required=True)
     write.add_argument("--macos-product-acceptance-evidence-url", required=True)
     write.add_argument("--output", required=True, type=Path)
@@ -398,6 +490,12 @@ def main() -> int:
     verify.add_argument("--release-metadata", required=True, type=Path)
     verify.add_argument("--workflow-run-id", required=True)
     verify.add_argument("--receipt", required=True, type=Path)
+    verify.add_argument(
+        "--profile",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "release-profile.json",
+    )
+    verify.add_argument("--release-json", type=Path)
     verify.set_defaults(handler=verify_receipt)
 
     digest = subparsers.add_parser("digest")
@@ -413,6 +511,7 @@ def main() -> int:
     rc_sequence = subparsers.add_parser("rc-sequence")
     rc_sequence.add_argument("--candidate-tag", required=True)
     rc_sequence.add_argument("--published-tags", required=True, type=Path)
+    rc_sequence.add_argument("--existing-tags", type=Path)
     rc_sequence.set_defaults(handler=validate_rc_sequence)
 
     arguments = parser.parse_args()

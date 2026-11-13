@@ -44,12 +44,24 @@ sidecar contracts together rather than proposing incompatible individual majors.
 CodeQL default setup analyzes Actions, JavaScript/TypeScript and Python on GitHub.
 Rust is checked by the Rust CI job's formatting, Clippy and behavior/security tests.
 
-Release, qualification and promotion workflows are initially disabled in GitHub.
-Keep them disabled until a maintainer explicitly authorizes the first release and
-completes signing setup and the release audit. CI package smokes publish only
+Release, qualification and promotion must be enabled by the maintainer after
+signing setup and the read-only audit, before pushing the first tag. A disabled
+workflow does not run when a tag is pushed. CI package smokes publish only
 short-lived workflow evidence, not GitHub Releases or update manifests.
 
-Require pull requests for `main`. Restrict `v*` tag creation, update, and deletion. Protect the `release`, `release-qualification`, and `stable-release` environments. If an environment uses selected deployment branches and tags, allow the `v*` **tag** pattern for each tag-triggered release job. Signing secrets live only in `release`. `stable-release` must require at least one reviewer, prevent self-review, and disallow administrator bypass, so the person who dispatches promotion cannot approve or force the publication. Enable immutable GitHub Releases.
+Require pull requests for `main`. Restrict `v*` tag creation, update and deletion.
+Protect `release`, `release-qualification`, and `stable-release` with custom `v*`
+deployment policies whose explicit type is `tag`; every environment requires a
+non-empty required-reviewer rule. Branch-only policies and wait timers do not
+substitute for approval. Signing secrets live only in `release`. The unprotected
+`release-dry-run` environment must exist with no secrets, reviewers or deployment
+restrictions so branch rehearsals work without real credentials.
+`stable-release` requires a reviewer and disallows administrator bypass. While
+exactly one collaborator has admin or maintain rights, it permits that maintainer
+to approve their own promotion. This is self-review, with no second person; the
+audit prints `WARN`. When another maintainer joins, restore
+`prevent_self_review: true`; the audit rejects self-review with multiple maintainers.
+Enable immutable GitHub Releases.
 
 Before every RC tag and stable promotion, run the checked-in, read-only audit
 from an authenticated GitHub CLI session:
@@ -61,14 +73,19 @@ python3 apps/loupist/scripts/check-github-release-setup.py
 It verifies the public repository identity, immutable releases, `main`
 pull-request protection, an active `v*` tag rule that restricts creation,
 updates, and deletion, each required protected environment, and the **names** of every
-secret referenced by `release.yml`. Those names must be present only in the
-`release` environment, never at repository scope or in either non-signing
-environment. It never prints or reads secret values and does not change GitHub
-state. A nonzero result names every missing item. The auditor intentionally
-derives the required release-secret names from the workflow so a future signing
-change cannot silently make the checklist stale.
+secret required by the checked-in release profile. The updater secrets and the
+selected mode's credentials must be present in the `release` environment.
+Repository-level secrets and all secrets in non-signing environments are refused,
+including names unrelated to this signing mode. The other signing mode's names may be absent. The union of updater
+and per-mode secret sets must match every secret reference in `release.yml`.
+The audit also lists organization-secret names visible to this repository and
+rejects any; no organization secret may bypass the environment approval. Missing
+permissions or incomplete secret listings fail closed. It never prints or reads secret values and does not change GitHub
+state. A nonzero result names every missing item. The workflow-reference drift guard prevents a new signing secret from silently
+escaping the checklist.
 
-The immutable-release endpoint requires repository administration read access.
+The immutable-release endpoint requires repository administration read access;
+listing repository-visible organization secrets requires repository Secrets read access.
 Release workflows intentionally do not receive an administrative token, so the
 maintainer's authenticated, read-only audit is the release gate for that setting
 rather than adding a broader long-lived credential to every release job.
@@ -201,6 +218,21 @@ run succeeded. Before signing, the tag workflow calls the same-commit `ci.yml`
 with `full: true`: all source, native and unsigned package checks must pass.
 This reusable workflow receives no signing or provider secrets. A green
 documentation-only push is therefore insufficient to sign a release.
+Dry runs skip the tag-only source gates and repeat full CI only on request;
+[rehearsal and signing modes](release.md#signing-modes-and-rehearsal) owns that path.
+Assembly has a read-only token and no environment: it verifies updater signatures
+against the embedded public key in the separate signing report. Private signing
+material is never exported to `GITHUB_ENV`: real keys are scoped to certificate
+import or Tauri build steps, and disposable keys cross steps only in a private
+0600 file. Import removes its certificate fields, and the build consumes and
+removes the remaining updater handoff before invoking Tauri. The p12 import file
+is deleted immediately after import. Imported private keys are non-extractable
+(`security import -x`); their import ACL names only `/usr/bin/codesign`, and the
+signing partition list is set explicitly. Publication is
+skipped in dry runs; otherwise a second `release` approval gates the write token,
+verification against the configured updater public key, attestations and release
+creation. The signing report is an artifact because GitHub can suppress secret-like
+job outputs (including the Developer ID team).
 Release validation, assembly/promotion and signing jobs have 15, 30 and 90 minute limits
 respectively; signed package preflight has a 60 minute limit.
 

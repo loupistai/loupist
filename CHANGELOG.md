@@ -16,5 +16,5 @@
 - Retry recurring briefings at their next occurrence before pausing after three consecutive failures; a successful run clears the streak, and missing AI credentials pause immediately.
 - Read bundled Skills and their references again without allowing changes to them; built-in tools need no loading step, while Data connections keep their grants.
 - Update the local SQLite database engine with its security fix, refuse sharing when a required saved-credential scan fails, and save AI API keys through private process input instead of a process environment.
-- Deliver signed and notarized Mac installers and consent-based signed updates, verifying that each update package names the version in its feed; compatible database upgrades make a private backup and leave unsupported formats unchanged.
+- Beta. Deliver a Mac installer signed with Loupist's own certificate and not notarized by Apple, so the first launch needs a one-time approval in System Settings; updates are signed with the Loupist updater key, install only with consent, and are refused unless the package names the version in its feed. Compatible database upgrades make a private backup and leave unsupported formats unchanged.
 - License the app under AGPL-3.0-only; Loupist never trades, offers no trading execution, and is not a licensed adviser.
