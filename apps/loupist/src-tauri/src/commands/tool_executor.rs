@@ -1180,7 +1180,13 @@ impl AppToolExecutor {
             ToolMethod::ChartQuery => self.chart_query(policy, params).await,
             ToolMethod::ChartPublish => self.chart_publish(policy, params, delivery_id).await,
             ToolMethod::GridPublish => self.grid_publish(policy, params, delivery_id).await,
-            ToolMethod::WorkspaceCapture => self.workspace_capture(params),
+            ToolMethod::WorkspaceCapture => {
+                let mut result = self.workspace_capture(params)?;
+                if policy.propose_memory_updates {
+                    result["next"] = json!("Captured, not retained. If the user named or attached this file as material for the answer, call source_save with this result_ref before replying.");
+                }
+                Ok(result)
+            },
             ToolMethod::PythonRun => self.python_run(params).await,
         }?;
         // Holdings redaction over every tool result (D9): an account read

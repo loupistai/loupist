@@ -62,6 +62,12 @@ index order.
 
 ### Filing
 
+With saving on, every surface files an answer based on an original read this turn
+about a named company, asset, sector or theme, without being asked; chatter,
+explainers, arithmetic, a single looked-up figure, re-reads and stated one-offs
+file nothing. A short standing rule is one principle; a method is a multi-step
+procedure the user teaches or a page or check they ask to keep, never both.
+
 `KnowledgeWrite::file(loupist, origin, deltas, at_ms)` is the only page writer. A
 delta names a target, either an existing record or a create (kind, title, anchors),
 and at most 12 ops: `put` (add or replace a section; `expected` is the digest from

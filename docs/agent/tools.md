@@ -138,3 +138,10 @@ checked number links as inline evidence, independently of the Source footer.
 ## Code
 
 - Prompt / tools: `agent/SYSTEM.md`, `agent/tool-catalog.json`, `src-tauri/src/broker.rs`
+
+A named or attached original used for answer facts is captured and retained with
+`source_save` when saving is on, even after a native read; calculation-only inputs,
+scripts, scratch output and files the user says not to keep are excluded. One-step
+arithmetic on user-typed numbers needs no tool; sourced figures use `calculate`
+when supported, otherwise `run_python` once. Before citing a web passage, check
+that it names the sentence’s entity and period, as well as its number.
