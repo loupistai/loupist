@@ -14,7 +14,7 @@ import { sameBlock, type GridBlock } from "../../chat/chartBlocks";
 import { GRID_SCHEMA } from "../../contracts/chat";
 import { citationNumber } from "../../chat/numberChecks";
 import { citationLabel, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
-import { emptyReason, gridCounts, gridCsv, gridMarkdown, gridTsv, isValueCell, nextSort, sortedRows, type GridSort } from "../../chat/grid";
+import { emptyReason, gridCounts, gridCsv, gridMarkdown, gridTsv, isValueCell, nextSort, shownCheck, sortedRows, type GridSort } from "../../chat/grid";
 import { exportFileName, utf8Bytes } from "../../chat/exportChat";
 import { useAssetNames } from "../assets/assetName";
 import { formatAsOf } from "../../chat/asOf";
@@ -37,8 +37,9 @@ const shortDate = (value: string) => formatDate(Date.parse(`${value}T00:00:00Z`)
 /** A value: its number chip when the cited evidence is retained, the printed value otherwise. */
 function ValueCell({ cell, asset, evidenceRefs, asOf }: { cell: GridValueCell; asset?: string; evidenceRefs: readonly ChatEvidenceRef[]; asOf?: string }) {
   const evidence = evidenceRefs.find((item) => item.id === cell.evidence_id);
-  if (!evidence) return <span className="gg-num">{cell.value}</span>;
-  return <NumberChip check={cell.check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={asOf} asset={asset}>{cell.value}</NumberChip>;
+  const check = shownCheck(cell);
+  if (!evidence) return <span className="gg-num">{check.text}</span>;
+  return <NumberChip check={check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={asOf} asset={asset}>{check.text}</NumberChip>;
 }
 
 /** An empty cell says why; with the run's note, hover or focus opens it. */

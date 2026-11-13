@@ -54,14 +54,44 @@ export function gridCounts(grid: AssetsGrid) {
   return { linked: values.length, toCheck: values.filter((cell) => needsChecking(cell.check)).length };
 }
 
-const quotedTsv = (text: string) => (/[\t\n\r"]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text);
+// One number in an amount, with more than two decimals: "₩32.765719조", "$394.3281bn".
+const LONG_AMOUNT = /^([^\d]*?)(\d[\d,]*)\.(\d{3,})([^\d]*)$/u;
+const CURRENCY_MARK = /[$₩€£¥￦]|원|달러|엔|유로|\b[A-Z]{3}\b/u;
+
+/**
+ * A money value as a table shows it: the model's own words, with a long tail of
+ * decimals rounded to two ("₩32.765719조" → "₩32.77조", "$394.3281bn" →
+ * "$394.33bn"), as the answer prints amounts. Anything else (two decimals or
+ * fewer, a percent, a multiple, a 조-and-억 amount) is shown as written. The
+ * exact value stays in the cell's number chip.
+ */
+export function shownAmount(text: string): string {
+  if (!CURRENCY_MARK.test(text)) return text;
+  const match = LONG_AMOUNT.exec(text);
+  if (!match) return text;
+  const [, before, whole, fraction, after] = match;
+  const rounded = Number(`${whole!.replaceAll(",", "")}.${fraction}`).toFixed(2).replace(/\.?0+$/u, "");
+  const [integer, decimals] = rounded.split(".");
+  // Keep the model's grouping: a comma-grouped whole part stays grouped.
+  const grouped = whole!.includes(",") ? integer!.replace(/\B(?=(\d{3})+(?!\d))/gu, ",") : integer!;
+  return `${before}${grouped}${decimals ? `.${decimals}` : ""}${after}`;
+}
+
+/** A value cell's check as its chip reads it: about the shown text, so a rounded tail offers the exact value. */
+export function shownCheck(cell: GridValueCell): GridValueCell["check"] {
+  const shown = shownAmount(cell.value);
+  if (shown === cell.value) return cell.check;
+  return { ...cell.check, text: shown, status: cell.check.status === "matched" ? "rounded" : cell.check.status };
+}
+
+const quotedTsv =(text: string) => (/[\t\n\r"]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text);
 
 /** Tab-separated header and rows for pasting into a spreadsheet; empty cells are blank. */
 export function gridTsv(grid: AssetsGrid) {
   const header = [t("grid.asset"), ...grid.columns.map((column) => column.label)];
   const rows = grid.rows.map((row, index) => [row.label, ...grid.columns.map((_, column) => {
     const cell = grid.cells[index]?.[column];
-    return cell && isValueCell(cell) ? cell.value : "";
+    return cell && isValueCell(cell) ? shownAmount(cell.value) : "";
   })]);
   return [header, ...rows].map((line) => line.map(quotedTsv).join("\t")).join("\n");
 }
@@ -148,7 +178,7 @@ export function gridMarkdown(title: string, grid: AssetsGrid, evidenceRefs: read
       if (!cell || isEmptyCell(cell)) return emptyReason(cell?.empty ?? "not_checked");
       const evidence = evidenceRefs.find((item) => item.id === cell.evidence_id);
       footnotes.push(`[^${footnotes.length + 1}]: ${exportFootnote(cell.check, evidence, evidenceRefs)}`);
-      return `${cell.value}[^${footnotes.length}]`;
+      return `${shownAmount(cell.value)}[^${footnotes.length}]`;
     });
     lines.push(`| ${[row.label, ...cells].map(markdownCell).join(" | ")} |`);
   });

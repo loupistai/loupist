@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AssetsGrid, ChatEvidenceRef, NumberCheck } from "../types";
-import { currencyOf, gridCounts, gridCsv, gridMarkdown, gridTsv, nextSort, sortedRows } from "./grid";
+import { currencyOf, gridCounts, gridCsv, gridMarkdown, gridTsv, nextSort, shownAmount, shownCheck, sortedRows } from "./grid";
 
 const DART: ChatEvidenceRef = {
   id: "ev_dart", title: "Solsup Foods FY2025 statements", kind: "original", provider: "OpenDART", tool_name: "dart_financials",
@@ -106,6 +106,41 @@ describe("grid answers", () => {
     const csv = gridCsv(cited, [DART, MARGIN]);
     expect(csv).toContain("Separate only (OpenDART).");
     expect(csv).not.toContain("#evidence-");
+  });
+
+  it("rounds a money value's long decimal tail to two places and leaves every other value as written", () => {
+    // KRW in 조, 억 and 만.
+    expect(shownAmount("₩32.765719조")).toBe("₩32.77조");
+    expect(shownAmount("-₩7.730313조")).toBe("-₩7.73조");
+    expect(shownAmount("₩66.192960조")).toBe("₩66.19조");
+    expect(shownAmount("4,523.4567억 원")).toBe("4,523.46억 원");
+    expect(shownAmount("1,234.999만 원")).toBe("1,235만 원");
+    expect(shownAmount("12.3456만 원")).toBe("12.35만 원");
+    // Already sensible, or several numbers: as written.
+    expect(shownAmount("₩452.3bn")).toBe("₩452.3bn");
+    expect(shownAmount("4,523억 원")).toBe("4,523억 원");
+    expect(shownAmount("1조 2,345억 원")).toBe("1조 2,345억 원");
+    expect(shownAmount("₩32.77조")).toBe("₩32.77조");
+    // USD and other currencies.
+    expect(shownAmount("$394.3281bn")).toBe("$394.33bn");
+    expect(shownAmount("$1.20bn")).toBe("$1.20bn");
+    expect(shownAmount("USD 1,234.5678")).toBe("USD 1,234.57");
+    expect(shownAmount("€12.5m")).toBe("€12.5m");
+    expect(shownAmount("¥1,050.000bn")).toBe("¥1,050bn");
+    // Not money: a percent or a multiple keeps the model's digits.
+    expect(shownAmount("8.4231%")).toBe("8.4231%");
+    expect(shownAmount("1.2345×")).toBe("1.2345×");
+  });
+
+  it("shows a rounded tail in the cell, the copy and the Markdown table, and keeps the exact value in the chip", () => {
+    const exact = { ...data("₩32.765719조", "matched"), exact: "32765719000000" };
+    const cell = { value: "₩32.765719조", evidence_id: DART.id, check: exact, sort: 32.765719e12 };
+    expect(shownCheck(cell)).toEqual({ ...exact, text: "₩32.77조", status: "rounded" });
+    const plain = grid.cells[0]![0]! as Extract<AssetsGrid["cells"][number][number], { value: string }>;
+    expect(shownCheck(plain)).toBe(plain.check);
+    const long: AssetsGrid = { ...grid, cells: [[cell, grid.cells[0]![1]!], grid.cells[1]!, grid.cells[2]!] };
+    expect(gridTsv(long).split("\n")[1]).toBe("Solsup Foods\t₩32.77조\t8.42%");
+    expect(gridMarkdown("Margins", long, [DART, MARGIN])).toContain("| Solsup Foods | ₩32.77조[^1] | 8.42%[^2] |");
   });
 
   it("names the currency a printed amount uses", () => {

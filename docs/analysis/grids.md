@@ -34,6 +34,10 @@ Exports keep sources: CSV with sources has one row per cell (asset, symbol, mark
 measure, period, basis, value, unit, currency, status, source, source date, and the
 source URL or a calculated cell's formula with its inputs' sources), UTF-8 with a byte
 order mark and the AI notice row last; the Markdown table adds a footnote per value.
+A money value with more than two decimals is shown, copied and written to the Markdown
+table rounded to two ("₩32.765719조" reads "₩32.77조", "$394.3281bn" "$394.33bn"); its
+number chip then says it was rounded and gives the exact source value, and CSV with
+sources keeps the value as published. Percents, multiples and other values show as written.
 
 ## Code
 
