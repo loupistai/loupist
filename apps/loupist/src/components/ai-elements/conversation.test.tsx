@@ -211,6 +211,25 @@ describe("anchored reading", () => {
     } finally { t.restore(); }
   });
 
+  it("keeps the page still when context above it changes while a glide makes room, then finishes that glide", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }));
+    const t = thread();
+    try {
+      t.sendPrompt();
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(t.element.scrollTop).toBe(984);
+      t.grow(2400);
+      t.moveBlock(984 + 300);
+      act(() => t.actions.append("prose"));
+      // The question card's "Needs your answer" row arrives in the same moment: the page starts from where the content stays.
+      t.contextAbove(45);
+      t.rerender(true);
+      expect(t.element.scrollTop).toBe(984 + 45);
+      act(() => { vi.advanceTimersByTime(400); });
+      expect(t.element.scrollTop).toBe(984 + 300 - 160);
+    } finally { t.restore(); }
+  });
+
   it("keeps a thread opened at its end at its end when context above it changes", () => {
     const t = thread();
     try {

@@ -144,6 +144,8 @@ export const Conversation = ({
   /** The scroller's top edge in the window when last seen. */
   const edge = useRef<number | null>(null);
   const glide = useRef<number | undefined>(undefined);
+  /** Where the running glide ends. */
+  const glideTarget = useRef(0);
   const follow = useRef<number | undefined>(undefined);
   const lastResetKey = useRef(scrollResetKey);
   const runningRef = useRef(running);
@@ -170,12 +172,13 @@ export const Conversation = ({
     glide.current = undefined;
   }, []);
 
-  const glideBy = useCallback((delta: number) => {
+  const glideTo = useCallback((target: number) => {
     const element = scrollRef.current;
-    if (!element || !delta) return;
+    if (!element) return;
     stopGlide();
     const from = element.scrollTop;
-    const to = Math.max(0, from + delta);
+    const to = Math.max(0, target);
+    glideTarget.current = to;
     if (reducedMotion() || typeof requestAnimationFrame !== "function") {
       element.scrollTop = to;
       lastTop.current = element.scrollTop;
@@ -193,6 +196,12 @@ export const Conversation = ({
     };
     glide.current = requestAnimationFrame(step);
   }, [stopGlide]);
+
+  const glideBy = useCallback((delta: number) => {
+    const element = scrollRef.current;
+    if (!element || !delta) return;
+    glideTo(element.scrollTop + delta);
+  }, [glideTo]);
 
   /** Make sure the position exists before gliding to it: the latest turn grows its reserve. */
   const reserve = useCallback((delta: number) => {
@@ -216,16 +225,20 @@ export const Conversation = ({
     const top = element.getBoundingClientRect().top;
     const before = edge.current;
     edge.current = top;
-    if (before === null || Math.abs(top - before) < 1 || mode.current === "bottom" || following.current || glide.current !== undefined) return false;
+    if (before === null || Math.abs(top - before) < 1 || mode.current === "bottom" || following.current) return false;
     const to = Math.max(0, lastTop.current + top - before);
     // The latest turn's room follows the viewport: size it now, so the reserve below sees the range the frame will have.
     writeViewport(element);
     reserve(to - element.scrollTop);
+    // A glide making room for a block keeps its target, which already counts the new edge, and starts from here.
+    const gliding = glide.current !== undefined ? glideTarget.current : null;
+    stopGlide();
     element.scrollTop = to;
     lastTop.current = element.scrollTop;
     markScrolled(element);
+    if (gliding !== null && gliding > to) glideTo(gliding);
     return true;
-  }, [reserve]);
+  }, [glideTo, reserve, stopGlide]);
 
   const toBottom = useCallback(() => {
     const element = scrollRef.current;
