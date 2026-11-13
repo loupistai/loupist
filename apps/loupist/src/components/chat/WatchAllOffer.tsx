@@ -47,6 +47,8 @@ export function WatchAllOffer({ bridge, loupistId, refreshKey, onOpenFollowing, 
   // Only assets with no decision yet: one switched fully off stays off.
   const count = settings.undecidedAssetIds.length;
   if (settings.watched.length > 0 || count === 0) return null;
+  // One asset is offered by name rather than as "Watch all 1".
+  const only = count === 1 ? settings.notWatched.find(asset => asset.assetId === settings.undecidedAssetIds[0]) : undefined;
   const run = async () => {
     setState("busy");
     try { setResult(await bridge.watchDefaultsApply({ loupistId })); setState("done"); }
@@ -55,7 +57,7 @@ export function WatchAllOffer({ bridge, loupistId, refreshKey, onOpenFollowing, 
   return <div className="watch-all-offer follow-watch-offer" data-watch-all="offer">
     <p>{t("watchAll.note")}</p>
     <Button type="button" size="sm" disabled={state === "busy"} aria-busy={state === "busy" || undefined} onClick={() => void run()}>
-      {t("watchAll.action", { count, formattedCount: formatNumber(count) })}
+      {only ? t("watchAll.actionOne", { name: only.name }) : t("watchAll.action", { count, formattedCount: formatNumber(count) })}
     </Button>
     {state === "failed" ? <p className="inline-error" role="alert">{t("watchAll.failed")}</p> : null}
   </div>;

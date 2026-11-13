@@ -28,7 +28,7 @@ it("says which kinds still need a data connection after Watch all", async () => 
   }] });
   const onOpenConnections = vi.fn();
   render(<WatchAllOffer bridge={bridge} loupistId={loupistId} onOpenConnections={onOpenConnections} />);
-  await user.click(await screen.findByRole("button", { name: "Watch it" }));
+  await user.click(await screen.findByRole("button", { name: "Watch Samsung Electronics" }));
   expect(await screen.findByText(/Filings: needs OpenDART/)).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Data connections" }));
   expect(onOpenConnections).toHaveBeenCalledOnce();

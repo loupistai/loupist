@@ -1888,7 +1888,7 @@
     "incomplete": "Could not finish reviewing earlier conversation"
   },
   "watchAll": {
-    "action_one": "Watch it",
+    "actionOne": "Watch {{name}}",
     "action_other": "Watch all {{formattedCount}}",
     "note": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",
     "done_one": "Watching {{formattedCount}} name. Change it in <0>Following</0>.",

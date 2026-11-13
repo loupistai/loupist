@@ -1831,6 +1831,7 @@
     "incomplete": "이전 대화를 끝까지 확인하지 못했어요"
   },
   "watchAll": {
+    "actionOne": "{{name}} 지켜보기",
     "action_other": "관심 자산 {{formattedCount}}개 모두 지켜보기",
     "note": "관심 자산의 공시, 실적 발표일, 배당을 루피스트가 열려 있는 동안 매시간 확인해요. AI 사용량은 들지 않고, 데이터 제공처에는 이름만 보내요.",
     "done_other": "관심 자산 {{formattedCount}}개를 지켜보고 있어요. <0>관심 자산</0>에서 바꿀 수 있어요.",

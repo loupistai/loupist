@@ -131,6 +131,12 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
   // An asset the user switched fully off is decided, so it is neither counted nor offered.
   const undecided = settings?.undecidedAssetIds.length ?? 0;
   const offerWatchAll = undecided > 0;
+  // One undecided asset is offered by name rather than as "Watch all 1".
+  const onlyUndecided = undecided === 1 && settings ? [...settings.watched, ...settings.notWatched].find(asset => asset.assetId === settings.undecidedAssetIds[0]) : undefined;
+  const onlyEntry = onlyUndecided && watchlist?.find(entry => sameName(entry.symbol, onlyUndecided.symbol) && sameName(entry.market, onlyUndecided.market));
+  const watchAllLabel = onlyUndecided
+    ? t("following.watchOne", { name: (onlyEntry && followedName(onlyEntry, nodes)) || onlyUndecided.name })
+    : t("following.watchAll", { n: formatNumber(undecided) });
   const watchAll = async () => {
     setApplying(true); setError(null);
     try { const result = await bridge.watchDefaultsApply({ loupistId }); setNeeds(result.needsConnections); await reloadWatch(); }
@@ -174,7 +180,7 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
 
     {offerWatchAll && watchlist?.length ? <div className="settings-row following-watch-all" data-watch-all>
       <p className="settings-row-description">{t("following.watchAllDetail")}</p>
-      <Button variant={settings?.paused ? "outline" : "default"} disabled={applying} onClick={() => void watchAll()}>{applying ? <Spinner /> : null}{t("following.watchAll", { n: formatNumber(undecided) })}</Button>
+      <Button variant={settings?.paused ? "outline" : "default"} disabled={applying} onClick={() => void watchAll()}>{applying ? <Spinner /> : null}{watchAllLabel}</Button>
     </div> : null}
 
     {needs.length ? <ul className="following-needs" data-watch-needs>{needs.map(item => <li key={`${item.kind}:${item.connection.id}`}>

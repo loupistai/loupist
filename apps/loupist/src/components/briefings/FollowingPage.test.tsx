@@ -64,10 +64,11 @@ it("lists every followed asset with a Watch-for box per kind that saves on chang
   await waitFor(() => expect(screen.getByRole("checkbox", { name: "Filings, Apple" })).toBeChecked());
 });
 
-it("watches every followed asset with the class defaults in one step", async () => {
+it("watches every followed asset with the class defaults in one step, naming a single one", async () => {
   const { bridge, loupist, user } = await fixture(async bridge => { await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }); });
   const apply = vi.spyOn(bridge, "watchDefaultsApply");
-  const button = await screen.findByRole("button", { name: /^Watch all \d+$/ });
+  // One undecided asset reads "Watch Apple", not "Watch all 1".
+  const button = await screen.findByRole("button", { name: "Watch Apple" });
   expect(screen.getByText(/No AI usage\. Only names are sent to data sources\./)).toBeVisible();
   await user.click(button);
   expect(apply).toHaveBeenCalledWith({ loupistId: loupist.id });

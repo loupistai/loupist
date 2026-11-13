@@ -211,6 +211,7 @@
     "watchLoadFailed": "Couldn't load Watching settings.",
     "importHoldings": "Import holdings…",
     "watchAll": "Watch all {{n}}",
+    "watchOne": "Watch {{name}}",
     "watchAllDetail": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",
     "watchAllFailed": "Couldn't turn on Watching. Try again.",
     "holdingsTitle": "Your holdings",

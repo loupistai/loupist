@@ -204,6 +204,7 @@
     "watchLoadFailed": "지켜보기 설정을 불러오지 못했어요.",
     "importHoldings": "보유 자산 가져오기…",
     "watchAll": "관심 자산 {{n}}개 모두 지켜보기",
+    "watchOne": "{{name}} 지켜보기",
     "watchAllDetail": "관심 자산의 공시, 실적 발표일, 배당을 루피스트가 열려 있는 동안 매시간 확인해요. AI 사용량은 들지 않고, 데이터 제공처에는 이름만 보내요.",
     "watchAllFailed": "지켜보기를 켜지 못했어요. 다시 시도해 주세요.",
     "holdingsTitle": "보유 자산",
