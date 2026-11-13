@@ -98,6 +98,7 @@
     "worldIsUpdating": "지도 업데이트 중",
     "worldUpdated": "지도 업데이트 완료",
     "worldProcessingPaused": "지도 구성 일시정지",
+    "worldProcessingStoppedForThisSource": "이 자료의 지도 구성 멈춤",
     "worldProcessingFailed": "지도 구성 실패",
     "worldUpdateNeedsReview": "지도 업데이트 확인 필요",
     "sourceRetainedInterruptedProcessingWasNotRetried": "자료 유지됨 · 중단된 처리는 재시도하지 않았어요",

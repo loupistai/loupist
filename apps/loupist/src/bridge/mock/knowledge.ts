@@ -857,7 +857,8 @@ export const knowledgeSourceRetain = async (
   if (readable && store.settings.enrichmentEnabled) {
     const job: GraphJobView = { jobId: makeId("job"), loupistId: request.loupistId, worldRecordId: WORLD, worldRevisionId: OWNED, status: store.settings.paused ? "paused_budget" : "queued", payloadDigest: spanId!, createdAtMs: Date.now(), hostMayRedrive: false };
     store.jobs.push(job);
-    retained.processing = { jobId: job.jobId, status: job.status, error: null };
+    // Rust reports a job the user's pause parked as "paused".
+    retained.processing = { jobId: job.jobId, status: store.settings.paused ? "paused" : job.status, error: null };
   } else retained.processing = { status: readable ? "disabled" : "no_text", jobId: null, error: null };
   const result: RetainedSource = {
     recordId,

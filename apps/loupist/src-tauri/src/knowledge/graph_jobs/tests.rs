@@ -641,6 +641,31 @@ fn pause_and_resume_restore_the_queue_without_resetting_the_job_budget() {
 }
 
 #[test]
+fn a_source_whose_allowance_ran_out_is_not_reported_as_the_users_pause() {
+    let (_directory, store) = open();
+    let mut settings = enabled();
+    settings.max_llm_calls = 1;
+    let job = queued(&store, &settings, "loupist-a", b"short allowance");
+    assert_eq!(claim(&store, &settings, &job.job_id, T).status, JOB_PAUSED);
+    let source = job.document.source_binding.unwrap().source_record_id;
+    let status = || {
+        store
+            .transact(|write| write.source_processing("loupist-a", &source))
+            .unwrap()
+            .status
+    };
+    // Map building is on: the Source stopped by itself.
+    assert_eq!(status(), JOB_PAUSED);
+    store
+        .transact(|write| {
+            pause_processing(write.tx, &mut settings, "loupist-a")?;
+            store_settings(write.tx, "loupist-a", &settings)
+        })
+        .unwrap();
+    assert_eq!(status(), "paused");
+}
+
+#[test]
 fn resume_does_not_redrive_attempted_terminal_or_other_loupist_jobs() {
     let (_directory, store) = open();
     let mut settings = enabled();

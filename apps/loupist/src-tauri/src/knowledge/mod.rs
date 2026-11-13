@@ -1091,12 +1091,22 @@ impl KnowledgeWrite<'_> {
     ) -> KnowledgeResult<SourceProcessing> {
         let record = self.owned_record(loupist_id, record_id)?;
         if let Some(job) = graph_jobs::latest_source_job(self.tx, loupist_id, record_id)? {
+            // A parked job reads as paused only while the user has paused Map
+            // building; with building on it is this Source's own stop (its
+            // frozen allowance ran out), which keeps the job's status.
+            let status = if job.status == graph_jobs::JOB_PAUSED
+                && graph_jobs::load_settings(self.tx, loupist_id)?.paused
+            {
+                "paused".into()
+            } else {
+                job.status
+            };
             return Ok(SourceProcessing {
                 job_id: Some(job.job_id),
                 error: (job.document.usage_uncertain).then(|| {
                     "The helper response was uncertain. Automatic retry is disabled.".into()
                 }),
-                status: job.status,
+                status,
             });
         }
         let reflected: bool = self.tx.query_row(

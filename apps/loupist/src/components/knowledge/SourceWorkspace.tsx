@@ -49,7 +49,9 @@ const sourceProcessingLabel = (status?: string) => {
   switch (status) {
     case "queued": case "running": return i18n.t("knowledge:sourceWorkspace.worldIsUpdating");
     case "completed": return i18n.t("knowledge:sourceWorkspace.worldUpdated");
-    case "paused_budget": case "paused": return i18n.t("knowledge:sourceWorkspace.worldProcessingPaused");
+    case "paused": return i18n.t("knowledge:sourceWorkspace.worldProcessingPaused");
+    // Map building is on; this Source's chunks stopped by themselves (its allowance ran out).
+    case "paused_budget": return i18n.t("knowledge:sourceWorkspace.worldProcessingStoppedForThisSource");
     case "failed_before_mutation": return i18n.t("knowledge:sourceWorkspace.worldProcessingFailed");
     case "reconcile_required": return i18n.t("knowledge:sourceWorkspace.worldUpdateNeedsReview");
     case "reconciled_without_retry": return i18n.t("knowledge:sourceWorkspace.sourceRetainedInterruptedProcessingWasNotRetried");
