@@ -1220,8 +1220,8 @@
       "done": "Asked you a question"
     },
     "research_open": {
-      "running": "Opening a new chat",
-      "done": "Opened a new chat"
+      "running": "Opening a research session",
+      "done": "Opened a research session"
     },
     "worldbank_series": {
       "running": "Reading macro data",
