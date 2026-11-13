@@ -1740,6 +1740,10 @@
     "outsideCount_other": "칸 {{formattedCount}}개는 계산 범위를 벗어나요",
     "copy": "데이터 복사"
   },
+  "readStep": {
+    "running": "{{read}} 읽는 중",
+    "done": "{{read}} 읽음"
+  },
   "asOf": {
     "panelTitle": "기준일",
     "set": "날짜 설정",

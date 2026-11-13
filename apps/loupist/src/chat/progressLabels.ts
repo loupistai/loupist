@@ -22,6 +22,18 @@ export function catalogStepLabel(tool: string | undefined, form: "running" | "do
 }
 
 /**
+ * A data read whose tool has a localized noun (a bundled market-data read such as
+ * `mcp__openbb__equity_fundamental_income`): "Reading income statements" /
+ * "손익계산서 읽는 중", so the host's English tool wording never reaches a Korean
+ * live line. Undefined for a tool without a known noun.
+ */
+export function readStepLabel(tool: string | undefined, form: "running" | "done"): string | undefined {
+  const name = tool?.split("__").at(-1);
+  if (!name || !i18n.exists(`chat:asOf.reads.${name}`)) return undefined;
+  return tDynamic(`readStep.${form}`, { read: tDynamic(`asOf.reads.${name}`) });
+}
+
+/**
  * What a read was about, as a noun ("market data", "daily prices for 990221"),
  * for as-of notes and refused step rows. Connection tools may arrive with a
  * server prefix (`mcp__openbb__equity_profile`); an unknown tool falls back to

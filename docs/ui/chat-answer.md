@@ -62,7 +62,8 @@ holds the **live line** (`TurnFooter.tsx`): a glyph, the label with a sheen (a 1
 sweep, then a 1 s rest), the target, "+N" other running steps and the clock. The label
 is, first match: Stopping; Waiting for you (an amber dot, the only amber in a running
 turn); the newest running step in the catalog's localized words, whatever the host
-wrote (its target reads "Still working" after 15 s without host activity); Writing;
+wrote, or for a bundled market-data read, "Reading {what it reads}" in the interface
+language ("Reading income statements" / "손익계산서 읽는 중") (its target reads "Still working" after 15 s without host activity); Writing;
 Still working; Starting (no signal from the host yet); Thinking. A label stays at least
 600 ms and a finished step's label holds 800 ms, so quick steps never strobe and the gap
 between steps never flashes Thinking. The slot is the turn's only live region, spoken at

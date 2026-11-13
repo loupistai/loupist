@@ -2,7 +2,7 @@ import i18n from "@/i18n";
 import { formatNumber } from "@/i18n/format";
 import { useEffect, useRef, useState } from "react";
 import type { ChatProgressItem } from "../types";
-import { catalogStepLabel } from "./progressLabels";
+import { catalogStepLabel, readStepLabel } from "./progressLabels";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -38,6 +38,8 @@ export const actionLabel = (item: ActionItem) => {
   const running = item.status === "running";
   const catalog = item.kind === "tool" ? catalogStepLabel(item.toolName, running ? "running" : "done") : undefined;
   if (catalog) return catalog;
+  const read = item.kind === "tool" && item.operation === "read" ? readStepLabel(item.toolName, running ? "running" : "done") : undefined;
+  if (read) return read;
   const raw = running && item.kind === "tool" && item.running ? item.running : item.action;
   return scrubIdentifiers(raw) || item.action;
 };

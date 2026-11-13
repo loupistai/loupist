@@ -1793,6 +1793,10 @@
     "outsideCount_other": "{{formattedCount}} cells are outside what can be calculated",
     "copy": "Copy data"
   },
+  "readStep": {
+    "running": "Reading {{read}}",
+    "done": "Read {{read}}"
+  },
   "asOf": {
     "panelTitle": "Look back to",
     "set": "Set date",
