@@ -69,6 +69,10 @@ participant or subject beyond generic action, date and unit words; a contract's
 value or amount remains a measurement. Institutions keep their Organization role
 separate from what they issue or oversee, and quantitative claims keep their
 specific metric names and stated counterparty roles beside the value.
+Measurement claims keep each metric's exact Source wording, language and qualifiers.
+English claims retain a non-English metric label with its English rendering beside
+it. A synonym, accounting term or acronym cannot replace the stated label:
+operating profit, operating income, EBIT and adjusted operating profit stay distinct.
 
 ### Queue and interruptions
 
@@ -218,7 +222,8 @@ resolver finds to be an existing node ("Acme Corporation" for "Acme Corp") also
 stays an alias of that node, unless a name or alias already folds to it, within
 the 16-alias cap, so a Lens anchor filed under that spelling resolves exactly. One attribute call per
 episode fills every typed entity's fields. World stores names, summaries, relation
-names and facts in English whatever the Source language; the original text stays in
+names and fact prose in English, retaining original-language metric labels beside
+their English rendering; the original text stays in
 the retained Source and its evidence spans. Research focus, preferred relationship
 names and anchor entities add emphasis on top of the core schema. Editing this guidance retains saved anchor identifiers as identifiers. Publication time,
 observation period and validity remain distinct. Extraction preserves quantitative

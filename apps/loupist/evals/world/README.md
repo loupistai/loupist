@@ -225,6 +225,13 @@ exception. `entity-name-corpus-v1.json` is a deterministic classifier fixture,
 not a model-visible Source or a changed ontology corpus. The adoption check requires
 zero measurement nodes, alongside numeric fidelity so dropping figures cannot pass.
 
+Quantitative extraction keeps a metric's exact Source wording, language and
+qualifiers in its claim, with an English rendering beside a non-English label.
+Accounting terms and acronyms are not interchangeable labels. Scripted publication
+coverage checks both the extraction instruction and preservation of the returned
+English/Korean labels; real-model numeric fidelity still requires a fresh run after
+this model-visible policy changes.
+
 ```sh
 node apps/loupist/evals/world/ontology-grade.mjs \
   --suite apps/loupist/evals/world/ontology-corpus-v1.json \

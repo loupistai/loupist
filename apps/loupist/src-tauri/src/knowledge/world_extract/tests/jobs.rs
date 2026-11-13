@@ -188,6 +188,8 @@ struct Script {
     calls: Vec<String>,
     /// Extracted spellings the model resolves to an existing node's name.
     same_as: HashMap<String, String>,
+    /// Required evidence and policy text on a scripted relation extraction.
+    required_edge_text: Vec<String>,
 }
 
 impl Script {
@@ -219,6 +221,12 @@ impl Script {
             .unwrap_or("")
             .to_string();
         self.calls.push(title.clone());
+        if title == "ExtractedEdges" {
+            let messages = request["messages"].to_string();
+            for text in &self.required_edge_text {
+                assert!(messages.contains(text), "missing extraction text: {text}");
+            }
+        }
         if let Some(disposition) = self.fail.get(&title) {
             return InferenceReply {
                 disposition: disposition.clone(),
@@ -311,6 +319,60 @@ fn relation(source: &str, target: &str, kind: &str, fact: &str) -> Value {
 
 const SUPPLY: &str = "Acme Corp supplies lithium cells to Beta Motors.";
 const PARTNER: &str = "Acme Corp partners with Gamma Labs on solid-state cells.";
+
+#[test]
+fn source_metric_labels_survive_publication_with_english_renderings() {
+    let mut fixture = Fixture::new();
+    let observations = [
+        ("operating profit", "Acme Corp reported Q2 FY2026 operating profit of USD 11 million."),
+        ("operating income", "Acme Corp reported Q2 FY2026 operating income of USD 10 million."),
+        ("EBIT", "Acme Corp reported Q2 FY2026 EBIT of USD 9 million."),
+        ("adjusted operating profit", "Acme Corp reported Q2 FY2026 adjusted operating profit of USD 8 million."),
+        ("영업이익", "Acme Corp reported Q2 FY2026 영업이익 (operating profit) of KRW 13 billion."),
+        ("조정 영업이익", "Acme Corp reported Q2 FY2026 조정 영업이익 (adjusted operating profit) of KRW 14 billion."),
+        ("매출 비중", "Acme Corp reported Beta Motors' Q2 FY2026 매출 비중 (share of revenue) of 37%."),
+    ];
+    let source = "Acme Corp reported Q2 FY2026 operating profit USD 11 million, operating income USD 10 million, EBIT USD 9 million, and adjusted operating profit USD 8 million. Acme Corp의 2026 회계연도 2분기 영업이익은 130억 원, 조정 영업이익은 140억 원이며 Beta Motors의 매출 비중은 37%였다.";
+    let mut script = Script {
+        required_edge_text: vec![
+            "Keep a measurement's metric name exactly as written in the Source".into(),
+            "original wording and language".into(),
+            "English rendering beside it".into(),
+            "Never substitute a synonym, different accounting term or acronym".into(),
+            source.into(),
+        ],
+        ..Script::default()
+    };
+    script.reply("ExtractedEntities", entities(&["Acme Corp"]));
+    script.reply(
+        "ExtractedEdges",
+        json!({"edges": observations.iter().map(|(_, fact)| {
+        relation("Acme Corp", "Acme Corp", "REPORTS", fact)
+    }).collect::<Vec<_>>()}),
+    );
+    script.reply("CoreAttributeBatch", json!({"entities": []}));
+    let script = Arc::new(Mutex::new(script));
+    let job = fixture.queue("Bilingual metric labels", source);
+    assert_eq!(
+        drive(&mut fixture, &job, &script, "fixture").status,
+        graph_jobs::JOB_COMPLETED
+    );
+    let body = fixture.body();
+    assert_eq!(body.claims.len(), observations.len());
+    for (label, fact) in observations {
+        let published = body
+            .claims
+            .iter()
+            .find(|claim| claim.proposition == fact)
+            .unwrap();
+        assert!(published.proposition.contains(label));
+        assert_eq!(
+            published.endpoints[0].node_id,
+            published.endpoints[1].node_id
+        );
+        assert_eq!(published.evidence.len(), 1);
+    }
+}
 
 #[test]
 fn subject_measurement_claim_survives_publication_reingestion_and_reopen() {
