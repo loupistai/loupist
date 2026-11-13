@@ -29,6 +29,73 @@ test('measurement share counts all node kinds, pools by node count, and keeps mi
   assert.equal(grade(rows({ nodes: [], claims: [], enResult: miss, koResult: miss, omitSnapshot: true })).arms[0].pooled.measurement_node_share, null);
 });
 
+test('fact language distinguishes English bilingual labels and aliases from non-English prose', () => {
+  const corpus = [
+    [false, 'Acme reported operating profit of KRW 8.7 billion.'],
+    [false, 'Acme reported operating profit (영업이익) of KRW 8.7 billion.'],
+    [false, 'Acme reported operating profit ( 영업이익 ) of KRW 8.7 billion.'],
+    [false, 'Acme reported 영업이익 (operating profit) of KRW 8.7 billion.'],
+    [false, 'Acme reported adjusted operating profit （조정 영업이익） this quarter.'],
+    [false, 'Acme reported "영업이익" (operating profit) this quarter.'],
+    [false, 'Acme reported operating profit “영업이익” this quarter.'],
+    [false, "Acme reported '조정 영업이익' alongside its operating profit."],
+    [false, 'Acme reported 영업이익 / operating profit this quarter.'],
+    [false, 'Acme reported operating profit / 영업이익 this quarter.'],
+    [false, 'Acme (아주 긴 한국어 회사 이름 주식회사) grew.'],
+    [false, '아주긴한국어회사이름주식회사 (Acme) reported revenue.'],
+    [false, 'Acme “아주긴한국어회사이름주식회사” reported revenue.'],
+    [false, 'Acme / 아주긴한국어회사이름주식회사 reported revenue.'],
+    [false, '아주긴한국어회사이름주식회사 / Acme reported revenue.'],
+    [false, 'Acme reported 营业利润 (operating profit) this quarter.'],
+    [false, 'Acme (Акме) reported profit this quarter.'],
+    [false, 'Acme (다다) reported profit this quarter.'],
+    [false, 'Acme reported annual production capacity (연산 능력) of 40,000 tons.'],
+    [false, 'Acme reported 영업이익 (operating profit), not adjusted operating profit.'],
+    [true, '아크메는 이번 분기에 영업이익 87억 원을 보고했다.'],
+    [true, 'Acme는 Beta에 전기차용 배터리를 공급한다고 발표했다.'],
+    [true, 'Acme reported revenue, 하지만 영업이익은 전년 대비 크게 늘었다.'],
+    [true, 'Acme (아크메) reported revenue, 하지만 영업이익은 전년 대비 크게 늘었다.'],
+    [true, '아크메는 영업이익 (operating profit)이 전년보다 늘었다고 보고했다.'],
+    [true, 'Acme 영업이익은 늘었다 (operating profit rose).'],
+    [true, '"아크메는 영업이익이 크게 늘었다고 보고했다."'],
+    [true, 'Acme said "아크메는 영업이익이 크게 늘었다고 보고했다."'],
+    [true, 'Acme said "아크메는 영업이익이 크게 늘었다고 보고했다"'],
+    [true, 'Acme said "영업이익이 증가했다"'],
+    [true, 'Acme said " 영업이익이 증가했다 "'],
+    [true, 'Acme (이번 분기에는 영업이익이 크게 늘었다고 보고했다) reported results.'],
+    [true, 'Acme reported revenue (하지만 영업이익은 전년 대비 크게 늘었다.), increasing profit.'],
+    [true, 'Acme는 매출 / 영업이익을 구분해서 공시했다.'],
+    [true, 'Компания Акме сообщила о росте операционной прибыли.'],
+    [true, '该公司报告本季度营业利润增长。'],
+  ];
+  for (const [nonEnglish, proposition] of corpus) {
+    const report = grade(rows({
+      nodes: [node('a', 'Acme')],
+      claims: [claim('c', 'REPORTS', 'a', 'a', proposition)],
+      enResult: miss, koResult: miss,
+    }));
+    assert.equal(trialOf(report).metrics.non_english_fact_share, Number(nonEnglish), proposition);
+  }
+});
+
+test('fact language pools claim counts after excluding bilingual annotations', () => {
+  const trace = rows({
+    nodes: [node('a', 'Acme')],
+    claims: [
+      claim('en', 'REPORTS', 'a', 'a', 'Acme reported 영업이익 (operating profit) this quarter.'),
+      claim('ko', 'REPORTS', 'a', 'a', '아크메는 이번 분기에 영업이익을 보고했다.'),
+    ],
+    enResult: miss, koResult: miss,
+  });
+  assert.deepEqual(trialOf(grade(trace)).metrics.counts.non_english_facts, [1, 2]);
+  const second = rows({
+    trial: 1, nodes: [node('a', 'Acme')],
+    claims: [claim('alias', 'REPORTS', 'a', 'a', 'Acme (아크메) reported revenue.')],
+    enResult: miss, koResult: miss,
+  });
+  assert.equal(grade([...trace, ...second]).arms[0].pooled.non_english_fact_share, 1 / 3);
+});
+
 function suiteFor(id = 'CELL') {
   return {
     schema: 'loupist-world-suite/1', suite: 'ontology-test', version: 1,

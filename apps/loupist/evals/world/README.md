@@ -232,6 +232,22 @@ coverage checks both the extraction instruction and preservation of the returned
 English/Korean labels; real-model numeric fidelity still requires a fresh run after
 this model-visible policy changes.
 
+On **2026-11-13**, `non_english_fact_share` changed from “contains any Hangul”
+to a deterministic script heuristic for the sentence's prose. After NFKC
+normalization, it ignores short original-language labels and name aliases in
+parentheses, quotes or slash pairs in an English frame. This includes a label
+before its parenthesized English rendering. An English frame has at least two
+Latin words outside the annotation; ignored spans contain only non-Latin letters,
+spaces, hyphens or middle dots, at most 64 letters and six words. Sentence
+punctuation and common Korean clause endings prevent prose from being ignored as
+a label. A fact counts as non-English when at least 25% of the remaining letters
+are non-Latin; digits, punctuation and whitespace do not dilute that proportion.
+This keeps mostly or half-Korean prose flagged while allowing English sentences
+to retain Source metric labels and company aliases. It is a script heuristic,
+not a general language-identification model. The adoption limit of 5% is unchanged.
+This approved grading-only revision requires a **retrospective regrade of both
+baseline and candidate** with the same grader; all other predicates stay unchanged.
+
 ```sh
 node apps/loupist/evals/world/ontology-grade.mjs \
   --suite apps/loupist/evals/world/ontology-corpus-v1.json \

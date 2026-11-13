@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-const HANGUL = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7A3]/u;
 const SOURCE_ROLES = new Set(['source', 'from', 'subject']);
 const TARGET_ROLES = new Set(['target', 'to', 'object']);
 const NAMED_KINDS = new Set(['Organization', 'Person', 'Asset', 'Product', 'Place', 'Policy']);
@@ -32,6 +31,51 @@ export function isMeasurementNode(node) {
   if (/^\d+$/u.test(name)) return !['Organization', 'Asset'].includes(node?.kind) || name.length > 12;
   if (/^[+−-]?\d[\d,.]*$/u.test(name)) return true;
   return MEASUREMENT_NAME.test(name) || /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T ].*)?$/u.test(name);
+}
+
+const LATIN_LETTER = /\p{Script=Latin}/u;
+const LATIN_WORDS = /\p{Script=Latin}+/gu;
+const ORIGINAL_RUN = String.raw`(?!\p{Script=Latin})\p{L}+(?:[ \t·-]+(?!\p{Script=Latin})\p{L}+)*`;
+const ORIGINAL_BEFORE_RENDERING = new RegExp(`(${ORIGINAL_RUN})[ \\t]*\\(([^()\\n]+)\\)`, 'gu');
+const ORIGINAL_BEFORE_SLASH = new RegExp(`(${ORIGINAL_RUN})[ \\t]*/[ \\t]*(?=\\p{Script=Latin})`, 'gu');
+const ORIGINAL_AFTER_SLASH = new RegExp(`(?<=\\p{Script=Latin})[ \\t]*/[ \\t]*(${ORIGINAL_RUN})`, 'gu');
+
+function originalLabel(value) {
+  const label = value.trim();
+  const letters = label.match(/\p{L}/gu) ?? [];
+  const words = label.split(/\s+/u);
+  const koreanClause = /(?:했다|한다|됐다|된다|있다|없다|였다|습니다|어요)$/u.test(label)
+    || (words.length > 1 && /[가-힣](?:다|요)$/u.test(label));
+  // Labels and aliases may be long, but a quoted sentence is still prose.
+  return letters.length > 0 && letters.length <= 64 && letters.every((letter) => !LATIN_LETTER.test(letter))
+    && /^[\p{L}\p{M} \t·-]+$/u.test(label) && words.length <= 6 && !koreanClause;
+}
+
+function englishFrame(text, offset, length) {
+  const outside = text.slice(0, offset) + text.slice(offset + length);
+  return (outside.match(LATIN_WORDS) ?? []).length >= 2;
+}
+
+function nonEnglishFact(proposition) {
+  let text = String(proposition ?? '').normalize('NFKC');
+  text = text.replace(ORIGINAL_BEFORE_RENDERING, (whole, original, rendering, offset, source) => {
+    const letters = rendering.match(/\p{L}/gu) ?? [];
+    return originalLabel(original) && letters.length > 0 && letters.every((letter) => LATIN_LETTER.test(letter))
+      && englishFrame(source, offset, whole.length) ? rendering : whole;
+  });
+  text = text.replace(/\(([^()\n]*)\)|"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’/gu,
+    (whole, parenthetical, double, single, curlyDouble, curlySingle, offset, source) => {
+      const original = parenthetical ?? double ?? single ?? curlyDouble ?? curlySingle;
+      return originalLabel(original) && englishFrame(source, offset, whole.length) ? '' : whole;
+    });
+  for (const pair of [ORIGINAL_BEFORE_SLASH, ORIGINAL_AFTER_SLASH]) {
+    text = text.replace(pair, (whole, original, offset, source) => (
+      originalLabel(original) && englishFrame(source, offset, whole.length) ? '' : whole
+    ));
+  }
+  const letters = text.match(/\p{L}/gu) ?? [];
+  const nonLatin = letters.filter((letter) => !LATIN_LETTER.test(letter)).length;
+  return letters.length > 0 && nonLatin / letters.length >= 0.25;
 }
 
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -169,7 +213,7 @@ function withRates(counts) {
     canonical_relation_rate: ratio(counts.canonicalClaims, counts.canonicalClaimOpportunities),
     relation_names_per_100_claims: claims ? (counts.relationNames.size * 100) / claims : null,
     relates_to_share: ratio(counts.relatesTo, claims),
-    non_english_fact_share: ratio(counts.hangulClaims, claims),
+    non_english_fact_share: ratio(counts.nonEnglishClaims, claims),
     numeric_fidelity: ratio(counts.numericFound, counts.numericExpected),
     measurement_node_share: counts.nodes ? counts.measurementNodes / counts.nodes : 0,
     query_hit_rate: {
@@ -186,7 +230,7 @@ function withRates(counts) {
       canonical_relation_claims: [counts.canonicalClaims, counts.canonicalClaimOpportunities],
       relation_names: [counts.relationNames.size, claims],
       relates_to: [counts.relatesTo, claims],
-      non_english_facts: [counts.hangulClaims, claims],
+      non_english_facts: [counts.nonEnglishClaims, claims],
       numeric: [counts.numericFound, counts.numericExpected],
       measurement_nodes: [counts.measurementNodes, counts.nodes],
       query_en: [counts.queryHits.en, counts.queryExpected.en],
@@ -200,14 +244,14 @@ function emptyCounts() {
     entitiesMatched: 0, entitiesExpected: 0, typesCorrect: 0, duplicateEntities: 0,
     aliasCarried: 0, aliasExpected: 0, identifierFilled: 0, identifierExpected: 0,
     relationsJoined: 0, relationsExpected: 0, canonicalClaims: 0, canonicalClaimOpportunities: 0,
-    relationNames: new Set(), relatesTo: 0, hangulClaims: 0, claims: 0,
+    relationNames: new Set(), relatesTo: 0, nonEnglishClaims: 0, claims: 0,
     numericFound: 0, numericExpected: 0, measurementNodes: 0, nodes: 0,
     queryHits: { en: 0, ko: 0 }, queryExpected: { en: 0, ko: 0 },
   };
 }
 
 function addCounts(total, counts) {
-  for (const key of ['entitiesMatched', 'entitiesExpected', 'typesCorrect', 'duplicateEntities', 'aliasCarried', 'aliasExpected', 'identifierFilled', 'identifierExpected', 'relationsJoined', 'relationsExpected', 'canonicalClaims', 'canonicalClaimOpportunities', 'relatesTo', 'hangulClaims', 'claims', 'numericFound', 'numericExpected', 'measurementNodes', 'nodes']) {
+  for (const key of ['entitiesMatched', 'entitiesExpected', 'typesCorrect', 'duplicateEntities', 'aliasCarried', 'aliasExpected', 'identifierFilled', 'identifierExpected', 'relationsJoined', 'relationsExpected', 'canonicalClaims', 'canonicalClaimOpportunities', 'relatesTo', 'nonEnglishClaims', 'claims', 'numericFound', 'numericExpected', 'measurementNodes', 'nodes']) {
     total[key] += counts[key];
   }
   for (const name of counts.relationNames) total.relationNames.add(name);
@@ -314,7 +358,7 @@ function gradeTrial(scenario, expected, rows) {
     counts.claims += 1;
     if (typeof claim.relation === 'string' && claim.relation) counts.relationNames.add(claim.relation);
     if (claim.relation === 'RELATES_TO') counts.relatesTo += 1;
-    if (HANGUL.test(String(claim.proposition ?? ''))) counts.hangulClaims += 1;
+    if (nonEnglishFact(claim.proposition)) counts.nonEnglishClaims += 1;
   }
   const numericDetail = [];
   counts.numericExpected = expected.numeric_facts.length;
