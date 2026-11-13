@@ -64,8 +64,24 @@ def macho_files(root: Path) -> list[Path]:
     )
 
 
+def framework_directories(root: Path) -> list[Path]:
+    return sorted(
+        path
+        for path in root.rglob("*.framework")
+        if path.is_dir() and not path.is_symlink()
+    )
+
+
 def sign_runtime(root: Path, kind: str, mode: str, identity: str) -> None:
     main = root / ("loupist-pi" if kind == "pi" else "loupist-openbb")
+    frameworks = framework_directories(root)
+    if frameworks:
+        # codesign treats a file inside a flat *.framework as a bundle and
+        # refuses it; the runtime must be built on a non-framework Python.
+        raise ValueError(
+            "runtime contains a framework bundle that cannot be signed in place: "
+            + ", ".join(str(path.relative_to(root)) for path in frameworks)
+        )
     files = macho_files(root)
     if main not in files:
         raise ValueError(f"missing Mach-O main executable: {main}")

@@ -32,11 +32,15 @@ if [ ! -d "$RUNTIME_ROOT" ]; then
 fi
 
 # Reinstall under the deployment target so uv selects compatible arm64 wheels
-# instead of host-optimized macOS 14 variants from the same lockfile.
+# instead of host-optimized macOS 14 variants from the same lockfile. Build on
+# uv's own standalone Python: a framework Python from the host (Homebrew, the
+# runner's tool cache) makes PyInstaller ship a flat Python.framework, which
+# codesign cannot sign or verify in place ("bundle format is ambiguous").
 uv sync \
     --project "$OPENBB_ROOT" \
     --locked \
     --python 3.12 \
+    --python-preference only-managed \
     --python-platform aarch64-apple-darwin \
     --reinstall-package numpy \
     --reinstall-package scipy

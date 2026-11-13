@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import plistlib
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -353,6 +354,33 @@ class SigningTests(unittest.TestCase):
                 )
             )
             self.assertIn("--ci", calls.call_args_list[-1].args)
+
+    def test_a_framework_bundle_in_a_runtime_is_refused_before_signing(self):
+        # A host framework Python makes PyInstaller ship Python.framework, which
+        # codesign cannot sign in place; staging builds on uv's standalone Python.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "loupist-openbb").write_bytes(b"main")
+            framework = root / "_internal" / "Python.framework"
+            framework.mkdir(parents=True)
+            (framework / "Python").write_bytes(b"library")
+            with patch.object(signing, "run") as run:
+                with self.assertRaisesRegex(ValueError, "Python.framework"):
+                    signing.sign_runtime(root, "openbb", "self-signed", "A" * 40)
+                run.assert_not_called()
+            shutil.rmtree(framework)
+            with (
+                patch.object(
+                    signing, "macho_files", return_value=[root / "loupist-openbb"]
+                ),
+                patch.object(signing, "run") as run,
+            ):
+                signing.sign_runtime(root, "openbb", "self-signed", "A" * 40)
+                self.assertEqual(run.call_count, 1)
+        text = (
+            Path(__file__).resolve().parent / "stage-openbb-macos-arm64.sh"
+        ).read_text()
+        self.assertIn("--python-preference only-managed", text)
 
     def test_staging_shell_entrypoints_delegate_to_the_tested_signing_policy(self):
         # Security invariant: no inline shell signing path may bypass this policy.
