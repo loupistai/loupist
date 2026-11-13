@@ -352,15 +352,11 @@ class GitHubReleaseSetupTest(unittest.TestCase):
             return endpoints[endpoint]
 
         remote_audit = AUDIT["remote_audit"]
-        with tempfile.TemporaryDirectory() as directory:
-            workflow = Path(directory) / "release.yml"
-            workflow.write_text(
-                "\n".join(
-                    "# ${{ secrets." + name + " }}" for name in AUDIT["ALL_SECRETS"]
-                )
-            )
-            with mock.patch.dict(remote_audit.__globals__, {"gh_api": fake_gh_api}):
-                findings = remote_audit(REPOSITORY, workflow, "read-only-gh")
+        # The committed workflow references exactly the union of mode secret
+        # names (pinned by the mode-union test below), so no fixture is written.
+        workflow = SCRIPTS.parents[2] / ".github/workflows/release.yml"
+        with mock.patch.dict(remote_audit.__globals__, {"gh_api": fake_gh_api}):
+            findings = remote_audit(REPOSITORY, workflow, "read-only-gh")
         self.assertFalse(errors(findings))
         self.assertEqual(set(requests), set(endpoints))
 

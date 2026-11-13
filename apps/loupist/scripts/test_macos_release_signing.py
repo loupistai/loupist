@@ -203,16 +203,25 @@ class SigningTests(unittest.TestCase):
                     credentials.require(mode)
 
     def test_import_uses_untrusted_identity_listing_and_pins_both_hashes(self):
-        leaf = b"fixture public DER"
-        sha1, sha256 = (
-            hashlib.sha1(leaf).hexdigest().upper(),
-            hashlib.sha256(leaf).hexdigest().upper(),
-        )
-        pem = (
-            "-----BEGIN CERTIFICATE-----\n"
-            + base64.b64encode(leaf).decode()
-            + "\n-----END CERTIFICATE-----\n"
-        )
+        leaf, chain = b"fixture public DER", b"fixture CA DER"
+        # `security` reports Apple's SHA-1 identity identifier; the fixture only
+        # needs it to be consistent across the identity and certificate listings.
+        sha1, ca_sha1 = "A1" * 20, "C0" * 20
+        sha256 = hashlib.sha256(leaf).hexdigest().upper()
+
+        def entry(identifier, der, listed_sha256=None):
+            return (
+                (f"SHA-256 hash: {listed_sha256}\n" if listed_sha256 else "")
+                + f"SHA-1 hash: {identifier}\n-----BEGIN CERTIFICATE-----\n"
+                + base64.b64encode(der).decode()
+                + "\n-----END CERTIFICATE-----\n"
+            )
+
+        ca = entry(ca_sha1, chain, hashlib.sha256(chain).hexdigest().upper())
+        listing = {"value": entry(sha1, leaf, sha256) + ca}
+        identities = {
+            "value": f'  1) {sha1} "Identity"\n  1) {sha1.lower()} "Identity"\n'
+        }
         profile = {
             "macos_signing": {
                 "mode": "self-signed",
@@ -230,10 +239,11 @@ class SigningTests(unittest.TestCase):
                 certificate = Path(args[2])
                 self.assertEqual(certificate.stat().st_mode & 0o777, 0o600)
             if "find-identity" in args:
-                return result(
-                    f'  1) {sha1} "Identity"\n  1) {sha1.lower()} "Identity"\n'
-                )
-            return result(pem if "find-certificate" in args else "")
+                return result(identities["value"])
+            if "find-certificate" in args:
+                self.assertIn("-Z", args)
+                return result(listing["value"])
+            return result()
 
         with (
             tempfile.TemporaryDirectory() as directory,
@@ -263,13 +273,58 @@ class SigningTests(unittest.TestCase):
             self.assertTrue(
                 any("list-keychain" in call.args for call in calls.call_args_list)
             )
+            # A listing without SHA-256 lines still pins the computed SHA-256.
+            listing["value"] = entry(sha1, leaf) + entry(ca_sha1, chain)
+            self.assertEqual(
+                credentials.import_certificate(Path(directory), profile, dry_run=False),
+                {"APPLE_SIGNING_IDENTITY": sha1},
+            )
+
+            def refuses(message, *, dry_run=False):
+                with self.assertRaisesRegex(ValueError, message):
+                    credentials.import_certificate(
+                        Path(directory), profile, dry_run=dry_run
+                    )
+
+            good_listing, good_identities = (
+                entry(sha1, leaf, sha256) + ca,
+                identities["value"],
+            )
+            for bad_identities in (
+                "",
+                f'  1) {sha1} "Identity"\n  2) {ca_sha1} "Other"\n',
+            ):
+                identities["value"] = bad_identities
+                refuses("exactly one code-signing identity", dry_run=True)
+            identities["value"] = good_identities
+            for bad_listing, message in (
+                ("", "certificate is absent"),
+                (ca, "do not match"),
+                (entry(sha1, leaf) + entry(sha1, chain), "do not match"),
+                (entry(sha1, leaf, "0" * 64), "do not match"),
+                (
+                    "-----BEGIN CERTIFICATE-----\n"
+                    + base64.b64encode(leaf).decode()
+                    + "\n-----END CERTIFICATE-----\n",
+                    "not recognized",
+                ),
+            ):
+                listing["value"] = bad_listing
+                refuses(message, dry_run=True)
+            listing["value"] = good_listing
+            profile["macos_signing"]["certificate_sha1"] = ca_sha1
+            refuses("differ from release profile")
+            profile["macos_signing"]["certificate_sha1"] = sha1
             profile["macos_signing"]["certificate_sha256"] = "0" * 64
-            with self.assertRaises(ValueError):
-                credentials.import_certificate(Path(directory), profile, dry_run=False)
+            refuses("differ from release profile")
             self.assertIn(
                 "LOUPIST_EPHEMERAL_CERTIFICATE_SHA1",
                 credentials.import_certificate(Path(directory), profile, dry_run=True),
             )
+            profile["macos_signing"].update(
+                certificate_sha1=None, certificate_sha256=None
+            )
+            refuses("must be pinned")
 
     def test_dry_run_generator_uses_libressl_and_base64_roundtrip(self):
         with tempfile.TemporaryDirectory() as directory:

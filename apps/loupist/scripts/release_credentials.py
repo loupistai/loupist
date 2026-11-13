@@ -197,24 +197,32 @@ def import_certificate(root: Path, profile: dict, *, dry_run: bool) -> dict[str,
         raise ValueError(
             "signing keychain must contain exactly one code-signing identity"
         )
-    pem = run("security", "find-certificate", "-a", "-p", keychain).stdout
-    if pem.count("-----BEGIN CERTIFICATE-----") < 1:
+    # -Z prints each certificate's SHA-256 and SHA-1 before its PEM. The SHA-1 is
+    # Apple's identity identifier (find-identity, codesign); it is taken from the
+    # tool, never computed here. The SHA-256 computed below is the security pin.
+    listing = run("security", "find-certificate", "-a", "-Z", "-p", keychain).stdout
+    if listing.count("-----BEGIN CERTIFICATE-----") < 1:
         raise ValueError("imported code-signing certificate is absent")
-    # Select the leaf matching the identity, not a CA certificate in a Developer ID chain.
     certificates = re.findall(
+        r"^(?:SHA-256 hash: ([A-Fa-f0-9]{64})\s*\n)?SHA-1 hash: ([A-Fa-f0-9]{40})\s*\n"
         r"-----BEGIN CERTIFICATE-----\s*(.*?)\s*-----END CERTIFICATE-----",
-        pem,
-        re.DOTALL,
+        listing,
+        re.MULTILINE | re.DOTALL,
     )
-    der = [base64.b64decode(re.sub(r"\s", "", item)) for item in certificates]
+    if len(certificates) != listing.count("-----BEGIN CERTIFICATE-----"):
+        raise ValueError("imported certificate listing is not recognized")
+    # Select the leaf matching the identity, not a CA certificate in a Developer ID chain.
     leaves = [
-        item
-        for item in der
-        if hashlib.sha1(item).hexdigest().upper() == hashes[0].upper()
+        (listed_sha256, base64.b64decode(re.sub(r"\s", "", body), validate=True))
+        for listed_sha256, listed_sha1, body in certificates
+        if listed_sha1.upper() == hashes[0]
     ]
     if len(leaves) != 1:
         raise ValueError("identity and imported certificate do not match")
-    sha1, sha256 = hashes[0].upper(), hashlib.sha256(leaves[0]).hexdigest().upper()
+    listed_sha256, leaf = leaves[0]
+    sha1, sha256 = hashes[0], hashlib.sha256(leaf).hexdigest().upper()
+    if listed_sha256 and listed_sha256.upper() != sha256:
+        raise ValueError("identity and imported certificate do not match")
     if not dry_run:
         policy = profile["macos_signing"]
         if policy["certificate_sha1"] and (
