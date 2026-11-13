@@ -14,7 +14,7 @@ import { sameBlock, type GridBlock } from "../../chat/chartBlocks";
 import { GRID_SCHEMA } from "../../contracts/chat";
 import { citationNumber } from "../../chat/numberChecks";
 import { citationLabel, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
-import { emptyReason, gridCounts, gridCsv, gridMarkdown, gridTsv, isValueCell, nextSort, shownCheck, sortedRows, type GridSort } from "../../chat/grid";
+import { emptyReason, gridCounts, gridCsv, gridMarkdown, gridTsv, gridDecimals, isValueCell, nextSort, shownCheck, sortedRows, type GridSort } from "../../chat/grid";
 import { exportFileName, utf8Bytes } from "../../chat/exportChat";
 import { useAssetNames } from "../assets/assetName";
 import { formatAsOf } from "../../chat/asOf";
@@ -36,9 +36,9 @@ const asOfDate = (value: string) => formatAsOf(value);
 const shortDate = (value: string) => formatDate(Date.parse(`${value}T00:00:00Z`), { timeZone: "UTC", year: undefined, month: "short", day: "numeric" });
 
 /** A value: its number chip when the cited evidence is retained, the printed value otherwise. */
-function ValueCell({ cell, asset, evidenceRefs, asOf }: { cell: GridValueCell; asset?: string; evidenceRefs: readonly ChatEvidenceRef[]; asOf?: string }) {
+function ValueCell({ cell, decimals, asset, evidenceRefs, asOf }: { cell: GridValueCell; decimals?: number; asset?: string; evidenceRefs: readonly ChatEvidenceRef[]; asOf?: string }) {
   const evidence = evidenceRefs.find((item) => item.id === cell.evidence_id);
-  const check = shownCheck(cell);
+  const check = shownCheck(cell, decimals);
   if (!evidence) return <span className="gg-num">{check.text}</span>;
   return <NumberChip check={check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={asOf} asset={asset}>{check.text}</NumberChip>;
 }
@@ -204,6 +204,8 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
   const names = useAssetNames(scope?.bridge, scope?.loupistId ?? "", Boolean(scope));
   const order = useMemo(() => sortedRows(grid, sort), [grid, sort]);
   const counts = useMemo(() => gridCounts(grid), [grid]);
+  // Values the table rounds show one number of decimals per column, so the column reads evenly.
+  const decimals = useMemo(() => gridDecimals(grid), [grid]);
 
   const copy = () => { void copyText(gridTsv(grid)); };
   const save = async (kind: "csv" | "md") => {
@@ -272,7 +274,7 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
                 const cell = grid.cells[rowIndex]?.[columnIndex];
                 if (!cell) return <td key={column.id} />;
                 return isValueCell(cell)
-                  ? <td key={column.id} className="grid-card-value gg-num" data-status={cell.check.status}><ValueCell cell={cell} asset={row.symbol} evidenceRefs={evidenceRefs} asOf={grid.as_of} /></td>
+                  ? <td key={column.id} className="grid-card-value gg-num" data-status={cell.check.status}><ValueCell cell={cell} decimals={decimals[columnIndex]} asset={row.symbol} evidenceRefs={evidenceRefs} asOf={grid.as_of} /></td>
                   : <td key={column.id} className="grid-card-empty-cell"><EmptyCell cell={cell} spoken={t("grid.emptySpoken", { asset: label, measure: column.label, reason: emptyReason(cell.empty) })} /></td>;
               })}
             </tr>;

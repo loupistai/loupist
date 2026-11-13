@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AssetsGrid, ChatEvidenceRef, NumberCheck } from "../types";
-import { currencyOf, gridCounts, gridCsv, gridMarkdown, gridTsv, nextSort, shownAmount, shownCheck, sortedRows } from "./grid";
+import { currencyOf, gridCounts, gridCsv, gridDecimals, gridMarkdown, gridTsv, nextSort, shownAmount, shownCheck, sortedRows } from "./grid";
 
 const DART: ChatEvidenceRef = {
   id: "ev_dart", title: "Solsup Foods FY2025 statements", kind: "original", provider: "OpenDART", tool_name: "dart_financials",
@@ -141,6 +141,29 @@ describe("grid answers", () => {
     const long: AssetsGrid = { ...grid, cells: [[cell, grid.cells[0]![1]!], grid.cells[1]!, grid.cells[2]!] };
     expect(gridTsv(long).split("\n")[1]).toBe("Solsup Foods\t₩32.77조\t8.42%");
     expect(gridMarkdown("Margins", long, [DART, MARGIN])).toContain("| Solsup Foods | ₩32.77조[^1] | 8.42%[^2] |");
+  });
+
+  it("shows the values it rounds in one column with one number of decimals, and every written value as written", () => {
+    const cell = (value: string, status: NumberCheck["status"] = "matched") => ({ value, evidence_id: DART.id, check: { ...data(value, status), exact: value }, sort: 0 });
+    const column = (values: string[]): AssetsGrid => ({ ...grid, rows: values.map((_, index) => ({ symbol: `99000${index}`, market: "KRX", label: `Row ${index}` })),
+      columns: [grid.columns[0]!], cells: values.map((value) => [cell(value)]) });
+    // KRW: "₩43.600123조" rounds to 43.6 but its neighbour needed two decimals, so it keeps "43.60".
+    const krw = column(["₩47.214321조", "₩43.600123조", "₩12.30조"]);
+    expect(gridDecimals(krw)).toEqual([2]);
+    expect(gridTsv(krw).split("\n").slice(1).map((line) => line.split("\t")[1])).toEqual(["₩47.21조", "₩43.60조", "₩12.30조"]);
+    expect(gridMarkdown("Revenue", krw, [DART])).toContain("| Row 1 | ₩43.60조[^2] |");
+    // The chip says the shown "₩43.60조" was rounded and keeps the exact source value; a written value is unchanged.
+    expect(shownCheck(krw.cells[1]![0] as never, 2)).toMatchObject({ text: "₩43.60조", status: "rounded", exact: "₩43.600123조" });
+    expect(shownCheck(krw.cells[2]![0] as never, 2)).toBe((krw.cells[2]![0] as { check: NumberCheck }).check);
+    // A value the model wrote with fewer decimals stays as written even when its neighbours show two.
+    expect(shownAmount("₩452.3bn", 2)).toBe("₩452.3bn");
+    expect(shownAmount("4,523억 원", 2)).toBe("4,523억 원");
+    // USD, and a column whose rounded values all need one decimal or none: no padding beyond what they need.
+    expect(gridTsv(column(["$394.3281bn", "-$12.6004bn"])).split("\n").slice(1).map((line) => line.split("\t")[1])).toEqual(["$394.33bn", "-$12.60bn"]);
+    expect(gridDecimals(column(["$1.2004bn", "$3.0001bn"]))).toEqual([1]);
+    expect(gridTsv(column(["$1.2004bn", "$3.0001bn"])).split("\n").slice(1).map((line) => line.split("\t")[1])).toEqual(["$1.2bn", "$3.0bn"]);
+    // Not money: percents and multiples neither count nor change.
+    expect(gridDecimals(column(["8.4231%", "1.2345×"]))).toEqual([0]);
   });
 
   it("names the currency a printed amount uses", () => {

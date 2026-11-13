@@ -140,6 +140,27 @@ export function formatAmount(value: number, currency?: string, options: { exact?
 }
 
 /**
+ * The unit an axis of amounts counts in, from its largest magnitude, at the
+ * scales `formatAmount` prints: 조, 억 or 만 in Korean, tn, bn or m in English.
+ * Below them (under 1,000만, under 1m) there is none and digits stay plain.
+ */
+export function amountScale(magnitude: number): { size: number; suffix: string } {
+  const value = Math.abs(magnitude);
+  if (isKorean()) {
+    if (value < 1e7) return { size: 1, suffix: "" };
+    const [size, suffix] = KO_UNITS.find(([size]) => value >= size) ?? KO_UNITS[2];
+    return { size, suffix };
+  }
+  const scale = EN_SCALES.find(([size]) => value >= size);
+  return scale ? { size: scale[0], suffix: scale[1] } : { size: 1, suffix: "" };
+}
+
+/** A currency as a label names it once: "원", "달러" in Korean; the ISO code ("KRW", "USD") in English. */
+export function currencyName(code: string) {
+  return isKorean() ? KO_CURRENCY[code] ?? code : code;
+}
+
+/**
  * A count at the scale money uses, ready for a counter word: "34.6m", "9,800".
  * In Korean a counter follows a unit with a space and digits without one, so a
  * count that ends in 조, 억 or 만 keeps a trailing space ("3,456만 " + "주").

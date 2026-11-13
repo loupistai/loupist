@@ -2,11 +2,11 @@ import { sourceIdentityLabel } from "../../chat/evidence";
 import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { Disclosure } from "../ui/disclosure";
 import { ApprovalCards } from "./ApprovalCard";
-import { QuestionCards } from "./QuestionCard";
+import { holdTurnHeight, QuestionCards } from "./QuestionCard";
 import type { LoupistBridge } from "../../types";
 import { formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { useConversationScroll } from "../ai-elements/conversation";
 import { AnswerFeedback, type SaveAnswerFeedback } from "./AnswerFeedback";
 import {
@@ -48,7 +48,7 @@ import { earningsCards } from "../../chat/earningsLinks";
 import { heldSensitivityParagraphs, sensitivityParagraphs, type SensitivitySegment } from "../../chat/sensitivity";
 import { SensitivityCard } from "./SensitivityCard";
 import { ChatArtifactBlock } from "./ChatArtifactBlock";
-import { chartBlocks, gridBlocks, type ChartBlock } from "../../chat/chartBlocks";
+import { chartBlocks, gridBlocks, sameBlock, type ChartBlock } from "../../chat/chartBlocks";
 import { connectionSetupBlocks } from "../../chat/connectionSetupBlocks";
 import { ConnectionSetupCard } from "./ConnectionSetupCard";
 import { ChatGridBlock } from "./GridCard";
@@ -547,9 +547,10 @@ function ChatMessageCardComponent({
 }
 
 /** A block of the turn (a card, a question, an approval) that rises in when it arrives while the reader watches. */
-function TurnBlock({ kind, children }: { kind: "card" | "ask"; children: ReactNode }) {
+function TurnBlock({ kind, leaving = false, blockRef, children }: { kind: "card" | "ask"; leaving?: boolean; blockRef?: Ref<HTMLDivElement>; children: ReactNode }) {
   const arrived = useArrived();
-  return <div className="turn-block" data-turn-item={kind} data-enter={arrived || undefined}>{children}</div>;
+  return <div ref={blockRef} className="turn-block" data-turn-item={kind} data-enter={(arrived && !leaving) || undefined}
+    data-leaving={leaving ? "" : undefined} aria-hidden={leaving || undefined} inert={leaving || undefined}>{children}</div>;
 }
 
 /**
@@ -564,26 +565,31 @@ function SensitivitySlot({ children }: { children?: ReactNode }) {
   </div>;
 }
 
-/** A card's exit (`--gg-motion-fast`): a card still preparing when the reply stops fades out where it stood. */
+/** A card's exit (`--gg-motion-fast`): a card the stopped reply takes away fades out where it stood. */
 export const CARD_LEAVE_MS = 120;
 
 /**
  * A card where its publish step started. When its block goes away (the reply
- * stopped while it was preparing), the frame the reader saw fades out in place
- * and is then removed (DIRECTION 5.7); under reduced motion it goes at once.
+ * stopped while it was preparing, or before the card it had filled was saved),
+ * the same frame the reader saw, drawn as it was, fades out in place and is then
+ * removed (DIRECTION 5.7); under reduced motion it is hidden at once. The turn
+ * keeps the height it had when the card began to leave (`--turn-hold`), so the
+ * scroll range never shrinks under the reader and the page does not snap.
  */
 function TurnCard({ block, render }: { block: ChartBlock | undefined; render: (block: ChartBlock) => ReactNode }) {
   const [last, setLast] = useState(block);
-  if (block && (block.key !== last?.key || block.kind !== last.kind)) setLast(block);
+  if (block && (!last || !sameBlock(block, last))) setLast(block);
   const leaving = !block && last ? last : undefined;
-  useEffect(() => {
-    if (!leaving) return;
+  const frame = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!leaving) return undefined;
+    holdTurnHeight(frame.current);
     const timer = window.setTimeout(() => setLast(undefined), CARD_LEAVE_MS);
     return () => window.clearTimeout(timer);
   }, [leaving]);
-  if (block) return <TurnBlock kind="card">{render(block)}</TurnBlock>;
-  if (!leaving) return null;
-  return <div className="turn-block" data-turn-item="card" data-leaving="" aria-hidden="true" inert>{render(leaving)}</div>;
+  const shown = block ?? leaving;
+  // One element whether shown or leaving, so the drawn card is kept, never mounted again for its exit.
+  return shown ? <TurnBlock kind="card" leaving={!block} blockRef={frame}>{render(shown)}</TurnBlock> : null;
 }
 
 /** The outline and details triggers arrive at commit; the meta row already has their height. */

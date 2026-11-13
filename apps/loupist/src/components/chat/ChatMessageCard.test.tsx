@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 // Citation links open a delayed HoverCard; skipping hover keeps its timer from firing after teardown.
-import type { ChatMessage, ChatPerformance, KnowledgeReference, MemoryRef } from "../../types";
+import type { ChatArtifactView, ChatMessage, ChatPerformance, KnowledgeReference, MemoryRef } from "../../types";
 import { evidenceFixture } from "../../test/evidenceFixtures";
 import { TooltipProvider } from "../ui/tooltip";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -600,6 +600,41 @@ describe("the in-progress reply", () => {
       expect(screen.queryByRole("region", { name: "Chart: Margins" })).toBeNull();
       await act(async () => { await vi.advanceTimersByTimeAsync(130); });
       expect(card()).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("fades a filled card out in place when the reply stops, holding the turn's height so the page stays still", async () => {
+    vi.useFakeTimers();
+    try {
+      const staged: ChatArtifactView = {
+        artifact: { id: "chart-1", chat_session_id: "chat-a", kind: "chart", title: "Margins", current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+        revision: { artifact_id: "chart-1", revision: 1, digest: "a".repeat(64), source_message_id: "answer", created_at_ms: 0,
+          payload: { kind: "chart", schema: "loupist-chart/1", chart: {} as never } },
+        chart_dataset: null,
+      };
+      const filled = answer({ status: "streaming", content: "", staged_artifacts: [staged], progress: { startedAtMs: 0, finishedAtMs: null, items: [chartStep("succeeded")] } });
+      const turnOf = (message: ChatMessage, props: Omit<ReturnType<typeof renderAnswer>, "view" | "open">) =>
+        <TooltipProvider><section className="turn" data-turn-reserve=""><ChatMessageCard {...props} message={message} /></section></TooltipProvider>;
+      const running = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, finishedAtMs: null, items: [chartStep("running")] } });
+      const { view, ...props } = renderAnswer(running);
+      view.rerender(turnOf(running, props));
+      view.rerender(turnOf(filled, props));
+      const turn = view.container.querySelector<HTMLElement>(".turn")!;
+      vi.spyOn(turn, "getBoundingClientRect").mockReturnValue({ height: 840.2 } as DOMRect);
+      const article = turn.querySelector("article")!;
+      const card = () => article.querySelector(':scope > [data-turn-item="card"]');
+      const shown = card()!.querySelector("section.chat-artifact-block");
+      expect(shown).toHaveAttribute("data-state", "ready");
+      view.rerender(turnOf(answer({ status: "aborted", content: "", staged_artifacts: [staged], progress: { startedAtMs: 0, finishedAtMs: 5, items: [chartStep("succeeded")] } }), props));
+      // The card the reader saw stays drawn, the same element, and fades where it stood.
+      expect(card()).toHaveAttribute("data-leaving");
+      expect(card()).toHaveAttribute("aria-hidden", "true");
+      expect(card()!.querySelector("section.chat-artifact-block")).toBe(shown);
+      expect(turn.style.getPropertyValue("--turn-hold")).toBe("841px");
+      await act(async () => { await vi.advanceTimersByTimeAsync(130); });
+      expect(card()).toBeNull();
+      // Gone, the card leaves its room: the turn keeps the height it had, so nothing below or above moves.
+      expect(turn.style.getPropertyValue("--turn-hold")).toBe("841px");
     } finally { vi.useRealTimers(); }
   });
 

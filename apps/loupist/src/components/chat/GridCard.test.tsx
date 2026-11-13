@@ -64,6 +64,16 @@ describe("GridCard", () => {
     expect(screen.getByRole("region", { name: "Table, scroll sideways" })).toHaveAttribute("tabindex", "0");
   });
 
+  it("shows the values it rounds in a column with the same decimals, and its chip says the shown value was rounded", () => {
+    const amount = (value: string) => ({ value, evidence_id: DART.id, check: { ...check(value, "matched"), exact: value }, sort: 0 });
+    const rounded: AssetsGrid = { ...grid, cells: [[amount("₩47.214321조"), grid.cells[0]![1]!], [amount("₩43.600123조"), grid.cells[1]![1]!]] };
+    renderGrid({ grid: rounded });
+    const table = screen.getByRole("table", { name: "Dividend payers" });
+    expect(within(table).getByRole("button", { name: /^₩47\.21조, from OpenDART/u })).toHaveAttribute("data-status", "rounded");
+    expect(within(table).getByRole("button", { name: /^₩43\.60조, from OpenDART/u })).toHaveAttribute("data-status", "rounded");
+    expect(within(table).queryByText("₩43.6조")).toBeNull();
+  });
+
   it("sorts by a column header and keeps empty cells last", async () => {
     const user = userEvent.setup();
     renderGrid();
