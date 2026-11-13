@@ -120,7 +120,7 @@ describe("Save as PNG… (X9)", () => {
     render(withScope(<ChatArtifactBlock block={{ kind: "ready", key: "r", artifact: ref, updating: false }} />, undefined, exportSave));
     await screen.findByText("compact-chart");
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save as PNG…" })); });
-    expect(exportSave).toHaveBeenCalledExactlyOnceWith({ suggestedName: "Operating margin.png", kind: "png", bytes: PNG_SIGNATURE });
+    expect(exportSave).toHaveBeenCalledExactlyOnceWith({ suggestedName: "Operating margin.png", kind: "png", bytes: PNG_SIGNATURE, title: "Save image" });
     // The file is the chart at twice its size, with a footer band under it.
     expect(drawn).toHaveLength(1);
     expect(drawn[0]!.width).toBe(640);

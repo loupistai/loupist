@@ -121,7 +121,8 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   principleUpdate(request: PrincipleUpdateRequest): Promise<Principle>;
   principleArchive(request: PrincipleArchiveRequest): Promise<Principle>;
   /** Saves prepared bytes through the native save dialog; Rust checks the size and that the extension matches the kind. */
-  exportSave(request: { suggestedName: string; bytes: number[]; kind: "png" | "mp4" | "webm" | "md" | "csv" }): Promise<string | null>;
+  /** `title` is the Save dialog's title in the interface language (`exportTitle`). */
+  exportSave(request: { suggestedName: string; bytes: number[]; kind: "png" | "mp4" | "webm" | "md" | "csv"; title: string }): Promise<string | null>;
   pickFile(request: { title: string; filters: { name: string; extensions: string[] }[] }): Promise<string | null>;
   onMenuAction(handler: (action: string) => void): () => void;
 

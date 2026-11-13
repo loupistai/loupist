@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import type { MapCanvasControls } from "./MapCanvas";
 import { composeMapExport, pngBytes, recordingFormat, type MapExportFooter } from "./export";
 import { REPLAY_DURATION_MS, replayTime, type MapReplay } from "./replay";
+import { titledExport } from "../../lib/exportTitle";
 const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 /** Map export as an image or a replay video; the actions live in the toolbar's More menu and the progress and error sit over the Map. */
 export function useMapExport({ bridge, loupistId, controls, replay, stats, onRecording }: { bridge: LoupistBridge; loupistId: string; controls: MutableRefObject<MapCanvasControls | null>; replay: MapReplay; stats: string; onRecording: (recording: boolean) => void }) {
@@ -30,7 +31,7 @@ export function useMapExport({ bridge, loupistId, controls, replay, stats, onRec
       if (cancel.current || !mounted.current) return;
       const name = `${loupist.name.replace(/[/\\:]/g, "-")}-map`;
       if (!video) {
-        await bridge.exportSave({ suggestedName: `${name}.png`, kind: "png", bytes: Array.from(pngBytes(composeMapExport(source, footer))) });
+        await bridge.exportSave(titledExport({ suggestedName: `${name}.png`, kind: "png" as const, bytes: Array.from(pngBytes(composeMapExport(source, footer))) }));
         return;
       }
       const { mime, kind } = recordingFormat();
@@ -63,7 +64,7 @@ export function useMapExport({ bridge, loupistId, controls, replay, stats, onRec
       if (recorder.state !== "inactive") recorder.stop();
       if (encodingError) cancel.current = false;
       const blob = await finished;
-      if (!cancel.current) await bridge.exportSave({ suggestedName: `${name}.${kind}`, kind, bytes: Array.from(new Uint8Array(await blob.arrayBuffer())) });
+      if (!cancel.current) await bridge.exportSave(titledExport({ suggestedName: `${name}.${kind}`, kind, bytes: Array.from(new Uint8Array(await blob.arrayBuffer())) }));
     } catch { if (mounted.current && !cancel.current) setError(true); }
     finally {
       controls.current?.exportLabels?.(false);

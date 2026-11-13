@@ -3,6 +3,12 @@
   "dialog": {
     "close": "Close"
   },
+  "exportDialog": {
+    "png": "Save image",
+    "video": "Save video",
+    "md": "Save Markdown",
+    "csv": "Save CSV"
+  },
   "sheet": {
     "close": "Close"
   },

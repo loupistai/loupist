@@ -23,6 +23,7 @@ import { NumberChip } from "./NumberChip";
 import { CitationChip } from "./CitationChip";
 import { CitedNote } from "./CitedNote";
 import { useGo, useOpenProps } from "../navigation/Open";
+import { titledExport } from "../../lib/exportTitle";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -413,7 +414,7 @@ export const ChatGridBlock = memo(function ChatGridBlock({ block, onAsk, askDisa
       return <ConflictCard title={title} conflict={payload.grid} evidenceRefs={evidenceRefs} />;
     }
     return <GridCard title={title} grid={payload.grid} evidenceRefs={evidenceRefs} filled={wasBuilding}
-      onExport={(request) => scope.bridge.exportSave(request)}
+      onExport={(request) => scope.bridge.exportSave(titledExport(request))}
       onAsk={onAsk ? () => onAsk(chatArtifactRef(loaded)) : undefined} askDisabled={askDisabled} />;
   }
   let state: ReactNode;

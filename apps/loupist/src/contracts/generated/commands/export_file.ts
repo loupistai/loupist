@@ -6,4 +6,13 @@
  */
 export type ExportKind = "png" | "mp4" | "webm" | "md" | "csv";
 
-export type ExportRequest = { suggestedName: string, bytes: Array<number>, kind: ExportKind };
+export type ExportRequest = {
+  suggestedName: string,
+  bytes: Array<number>,
+  kind: ExportKind,
+  /**
+   * The Save dialog's title in the interface language, as the renderer
+   * words it (like `pick_file`'s).
+   */
+  title: string,
+};
