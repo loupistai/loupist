@@ -564,6 +564,24 @@ describe("the in-progress reply", () => {
     expect(order()).toEqual(["tools", "card", "prose"]);
   });
 
+  it("fades a card still preparing out where it stood when the reply stops, then removes it", async () => {
+    vi.useFakeTimers();
+    try {
+      const live = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, finishedAtMs: null, items: [chartStep("running")] } });
+      const { view, ...props } = renderAnswer(live);
+      const article = view.container.querySelector("article")!;
+      const card = () => article.querySelector(':scope > [data-turn-item="card"]');
+      expect(card()).not.toHaveAttribute("data-leaving");
+      const stopped = { ...chartStep("running"), status: "stopped" as const, finishedAtMs: 5 };
+      view.rerender(<TooltipProvider><ChatMessageCard {...props} message={answer({ status: "aborted", content: "", progress: { startedAtMs: 0, finishedAtMs: 5, items: [stopped] } })} /></TooltipProvider>);
+      expect(card()).toHaveAttribute("data-leaving");
+      expect(card()).toHaveAttribute("aria-hidden", "true");
+      expect(screen.queryByRole("region", { name: "Chart: Margins" })).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(130); });
+      expect(card()).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("reads Writing until the answer's last words are shown, at most 400 ms after the host finished", async () => {
     vi.useFakeTimers();
     try {

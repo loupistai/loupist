@@ -373,7 +373,8 @@ function ChatMessageCardComponent({
         case "card": {
           // The card stands where its publish step started; the frame keeps its place as it fills.
           const block = cardBlocks(segment.tool).find((entry) => entry.stepId === segment.itemId);
-          if (block) transcript.push(<TurnBlock key={segment.key} kind="card">{renderBlock(segment.tool, block, segment.key)}</TurnBlock>);
+          const tool = segment.tool;
+          transcript.push(<TurnCard key={segment.key} block={block} render={(shown) => renderBlock(tool, shown, segment.key)} />);
           continue;
         }
         case "question":
@@ -535,6 +536,28 @@ function ChatMessageCardComponent({
 function TurnBlock({ kind, children }: { kind: "card" | "ask"; children: ReactNode }) {
   const arrived = useArrived();
   return <div className="turn-block" data-turn-item={kind} data-enter={arrived || undefined}>{children}</div>;
+}
+
+/** A card's exit (`--gg-motion-fast`): a card still preparing when the reply stops fades out where it stood. */
+export const CARD_LEAVE_MS = 120;
+
+/**
+ * A card where its publish step started. When its block goes away (the reply
+ * stopped while it was preparing), the frame the reader saw fades out in place
+ * and is then removed (DIRECTION 5.7); under reduced motion it goes at once.
+ */
+function TurnCard({ block, render }: { block: ChartBlock | undefined; render: (block: ChartBlock) => ReactNode }) {
+  const [last, setLast] = useState(block);
+  if (block && (block.key !== last?.key || block.kind !== last.kind)) setLast(block);
+  const leaving = !block && last ? last : undefined;
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = window.setTimeout(() => setLast(undefined), CARD_LEAVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [leaving]);
+  if (block) return <TurnBlock kind="card">{render(block)}</TurnBlock>;
+  if (!leaving) return null;
+  return <div className="turn-block" data-turn-item="card" data-leaving="" aria-hidden="true" inert>{render(leaving)}</div>;
 }
 
 /** The outline and details triggers arrive at commit; the meta row already has their height. */

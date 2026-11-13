@@ -49,7 +49,9 @@ with its nested steps, every step and note in order (label, target, Failed or St
 and a duration of a second or more), and results. A plan or Memory reads with no step of
 their own place the ledger before the live answer, where it stays. A chart or table
 card stands where its publish step started (`chartBlocks`/`gridBlocks` give each block
-its `stepId`), so a card made before the answer sits above it, live and after reload;
+its `stepId`), so a card made before the answer sits above it, live and after reload. A
+card still preparing when the reply stops fades out in place (120 ms; at once under
+reduced motion) and is then removed;
 an answer that says "the chart below" can be wrong until the prompt says otherwise. A
 question or approval is a block where it was asked, and settles into its one line in
 the same place. The card, the status pill and the ledger read the view alone; the pill

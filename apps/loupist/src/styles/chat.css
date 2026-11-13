@@ -1510,7 +1510,7 @@ button.chat-progress-names:hover { text-decoration: underline; }
   .turn-ledger-chevron { transition: none; }
   .turn-live[data-sheen] .turn-live-label { animation: none; background: none; color: var(--gg-color-text-primary); }
   .turn-tick-out { display: none; }
-  :is(.turn-live, .turn-ledger-chips)[data-leaving] { display: none; }
+  :is(.turn-live, .turn-ledger-chips, .turn-block)[data-leaving] { display: none; }
 }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @container chat-reading (max-width: 760px) {
@@ -1603,6 +1603,8 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 /* Blocks that arrive while the reader watches: the ledger fades in, chips, cards and questions rise in. */
 .turn-ledger[data-enter] { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; }
 .turn-ledger-chip[data-enter], .turn-block[data-enter] { animation: turn-rise-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+/* A card still preparing when the reply stops fades out where it stood, then is removed. */
+.turn-block[data-leaving] { pointer-events: none; animation: turn-fade-out var(--gg-motion-fast) var(--gg-ease-in) both; }
 .message-meta-late { display: inline-flex; align-items: center; }
 .message-meta-late[data-enter] { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; }
 
