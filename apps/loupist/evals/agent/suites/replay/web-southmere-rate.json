@@ -4,7 +4,9 @@
     {
       "provider": "web",
       "request": {
-        "url": "https://fictional.example/rates/southmere-decision-2026-10"
+        "url": "https://fictional.example/rates/southmere-decision-2026-10",
+        "method": "GET",
+        "body": null
       },
       "response": {
         "status": 200,

@@ -48,7 +48,11 @@
         },
         "end_de": {
           "at_least": "20260318"
-        }
+        },
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore",
+        "pblntf_ty": "optional"
       }
     },
     {
@@ -87,7 +91,10 @@
         },
         "end_de": {
           "at_least": "20260318"
-        }
+        },
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
       }
     },
     {
@@ -126,7 +133,10 @@
         },
         "end_de": {
           "at_least": "20260318"
-        }
+        },
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
       }
     },
     {
@@ -138,6 +148,28 @@
         "status": 200,
         "content_type": "application/zip",
         "body_base64": "UEsDBBQAAAAIAAAAIVxUkBt+LwEAAIQBAAASAAAAMjAyNjAzMTg5OTAzMDgueG1sbZA7a8JQFMe/yiG7puLS4RqpGkGoRjAOHUNyq5fmUUzsY+vDQZpBh5ZmMMVBhYJDqEI72C+Ue/IdmqLYFrodOPx//wcpXlkmXNCeyxy7IOSyBwJQW3cMZncKQlutZg6FokQqSrldlxvqz5VpHNVlia8GfLnmiyWPAj4a4NsaktESX+Y83GD4AbgIcTAj4l8VKSmVE4m05LJaUxqZnETUmnosS+hP4/cJoD9JRZAMU9CYiNsfaf5jxh8eIY5u8P4WwwAwmOFdBBh9xqspPo93UWCXJR9HEz7fpPhpik+eXrk/5P4sS8TmN73KdC/dQDOhdE0d0+r3GLSoxXTHNvq65/TgkpkmaIYBeTjX9DOtk24EJrOpC5oHXpfC6Z6huJoNbpcaW7z4q6u4bb/fRPoCUEsBAhQDFAAAAAgAAAAhXFSQG34vAQAAhAEAABIAAAAAAAAAAAAAAIABAAAAADIwMjYwMzE4OTkwMzA4LnhtbFBLBQYAAAAAAQABAEAAAABfAQAAAAA="
+      }
+    }
+  ],
+  "otherwise": [
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/list.json?",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/document.xml?",
+      "response": {
+        "status": 200,
+        "content_type": "application/xml",
+        "text": "<result><status>013</status><message>조회된 데이타가 없습니다.</message></result>"
       }
     }
   ]

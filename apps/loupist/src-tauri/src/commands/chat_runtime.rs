@@ -33,6 +33,7 @@ use std::{
 };
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+#[cfg(not(feature = "eval-harness"))]
 use chrono::Utc;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;

@@ -11,6 +11,15 @@ use std::sync::{Mutex, OnceLock, RwLock};
 pub struct Replay {
     pub schema: String,
     pub requests: Vec<Entry>,
+    #[serde(default)]
+    pub otherwise: Vec<Fallback>,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Fallback {
+    pub provider: String,
+    pub url_prefix: String,
+    pub response: Response,
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -26,6 +35,7 @@ pub struct Entry {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum QueryMatch {
     Ignore,
+    Optional,
     AtMost(String),
     AtLeast(String),
     RangeIncludes { start: i32, end: i32 },
@@ -58,15 +68,15 @@ impl Entry {
                 .filter(|(k, _)| k == key)
                 .map(|(_, v)| v)
                 .collect::<Vec<_>>();
-            // Every declared parameter must occur exactly once, including ignored ones.
-            if values.len() != 1 {
+            // Optional filters may be absent; duplicate keys are always refused.
+            if values.len() > 1 || (values.is_empty() && !matches!(rule, QueryMatch::Optional)) {
                 return false;
             }
-            let value = values[0];
+            let value = values.first().map(|value| value.as_str()).unwrap_or("");
             let matched = match rule {
-                QueryMatch::Ignore => true,
-                QueryMatch::AtMost(bound) => value <= bound,
-                QueryMatch::AtLeast(bound) => value >= bound,
+                QueryMatch::Ignore | QueryMatch::Optional => true,
+                QueryMatch::AtMost(bound) => value <= bound.as_str(),
+                QueryMatch::AtLeast(bound) => value >= bound.as_str(),
                 QueryMatch::RangeIncludes { start, end } => value
                     .split_once(':')
                     .and_then(|(a, b)| Some((a.parse::<i32>().ok()?, b.parse::<i32>().ok()?)))
@@ -129,6 +139,7 @@ impl Response {
 type ReplayScope = Option<tokio::runtime::Id>;
 type ActiveReplays = HashMap<ReplayScope, (Replay, String)>;
 static ACTIVE: OnceLock<RwLock<ActiveReplays>> = OnceLock::new();
+static FALLBACKS: OnceLock<Mutex<HashMap<ReplayScope, Vec<Value>>>> = OnceLock::new();
 static SERIAL: Mutex<()> = Mutex::new(());
 fn active() -> &'static RwLock<ActiveReplays> {
     ACTIVE.get_or_init(|| RwLock::new(HashMap::new()))
@@ -152,19 +163,35 @@ impl Replay {
         if self.schema != "loupist-connection-replay/1" {
             return Err("unsupported replay schema".into());
         }
-        for entry in &self.requests {
-            if crate::finance_data::native_vendor(&entry.provider).is_none()
-                && !matches!(entry.provider.as_str(), "web" | "web-search")
+        for (provider, response) in self
+            .requests
+            .iter()
+            .map(|entry| (&entry.provider, &entry.response))
+            .chain(
+                self.otherwise
+                    .iter()
+                    .map(|entry| (&entry.provider, &entry.response)),
+            )
+        {
+            if crate::finance_data::native_vendor(provider).is_none()
+                && !matches!(provider.as_str(), "web" | "web-search")
             {
                 return Err("unknown replay provider".into());
             }
-            let body_count = usize::from(entry.response.body.is_some())
-                + usize::from(entry.response.text.is_some())
-                + usize::from(entry.response.body_base64.is_some());
-            if body_count != 1 || !(100..=599).contains(&entry.response.status) {
+            let body_count = usize::from(response.body.is_some())
+                + usize::from(response.text.is_some())
+                + usize::from(response.body_base64.is_some());
+            if body_count != 1 || !(100..=599).contains(&response.status) {
                 return Err("replay response requires one body and a valid HTTP status".into());
             }
-            entry.response.bytes()?;
+            response.bytes()?;
+        }
+        for fallback in &self.otherwise {
+            if !(fallback.provider == "web-search" && fallback.url_prefix.is_empty())
+                && reqwest::Url::parse(&fallback.url_prefix).is_err()
+            {
+                return Err("fallback needs an absolute URL prefix".into());
+            }
         }
         let serial = if cfg!(test) {
             None
@@ -186,6 +213,11 @@ impl Replay {
 impl Drop for Guard {
     fn drop(&mut self) {
         active().write().unwrap().remove(&self.scope);
+        FALLBACKS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap()
+            .remove(&self.scope);
     }
 }
 pub(crate) fn credential_environment(environment: &str, entry: &str) -> bool {
@@ -224,19 +256,237 @@ pub(crate) fn enabled() -> bool {
 pub(crate) fn lookup(provider: &str, request: &Value) -> Option<Result<Response, String>> {
     let active = active().read().unwrap();
     let (replay, _) = active.get(&scope())?;
-    Some(
-        replay
-            .requests
-            .iter()
-            .find(|entry| entry.provider == provider && entry.matches(request))
-            .map(|entry| entry.response.clone())
-            .ok_or_else(|| format!("eval_replay_unmatched: {provider} {request}")),
-    )
+    if let Some(entry) = replay
+        .requests
+        .iter()
+        .find(|entry| entry.provider == provider && entry.matches(request))
+    {
+        return Some(Ok(entry.response.clone()));
+    }
+    let url = request.get("url").and_then(Value::as_str);
+    if let Some(fallback) = replay.otherwise.iter().find(|entry| {
+        entry.provider == provider
+            && match url {
+                Some(url) => url.starts_with(&entry.url_prefix),
+                None => {
+                    provider == "web-search"
+                        && entry.url_prefix.is_empty()
+                        && request.get("query").is_some_and(Value::is_string)
+                }
+            }
+    }) {
+        FALLBACKS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap()
+            .entry(scope())
+            .or_default()
+            .push(serde_json::json!({"provider":provider,"url":url}));
+        return Some(Ok(fallback.response.clone()));
+    }
+    Some(Err(format!("eval_replay_unmatched: {provider} {request}")))
+}
+
+pub(crate) fn take_fallbacks() -> Vec<Value> {
+    FALLBACKS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap()
+        .remove(&scope())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn optional_query_filters_allow_absence_but_never_duplicate_or_unknown_keys() {
+        let entry: Entry = serde_json::from_value(serde_json::json!({"provider":"opendart.disclosures",
+            "request":{"url":"https://fixture.example/list.json?corp=one"},"query_match":{"filter":"optional"},
+            "response":{"status":200,"body":{}}})).unwrap();
+        for url in [
+            "https://fixture.example/list.json?corp=one",
+            "https://fixture.example/list.json?corp=one&filter=periodic",
+        ] {
+            assert!(entry.matches(&serde_json::json!({"url":url})), "{url}");
+        }
+        for url in [
+            "https://fixture.example/list.json?corp=other",
+            "https://other.example/list.json?corp=one",
+            "https://fixture.example/list.json?corp=one&filter=a&filter=b",
+            "https://fixture.example/list.json?corp=one&extra=1",
+        ] {
+            assert!(!entry.matches(&serde_json::json!({"url":url})), "{url}");
+        }
+    }
+
+    #[tokio::test]
+    async fn fallback_is_provider_and_endpoint_scoped_and_observable_after_exact_matches() {
+        let replay: Replay = serde_json::from_value(serde_json::json!({"schema":"loupist-connection-replay/1",
+            "requests":[{"provider":"web","request":{"url":"https://fixture.example/page?id=one"},"response":{"status":200,"text":"exact"}}],
+            "otherwise":[{"provider":"web","url_prefix":"https://fixture.example/page?","response":{"status":200,"text":"empty"}}]})).unwrap();
+        let _guard = replay.install("fixture").unwrap();
+        assert_eq!(
+            lookup(
+                "web",
+                &serde_json::json!({"url":"https://fixture.example/page?id=one"})
+            )
+            .unwrap()
+            .unwrap()
+            .text
+            .as_deref(),
+            Some("exact")
+        );
+        assert!(take_fallbacks().is_empty());
+        assert_eq!(
+            lookup(
+                "web",
+                &serde_json::json!({"url":"https://fixture.example/page?id=other"})
+            )
+            .unwrap()
+            .unwrap()
+            .text
+            .as_deref(),
+            Some("empty")
+        );
+        assert_eq!(
+            take_fallbacks(),
+            vec![
+                serde_json::json!({"provider":"web","url":"https://fixture.example/page?id=other"})
+            ]
+        );
+        for (provider, url) in [
+            ("unknown", "https://fixture.example/page?id=one"),
+            ("web", "https://fixture.example/unknown"),
+            ("web", "https://fixture.example/page-other?id=one"),
+            ("web", "https://other.example/page?id=one"),
+        ] {
+            assert!(lookup(provider, &serde_json::json!({"url":url}))
+                .unwrap()
+                .is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn search_fallback_handles_the_hosts_query_object_without_a_url() {
+        let replay: Replay = serde_json::from_value(serde_json::json!({"schema":"loupist-connection-replay/1", "requests":[],
+            "otherwise":[{"provider":"web-search","url_prefix":"","response":{"status":200,"body":{"results":[]}}}]})).unwrap();
+        let _guard = replay.install("fixture").unwrap();
+        assert!(lookup(
+            "web-search",
+            &serde_json::json!({"provider":"exa_public","query":"issuer","limit":5})
+        )
+        .unwrap()
+        .is_ok());
+        assert_eq!(
+            take_fallbacks(),
+            vec![serde_json::json!({"provider":"web-search","url":null})]
+        );
+        for provider in ["web", "unknown"] {
+            assert!(lookup(provider, &serde_json::json!({"query":"issuer"}))
+                .unwrap()
+                .is_err());
+        }
+        assert!(lookup("web-search", &serde_json::json!({"query":42}))
+            .unwrap()
+            .is_err());
+    }
+
+    #[test]
+    fn every_agent_fixture_covers_list_receipts_and_contains_event_windows() {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../evals/agent/suites/replay");
+        for path in std::fs::read_dir(root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+        {
+            let replay: Replay = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            for entry in &replay.requests {
+                let Some(url) = entry.request.get("url").and_then(Value::as_str) else {
+                    continue;
+                };
+                let parsed = reqwest::Url::parse(url).unwrap();
+                if !parsed.path().ends_with("/list.json") {
+                    continue;
+                }
+                let rows = entry
+                    .response
+                    .body
+                    .as_ref()
+                    .and_then(|body| body["list"].as_array());
+                for row in rows.into_iter().flatten() {
+                    let Some(receipt) = row["rcept_no"].as_str() else {
+                        continue;
+                    };
+                    let document =
+                        format!("https://opendart.fss.or.kr/api/document.xml?rcept_no={receipt}");
+                    assert!(
+                        replay
+                            .requests
+                            .iter()
+                            .any(|candidate| candidate.provider == entry.provider
+                                && candidate.matches(&serde_json::json!({"url":document})))
+                            || replay
+                                .otherwise
+                                .iter()
+                                .any(|fallback| fallback.provider == entry.provider
+                                    && document.starts_with(&fallback.url_prefix)),
+                        "{} missing {document}",
+                        path.display()
+                    );
+                }
+                let dates = rows
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|row| row["rcept_dt"].as_str())
+                    .collect::<Vec<_>>();
+                if dates.is_empty() {
+                    continue;
+                }
+                let first = *dates.iter().min().unwrap();
+                let last = *dates.iter().max().unwrap();
+                let year = &first[..4];
+                let month = &first[..6];
+                let clock = "20261113";
+                for (start, end) in [
+                    (format!("{year}0101"), clock.to_string()),
+                    ("20251113".to_string(), clock.to_string()),
+                    (format!("{month}01"), format!("{}31", &last[..6])),
+                ] {
+                    let mut request_url = parsed.clone();
+                    let query = parsed
+                        .query_pairs()
+                        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+                        .collect::<Vec<_>>();
+                    request_url
+                        .query_pairs_mut()
+                        .clear()
+                        .extend_pairs(query.iter().map(|(key, value)| {
+                            (
+                                key.as_str(),
+                                match key.as_str() {
+                                    "bgn_de" => start.as_str(),
+                                    "end_de" => end.as_str(),
+                                    _ => value.as_str(),
+                                },
+                            )
+                        }));
+                    assert_eq!(
+                        entry.matches(&serde_json::json!({"url":request_url.as_str()})),
+                        start.as_str() <= first && end.as_str() >= last,
+                        "{} {} containment for {start}..{end}",
+                        path.display(),
+                        url
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn replays_are_independent_across_parallel_test_runtimes() {
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
@@ -354,9 +604,9 @@ mod tests {
         let unmatched = service.opendart_filing_search(serde_json::json!({"corp_code":"00888888","start":"2020-01-01","end":"2020-12-31","limit":1}), "eval-placeholder").await.unwrap_err();
         assert!(matches!(
             unmatched,
-            crate::finance_data::FinanceDataError::Replay(_)
+            crate::finance_data::FinanceDataError::NoData(_)
         ));
-        assert!(unmatched.to_string().contains("eval_replay_unmatched"));
+        assert!(unmatched.to_string().contains("no matching data"));
         let source = crate::web::source_from_url("https://fictional.example/unmatched").unwrap();
         assert!(crate::web::fetch(&source)
             .await

@@ -768,7 +768,9 @@ Same-model pairs require identical model, effort, `comparison_config_hash`, data
 condition, task, repeat and phase; external product groups stay separate.
 
 Replay fixtures use containment for event windows, optional query filters and
-explicit provider/endpoint `otherwise` empty answers. Unknown providers and
+explicit provider/endpoint `otherwise` empty answers. A `web-search` fallback
+uses an empty `url_prefix` because native search requests carry a query object,
+not a URL; its trace URL is null. Unknown providers and
 endpoints remain fail-closed; `replay_fallbacks` exposes every fallback used.
 The fixture lint checks listed receipts and three containing windows. Scenario
 `clock` pins model `live_time` only (T-045/T-049); host refresh windows retain the
