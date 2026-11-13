@@ -112,17 +112,19 @@ impl AppToolExecutor {
             .ok_or_else(|| {
                 export_error("dataset pointer is absent; inspect dataset_describe before exporting")
             })?;
+        let mut selected = selected.clone();
+        clean_widened_floats(&mut selected);
         let ExportContent {
             bytes,
             row_count,
             columns,
         } = match request.format {
             ExportFormat::Json => ExportContent {
-                bytes: serde_json::to_vec_pretty(selected).map_err(export_error)?,
+                bytes: serde_json::to_vec_pretty(&selected).map_err(export_error)?,
                 row_count: selected.as_array().map(Vec::len),
                 columns: vec![],
             },
-            ExportFormat::Csv => csv_bytes(selected, &request.columns)?,
+            ExportFormat::Csv => csv_bytes(&selected, &request.columns)?,
         };
         if bytes.len() > crate::datasets::MAX_DATASET_BYTES * 2 {
             return Err(export_error("export exceeds its size limit"));
@@ -155,6 +157,37 @@ impl AppToolExecutor {
             "size_bytes":bytes.len(), "content_sha256":digest, "row_count":row_count, "columns":columns,
             "status":"written", "lifecycle":"Local workspace files are immediate and remain if this reply is interrupted."}),
         )
+    }
+}
+
+/// Match Copy data: shorten only fractional, exactly widened f32 values
+/// with more than nine significant digits. Stored dataset bytes stay untouched.
+fn clean_widened_floats(value: &mut Value) {
+    match value {
+        Value::Array(values) => values.iter_mut().for_each(clean_widened_floats),
+        Value::Object(values) => values.values_mut().for_each(clean_widened_floats),
+        Value::Number(number) => {
+            let Some(wide) = number.as_f64() else {
+                return;
+            };
+            let text = number.to_string();
+            let digits = text
+                .split(['e', 'E'])
+                .next()
+                .unwrap_or("")
+                .trim_start_matches('-')
+                .replace('.', "");
+            if wide.fract() != 0.0
+                && f64::from(wide as f32) == wide
+                && digits.trim_start_matches('0').len() > 9
+            {
+                // Rust's f32 Display is its shortest round-tripping decimal.
+                if let Ok(shorter) = (wide as f32).to_string().parse() {
+                    *number = shorter;
+                }
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::String(_) => {}
     }
 }
 
@@ -628,6 +661,39 @@ mod tests {
         assert!(csv_bytes(&json!([1, 2]), &[]).is_err());
         assert!(csv_bytes(&json!([{"a":1}]), &["missing".into()]).is_err());
     }
+    #[test]
+    fn export_shortens_only_widened_fractional_f32_values_in_json_and_csv() {
+        let originals = json!([
+            {"n":f64::from(225.3_f32)}, {"n":f64::from(0.0123_f32)},
+            {"n":f64::from(-12.34_f32)}, {"n":f64::from(98765.43_f32)},
+            {"n":225.3}, {"n":1234.5678}, {"n":0.1 + 0.2},
+            {"n":1234567.25}, {"n":123456792_u64}, {"n":394328000000_u64},
+            {"n":18446744073709551615_u64}, {"n":1e-7}, {"n":0.5},
+            {"n":"1.50"}, {"n":null}, {"n":false}
+        ]);
+        let mut cleaned = originals.clone();
+        clean_widened_floats(&mut cleaned);
+        let rows = cleaned.as_array().unwrap();
+        assert_eq!(
+            &rows[..4],
+            &[
+                json!({"n":225.3}),
+                json!({"n":0.0123}),
+                json!({"n":-12.34}),
+                json!({"n":98765.43})
+            ]
+        );
+        assert_eq!(&rows[4..], &originals.as_array().unwrap()[4..]);
+        let encoded = serde_json::to_vec_pretty(&cleaned).unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&encoded).unwrap(), cleaned);
+        let csv = String::from_utf8(csv_bytes(&cleaned, &[]).unwrap().bytes).unwrap();
+        assert!(
+            csv.starts_with("n\r\n225.3\r\n0.0123\r\n-12.34\r\n98765.43\r\n"),
+            "{csv}"
+        );
+        assert!(csv.contains("18446744073709551615"));
+    }
+
     #[cfg(any(unix, windows))]
     #[test]
     fn failed_export_leaves_no_partial_output_and_keeps_concurrent_data() {
