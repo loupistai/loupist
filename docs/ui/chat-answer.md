@@ -61,7 +61,11 @@ reduced motion) and is then removed;
 an answer that says "the chart below" can be wrong until the prompt says otherwise. A
 question or approval is a block where it was asked, and settles into its one line in
 the same place; answering a question holds the turn at its height (`--turn-hold`) while
-the reply runs, so the shorter line never shrinks the scroll range and the page stays put. The card, the status pill and the ledger read the view alone; the pill
+the reply runs, so the shorter line never shrinks the scroll range and the page stays put.
+Context above the thread (the inline rail's rows, such as "Needs your answer" going on an
+answer or "Learned" arriving at commit) moves the thread's top edge; the scroll position
+moves with that edge (`keepContentStill`, `conversation.tsx`), so the transcript stays
+where the reader sees it, while a thread kept at its end stays at its end. The card, the status pill and the ledger read the view alone; the pill
 derives the cheaper `deriveTurnStatus`.
 
 The footer slot keeps one control's height from the first frame. While the reply runs it

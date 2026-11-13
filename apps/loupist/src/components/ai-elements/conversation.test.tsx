@@ -59,6 +59,8 @@ function thread({ running = false, wholePixels = false }: { running?: boolean; w
   let height = 1000;
   let viewport = 400;
   let top = 0;
+  // Where the scroller's top edge sits: context above the thread moves it.
+  let edgeAt = 0;
   let questionAt = 900;
   let blockAt = 950;
   const define = (element: Element) => {
@@ -67,7 +69,7 @@ function thread({ running = false, wholePixels = false }: { running?: boolean; w
       clientHeight: { configurable: true, get: () => viewport },
       scrollTop: { configurable: true, get: () => top, // WKWebView keeps scrollTop in whole pixels: a smaller step is dropped.
       set: (value) => { top = Math.max(0, Math.min(wholePixels ? Math.floor(value) : value, height - viewport)); } },
-      getBoundingClientRect: { configurable: true, value: () => ({ top: 0, bottom: viewport, height: viewport, left: 0, right: 600, width: 600 }) },
+      getBoundingClientRect: { configurable: true, value: () => ({ top: edgeAt, bottom: edgeAt + viewport, height: viewport, left: 0, right: 600, width: 600 }) },
     });
   };
   // jsdom has no layout: give the scroller, the question and the appended block their geometry before the first layout effect.
@@ -75,7 +77,7 @@ function thread({ running = false, wholePixels = false }: { running?: boolean; w
   Object.defineProperty(HTMLElement.prototype, "offsetTop", { configurable: true, get() { return (this as HTMLElement).id === "block" ? blockAt : (this as HTMLElement).classList.contains("user") ? questionAt : 0; } });
   Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get() { return (this as HTMLElement).id === "block" ? 26 : 40; } });
   HTMLElement.prototype.getBoundingClientRect = function () {
-    if ((this as HTMLElement).getAttribute("role") === "log") return { top: 0, bottom: viewport, height: viewport, left: 0, right: 600, width: 600, x: 0, y: 0, toJSON() {} } as DOMRect;
+    if ((this as HTMLElement).getAttribute("role") === "log") return { top: edgeAt, bottom: edgeAt + viewport, height: viewport, left: 0, right: 600, width: 600, x: 0, y: 0, toJSON() {} } as DOMRect;
     if ((this as HTMLElement).classList.contains("turn-footer")) return { top: height - top - 30, bottom: height - top, height: 30, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} } as DOMRect;
     return original.call(this);
   };
@@ -89,6 +91,8 @@ function thread({ running = false, wholePixels = false }: { running?: boolean; w
     rerender: (live: boolean, extra?: ReactNode) => result.rerender(content("second", live, extra)),
     grow: (next: number) => { height = next; act(() => resize()); },
     moveBlock: (next: number) => { blockAt = next; },
+    /** Context above the thread takes `rows` px: the scroller's top edge moves down and its viewport shrinks by as much. */
+    contextAbove: (rows: number) => { viewport += edgeAt - rows; edgeAt = rows; },
     restore: () => { HTMLElement.prototype.getBoundingClientRect = original; delete (HTMLElement.prototype as { offsetTop?: number }).offsetTop; delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight; },
   };
 }
@@ -168,6 +172,53 @@ describe("anchored reading", () => {
       t.grow(3000);
       act(() => { vi.advanceTimersByTime(50); });
       expect(t.element.scrollTop).toBe(held);
+    } finally { t.restore(); }
+  });
+
+  it("keeps what the reader sees in place when context above the thread grows or goes, also when the browser clamps first", () => {
+    const t = thread();
+    try {
+      t.sendPrompt();
+      expect(t.element.scrollTop).toBe(984);
+      // A 62 px row appears above the thread (the inline rail's "Needs your answer"): the page moves down with it.
+      t.contextAbove(62);
+      act(() => resize());
+      expect(t.element.scrollTop).toBe(984 + 62);
+      // The row goes once the question is answered. WKWebView first clamps the position to the larger viewport's range
+      // (1400 - 400) and reports a scroll; the page goes back to where the reader's content stays put, and that is not the reader's scroll.
+      t.contextAbove(0);
+      t.element.scrollTop = t.element.scrollTop;
+      expect(t.element.scrollTop).toBe(1000);
+      fireEvent.scroll(t.element);
+      expect(t.element.scrollTop).toBe(984);
+      // Still the page's own position: a new block makes room as before.
+      t.grow(2000);
+      t.moveBlock(984 + 300);
+      act(() => t.actions.append("prose"));
+      expect(t.element.scrollTop).toBe(984 + 300 - 160);
+    } finally { t.restore(); }
+  });
+
+  it("corrects in the commit that changes the context above the thread, before a resize is observed", () => {
+    const t = thread();
+    try {
+      t.sendPrompt();
+      t.contextAbove(45);
+      t.rerender(true);
+      expect(t.element.scrollTop).toBe(984 + 45);
+      // The turn's room is sized for the smaller viewport in the same commit, so a later resize cannot clamp the position.
+      expect(t.element.style.getPropertyValue("--turn-viewport")).toBe("355px");
+    } finally { t.restore(); }
+  });
+
+  it("keeps a thread opened at its end at its end when context above it changes", () => {
+    const t = thread();
+    try {
+      act(() => resize());
+      expect(t.element.scrollTop).toBe(600);
+      t.contextAbove(45);
+      act(() => resize());
+      expect(t.element.scrollTop).toBe(1000 - 355);
     } finally { t.restore(); }
   });
 

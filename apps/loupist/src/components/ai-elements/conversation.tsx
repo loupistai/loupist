@@ -97,6 +97,9 @@ export type ConversationProps = ComponentProps<"div"> & {
 };
 
 /** The chat sub-header shows a rule and a fade only while the thread is scrolled under it. */
+/** The viewport's height, for the latest turn's reserve (chat.css `--turn-viewport`). */
+const writeViewport = (element: HTMLElement) => element.style.setProperty("--turn-viewport", `${element.clientHeight}px`);
+
 const markScrolled = (element: HTMLElement) => element.toggleAttribute("data-scrolled", element.scrollTop > 0);
 
 const latestTurn = (element: HTMLElement) => element.querySelector<HTMLElement>("[data-turn][data-turn-latest]");
@@ -138,6 +141,8 @@ export const Conversation = ({
   const following = useRef(false);
   const lastInput = useRef(-Infinity);
   const lastTop = useRef(0);
+  /** The scroller's top edge in the window when last seen. */
+  const edge = useRef<number | null>(null);
   const glide = useRef<number | undefined>(undefined);
   const follow = useRef<number | undefined>(undefined);
   const lastResetKey = useRef(scrollResetKey);
@@ -198,6 +203,30 @@ export const Conversation = ({
     if (missing > 0) turn.style.minHeight = `${turn.getBoundingClientRect().height + missing}px`;
   }, []);
 
+  /**
+   * Context above the thread (the inline rail's rows) grows or shrinks and moves the thread's top edge,
+   * for example when a question is answered or the reply commits. The scroll position moves with that
+   * edge, so what the reader sees stays where it was; the browser would otherwise keep the position,
+   * or clamp it to the new range, and shift the whole transcript. A thread kept at its end or following
+   * the reply stays at the end instead.
+   */
+  const keepContentStill = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return false;
+    const top = element.getBoundingClientRect().top;
+    const before = edge.current;
+    edge.current = top;
+    if (before === null || Math.abs(top - before) < 1 || mode.current === "bottom" || following.current || glide.current !== undefined) return false;
+    const to = Math.max(0, lastTop.current + top - before);
+    // The latest turn's room follows the viewport: size it now, so the reserve below sees the range the frame will have.
+    writeViewport(element);
+    reserve(to - element.scrollTop);
+    element.scrollTop = to;
+    lastTop.current = element.scrollTop;
+    markScrolled(element);
+    return true;
+  }, [reserve]);
+
   const toBottom = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
@@ -250,11 +279,15 @@ export const Conversation = ({
     glideBy(delta);
   }, [glideBy, reserve]);
 
+  // Context above the thread usually changes in the same commit as the thread (an answer, the reply's commit):
+  // correct before that frame is drawn, not a frame later when the resize is observed.
+  useLayoutEffect(() => { keepContentStill(); });
+
   // The viewport's height, for the latest turn's reserve: one write per resize.
   useLayoutEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
-    const write = () => element.style.setProperty("--turn-viewport", `${element.clientHeight}px`);
+    const write = () => writeViewport(element);
     write();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(write);
@@ -266,6 +299,7 @@ export const Conversation = ({
   useLayoutEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
+    edge.current = element.getBoundingClientRect().top;
     if (!autoScroll) {
       element.scrollTop = 0;
       markScrolled(element);
@@ -313,6 +347,7 @@ export const Conversation = ({
     const content = element?.firstElementChild;
     if (!autoScroll || !element || !content || typeof ResizeObserver === "undefined") return;
     const changed = () => {
+      keepContentStill();
       if (mode.current === "bottom") toBottom();
       else if (following.current && follow.current === undefined && typeof requestAnimationFrame === "function") follow.current = requestAnimationFrame(followFrame);
       measure();
@@ -323,7 +358,7 @@ export const Conversation = ({
     // WKWebView can deliver the viewport resize without a ResizeObserver callback for this flex child.
     window.addEventListener("resize", changed);
     return () => { observer.disconnect(); window.removeEventListener("resize", changed); };
-  }, [autoScroll, followFrame, measure, toBottom]);
+  }, [autoScroll, followFrame, keepContentStill, measure, toBottom]);
 
   useEffect(() => () => {
     if (glide.current !== undefined) cancelAnimationFrame(glide.current);
@@ -340,6 +375,8 @@ export const Conversation = ({
 
   const handleScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     const element = event.currentTarget;
+    // The browser moved or clamped the position because the thread's top edge moved: put it back, not the reader's scroll.
+    if (keepContentStill()) { measure(); onScroll?.(event); return; }
     const movedUp = element.scrollTop < lastTop.current - 1;
     // Movement no glide or follow made (a scrollbar drag reports no other input) is the reader's too.
     if (Math.abs(element.scrollTop - lastTop.current) > 1 && glide.current === undefined && follow.current === undefined && mode.current === "anchored") {
@@ -359,7 +396,7 @@ export const Conversation = ({
     if (mode.current === "bottom" && !atBottom && reader) mode.current = "anchored";
     measure();
     onScroll?.(event);
-  }, [measure, onScroll, startFollowing, stopFollowing]);
+  }, [keepContentStill, measure, onScroll, startFollowing, stopFollowing]);
 
   const actions = useMemo(() => ({ jumpToLatest, holdScrollPosition, blockAppended }), [jumpToLatest, holdScrollPosition, blockAppended]);
 
