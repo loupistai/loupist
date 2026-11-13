@@ -88,6 +88,9 @@ Previously saved positive per-chunk allowances stay as saved, since an old
 completed receipt does not say how many of its calls were unused.
 An episode that exhausts its allowance pauses its unfunded tail without repeating
 paid calls or quarantining other Sources; resume does not replay its paid attempt.
+Its Library row then reads "Map building stopped for this source"; a row reads "Map
+building paused" only while the user has paused Map building (`source_processing`
+reports such a job as `paused`, an exhausted one keeps `paused_budget`).
 Revision and growth-event timestamps reflect extraction completion.
 
 An attempt that publishes nothing ends one of three ways (`finish_unpublished` in

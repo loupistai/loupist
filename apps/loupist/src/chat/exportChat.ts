@@ -51,10 +51,29 @@ export function chatMarkdown(thread: ChatThread, loupistName: string, nowMs = Da
   return lines.join("\n");
 }
 
+const significantDigits = (text: string) => text.replace(/^-/u, "").replace(/e.*$/iu, "").replace(".", "").replace(/^0+/u, "").length;
+
+/**
+ * A dataset cell as text. A fraction that a provider stored as a 32-bit float
+ * and that reached us widened (225.3000030517578) prints as the shortest
+ * decimal that 32-bit value stands for (225.3). Every other value, including
+ * every integer and any number of 9 or fewer significant digits, prints exactly.
+ */
+export function datasetCellText(value: unknown): string {
+  if (value == null) return "";
+  const text = String(value);
+  if (typeof value !== "number" || Number.isInteger(value) || !Number.isFinite(value) || Math.fround(value) !== value || significantDigits(text) <= 9) return text;
+  for (let digits = 1; digits <= 9; digits += 1) {
+    const shorter = Number(value.toPrecision(digits));
+    if (Math.fround(shorter) === value) return String(shorter);
+  }
+  return text;
+}
+
 /** Comma-separated rows with a header line; cells with commas, quotes or line breaks are quoted. */
 export function datasetCsv(columns: readonly { label: string }[], rows: readonly unknown[][]) {
   const cell = (value: unknown) => {
-    const text = value == null ? "" : String(value);
+    const text = datasetCellText(value);
     return /[",\n\r]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   };
   return [columns.map((column) => column.label), ...rows].map((row) => row.map(cell).join(",")).join("\r\n");

@@ -97,6 +97,7 @@
     "worldIsUpdating": "Map is updating",
     "worldUpdated": "Map updated",
     "worldProcessingPaused": "Map building paused",
+    "worldProcessingStoppedForThisSource": "Map building stopped for this source",
     "worldProcessingFailed": "Map building failed",
     "worldUpdateNeedsReview": "Map update needs review",
     "sourceRetainedInterruptedProcessingWasNotRetried": "Source retained · Interrupted processing was not retried",

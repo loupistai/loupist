@@ -175,6 +175,16 @@ it("leaves the default Source saved status off a library row and shows any other
   expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("Map is updating");
 });
 
+it("says Map building is paused only for the user's pause, and names a source that stopped by itself", async () => {
+  const props = await fixture();
+  const catalog = { ...props.catalog, sources: ["paused", "paused_budget"].map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: "job", status, error: null } }] })) };
+  render(<SourceWorkspace {...props} catalog={catalog} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+  expect(await screen.findByRole("button", { name: /Report 0/ })).toHaveTextContent("Map building paused");
+  const stopped = screen.getByRole("button", { name: /Report 1/ });
+  expect(stopped).toHaveTextContent("Map building stopped for this source");
+  expect(stopped).not.toHaveTextContent("Map building paused");
+});
+
 it("opens an exact World relationship from its original source", async () => {
   const props = await fixture();
   render(<SourceWorkspace {...props} />);

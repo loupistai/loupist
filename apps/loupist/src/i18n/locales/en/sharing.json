@@ -94,7 +94,7 @@
   "ghCopyOpen": "Copy code and open GitHub",
   "ghWaiting": "Waiting for you to approve…",
   "ghExpiresIn": "Code expires in {{minutes}} min",
-  "ghScope": "Loupist can create and update public repositories and GitHub gists on your account. It only changes the ones it creates. Your sign-in stays on this device.",
+  "ghScope": "Loupist can create and update public repositories and GitHub gists on your account. It only changes the ones it creates. Your sign-in stays on this Mac.",
   "ghExpired": "The code expired.",
   "ghNewCode": "Get a new code",
   "ghDenied": "You didn't allow it. Nothing was shared.",

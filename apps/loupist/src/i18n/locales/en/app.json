@@ -88,7 +88,7 @@
   },
   "viewBoundary": {
     "couldNotDisplay": "Could not display {{name}}",
-    "reloadTheAppToTryAgainYourSaved": "Reload the app to try again. Your saved research stays on this device.",
+    "reloadTheAppToTryAgainYourSaved": "Reload the app to try again. Your saved research stays on this Mac.",
     "tryAgainOrUseTheSidebarToOpen": "Try again, or use the sidebar to open another view.",
     "reloadApp": "Reload app",
     "tryAgain": "Try again",

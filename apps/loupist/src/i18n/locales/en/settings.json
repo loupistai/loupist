@@ -24,7 +24,7 @@
       "system": "System",
       "light": "Light",
       "dark": "Dark",
-      "systemDescription": "Follow your device’s appearance",
+      "systemDescription": "Follow this Mac’s appearance",
       "optionLabel": "{{theme}} theme"
     },
     "language": {
@@ -35,7 +35,7 @@
     }
   },
   "settingsView": {
-    "savedAutomaticallyForAllLoupistsOnThisDevice": "Saved automatically for all Loupists on this device."
+    "savedAutomaticallyForAllLoupistsOnThisDevice": "Saved automatically for all Loupists on this Mac."
   },
   "agentSettings": {
     "performanceGroup": "Response speed",
@@ -604,7 +604,7 @@
   },
   "providers": {
     "getKey": "Get a key from {{provider}}",
-    "keyStays": "Your key stays on this device. Requests go straight to {{provider}}.",
+    "keyStays": "Your key stays on this Mac. Requests go straight to {{provider}}.",
     "replacesChatgpt": "This replaces your ChatGPT sign-in on this Mac. You can switch back any time.",
     "keyRejected": "{{provider}} didn't accept this key. Check it and try again.",
     "localSearching": "Looking for model apps on this Mac…",
@@ -639,7 +639,7 @@
     "needsReconnect": "Needs reconnect",
     "disconnected": "Disconnected",
     "viaSignIn": "Signed in with {{provider}} · since {{date}}",
-    "viaKey": "API key saved on this device",
+    "viaKey": "API key saved on this Mac",
     "viaLocal": "Running on this Mac · {{address}}",
     "viaEnvironment": "Key from this Mac's settings (development)",
     "viaCustom": "Custom endpoint · {{address}}",

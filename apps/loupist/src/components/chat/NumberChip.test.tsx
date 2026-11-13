@@ -140,7 +140,7 @@ it("pins the calculated popover with its formula and inputs, and Esc returns foc
   const inputs = [...dialog.querySelectorAll(".number-chip-inputs > div")].map((row) => [row.querySelector("dt")?.textContent, row.querySelector("dd")?.textContent]);
   expect(inputs).toEqual([["Operating income", "₩38.1bn"], ["Revenue", "₩452.3bn"]]);
   expect(dialog).toHaveTextContent("Not linked to a source");
-  expect(dialog).toHaveTextContent("Calculated on this computer");
+  expect(dialog).toHaveTextContent("Calculated on this Mac");
   expect(margin).toHaveAttribute("aria-expanded", "true");
   await waitFor(() => expect(within(dialog).getByRole("button", { name: "Show step" })).toHaveFocus());
   await user.keyboard("{Escape}");

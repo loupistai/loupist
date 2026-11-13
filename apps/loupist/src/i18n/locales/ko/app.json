@@ -89,7 +89,7 @@
   },
   "viewBoundary": {
     "couldNotDisplay": "{{name}} 화면을 표시하지 못했어요",
-    "reloadTheAppToTryAgainYourSaved": "앱을 새로고침한 뒤 다시 시도해 주세요. 저장된 리서치는 이 기기에 그대로 남아 있어요.",
+    "reloadTheAppToTryAgainYourSaved": "앱을 새로고침한 뒤 다시 시도해 주세요. 저장된 리서치는 이 Mac에 그대로 남아 있어요.",
     "tryAgainOrUseTheSidebarToOpen": "다시 시도하거나 사이드바에서 다른 화면을 열어 주세요.",
     "reloadApp": "앱 새로고침",
     "tryAgain": "다시 시도",

@@ -200,6 +200,33 @@ enum McpInvocation {
     Stopped(Option<BrokerError>),
 }
 
+/// A data read that answered without rows: an empty or missing `results`, or
+/// (OpenBB's empty-data reply, HTTP 204) no structured content and only blank
+/// text.
+fn returned_no_rows(payload: &Value) -> bool {
+    match payload
+        .get("structuredContent")
+        .filter(|value| !value.is_null())
+    {
+        Some(structured) => match structured.get("results") {
+            Some(Value::Array(rows)) => rows.is_empty(),
+            Some(Value::Null) => true,
+            _ => false,
+        },
+        None => payload
+            .get("content")
+            .and_then(Value::as_array)
+            .is_none_or(|parts| {
+                parts.iter().all(|part| {
+                    part["type"] == "text"
+                        && part["text"]
+                            .as_str()
+                            .is_none_or(|text| text.trim().is_empty())
+                })
+            }),
+    }
+}
+
 /// Invocation: forwards the admitted call and checks what came back. A result
 /// from a provider the call did not admit, or one echoing a credential, stops
 /// the session; a cutoff read keeps only rows on or before the cutoff.
@@ -699,9 +726,24 @@ impl AppToolExecutor {
                 Ok(result_ref) => result_ref,
                 Err(error) => return mcp_call_error_with_inventory(tools, error),
             };
-            attach_result_ref(&mut payload, &result_ref);
-            if let Some(delivered) = &mut model_payload {
-                attach_result_ref(delivered, &result_ref);
+            if returned_no_rows(&payload) {
+                // Nothing the answer can rely on: host reads still resolve it
+                // by result_ref, but it has no citation_url and is never one
+                // of the answer's Sources.
+                self.capture
+                    .stage(delivery_id, |pending| {
+                        pending.unlisted_results.insert(result_ref.clone());
+                    })
+                    .await;
+                payload["result_ref"] = json!(result_ref);
+                if let Some(delivered) = &mut model_payload {
+                    delivered["result_ref"] = json!(result_ref);
+                }
+            } else {
+                attach_result_ref(&mut payload, &result_ref);
+                if let Some(delivered) = &mut model_payload {
+                    attach_result_ref(delivered, &result_ref);
+                }
             }
             model_payload.unwrap_or(payload)
         };
@@ -2293,6 +2335,58 @@ done
             2
         );
         assert!(!transcript.contains("max_age"));
+        turn.shutdown_mcp().await;
+        wait_for_exit_marker(&spawned.exited).await;
+    }
+
+    /// A provider that answered with no rows (cboe before yfinance) is shown
+    /// to the model as empty but is not a citable result or a listed Source.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_read_that_returned_no_rows_is_not_a_source_of_the_answer() {
+        let _guard = crate::mcp::MCP_PROCESS_TEST_LOCK.lock().await;
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let turn = capture(&temporary, "no-rows", None);
+        let spawned =
+            spawn_script_server(&temporary, "no-rows", "sec", None, ASSET_REFRESH_SCRIPT).await;
+        install(&turn, spawned.server).await;
+        let executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
+        let read = |tool: &'static str| {
+            let executor = &executor;
+            async move {
+                let delivery = new_id("mcp-call");
+                let result = executor
+                    .mcp_call(
+                        &policy("loupist-a", None),
+                        json!({"server_id": "openbb", "tool_name": tool, "arguments": {"symbol": "MORR", "provider": "sec"}}),
+                        &delivery,
+                    )
+                    .await
+                    .unwrap();
+                executor.capture.commit_delivery(&delivery).await;
+                result
+            }
+        };
+        let empty = read("etf_holdings").await;
+        assert_eq!(empty["result"]["structuredContent"]["results"], json!([]));
+        assert!(empty["result"].get("citation_url").is_none(), "{empty}");
+        let bars = read("equity_price_historical").await;
+        assert!(bars["result"]["citation_url"].is_string(), "{bars}");
+        let evidence = turn.evidence_refs.lock().await.clone();
+        assert_eq!(
+            evidence
+                .iter()
+                .map(|item| item.tool_name.as_str())
+                .collect::<Vec<_>>(),
+            ["equity_price_historical"]
+        );
+        assert!(!returned_no_rows(
+            &json!({"content": [{"type": "text", "text": "rows"}], "structuredContent": {"provider": "sec", "results": {"symbol": "MORR"}}})
+        ));
+        assert!(returned_no_rows(
+            &json!({"content": [{"type": "text", "text": " "}], "isError": false})
+        ));
         turn.shutdown_mcp().await;
         wait_for_exit_marker(&spawned.exited).await;
     }

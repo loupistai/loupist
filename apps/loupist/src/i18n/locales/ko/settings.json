@@ -25,7 +25,7 @@
       "system": "시스템",
       "light": "라이트",
       "dark": "다크",
-      "systemDescription": "기기의 화면 설정 따르기",
+      "systemDescription": "이 Mac의 화면 설정 따르기",
       "optionLabel": "{{theme}} 테마"
     },
     "language": {
@@ -36,7 +36,7 @@
     }
   },
   "settingsView": {
-    "savedAutomaticallyForAllLoupistsOnThisDevice": "이 기기의 모든 루피스트에 자동으로 저장돼요."
+    "savedAutomaticallyForAllLoupistsOnThisDevice": "이 Mac의 모든 루피스트에 자동으로 저장돼요."
   },
   "agentSettings": {
     "performanceGroup": "응답 속도",
@@ -605,7 +605,7 @@
   },
   "providers": {
     "getKey": "{{provider}}에서 키 받기",
-    "keyStays": "키는 이 기기에만 저장돼요. 요청은 {{provider}}(으)로 바로 가요.",
+    "keyStays": "키는 이 Mac에만 저장돼요. 요청은 {{provider}}(으)로 바로 가요.",
     "replacesChatgpt": "이 Mac의 ChatGPT 로그인을 대신해요. 언제든 다시 바꿀 수 있어요.",
     "keyRejected": "{{provider}}에서 이 키를 받지 않았어요. 확인하고 다시 시도해 주세요.",
     "localSearching": "이 Mac에서 모델 앱을 찾는 중…",
@@ -640,7 +640,7 @@
     "needsReconnect": "다시 연결 필요",
     "disconnected": "연결 끊김",
     "viaSignIn": "{{provider}}로 로그인 · {{date}}부터",
-    "viaKey": "이 기기에 저장된 API 키",
+    "viaKey": "이 Mac에 저장된 API 키",
     "viaLocal": "이 Mac에서 실행 · {{address}}",
     "viaEnvironment": "이 Mac 설정의 키 (개발용)",
     "viaCustom": "직접 입력한 주소 · {{address}}",
