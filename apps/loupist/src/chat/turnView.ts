@@ -122,7 +122,10 @@ export type TurnFooter =
       kind: "settled";
       /** Distinct citation subjects of the whole answer, numbered in this order. */
       sources: ChatEvidenceRef[];
-      /** The answer as written, or null when there is nothing worth copying. */
+      /**
+       * What Copy copies: every note left on the page and the answer, in the
+       * order the page shows them; null when the page shows no prose.
+       */
       copyText: string | null;
       feedback: boolean;
       runState: RunState | null;
@@ -504,5 +507,10 @@ export function deriveTurnView(input: TurnInput): TurnView {
   const announce = footer.kind === "live"
     ? [footer.line.label, footer.line.target].filter(Boolean).join(" · ")
     : ledger ? [ledger.ledger.text, ledger.ledger.failed].filter(Boolean).join(" · ") : "";
-  return { state, segments, footer, announce };
+  // Copy takes every piece of prose the page shows, in order: notes that stayed on the page, then the answer.
+  // A short note that gave its place to the text after it is read in the timeline, not on the page.
+  const settled = footer.kind === "settled"
+    ? { ...footer, copyText: segments.flatMap((segment) => segment.kind === "prose" && segment.text.trim() ? [segment.text.trim()] : []).join("\n\n") || null }
+    : footer;
+  return { state, segments, footer: settled, announce };
 }

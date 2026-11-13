@@ -333,7 +333,8 @@ function ChatMessageCardComponent({
   // A paragraph that only links to a grid result renders as the sensitivity card where the
   // paragraph stood, and one that only links to a results snapshot as the compact results card.
   // Rust counted the links of the answer as written, so the grid paragraphs come out first.
-  const answerText = complete ? copyText : null;
+  const answerSegment = view.segments.find((segment) => segment.kind === "prose" && segment.tone === "answer");
+  const answerText = complete && answerSegment?.kind === "prose" ? answerSegment.text : null;
   const settledAnswer = useMemo(() => {
     if (message.role !== "assistant" || answerText === null) return null;
     const grids = sensitivityParagraphs(answerText, message.sensitivity_cards, message.number_checks);

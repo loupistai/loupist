@@ -185,6 +185,16 @@ describe("segments, in the order they happened", () => {
     expect([isShortNote("One line."), isShortNote("- a list"), isShortNote("x".repeat(300)), isShortNote("| a | b |")]).toEqual([true, false, false, false]);
   });
 
+  it("copies every note left on the page and the answer, in page order, but not a note that gave its place", () => {
+    const long = note("n1", "Checking the filing.\n\nThe segment table is on page twelve.");
+    const short = note("n2", "Now the margins.");
+    const done = view(message({ status: "complete", content: "Revenue rose 8%.", progress: { startedAtMs: start, finishedAtMs: start + 1, items: [long, search, short, read] } }));
+    expect(keys(done)).toEqual(["prose:n1", "ledger:activity", "prose:answer"]);
+    expect(done.footer).toMatchObject({ copyText: "Checking the filing.\n\nThe segment table is on page twelve.\n\nRevenue rose 8%." });
+    const notesOnly = view(message({ status: "aborted", content: "", progress: { startedAtMs: start, finishedAtMs: start + 1, items: [long, search] } }));
+    expect(notesOnly.footer).toMatchObject({ copyText: "Checking the filing.\n\nThe segment table is on page twelve." });
+  });
+
   it("places a card where its publish step started, so a card made before the answer stands above it, live and after reload", () => {
     const chart = step("chart", { toolName: "chart_publish", category: "artifact", operation: "publish", status: "running", target: "Margins", finishedAtMs: null });
     const live = view(message({ phase: "writing", draft: writing("commentary-9"), progress: { startedAtMs: start, items: [search, chart, draft], finishedAtMs: null } }));

@@ -73,6 +73,9 @@ their height; next steps and the as-of note render below the footer. The commit 
 waits until the answer's last received word is shown, at most 400 ms after the host's
 `completed`, and changes no wrapping and no position of anything already read. On
 older answers only Copy and feedback wait for hover; Sources and a failure stay visible.
+Copy takes every piece of prose the page shows, in page order: each note that stayed on
+the page, then the answer. A short note that gave its place is in the timeline only and
+is not copied.
 
 The renderer draws the reply's shell (name, time and "Starting") as soon as the
 question is sent, 120 ms after the question rises in, without waiting for the host.
