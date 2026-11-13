@@ -132,3 +132,10 @@ text looks like a credential; the refusal is a tool refusal with reason
 ## Code
 
 - Memory writes / World: `src-tauri/src/knowledge/`, `src-tauri/src/commands/knowledge.rs`, `src-tauri/src/commands/memory_updates.rs`
+
+A retained original and a filed subject page are separate receipts: with saving
+on, named or attached originals used for answer facts become Sources, and
+substantive original research about a named subject files its Lens page. A short
+user-taught standing rule is saved once as a principle rather than duplicated as
+a method. Context-delivered principles carry current revision receipts; a final
+`lens:` link records their application without a redundant exact read.

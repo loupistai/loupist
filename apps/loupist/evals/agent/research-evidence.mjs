@@ -3,9 +3,11 @@ import { planProgressAssertion, calculationChipAssertion, numberChecks, toolCall
 import { comparableArgs } from './tool-evidence.mjs';
 
 const result = (pass, detail) => ({ pass, detail });
-const work = call => !['plan_update', 'capability_load'].includes(call.name) && call.outcome === 'ok'
-  // Loading a bundled Skill prepares the turn; it does not perform a research step.
-  && !(call.name === 'read' && /(?:^|\/)skills\/[^/]+\/SKILL\.md$/u.test(call.args?.path ?? ''));
+const PREPARATION = new Set(['plan_update', 'capability_load', 'ls', 'find']);
+const work = call => !PREPARATION.has(call.name) && call.outcome === 'ok'
+  // Listing the folder, like loading a bundled Skill or one of its reference files, prepares the turn; it reads no research material.
+  && !(call.name === 'read' && /(?:^|\/)skills\/[^/]+\/(?:SKILL\.md|references\/[^/]+)$/u.test(call.args?.path ?? ''));
+
 
 export function planProgressEvidence(assertion, calls) {
   const { min_items: min } = planProgressAssertion(assertion);

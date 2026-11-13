@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mergePending } from './grade.mjs';
 import { analyzeToolCalls, toolValidity } from '../agent/tool-evidence.mjs';
-import { canonicalJson } from '../agent/eval-contract.mjs';
+import { canonicalJson, citingParagraphs } from '../agent/eval-contract.mjs';
 
 export const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 const key = (scenario, trial, step) => canonicalJson([scenario, trial, step]);
@@ -42,6 +42,7 @@ export function validateMemorySuite(suite) {
         if (!assertions.has(check.assert) || !check.metric) throw new Error(`Unsupported check: ${check.assert}`);
         if (check.reference_step && !steps.has(check.reference_step)) throw new Error('Check reference must name an earlier step');
         if (check.assert === 'conversation_read' && !check.reference_step) throw new Error('Conversation check requires an earlier user message');
+        if (check.lens_kinds !== undefined && (check.kind !== 'lens' || !Array.isArray(check.lens_kinds) || !check.lens_kinds.length || check.lens_kinds.some(kind => !['principle', 'perspective', 'method', 'subject', 'idea'].includes(kind)))) throw new Error('Invalid lens_kinds');
         if (check.pattern != null) new RegExp(check.pattern, 'iu');
         if (check.assert === 'source_retained' && typeof fixtures[check.path] !== 'string') throw new Error('Source check has no fixture');
         if (check.assert === 'record_count' && (!Number.isInteger(check.equals) || check.equals < 0)) throw new Error('Invalid record count');
@@ -189,6 +190,14 @@ export function evaluateMemoryCheck(check, row, scenario, prior = new Map()) {
   if (check.assert === 'no_commit') {
     const commits = row.chat_trace.memory_commits;
     if (!Array.isArray(commits) || commits.some((item) => typeof item.kind !== 'string')) return unknown('commit evidence missing');
+    if (check.lens_kinds) {
+      const pages = row.chat_trace.lens?.pages;
+      if (!Array.isArray(pages)) return unknown('Lens state unavailable');
+      const kinds = new Map(pages.map(page => [page.record_id, page.kind]));
+      const count = commits.filter(item => item.kind === 'principle' ? check.lens_kinds.includes('principle')
+        : item.kind === 'lens' && (!kinds.has(item.record_id) || check.lens_kinds.includes(kinds.get(item.record_id)))).length;
+      return result(count === 0, `${count} ${check.lens_kinds.join('|')} Lens commits`);
+    }
     const count = commits.filter((item) => check.kind === 'all' || item.kind === check.kind).length;
     return result(count === 0, `${count} ${check.kind} commits`);
   }
@@ -206,8 +215,20 @@ export function evaluateMemoryCheck(check, row, scenario, prior = new Map()) {
       const learned = [...prior.values()].flatMap((earlier) => createdLenses(earlier) ?? []);
       if (learned.length) ids = new Set(learned.map((entry) => entry.record.recordId));
     }
-    return result(reads.some((read) => read.kind === check.kind && read.access === 'exact_read'
-      && read.record_id && (!ids || ids.has(read.record_id))), `acknowledged exact ${check.kind} read`);
+    const exact = reads.some(read => read.kind === check.kind && read.access === 'exact_read'
+      && read.record_id && (!ids || ids.has(read.record_id)));
+    if (exact) return { ...result(true, `acknowledged exact ${check.kind} read`), retrieval_evidence: 'exact_read' };
+    if (check.kind !== 'lens') return result(false, `no acknowledged exact ${check.kind} read`);
+    const receipts = row.chat_trace.lens_receipts;
+    if (!Array.isArray(receipts)) return unknown('Lens delivery receipts unavailable');
+    const answer = answerText(row); if (answer === null) return unknown('answer missing');
+    const before = records(row.before_chat, 'lens');
+    if (!before) return unknown('canonical before snapshot missing');
+    const current = new Map(before.map(entry => [entry.record.recordId, entry.snapshot.revisionId]));
+    const applied = receipts.some(receipt => receipt.delivery === 'context' && receipt.kind === 'principle'
+      && (!ids || ids.has(receipt.record_id)) && current.has(receipt.record_id) && current.get(receipt.record_id) === receipt.revision_id
+      && citingParagraphs(answer, new Set([`lens:${receipt.record_id}`])).length > 0);
+    return { ...result(applied, applied ? 'principle delivered in context and linked in the answer' : 'no exact lens read and no linked context principle'), ...(applied ? { retrieval_evidence: 'context_link' } : {}) };
   }
   if (check.assert === 'original_not_read') {
     const calls = row.chat_trace.tool_calls;
@@ -241,7 +262,17 @@ export function evaluateMemoryCheck(check, row, scenario, prior = new Map()) {
   const before = records(row.before_chat, check.kind ?? 'lens'); const after = records(row.after_chat, check.kind ?? 'lens');
   if (!before || !after) return unknown('canonical before/after snapshots missing');
   if (check.assert === 'record_count') return result(after.length === check.equals, `${after.length} ${check.kind} records; expected ${check.equals}`);
-  if (check.assert === 'records_unchanged') return result(identity(before) === identity(after), `${check.kind} record identities, revisions and contents unchanged`);
+  if (check.assert === 'records_unchanged') {
+    let selectedBefore = before; let selectedAfter = after;
+    if (check.lens_kinds) {
+      const pages = row.chat_trace.lens?.pages;
+      if (!Array.isArray(pages)) return unknown('Lens state unavailable');
+      const kinds = new Map(pages.map(page => [page.record_id, page.kind]));
+      const selected = entry => !kinds.has(entry.record.recordId) || check.lens_kinds.includes(kinds.get(entry.record.recordId));
+      selectedBefore = before.filter(selected); selectedAfter = after.filter(selected);
+    }
+    return result(identity(selectedBefore) === identity(selectedAfter), `${check.kind} record identities, revisions and contents unchanged`);
+  }
   if (['lens_pattern', 'lens_absent'].includes(check.assert)) {
     let selected = after;
     if (check.reference_step) {
@@ -367,6 +398,7 @@ export function memoryReport(suite, rows, { suiteSha256, trials = 3 } = {}) {
   return { schema: 'loupist-memory-report/1', suite: suite.suite, suite_sha256: suiteSha256, trials,
     scope: 'Deterministic lifecycle, provenance, and answer predicates; not a general semantic quality rating.',
     coverage: { complete, missing, duplicate, unexpected, mismatched }, configurations: [...configurations.keys()].map(JSON.parse),
+    retrieval_evidence: { exact_read: checks.filter(check => check.retrieval_evidence === 'exact_read').length, context_link: checks.filter(check => check.retrieval_evidence === 'context_link').length },
     metrics, scenarios: scenarioResults, trial_results: trialResults, checks,
     acceptance: { pass: complete && trials === 3 ? scenarioResults.every((scenario) => scenario.pass_all) : null,
       reason: !complete ? 'incomplete or mismatched evidence' : trials !== 3 ? 'diagnostic run; three independent trials required' : 'all predicates in all three trials required' },

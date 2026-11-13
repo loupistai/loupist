@@ -359,6 +359,10 @@ pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
         json!({"kind":kind,"record_id":change.record_id,"title":change.title,"summary":null,"change_summary":bounded_text(&change.lesson),"operation":match change.operation.as_str() { "create"|"revise" => Some(change.operation.as_str()), _=>None }})
     }).collect::<Vec<_>>()).unwrap_or_default();
     let reads = message.memory_refs.iter().map(|read| json!({"kind":read.kind.to_lowercase(),"record_id":read.record_id,"title":read.title,"access":match read.access {MemoryAccess::ExactRead=>"exact_read",MemoryAccess::SearchDiscovered=>"search"}})).collect::<Vec<_>>();
+    let receipts = message.lens_receipts.iter().map(|receipt| json!({
+        "record_id": receipt.record_id, "revision_id": receipt.revision_id,
+        "kind": receipt.kind, "title": bounded_text(&receipt.title), "delivery": receipt.delivery,
+    })).collect::<Vec<_>>();
     let performance = message.performance.as_ref();
     let usage = performance.filter(|p| {
         pi.usage_seen
@@ -372,7 +376,7 @@ pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
         "agent_dir_sha256":message.agent_harness.as_ref().and_then(|h| crate::agent_harness::snapshot("chat", &h.skill_ids, &[]).ok()).map(|h|h.digest),
         "status":match message.status {ChatMessageStatus::Complete=>"completed",ChatMessageStatus::Error=>"failed",ChatMessageStatus::Aborted=>"aborted"},
         "error":if message.status == ChatMessageStatus::Error { pi.error.clone().unwrap_or_else(||bounded_json(&json!(message.content))) } else { Value::Null },
-        "tool_calls":tool_calls(message.tool_trace.as_ref(),pi),"memory_reads":reads,"memory_commits":commits,
+        "tool_calls":tool_calls(message.tool_trace.as_ref(),pi),"memory_reads":reads,"lens_receipts":receipts,"memory_commits":commits,
         "number_checks":message.number_checks,"sensitivity_cards":message.sensitivity_cards,"as_of_report":message.as_of_report,
         "usage":{"input":usage.map(|p|p.input_tokens),"output":usage.map(|p|p.output_tokens),"cache_read":usage.map(|p|p.cache_read_tokens),"cache_write":usage.map(|p|p.cache_write_tokens)},
         "performance":{"setup_ms":performance.map(|p|p.setup_ms),"first_text_ms":performance.and_then(|p|p.first_text_ms),"total_ms":performance.map(|p|p.total_ms)}
@@ -525,6 +529,32 @@ fn content_excerpt(title: &str, content: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn persisted_trace_keeps_context_and_exact_lens_delivery_receipts() {
+        let mut message = crate::test_fixtures::chat_message(
+            "answer",
+            crate::domain::ChatRole::Assistant,
+            "[Rule](lens:rec_rule)",
+        );
+        for delivery in ["context", "exact_read"] {
+            message.lens_receipts.push(crate::domain::LensReceipt {
+                record_id: "rec_rule".into(),
+                revision_id: "rev_current".into(),
+                revision_digest: "a".repeat(64),
+                kind: "principle".into(),
+                title: "Rule".into(),
+                delivery: delivery.into(),
+            });
+        }
+        let trace = persisted(&message, &PiTrace::default());
+        assert_eq!(trace["lens_receipts"].as_array().unwrap().len(), 2);
+        assert_eq!(trace["lens_receipts"][0]["delivery"], "context");
+        assert_eq!(trace["lens_receipts"][1]["delivery"], "exact_read");
+        assert_eq!(trace["lens_receipts"][0]["revision_id"], "rev_current");
+        assert_eq!(trace["lens_receipts"][0]["kind"], "principle");
+        assert!(trace["memory_reads"].as_array().unwrap().is_empty());
+    }
 
     #[test]
     fn skill_authorization_is_host_only_and_bound_to_the_read_call() {
