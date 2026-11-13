@@ -282,8 +282,24 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                     json!({"company":"99022100","fiscal_year":2025,"report_period":"annual","basis":"consolidated"}),
                     &["452300000000"],
                 ));
+                let mut empty = call(
+                    "dart_filing_search",
+                    "dart.filing_search",
+                    json!({"company":"990221","start":"2026-01-01","end":"2026-03-10","limit":100}),
+                    &["no matching data"],
+                );
+                empty.0["error"] = json!("no matching data");
+                cases.push(empty);
             }
             "T-034" => {
+                let mut narrow = call(
+                    "dart_filing_search",
+                    "dart.filing_search",
+                    json!({"company":"990308","start":"2026-01-01","end":"2026-03-15","limit":100}),
+                    &["20260305990308"],
+                );
+                narrow.0["absent"] = json!(["20260318990308", "포장"]);
+                cases.push(narrow);
                 let mut search = call(
                     "dart_filing_search",
                     "dart.filing_search",
@@ -568,6 +584,12 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                 cases.push(negative);
             }
             "T-049" => {
+                cases.push(call(
+                    "web_search",
+                    "web.search",
+                    json!({"query":"unrecorded neighbouring query","limit":5}),
+                    &["\"results\": []"],
+                ));
                 // The close before the move sits across a substitute holiday; Seollal has no rows.
                 cases.push(call(
                     "krx_daily_quote",

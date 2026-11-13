@@ -487,6 +487,170 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn as_of_lists_cover_partial_windows_without_future_receipts() {
+        let replay: Replay = serde_json::from_str(include_str!(
+            "../../../evals/agent/suites/replay/opendart-byeolmuri-as-of.json"
+        ))
+        .unwrap();
+        let _guard = replay.install("fixture").unwrap();
+        for (start, end, filter, expected) in [
+            (
+                "20260101",
+                "20260331",
+                "",
+                vec!["20260318990308", "20260305990308"],
+            ),
+            ("20260101", "20260315", "", vec!["20260305990308"]),
+            (
+                "20260101",
+                "20260315",
+                "&pblntf_ty=I",
+                vec!["20260305990308"],
+            ),
+            (
+                "20260101",
+                "20260315",
+                "&pblntf_ty=B",
+                vec!["20260305990308"],
+            ),
+            ("20260310", "20260320", "", vec!["20260318990308"]),
+            ("20260305", "20260305", "", vec!["20260305990308"]),
+            ("20260318", "20260318", "", vec!["20260318990308"]),
+            ("20260306", "20260317", "", vec![]),
+            ("20260101", "20260304", "", vec![]),
+        ] {
+            let url = format!("https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de={start}&end_de={end}&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100{filter}");
+            let response = lookup("opendart.disclosures", &serde_json::json!({"url":url}))
+                .unwrap()
+                .unwrap();
+            let body = response.body.unwrap();
+            let receipts = body["list"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|row| row["rcept_no"].as_str().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(receipts, expected, "{start}..{end}{filter}");
+        }
+        assert_eq!(take_fallbacks().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn as_of_financial_fixture_closes_neighbouring_list_requests() {
+        let replay: Replay = serde_json::from_str(include_str!(
+            "../../../evals/agent/suites/replay/opendart-solsup-as-of.json"
+        ))
+        .unwrap();
+        let _guard = replay.install("fixture").unwrap();
+        let url = "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260101&end_de=20260310&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100";
+        let response = lookup("opendart.disclosures", &serde_json::json!({"url":url}))
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.body.unwrap()["status"], "013");
+        assert_eq!(take_fallbacks().len(), 1);
+        for (provider, url) in [
+            ("unknown", url),
+            (
+                "opendart.disclosures",
+                "https://opendart.fss.or.kr/api/uncovered.json",
+            ),
+            (
+                "opendart.disclosures",
+                "https://other.example/api/list.json",
+            ),
+        ] {
+            assert!(lookup(provider, &serde_json::json!({"url":url}))
+                .unwrap()
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("eval_replay_unmatched"));
+        }
+    }
+
+    #[tokio::test]
+    async fn every_opendart_fixture_closes_unknown_company_list_requests() {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../evals/agent/suites/replay");
+        for path in std::fs::read_dir(root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+        {
+            let replay: Replay = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            if !replay
+                .requests
+                .iter()
+                .any(|entry| entry.provider == "opendart.disclosures")
+            {
+                continue;
+            }
+            let _guard = replay.install("fixture").unwrap();
+            let url = "https://opendart.fss.or.kr/api/list.json?corp_code=00000000&bgn_de=20260101&end_de=20260310&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100";
+            let response = lookup("opendart.disclosures", &serde_json::json!({"url":url}))
+                .unwrap()
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            assert_eq!(
+                response.body.unwrap()["status"],
+                "013",
+                "{}",
+                path.display()
+            );
+            assert_eq!(take_fallbacks().len(), 1, "{}", path.display());
+        }
+    }
+
+    #[tokio::test]
+    async fn every_web_fixture_closes_searches_but_rejects_unknown_fetches() {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../evals/agent/suites/replay");
+        for path in std::fs::read_dir(root)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+        {
+            let replay: Replay = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            if !replay
+                .requests
+                .iter()
+                .any(|entry| matches!(entry.provider.as_str(), "web" | "web-search"))
+            {
+                continue;
+            }
+            let _guard = replay.install("fixture").unwrap();
+            let response = lookup("web-search", &serde_json::json!({"provider":"exa_public","query":"unrecorded neighbouring query","limit":5}))
+                .unwrap()
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            assert_eq!(
+                response.body.unwrap()["results"],
+                serde_json::json!([]),
+                "{}",
+                path.display()
+            );
+            assert_eq!(take_fallbacks().len(), 1, "{}", path.display());
+            for (provider, request) in [
+                (
+                    "web",
+                    serde_json::json!({"url":"https://not-a-fixture.example/unrecorded"}),
+                ),
+                ("web-search", serde_json::json!({"query":42})),
+            ] {
+                assert!(
+                    lookup(provider, &request).unwrap().is_err(),
+                    "{}",
+                    path.display()
+                );
+            }
+        }
+    }
+
     #[test]
     fn replays_are_independent_across_parallel_test_runtimes() {
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));

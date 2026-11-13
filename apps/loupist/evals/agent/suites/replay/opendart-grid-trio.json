@@ -290,6 +290,17 @@
   "otherwise": [
     {
       "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/list.json?",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
       "url_prefix": "https://opendart.fss.or.kr/api/company.json?",
       "response": {
         "status": 200,

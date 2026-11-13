@@ -772,6 +772,8 @@ explicit provider/endpoint `otherwise` empty answers. A `web-search` fallback
 uses an empty `url_prefix` because native search requests carry a query object,
 not a URL; its trace URL is null. Unknown providers and
 endpoints remain fail-closed; `replay_fallbacks` exposes every fallback used.
+Multi-event lists include the needed partial-window responses after their full
+response, so an earlier as-of query receives only the events in that window.
 The fixture lint checks listed receipts and three containing windows. Scenario
 `clock` pins model `live_time` only (T-045/T-049); host refresh windows retain the
 wall clock. Scenario `language` sets the disposable app language; otherwise a

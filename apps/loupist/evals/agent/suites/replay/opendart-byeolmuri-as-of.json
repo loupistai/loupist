@@ -175,6 +175,92 @@
     {
       "provider": "opendart.disclosures",
       "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260318&end_de=20260318&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore",
+        "pblntf_ty": "optional"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99030800",
+              "corp_cls": "Y",
+              "corp_name": "별무리반도체",
+              "stock_code": "990308",
+              "report_nm": "별무리반도체 포장라인 증설",
+              "rcept_no": "20260318990308",
+              "flr_nm": "별무리반도체",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99030800&bgn_de=20260305&end_de=20260305&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=20"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260305"
+        },
+        "end_de": {
+          "at_least": "20260305"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore",
+        "pblntf_ty": "optional"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99030800",
+              "corp_cls": "Y",
+              "corp_name": "별무리반도체",
+              "stock_code": "990308",
+              "report_nm": "별무리반도체 검사장비 도입",
+              "rcept_no": "20260305990308",
+              "flr_nm": "별무리반도체",
+              "rcept_dt": "20260305",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
         "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20260305990308"
       },
       "response": {

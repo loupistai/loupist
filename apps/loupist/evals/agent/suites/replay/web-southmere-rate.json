@@ -14,5 +14,17 @@
         "text": "<html><head><title>Southmere Central Bank holds its policy rate</title></head><body><p>Fictional Southmere Central Bank kept its policy rate at 4.25% on 21 October 2026. The statement mentions no other central bank.</p></body></html>"
       }
     }
+  ],
+  "otherwise": [
+    {
+      "provider": "web-search",
+      "url_prefix": "",
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    }
   ]
 }
