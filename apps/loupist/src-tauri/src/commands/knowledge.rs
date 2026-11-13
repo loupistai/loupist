@@ -733,6 +733,14 @@ pub struct KnowledgeGraphJobRequest {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KnowledgeGraphRetrySourceRequest {
+    pub loupist_id: String,
+    pub record_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeGraphLoupistRequest {
     pub loupist_id: String,
 }
@@ -836,7 +844,7 @@ pub fn knowledge_graph_job(
 ) -> Result<crate::knowledge::GraphJobView, CommandError> {
     admit(state.inner(), &request.loupist_id)?;
     with_loupist_knowledge(state.inner(), &request.loupist_id.clone(), |tx, _blobs| {
-        crate::knowledge::get_job(tx, &request.loupist_id, &request.job_id)
+        crate::knowledge::get_processing_job(tx, &request.loupist_id, &request.job_id)
     })
 }
 
@@ -871,6 +879,28 @@ pub fn knowledge_graph_recover(
         &request.loupist_id,
         &load_graph_settings(state.inner(), &request.loupist_id)?,
     )
+}
+
+#[tauri::command(async)]
+pub fn knowledge_graph_retry_source(
+    request: KnowledgeGraphRetrySourceRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::knowledge::GraphJobView, CommandError> {
+    let _activity = admit_mutation(state.inner(), &request.loupist_id)?;
+    if !state.graph.runtime_available() {
+        return Err(CommandError::invalid("Map building is unavailable"));
+    }
+    let job = with_loupist_knowledge(state.inner(), &request.loupist_id.clone(), |tx, _| {
+        let settings = crate::knowledge::load_settings(tx, &request.loupist_id)?;
+        crate::knowledge::retry_source_processing(
+            tx,
+            &settings,
+            &request.loupist_id,
+            &request.record_id,
+        )
+    })?;
+    state.graph.wake();
+    Ok(job)
 }
 
 #[tauri::command(async)]

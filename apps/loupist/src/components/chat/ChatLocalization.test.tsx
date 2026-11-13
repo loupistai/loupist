@@ -51,3 +51,11 @@ it("resolves status and evidence labels from the current language", async () => 
   expect(screen.getByRole("status").textContent).toMatch(/^⟦.*⟧$/);
   expect(evidencePresentation(evidence).label).toMatch(/^⟦.*⟧$/);
 });
+
+it("distinguishes a Source allowance stop from a user pause in Korean", async () => {
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  const view = render(<WorldProcessingStatus initialStatus="paused_budget" />);
+  expect(screen.getByRole("status")).toHaveTextContent("지도: 이 자료의 지도 구성 멈춤");
+  view.rerender(<WorldProcessingStatus initialStatus="paused" />);
+  expect(screen.getByRole("status")).toHaveTextContent("지도: 구성 일시정지");
+});

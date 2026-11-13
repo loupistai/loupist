@@ -656,6 +656,13 @@ fn a_source_whose_allowance_ran_out_is_not_reported_as_the_users_pause() {
     };
     // Map building is on: the Source stopped by itself.
     assert_eq!(status(), JOB_PAUSED);
+    assert_eq!(
+        store
+            .transact(|write| get_processing_job(write.tx, "loupist-a", &job.job_id))
+            .unwrap()
+            .status,
+        JOB_PAUSED
+    );
     store
         .transact(|write| {
             pause_processing(write.tx, &mut settings, "loupist-a")?;
@@ -663,6 +670,17 @@ fn a_source_whose_allowance_ran_out_is_not_reported_as_the_users_pause() {
         })
         .unwrap();
     assert_eq!(status(), "paused");
+    assert_eq!(
+        store
+            .transact(|write| get_processing_job(write.tx, "loupist-a", &job.job_id))
+            .unwrap()
+            .status,
+        "paused"
+    );
+    assert_eq!(
+        store.graph_job("loupist-a", &job.job_id).unwrap().status,
+        JOB_PAUSED
+    );
 }
 
 #[test]
@@ -1775,4 +1793,213 @@ fn a_spent_legacy_slice_cannot_borrow_a_completed_slices_unknown_allowance() {
             "old paid credit must stay untouched"
         );
     }
+}
+
+#[test]
+fn explicit_source_retry_funds_one_span_and_its_tail_once_per_action() {
+    let (directory, store) = open();
+    let mut settings = enabled();
+    settings.max_llm_calls = 2;
+    let first = queued(
+        &store,
+        &settings,
+        "loupist-a",
+        "A".repeat(EPISODE_CHUNK_CHARS * 3).as_bytes(),
+    );
+    let source = first
+        .document
+        .source_binding
+        .as_ref()
+        .unwrap()
+        .source_record_id
+        .clone();
+    let running = claim(&store, &settings, &first.job_id, T);
+    let old_attempt = running.document.attempt_id.as_deref().unwrap();
+    store
+        .transact(|write| {
+            reserve_model_call(write.tx, &first.job_id, old_attempt)?;
+            reserve_model_call(write.tx, &first.job_id, old_attempt)?;
+            pause_exhausted_attempt(write.tx, &first.job_id, old_attempt, T + 1)
+        })
+        .unwrap();
+    settings.max_llm_calls = 8;
+    let resumed = store
+        .transact(|write| resume_processing(write.tx, &mut settings, "loupist-a"))
+        .unwrap();
+    // Global resume neither funds the head nor requeues a blocked tail.
+    assert_eq!(resumed, 0);
+    assert!(store
+        .graph_jobs("loupist-a")
+        .unwrap()
+        .iter()
+        .all(|job| job.status == JOB_PAUSED));
+    assert_eq!(
+        store.graph_job("loupist-a", &first.job_id).unwrap().status,
+        JOB_PAUSED
+    );
+    let retried = store
+        .transact(|write| retry_source_processing(write.tx, &settings, "loupist-a", &source))
+        .unwrap();
+    assert_eq!(retried.status, JOB_QUEUED);
+    assert_eq!(retried.document.extraction.max_llm_calls, 8);
+    let jobs = store.graph_jobs("loupist-a").unwrap();
+    assert_eq!(
+        jobs.iter()
+            .map(|job| job.document.extraction.max_llm_calls)
+            .sum::<u32>(),
+        8
+    );
+    assert!(store
+        .transact(|write| retry_source_processing(write.tx, &settings, "loupist-a", &source))
+        .is_err());
+    assert!(store
+        .transact(|write| reserve_model_call(write.tx, &first.job_id, old_attempt))
+        .is_err());
+    let running = claim(&store, &settings, &first.job_id, T + 2);
+    let attempt = running.document.attempt_id.as_deref().unwrap();
+    assert_ne!(attempt, old_attempt);
+    store
+        .transact(|write| {
+            for _ in 0..8 {
+                reserve_model_call(write.tx, &first.job_id, attempt)?;
+            }
+            pause_exhausted_attempt(write.tx, &first.job_id, attempt, T + 3)
+        })
+        .unwrap();
+    drop(store);
+    let store = KnowledgeStore::open(directory.path().join("knowledge.sqlite")).unwrap();
+    assert_eq!(
+        store
+            .graph_job("loupist-a", &first.job_id)
+            .unwrap()
+            .document
+            .extraction
+            .max_llm_calls,
+        0
+    );
+    assert_eq!(
+        store.graph_job("loupist-a", &first.job_id).unwrap().status,
+        JOB_PAUSED
+    );
+}
+
+#[test]
+fn source_retry_refuses_unsafe_and_unrelated_work() {
+    type Edit = fn(&mut JobDocument, &mut GraphProcessingSettings);
+    let cases: &[(&str, &str, Edit)] = &[
+        ("running", JOB_RUNNING, |_, _| {}),
+        ("queued", JOB_QUEUED, |_, _| {}),
+        ("uncertain", JOB_PAUSED, |doc, _| doc.usage_uncertain = true),
+        ("mutation", JOB_PAUSED, |doc, _| doc.mutation_sent = true),
+        ("lease", JOB_PAUSED, |doc, _| {
+            doc.lease_expires_at_ms = Some(T)
+        }),
+        ("attempt", JOB_PAUSED, |doc, _| {
+            doc.attempt_id = Some("old".into())
+        }),
+        ("funded", JOB_PAUSED, |doc, _| {
+            doc.extraction.max_llm_calls = 8
+        }),
+        ("stale source", JOB_PAUSED, |doc, _| {
+            doc.source_binding.as_mut().unwrap().source_revision_id = "stale".into()
+        }),
+        ("quarantined", JOB_PAUSED, |doc, settings| {
+            settings
+                .quarantined_generations
+                .push(doc.generation_id.clone())
+        }),
+        ("user pause", JOB_PAUSED, |_, settings| {
+            settings.paused = true
+        }),
+        ("off", JOB_PAUSED, |_, settings| {
+            settings.enrichment_enabled = false
+        }),
+        ("too small", JOB_PAUSED, |_, settings| {
+            settings.max_llm_calls = 1
+        }),
+        ("reconcile", JOB_RECONCILE, |_, _| {}),
+        ("completed", JOB_COMPLETED, |_, _| {}),
+        ("cancelled", JOB_CANCELLED, |_, _| {}),
+    ];
+    for (name, status, edit) in cases {
+        let (_directory, store) = open();
+        let mut settings = enabled();
+        let job = queued(&store, &settings, "loupist-a", b"Stopped source");
+        let source = job
+            .document
+            .source_binding
+            .as_ref()
+            .unwrap()
+            .source_record_id
+            .clone();
+        let mut document = job.document.clone();
+        document.extraction.max_llm_calls = 0;
+        edit(&mut document, &mut settings);
+        store
+            .transact(|write| write_status(write.tx, &job.job_id, JOB_QUEUED, status, &document))
+            .unwrap();
+        let before = store.graph_job("loupist-a", &job.job_id).unwrap();
+        assert!(
+            store
+                .transact(|write| retry_source_processing(
+                    write.tx,
+                    &settings,
+                    "loupist-a",
+                    &source
+                ))
+                .is_err(),
+            "{name}"
+        );
+        assert!(
+            store
+                .transact(|write| retry_source_processing(
+                    write.tx,
+                    &settings,
+                    "loupist-b",
+                    &source
+                ))
+                .is_err(),
+            "{name}"
+        );
+        assert_eq!(
+            store.graph_job("loupist-a", &job.job_id).unwrap(),
+            before,
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_user_pause_resumes_the_funded_span_and_its_unfunded_followers_without_refilling() {
+    let (_directory, store) = open();
+    let mut settings = enabled();
+    settings.max_llm_calls = 6;
+    queued(
+        &store,
+        &settings,
+        "loupist-a",
+        "A".repeat(EPISODE_CHUNK_CHARS * 3).as_bytes(),
+    );
+    let count = store.graph_jobs("loupist-a").unwrap().len() as u32;
+    assert_eq!(
+        store
+            .transact(|write| pause_processing(write.tx, &mut settings, "loupist-a"))
+            .unwrap(),
+        count
+    );
+    settings.max_llm_calls = 16;
+    assert_eq!(
+        store
+            .transact(|write| resume_processing(write.tx, &mut settings, "loupist-a"))
+            .unwrap(),
+        count
+    );
+    let jobs = store.graph_jobs("loupist-a").unwrap();
+    assert!(jobs.iter().all(|job| job.status == JOB_QUEUED));
+    assert_eq!(
+        jobs.iter()
+            .map(|job| job.document.extraction.max_llm_calls)
+            .sum::<u32>(),
+        6
+    );
 }

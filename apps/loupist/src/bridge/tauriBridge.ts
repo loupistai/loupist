@@ -229,6 +229,7 @@ const bridge = (): StrictBridge => ({
   knowledgeFollowedStatus: request("knowledge_followed_status"),
   knowledgeGraphRecover: request("knowledge_graph_recover"),
   knowledgeGraphPause: request("knowledge_graph_pause"),
+  knowledgeGraphRetrySource: request("knowledge_graph_retry_source"),
   knowledgeGraphSettingsGet: request("knowledge_graph_settings_get"),
   knowledgeGraphSettingsSet: request("knowledge_graph_settings_set"),
   worldKeepAwakeGet: () => call("world_keep_awake_get"),

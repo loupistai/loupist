@@ -88,3 +88,10 @@ it("sends only registered native commands, and every registered command has a br
   expect([...sent].filter((command) => !registered.has(command))).toEqual([]);
   expect([...registered].filter((command) => !sent.has(command))).toEqual([]);
 });
+
+it("passes the explicit Source retry intent to the host", async () => {
+  const bridge = createLoupistBridge();
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  await bridge.knowledgeGraphRetrySource({ loupistId: "a", recordId: "source-a" });
+  expect(invoke).toHaveBeenLastCalledWith("knowledge_graph_retry_source", { request: { loupistId: "a", recordId: "source-a" } });
+});

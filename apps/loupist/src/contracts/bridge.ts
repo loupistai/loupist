@@ -334,6 +334,7 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   ): Promise<KnowledgeResearchPage>;
   knowledgeSourceRetain(request: KnowledgeSourceRetainRequest): Promise<RetainedSource>;
   knowledgeGraphJob(request: { loupistId: string; jobId: string }): Promise<GraphJobView>;
+  knowledgeGraphRetrySource(request: { loupistId: string; recordId: string }): Promise<GraphJobView>;
   knowledgeFollowedStatus(request: { loupistId: string }): Promise<import("./knowledge").FollowedStatus>;
   knowledgeGraphRecover(request: { loupistId: string }): Promise<GraphProcessingView>;
   knowledgeGraphPause(request: {

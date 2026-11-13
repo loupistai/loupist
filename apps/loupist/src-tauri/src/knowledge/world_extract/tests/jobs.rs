@@ -927,6 +927,30 @@ fn an_exhausted_frozen_budget_does_not_repeat_paid_calls_or_quarantine_other_sou
         drive(&mut fixture, &next, &script, "fixture").status,
         graph_jobs::JOB_COMPLETED
     );
+    // A fresh allowance is available only through the explicit Source action.
+    let source = job
+        .document
+        .source_binding
+        .as_ref()
+        .unwrap()
+        .source_record_id
+        .clone();
+    let retried = fixture
+        .store
+        .transact(|write| {
+            graph_jobs::retry_source_processing(write.tx, &fixture.settings, LOUPIST, &source)
+        })
+        .unwrap();
+    {
+        let mut script = script.lock().unwrap();
+        script.reply("ExtractedEntities", entities(&["Acme Corp", "Beta Motors"]));
+        script.reply("ExtractedEdges", json!({"edges": []}));
+        script.reply("CoreAttributeBatch", json!({"entities": []}));
+    }
+    assert_eq!(
+        drive(&mut fixture, &retried, &script, "fixture").status,
+        graph_jobs::JOB_COMPLETED
+    );
 }
 
 #[test]

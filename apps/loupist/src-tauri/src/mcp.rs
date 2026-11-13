@@ -1544,6 +1544,26 @@ pub fn filter_tool_providers(
     Ok(Some(filtered))
 }
 
+/// OpenBB's HTTP 204 has neither structured data nor nonblank text. This is
+/// the only receipt-free success; even an empty structured object needs a receipt.
+pub fn result_is_blank(result: &McpCallResult) -> bool {
+    !result.is_error
+        && result.metadata.as_ref().is_none_or(|meta| {
+            meta.is_null() || meta.as_object().is_some_and(|object| object.is_empty())
+        })
+        && result
+            .structured_content
+            .as_ref()
+            .is_none_or(Value::is_null)
+        && result.content.iter().all(|part| {
+            part.as_object().is_some_and(|object| object.len() == 2)
+                && part["type"] == "text"
+                && part["text"]
+                    .as_str()
+                    .is_some_and(|text| text.trim().is_empty())
+        })
+}
+
 /// Provider-backed runtimes declare one canonical provider receipt location in
 /// their signed runtime manifest. Rust follows only that exact JSON Pointer;
 /// text blocks and unrelated nested fields are never treated as provenance.
@@ -1561,6 +1581,9 @@ pub fn validate_result_provider(
     }
     if !valid_json_pointer(provider_receipt_pointer) {
         return Err(McpError::Protocol);
+    }
+    if result_is_blank(result) {
+        return Ok(());
     }
     let encoded = serde_json::to_value(result).map_err(|_| McpError::Protocol)?;
     let reported_provider = encoded
@@ -2150,6 +2173,62 @@ done
             &enabled,
         )
         .is_ok());
+    }
+
+    #[test]
+    fn only_blank_successes_may_omit_the_provider_receipt() {
+        let enabled = BTreeSet::from(["fmp".to_owned()]);
+        let check = |content, structured_content| {
+            validate_result_provider(
+                &McpCallResult {
+                    content,
+                    structured_content,
+                    is_error: false,
+                    metadata: None,
+                },
+                "/structuredContent/provider",
+                Some("fmp"),
+                &enabled,
+            )
+        };
+        for content in [vec![], vec![json!({"type":"text", "text":" \n"})]] {
+            assert!(check(content, None).is_ok());
+        }
+        for (content, structured) in [
+            (vec![json!({"type":"text", "text":"data"})], None),
+            (vec![json!({"type":"image", "data":""})], None),
+            (vec![json!({"type":"text"})], None),
+            (vec![json!({"type":"text", "text":"", "data":123})], None),
+            (vec![], Some(json!({}))),
+            (vec![], Some(json!({"results":[{"price":1}]}))),
+            (vec![], Some(json!({"provider":"other", "results":[]}))),
+        ] {
+            assert!(check(content, structured).is_err());
+        }
+        let mut blank = McpCallResult {
+            content: vec![],
+            structured_content: None,
+            is_error: false,
+            metadata: None,
+        };
+        assert!(validate_result_provider(
+            &blank,
+            "/structuredContent/provider",
+            Some("disabled"),
+            &enabled
+        )
+        .is_err());
+        assert!(
+            validate_result_provider(&blank, "invalid-pointer", Some("fmp"), &enabled).is_err()
+        );
+        blank.metadata = Some(json!({"price":123}));
+        assert!(validate_result_provider(
+            &blank,
+            "/structuredContent/provider",
+            Some("fmp"),
+            &enabled
+        )
+        .is_err());
     }
 
     #[tokio::test]

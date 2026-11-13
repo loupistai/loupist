@@ -200,17 +200,27 @@ enum McpInvocation {
     Stopped(Option<BrokerError>),
 }
 
-/// A data read that answered without rows: an empty or missing `results`, or
-/// (OpenBB's empty-data reply, HTTP 204) no structured content and only blank
-/// text.
+/// Empty row containers, including OpenBB models whose fields are all null.
+/// Zero and false are data; nonempty structured metadata is not an empty row section.
+fn empty_row(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::String(text) => text.trim().is_empty(),
+        Value::Array(values) => values.iter().all(empty_row),
+        Value::Object(values) => values.values().all(empty_row),
+        Value::Bool(_) | Value::Number(_) => false,
+    }
+}
+
 fn returned_no_rows(payload: &Value) -> bool {
     match payload
         .get("structuredContent")
         .filter(|value| !value.is_null())
     {
         Some(structured) => match structured.get("results") {
-            Some(Value::Array(rows)) => rows.is_empty(),
+            Some(Value::Array(rows)) => rows.iter().all(empty_row),
             Some(Value::Null) => true,
+            None => empty_row(structured),
             _ => false,
         },
         None => payload
@@ -221,10 +231,16 @@ fn returned_no_rows(payload: &Value) -> bool {
                     part["type"] == "text"
                         && part["text"]
                             .as_str()
-                            .is_none_or(|text| text.trim().is_empty())
+                            .is_some_and(|text| text.trim().is_empty())
                 })
             }),
     }
+}
+
+fn describe_empty_read(payload: &mut Value) {
+    payload["status"] = json!("ok");
+    payload["row_count"] = json!(0);
+    payload["next"] = json!("No data was returned for this request. Try another enabled provider or change the request. Do not cite this empty result.");
 }
 
 /// Invocation: forwards the admitted call and checks what came back. A result
@@ -279,7 +295,10 @@ async fn invoke_mcp_tool(
     if contains_protected_value(&original, &server.sensitive_values) {
         return Ok(McpInvocation::Stopped(None));
     }
-    let as_of = match plan.dated {
+    let blank = crate::mcp::result_is_blank(&result);
+    // A 204 is already empty, including under a cutoff. Do not run the dated
+    // row filter, which requires a structured row section.
+    let as_of = match plan.dated.filter(|_| !blank) {
         Some((route, cutoff, bounded)) => {
             match point_in_time::filter_result(route, &mut result, cutoff, bounded) {
                 Ok(summary) => Some(summary),
@@ -293,6 +312,9 @@ async fn invoke_mcp_tool(
             .map_err(|_| BrokerError::Execution("MCP result was invalid".into()))?,
         None => original,
     };
+    if blank && !plan.control_tool {
+        payload["structuredContent"] = json!({"results": []});
+    }
     if let Some(as_of) = as_of {
         payload["as_of"] = as_of;
     }
@@ -735,8 +757,10 @@ impl AppToolExecutor {
                         pending.unlisted_results.insert(result_ref.clone());
                     })
                     .await;
+                describe_empty_read(&mut payload);
                 payload["result_ref"] = json!(result_ref);
                 if let Some(delivered) = &mut model_payload {
+                    describe_empty_read(delivered);
                     delivered["result_ref"] = json!(result_ref);
                 }
             } else {
@@ -2335,6 +2359,75 @@ done
             2
         );
         assert!(!transcript.contains("max_age"));
+        turn.shutdown_mcp().await;
+        wait_for_exit_marker(&spawned.exited).await;
+    }
+
+    #[test]
+    fn empty_rows_do_not_mistake_zero_false_or_other_data_for_missing_values() {
+        for rows in [
+            json!([]),
+            json!([{}]),
+            json!([null, {"price":null, "nested":[]}]),
+            json!([{"value":" "}]),
+        ] {
+            assert!(returned_no_rows(
+                &json!({"structuredContent":{"results":rows}})
+            ));
+        }
+        for rows in [
+            json!([{"price":0}]),
+            json!([{"flag":false}]),
+            json!([{"symbol":"AAA"}]),
+            json!([{}, {"value":1}]),
+            json!({"value":null}),
+        ] {
+            assert!(!returned_no_rows(
+                &json!({"structuredContent":{"results":rows}})
+            ));
+        }
+        assert!(!returned_no_rows(
+            &json!({"structuredContent":{"notice":"data"}})
+        ));
+        assert!(!returned_no_rows(
+            &json!({"content":[{"type":"image","data":""}]})
+        ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_blank_provider_reply_keeps_the_session_and_a_host_result_ref() {
+        let _guard = crate::mcp::MCP_PROCESS_TEST_LOCK.lock().await;
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let turn = capture(&temporary, "blank", None);
+        let script = ASSET_REFRESH_SCRIPT.replace(
+            "reply \"$id\" ''",
+            r#"printf '{"jsonrpc":"2.0","id":"%s","result":{"content":[{"type":"text","text":""}],"isError":false}}\n' "$id""#,
+        );
+        let spawned = spawn_script_server(&temporary, "blank", "sec", None, &script).await;
+        install(&turn, spawned.server).await;
+        let executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
+        let delivery = new_id("mcp-call");
+        let empty = executor.mcp_call(&policy("loupist-a", None), json!({"server_id":"openbb", "tool_name":"etf_info", "arguments":{"symbol":"MORR","provider":"sec"}}), &delivery).await.unwrap();
+        executor.capture.commit_delivery(&delivery).await;
+        assert_eq!(empty["result"]["status"], "ok", "{empty}");
+        assert_eq!(empty["result"]["row_count"], 0);
+        assert!(empty["result"]["next"]
+            .as_str()
+            .unwrap()
+            .contains("another enabled provider"));
+        assert!(empty["result"]["result_ref"].is_string());
+        assert!(empty["result"].get("citation_url").is_none());
+        assert!(turn.evidence_refs.lock().await.is_empty());
+        let bars = call(
+            &executor,
+            "equity_price_historical",
+            json!({"symbol":"MORR","provider":"sec"}),
+        )
+        .await
+        .unwrap();
+        assert!(bars["result"]["citation_url"].is_string(), "{bars}");
         turn.shutdown_mcp().await;
         wait_for_exit_marker(&spawned.exited).await;
     }

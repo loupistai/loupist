@@ -72,6 +72,7 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::knowledge::KnowledgeGraphJobRequest,
         crate::commands::knowledge::KnowledgeGraphLoupistRequest,
         crate::commands::knowledge::KnowledgeGraphPauseRequest,
+        crate::commands::knowledge::KnowledgeGraphRetrySourceRequest,
         crate::commands::knowledge::KnowledgeGraphSettingsRequest,
         crate::commands::knowledge::KnowledgeJournalReadRequest,
         crate::commands::knowledge::KnowledgeJournalSourceReadRequest,
@@ -354,6 +355,7 @@ commands! {
         knowledge_connection_open: crate::commands::knowledge::KnowledgeConnectionRequest => crate::knowledge::ConnectionView;
         knowledge_graph_job: crate::commands::knowledge::KnowledgeGraphJobRequest => crate::knowledge::GraphJobView;
         knowledge_graph_pause: crate::commands::knowledge::KnowledgeGraphPauseRequest => crate::knowledge::GraphProcessingView;
+        knowledge_graph_retry_source: crate::commands::knowledge::KnowledgeGraphRetrySourceRequest => crate::knowledge::GraphJobView;
         knowledge_graph_recover: crate::commands::knowledge::KnowledgeGraphLoupistRequest => crate::knowledge::GraphProcessingView;
         knowledge_graph_settings_get: crate::commands::knowledge::KnowledgeGraphLoupistRequest => crate::knowledge::GraphProcessingView;
         knowledge_graph_settings_set: crate::commands::knowledge::KnowledgeGraphSettingsRequest => crate::knowledge::GraphProcessingView;
@@ -723,6 +725,11 @@ async fn command_signatures() {
     let _: Result<crate::knowledge::GraphJobView, CommandError> =
         crate::commands::knowledge::knowledge_graph_job(
             any::<crate::commands::knowledge::KnowledgeGraphJobRequest>(),
+            any(),
+        );
+    let _: Result<crate::knowledge::GraphJobView, CommandError> =
+        crate::commands::knowledge::knowledge_graph_retry_source(
+            any::<crate::commands::knowledge::KnowledgeGraphRetrySourceRequest>(),
             any(),
         );
     let _: Result<crate::knowledge::GraphProcessingView, CommandError> =

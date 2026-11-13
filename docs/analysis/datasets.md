@@ -35,6 +35,13 @@ cannot turn its retained chart rows into trusted data. Artifact text from a
 reply recorded as tainted is also delimited on a later read.
 
 `dataset_export` writes the current snapshot identified by a pinned reference, or a JSON Pointer selection, directly to the selected local workspace. JSON preserves the selected structure; CSV accepts row objects with an explicit column order or stable alphabetical columns. The returned path, byte digest, row count and `.provenance.json` sidecar let local scripts use the same inputs without copying them through model output. The host enforces Loupist ownership, relative paths, no symlink traversal and no overwrite. It stages both outputs before publication and rolls back only files it owns on publication failure; concurrent replacements are preserved. These are immediate local files and remain if the reply stops.
+JSON and CSV exports use the same numeric rule as Copy data: a fractional number
+that is exactly a widened 32-bit float and has more than nine significant digits
+uses that float's shortest decimal (for example, `225.3000030517578` becomes
+`225.3`). Integers, shorter decimals, genuine 64-bit fractions and decimal strings
+keep their stored values. This applies only at export; existing dataset bytes,
+revisions and digests are unchanged, and `run_python` reads the cleaned export.
+
 Exports from untrusted datasets also record the exact output and sidecar digests
 in the host's private trust registry before publication. Native reads of those
 bytes, including unchanged copies, return delimited and raise the untrusted-text

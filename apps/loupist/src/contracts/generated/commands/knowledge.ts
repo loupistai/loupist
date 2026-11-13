@@ -33,6 +33,8 @@ export type KnowledgeGraphLoupistRequest = { loupistId: string };
 
 export type KnowledgeGraphPauseRequest = { loupistId: string, paused: boolean };
 
+export type KnowledgeGraphRetrySourceRequest = { loupistId: string, recordId: string };
+
 export type KnowledgeGraphSettingsRequest = { loupistId: string, settings: GraphPublicSettings };
 
 export type KnowledgeJournalReadRequest = { loupistId: string, journalId: string };
