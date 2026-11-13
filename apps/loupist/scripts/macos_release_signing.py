@@ -79,7 +79,7 @@ def details(path: Path) -> str:
 
 
 def entitlements(path: Path) -> dict:
-    result = run("codesign", "-d", "--entitlements", ":-", str(path))
+    result = run("codesign", "-d", "--entitlements", "-", "--xml", str(path))
     text = result.stdout
     if not text.strip():
         return {}
@@ -126,7 +126,7 @@ def verify_runtime(
         verify_binary(path, mode, sha1, team)
         if path == worker:
             require_flags(path, True, {WORKER_ENTITLEMENT: True})
-        elif mode in {"self-signed", "ad-hoc"}:
+        elif mode == "self-signed":
             require_flags(path, False, {})
         elif path == pi / "loupist-pi":
             require_flags(path, True, PI_ENTITLEMENTS)
@@ -179,8 +179,7 @@ def verify_bundle(
     sha1 = ephemeral_sha1 or policy["certificate_sha1"]
     run("hdiutil", "verify", str(dmg))
     run("codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app))
-    if mode != "ad-hoc":
-        verify_binary(dmg, mode, sha1, team)
+    verify_binary(dmg, mode, sha1, team)
     if mode == "self-signed":
         run(
             "codesign",
@@ -198,7 +197,7 @@ def verify_bundle(
     verify_runtime(pi, worker, mode, sha1, team)
     for path in macho_files(app / "Contents"):
         verify_binary(path, mode, sha1, team)
-        if mode in {"self-signed", "ad-hoc"}:
+        if mode == "self-signed":
             require_flags(
                 path,
                 path in {main, worker},
@@ -232,7 +231,7 @@ def verify_bundle(
         "mode": "dry-run-ephemeral" if ephemeral_sha1 else mode,
         "notarized": mode == "developer-id",
         "team_id": team if mode == "developer-id" else None,
-        "certificate_sha256": None if mode == "ad-hoc" else certificate_hash(app),
+        "certificate_sha256": certificate_hash(app),
         "designated_requirement": designated_requirement(app),
     }
     if not ephemeral_sha1:

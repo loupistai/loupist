@@ -413,14 +413,7 @@ def environment_uses_custom_branch_policies(environment: dict[str, object]) -> b
 
 
 def deployment_policy_lists_v_ref_pattern(value: object | None) -> bool:
-    """Return whether a complete official policy list contains the exact ``v*`` name.
-
-    GitHub's read-only list/get deployment-policy responses expose ``id``,
-    ``node_id``, and ``name``, but not the policy target type. The audit can
-    therefore prove only the exact policy name. Tag execution remains enforced
-    at runtime by the tag-triggered release workflow and the qualification/
-    promotion workflows' ``GITHUB_REF_TYPE=tag`` guards.
-    """
+    """Require the explicit v* tag policy; a same-named branch policy is unsafe."""
 
     if not isinstance(value, dict):
         return False
@@ -449,9 +442,12 @@ def deployment_policy_lists_v_ref_pattern(value: object | None) -> bool:
             or not node_id
             or not isinstance(name, str)
             or not name
+            or policy.get("type") not in {"branch", "tag"}
         ):
             return False
         if name == "v*":
+            if policy["type"] != "tag":
+                return False
             lists_v_ref_pattern = True
     return lists_v_ref_pattern
 
@@ -467,16 +463,21 @@ def environment_is_protected(
     ):
         return False
     protection_rules = environment.get("protection_rules")
-    if isinstance(protection_rules, list) and protection_rules:
-        return True
-    branch_policy = environment.get("deployment_branch_policy")
-    if not isinstance(branch_policy, dict):
-        return False
-    if branch_policy.get("protected_branches") is True:
-        return True
-    if branch_policy.get("custom_branch_policies") is True:
-        return has_v_ref_policy if requires_v_tag_policy else True
-    return False
+    return isinstance(protection_rules, list) and any(
+        isinstance(rule, dict)
+        and rule.get("type") == "required_reviewers"
+        and isinstance(rule.get("reviewers"), list)
+        and bool(rule["reviewers"])
+        and all(
+            isinstance(item, dict)
+            and item.get("type") in {"User", "Team"}
+            and isinstance(item.get("reviewer"), dict)
+            and type(item["reviewer"].get("id")) is int
+            and item["reviewer"]["id"] > 0
+            for item in rule["reviewers"]
+        )
+        for rule in protection_rules
+    )
 
 
 def environment_requires_independent_reviewer(environment: dict[str, object]) -> bool:
@@ -574,6 +575,7 @@ def audit_release_setup(
     *,
     repository: str,
     repository_secrets: set[str],
+    organization_secrets: set[str],
     environment_secrets: Mapping[str, set[str]],
     deployment_branch_policies: Mapping[str, object],
     required_secrets: set[str],
@@ -756,19 +758,13 @@ def audit_release_setup(
             add(
                 "pass",
                 f"environment {name}",
-                "deployment protection and an exact v* custom policy are configured; "
-                "the policy-list API has no target type, so tag triggers and "
-                "GITHUB_REF_TYPE=tag guards enforce tag execution at runtime",
+                "required reviewers and an exact v* tag deployment policy are configured",
             )
         else:
             if name in TAG_TRIGGERED_ENVIRONMENTS:
-                detail = (
-                    "configure the custom deployment policy with an exact v* pattern; "
-                    "the policy-list API has no target type, so tag triggers and "
-                    "GITHUB_REF_TYPE=tag guards enforce tag execution at runtime"
-                )
+                detail = "configure required reviewers and an exact v* deployment policy with type=tag"
             else:
-                detail = "configure a reviewer, wait timer, or deployment branch policy"
+                detail = "configure required reviewers"
             add(
                 "error",
                 f"environment {name}",
@@ -798,6 +794,19 @@ def audit_release_setup(
             "all release workflow secret names are present",
         )
 
+    if not isinstance(organization_secrets, set) or not all(
+        isinstance(name, str) and name for name in organization_secrets
+    ):
+        raise AuditError("organization secret names must be a complete set")
+    add(
+        "error" if organization_secrets else "pass",
+        "organization secret isolation",
+        "remove organization secrets visible to this repository: "
+        + ", ".join(sorted(organization_secrets))
+        if organization_secrets
+        else "no organization secrets are visible to this repository",
+    )
+
     secret_scopes: tuple[tuple[str, set[str]], ...] = (
         ("repository", repository_secrets),
         (
@@ -820,18 +829,13 @@ def audit_release_setup(
             isinstance(name, str) and name for name in names
         ):
             raise AuditError(f"secret names for {scope} are invalid")
-        leaked_names = sorted(
-            names
-            if scope == "environment release-dry-run"
-            else (ALL_SECRETS | required_secrets) & names
-        )
+        leaked_names = sorted(names)
         subject = f"{scope} secret isolation"
         if leaked_names:
             add(
                 "error",
                 subject,
-                "workflow-referenced secret names must exist only in release: "
-                + ", ".join(leaked_names),
+                "secret names must exist only in release: " + ", ".join(leaked_names),
             )
         else:
             add(
@@ -930,6 +934,9 @@ def remote_audit(repository: str, workflow: Path, gh: str) -> list[Finding]:
     repository_secrets = repository_secret_names(
         gh_api(gh, f"/repos/{repository}/actions/secrets?per_page=100")
     )
+    organization_secrets = repository_secret_names(
+        gh_api(gh, f"/repos/{repository}/actions/organization-secrets?per_page=100")
+    )
     environment_secrets: dict[str, set[str]] = {}
     deployment_branch_policies: dict[str, object] = {}
     for name in REQUIRED_ENVIRONMENTS:
@@ -953,6 +960,7 @@ def remote_audit(repository: str, workflow: Path, gh: str) -> list[Finding]:
     return audit_release_setup(
         repository=repository,
         repository_secrets=repository_secrets,
+        organization_secrets=organization_secrets,
         environment_secrets=environment_secrets,
         deployment_branch_policies=deployment_branch_policies,
         required_secrets=required_secrets,

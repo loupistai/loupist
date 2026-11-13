@@ -35,6 +35,7 @@ class ReleaseProfileTests(unittest.TestCase):
                 lambda v: v.update(channel="nightly"),
                 lambda v: v.update(extra=True),
                 lambda v: v["macos_signing"].update(mode="unknown"),
+                lambda v: v["macos_signing"].update(mode="ad-hoc"),
                 lambda v: v["macos_signing"].update(certificate_sha1="A" * 39),
                 lambda v: v["macos_signing"].update(certificate_sha256="x" * 64),
                 lambda v: v["macos_signing"].update(certificate_common_name=""),
@@ -44,7 +45,7 @@ class ReleaseProfileTests(unittest.TestCase):
                 path.write_text(json.dumps(value))
                 with self.assertRaises(ValueError):
                     load_profile(path)
-            for mode in ("developer-id", "ad-hoc"):
+            for mode in ("developer-id",):
                 value = copy.deepcopy(profile)
                 value["macos_signing"] = {
                     key: mode if key == "mode" else None
@@ -88,7 +89,8 @@ class ReleaseProfileTests(unittest.TestCase):
             "certificate_sha256": None,
             "designated_requirement": 'cdhash H"' + "a" * 40 + '"',
         }
-        validate_signing_record(adhoc)
+        with self.assertRaises(ValueError):
+            validate_signing_record(adhoc)
         with self.assertRaises(ValueError):
             validate_signing_record({**adhoc, "certificate_sha256": "F" * 64})
         developer = {
@@ -113,7 +115,12 @@ class ReleaseProfileTests(unittest.TestCase):
         self.assertIn("Loupist 0.1.0-rc.1 (Beta)", beta)
         self.assertIn("Not notarized", beta)
         self.assertNotIn("{{", beta)
-        for mode in ("developer-id", "ad-hoc"):
+        self.assertIn("release candidate for testing", beta)
+        self.assertNotIn("<product acceptance", beta)
+        self.assertNotIn("<the complete unperformed_checks", beta)
+        stable = render("0.1.0", profile)
+        self.assertIn("<the complete unperformed_checks", stable)
+        for mode in ("developer-id",):
             changed = copy.deepcopy(profile)
             changed["macos_signing"]["mode"] = mode
             notes = render("0.1.0-rc.1", changed)

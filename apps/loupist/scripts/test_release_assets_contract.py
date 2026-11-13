@@ -459,6 +459,28 @@ class ReleaseAssetsContractTest(unittest.TestCase):
         ]
         write_json(notes, {"name": "Loupist 0.0.1 (Beta)", "body": omitted})
         self.script(*verify)
+        write_json(
+            notes, {"name": "Loupist 0.0.1 (Beta)", "body": "Only part: " + omitted}
+        )
+        self.refused("whole unperformed_checks line", *verify)
+        write_json(
+            notes,
+            {
+                "name": "Loupist 0.0.1 (Beta)",
+                "body": "- Not checked:  " + omitted.replace(" ", "  "),
+            },
+        )
+        self.script(*verify)
+        value["unperformed_checks"] = "a"
+        write_json(receipt, value)
+        write_json(
+            notes,
+            {"name": "Loupist 0.0.1 (Beta)", "body": "Beta candidate was accepted"},
+        )
+        self.refused("whole unperformed_checks line", *verify)
+        value["unperformed_checks"] = omitted
+        write_json(receipt, value)
+        write_json(notes, {"name": "Loupist 0.0.1 (Beta)", "body": omitted})
         value["platforms"]["macos-aarch64"]["result"] = "passed"
         write_json(receipt, value)
         self.refused("differs from the recorded method", *verify)

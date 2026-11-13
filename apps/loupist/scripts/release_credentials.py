@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -17,7 +18,11 @@ from release_profile import MODE_SECRETS, UPDATER_SECRETS, load_profile
 
 def run(*args: str, **kwargs) -> subprocess.CompletedProcess:
     result = subprocess.run(
-        list(map(str, args)), check=False, capture_output=True, text=True, **kwargs
+        list(map(str, args)),
+        check=False,
+        capture_output=kwargs.pop("capture_output", True),
+        text=True,
+        **kwargs,
     )
     if result.returncode:
         # Never include the command arguments: security/openssl take passwords.
@@ -25,14 +30,19 @@ def run(*args: str, **kwargs) -> subprocess.CompletedProcess:
     return result
 
 
-def export(values: dict[str, str], *, sensitive: bool = False) -> None:
+PUBLIC_EXPORTS = {
+    "LOUPIST_UPDATER_PUBLIC_KEY",
+    "APPLE_SIGNING_IDENTITY",
+    "LOUPIST_SIGNING_KEYCHAIN",
+    "LOUPIST_EPHEMERAL_CERTIFICATE_SHA1",
+}
+
+
+def export(values: dict[str, str]) -> None:
+    if set(values) - PUBLIC_EXPORTS:
+        raise ValueError("private release material must not be exported to GITHUB_ENV")
     with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
         for key, value in values.items():
-            if sensitive:
-                masked = (
-                    value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-                )
-                print(f"::add-mask::{masked}")
             delimiter = "LOUPIST_" + secrets.token_hex(16)
             output.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
 
@@ -42,31 +52,7 @@ def require(mode: str) -> dict[str, str]:
     missing = sorted(name for name in required if not os.environ.get(name))
     if missing:
         raise ValueError("Required release credential is absent: " + ", ".join(missing))
-    values = {
-        "LOUPIST_UPDATER_PUBLIC_KEY": os.environ["LOUPIST_UPDATER_PUBLIC_KEY"],
-        "TAURI_SIGNING_PRIVATE_KEY": os.environ["LOUPIST_TAURI_SIGNING_PRIVATE_KEY"],
-        "TAURI_SIGNING_PRIVATE_KEY_PASSWORD": os.environ[
-            "LOUPIST_TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
-        ],
-    }
-    if mode == "self-signed":
-        values |= {
-            "LOUPIST_CERTIFICATE": os.environ["LOUPIST_SELF_SIGNED_CERTIFICATE"],
-            "LOUPIST_CERTIFICATE_PASSWORD": os.environ[
-                "LOUPIST_SELF_SIGNED_CERTIFICATE_PASSWORD"
-            ],
-        }
-    elif mode == "developer-id":
-        values |= {
-            "LOUPIST_CERTIFICATE": os.environ["LOUPIST_APPLE_CERTIFICATE"],
-            "LOUPIST_CERTIFICATE_PASSWORD": os.environ[
-                "LOUPIST_APPLE_CERTIFICATE_PASSWORD"
-            ],
-            "APPLE_SIGNING_IDENTITY": os.environ["LOUPIST_APPLE_SIGNING_IDENTITY"],
-        }
-    else:
-        values["APPLE_SIGNING_IDENTITY"] = "-"
-    return values
+    return {"LOUPIST_UPDATER_PUBLIC_KEY": os.environ["LOUPIST_UPDATER_PUBLIC_KEY"]}
 
 
 def ephemeral(root: Path) -> dict[str, str]:
@@ -154,30 +140,35 @@ def import_certificate(root: Path, profile: dict, *, dry_run: bool) -> dict[str,
         root / "loupist-signing.p12",
         root / "loupist-signing.keychain-db",
     )
-    certificate.write_bytes(
-        base64.b64decode(os.environ["LOUPIST_CERTIFICATE"], validate=True)
-    )
-    certificate.chmod(0o600)
+    encoded = re.sub(r"\s", "", os.environ["LOUPIST_CERTIFICATE"])
+    decoded = base64.b64decode(encoded, validate=True)
+    with open(
+        certificate, "xb", opener=lambda name, flags: os.open(name, flags, 0o600)
+    ) as output:
+        output.write(decoded)
     password = secrets.token_hex(30)
     run("security", "create-keychain", "-p", password, keychain)
     # Export immediately so the workflow's always() cleanup also handles a failed import.
     export({"LOUPIST_SIGNING_KEYCHAIN": str(keychain)})
     run("security", "set-keychain-settings", "-lut", "21600", keychain)
     run("security", "unlock-keychain", "-p", password, keychain)
-    run(
-        "security",
-        "import",
-        certificate,
-        "-P",
-        os.environ["LOUPIST_CERTIFICATE_PASSWORD"],
-        "-A",
-        "-t",
-        "cert",
-        "-f",
-        "pkcs12",
-        "-k",
-        keychain,
-    )
+    try:
+        run(
+            "security",
+            "import",
+            certificate,
+            "-P",
+            os.environ["LOUPIST_CERTIFICATE_PASSWORD"],
+            "-A",
+            "-t",
+            "cert",
+            "-f",
+            "pkcs12",
+            "-k",
+            keychain,
+        )
+    finally:
+        certificate.unlink(missing_ok=True)
     run(
         "security",
         "set-key-partition-list",
@@ -190,7 +181,14 @@ def import_certificate(root: Path, profile: dict, *, dry_run: bool) -> dict[str,
     )
     run("security", "list-keychain", "-d", "user", "-s", keychain)
     identities = run("security", "find-identity", "-p", "codesigning", keychain).stdout
-    hashes = re.findall(r"^\s*\d+\) ([A-Fa-f0-9]{40}) ", identities, re.MULTILINE)
+    hashes = sorted(
+        {
+            value.upper()
+            for value in re.findall(
+                r"^\s*\d+\) ([A-Fa-f0-9]{40}) ", identities, re.MULTILINE
+            )
+        }
+    )
     if len(hashes) != 1:
         raise ValueError(
             "signing keychain must contain exactly one code-signing identity"
@@ -229,19 +227,86 @@ def import_certificate(root: Path, profile: dict, *, dry_run: bool) -> dict[str,
     }
 
 
+def ephemeral_file(root: Path) -> Path:
+    return root / "loupist-ephemeral/credentials.json"
+
+
+def persist_ephemeral(root: Path) -> None:
+    directory = root / "loupist-ephemeral"
+    values = ephemeral(directory)
+    path = ephemeral_file(root)
+    with open(
+        path,
+        "x",
+        encoding="utf-8",
+        opener=lambda name, flags: os.open(name, flags, 0o600),
+    ) as output:
+        json.dump(values, output)
+    # Only the bounded private handoff file is needed by import/build steps.
+    for name in ("certificate.key", "certificate.p12", "updater.key"):
+        (directory / name).unlink(missing_ok=True)
+    export({"LOUPIST_UPDATER_PUBLIC_KEY": values["LOUPIST_UPDATER_PUBLIC_KEY"]})
+
+
+def load_ephemeral(root: Path) -> dict[str, str]:
+    path = ephemeral_file(root)
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or path.stat().st_mode & 0o077
+        or path.stat().st_size > 1024 * 1024
+    ):
+        raise ValueError("dry-run credentials must be a private regular file")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def build(root: Path, *, dry_run: bool) -> None:
+    names = ("TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD")
+    values = load_ephemeral(root) if dry_run else os.environ
+    environment = dict(os.environ)
+    for name in names:
+        if not values.get(name):
+            raise ValueError(f"missing updater build credential: {name}")
+        environment[name] = values[name]
+    # Keep real and disposable material scoped to this Tauri invocation.
+    run(
+        "npm",
+        "exec",
+        "--",
+        "tauri",
+        "build",
+        "--target",
+        "aarch64-apple-darwin",
+        "--bundles",
+        "app,dmg",
+        "--config",
+        os.environ["LOUPIST_TAURI_RELEASE_CONFIG"],
+        env=environment,
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=False,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["require", "ephemeral", "import"])
+    parser.add_argument("command", choices=["require", "ephemeral", "import", "build"])
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     profile = load_profile()
     root = Path(os.environ["RUNNER_TEMP"])
     if args.command == "require":
-        export(require(profile["macos_signing"]["mode"]), sensitive=True)
+        export(require(profile["macos_signing"]["mode"]))
     elif args.command == "ephemeral":
-        export(ephemeral(root / "loupist-ephemeral"), sensitive=True)
-        export({"LOUPIST_MACOS_SIGNING_MODE": "self-signed"})
+        persist_ephemeral(root)
+    elif args.command == "build":
+        build(root, dry_run=args.dry_run)
     else:
+        if args.dry_run:
+            values = load_ephemeral(root)
+            for name in ("LOUPIST_CERTIFICATE", "LOUPIST_CERTIFICATE_PASSWORD"):
+                os.environ[name] = values.pop(name)
+            # Remove certificate handoff bytes before any staging helper runs.
+            ephemeral_file(root).write_text(json.dumps(values), encoding="utf-8")
         export(import_certificate(root, profile, dry_run=args.dry_run))
 
 

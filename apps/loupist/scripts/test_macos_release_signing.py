@@ -20,8 +20,8 @@ def result(stdout="", stderr="", code=0):
 
 class SigningTests(unittest.TestCase):
     def test_sidecar_arguments_and_main_last(self):
-        for mode in ("developer-id", "self-signed", "ad-hoc"):
-            identity = "-" if mode == "ad-hoc" else "A" * 40
+        for mode in ("developer-id", "self-signed"):
+            identity = "A" * 40
             command = signing.sidecar_command(Path("/pi"), mode, identity, pi=True)
             self.assertEqual("--timestamp" in command, mode == "developer-id")
             self.assertEqual("runtime" in command, mode == "developer-id")
@@ -88,6 +88,11 @@ class SigningTests(unittest.TestCase):
             return_value=result(stdout=plistlib.dumps({"extra": True}).decode()),
         ):
             self.assertEqual(signing.entitlements(path), {"extra": True})
+            with patch.object(signing, "run", return_value=result()) as xml_call:
+                signing.entitlements(path)
+                self.assertIn("--xml", xml_call.call_args.args)
+                self.assertIn("-", xml_call.call_args.args)
+                self.assertNotIn(":-", xml_call.call_args.args)
 
     def test_all_runtime_files_are_verified_with_only_worker_hardened_for_beta(self):
         pi, worker = Path("/pi"), Path("/worker")
@@ -167,8 +172,13 @@ class SigningTests(unittest.TestCase):
         }
 
         def run(*args, **kwargs):
+            if "import" in args:
+                certificate = Path(args[2])
+                self.assertEqual(certificate.stat().st_mode & 0o777, 0o600)
             if "find-identity" in args:
-                return result(f'  1) {sha1} "Untrusted" (CSSMERR_TP_NOT_TRUSTED)\n')
+                return result(
+                    f'  1) {sha1} "Identity"\n  1) {sha1.lower()} "Identity"\n'
+                )
             return result(pem if "find-certificate" in args else "")
 
         with (
@@ -176,7 +186,9 @@ class SigningTests(unittest.TestCase):
             patch.dict(
                 os.environ,
                 {
-                    "LOUPIST_CERTIFICATE": base64.b64encode(b"p12").decode(),
+                    "LOUPIST_CERTIFICATE": " \n"
+                    + base64.b64encode(b"p12").decode()
+                    + "\n",
                     "LOUPIST_CERTIFICATE_PASSWORD": "test",
                 },
             ),
@@ -187,6 +199,7 @@ class SigningTests(unittest.TestCase):
                 Path(directory), profile, dry_run=False
             )
             self.assertEqual(values["APPLE_SIGNING_IDENTITY"], sha1)
+            self.assertFalse((Path(directory) / "loupist-signing.p12").exists())
             identity_call = next(
                 call.args
                 for call in calls.call_args_list
@@ -252,53 +265,35 @@ class SigningTests(unittest.TestCase):
             text.index("sign-runtime --kind openbb"),
         )
 
-    def test_bundle_records_developer_id_and_ad_hoc_facts_strictly(self):
+    def test_bundle_records_developer_id_facts_strictly(self):
         app, dmg = Path("/Loupist.app"), Path("/fixture.dmg")
-        main, worker = (
-            app / "Contents/MacOS/loupist",
-            app / "Contents/Resources/python-runtime/loupist-python-worker",
-        )
-        for mode in ("developer-id", "ad-hoc"):
-            profile = load_profile()
-            profile["macos_signing"] = {
-                key: mode if key == "mode" else None for key in profile["macos_signing"]
-            }
-            requirement = (
-                'identifier "com.monarchjuno.loupist" and anchor apple generic and certificate leaf[subject.OU] = ABCDE12345'
-                if mode == "developer-id"
-                else 'cdhash H"' + "a" * 40 + '"'
+        main = app / "Contents/MacOS/loupist"
+        worker = app / "Contents/Resources/python-runtime/loupist-python-worker"
+        profile = load_profile()
+        profile["macos_signing"] = {
+            key: "developer-id" if key == "mode" else None
+            for key in profile["macos_signing"]
+        }
+        requirement = 'identifier "com.monarchjuno.loupist" and anchor apple generic and certificate leaf[subject.OU] = ABCDE12345'
+        with (
+            patch.object(signing, "run", return_value=result()),
+            patch.object(signing, "verify_runtime"),
+            patch.object(signing, "verify_binary") as verify,
+            patch.object(signing, "require_flags") as flags,
+            patch.object(signing, "macho_files", return_value=[main, worker]),
+            patch.object(signing, "require_ticket", return_value="ticket") as ticket,
+            patch.object(signing, "certificate_hash", return_value="A" * 64),
+            patch.object(signing, "designated_requirement", return_value=requirement),
+        ):
+            record = signing.verify_bundle(app, dmg, profile, team="ABCDE12345")
+            self.assertEqual(verify.call_count, 3)
+            self.assertEqual(record["mode"], "developer-id")
+            self.assertIs(record["notarized"], True)
+            self.assertEqual(record["certificate_sha256"], "A" * 64)
+            self.assertEqual(ticket.call_count, 2)
+            self.assertTrue(
+                any(call.args == (main, True, {}) for call in flags.call_args_list)
             )
-            with (
-                patch.object(signing, "run", return_value=result()),
-                patch.object(signing, "verify_runtime"),
-                patch.object(signing, "verify_binary") as verify,
-                patch.object(signing, "require_flags") as flags,
-                patch.object(signing, "macho_files", return_value=[main, worker]),
-                patch.object(
-                    signing, "require_ticket", return_value="no ticket"
-                ) as ticket,
-                patch.object(signing, "certificate_hash", return_value="A" * 64),
-                patch.object(
-                    signing, "designated_requirement", return_value=requirement
-                ),
-            ):
-                record = signing.verify_bundle(
-                    app,
-                    dmg,
-                    profile,
-                    team="ABCDE12345" if mode == "developer-id" else None,
-                )
-                self.assertEqual(verify.call_count, 3 if mode == "developer-id" else 2)
-                self.assertEqual(record["mode"], mode)
-                self.assertEqual(record["notarized"], mode == "developer-id")
-                self.assertEqual(
-                    record["certificate_sha256"],
-                    "A" * 64 if mode == "developer-id" else None,
-                )
-                self.assertEqual(ticket.call_count, 2 if mode == "developer-id" else 1)
-                self.assertTrue(
-                    any(call.args == (main, True, {}) for call in flags.call_args_list)
-                )
 
     def test_credential_command_failure_does_not_print_password_arguments(self):
         with patch.object(credentials.subprocess, "run", return_value=result(code=1)):

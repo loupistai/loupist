@@ -16,9 +16,6 @@ Full steps: https://github.com/loupistai/loupist/blob/main/installation.md
 - Checksums: `SHA256SUMS`. Build provenance: `gh attestation verify <file> --repo loupistai/loupist`.
 - `RELEASE-METADATA.json` records the source commit, the workflow run and the signing mode.
 
-## What was and was not checked before this release
-Before promotion, the maintainer must replace these placeholders with the qualification evidence.
-- Checked: <product acceptance: where and how; the RC in-app update; command-line checks of this exact file set>
-- Not checked: <the unperformed_checks line from the qualification receipt, verbatim>
+{{qualification}}
 
 한국어 설치 안내: https://github.com/loupistai/loupist/blob/main/installation.md

@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
-from release_profile import load_profile
+from release_profile import load_profile, MODES
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -18,6 +18,8 @@ def render(version: str, profile: dict, root: Path = ROOT) -> str:
         is None
     ):
         raise ValueError("release version must be canonical")
+    if profile["macos_signing"]["mode"] not in MODES:
+        raise ValueError("unsupported release signing mode")
     lines = (root / "CHANGELOG.md").read_text().splitlines()
     heading = next(
         (
@@ -43,6 +45,14 @@ def render(version: str, profile: dict, root: Path = ROOT) -> str:
         root / ".github/release-notes" / (profile["macos_signing"]["mode"] + ".md")
     ).read_text()
     values = {
+        "qualification": (
+            "This is a release candidate for testing; it has not yet been qualified for stable publication."
+            if "-rc." in version
+            else "## What was and was not checked before this release\n\n"
+            "Before promotion, replace these placeholders with the qualification evidence.\n"
+            "- Checked: <product acceptance and update evidence for this exact file set>\n"
+            "- Not checked: <the complete unperformed_checks line from the receipt>"
+        ),
         "version": version,
         "channel_suffix": " (Beta)" if profile["channel"] == "beta" else "",
         "certificate_sha256": profile["macos_signing"]["certificate_sha256"] or "",

@@ -232,6 +232,10 @@ def validate_methods(channel: str, update: str, product: str, unperformed: str) 
         raise RuntimeError("stable channel requires both isolated-machine checks")
     if channel == "beta" and product == "not-performed":
         raise RuntimeError("Beta requires product acceptance")
+    if channel == "beta" and not normalized_disclosure(unperformed):
+        raise RuntimeError(
+            "Beta requires a non-empty unperformed checks line, including when all checks were performed"
+        )
     if (
         update != "candidate-on-isolated-machine" or product != "clean-isolated-machine"
     ) and not unperformed.strip():
@@ -314,6 +318,15 @@ def write_receipt(arguments: argparse.Namespace) -> int:
         encoding="utf-8",
     )
     return 0
+
+
+def normalized_disclosure(line: str) -> str:
+    line = line.strip()
+    if line.startswith(("- ", "* ")):
+        line = line[2:]
+    if line.startswith("Not checked:"):
+        line = line.removeprefix("Not checked:")
+    return " ".join(line.split())
 
 
 def verify_receipt(arguments: argparse.Namespace) -> int:
@@ -400,12 +413,11 @@ def verify_receipt(arguments: argparse.Namespace) -> int:
             "(Beta)"
         ):
             raise RuntimeError("Beta draft title must end in (Beta)")
-        if not isinstance(release.get("body"), str) or (
+        if not isinstance(release.get("body"), str) or normalized_disclosure(
             receipt["unperformed_checks"]
-            and receipt["unperformed_checks"] not in release["body"]
-        ):
+        ) not in {normalized_disclosure(line) for line in release["body"].splitlines()}:
             raise RuntimeError(
-                "Beta draft notes must contain unperformed_checks verbatim"
+                "Beta draft notes must contain the whole unperformed_checks line verbatim after whitespace normalization"
             )
     return 0
 

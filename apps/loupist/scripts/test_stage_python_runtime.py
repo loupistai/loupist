@@ -226,7 +226,7 @@ class PythonRuntimeTests(unittest.TestCase):
         for mode, identity, timestamp in [
             ("developer-id", "Example", True),
             ("self-signed", "A" * 40, False),
-            ("ad-hoc", "-", False),
+            ("", "-", False),
         ]:
             with (
                 self.subTest(mode),

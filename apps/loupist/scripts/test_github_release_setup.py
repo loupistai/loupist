@@ -85,12 +85,12 @@ def environments():
         "environments": [
             {
                 "name": "release",
-                "protection_rules": [{"id": 1}],
+                "protection_rules": [dict(reviewer)],
                 "deployment_branch_policy": dict(CUSTOM),
             },
             {
                 "name": "release-qualification",
-                "protection_rules": [{"id": 2}],
+                "protection_rules": [dict(reviewer)],
                 "deployment_branch_policy": dict(CUSTOM),
             },
             {
@@ -111,7 +111,9 @@ def environments():
 def policy(name, pattern="v*", **extra):
     return {
         "total_count": 1,
-        "branch_policies": [{"id": 1, "node_id": f"policy-{name}", "name": pattern}],
+        "branch_policies": [
+            {"id": 1, "node_id": f"policy-{name}", "name": pattern, "type": "tag"}
+        ],
         **extra,
     }
 
@@ -120,6 +122,7 @@ def configured():
     return {
         "repository": REPOSITORY,
         "repository_secrets": set(),
+        "organization_secrets": set(),
         "environment_secrets": {
             "release": {UPDATER_KEY, WINDOWS_CERT},
             "release-qualification": set(),
@@ -166,7 +169,7 @@ def windows_ruleset(context):
 
 REVIEW = "configure a required reviewer and prevent self-review"
 ADMIN = "set can_admins_bypass to false to disallow administrator bypass"
-ISOLATION = "workflow-referenced secret names must exist only in release: "
+ISOLATION = "secret names must exist only in release: "
 
 # (label, mutation, error subject, exact detail or None)
 WEAKENED = [
@@ -238,10 +241,10 @@ class GitHubReleaseSetupTest(unittest.TestCase):
 
     def test_configured_repository_passes_every_required_check(self) -> None:
         findings = self.audit()
-        self.assertEqual([item.level for item in findings], ["pass"] * 14)
+        self.assertEqual([item.level for item in findings], ["pass"] * 15)
         details = {item.subject: item.detail for item in findings}
         for name in ENVIRONMENTS:
-            self.assertIn("GITHUB_REF_TYPE=tag", details[f"environment {name}"])
+            self.assertIn("v* tag deployment policy", details[f"environment {name}"])
         # Owner enforcement and classic branch protection are accepted forms.
         owner = {"enabled": False, "enforced_by_owner": True}
         self.assertFalse(
@@ -323,6 +326,10 @@ class GitHubReleaseSetupTest(unittest.TestCase):
             f"{base}/immutable-releases": {"enabled": True, "enforced_by_owner": False},
             f"{base}/environments?per_page=100": environments(),
             f"{base}/collaborators?affiliation=all&per_page=100&page=1": [],
+            f"{base}/actions/organization-secrets?per_page=100": {
+                "total_count": 0,
+                "secrets": [],
+            },
             f"{base}/actions/secrets?per_page=100": {"total_count": 0, "secrets": []},
         }
         for name in (*ENVIRONMENTS, "release-dry-run"):
@@ -359,7 +366,7 @@ class GitHubReleaseSetupTest(unittest.TestCase):
 
     def test_mode_secret_union_drift_and_single_maintainer_review(self):
         release = SCRIPTS.parents[2] / ".github/workflows/release.yml"
-        for mode in ("developer-id", "self-signed", "ad-hoc"):
+        for mode in ("developer-id", "self-signed"):
             self.assertEqual(
                 AUDIT["mode_release_secret_names"](
                     release, {"macos_signing": {"mode": mode}}
@@ -385,6 +392,52 @@ class GitHubReleaseSetupTest(unittest.TestCase):
         self.assertTrue(errors(AUDIT["audit_release_setup"](**state)))
         state = configured()
         state["environment_secrets"]["release-dry-run"] = {"UNRELATED_SECRET"}
+        self.assertTrue(errors(AUDIT["audit_release_setup"](**state)))
+
+    def test_release_approval_and_explicit_tag_policy_negative_corpus(self):
+        for name in ENVIRONMENTS:
+            for rules in (
+                [],
+                [{"type": "branch_policy"}],
+                [{"type": "required_reviewers", "reviewers": []}],
+            ):
+                state = configured()
+                target = next(
+                    item
+                    for item in state["environments"]["environments"]
+                    if item["name"] == name
+                )
+                target["protection_rules"] = rules
+                self.assertTrue(
+                    errors(AUDIT["audit_release_setup"](**state)), (name, rules)
+                )
+            for kind in ("branch", None, "unknown"):
+                state = configured()
+                entry = state["deployment_branch_policies"][name]["branch_policies"][0]
+                if kind is None:
+                    entry.pop("type")
+                else:
+                    entry["type"] = kind
+                self.assertTrue(
+                    errors(AUDIT["audit_release_setup"](**state)), (name, kind)
+                )
+        for scope in (
+            "repository",
+            "release-qualification",
+            "stable-release",
+            "release-dry-run",
+        ):
+            state = configured()
+            if scope == "repository":
+                state["repository_secrets"] = {"UNRELATED_REPO_SECRET"}
+            else:
+                state["environment_secrets"][scope] = {"UNRELATED_ENV_SECRET"}
+            self.assertTrue(errors(AUDIT["audit_release_setup"](**state)))
+        state = configured()
+        state["organization_secrets"] = {
+            "LOUPIST_UPDATER_PUBLIC_KEY",
+            "UNRELATED_ORG_SECRET",
+        }
         self.assertTrue(errors(AUDIT["audit_release_setup"](**state)))
 
 

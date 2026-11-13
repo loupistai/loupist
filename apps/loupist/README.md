@@ -77,7 +77,7 @@ dependency before running the same checks.
 The first release supports macOS 13 or newer on Apple Silicon only.
 Windows is not supported in this release.
 Release builds require staged sidecars and the credentials selected by
-`release-profile.json` (self-signed Beta, Developer ID, or ad-hoc fallback); the
+`release-profile.json` (self-signed Beta or Developer ID); the
 [release workflow](../../.github/workflows/release.yml) defines the required
 configuration. Use the [release acceptance flow](../../LOUPIST.md) to verify
 the app against its recorded signing mode. The Beta is not notarized; see

@@ -3,12 +3,22 @@ set -eu
 
 APP_BUNDLE=${1:?usage: check-macos-app-bundle.sh /path/to/Loupist\ Terminal.app [--expected-bundle-version BUILD]}
 EXPECTED_BUNDLE_VERSION=
-if [ "$#" -eq 3 ] && [ "$2" = "--expected-bundle-version" ]; then
-    EXPECTED_BUNDLE_VERSION=$3
-elif [ "$#" -ne 1 ]; then
-    echo "usage: check-macos-app-bundle.sh /path/to/Loupist.app [--expected-bundle-version BUILD]" >&2
-    exit 2
-fi
+REQUIRE_DISTRIBUTION_TRUST=0
+shift
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --expected-bundle-version)
+            [ "$#" -ge 2 ] || exit 2
+            EXPECTED_BUNDLE_VERSION=$2
+            shift 2
+            ;;
+        --require-distribution-trust)
+            REQUIRE_DISTRIBUTION_TRUST=1
+            shift
+            ;;
+        *) echo "unknown bundle-check option: $1" >&2; exit 2 ;;
+    esac
+done
 if [ ! -d "$APP_BUNDLE" ]; then
     echo "Loupist app bundle is missing: $APP_BUNDLE" >&2
     exit 1
@@ -170,5 +180,9 @@ find "$OPENBB_RUNTIME" -type f -exec sh -c '
     --provider-extension "$AGENT_DIR/loupist-provider-extension.mjs" \
     --openbb "$OPENBB_BINARY" \
     --openbb-runtime "$OPENBB_RUNTIME"
+
+if [ "$REQUIRE_DISTRIBUTION_TRUST" = 1 ]; then
+    "$MACOS_DIR/loupist" --check-bundled-helpers
+fi
 
 echo "Loupist packaged macOS app contents passed."

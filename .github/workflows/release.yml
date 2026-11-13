@@ -312,9 +312,10 @@ jobs:
         run: python3 apps/loupist/scripts/release_credentials.py ephemeral
 
       - name: Import the selected signing certificate
-        if: needs.validate.outputs.dry_run == 'true' || needs.validate.outputs.signing_mode != 'ad-hoc'
         env:
           DRY_RUN: ${{ needs.validate.outputs.dry_run }}
+          LOUPIST_CERTIFICATE: ${{ needs.validate.outputs.signing_mode == 'developer-id' && secrets.LOUPIST_APPLE_CERTIFICATE || secrets.LOUPIST_SELF_SIGNED_CERTIFICATE }}
+          LOUPIST_CERTIFICATE_PASSWORD: ${{ needs.validate.outputs.signing_mode == 'developer-id' && secrets.LOUPIST_APPLE_CERTIFICATE_PASSWORD || secrets.LOUPIST_SELF_SIGNED_CERTIFICATE_PASSWORD }}
         shell: bash
         run: |
           args=()
@@ -352,17 +353,25 @@ jobs:
       - name: Build and sign unnotarized Loupist
         if: needs.validate.outputs.dry_run == 'true' || needs.validate.outputs.signing_mode != 'developer-id'
         working-directory: apps/loupist
+        env:
+          DRY_RUN: ${{ needs.validate.outputs.dry_run }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
           test -z "${TAURI_CONFIG:-}"
           test -s "$LOUPIST_TAURI_RELEASE_CONFIG"
-          npm exec -- tauri build --target aarch64-apple-darwin --bundles app,dmg --config "$LOUPIST_TAURI_RELEASE_CONFIG"
+          args=()
+          if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
+          python3 scripts/release_credentials.py build "${args[@]}"
 
       - name: Build, sign, and notarize Loupist with Developer ID
         if: needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.signing_mode == 'developer-id'
         working-directory: apps/loupist
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.LOUPIST_APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.LOUPIST_APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.LOUPIST_APPLE_TEAM_ID }}
@@ -371,7 +380,7 @@ jobs:
           set -euo pipefail
           test -z "${TAURI_CONFIG:-}"
           test -s "$LOUPIST_TAURI_RELEASE_CONFIG"
-          npm exec -- tauri build --target aarch64-apple-darwin --bundles app,dmg --config "$LOUPIST_TAURI_RELEASE_CONFIG"
+          python3 scripts/release_credentials.py build
 
       - name: Notarize and staple the DMG
         if: needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.signing_mode == 'developer-id'
@@ -456,9 +465,15 @@ jobs:
           DMG_ATTACHED=true
           MOUNTED_APP="$MOUNT_DIR/Loupist.app"
           test -d "$MOUNTED_APP"
+          python3 apps/loupist/scripts/macos_release_signing.py verify-bundle \
+            --app "$MOUNTED_APP" --dmg "$DMG" \
+            --release-config "$LOUPIST_TAURI_RELEASE_CONFIG" --report mounted-signing-report.json
+          cmp -s signing-report.json mounted-signing-report.json
+          rm mounted-signing-report.json
           apps/loupist/scripts/check-macos-app-bundle.sh \
             "$MOUNTED_APP" \
-            --expected-bundle-version "$LOUPIST_MACOS_BUNDLE_VERSION"
+            --expected-bundle-version "$LOUPIST_MACOS_BUNDLE_VERSION" \
+            --require-distribution-trust
           hdiutil detach "$MOUNT_DIR" >/dev/null
           DMG_ATTACHED=false
           rmdir "$MOUNT_DIR"
@@ -481,7 +496,7 @@ jobs:
           name: loupist-signing-report
           path: signing-report.json
           if-no-files-found: error
-          retention-days: ${{ needs.validate.outputs.dry_run == 'true' && 3 || 14 }}
+          retention-days: ${{ needs.validate.outputs.dry_run == 'true' && 1 || 14 }}
 
       - name: Upload macOS release assets
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -489,7 +504,7 @@ jobs:
           name: loupist-${{ needs.validate.outputs.version }}-macos-aarch64
           path: release-assets/*
           if-no-files-found: error
-          retention-days: ${{ needs.validate.outputs.dry_run == 'true' && 3 || 14 }}
+          retention-days: ${{ needs.validate.outputs.dry_run == 'true' && 1 || 14 }}
 
       - name: Remove temporary signing keychain
         if: always()
@@ -612,7 +627,7 @@ jobs:
           name: loupist-assembled-release
           path: release-assets/*
           if-no-files-found: error
-          retention-days: ${{ needs.validate.outputs.dry_run == 'true' && 3 || 14 }}
+          retention-days: ${{ needs.validate.outputs.dry_run == 'true' && 1 || 14 }}
 
   publish:
     timeout-minutes: 30
@@ -630,6 +645,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Install pinned Node LTS
         uses: ./.github/actions/setup-toolchains
         with:
@@ -669,6 +685,18 @@ jobs:
           if gh release view "${{ needs.validate.outputs.release_tag }}" >/dev/null 2>&1; then
             echo "Release already exists; immutable assets will not be replaced." >&2
             exit 1
+          fi
+          # Re-evaluate at publication: a failed-job rerun may have skipped validate.
+          if [[ "$PRERELEASE" == true ]]; then
+            gh api --paginate \
+              "/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select(.draft == false and .published_at != null) | .tag_name' \
+              > "$RUNNER_TEMP/publish-release-tags.txt"
+            git tag --list 'v*-rc.*' > "$RUNNER_TEMP/publish-rc-tags.txt"
+            python3 apps/loupist/scripts/release-qualification.py rc-sequence \
+              --candidate-tag "$GITHUB_REF_NAME" \
+              --published-tags "$RUNNER_TEMP/publish-release-tags.txt" \
+              --existing-tags "$RUNNER_TEMP/publish-rc-tags.txt"
           fi
           TITLE="Loupist $RELEASE_VERSION"
           if [[ "$RELEASE_CHANNEL" == beta ]]; then TITLE+=" (Beta)"; fi

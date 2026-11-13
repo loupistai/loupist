@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 PROFILE = Path(__file__).resolve().parents[1] / "release-profile.json"
-MODES = {"developer-id", "self-signed", "ad-hoc"}
+MODES = {"developer-id", "self-signed"}
 UPDATER_SECRETS = {
     "LOUPIST_UPDATER_PUBLIC_KEY",
     "LOUPIST_TAURI_SIGNING_PRIVATE_KEY",
@@ -31,7 +31,6 @@ MODE_SECRETS = {
         "LOUPIST_SELF_SIGNED_CERTIFICATE",
         "LOUPIST_SELF_SIGNED_CERTIFICATE_PASSWORD",
     },
-    "ad-hoc": set(),
 }
 ALL_SECRETS = UPDATER_SECRETS | set().union(*MODE_SECRETS.values())
 IDENTIFIER = "com.monarchjuno.loupist"
@@ -67,11 +66,8 @@ def load_profile(path: Path = PROFILE) -> dict:
         signing[key]
         for key in ("certificate_common_name", "certificate_sha1", "certificate_sha256")
     ]
-    if mode == "ad-hoc" or (
-        mode == "developer-id" and all(field is None for field in fields)
-    ):
-        if any(field is not None for field in fields):
-            raise ValueError("ad-hoc profile must not pin a certificate")
+    if mode == "developer-id" and all(field is None for field in fields):
+        pass
     elif (
         not isinstance(fields[0], str)
         or not fields[0].strip()
@@ -104,51 +100,34 @@ def validate_signing_record(
     requirement = value["designated_requirement"]
     if not isinstance(requirement, str) or not requirement or "\n" in requirement:
         raise ValueError("macOS designated requirement must be one nonempty line")
-    if mode == "ad-hoc":
+    if not fingerprint(value["certificate_sha256"], 64):
+        raise ValueError("macOS signing certificate SHA-256 is invalid")
+    if mode in {"self-signed", "dry-run-ephemeral"}:
+        if value["notarized"] is not False or value["team_id"] is not None:
+            raise ValueError("self-signed signing must have no notarization or team")
         if (
-            value["notarized"] is not False
-            or value["team_id"] is not None
-            or value["certificate_sha256"] is not None
-        ):
-            raise ValueError(
-                "ad-hoc signing must have no notarization, team or certificate"
+            re.fullmatch(
+                r'identifier "'
+                + re.escape(IDENTIFIER)
+                + r'" and certificate root = H"[0-9a-fA-F]{40}"',
+                requirement,
             )
-        if (
-            re.fullmatch(r'cdhash H"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})"', requirement)
             is None
         ):
-            raise ValueError("ad-hoc designated requirement must record the cdhash")
-    else:
-        if not fingerprint(value["certificate_sha256"], 64):
-            raise ValueError("macOS signing certificate SHA-256 is invalid")
-        if mode in {"self-signed", "dry-run-ephemeral"}:
-            if value["notarized"] is not False or value["team_id"] is not None:
-                raise ValueError(
-                    "self-signed signing must have no notarization or team"
-                )
-            if (
-                re.fullmatch(
-                    r'identifier "'
-                    + re.escape(IDENTIFIER)
-                    + r'" and certificate root = H"[0-9a-fA-F]{40}"',
-                    requirement,
-                )
-                is None
-            ):
-                raise ValueError(
-                    "self-signed designated requirement must pin the certificate root"
-                )
-        elif (
-            value["notarized"] is not True
-            or not isinstance(value["team_id"], str)
-            or re.fullmatch(r"[A-Z0-9]{10}", value["team_id"]) is None
-            or f'identifier "{IDENTIFIER}"' not in requirement
-            or "anchor apple generic" not in requirement
-            or value["team_id"] not in requirement
-        ):
             raise ValueError(
-                "Developer ID signing must record notarization and its Apple team requirement"
+                "self-signed designated requirement must pin the certificate root"
             )
+    elif (
+        value["notarized"] is not True
+        or not isinstance(value["team_id"], str)
+        or re.fullmatch(r"[A-Z0-9]{10}", value["team_id"]) is None
+        or f'identifier "{IDENTIFIER}"' not in requirement
+        or "anchor apple generic" not in requirement
+        or value["team_id"] not in requirement
+    ):
+        raise ValueError(
+            "Developer ID signing must record notarization and its Apple team requirement"
+        )
     if expected_certificate and value["certificate_sha256"] != expected_certificate:
         raise ValueError("macOS signing certificate differs from the release profile")
     return value

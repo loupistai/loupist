@@ -255,6 +255,7 @@ jobs:
             --source-plist apps/loupist/src-tauri/Info.plist \
             --expected-bundle-version "$MACOS_BUNDLE_VERSION" \
             --bundle-plist "$APP/Contents/Info.plist"
+          "$APP/Contents/MacOS/loupist" --check-bundled-helpers
           hdiutil detach "$MOUNT_DIR" >/dev/null
           DMG_ATTACHED=false
           rmdir "$MOUNT_DIR"

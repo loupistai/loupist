@@ -43,7 +43,7 @@ so the failed attempt published nothing under that number.
 ## Signing modes and rehearsal
 
 `apps/loupist/release-profile.json` is part of the tag: `channel` is `beta` or
-`stable`, and `macos_signing.mode` is `self-signed`, `developer-id`, or `ad-hoc`.
+`stable`, and `macos_signing.mode` is `self-signed` or `developer-id`.
 The default Beta pins the public certificate's SHA-1 and SHA-256 and common name;
 `apps/loupist/release-signing-certificate.pem` contains only that public certificate.
 Switching modes requires a source change and a new tag, never a mutable repository
@@ -53,14 +53,19 @@ variable. Local staging with no mode keeps its existing behavior.
 | --- | --- | --- |
 | Self-signed | Three updater secrets and `LOUPIST_SELF_SIGNED_CERTIFICATE`, `LOUPIST_SELF_SIGNED_CERTIFICATE_PASSWORD` | Pinned certificate root and leaf, no Apple team or stapled ticket, per-executable runtime flags and entitlements |
 | Developer ID | Three updater secrets and six `LOUPIST_APPLE_*` secrets | Apple chain and team, notarization and stapling, existing sidecar entitlements |
-| Ad-hoc fallback | Three updater secrets | Strict app seal, cdhash requirement, no certificate/team/ticket; DMG is unsigned |
 
 The updater secrets are `LOUPIST_UPDATER_PUBLIC_KEY`,
 `LOUPIST_TAURI_SIGNING_PRIVATE_KEY`, and
 `LOUPIST_TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. All modes retain updater signatures,
 the closed asset manifest, checksums, and build provenance. `RELEASE-METADATA.json`
 schema 1 records `macos_signing`: mode, notarized, team ID or null, certificate
-SHA-256 or null, and the app's designated requirement. Qualification compares these
+SHA-256, and the app's designated requirement. A release with an Apple Team ID
+admits only
+helpers with that team; a teamless signed release requires the helper's actual
+leaf certificate SHA-256 to match the running app's own signature. Ad-hoc apps
+cannot establish a shared signer and refuse all bundled helpers; ad-hoc mode is
+therefore not selectable for a release. Unsigned development/CI staging remains
+available, without claiming release runtime trust. Qualification compares these
 facts to both the tag's profile and the mounted app. No unnotarized build claims
 Apple notarization; Gatekeeper output is recorded without gating on runner policy.
 
@@ -74,7 +79,9 @@ gh workflow run release.yml --ref main -f dry_run=true
 The rehearsal builds with a certificate and updater key generated inside the job,
 imports the certificate through the real base64/keychain path, stages and signs,
 verifies the mounted DMG and runs sidecar checks, assembles and verifies all assets,
-and uploads `loupist-assembled-release` and `loupist-signing-report` for three days.
+and runs the app's headless `--check-bundled-helpers` entry point from the mounted
+image through the real Pi, MCP and Python host launch paths. It uploads
+`loupist-assembled-release` and `loupist-signing-report` for one day.
 It uses `release-dry-run`, receives no release secrets, and publishes or attests
 nothing. Metadata mode `dry-run-ephemeral` is accepted only with the explicit
 `verify-release-assets.py --allow-dry-run` flag and cannot be qualified/promoted.
@@ -101,8 +108,8 @@ update install instructions in that same release. Qualify the new path through
 RCs: its notarization and sidecar signing have not yet been exercised on a runner.
 The identity change can ask once for access to each saved Data/custom connection
 secret and GitHub sharing token. Choosing Always Allow settles it. AI sign-ins
-are files and are unaffected. Ad-hoc fallback changes identity on every update,
-so saved secrets may prompt again each time.
+are files and are unaffected. The ad-hoc release fallback was removed because it
+cannot satisfy helper trust.
 
 ## Candidate update qualification
 
@@ -163,13 +170,19 @@ RC update as a test of the candidate. The workflow prints the receipt in its sum
 `channel: stable` requires the first value of each choice. Beta requires product
 acceptance; it can record an unperformed candidate update with an explicit
 explanation and substitute evidence (for example, a real RC-to-RC update before
-promotion and RC-to-stable immediately afterward). VM methods are available for Beta; the stable channel retains its stricter
+promotion and RC-to-stable immediately afterward). VM methods are available for
+Beta; the stable channel retains its stricter
 isolated-machine choices. An evidence URL is required
 for each performed check; an unperformed update may carry a substitute evidence
-URL or be empty. `unperformed_checks` is required whenever either choice differs
-from its first value. A VM records its actual method, never isolated-machine.
+URL or be empty. Beta always requires a non-empty `unperformed_checks` line,
+including an explicit statement when no checks were omitted. Other channels
+require it whenever either choice differs from its first value. A VM records its
+actual method, never isolated-machine.
 For Beta promotion the current draft title must end in `(Beta)` and its body must
-contain that explanation verbatim. Edit the draft notes before qualification and
+contain the whole explanation line, allowing whitespace normalization and the
+`- Not checked:` presentation prefix; a substring does not qualify. RC notes say
+they are unqualified candidates and contain no acceptance placeholders.
+Edit the stable draft notes before qualification and
 promotion. Neither workflow replaces the candidate bytes. Their first end-to-end
 execution requires a real draft and cannot be established by the build rehearsal.
 

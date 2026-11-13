@@ -83,7 +83,7 @@ sh "$SCRIPT_DIR/check-macos-minimum-version.sh" \
     "$MACOS_MINIMUM_VERSION" \
     "$BUILT_RUNTIME"
 
-if [ "${LOUPIST_MACOS_SIGNING_MODE:-}" = self-signed ] || [ "${LOUPIST_MACOS_SIGNING_MODE:-}" = ad-hoc ]; then
+if [ "${LOUPIST_MACOS_SIGNING_MODE:-}" = self-signed ]; then
     python3 "$SCRIPT_DIR/macos_release_signing.py" sign-runtime --kind openbb --runtime "$BUILT_RUNTIME"
 fi
 

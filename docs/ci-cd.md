@@ -51,7 +51,9 @@ short-lived workflow evidence, not GitHub Releases or update manifests.
 
 Require pull requests for `main`. Restrict `v*` tag creation, update and deletion.
 Protect `release`, `release-qualification`, and `stable-release` with custom `v*`
-tag deployment policies. Signing secrets live only in `release`. The unprotected
+deployment policies whose explicit type is `tag`; every environment requires a
+non-empty required-reviewer rule. Branch-only policies and wait timers do not
+substitute for approval. Signing secrets live only in `release`. The unprotected
 `release-dry-run` environment must exist with no secrets, reviewers or deployment
 restrictions so branch rehearsals work without real credentials.
 `stable-release` requires a reviewer and disallows administrator bypass. While
@@ -72,14 +74,18 @@ It verifies the public repository identity, immutable releases, `main`
 pull-request protection, an active `v*` tag rule that restricts creation,
 updates, and deletion, each required protected environment, and the **names** of every
 secret required by the checked-in release profile. The updater secrets and the
-selected mode's credentials must be present only in the
-`release` environment, never at repository scope or in any non-signing
-environment. The other signing mode's names may be absent. The union of updater
-and per-mode secret sets must match every secret reference in `release.yml`. It never prints or reads secret values and does not change GitHub
+selected mode's credentials must be present in the `release` environment.
+Repository-level secrets and all secrets in non-signing environments are refused,
+including names unrelated to this signing mode. The other signing mode's names may be absent. The union of updater
+and per-mode secret sets must match every secret reference in `release.yml`.
+The audit also lists organization-secret names visible to this repository and
+rejects any; no organization secret may bypass the environment approval. Missing
+permissions or incomplete secret listings fail closed. It never prints or reads secret values and does not change GitHub
 state. A nonzero result names every missing item. The workflow-reference drift guard prevents a new signing secret from silently
 escaping the checklist.
 
-The immutable-release endpoint requires repository administration read access.
+The immutable-release endpoint requires repository administration read access;
+listing repository-visible organization secrets requires repository Secrets read access.
 Release workflows intentionally do not receive an administrative token, so the
 maintainer's authenticated, read-only audit is the release gate for that setting
 rather than adding a broader long-lived credential to every release job.
@@ -215,7 +221,11 @@ documentation-only push is therefore insufficient to sign a release.
 Dry runs skip the tag-only source gates and repeat full CI only on request;
 [rehearsal and signing modes](release.md#signing-modes-and-rehearsal) owns that path.
 Assembly has a read-only token and no environment: it verifies updater signatures
-against the embedded public key in the separate signing report. Publication is
+against the embedded public key in the separate signing report. Private signing
+material is never exported to `GITHUB_ENV`: real keys are scoped to certificate
+import or Tauri build steps, and disposable keys cross steps only in a private
+0600 file removed during cleanup. The p12 import file is deleted immediately after
+import. Publication is
 skipped in dry runs; otherwise a second `release` approval gates the write token,
 verification against the configured updater public key, attestations and release
 creation. The signing report is an artifact because GitHub can suppress secret-like

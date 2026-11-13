@@ -292,9 +292,13 @@ branch on `LOUPIST_MACOS_SIGNING_MODE`: unset preserves local/CI behavior,
 
 Without a Team ID, library validation prevents a hardened Pi/OpenBB process from
 loading its own libraries. Self-signed staging therefore omits hardened runtime
-for those processes; the app and Python worker retain it. Ad-hoc fallback uses
-`APPLE_SIGNING_IDENTITY=-`, no runtime on Pi/OpenBB, and the same strict app/worker
-entitlement checks. No signing experiment may touch another user's keychains or
+for those processes; the app and Python worker retain it. A release app without a
+Team ID admits only helpers with its own actual leaf
+certificate hash. Ad-hoc apps have no certificate and cannot run bundled helpers,
+so ad-hoc is not selectable in `release-profile.json`. Local unsigned staging
+remains available. The signed bundle check also starts the app's headless
+`--check-bundled-helpers` preflight, which uses its real Pi RPC, bundled MCP and
+`run_python` launch paths before any Tauri/app-profile initialization. No signing experiment may touch another user's keychains or
 trust settings. Release signing facts are checked by `macos_release_signing.py`
 and recorded in the release metadata; see [signing modes](../release.md#signing-modes-and-rehearsal).
 
