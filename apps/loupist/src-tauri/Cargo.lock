@@ -3216,6 +3216,7 @@ dependencies = [
  "open",
  "pdf_oxide",
  "pulldown-cmark",
+ "regex",
  "reqwest 0.12.28",
  "rfd",
  "rusqlite",

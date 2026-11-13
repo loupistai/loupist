@@ -48,8 +48,12 @@ const PLACE: &str = "A country, region, state, city or named facility such as a 
 const TECHNOLOGY: &str = "A science, technique, process, material or standard that more than one organization can\nuse, such as EUV lithography, hybrid bonding, GLP-1 agonism or proof-of-stake.\n\nNot a Technology: a specific product built with it (Product), or the company that\ndevelops it (Organization).";
 const SEGMENT: &str = "An industry, market segment or value-chain stage, such as advanced packaging, Seoul office\nleasing or L2 sequencing.\n\nNot a Segment: a single company (Organization), or a specific product (Product).";
 const POLICY: &str = "A standing law, regulation, tariff, sanction, export control, subsidy or tax program, or\na central bank's policy setting.\n\nThe enactment, change, ruling or announcement of a policy on a date is an Event; the rule\nitself is the Policy.";
-const EVENT: &str = "A dated or datable occurrence: an acquisition or other deal, earnings release, guidance\nchange, product launch, lawsuit or ruling, accident or outage, rating action, executive\nchange, or policy announcement.\n\nName it with the actor, the action and the date or period the source gives. Preserve\nwhether it is completed, announced, expected, rumored, alleged or denied. Not an Event: a\nreported number (Metric).";
-const METRIC: &str = "A source-reported quantitative observation about one subject: a financial result,\noperating figure, market share, price, forecast, estimate, guidance or target.\n\nA reported amount is a Metric even when it describes only one organization. Name it with\nthe subject, the metric, the value with its unit or currency, the period and the reporting\nbasis the source gives, such as \"Aster Harbor Systems Q2 2026 operating profit GBP 12.4m\n(corrected)\". Preserve forecast, correction, hypothetical or disputed status. Do not\ncalculate missing values.";
+const EVENT: &str = "A dated or datable occurrence: an acquisition or other deal, earnings release, guidance\nchange, product launch, lawsuit or ruling, accident or outage, rating action, executive\nchange, or policy announcement.\n\nName it with the actor, the action and the date or period the source gives. Preserve\nwhether it is completed, announced, expected, rumored, alleged or denied. Not an Event: a\nreported number; keep it as a claim on its subject.";
+const METRIC: &str = concat!(
+    "Legacy measurement-node type retained for existing Maps. Never extract new Metric nodes.",
+    " A reported amount, value, unit, period or sentence is a claim about its subject, not an",
+    " entity. Preserve the full observation in a REPORTS claim on the subject.",
+);
 
 /// Field description for an extension type's `original_name`.
 pub(crate) const ORIGINAL_NAME: &str = "The name exactly as written in a non-English source. Null when the source writes the name in English.";
@@ -135,7 +139,7 @@ pub(crate) fn core_edge_types() -> Vec<EdgeType> {
         ("LEADS", "The person is an executive, director, founder or head of the organization. Keep the role and dates in the fact."),
         ("OFFERS", "The organization makes, sells or provides the product or service."),
         ("USES", "The source relies on the target product, technology, material or process as an input."),
-        ("REPORTS", "The source entity is the subject of the target measurement: it reported, guided or was estimated at that value. Keep who stated the value in the fact."),
+        ("REPORTS", "A quantitative observation about the source entity: a reported value, guidance or estimate. Use that same subject as the target; preserve the value, unit, period, basis, status and attribution in the fact, without a measurement node."),
         ("LOCATED_IN", "The source is headquartered in, operates in or takes place in the target place. State which in the fact."),
         ("PART_OF", "The source is a component, stage or member of the target: a part of a product, a step of a process, a technology inside a larger one, a segment inside an industry."),
         ("REQUIRES", "The source product, technology or segment needs the target as an input or prerequisite. State what kind of dependency in the fact."),
@@ -189,7 +193,7 @@ fn core_edge_map() -> Vec<((String, String), Vec<String>)> {
         pair("Person", "Organization", &["INVESTED_IN", "LEADS"]),
         pair("Organization", "Asset", &["INVESTED_IN", "ISSUES", "OWNS"]),
         pair("Person", "Asset", &["INVESTED_IN", "OWNS"]),
-        pair("Entity", "Metric", &["REPORTS"]),
+        pair("Entity", "Entity", &["REPORTS"]),
         pair("Entity", "Place", &["LOCATED_IN"]),
         pair("Policy", "Entity", &["AFFECTS"]),
         pair("Event", "Entity", &["AFFECTS"]),
@@ -279,7 +283,7 @@ pub(crate) const WORLD_FACT_POLICY: &str = concat!(
     "a generic exclusion of common ",
     "nouns or concepts; it does not permit vague qualities or unstated relationships. ",
     "Retain every explicitly named participant in an extracted claim, including ",
-    "customers, suppliers and other counterparties. A product or measurement node ",
+    "customers, suppliers and other counterparties. A product node ",
     "does not replace the named organization on either side of the relationship. ",
     "When a source says an organization buys a product from a named supplier, keep ",
     "the buyer, product and supplier as distinct entities and preserve the stated ",
@@ -314,6 +318,13 @@ pub(crate) const WORLD_FACT_POLICY: &str = concat!(
     " its validity at the explicit end instant. Do not require the termination to restate the",
     " original start. A new holder, endpoint or relation label is not by itself proof of ",
     "replacement; compare the actual assertion and its qualifiers.",
+    " Quantities, dated measurements, figures with units and sentences are not entities, ",
+    "regardless of the proposed type or custom schema. Never extract a new Metric node. Keep ",
+    "each quantitative observation as a REPORTS claim on its measured subject, with that same",
+    " subject in both endpoint roles. This overrides the generic distinct-entity requirement;",
+    " never invent an endpoint to retain a value. Preserve exact numbers, units, periods, ",
+    "basis and status in the fact. Numbers in a product, security, ticker, fiscal entity or ",
+    "named event do not make that entity a measurement.",
 );
 
 const EXTRACTION_INSTRUCTIONS: &str = concat!(
@@ -326,11 +337,13 @@ const EXTRACTION_INSTRUCTIONS: &str = concat!(
     "unclassified when none fits. Use a listed fact type when the relationship ",
     "matches its description and entity types; otherwise name the relationship ",
     "specifically in English. Retain quantitative observations, amounts and dates ",
-    "as well as relationships between people and organizations. Extract a Metric ",
-    "entity to connect a reported value to its subject and an Event entity for a ",
-    "dated occurrence. A Metric's name and relationship text must preserve the ",
-    "metric, value, unit or currency, reporting period and reporting basis supplied ",
-    "by the source. Do not omit a fact merely ",
+    "as well as relationships between people and organizations. Keep a quantitative ",
+    "observation as a REPORTS claim on the subject it measures: use the subject's exact name ",
+    "as both source_entity_name and target_entity_name. Do not invent a second entity for a ",
+    "quantity, dated measurement, figure with a unit or sentence. Preserve the metric, exact ",
+    "value, unit or currency, reporting period, basis and status in the claim text. Named ",
+    "products and securities may contain numbers; dated named occurrences may be Event ",
+    "entities. Do not omit a fact merely ",
     "because it describes one organization rather than two named people. Do not ",
     "calculate missing values. Include explicit identifying codes in entity names; ",
     "different codes identify different entities even when their display names ",

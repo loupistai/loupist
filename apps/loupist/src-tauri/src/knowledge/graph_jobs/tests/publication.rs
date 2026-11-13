@@ -246,7 +246,7 @@ fn repeated_authorized_spans_do_not_hide_a_later_foreign_span() {
     let (_directory, store) = open();
     let publications = prepare(&store, &enabled());
     let (nodes, mut claims, annotations) =
-        project_worker_artifact(&publications.first_artifact).unwrap();
+        project_worker_artifact(&publications.first_artifact, &[]).unwrap();
     let evidence = claims[0].evidence[0].clone();
     claims[0].evidence = vec![evidence; 31];
     let mut body = crate::knowledge::WorldSnapshotBody {

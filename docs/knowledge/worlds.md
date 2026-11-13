@@ -37,7 +37,7 @@ Each episode runs after the one before it, whose text is its extraction context;
 that episode completed or can no longer finish, the next one runs.
 Every World extracts with one shared core vocabulary, listed once in
 `knowledge/world_extract/ontology.rs`: the entity types Organization, Person, Asset,
-Product, Place, Policy, Event, Metric, Technology and Segment, and seventeen relation
+Product, Place, Policy, Event, Technology and Segment, and seventeen relation
 types (SUPPLIES, COMPETES_WITH, PARTNERS_WITH, SUBSIDIARY_OF, ACQUIRED, INVESTED_IN,
 LEADS, OFFERS, USES, REPORTS, LOCATED_IN, AFFECTS, PART_OF, REQUIRES, OPERATES_IN,
 ISSUES, OWNS) with allowed endpoint types. `world_schema.rs` reads its reserved
@@ -51,6 +51,15 @@ rates_fx, real_asset, prediction, private), rendered from the enum, and its
 estate and private deals are Assets of class `real_asset` and `private`. An entity
 that fits no type stays `Entity`, and a relationship that fits no type keeps a
 specific open name, so the vocabulary guides extraction without closing it.
+`Metric` stays reserved for existing Maps, which remain readable, but new measured
+values are claims about their subject. `REPORTS` uses the same subject in both
+endpoint roles, with the exact value, unit, period, basis and status in its text.
+Extraction and publication reject new nodes named as quantities, measurements,
+figures with units or sentences, including under custom kinds. Numeric product
+names, tickers, security maturities, fiscal entities and named events remain valid.
+A `REPORTS` claim from an admitted subject to a newly rejected value node keeps
+its full text and uses the subject in both roles. Other relationships are not
+rewritten, and existing measurement nodes and their claims stay as stored.
 
 ### Queue and interruptions
 

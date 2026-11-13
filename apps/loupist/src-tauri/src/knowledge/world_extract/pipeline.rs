@@ -448,6 +448,9 @@ impl Run<'_, '_> {
                 .and_then(|index| types.get(index))
                 .map_or("Entity", |(_, name, _)| name.as_str())
                 .to_string();
+            if !crate::knowledge::entity_name::admits_entity_name(&name, &type_name) {
+                continue;
+            }
             extracted.push(Node {
                 uuid: new_uuid(),
                 name,
@@ -850,7 +853,9 @@ impl Run<'_, '_> {
                 self.nodes[*source].uuid.clone(),
                 self.nodes[*target].uuid.clone(),
             );
-            if source == target || fact.trim().is_empty() {
+            // A quantitative observation belongs to its subject. REPORTS uses
+            // that subject in both roles instead of inventing a value node.
+            if (source == target && relation != "REPORTS") || fact.trim().is_empty() {
                 continue;
             }
             let edge = Edge {

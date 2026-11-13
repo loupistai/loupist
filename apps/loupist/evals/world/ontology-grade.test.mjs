@@ -4,9 +4,30 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { entityMatchesNode, gradeOntology, normalizeOriginal, patternHits, sha256 } from './ontology-grade.mjs';
+import { entityMatchesNode, gradeOntology, isMeasurementNode, normalizeOriginal, patternHits, sha256 } from './ontology-grade.mjs';
 
 const root = new URL('.', import.meta.url);
+
+test('measurement node detector keeps numbered entities in English and Korean', async () => {
+  const corpus = JSON.parse(await readFile(new URL('./entity-name-corpus-v1.json', root), 'utf8'));
+  for (const row of corpus) {
+    assert.equal(isMeasurementNode(row), row.measurement, `${row.kind}: ${row.name}`);
+  }
+});
+
+test('measurement share counts all node kinds, pools by node count, and keeps missing data unknown', () => {
+  const trace = rows({
+    nodes: [node('a', 'Acme'), node('m', 'Acme revenue USD 42 million', { kind: 'CustomObservation' })],
+    claims: [], enResult: miss, koResult: miss,
+  });
+  const first = grade(trace);
+  assert.equal(trialOf(first).metrics.measurement_node_share, 0.5);
+  assert.deepEqual(first.arms[0].pooled.counts.measurement_nodes, [1, 2]);
+  const second = rows({ trial: 1, nodes: [node('b', 'HBM4', { kind: 'Product' })], claims: [], enResult: miss, koResult: miss });
+  assert.equal(grade([...trace, ...second]).arms[0].pooled.measurement_node_share, 1 / 3);
+  assert.equal(grade(rows({ nodes: [], claims: [], enResult: miss, koResult: miss })).arms[0].pooled.measurement_node_share, 0);
+  assert.equal(grade(rows({ nodes: [], claims: [], enResult: miss, koResult: miss, omitSnapshot: true })).arms[0].pooled.measurement_node_share, null);
+});
 
 function suiteFor(id = 'CELL') {
   return {

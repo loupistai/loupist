@@ -312,6 +312,62 @@ fn relation(source: &str, target: &str, kind: &str, fact: &str) -> Value {
 const SUPPLY: &str = "Acme Corp supplies lithium cells to Beta Motors.";
 const PARTNER: &str = "Acme Corp partners with Gamma Labs on solid-state cells.";
 
+#[test]
+fn subject_measurement_claim_survives_publication_reingestion_and_reopen() {
+    let mut fixture = Fixture::new();
+    let script = Arc::new(Mutex::new(Script::default()));
+    let fact = "Acme Corp reported Q4 FY2026 GAAP net income USD 42,960 million.";
+    for _ in 0..2 {
+        {
+            let mut script = script.lock().unwrap();
+            // A mistaken value node in extraction cannot reach the Map.
+            script.reply("ExtractedEntities", json!({"extracted_entities": [
+                {"name": "Acme Corp", "entity_type_id": 1},
+                {"name": "Acme Corp Q4 FY2026 GAAP net income USD 42,960 million", "entity_type_id": 8}
+            ]}));
+            script.reply(
+                "ExtractedEdges",
+                json!({"edges": [relation("Acme Corp", "Acme Corp", "REPORTS", fact)]}),
+            );
+            script.reply("CoreAttributeBatch", json!({"entities": []}));
+        }
+        let job = fixture.queue("Reported earnings", fact);
+        assert_eq!(
+            drive(&mut fixture, &job, &script, "fixture").status,
+            graph_jobs::JOB_COMPLETED
+        );
+        let body = fixture.body();
+        assert_eq!(body.nodes.len(), 1);
+        assert_eq!(body.claims.len(), 1);
+        assert_eq!(body.claims[0].proposition, fact);
+        assert_eq!(
+            body.claims[0].endpoints[0].node_id,
+            body.claims[0].endpoints[1].node_id
+        );
+        assert_eq!(fixture.index_rows(), (1, 1, 1));
+    }
+    assert_eq!(fixture.body().claims[0].evidence.len(), 2);
+    let revision = fixture.head();
+    let database = fixture._directory.path().join("knowledge.sqlite");
+    drop(fixture.store);
+    let reopened = KnowledgeStore::open(database).unwrap();
+    let result = world_extract::query_world(
+        &reopened,
+        LOUPIST,
+        &fixture.world,
+        &revision,
+        "Acme Corp net income Q4 FY2026",
+        &assets(),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(result.to_string().contains("42,960 million"));
+    let stored: WorldSnapshotBody =
+        serde_json::from_value(reopened.get_revision(LOUPIST, &revision).unwrap().payload).unwrap();
+    assert_eq!(stored.nodes.len(), 1);
+    assert_eq!(stored.claims.len(), 1);
+}
+
 /// The first two Sources: a new World, then a repeated fact and a new partner.
 fn two_sources(fixture: &mut Fixture) -> (GraphJobView, GraphJobView, Arc<Mutex<Script>>) {
     let script = Arc::new(Mutex::new(Script::default()));

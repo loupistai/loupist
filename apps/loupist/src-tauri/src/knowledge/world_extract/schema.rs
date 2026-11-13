@@ -122,7 +122,7 @@ pub(crate) fn extracted_entities() -> Py {
     let entity = model(
         "ExtractedEntity",
         vec![
-            string_field("name", "Name of the extracted entity"),
+            string_field("name", "Identifying name of a concrete entity, never a quantity, measurement, figure with a unit or sentence. Numbers in named products, securities, tickers, fiscal entities and events are allowed."),
             integer_field(
                 "entity_type_id",
                 Some("ID of the classified entity type. Must be one of the provided entity_type_id integers."),

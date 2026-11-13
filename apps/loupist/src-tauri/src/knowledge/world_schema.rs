@@ -954,7 +954,7 @@ fn dividends() -> WorldExtension {
         updated_at_ms: 0,
         types: vec![ExtensionType {
             name: "CapitalReturnPolicy".into(),
-            description: "A company's stated policy for returning cash to shareholders: a payout target, a progressive dividend commitment or a buyback authorization. A single dividend declaration is an Event, and a paid amount is a Metric.".into(),
+            description: "A company's stated policy for returning cash to shareholders: a payout target, a progressive dividend commitment or a buyback authorization. A single dividend declaration is an Event, and a paid amount is a claim on the company.".into(),
             category: ExtensionCategory::Event,
             labels: labels("Capital return policy", "주주환원 정책"),
             blurbs: labels(
@@ -1022,7 +1022,7 @@ fn macro_rates() -> WorldExtension {
     seed(
         vec![kind(
             "EconomicIndicator",
-            "A published economic data series such as CPI, payrolls or GDP. One release of it is an Event, and one value is a Metric.",
+            "A published economic data series such as CPI, payrolls or GDP. One release of it is an Event, and one value is a claim on the series.",
             ExtensionCategory::Event,
             ("Economic indicator", "경제 지표"),
             ("Published series such as CPI or payrolls", "소비자물가, 고용 같은 발표 지표"),

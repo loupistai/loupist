@@ -11,6 +11,20 @@ const NAMED_KINDS = new Set(['Organization', 'Person', 'Asset', 'Product', 'Plac
 const TRAILING_LABEL = /\s*(?:\([^)]*\)|\[[^\]]*\])$/u;
 const CORPORATE_SUFFIX = /(?:\s+주식회사|\s*\(주\)|\s*,?\s+Co\.,\s*Ltd\.|\s*,?\s+Inc\.|\s*,?\s+Corp\.|\s*,?\s+LLC)$/iu;
 
+// Independent of the extractor: detect value nodes even if they were mislabeled
+// as a Product, Event or a user-defined kind. A digit/period alone is not enough.
+const MEASUREMENT_NAME = /(?:\b(?:USD|KRW|EUR|GBP|JPY|CNY|RMB|CAD|AUD|CHF)\s*[+−-]?\d|[$€£₩¥]\s*[+−-]?\d|\d[\d,.]*\s*(?:%|퍼센트|bps\b|basis points\b|million\b|billion\b|trillion\b|thousand\b|percent\b|tonnes\b|tons\b|barrels\b|widgets\b|units\b|GWh\b|MWh\b|kWh\b|GW\b|MW\b|kg\b|km\b|억원|조원|만원|천원|원|달러|백만|천만|십억|백억|억|조|만|톤|명|대|개|주|건|배)|\d[\d,.]*\s+(?:shares|employees|patients|vehicles|dollars|euros|people)\b|\b(?:revenue|net income|operating (?:profit|income|margin)|earnings per share|market share|net (?:profit|loss)|sales volume|production capacity|yield)\b[^;\n]*\d|(?:매출액|순이익|영업이익|점유율|생산량|생산능력|주당순이익)\s*[:=]?\s*[+−-]?\d)/iu;
+const COUPON_SECURITY = /^\d+(?:\.\d+)?%\s+(?:(?:notes|bonds)\s+(?:due\s+)?20\d{2}|20\d{2}년\s+만기\s+채권)$/iu;
+
+export function isMeasurementNode(node) {
+  const name = String(node?.name ?? '').normalize('NFKC').trim();
+  if (node?.kind === 'Metric') return true;
+  if (node?.kind === 'Asset' && COUPON_SECURITY.test(name)) return false;
+  if (/^\d+$/u.test(name)) return !['Organization', 'Asset'].includes(node?.kind) || name.length > 12;
+  if (/^[+−-]?\d[\d,.]*$/u.test(name)) return true;
+  return MEASUREMENT_NAME.test(name) || /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T ].*)?$/u.test(name);
+}
+
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
 const list = (value) => Array.isArray(value) ? value : [];
@@ -129,7 +143,7 @@ function blankMetrics() {
     entity_recall: null, type_accuracy: null, duplicate_entities: 0,
     original_alias_rate: null, identifier_fill: null, relation_pair_recall: null,
     canonical_relation_rate: null, relation_names_per_100_claims: null, relates_to_share: null,
-    non_english_fact_share: null, numeric_fidelity: null,
+    non_english_fact_share: null, numeric_fidelity: null, measurement_node_share: null,
     query_hit_rate: { en: null, ko: null },
   };
 }
@@ -148,6 +162,7 @@ function withRates(counts) {
     relates_to_share: ratio(counts.relatesTo, claims),
     non_english_fact_share: ratio(counts.hangulClaims, claims),
     numeric_fidelity: ratio(counts.numericFound, counts.numericExpected),
+    measurement_node_share: counts.nodes ? counts.measurementNodes / counts.nodes : 0,
     query_hit_rate: {
       en: ratio(counts.queryHits.en, counts.queryExpected.en),
       ko: ratio(counts.queryHits.ko, counts.queryExpected.ko),
@@ -164,6 +179,7 @@ function withRates(counts) {
       relates_to: [counts.relatesTo, claims],
       non_english_facts: [counts.hangulClaims, claims],
       numeric: [counts.numericFound, counts.numericExpected],
+      measurement_nodes: [counts.measurementNodes, counts.nodes],
       query_en: [counts.queryHits.en, counts.queryExpected.en],
       query_ko: [counts.queryHits.ko, counts.queryExpected.ko],
     },
@@ -176,13 +192,13 @@ function emptyCounts() {
     aliasCarried: 0, aliasExpected: 0, identifierFilled: 0, identifierExpected: 0,
     relationsJoined: 0, relationsExpected: 0, canonicalClaims: 0, canonicalClaimOpportunities: 0,
     relationNames: new Set(), relatesTo: 0, hangulClaims: 0, claims: 0,
-    numericFound: 0, numericExpected: 0,
+    numericFound: 0, numericExpected: 0, measurementNodes: 0, nodes: 0,
     queryHits: { en: 0, ko: 0 }, queryExpected: { en: 0, ko: 0 },
   };
 }
 
 function addCounts(total, counts) {
-  for (const key of ['entitiesMatched', 'entitiesExpected', 'typesCorrect', 'duplicateEntities', 'aliasCarried', 'aliasExpected', 'identifierFilled', 'identifierExpected', 'relationsJoined', 'relationsExpected', 'canonicalClaims', 'canonicalClaimOpportunities', 'relatesTo', 'hangulClaims', 'claims', 'numericFound', 'numericExpected']) {
+  for (const key of ['entitiesMatched', 'entitiesExpected', 'typesCorrect', 'duplicateEntities', 'aliasCarried', 'aliasExpected', 'identifierFilled', 'identifierExpected', 'relationsJoined', 'relationsExpected', 'canonicalClaims', 'canonicalClaimOpportunities', 'relatesTo', 'hangulClaims', 'claims', 'numericFound', 'numericExpected', 'measurementNodes', 'nodes']) {
     total[key] += counts[key];
   }
   for (const name of counts.relationNames) total.relationNames.add(name);
@@ -245,6 +261,8 @@ function gradeTrial(scenario, expected, rows) {
   const nodes = list(payload?.nodes);
   const claims = payload ? activeClaims(payload) : [];
   const counts = emptyCounts();
+  counts.nodes = nodes.length;
+  counts.measurementNodes = nodes.filter(isMeasurementNode).length;
   const entityDetail = [];
   const matchedIds = new Map();
   counts.entitiesExpected = expected.entities.length;
@@ -464,6 +482,9 @@ export function adoptionCriteria(report) {
         && rate(candidate, 'numeric_fidelity') >= rate(baseline, 'numeric_fidelity') - 0.05,
       { candidate: rate(candidate, 'numeric_fidelity'), baseline: rate(baseline, 'numeric_fidelity') },
     ),
+    measurement_nodes: criterion(rate(candidate, 'measurement_node_share') === 0, {
+      candidate: rate(candidate, 'measurement_node_share'), baseline: rate(baseline, 'measurement_node_share'),
+    }),
     world_cost: criterion(withinBudget(calls(candidate), calls(baseline)) && withinBudget(input(candidate), input(baseline)), {
       candidate_calls_per_episode: calls(candidate), baseline_calls_per_episode: calls(baseline),
       candidate_input_tokens_per_episode: input(candidate), baseline_input_tokens_per_episode: input(baseline),

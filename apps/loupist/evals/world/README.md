@@ -214,6 +214,15 @@ Product, Place and Policy. An original is retained when a name, alias or
 `original_name` matches the oracle original after also removing one corporate suffix
 (`주식회사`, `(주)`, `Co., Ltd.`, `Inc.`, `Corp.`, `LLC`).
 
+`measurement_node_share` counts measurement-like names across every node kind,
+including custom kinds, and legacy `Metric` nodes, divided by all nodes. It reports
+zero for a known empty snapshot and null for a missing snapshot; pooled values use
+node counts. The detector recognizes English and Korean quantities, units and
+dated measurements while preserving numbered products, tickers, securities and
+named events. `entity-name-corpus-v1.json` is a deterministic classifier fixture,
+not a model-visible Source or a changed ontology corpus. The adoption check requires
+zero measurement nodes, alongside numeric fidelity so dropping figures cannot pass.
+
 ```sh
 node apps/loupist/evals/world/ontology-grade.mjs \
   --suite apps/loupist/evals/world/ontology-corpus-v1.json \
