@@ -109,6 +109,7 @@
     "noRuns": "아직 실행한 적이 없어요.",
     "back": "← 예약",
     "backTo": "← {{title}}",
+    "prompt": "요청 내용",
     "runs": "실행 기록",
     "waitingPlan": "대기 중: ChatGPT 요금제 한도 도달",
     "waitingReconnect": "대기 중: 다시 로그인 필요",

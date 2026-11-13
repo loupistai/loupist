@@ -112,6 +112,7 @@
     "noRuns": "No runs yet.",
     "back": "← Schedule",
     "backTo": "← {{title}}",
+    "prompt": "Prompt",
     "runs": "Runs",
     "waitingPlan": "Waiting: ChatGPT plan at its limit",
     "waitingReconnect": "Waiting: sign-in needs reconnect",
