@@ -73,6 +73,12 @@
     "principles": "Principles",
     "limitations": "Limitations"
   },
+  "sourceRetry": {
+    "tryAgain": "Try again",
+    "tryingAgain": "Trying again…",
+    "usesOneMoreAllowance": "Uses one more allowance of model requests per source, as set in Map building.",
+    "couldNotTryAgain": "Could not try this source again."
+  },
   "sourceWorkspace": {
     "publisherDocument": "Publisher document",
     "dataset": "Dataset",

@@ -1137,6 +1137,17 @@ button.chat-progress-names:hover { text-decoration: underline; }
   color: var(--gg-color-text-secondary);
 }
 
+/* "Try again" for a Source that stopped: a neutral action on its own line under the status. */
+.world-status-retry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--gg-space-2);
+  margin-top: 2px;
+}
+
+.world-status-retry [role="alert"] { flex-basis: 100%; }
+
 .composer-assist {
   position: absolute;
   z-index: var(--gg-z-panel);
