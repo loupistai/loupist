@@ -1,4 +1,4 @@
-import { skillBlurb, skillPresentation } from "../../lib/agentSkills";
+import { SKILL_TOOLING_IDS, skillBlurb, skillPresentation } from "../../lib/agentSkills";
 import i18n, { useTranslation } from "../../i18n";
 import { CONFIG_CHANGED_EVENT, notifyConfigurationChanged } from "../../app/useConfiguration";
 import { Disclosure } from "../ui/disclosure";
@@ -260,14 +260,18 @@ export function LoupistSettings({
 
   const skillItems = useMemo<AgentCapabilityItem[]>(
     () =>
-      skills.filter((skill) => !skill.fixed).map((skill) => ({
-        id: skill.id,
-        ...skillPresentation(skill),
-        // The row shows the short line for people; the model-facing description stays in Settings › Skills' detail.
-        description: skillBlurb(skill),
-        enabled: skill.enabled,
-        locked: false,
-      })),
+      skills.filter((skill) => !skill.fixed)
+        // Tools for making Skills come last under "Advanced", as in Settings › Skills.
+        .sort((a, b) => Number(SKILL_TOOLING_IDS.has(a.id)) - Number(SKILL_TOOLING_IDS.has(b.id)))
+        .map((skill) => ({
+          id: skill.id,
+          ...skillPresentation(skill),
+          // The row shows the short line for people; the model-facing description stays in Settings › Skills' detail.
+          description: skillBlurb(skill),
+          enabled: skill.enabled,
+          locked: false,
+          ...(SKILL_TOOLING_IDS.has(skill.id) ? { group: i18n.t("settings:skillsSettings.advancedSkills") } : {}),
+        })),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
     [skills, i18n.language],
   );

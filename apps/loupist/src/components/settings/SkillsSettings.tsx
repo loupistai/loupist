@@ -1,4 +1,4 @@
-import { skillBlurb, skillPresentation } from "../../lib/agentSkills";
+import { SKILL_TOOLING_IDS, skillBlurb, skillPresentation } from "../../lib/agentSkills";
 import i18n, { useTranslation } from "../../i18n";
 import { loupistOptionLabel } from "../../lib/loupistFolder";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -17,7 +17,6 @@ import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control"
 import { ConfigurationDiagnostics } from "./AgentSettings";
 
 const keyOf = (skill: ManagedSkill) => skill.path ?? skill.id;
-const SKILL_TOOLING = new Set(["skill-creator"]);
 const origin = (skill: ManagedSkill) => skill.source === "bundled" ? i18n.t("settings:skillsSettings.includedWithLoupist") : skill.source === "personal" ? i18n.t("settings:skillsSettings.personal") : i18n.t("settings:skillsSettings.thisLoupist");
 export function SkillsSettings({ bridge, loupists, scope, onScopeChange, onDraftSkill }: {
   bridge: LoupistBridge; loupists: LoupistSummary[]; scope: ConfigScope; onScopeChange?: (scope: ConfigScope) => void;
@@ -99,7 +98,7 @@ export function SkillsSettings({ bridge, loupists, scope, onScopeChange, onDraft
     .sort((a, b) => Number(a.fixed) - Number(b.fixed)) ?? [];
   const disabled = busy || Boolean(catalog?.configuration.diagnostics.length);
   // Tools for making and installing Skills sit behind Advanced; research Skills come first.
-  const basic = skills.filter((skill) => !SKILL_TOOLING.has(skill.id)), tooling = skills.filter((skill) => SKILL_TOOLING.has(skill.id));
+  const basic = skills.filter((skill) => !SKILL_TOOLING_IDS.has(skill.id)), tooling = skills.filter((skill) => SKILL_TOOLING_IDS.has(skill.id));
   const skillRow = (skill: ManagedSkill) => {
       const explicit = catalog!.configuration.explicit?.skills?.[skill.id]?.enabled !== undefined;
       const source = catalog!.configuration.sources[`skills.${skill.id}.enabled`];

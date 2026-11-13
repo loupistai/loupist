@@ -70,6 +70,21 @@ it("searches the selected Loupist’s capabilities and reveals that Loupist’s 
   expect(screen.getByLabelText("Workspace folder")).toHaveTextContent(selectedAgent.workspace_path);
 });
 
+it("lists Skill Creator last under Advanced, as Settings › Skills does", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const agents = await bridge.loupistList();
+  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={agents[0]} mutationBusy={false} mutationError={null} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
+  const user = userEvent.setup();
+  await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
+  const creator = await screen.findByRole("switch", { name: /^Skill Creator:/ });
+  const list = creator.closest(".agent-capability-list")!;
+  const switches = within(list as HTMLElement).getAllByRole("switch");
+  expect(switches.at(-1)).toBe(creator);
+  const advanced = within(list as HTMLElement).getByRole("heading", { level: 3, name: "Advanced" });
+  expect(advanced.compareDocumentPosition(creator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(advanced.compareDocumentPosition(switches[0]) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+});
+
 it("filters capabilities by availability and opens the selected connection’s details", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const agents = await bridge.loupistList();
