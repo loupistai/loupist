@@ -130,6 +130,8 @@ struct ChartPublishRequest {
 }
 
 type EvidenceSink = Arc<dyn Fn(crate::domain::ChatEvidenceRef, Option<String>) + Send + Sync>;
+/// Receives a chart or table as its publish call is delivered; it is saved only with the reply.
+type ArtifactSink = Arc<dyn Fn(super::types::ChatArtifactViewDto) + Send + Sync>;
 /// Receives (tool call id, World node ids) when a call's World read is acknowledged.
 type EntitySink = Arc<dyn Fn(String, Vec<String>) + Send + Sync>;
 /// Receives (tool call id, approval card) when a call starts or stops waiting for the user.
@@ -159,6 +161,7 @@ pub(super) struct ToolCapture {
     pub(crate) run_results: Mutex<RunResultRegistry>,
     pub(super) evidence_refs: Mutex<Vec<crate::domain::ChatEvidenceRef>>,
     pub(super) evidence_sink: Option<EvidenceSink>,
+    pub(super) artifact_sink: Option<ArtifactSink>,
     pub(super) entity_sink: Option<EntitySink>,
     /// Set for interactive Chats: unapproved read-only custom tools wait for the user here.
     pub(super) approval_sink: Option<ApprovalSink>,
@@ -773,6 +776,7 @@ impl ToolCapture {
             staged.push(principle);
         }
         if !pending.artifacts.is_empty() {
+            self.show_staged_artifacts(&pending.artifacts).await;
             self.artifacts
                 .lock()
                 .await

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChatArtifactRef, ChatMessage, ChatProgressItem } from "../types";
+import type { ChatArtifactRef, ChatArtifactView, ChatMessage, ChatProgressItem } from "../types";
 import { chartBlocks, sameBlock } from "./chartBlocks";
 
 const chart = (overrides: Partial<ChatArtifactRef> = {}): ChatArtifactRef => ({
@@ -32,6 +32,26 @@ describe("chartBlocks", () => {
     const filled = chartBlocks(message({ status: "streaming", artifact_refs: [chart()], progress: { startedAtMs: 0, items: [step("succeeded")], finishedAtMs: null } }));
     expect(filled).toEqual([{ kind: "ready", key: "chart:chart-1", artifact: chart(), updating: false, stepId: "step-succeeded" }]);
     expect(chartBlocks(message({ artifact_refs: [chart()] }))).toEqual([{ kind: "ready", key: "chart:chart-1", artifact: chart(), updating: false, stepId: undefined }]);
+  });
+
+  it("fills a card from the host's staged chart while streaming, and drops it when the reply stops or fails", () => {
+    const staged: ChatArtifactView = {
+      artifact: { id: "chart-1", chat_session_id: "chat", kind: "chart", title: "Margin vs utilization", current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+      revision: { artifact_id: "chart-1", revision: 1, digest: "a".repeat(64), source_message_id: "answer", created_at_ms: 0,
+        payload: { kind: "chart", schema: "loupist-chart/1", chart: {} as never } },
+      chart_dataset: null,
+    };
+    const progress = { startedAtMs: 0, items: [step("succeeded")], finishedAtMs: null };
+    const filled = { kind: "ready", key: "chart:chart-1", artifact: chart(), updating: false, stepId: "step-succeeded", staged };
+    expect(chartBlocks(message({ status: "streaming", staged_artifacts: [staged], progress }))).toEqual([filled]);
+    // The commit adds the stored reference; the same card then reads the stored revision.
+    expect(chartBlocks(message({ status: "streaming", artifact_refs: [chart()], staged_artifacts: [staged], progress }))).toEqual([filled]);
+    expect(chartBlocks(message({ status: "complete", artifact_refs: [chart()], staged_artifacts: [staged], progress }))).toEqual([
+      { kind: "ready", key: "chart:chart-1", artifact: chart(), updating: false, stepId: "step-succeeded" },
+    ]);
+    // A stopped or failed reply saved nothing, so its staged card goes.
+    expect(chartBlocks(message({ status: "aborted", staged_artifacts: [staged], progress }))).toEqual([]);
+    expect(chartBlocks(message({ status: "error", staged_artifacts: [staged], progress }))).toEqual([]);
   });
 
   it("ignores documents, keeps the latest chart revision, and marks a chart being revised", () => {

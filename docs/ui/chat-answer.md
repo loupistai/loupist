@@ -50,6 +50,10 @@ and a duration of a second or more), and results. A plan or Memory reads with no
 their own place the ledger before the live answer, where it stays. A chart or table
 card stands where its publish step started (`chartBlocks`/`gridBlocks` give each block
 its `stepId`), so a card made before the answer sits above it, live and after reload. A
+card fills as its publish call is delivered: Rust sends the staged content
+(`artifact_staged`, a `ChatArtifactView`, never stored) and the card draws it while the
+answer is written below, so nothing moves at commit, where only the stored reference
+(`artifact`) follows. A stopped or failed reply saved nothing, so its staged cards go. A
 card still preparing when the reply stops fades out in place (120 ms; at once under
 reduced motion) and is then removed;
 an answer that says "the chart below" can be wrong until the prompt says otherwise. A

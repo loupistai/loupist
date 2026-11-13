@@ -378,21 +378,25 @@ export const ChatGridBlock = memo(function ChatGridBlock({ block, onAsk, askDisa
 }) {
   useTranslation("chat");
   const scope = useChatExecution();
-  const [view, setView] = useState<ViewState>({ status: "loading" });
+  const staged = block.kind === "ready" ? block.staged : undefined;
+  const [view, setView] = useState<ViewState>(() => staged ? { status: "ready", view: staged } : { status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const artifactId = block.kind === "ready" ? block.artifact.artifact_id : null;
   const revision = block.kind === "ready" ? block.artifact.revision : null;
   useEffect(() => {
     if (!artifactId) return undefined;
+    // Delivered before the commit: drawn as delivered, so the card fills while the answer is written.
+    if (staged) { setView({ status: "ready", view: staged }); return undefined; }
     if (!scope) { setView({ status: "unavailable" }); return undefined; }
     let live = true;
-    setView({ status: "loading" });
+    // A card already drawing this revision keeps it while the stored copy is read, so it never blinks.
+    setView((current) => current.status === "ready" && current.view.artifact.id === artifactId && current.view.revision.revision === revision ? current : { status: "loading" });
     void scope.bridge.chatArtifactRead(scope.loupistId, scope.threadId, artifactId, revision ?? undefined)
       .then((next) => { if (live) setView({ status: "ready", view: next }); })
       .catch(() => { if (live) setView({ status: "unavailable" }); });
     return () => { live = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scope's fields; a new scope object for the same thread must not re-read.
-  }, [artifactId, revision, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
+  }, [artifactId, revision, staged, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
 
   const title = block.kind === "ready" ? (view.status === "ready" ? view.view.artifact.title : block.artifact.title) : block.title;
   const loaded = view.status === "ready" && block.kind === "ready" && !block.updating ? view.view : null;

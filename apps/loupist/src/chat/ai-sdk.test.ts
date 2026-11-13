@@ -236,6 +236,44 @@ describe("native stream transport", () => {
     expect(onAdmission).toHaveBeenCalledExactlyOnceWith({ accepted: true, runId });
   });
 
+  it("shows a staged chart in the streaming answer but lists it as published only at commit", async () => {
+    const onArtifact = vi.fn();
+    const artifact = { artifact_id: "chart-1", revision: 1, kind: "chart" as const, title: "Margin", digest: "a".repeat(64) };
+    const view = {
+      artifact: { id: "chart-1", chat_session_id: "chat-a", kind: "chart" as const, title: "Margin", current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+      revision: { artifact_id: "chart-1", revision: 1, digest: "a".repeat(64), source_message_id: "answer", created_at_ms: 0, payload: { kind: "markdown" as const, schema: "loupist-markdown/1" as const, markdown: "" } },
+      chart_dataset: null,
+    };
+    let finish = () => {};
+    const stream = await new TauriChatTransport({ chatSend: vi.fn(async (sent: ChatSendRequest, onEvent: (event: ChatStreamEvent) => void) => {
+      const run_id = sent.run_id!;
+      onEvent({ type: "started", run_id });
+      onEvent({ type: "artifact_staged", run_id, view });
+      finish = () => {
+        onEvent({ type: "artifact", run_id, artifact });
+        onEvent({ type: "completed", ...completedRun, run_id, message_id: "charted", final_text: "Done.", created_at: "2026-11-01T00:00:00Z",
+          execution_model: { profile_id: "test", name: "Test", provider: "test", model: "test", thinking_level: "medium", run_options: {} },
+          agent_harness: { schema: "test", mode: "chat", skill_ids: [], capability_ids: [], digest: "test" } });
+      };
+      return { run_id };
+    }), chatAbort: vi.fn() } as unknown as LoupistBridge, undefined, onArtifact).sendMessages({ ...request, body });
+    const projections: ChatMessage[] = [];
+    let finished = false;
+    for await (const message of readUIMessageStream<LoupistUIMessage>({ stream: stream as ReadableStream<never> })) {
+      const projected = fromLoupistUIMessage(message);
+      projections.push(projected);
+      if (projected.staged_artifacts && !finished) {
+        finished = true;
+        expect(projected).toMatchObject({ status: "streaming", staged_artifacts: [view] });
+        expect(projected.artifact_refs).toBeUndefined();
+        expect(onArtifact).not.toHaveBeenCalled();
+        finish();
+      }
+    }
+    expect(projections.at(-1)).toMatchObject({ status: "complete", artifact_refs: [artifact], staged_artifacts: [view] });
+    expect(onArtifact).toHaveBeenCalledExactlyOnceWith("loupist-a", "chat-a", artifact);
+  });
+
   it("carries custom tool refusals from stream completion into the answer", async () => {
     const tool_refusals = [{ connection_id: "custom-one", connection_name: "Company research", tool_name: "read_filings", reason: "needs_approval" as const }];
     const stream = await transport(async (sent, onEvent) => {

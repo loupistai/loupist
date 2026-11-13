@@ -175,9 +175,10 @@ function researchBeats(ending: LiveEnding): { beats: Beat[]; answerAt: number } 
   at += 1_300;
   beats.push(...stepBeats(tool("live-calc", "run_python", "compute", "execute", "Ran Python", "Running Python", ""), at, at + 2_600));
   at += 2_800;
-  // The table card is reserved when its step starts and fills when the artifact arrives.
+  // The table card is reserved when its step starts and fills when the host delivers the
+  // staged table, as the call succeeds; the stored reference follows at commit (`artifact_staged`).
   beats.push(...stepBeats(tool("live-grid", "grid_publish", "artifact", "publish", "Built a table", "Building a table", grid.title), at, at + 2_300));
-  beats.push({ at: at + 2_290, artifact: true });
+  beats.push({ at: at + 2_300, artifact: true });
   at += 2_600;
   return { beats, answerAt: at };
 }
@@ -232,9 +233,14 @@ export function liveResearchRun(bridge: PreviewBridge, ending: LiveEnding = "com
     };
     const model = { profile_id: "preview-auto", name: "Auto", provider: "openai", model: "preview-model", thinking_level: "medium", run_options: {} };
     const harness: AgentHarnessSnapshot = { schema: "loupist-harness/1", mode: "chat", skill_ids: [], capability_ids: [], digest: "e".repeat(64) };
+    // Rust keeps a published table in the turn until it commits: it cannot be read before then.
+    let staged = false;
+    let committed = false;
     const run = (beat: Beat) => {
       if ("done" in beat) {
         progress.finishedAtMs = Date.now();
+        committed = true;
+        if (staged) emit({ type: "artifact", run_id, artifact: { artifact_id: grid.id, revision: 1, kind: "grid", title: grid.title, digest: grid.view.revision.digest } });
         emit({
           type: "completed", run_id, lens_receipts: [], tool_refusals: [], host_composed: false, message_id: `live-${run_id}`, final_text: content, created_at: new Date().toISOString(),
           performance: { setupMs: 40, generationMs: Math.max(0, text.end), totalMs: text.end + 250, sessionCache: "warm", inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
@@ -242,7 +248,7 @@ export function liveResearchRun(bridge: PreviewBridge, ending: LiveEnding = "com
         });
       } else if ("phase" in beat) emit({ type: "phase", run_id, phase: beat.phase });
       else if ("evidence" in beat) emit({ type: "evidence", run_id, evidence: beat.evidence });
-      else if ("artifact" in beat) emit({ type: "artifact", run_id, artifact: { artifact_id: grid.id, revision: 1, kind: "grid", title: grid.title, digest: "b".repeat(64) } });
+      else if ("artifact" in beat) { staged = true; emit({ type: "artifact_staged", run_id, view: structuredClone(grid.view) }); }
       else if ("question" in beat) {
         const now = Date.now();
         const ask: ProgressItem = { ...tool("live-ask", "ask_user", "capability", "generic", "Asked you a question", "Asking you a question", ""), startedAtMs: now };
@@ -288,7 +294,11 @@ export function liveResearchRun(bridge: PreviewBridge, ending: LiveEnding = "com
     emit({ type: "started", run_id });
     emit({ type: "progress", run_id, sequence: 0, progress: structuredClone(progress) });
     const read = bridge.chatArtifactRead.bind(bridge);
-    bridge.chatArtifactRead = async (loupistId, threadId, artifactId, revisionId) => artifactId === grid.id ? structuredClone(grid.view) : read(loupistId, threadId, artifactId, revisionId);
+    bridge.chatArtifactRead = async (loupistId, threadId, artifactId, revisionId) => {
+      if (artifactId !== grid.id) return read(loupistId, threadId, artifactId, revisionId);
+      if (!committed) throw new Error("artifact not found");
+      return structuredClone(grid.view);
+    };
     const middle = text.beats[Math.floor(text.beats.length * 0.45)]?.at ?? text.end;
     if (ending === "stopped") {
       schedule(beats.filter((beat) => beat.at < middle));

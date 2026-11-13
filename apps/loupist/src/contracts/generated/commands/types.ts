@@ -221,6 +221,7 @@ export type ChatStreamEvent =
   | { "type": "memory_update", run_id: string, result: MemoryUpdateResult }
   | { "type": "schedule", run_id: string, receipt: ScheduleReceipt }
   | { "type": "evidence", run_id: string, evidence: ChatEvidenceRef }
+  | { "type": "artifact_staged", run_id: string, view: ChatArtifactViewDto }
   | { "type": "artifact", run_id: string, artifact: ChatArtifactRef }
   | {
     "type": "completed",

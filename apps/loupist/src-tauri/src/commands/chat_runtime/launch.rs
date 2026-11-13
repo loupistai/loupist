@@ -189,6 +189,14 @@ pub(super) async fn launch_chat_turn(
                 evidence: Box::new(evidence),
             });
         }));
+        let artifact_event_sink = on_event.clone();
+        let artifact_run_id = run_id.clone();
+        capture.artifact_sink = Some(Arc::new(move |view| {
+            let _ = artifact_event_sink.send(ChatStreamEvent::ArtifactStaged {
+                run_id: artifact_run_id.clone(),
+                view: Box::new(view),
+            });
+        }));
         let entity_link_tx = entity_links.0.clone();
         capture.entity_sink = Some(Arc::new(move |call_id, ids| {
             let _ = entity_link_tx.send((call_id, ids));
