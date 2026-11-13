@@ -205,7 +205,7 @@
     "couldNotSaveWorldProcessingSettings": "Could not save Map building settings.",
     "couldNotRecoverWorldProcessing": "Could not recover Map building.",
     "worldProcessingSettings": "Map building settings",
-    "processingSendsSavedSourceTextToYourSelectedProviderAnd": "Processing sends saved source text to your selected provider and uses your plan or API balance.",
+    "processingSendsSavedSourceTextToYourSelectedProviderAnd": "Processing sends saved source text to your selected AI provider and uses your plan or API balance.",
     "worldProcessingReadiness": "Map building readiness",
     "recoveryRestoresTheLastConfirmedWorldAndKeepsYourSaved": "Recovery restores the last confirmed map and keeps your saved sources. The interrupted processing will not be retried. Recovery does not use a model.",
     "restoringConfirmedWorldData": "Restoring confirmed map data…",
