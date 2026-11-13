@@ -9,7 +9,7 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 
 use sha2::{Digest, Sha256};
 
-#[cfg(all(not(debug_assertions), target_os = "macos"))]
+#[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
 use std::process::{Command, Stdio};
 use thiserror::Error;
 
@@ -300,7 +300,8 @@ fn reject_changed_path(
 /// Validates an executable immediately before use. Development builds require
 /// a regular, non-link/reparse file. A macOS release additionally requires the
 /// helper to remain inside the current signed app bundle, the whole bundle and
-/// helper signatures to validate, and both executables to share a Team ID. A
+/// helper signatures to validate, and both executables to share the app's Team ID
+/// or (for a teamless app) its actual leaf certificate. Ad-hoc apps fail closed. A
 /// Windows release requires the native Authenticode trust policy to accept it.
 pub fn verify_executable(path: &Path) -> Result<VerifiedExecutable, ArtifactTrustError> {
     #[cfg(windows)]
@@ -378,7 +379,16 @@ fn ensure_existing_ancestry_trusted(path: &Path) -> Result<(), ArtifactTrustErro
 
 #[cfg(all(not(debug_assertions), target_os = "macos"))]
 fn verify_macos_distribution_identity(helper: &Path) -> Result<(), ArtifactTrustError> {
-    let current_executable = std::env::current_exe()?.canonicalize()?;
+    verify_macos_identity_for_app(&std::env::current_exe()?, helper)
+}
+
+#[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
+fn verify_macos_identity_for_app(current: &Path, helper: &Path) -> Result<(), ArtifactTrustError> {
+    let metadata = std::fs::symlink_metadata(helper)?;
+    if metadata_is_untrusted(&metadata) || !metadata.is_file() {
+        return Err(ArtifactTrustError::Untrusted);
+    }
+    let current_executable = current.canonicalize()?;
     let app_bundle = current_executable
         .ancestors()
         .find(|path| path.extension().and_then(|value| value.to_str()) == Some("app"))
@@ -388,18 +398,96 @@ fn verify_macos_distribution_identity(helper: &Path) -> Result<(), ArtifactTrust
     if !helper.starts_with(&app_bundle) {
         return Err(ArtifactTrustError::Untrusted);
     }
-
     verify_codesign(&app_bundle, true)?;
     verify_codesign(&helper, false)?;
-    let app_team = codesign_team_identifier(&current_executable)?;
-    let helper_team = codesign_team_identifier(&helper)?;
-    if app_team.is_empty() || app_team != helper_team {
+    let app_identity = macos_signing_identity(&current_executable)?;
+    let helper_identity = macos_signing_identity(&helper)?;
+    require_macos_matching_signer(&app_identity, &helper_identity)
+}
+
+#[cfg(any(test, all(not(debug_assertions), target_os = "macos")))]
+fn require_macos_matching_signer(
+    app: &MacosSigningIdentity,
+    helper: &MacosSigningIdentity,
+) -> Result<(), ArtifactTrustError> {
+    if app != helper {
         return Err(ArtifactTrustError::Untrusted);
     }
     Ok(())
 }
 
-#[cfg(all(not(debug_assertions), target_os = "macos"))]
+#[cfg(any(test, all(not(debug_assertions), target_os = "macos")))]
+#[derive(Debug, PartialEq, Eq)]
+enum MacosSigningIdentity {
+    Team(String),
+    Certificate(String),
+}
+
+#[cfg(any(test, all(not(debug_assertions), target_os = "macos")))]
+fn parse_macos_team(details: &str) -> Result<Option<String>, ArtifactTrustError> {
+    let teams: Vec<_> = details
+        .lines()
+        .filter_map(|line| line.strip_prefix("TeamIdentifier="))
+        .collect();
+    match teams.as_slice() {
+        ["not set"] => Ok(None),
+        [team]
+            if team.len() == 10
+                && team
+                    .bytes()
+                    .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit()) =>
+        {
+            Ok(Some((*team).to_owned()))
+        }
+        _ => Err(ArtifactTrustError::Untrusted),
+    }
+}
+
+#[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
+fn macos_signing_identity(path: &Path) -> Result<MacosSigningIdentity, ArtifactTrustError> {
+    let output = Command::new("/usr/bin/codesign")
+        .env_clear()
+        .args(["--display", "--verbose=4"])
+        .arg(path)
+        .stdin(Stdio::null())
+        .output()?;
+    if !output.status.success() {
+        return Err(ArtifactTrustError::Untrusted);
+    }
+    if let Some(team) = parse_macos_team(&String::from_utf8_lossy(&output.stderr))? {
+        return Ok(MacosSigningIdentity::Team(team));
+    }
+    // Read the actual embedded leaf, never the designated requirement text or
+    // a compiled-in certificate pin. The private directory prevents path swaps;
+    // no keychain, trust setting or certificate from the user's profile is used.
+    let temporary = tempfile::Builder::new()
+        .prefix("loupist-signature-")
+        .tempdir()?;
+    let prefix = temporary.path().join("certificate");
+    let mut extract = std::ffi::OsString::from("--extract-certificates=");
+    extract.push(&prefix);
+    let status = Command::new("/usr/bin/codesign")
+        .env_clear()
+        .arg("--display")
+        .arg(extract)
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    if !status.success() {
+        return Err(ArtifactTrustError::Untrusted);
+    }
+    let leaf = temporary.path().join("certificate0");
+    let digest =
+        digest_bounded_regular_file(&leaf, 64 * 1024).map_err(|_| ArtifactTrustError::Untrusted)?;
+    if std::fs::metadata(&leaf)?.len() == 0 {
+        return Err(ArtifactTrustError::Untrusted);
+    }
+    Ok(MacosSigningIdentity::Certificate(digest))
+}
+
+#[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
 fn verify_codesign(path: &Path, deep: bool) -> Result<(), ArtifactTrustError> {
     let mut command = Command::new("/usr/bin/codesign");
     command.env_clear().args(["--verify", "--strict"]);
@@ -419,29 +507,60 @@ fn verify_codesign(path: &Path, deep: bool) -> Result<(), ArtifactTrustError> {
     }
 }
 
-#[cfg(all(not(debug_assertions), target_os = "macos"))]
-fn codesign_team_identifier(path: &Path) -> Result<String, ArtifactTrustError> {
-    let output = Command::new("/usr/bin/codesign")
-        .env_clear()
-        .args(["--display", "--verbose=4"])
-        .arg(path)
-        .stdin(Stdio::null())
-        .output()?;
-    if !output.status.success() {
-        return Err(ArtifactTrustError::Untrusted);
-    }
-    let details = String::from_utf8_lossy(&output.stderr);
-    details
-        .lines()
-        .find_map(|line| line.strip_prefix("TeamIdentifier="))
-        .filter(|team| !team.is_empty() && *team != "not set")
-        .map(str::to_owned)
-        .ok_or(ArtifactTrustError::Untrusted)
-}
+#[cfg(all(test, target_os = "macos"))]
+#[path = "artifact_trust_macos_tests.rs"]
+mod macos_tests;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn macos_signer_identity_negative_corpus() {
+        let team = MacosSigningIdentity::Team("ABCDE12345".into());
+        let certificate = MacosSigningIdentity::Certificate("a".repeat(64));
+        require_macos_matching_signer(&team, &MacosSigningIdentity::Team("ABCDE12345".into()))
+            .unwrap();
+        require_macos_matching_signer(
+            &certificate,
+            &MacosSigningIdentity::Certificate("a".repeat(64)),
+        )
+        .unwrap();
+        for (app, helper) in [
+            (team, MacosSigningIdentity::Team("OTHER12345".into())),
+            (
+                certificate,
+                MacosSigningIdentity::Certificate("b".repeat(64)),
+            ),
+            (
+                MacosSigningIdentity::Team("ABCDE12345".into()),
+                MacosSigningIdentity::Certificate("a".repeat(64)),
+            ),
+            (
+                MacosSigningIdentity::Certificate("a".repeat(64)),
+                MacosSigningIdentity::Team("ABCDE12345".into()),
+            ),
+        ] {
+            assert!(require_macos_matching_signer(&app, &helper).is_err());
+        }
+        assert_eq!(parse_macos_team("TeamIdentifier=not set").unwrap(), None);
+        assert_eq!(
+            parse_macos_team("TeamIdentifier=ABCDE12345")
+                .unwrap()
+                .as_deref(),
+            Some("ABCDE12345")
+        );
+        for details in [
+            "",
+            "TeamIdentifier=",
+            "TeamIdentifier=abcde12345",
+            "TeamIdentifier=bad",
+            "TeamIdentifier=not set\nTeamIdentifier=ABCDE12345",
+            "TeamIdentifier=ABCDE12345\nTeamIdentifier=ABCDE12345",
+        ] {
+            assert!(parse_macos_team(details).is_err(), "accepted {details:?}");
+        }
+    }
 
     #[cfg(unix)]
     #[test]

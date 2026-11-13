@@ -8,6 +8,8 @@ mod app;
 mod bridge_contract;
 mod briefings;
 mod broker;
+#[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
+mod bundle_self_test;
 mod calculations;
 mod chat;
 mod commands;
@@ -127,6 +129,15 @@ fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Run before Tauri construction, single-instance registration or app-data
+    // recovery: preflight must never open the production profile or a window.
+    #[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
+    if let Some(result) = bundle_self_test::requested(std::env::args_os()) {
+        if let Err(error) = &result {
+            eprintln!("Release helper preflight failed: {error}");
+        }
+        std::process::exit(if result.is_ok() { 0 } else { 1 });
+    }
     let context = tauri::generate_context!();
     let builder = tauri::Builder::default();
     // `main` starts the Windows UI on an explicitly sized worker thread so
