@@ -10,19 +10,23 @@ import "@/styles/watch.css";
 
 const t = i18n.getFixedT(null, "assets");
 
-/** The Loupist's watch settings, kept current from `watch-changed`. */
+/**
+ * The Loupist's watch settings, kept current from `watch-changed`. `failed` says the
+ * last read failed; a page that depends on them offers `reload` as its retry.
+ */
 export function useWatchSettings(bridge: LoupistBridge | undefined, loupistId: string) {
   const [settings, setSettings] = useState<WatchSettings | null>(null);
+  const [failed, setFailed] = useState(false);
   const load = useCallback(async () => {
     if (!bridge?.watchSettingsList) return;
-    try { setSettings(await bridge.watchSettingsList({ loupistId })); } catch { /* the section hides until the next change */ }
+    try { setSettings(await bridge.watchSettingsList({ loupistId })); setFailed(false); } catch { setFailed(true); }
   }, [bridge, loupistId]);
   useEffect(() => {
     void load();
     const off = bridge?.onWatchChanged?.(event => { if (event.loupistId === loupistId) void load(); });
     return () => off?.();
   }, [bridge, loupistId, load]);
-  return { settings, setSettings, reload: load };
+  return { settings, setSettings, reload: load, failed };
 }
 
 /**

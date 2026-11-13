@@ -30,7 +30,11 @@ growth: a `reverse_dcf` over the last annual cash-flow, balance and income state
 report and at most a week older. A before-capture that starts on or after the report
 date runs under `as_of` = report date − 1 and leaves consensus out ("Consensus wasn't
 captured before the report"). Each capture before the report date replaces the host's
-earlier expected rows; after it, expected rows are locked. After: 30 minutes after the
+earlier expected rows; after it, expected rows are locked. When every attempted
+before-capture read fails, Rust records the failure and allows at most six attempts
+for that event, waiting 1, 2, 4, 8 and 16 hours between failures. The counter and next
+retry time survive restart; after the sixth failure the event stops retrying. A new
+earnings event starts a new budget. After: 30 minutes after the
 release is seen, reported revenue, operating income, net income and EPS from a statement
 read once a provider has the quarter (`fmp`, `intrinio`, `polygon`, `tiingo`, `tmx` or
 `sec`; Korea `dart_financials`), retried hourly up to six times; the same runs with stage
@@ -77,7 +81,7 @@ a low–high range as base-unit decimal strings, unit, currency, kind (`guidance
 `consensus`, `broker_estimate`, `implied`, `reported`), stage (`preliminary`, `final`),
 provider, evidence, fact date, the cutoff of a late capture and origin (`host`, `chat`,
 `briefing`). `knowledge_earnings_tone` keeps one call-tone sentence with its quotes, and
-`knowledge_earnings_notices` the Thread messages owed. Every row cites its evidence;
+`knowledge_earnings_notices` the Bot messages owed. Every row cites its evidence;
 [differences and revisions](results.md#results-before-and-after) are computed when the
 card is read and never stored from model text. Holdings never enter these tables.
 

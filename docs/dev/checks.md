@@ -18,7 +18,8 @@ packaging is also in scope; those run outside this gate. Plain `scripts/verify.s
 runs every scope whatever changed.
 
 From `apps/loupist/`, `npm run check:web`, `check:rust` and `check:python` run
-one scope without reinstalling dependencies; `check:harness` runs the
+one scope without reinstalling dependencies. Web and harness checks reject npm
+inventories that differ from the checked-in locks. `check:harness` runs the
 credential-free Pi/eval contracts also included in web. `npm run check` runs all
 three scopes one after another (web → python → rust). Rust includes feature-gated
 headless contracts without paid calls.
@@ -258,15 +259,13 @@ Keep the Pi package family on the same exact version and follow the pins in
 `scripts/pi-security.json` when updating dependencies.
 Dependency security floors and platform-specific findings are recorded in
 [dependency review](dependencies.md#dependency-security-review). The native
-dependency set requires Rust 1.90 or newer; use CI's pinned toolchain.
+dependency set requires Rust 1.97 or newer; use CI's pinned toolchain.
 
 ```sh
 python3 apps/loupist/scripts/stage-embed-assets.py
 python3 apps/loupist/scripts/stage_python_runtime.py --ensure
 # Complete platform staging also includes embeddings and the Python runtime:
 sh apps/loupist/scripts/stage-macos-arm64.sh
-# Windows compatibility staging:
-pwsh apps/loupist/scripts/stage-windows-x64.ps1
 ```
 
 `stage-macos-arm64.sh` signs `loupist-python-worker` with the hardened runtime
@@ -279,7 +278,39 @@ and include the comparison and measurement method in the PR. Runtime file bytes,
 Tauri's app-size report and a compressed installer are different measurements.
 When `APPLE_SIGNING_IDENTITY` is set, `--ensure` reapplies that identity even when
 the runtime was previously cached with an ad-hoc signature. Distribution checks
-also require the Python worker's signature to chain to Apple.
+branch on `LOUPIST_MACOS_SIGNING_MODE`: unset preserves local/CI behavior,
+`developer-id` requires an Apple chain, and `self-signed` requires the pinned leaf.
+
+| Executable | Developer ID | Self-signed Beta | Mode unset |
+| --- | --- | --- | --- |
+| App (Tauri) | Runtime, no entitlements, notarized | Runtime, no entitlements | Local linker signature |
+| Python worker | Runtime, worker entitlement, timestamp | Runtime, worker entitlement, no timestamp | Ad-hoc runtime and worker entitlement |
+| Pi | Runtime, Pi entitlements, timestamp | Certificate, no runtime or entitlements | Upstream signature |
+| Other Pi Mach-O | Runtime, timestamp | Certificate, no runtime or entitlements | Untouched |
+| OpenBB | PyInstaller identity, runtime, timestamp | PyInstaller ad-hoc, then sign every Mach-O without runtime, main executable last | PyInstaller ad-hoc |
+| DMG | Signed, notarized and stapled | Signed, no ticket | Unsigned |
+
+Without a Team ID, library validation prevents a hardened Pi/OpenBB process from
+loading its own libraries. Self-signed staging therefore omits hardened runtime
+for those processes; the app and Python worker retain it. A release app without a
+Team ID admits only helpers with its own actual leaf
+certificate hash. Ad-hoc apps have no certificate and cannot run bundled helpers,
+so ad-hoc is not selectable in `release-profile.json`. Local unsigned staging
+remains available. The signed bundle check also starts the app's headless
+`--check-bundled-helpers` preflight, which uses its real Pi RPC, bundled MCP and
+`run_python` launch paths before any Tauri/app-profile initialization. No signing experiment may touch another user's keychains or
+trust settings. Release signing facts are checked by `macos_release_signing.py`
+and recorded in the release metadata; see [signing modes](../release.md#signing-modes-and-rehearsal).
+
+The release and package-smoke resource maps list the same production agent files
+explicitly and exclude `*.test.mjs`. Tauri reads both overlays directly, so their
+JSON maps are kept equal by `test_agent_resources.py`, which stages each map into a
+disposable folder.
+`check_agent_resources.py` verifies exact production bytes and rejects tests, extras,
+missing files and symbolic links. The macOS app-bundle check uses the same verifier. The renderer has no notification
+plugin capability or `asset:` image CSP source: notification permission and delivery
+use Rust directly, and image previews use data URLs. Changes to these grants still
+require the release macOS WKWebView and native notification checks.
 
 After a bundle change use the bundle checks in [CI and releases](../ci-cd.md).
 Do not commit staged binaries, build output, credentials, databases or attachments.

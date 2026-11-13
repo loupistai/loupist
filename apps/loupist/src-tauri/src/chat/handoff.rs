@@ -182,7 +182,7 @@ impl HandoffRequest {
                 match pin {
                     HandoffPin::Lens { lens } => text.push_str(&format!("\n- lens_read {lens}")),
                     HandoffPin::World { world } => {
-                        text.push_str(&format!("\n- world_read node {world}"))
+                        text.push_str(&format!("\n- world_read with scope world and centerNodeId {world} (recordId from the World entry in the index or a world_search hit)"))
                     }
                 }
             }
@@ -883,7 +883,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             request.first_message(),
-            "Who else can supply HBM4 in 2027?\n\nCheck capacity announcements.\n\nRead these first:\n- lens_read rec_a\n- world_read node node_b"
+            "Who else can supply HBM4 in 2027?\n\nCheck capacity announcements.\n\nRead these first:\n- lens_read rec_a\n- world_read with scope world and centerNodeId node_b (recordId from the World entry in the index or a world_search hit)"
         );
         for (arguments, field) in [
             (json!({"question": "q", "requestKey": "k"}), "title"),

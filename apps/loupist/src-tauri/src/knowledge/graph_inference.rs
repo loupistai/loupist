@@ -62,7 +62,7 @@ pub fn authorize(settings: &GraphProcessingSettings, kind: &str) -> Result<(), &
 
 const MAX_PROMPT_CHARS: usize = 192 * 1024;
 const MAX_EMBEDDING_CHARS: usize = 8_000;
-const MAX_ANSWER_TOKENS: u32 = 8_192;
+pub(super) const MAX_ANSWER_TOKENS: u32 = 8_192;
 const REASONING_ALLOWANCE_TOKENS: u32 = 8_192;
 // Graphiti asks for answer tokens; reasoning APIs share that cap with hidden
 // thinking. Reserve room without allowing worker-controlled unbounded output.

@@ -249,6 +249,7 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
         },
     }];
     let research = crate::commands::tool_executor::StagedResearch {
+        thesis_pair: None,
         source_reads: vec![span_id.clone()],
         world_reads: Vec::new(),
         lens_reads: Vec::new(),

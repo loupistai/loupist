@@ -74,7 +74,10 @@ function checkChatCell(cell, geometry, width, height) {
   }
   if (!stage || (width >= 900) !== (stage.x > 0)) throw new Error("Unexpected sidebar space");
   if (panel.right > width + 1) throw new Error("Panel escapes viewport");
-  if (panelOverlay && Math.abs(chat.right - panel.x) > 1) throw new Error("Chat must wrap into the visible space beside the sheet");
+  // Under 840 px of stage the sheet covers the whole stage; above it the chat wraps into the strip beside it.
+  const fullSheet = panelOverlay && stage && stage.width < 840;
+  if (fullSheet && (Math.abs(panel.x - stage.x) > 1 || Math.abs(panel.width - stage.width) > 1)) throw new Error("A sheet under 840 px of stage must cover the stage");
+  if (panelOverlay && !fullSheet && Math.abs(chat.right - panel.x) > 1) throw new Error("Chat must wrap into the visible space beside the sheet");
   if (!panelOverlay && Math.abs(chat.right - panel.x) > 1) throw new Error("Dock must sit beside chat");
 }
 

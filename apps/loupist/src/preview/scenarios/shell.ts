@@ -15,12 +15,13 @@ export const shellScenarios: PreviewScenario[] = [
   { ...base("loupist-settings-tracking", "What the map tracks", () => select(".loupist-tracking-changes"), async () => {
     await openLoupistSettings();
     await click('[data-loupist-section="world"] > summary');
+    await click("[data-loupist-tracking-advanced] > summary");
     await until(() => select(".loupist-tracking-list"), "Tracking list did not load");
     select(".loupist-tracking")?.scrollIntoView({ block: "start" });
   }), setup: async bridge => { await prepareFixture(bridge); bridge.installWorldSchema("loupist-quality", semiconductorTrackingView()); } },
   { ...base("chat-all-chats", "Five recent sessions stay alongside the current chat", () => {
     const sessions = select(".loupist-navigation");
-    return sessions && sessions.querySelectorAll('.loupist-chat-row:not([data-home])').length === 5 ? sessions : null;
+    return sessions && sessions.querySelectorAll('.loupist-chat-row:not([data-home]):not([data-sidebar-place])').length === 5 ? sessions : null;
   }, async () => {
     await until(() => select("textarea[data-chat-composer]"), "Chat did not initialize");
     await openNavigation('[data-thread-id="preview-chat"]');

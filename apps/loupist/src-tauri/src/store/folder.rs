@@ -121,9 +121,6 @@ impl SqliteStore {
                 .connection
                 .into_inner()
                 .map_err(|_| StoreError::LockPoisoned)?;
-            // Keep every committed change in the copyable database file. A folder
-            // copy should be taken while the app is closed, as for other live DBs.
-            connection.execute_batch("PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL;")?;
             folders.insert(
                 loupist_id.to_owned(),
                 FolderConnection {
@@ -140,17 +137,51 @@ impl SqliteStore {
         if !self.folder_catalog {
             return self.lock();
         }
-        // Table names are static host code, never renderer input.
+        // An already bound database can identify its records without opening
+        // unrelated folders. Re-enter lock_loupist before returning it so root
+        // and database identity checks still run on this fast path.
+        let mut opened = std::collections::BTreeSet::new();
+        let owner = {
+            let folders = self.folders.lock().map_err(|_| StoreError::LockPoisoned)?;
+            let mut owner = None;
+            for (loupist, folder) in folders.iter() {
+                opened.insert(loupist.clone());
+                let found: bool = match folder.connection.query_row(
+                    &format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?1)"),
+                    [id],
+                    |row| row.get(0),
+                ) {
+                    Ok(found) => found,
+                    Err(_) => continue,
+                };
+                if found {
+                    owner = Some(loupist.clone());
+                    break;
+                }
+            }
+            owner
+        };
+        if let Some(owner) = owner {
+            return self.lock_loupist(&owner);
+        }
+        // Table names are static host code, never renderer input. A first read
+        // after restart still discovers ownership from the registered folders.
         for profile in self.list_loupists()? {
+            if opened.contains(&profile.id) {
+                continue;
+            }
             let connection = match self.lock_loupist(&profile.id) {
                 Ok(c) => c,
                 Err(_) => continue,
             };
-            let found: bool = connection.query_row(
+            let found: bool = match connection.query_row(
                 &format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?1)"),
                 [id],
                 |r| r.get(0),
-            )?;
+            ) {
+                Ok(found) => found,
+                Err(_) => continue,
+            };
             if found {
                 return Ok(connection);
             }
@@ -250,11 +281,8 @@ impl SqliteStore {
             create.mode(0o600);
         }
         drop(create.open(&database).map_err(invalid)?);
-        let local = Self::open(database)?;
+        let local = Self::open_folder(database)?;
         local.create_loupist(profile)?;
-        local
-            .lock()?
-            .execute_batch("PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL;")?;
         self.refresh_folder_registration(profile)
     }
     pub(crate) fn refresh_folder_registration(&self, profile: &LoupistProfile) -> StoreResult<()> {
@@ -368,7 +396,6 @@ impl SqliteStore {
                 .map_err(invalid)?;
             crate::knowledge::recover_interrupted_jobs(&transaction).map_err(invalid)?;
             transaction.commit()?;
-            connection.execute_batch("PRAGMA journal_mode = DELETE;")?;
         }
         self.refresh_folder_registration(profile)
     }

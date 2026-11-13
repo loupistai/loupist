@@ -82,7 +82,7 @@ describe("Loupist · Memory reading", () => {
     const view = render(<ResearchReader bridge={bridge} location={journal("journal-a")} onOpen={vi.fn()} />);
     await user.click(await screen.findByRole("button", { name: "Read saved source" }));
     view.rerender(<ResearchReader bridge={bridge} location={{ loupistId: "loupist-quality", surface: "note", selection: { kind: "research", recordId: "note-b" } }} onOpen={vi.fn()} />);
-    expect(await screen.findByRole("article", { name: "Saved working note" })).toHaveTextContent("Cash flow stayed positive in the annual filing.");
+    expect(await screen.findByRole("article", { name: "Saved research note" })).toHaveTextContent("Cash flow stayed positive in the annual filing.");
     await act(async () => release({ mediaType: "text/plain", byteLength: 13, text: "STALE PASSAGE", pinned }));
     expect(screen.queryByText("STALE PASSAGE")).not.toBeInTheDocument();
   });
@@ -103,7 +103,7 @@ describe("Loupist · Source catalog", () => {
     await renderSources(bridge);
     expect(await screen.findByText("No sources yet")).toBeVisible();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "+ Add source" }));
+    await user.click(screen.getByRole("button", { name: "Add source" }));
     expect(screen.getByRole("button", { name: "Save source" })).toBeDisabled();
   });
 
@@ -126,7 +126,7 @@ describe("Loupist · Source catalog", () => {
     const original = bridge.knowledgeSourceRetain.bind(bridge);
     const create = vi.spyOn(bridge, "knowledgeSourceRetain").mockRejectedValueOnce(new Error("Storage is unavailable")).mockImplementation(original);
     await renderSources(bridge);
-    await user.click(screen.getByRole("button", { name: "+ Add source" }));
+    await user.click(screen.getByRole("button", { name: "Add source" }));
     const dialog = screen.getByRole("dialog", { name: "Add source" });
     await user.type(within(dialog).getByRole("textbox", { name: "Source title" }), "Annual filing");
     await user.click(within(dialog).getByRole("tab", { name: "Link" }));

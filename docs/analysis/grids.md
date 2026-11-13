@@ -34,6 +34,17 @@ Exports keep sources: CSV with sources has one row per cell (asset, symbol, mark
 measure, period, basis, value, unit, currency, status, source, source date, and the
 source URL or a calculated cell's formula with its inputs' sources), UTF-8 with a byte
 order mark and the AI notice row last; the Markdown table adds a footnote per value.
+A money value with more than two decimals is shown, copied and written to the Markdown
+table rounded to two ("₩32.765719조" reads "₩32.77조", "$394.3281bn" "$394.33bn"); its
+number chip then says it was rounded and gives the exact source value, and CSV with
+sources keeps the value as published. Within one column the values the table rounds show
+one number of decimals, the most any money value in that column shows (at most two), so
+"₩43.600123조" reads "₩43.60조" under "₩47.21조" rather than "₩43.6조"; a value the model
+wrote with two decimals or fewer stays exactly as written (`gridDecimals`, `grid.ts`).
+Percents, multiples and other values show as written.
+A measure column is 112–168 px wide and never narrower than its widest value or period
+line, so a long amount ("333,605,938,000,000원") never runs into the next column: the
+table scrolls sideways instead, with the next column peeking in.
 
 ## Code
 

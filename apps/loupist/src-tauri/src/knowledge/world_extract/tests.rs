@@ -14,8 +14,10 @@ use super::text;
 use super::*;
 use crate::knowledge::graph_inference::{InferenceDisposition, InferenceReply};
 
+mod entity_names;
 mod indexing;
 mod jobs;
+mod temporal;
 
 const GOLDEN: &str = include_str!("golden/stages.json");
 const EPISODE_KEY: &str = "ep_golden";

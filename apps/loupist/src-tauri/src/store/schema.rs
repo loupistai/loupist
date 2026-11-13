@@ -16,7 +16,7 @@ use crate::fs::artifact_trust::{
 // formats are refused with a typed state, and newer ones are left untouched.
 // The SQLite application id distinguishes Loupist files from unrelated
 // databases and discarded development formats.
-pub(crate) const STORE_SCHEMA_VERSION: i64 = 5;
+pub(crate) const STORE_SCHEMA_VERSION: i64 = 6;
 pub(crate) const STORE_APPLICATION_ID: i64 = 0x4755_5255; // "GURU": the id stored in every existing database, kept as is
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -127,7 +127,17 @@ impl SqliteStore {
             }
             upgrade::upgrade(&mut connection, database_path.as_deref())?;
         }
-        connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
+        connection.execute_batch("PRAGMA foreign_keys = ON;")?;
+        // Folder databases are copyable single files. Opening one must never
+        // switch DELETE → WAL → DELETE, which takes needless exclusive locks.
+        let journal: String = connection.query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
+        let expected_journal = if folder { "delete" } else { "wal" };
+        if database_path.is_some() && !journal.eq_ignore_ascii_case(expected_journal) {
+            connection.pragma_update(None, "journal_mode", expected_journal)?;
+        }
+        if folder {
+            connection.execute_batch("PRAGMA synchronous = FULL;")?;
+        }
         if version == 0 {
             Self::initialize_schema(&connection)?;
         }
@@ -238,6 +248,11 @@ impl SqliteStore {
             "#,
         )?;
         connection.execute_batch(&crate::knowledge::embedded_ddl())?;
+        connection.execute_batch(
+            "CREATE INDEX knowledge_spans_by_id ON knowledge_source_spans(span_id, record_id);
+             CREATE INDEX knowledge_representations_by_id
+                 ON knowledge_source_representations(representation_id, record_id);",
+        )?;
         connection.execute_batch(crate::datasets::embedded_ddl())?;
         connection.execute_batch(crate::scheduled_tasks::store::DDL)?;
         connection.execute_batch(crate::chat::handoff::DDL)?;

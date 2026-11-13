@@ -10,9 +10,4 @@ export type LoupistAvailability =
   | { "status": "available" }
   | { "status": "workspace_unavailable" }
   | { "status": "earlier_version" }
-  | { "status": "newer_version" }
-  | { "status": "recovery_required", reason: LoupistRecoveryReason, action: LoupistRecoveryAction };
-
-export type LoupistRecoveryAction = "recover_memory";
-
-export type LoupistRecoveryReason = "interrupted_memory_update";
+  | { "status": "newer_version" };

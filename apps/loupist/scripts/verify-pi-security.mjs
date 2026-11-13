@@ -55,7 +55,7 @@ export async function verifyPiSecurity(executable, runtime) {
         "--mode", "rpc", "--no-session", "--no-builtin-tools", "--no-extensions",
         "--extension", join(scripts, "fixtures/pi-security-extension.mjs"),
         "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files",
-        "--provider", "google", "--model", "gemini-2.5-flash",
+        "--provider", "google", "--model", "gemini-3.5-flash-lite",
       ], { cwd: temporary, env, stdio: ["pipe", "pipe", "pipe"] });
       let failure;
       let diagnostics = "";

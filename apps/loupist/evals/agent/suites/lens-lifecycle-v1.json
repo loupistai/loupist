@@ -5,7 +5,7 @@
   "description": "Lens lifecycle: research turns file subject pages from retained originals, later Chats read and reuse them, newer originals revise the same page (including a stale premise, an alias and a small update that must keep earlier detail), one case never becomes a method, read-only and light turns file nothing, and a method applies only where it fits.",
   "budget": {
     "maxInputTokensPerTurn": 1000000,
-    "maxTurns": 60
+    "maxTurns": 75
   },
   "scenarios": [
     {
@@ -58,6 +58,22 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "halvren",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])31[.,]5(?![\\d])"
                   }
                 ]
               }
@@ -80,7 +96,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "answer": [
@@ -200,6 +216,22 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "한빛|hanbit",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])4,?200(?![\\d])"
                   }
                 ]
               }
@@ -235,6 +267,20 @@
                     "metric": "lens_update",
                     "count": 1,
                     "section_matches": "(?<![\\d.,])3,?600(?![\\d])"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "한빛|hanbit",
+                    "metric": "save_precision",
+                    "count": 1,
+                    "section_matches": "(?<![\\d.,])3,?600(?![\\d])"
                   }
                 ],
                 "rubric": [
@@ -264,7 +310,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "answer": [
@@ -288,7 +334,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "id": "LL-003",
@@ -339,6 +386,22 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "corvane",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])2028(?![\\d])"
                   }
                 ]
               }
@@ -366,6 +429,14 @@
                     "kind": "subject",
                     "title_matches": "corvane",
                     "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "terminat|31 December 2026|2026-12-31"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "corvane",
+                    "metric": "save_precision",
                     "count": 1,
                     "section_matches": "terminat|31 December 2026|2026-12-31"
                   }
@@ -402,7 +473,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -453,6 +524,14 @@
                     "metric": "save_recall",
                     "min": 1,
                     "max": 1
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "halvren|할브렌",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1
                   }
                 ]
               }
@@ -482,6 +561,14 @@
                     "metric": "lens_update",
                     "count": 1,
                     "section_matches": "(?<![\\d.,])71(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "halvren|할브렌",
+                    "metric": "save_precision",
+                    "count": 1,
+                    "section_matches": "(?<![\\d.,])71(?![\\d])"
                   }
                 ],
                 "rubric": [
@@ -495,7 +582,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "id": "LL-005",
@@ -540,6 +628,16 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])0[.,]18(?![\\d])"
                   }
                 ]
               }
@@ -583,6 +681,30 @@
                     "kind": "subject",
                     "title_matches": "marrowfield",
                     "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "packaging"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "save_precision",
+                    "count": 1,
+                    "section_matches": "(?<![\\d.,])0[.,]10(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "save_precision",
+                    "count": 1,
+                    "section_matches": "(?<![\\d.,])2[.,]6(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "marrowfield",
+                    "metric": "save_precision",
                     "count": 1,
                     "section_matches": "packaging"
                   }
@@ -642,6 +764,15 @@
                     "title_matches": ".",
                     "metric": "save_precision",
                     "max": 0
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "ostrava",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
                   }
                 ]
               }
@@ -679,12 +810,12 @@
                 "memory": [
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   },
                   {
                     "assert": "not_committed",
                     "kind": "lens",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ]
               }
@@ -707,6 +838,32 @@
                   {
                     "assert": "not_committed",
                     "kind": "lens",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "explicit-teaching",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this research principle for future work: For regulated utilities, compare allowed return on equity with the cost of equity before drawing an investment conclusion.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
                     "metric": "save_precision"
                   }
                 ]
@@ -753,6 +910,14 @@
                     "kind": "method",
                     "title_matches": ".",
                     "max": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "Ferrox",
+                    "min": 1,
+                    "basis": "span",
                     "metric": "save_precision"
                   }
                 ],
@@ -860,6 +1025,14 @@
                     "metric": "save_recall",
                     "min": 1,
                     "max": 1
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": "channel",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1
                   }
                 ]
               }
@@ -882,7 +1055,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -941,6 +1114,16 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "ardent",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])450(?![\\d])"
                   }
                 ]
               }
@@ -963,7 +1146,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -971,6 +1154,111 @@
                     "id": "dated",
                     "criterion": "The answer gives the 450 million USD capex plan, says it comes from Ardent's 12 February 2026 outlook, and does not claim the plan is unchanged or still current today.",
                     "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LL-011",
+      "title": "A document handed over in Bot is retained and filed to one subject page without being asked",
+      "tags": [
+        "create",
+        "bot"
+      ],
+      "split": "capability",
+      "connections": [],
+      "workspace_files": {},
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Here is Garnet Row Freight's Q3 2026 update. Give me the main points.",
+              "attachments": [
+                {
+                  "filename": "garnet-row-q3-2026.md",
+                  "media_type": "text/markdown",
+                  "text": "This is a fictional company created for Loupist's evaluation. It does not trade, and this note is not a recommendation.\n\nGarnet Row Freight Q3 2026 update (published 22 October 2026)\n\n- Revenue: 318 million USD, up 7% year on year.\n- Operating margin: 6.4%, down from 8.1% a year earlier.\n- Cause named by management: driver wage settlements effective 1 July 2026.\n- Fleet: 2,150 tractors; average age 4.2 years.\n- FY2026 capex guidance: 95 million USD, unchanged.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "garnet",
+                    "metric": "save_recall",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])6[.,]4(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "max": 0,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "garnet",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])6[.,]4(?![\\d])"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "recall",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "What was Garnet Row Freight's operating margin last quarter, and why did it fall?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "garnet",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "boundary"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "6.4"
+                    ],
+                    "metric": "carry_forward"
                   }
                 ]
               }

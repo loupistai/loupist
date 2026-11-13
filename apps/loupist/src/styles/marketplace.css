@@ -110,3 +110,7 @@
   .marketplace-manage-access { margin: 0; }
   .marketplace-error { flex-wrap: wrap; }
 }
+
+/* T3: quieter rows; a description reads at most two lines. */
+.marketplace-card { padding: var(--gg-space-3) 0; }
+.marketplace-entry-copy > p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

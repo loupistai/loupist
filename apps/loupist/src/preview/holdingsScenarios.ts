@@ -1,11 +1,12 @@
 /**
  * Crypto holdings and asset-class template scenarios
  * (finance-crypto-and-templates.md §8). Every scenario reaches its screen
- * through the app's own controls: About you › Update holdings, or the New Loupist dialog.
+ * through the app's own controls: Following › Import holdings, or the New Loupist dialog.
  */
 import i18n from "../i18n";
 import { prepareFixture, type PreviewBridge } from "./fixtures";
 import type { PreviewScenario } from "./scenarios";
+import { navigate } from "./scenarios/kit";
 
 type Helpers = {
   base: (id: string, title: string, landmark: PreviewScenario["landmark"], enter?: PreviewScenario["enter"]) => PreviewScenario;
@@ -19,6 +20,7 @@ const EVM_WALLET = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F";
 
 /** Stocks from a CSV, an exchange file and two wallets, as a returning user has them. */
 async function holdings(bridge: PreviewBridge) {
+  await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" });
   const stocks = await bridge.holdingsImportCsv({ path: "/mock/holdings.csv" });
   await bridge.holdingsCommitCsv({ previewId: stocks.previewId });
   const crypto = await bridge.holdingsImportCryptoFile({ path: "/mock/kraken-ledger.csv" });
@@ -34,16 +36,10 @@ function type(field: HTMLInputElement, value: string) {
 }
 
 export function holdingsScenarios({ base, select, until, click }: Helpers): PreviewScenario[] {
-  /** "What {Loupist} knows" › About you. */
+  /** Following, from its sidebar row. */
   const openAbout = async (root: HTMLElement) => {
-    await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
-    (await until(() => select(".header-panel-toggle"), "Panel control did not initialize")).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    await click('[data-workspace-kind="lens"]');
-    await until(() => select(".memory-page-body"), "What it knows did not load");
-    const about = await until(() => [...document.querySelectorAll<HTMLElement>('.memory-page-tabs [role="tab"]')]
-      .find(tab => tab.textContent?.includes(i18n.t("knowledge:memoryPage.tabs.about"))), "About you tab missing");
-    about.click();
-    await until(() => select("[data-holdings-kinds]"), "About you did not load");
+    await navigate(root, "following");
+    await until(() => select("[data-testid=following-page] [data-holdings-kinds]"), "Following did not load");
   };
   const openSheet = async (root: HTMLElement) => {
     await openAbout(root);
@@ -95,28 +91,49 @@ export function holdingsScenarios({ base, select, until, click }: Helpers): Prev
       },
     }),
     {
-      ...base("memory-about-holdings-by-kind", "About you: holdings by kind, counts and dates only", () => select("[data-holdings-kinds]"), openAbout),
+      ...base("memory-about-holdings-by-kind", "Following: holdings by kind, counts and dates only", () => select("[data-holdings-kinds]"), openAbout),
       setup: async bridge => { await prepareFixture(bridge); await holdings(bridge); },
     },
     {
-      ...base("onboarding-templates-asset-classes", "New Loupist: nine templates with the asset classes", () => {
+      ...base("following-empty", "Following with nothing followed: the add field and holdings import", () => select("[data-testid=following-page] [data-following-empty]") && select("[data-testid=following-page] [data-holdings-kinds]"), openAbout),
+      setup: async bridge => {
+        await prepareFixture(bridge);
+        for (const entry of await bridge.watchlistList()) await bridge.watchlistRemove({ symbol: entry.symbol, market: entry.market });
+      },
+    },
+    {
+      ...base("following-unwatched", "Following two names that nothing watches yet: Watch all", () => select("[data-testid=following-page] [data-watch-all]"), openAbout),
+      setup: async bridge => {
+        await prepareFixture(bridge);
+        for (const entry of [{ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }, { symbol: "005930", market: "KRX", displayName: "Samsung Electronics" }]) await bridge.watchlistAdd(entry);
+      },
+    },
+    {
+      ...base("following-page", "Following: the list, Watch all and what this Loupist watches", () => select("[data-testid=following-page] [data-watch-all]") && select("[data-testid=following-page] .watching-reader"), openAbout),
+      setup: async bridge => { await prepareFixture(bridge); await holdings(bridge); },
+    },
+    {
+      ...base("onboarding-templates-asset-classes", "New Loupist: eight templates with the asset classes", () => {
         const grid = select('.loupist-template-grid');
-        return grid && grid.querySelectorAll(".loupist-template-card").length === 9 ? grid : null;
+        return grid && grid.querySelectorAll(".loupist-template-card").length === 8 ? grid : null;
       }, templates),
       setup: bridge => prepareFixture(bridge),
     },
     {
-      ...base("onboarding-follow-starters-macro", "New Loupist: Macro & rates fills the research focus", () => {
+      ...base("onboarding-follow-starters-macro", "New Loupist: Macro & rates offers starters to follow, one already followed", () => {
         const fields = select(".loupist-template-fields");
         const focus = fields?.querySelector<HTMLTextAreaElement>("textarea");
-        return focus?.value === i18n.t("onboarding:wizard.templates.macro.focus") ? fields : null;
+        return focus?.value === i18n.t("onboarding:wizard.templates.macro.focus") && fields?.querySelector('[data-template-starters="macro"] .loupist-starter[aria-pressed="true"]') ? fields : null;
       }, async root => {
         await templates(root);
         const macro = await until(() => [...document.querySelectorAll<HTMLButtonElement>('.loupist-template-card')]
           .find(card => card.querySelector("strong")?.textContent === i18n.t("onboarding:wizard.templates.macro.title")), "Macro template missing");
         macro.click();
         await until(() => macro.getAttribute("aria-pressed") === "true", "Macro template did not select");
-        (select(".loupist-template-fields textarea") as HTMLElement | null)?.scrollIntoView?.({ block: "center" });
+        const starter = await until(() => select('[data-template-starters="macro"] .loupist-starter'), "Starters did not appear") as HTMLButtonElement;
+        starter.click();
+        await until(() => starter.getAttribute("aria-pressed") === "true", "Starter was not followed");
+        starter.scrollIntoView?.({ block: "center" });
       }),
       setup: bridge => prepareFixture(bridge),
     },

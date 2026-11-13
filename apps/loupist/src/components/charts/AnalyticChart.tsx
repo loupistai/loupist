@@ -29,7 +29,8 @@ const syncVegaSize = (result: VegaResult, container: HTMLElement) => {
 };
 
 export default function AnalyticChart({ chart, dataset, theme }: Props) {
-  useTranslation("chat");
+  // Axis, label and tooltip text follow the interface language, so a language change draws the chart again.
+  const { i18n: { language } } = useTranslation("chat");
   const colors = useChartTokens();
   const containerRef = useRef<HTMLDivElement>(null);
   const resultRef = useRef<VegaResult | null>(null);
@@ -76,7 +77,7 @@ export default function AnalyticChart({ chart, dataset, theme }: Props) {
         title: { ...(config.title as object), color: colors.text },
         range: { ...(config.range as object), category: colors.series },
       };
-      void vegaEmbed(container, spec, VEGA_OPTIONS)
+      void vegaEmbed(container, spec, { ...VEGA_OPTIONS, tooltip: { theme: theme === "dark" ? "dark" : "light" } })
         .then((result) => {
           if (cancelled) {
             result.finalize();
@@ -107,7 +108,7 @@ export default function AnalyticChart({ chart, dataset, theme }: Props) {
       resultRef.current = null;
       rendering?.finalize();
     };
-  }, [chart, rows, dataset.columns, theme, colors]);
+  }, [chart, rows, dataset.columns, theme, colors, language]);
 
   useEffect(() => {
     const container = containerRef.current;

@@ -593,6 +593,13 @@ pub(crate) fn configured(
     {
         return false;
     }
+    if config
+        .get("requireSignedVersion")
+        .and_then(serde_json::Value::as_bool)
+        != Some(true)
+    {
+        return false;
+    }
     let Some(endpoints) = config
         .get("endpoints")
         .and_then(serde_json::Value::as_array)
@@ -867,8 +874,17 @@ mod tests {
             "pubkey": "test-public-key",
             "endpoints": [STABLE_UPDATE_ENDPOINT]
         }));
-        assert!(configured(&signed, "0.0.1"));
-        assert!(!configured(&signed, "0.0.1-rc.1"));
+        assert!(
+            !configured(&signed, "0.0.1"),
+            "updater config must require the signed release version"
+        );
+        let bound = config(serde_json::json!({
+            "pubkey": "test-public-key",
+            "requireSignedVersion": true,
+            "endpoints": [STABLE_UPDATE_ENDPOINT]
+        }));
+        assert!(configured(&bound, "0.0.1"));
+        assert!(!configured(&bound, "0.0.1-rc.1"));
     }
 
     #[test]

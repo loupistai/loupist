@@ -1,6 +1,6 @@
 ---
 name: visualize
-description: Create or revise an in-app chart, Mermaid diagram, or visual export when requested or useful to the answer. Charts inside a Word file, workbook, or slide deck follow that file Skill.
+description: Create or revise an in-app chart, Mermaid diagram, or image export when requested or useful to the answer.
 ---
 
 # Visualizations in Loupist
@@ -12,20 +12,19 @@ description: Create or revise an in-app chart, Mermaid diagram, or visual export
 | Prices, volume, indicators, or drawings | `chart_publish` with `view.kind: "candlestick"`; real OHLC columns, time, symbol, and interval are required. |
 | Trends, categories, or numeric relationships | `chart_publish` with `line`, `area`, `bar`, or `scatter`. |
 | A compact process or relationship diagram | A fenced Mermaid block in the reply. |
-| Recompute assumptions | `run_python` with matplotlib, save a PNG under `/workspace/outputs/`, then revise the chart with `chart_publish`. |
+| Recompute assumptions | `run_python` writing the recomputed rows as JSON under `/workspace/outputs/`, `dataset_import` that file, then revise the chart with `chart_publish` `from_dataset`. |
 | Unsupported forms or requested exports | `run_python` writing a file under `/workspace/outputs/`. |
 
-App charts do not execute arbitrary HTML, JavaScript, Vega specifications, or
-custom slider controls. `run_python` cannot install packages. numpy, pandas,
-scipy, matplotlib, statsmodels, and scikit-learn are already available. Save
-charts as PNG files in `/workspace/outputs/` so the app can show them.
-`chart_publish` remains the in-app chart. Files previews CSV/TSV as tables and
-supported raster formats as images. HTML and SVG open as source; deliver a
-self-contained export and explain how to view it in a browser when needed.
+App charts do not execute arbitrary HTML, JavaScript, Vega specifications or
+custom slider controls. `chart_publish` is the in-app chart. A matplotlib figure
+is a file: save it as PNG under `/workspace/outputs/`. Bundled fonts do not cover
+Korean, Japanese or Chinese labels: use `chart_publish` for those, or label the
+figure in Latin script and say so. Files previews CSV/TSV as tables and raster
+formats as images; HTML and SVG open as source.
 
 ## Publish and revise
 
-Load `charts` and follow the `chart_publish` contract for data binding and
+Follow the `chart_publish` contract for data binding and
 revision arguments. Use `chart_query` when exact stored values are needed.
 Include the period and units in the chart title or note. Inline rows must be
 a small inspected table or an explicit hypothetical.

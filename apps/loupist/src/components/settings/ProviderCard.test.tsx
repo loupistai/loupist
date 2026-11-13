@@ -34,20 +34,23 @@ it("shows a ChatGPT sign-in as Connected with its date, the plan line and Chat's
   expect(card).toHaveTextContent("Connected");
   expect(card).toHaveTextContent("Signed in with ChatGPT · since Oct 31, 2026");
   expect(card).toHaveTextContent("Using your ChatGPT plan");
-  expect(card).toHaveTextContent("Chat uses: Auto");
+  // Auto is not repeated on every card.
+  expect(card).not.toHaveTextContent("Chat default");
   expect(card.querySelector(".connect-state-dot")).toHaveAttribute("aria-hidden", "true");
   await user.click(within(card).getByRole("button", { name: "Manage usage" }));
   expect(onOpenUsage).toHaveBeenCalledWith("openai");
-  await user.click(within(card).getByRole("button", { name: "Reconnect ChatGPT" }));
+  await user.click(within(card).getByRole("button", { name: "More actions for ChatGPT" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Reconnect…" }));
   expect(onConnect).toHaveBeenCalledWith({ kind: "provider", provider: "openai", method: "sign_in" });
 });
 
 it("names the key, the local server and an Anthropic key by credential", async () => {
   const user = userEvent.setup();
   const key = renderCard({ option: option("google", { status: status({ credential_kind: "api_key" }) }), chatModel: undefined });
-  expect(key.card).toHaveTextContent("API key saved on this device");
-  expect(key.card).not.toHaveTextContent("Chat uses");
-  await user.click(within(key.card).getByRole("button", { name: "Reconnect Google Gemini" }));
+  expect(key.card).toHaveTextContent("API key saved on this Mac");
+  expect(key.card).not.toHaveTextContent("Chat default");
+  await user.click(within(key.card).getByRole("button", { name: "More actions for Google Gemini" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Change key…" }));
   expect(key.onConnect).toHaveBeenCalledWith({ kind: "provider", provider: "google", method: "api_key" });
   document.body.innerHTML = "";
 
@@ -58,9 +61,10 @@ it("names the key, the local server and an Anthropic key by credential", async (
 
   const claude = renderCard({ option: option("anthropic", { status: status({ credential_kind: "api_key" }) }) });
   expect(within(claude.card).getByRole("heading", { name: "Anthropic" })).toBeVisible();
-  expect(claude.card).toHaveTextContent("API key saved on this device");
+  expect(claude.card).toHaveTextContent("API key saved on this Mac");
   expect(claude.card).not.toHaveTextContent(/extra usage|Signed in with/);
-  await user.click(within(claude.card).getByRole("button", { name: "Reconnect Anthropic" }));
+  await user.click(within(claude.card).getByRole("button", { name: "More actions for Anthropic" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Change key…" }));
   expect(claude.onConnect).toHaveBeenCalledWith({ kind: "provider", provider: "anthropic", method: "api_key" });
 });
 
@@ -77,6 +81,8 @@ it("shows one plan-limit notice with Manage usage, then a dated last-limit line 
   const notice = within(card).getByRole("status");
   expect(notice).toHaveTextContent(/^Reached its plan limit .+\. Background work on this account waits until a request goes through\./u);
   expect(within(notice).getByRole("button", { name: "Manage usage" })).toBeInTheDocument();
+  // One Manage usage per card: the plan line above the notice does not repeat it.
+  expect(within(card).getAllByRole("button", { name: "Manage usage" })).toHaveLength(1);
   document.body.innerHTML = "";
 
   const cleared = renderCard({ option: option("openai", { status: status({ last_limit_at_ms: limit }) }) });
@@ -102,7 +108,7 @@ it("offers Connect and Remove for a disconnected account that schedules still us
 it("lists models with their context and an In menu switch, keeping raw IDs in the tooltip", async () => {
   const user = userEvent.setup();
   const { card, onSetVisibility } = renderCard({ option: option("openai"), chatModel: model });
-  expect(card).toHaveTextContent("Chat uses: GPT-6.1 Sol");
+  expect(card).toHaveTextContent("Chat default: GPT-6.1 Sol");
   await user.click(within(card).getByRole("button", { name: /Models \(1\)/u }));
   const row = card.querySelector(".settings-model-row")!;
   expect(row).toHaveAttribute("title", "gpt-6.1-sol");

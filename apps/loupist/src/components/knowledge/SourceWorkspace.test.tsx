@@ -119,7 +119,7 @@ it("refreshes exact source relationships and processing errors without losing th
     expect(reader).toHaveTextContent("Earlier processing issue");
     expect(screen.queryByRole("group", { name: "Related relationships" })).toBeNull();
     await act(async () => vi.advanceTimersByTimeAsync(2500));
-    expect(screen.getByRole("status")).toHaveTextContent("World updated");
+    expect(screen.getByRole("status")).toHaveTextContent("Map updated");
     expect(screen.getByRole("article", { name: "Source reader" })).toBe(reader);
     expect(reader).toHaveTextContent("The status-code element is a three-digit integer code.");
     expect(reader).not.toHaveTextContent("Earlier processing issue");
@@ -156,12 +156,33 @@ it("filters source processing independently of successful source storage", async
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(4);
   await user.click(screen.getByRole("radio", { name: /Processing/ }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(1);
-  expect(screen.getByRole("button", { name: /Report 0/ })).toHaveTextContent("World is updating");
+  expect(screen.getByRole("button", { name: /Report 0/ })).toHaveTextContent("Map is updating");
   await user.click(screen.getByRole("radio", { name: "Needs attention" }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(2);
-  expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("No text for World processing");
+  expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("No text for map building");
   await user.click(screen.getByRole("radio", { name: "All" }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(4);
+});
+
+it("leaves the default Source saved status off a library row and shows any other status", async () => {
+  const props = await fixture();
+  const statuses = [undefined, "completed", "queued"];
+  const catalog = { ...props.catalog, sources: statuses.map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: status ? { jobId: null, status, error: null } : undefined }] })) };
+  render(<SourceWorkspace {...props} catalog={catalog} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+  const rows = await screen.findAllByRole("button", { name: /Report \d/ });
+  expect(rows).toHaveLength(3);
+  for (const row of rows) expect(row).not.toHaveTextContent("Source saved");
+  expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("Map is updating");
+});
+
+it("says Map building is paused only for the user's pause, and names a source that stopped by itself", async () => {
+  const props = await fixture();
+  const catalog = { ...props.catalog, sources: ["paused", "paused_budget"].map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: "job", status, error: null } }] })) };
+  render(<SourceWorkspace {...props} catalog={catalog} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+  expect(await screen.findByRole("button", { name: /Report 0/ })).toHaveTextContent("Map building paused");
+  const stopped = screen.getByRole("button", { name: /Report 1/ });
+  expect(stopped).toHaveTextContent("Map building stopped for this source");
+  expect(stopped).not.toHaveTextContent("Map building paused");
 });
 
 it("opens an exact World relationship from its original source", async () => {
@@ -226,7 +247,7 @@ it("keeps a source locator with an unsupported scheme as plain text", async () =
 });
 
 it("shows a publication day without shifting its calendar date", async () => {
-  const [locale, expected] = ["ko", "2026. 10. 27."];
+  const [locale, expected] = ["ko", "2026년 10월 27일"];
   await i18n.changeLanguage(locale);
   try {
     const props = await fixture();
@@ -246,17 +267,17 @@ it("shows the What you follow Source in the interface language whatever title it
   const props = await fixture();
   const record = props.catalog.sources[0];
   const followed = { ...record, title: "What you follow", titleKey: "followed" as const, objects: [{
-    ...record.objects[0], title: "What you follow", titleKey: "followed" as const, originLabel: "Your watchlist and holdings",
+    ...record.objects[0], title: "What you follow", titleKey: "followed" as const, originLabel: "What you follow and your holdings",
   }] };
   const catalog = { ...props.catalog, sources: [followed] };
   const location = { loupistId: props.location.loupistId, surface: "source" as const };
   const view = render(<SourceWorkspace {...props} catalog={catalog} location={location} />);
-  expect(screen.getByRole("button", { name: /What you follow.*Your watchlist and holdings/ })).toBeVisible();
+  expect(screen.getByRole("button", { name: /What you follow.*What you follow and your holdings/ })).toBeVisible();
   try {
     await act(async () => { await i18n.changeLanguage("ko"); });
     view.rerender(<SourceWorkspace {...props} catalog={catalog} location={location} />);
     const row = screen.getByRole("button", { name: /관심 자산/ });
-    expect(row).toHaveTextContent("관심 목록과 보유 자산");
+    expect(row).toHaveTextContent("관심 자산과 보유 자산");
     expect(row).not.toHaveTextContent("What you follow");
     // The title the user reads is the one they can search for.
     view.rerender(<SourceWorkspace {...props} catalog={catalog} location={location} query="관심" />);
@@ -264,4 +285,78 @@ it("shows the What you follow Source in the interface language whatever title it
   } finally {
     await act(async () => { await i18n.changeLanguage("en"); });
   }
+});
+
+describe("Try again for a Source whose Map building stopped", () => {
+  const stoppedCatalog = (props: Awaited<ReturnType<typeof fixture>>, statuses: string[]) => ({ ...props.catalog, sources: statuses.map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: `job-${index}`, status, error: null } }] })) });
+  const graphJob = (status: string) => ({ jobId: "job-1", loupistId: "loupist-quality", worldRecordId: "world-protocols", worldRevisionId: "rev-owned-1", status, payloadDigest: "digest", createdAtMs: 0, hostMayRedrive: false });
+
+  it("offers the action only on a row that stopped by itself and explains the allowance it uses", async () => {
+    const props = await fixture();
+    render(<SourceWorkspace {...props} catalog={stoppedCatalog(props, ["paused", "paused_budget", "failed_before_mutation", "queued"])} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+    await screen.findByRole("button", { name: /Report 0/ });
+    expect(screen.getAllByRole("button", { name: "Try again" })).toHaveLength(1);
+    const item = screen.getByRole("button", { name: /Report 1/ }).closest("li")!;
+    expect(within(item).getByRole("button", { name: "Try again" })).toBeVisible();
+    expect(item).toHaveTextContent("Uses one more allowance of model requests per source, as set in Map building.");
+  });
+
+  it("disables while the host decides, shows its refusal inline, and lets the user try again", async () => {
+    const props = await fixture();
+    let refuse!: (cause: Error) => void;
+    const retry = vi.spyOn(props.bridge, "knowledgeGraphRetrySource").mockReturnValueOnce(new Promise((_, reject) => { refuse = reject; }));
+    render(<SourceWorkspace {...props} catalog={stoppedCatalog(props, ["paused", "paused_budget"])} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Try again" }));
+    expect(retry).toHaveBeenCalledWith({ loupistId: props.location.loupistId, recordId: "source-1" });
+    expect(screen.getByRole("button", { name: "Trying again…" })).toBeDisabled();
+    await act(async () => refuse(new Error("enable Map building with a sufficient allowance before retrying")));
+    expect(screen.getByRole("alert")).toHaveTextContent("enable Map building with a sufficient allowance before retrying");
+    expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
+    expect(props.onChanged).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the library after the host accepts and follows the returned job until it settles", async () => {
+    const props = await fixture();
+    vi.spyOn(props.bridge, "knowledgeGraphRetrySource").mockResolvedValue(graphJob("queued"));
+    const read = vi.spyOn(props.bridge, "knowledgeGraphJob").mockResolvedValueOnce(graphJob("running")).mockResolvedValue(graphJob("completed"));
+    vi.useFakeTimers();
+    try {
+      render(<SourceWorkspace {...props} catalog={stoppedCatalog(props, ["paused_budget"])} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
+      expect(props.onChanged).toHaveBeenCalledOnce();
+      await act(async () => vi.advanceTimersByTimeAsync(2500));
+      expect(read).toHaveBeenCalledWith({ loupistId: props.location.loupistId, jobId: "job-1" });
+      expect(props.onChanged).toHaveBeenCalledOnce();
+      await act(async () => vi.advanceTimersByTimeAsync(2500));
+      expect(props.onChanged).toHaveBeenCalledTimes(2);
+      await act(async () => vi.advanceTimersByTimeAsync(10_000));
+      expect(read).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("offers the action in the reader and refreshes it to the Map building progress", async () => {
+    const props = await fixture();
+    const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
+    vi.spyOn(props.bridge, "knowledgeSourceRead")
+      .mockImplementationOnce(async (request) => ({ ...await originalRead(request), processing: { jobId: "job-1", status: "paused_budget", error: null } }))
+      .mockImplementation(async (request) => ({ ...await originalRead(request), processing: { jobId: "job-1", status: "queued", error: null } }));
+    const retry = vi.spyOn(props.bridge, "knowledgeGraphRetrySource").mockResolvedValue(graphJob("queued"));
+    render(<SourceWorkspace {...props} readerOnly />);
+    const reader = await screen.findByRole("article", { name: "Source reader" });
+    expect(within(reader).getByRole("status")).toHaveTextContent("Map building stopped for this source");
+    await userEvent.setup().click(within(reader).getByRole("button", { name: "Try again" }));
+    expect(retry).toHaveBeenCalledWith({ loupistId: props.location.loupistId, recordId: props.location.recordId });
+    expect(await within(reader).findByText("Map is updating")).toBeVisible();
+    expect(within(reader).queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(props.onChanged).toHaveBeenCalled();
+  });
+
+  it("shows no action in the reader for any other status", async () => {
+    const props = await fixture();
+    const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
+    vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async (request) => ({ ...await originalRead(request), processing: { jobId: "job-1", status: "paused", error: null } }));
+    render(<SourceWorkspace {...props} readerOnly />);
+    await screen.findByRole("article", { name: "Source reader" });
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
 });

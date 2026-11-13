@@ -51,6 +51,7 @@ mod schema;
 mod search_embeddings;
 mod search_index;
 pub use search_index::{PreparedSearch, SearchOptions, SEARCH_LIMIT, SEARCH_WINDOW_LIMIT};
+mod entity_name;
 mod schema_writer;
 pub(crate) mod shared_pack;
 mod source;
@@ -83,9 +84,10 @@ pub(crate) use graph_jobs::recover_interrupted as recover_interrupted_jobs;
 #[cfg(any(test, feature = "eval-harness"))]
 pub use graph_jobs::SealedWorldIndex;
 pub use graph_jobs::{
-    get_job, list_jobs, load_settings, pause_processing, recover_world, recovery_status,
-    resume_processing, store_settings, GraphJobView, GraphProcessingSettings, GraphProcessingView,
-    GraphPublicSettings, GraphReadiness, ReadinessNote,
+    get_job, get_processing_job, list_jobs, load_settings, pause_processing, recover_world,
+    recovery_status, resume_processing, retry_source_processing, store_settings, GraphJobView,
+    GraphProcessingSettings, GraphProcessingView, GraphPublicSettings, GraphReadiness,
+    ReadinessNote,
 };
 pub use graph_service::GraphSupervisor;
 pub use model::*;
@@ -665,6 +667,7 @@ impl<'a> KnowledgeWrite<'a> {
         lens::resolve_anchors(self.tx, loupist_id, nodes)
     }
 
+    #[cfg(test)]
     pub fn connections(&self, loupist_id: &str) -> KnowledgeResult<Vec<ConnectionView>> {
         world_followups::list(self.tx, loupist_id)
     }
@@ -1090,12 +1093,13 @@ impl KnowledgeWrite<'_> {
     ) -> KnowledgeResult<SourceProcessing> {
         let record = self.owned_record(loupist_id, record_id)?;
         if let Some(job) = graph_jobs::latest_source_job(self.tx, loupist_id, record_id)? {
+            let status = graph_jobs::processing_status(self.tx, loupist_id, &job.status)?;
             return Ok(SourceProcessing {
                 job_id: Some(job.job_id),
                 error: (job.document.usage_uncertain).then(|| {
                     "The helper response was uncertain. Automatic retry is disabled.".into()
                 }),
-                status: job.status,
+                status,
             });
         }
         let reflected: bool = self.tx.query_row(

@@ -1,11 +1,12 @@
+import { sourceIdentityLabel } from "../../chat/evidence";
 import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { Disclosure } from "../ui/disclosure";
 import { ApprovalCards } from "./ApprovalCard";
-import { QuestionCards } from "./QuestionCard";
+import { holdTurnHeight, QuestionCards } from "./QuestionCard";
 import type { LoupistBridge } from "../../types";
 import { formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
-import { memo, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { useConversationScroll } from "../ai-elements/conversation";
 import { AnswerFeedback, type SaveAnswerFeedback } from "./AnswerFeedback";
 import {
@@ -19,8 +20,9 @@ import {
   InfoIcon,
 } from "lucide-react";
 import { Message, MessageContent } from "@/components/ai-elements/message";
-import { useNow } from "../../chat/runStatus";
-import { deriveTurnView, useLastActivity } from "../../chat/turnView";
+import { deriveTurnView, STALL_AFTER_MS, useLastActivity } from "../../chat/turnView";
+import { DRAIN_LIMIT_MS } from "../../chat/usePacedText";
+import { TurnArrivalProvider, useArrived } from "./turnMotion";
 import { deliveredFiles } from "../../chat/deliveredFiles";
 import { DeliveredFiles } from "./DeliveredFiles";
 import { thinkingLabel } from "../../lib/modelSelection";
@@ -34,7 +36,7 @@ import type {
   ChatPerformance,
   GraphJobView,
 } from "../../types";
-import { ActivityRow } from "./ActivityRow";
+import { TurnLedger } from "./TurnLedger";
 import { ProseSegment } from "./ProseSegment";
 import { TurnFooter } from "./TurnFooter";
 import { TurnProvider, useTurn } from "./TurnProvider";
@@ -43,10 +45,10 @@ import { useGo } from "../navigation/Open";
 import { MessageSchedules } from "./MessageSchedules";
 import { EarningsChatCard } from "./EarningsChatCard";
 import { earningsCards } from "../../chat/earningsLinks";
-import { sensitivityParagraphs, type SensitivitySegment } from "../../chat/sensitivity";
+import { heldSensitivityParagraphs, sensitivityParagraphs, type SensitivitySegment } from "../../chat/sensitivity";
 import { SensitivityCard } from "./SensitivityCard";
 import { ChatArtifactBlock } from "./ChatArtifactBlock";
-import { chartBlocks, gridBlocks } from "../../chat/chartBlocks";
+import { chartBlocks, gridBlocks, sameBlock, type ChartBlock } from "../../chat/chartBlocks";
 import { connectionSetupBlocks } from "../../chat/connectionSetupBlocks";
 import { ConnectionSetupCard } from "./ConnectionSetupCard";
 import { ChatGridBlock } from "./GridCard";
@@ -193,10 +195,8 @@ type Props = {
   /** Edit forks (X18): show the version of the chat before or after this message's version. */
   onEarlierVersion?: () => void;
   onLaterVersion?: () => void;
-  /** Briefings open the outline of a long answer (X16). */
-  outlineOpen?: boolean;
   onRetry?: () => void;
-  /** The newest answer keeps its action row visible; earlier ones show it on hover or focus (X1). */
+  /** The newest answer, or the newest question, keeps its action row visible; earlier ones show it on hover or focus (X1). */
   latest?: boolean;
   /** A stop was requested for this reply and the host has not confirmed it yet. */
   stopping?: boolean;
@@ -208,6 +208,8 @@ type Props = {
   onProviderAction?: (action: ProviderErrorAction, provider: string | undefined) => void;
   /** A meta note under the answer, such as "… isn't offered anymore, so this answer used …". */
   note?: string;
+  /** The optimistic shell drawn before the host started: it fades in under the question. */
+  entering?: boolean;
 };
 
 function UserMessageText({
@@ -271,7 +273,6 @@ function ChatMessageCardComponent({
   editDisabled = false,
   onEarlierVersion,
   onLaterVersion,
-  outlineOpen = false,
   onRetry,
   latest = false,
   stopping = false,
@@ -282,6 +283,7 @@ function ChatMessageCardComponent({
   onSaveFeedback,
   onTeachFeedback,
   feedbackBusy = false,
+  entering = false,
 }: Props) {
   useTranslation("chat");
   const { state: copyState, copy } = useCopyFeedback(message.id);
@@ -290,14 +292,23 @@ function ChatMessageCardComponent({
   const evidenceRefs = message.evidence_refs ?? [];
   // Memory declines are told once per chat by the memory row, not as connection activity.
   const connectionRefusals = (message.tool_refusals ?? []).filter(refusal => refusal.reason !== "sensitive_memory");
-  const now = useNow(message.status === "streaming");
   const lastActivityAt = useLastActivity(message);
+  const now = useStallClock(lastActivityAt, message.status === "streaming");
+  const [holding, releaseCommit] = useCommitGate(message.status, Boolean(message.content));
   const retryOffered = Boolean(onRetry);
-  const view = useMemo(() => deriveTurnView({ message, now, lastActivityAt, stopping, retry: { attempt: retryAttempt, offered: retryOffered } }), [message, now, lastActivityAt, stopping, retryAttempt, retryOffered]);
-  // A new row or a settled footer grows the turn in this commit; follow it now, a frame before the ResizeObserver would.
+  const view = useMemo(() => deriveTurnView({ message, now, lastActivityAt, stopping, holding, retry: { attempt: retryAttempt, offered: retryOffered } }), [message, now, lastActivityAt, stopping, holding, retryAttempt, retryOffered]);
+  const halted = message.status === "aborted" || message.status === "error";
   const conversation = useConversationScroll();
-  const segmentCount = view.segments.length;
-  useLayoutEffect(() => { conversation?.followGrowth(); }, [conversation, segmentCount, view.state.kind]);
+  const article = useRef<HTMLElement>(null);
+  // A block appended at the end of the turn may make room for itself, once; growth never scrolls.
+  const lastSegment = view.segments.at(-1);
+  const lastKey = lastSegment?.key;
+  useLayoutEffect(() => {
+    if (!lastKey || message.status !== "streaming") return;
+    const block = [...(article.current?.querySelectorAll<HTMLElement>(":scope > [data-turn-item]") ?? [])].at(-1);
+    if (block) conversation?.blockAppended(block, lastSegment?.kind === "prose" ? "prose" : "card");
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new last block counts, not its growth.
+  }, [lastKey]);
   const complete = view.state.kind === "complete";
   const settled = view.footer.kind === "settled" ? view.footer : null;
   const copyText = settled?.copyText ?? null;
@@ -313,6 +324,9 @@ function ChatMessageCardComponent({
     return [...written].filter((path) => delivered.has(path));
   }, [message.role, message.progress?.items, message.content, workspacePath]);
   // Charts render as cards in the answer; documents stay in the outputs row and open the panel.
+  // A setup card, a failed chart or a failed table offers the question again; it fills the composer and never sends.
+  const askAgainNow = useCallback(() => { if (onFillComposer && previousQuestion) onFillComposer(previousQuestion); }, [onFillComposer, previousQuestion]);
+  const askAgain = onFillComposer && previousQuestion ? askAgainNow : undefined;
   const charts = useMemo(() => chartBlocks(message), [message]);
   // Grid answers and conflict cards render in the answer too, after its charts.
   const grids = useMemo(() => gridBlocks(message), [message]);
@@ -320,7 +334,8 @@ function ChatMessageCardComponent({
   // A paragraph that only links to a grid result renders as the sensitivity card where the
   // paragraph stood, and one that only links to a results snapshot as the compact results card.
   // Rust counted the links of the answer as written, so the grid paragraphs come out first.
-  const answerText = complete ? copyText : null;
+  const answerSegment = view.segments.find((segment) => segment.kind === "prose" && segment.tone === "answer");
+  const answerText = complete && answerSegment?.kind === "prose" ? answerSegment.text : null;
   const settledAnswer = useMemo(() => {
     if (message.role !== "assistant" || answerText === null) return null;
     const grids = sensitivityParagraphs(answerText, message.sensitivity_cards, message.number_checks);
@@ -338,36 +353,76 @@ function ChatMessageCardComponent({
     ? t("chatMessageCard.responseTime", { value1: responseDuration(message.performance.totalMs) })
     : undefined;
   const tokenLines = responseTokenLines(message.performance);
-  const prose =(key: string, text: string, streaming: boolean, tone: "answer" | "narration", checks?: ChatMessage["number_checks"]) =>
-    <ProseSegment key={key} text={text} streaming={streaming} tone={tone} checks={checks} workspacePath={workspacePath} />;
+  // `drains`: this piece's last word releases the commit; an answer split around a held card drains at its last piece.
+  const prose = (segment: { key: string; text: string; streaming: boolean; tone: "answer" | "note"; short?: boolean; checks?: ChatMessage["number_checks"] }, drains = true) =>
+    <ProseSegment key={segment.key} text={segment.text} streaming={segment.streaming} tone={segment.tone} short={segment.short} checks={segment.checks}
+      // A note a tool call followed shows what it received at once, so the ledger under it never moves.
+      halted={halted || segment.tone === "note"} paused={stopping} onDrained={segment.tone === "answer" && drains ? releaseCommit : undefined} workspacePath={workspacePath} />;
+  const cardBlocks = (tool: "chart_publish" | "grid_publish") => tool === "chart_publish" ? charts : grids;
+  const placedSteps = new Set(view.segments.flatMap((segment) => segment.kind === "card" ? [segment.itemId] : []));
+  const renderBlock = (tool: "chart_publish" | "grid_publish", block: ChartBlock, key: string) => tool === "chart_publish"
+    ? <ChatArtifactBlock key={key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} asOf={message.as_of} onAskAgain={askAgain} />
+    : <ChatGridBlock key={key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onAskAgain={askAgain} />;
 
   const transcript: ReactNode[] = [];
   if (message.role === "assistant") {
     for (const segment of view.segments) {
-      if (segment.kind === "activity") {
-        transcript.push(<ActivityRow key={segment.key} segment={segment} focusItemId={progressFocus} asOf={message.as_of}
-          revealedResult={segment.evidence.some(e => e.id === revealedResult?.id) ? revealedResult : undefined}
-          renderApprovals={bridge ? approvals => <ApprovalCards approvals={approvals} refusals={[]} bridge={bridge} loupistId={loupistId} /> : undefined}
-          renderQuestions={bridge ? questions => <QuestionCards questions={questions} bridge={bridge} loupistId={loupistId} /> : undefined} />);
-        continue;
+      switch (segment.kind) {
+        case "ledger":
+          transcript.push(<TurnLedger key={segment.key} segment={segment} focusItemId={progressFocus} asOf={message.as_of}
+            revealedResult={segment.evidence.some(e => e.id === revealedResult?.id) ? revealedResult : undefined} />);
+          continue;
+        case "card": {
+          // The card stands where its publish step started; the frame keeps its place as it fills.
+          const block = cardBlocks(segment.tool).find((entry) => entry.stepId === segment.itemId);
+          const tool = segment.tool;
+          transcript.push(<TurnCard key={segment.key} block={block} render={(shown) => renderBlock(tool, shown, segment.key)} />);
+          continue;
+        }
+        case "question":
+          if (bridge) transcript.push(<TurnBlock key={segment.key} kind="ask">
+            <QuestionCards questions={[segment.question]} bridge={bridge} loupistId={loupistId} streaming={message.status === "streaming"} />
+          </TurnBlock>);
+          continue;
+        case "approval":
+          if (bridge) transcript.push(<TurnBlock key={segment.key} kind="ask">
+            <ApprovalCards approvals={[segment.approval]} refusals={[]} bridge={bridge} loupistId={loupistId} />
+          </TurnBlock>);
+          continue;
+        case "prose":
+          break;
       }
       // The settled answer alone splits around its cards; the first piece keeps the answer's key.
       if (settledAnswer && segment.tone === "answer" && !segment.streaming) {
         settledAnswer.segments.forEach((piece, index) => {
-          if (piece.text) transcript.push(prose(index ? `${segment.key}:${index}` : segment.key, piece.text, false, "answer", piece.numberChecks));
+          if (piece.text) transcript.push(prose({ key: index ? `${segment.key}:${index}` : segment.key, text: piece.text, streaming: false, tone: "answer", checks: piece.numberChecks }));
           if (piece.card) {
             const card = piece.card;
-            transcript.push(<SensitivityCard key={`grid-${card.evidence_id}-${index}`} grid={card} subject={card.subject}
+            transcript.push(<SensitivitySlot key={`grid-${card.evidence_id}-${index}`}><SensitivityCard grid={card} subject={card.subject}
               evidence={evidenceRefs.find(item => item.id === card.evidence_id)} evidenceRefs={evidenceRefs} asOf={message.as_of}
-              onChangeRates={onFillComposer} />);
+              onChangeRates={onFillComposer} /></SensitivitySlot>);
           }
         });
         continue;
       }
-      transcript.push(prose(segment.key, segment.text, segment.streaming, segment.tone, segment.checks));
+      // While it is written, a paragraph Rust will make a sensitivity card is held behind the card's frame, split
+      // exactly as the settled answer is, so the card fills that frame at commit and no text moves or is replaced.
+      if (segment.tone === "answer" && !settledAnswer) {
+        const pieces = heldSensitivityParagraphs(segment.text, evidenceRefs);
+        if (pieces.length > 1 || pieces[0]?.held) {
+          pieces.forEach((piece, index) => {
+            if (piece.text) transcript.push(prose({ key: index ? `${segment.key}:${index}` : segment.key, text: piece.text, streaming: segment.streaming, tone: "answer" }, index === pieces.length - 1));
+            if (piece.held) transcript.push(<SensitivitySlot key={`grid-${piece.held}-${index}`} />);
+          });
+          continue;
+        }
+      }
+      transcript.push(prose(segment));
     }
     if (bridge && connectionRefusals.length) transcript.push(<ApprovalCards key="refusals" approvals={[]} refusals={connectionRefusals} bridge={bridge} loupistId={loupistId} />);
   }
+  // A card no step names (an answer stored before steps were kept) follows the answer, as before.
+  const unplaced = (blocks: ChartBlock[]) => blocks.filter((block) => !block.stepId || !placedSteps.has(block.stepId));
 
   // Guidance the reply accepted reads as the row it was while the reply ran, not a new question.
   if (message.role === "user" && message.steer) return (
@@ -377,12 +432,14 @@ function ChatMessageCardComponent({
   );
 
   return (
-    <article data-message-id={message.id} data-latest={latest || undefined} className={`message ${message.role} ${message.status ?? ""}`}>
+    <article ref={article} data-message-id={message.id} data-latest={latest || undefined} data-entering={entering || undefined} data-turn-message=""
+      className={`message ${message.role} ${message.status ?? ""}`}>
       <div className="message-meta">
         <span>{message.role === "user" ? t("chatMessageCard.you") : loupistName}</span>
         <time>{formatTime(new Date(message.created_at))}</time>
         {message.role === "assistant" && message.as_of ? <AsOfTag asOf={message.as_of} kind="answer" /> : null}
-        {message.execution_model || message.performance || message.host_composed ? <Popover>
+        {message.role === "assistant" && answerText ? <LateTrigger><AnswerOutline messageId={message.id} markdown={answerText} /></LateTrigger> : null}
+        {message.execution_model || message.performance || message.host_composed ? <LateTrigger><Popover>
           <PopoverTrigger asChild><button type="button" className="message-details-trigger" aria-label={t("chatMessageCard.responseDetails")} aria-description={[executionModelTitle, performanceTitle, ...tokenLines].filter(Boolean).join(" · ")}><InfoIcon /></button></PopoverTrigger>
           <PopoverContent className="message-details-panel" align="start" aria-label={t("chatMessageCard.responseDetails")}>
             <strong>{t("chatMessageCard.responseDetails")}</strong>
@@ -391,7 +448,7 @@ function ChatMessageCardComponent({
             {message.host_composed ? <p>{t("chatMessageCard.thisAnswerListsWhatWasSavedBecauseTheModel")}</p> : null}
             <div className="message-token-usage">{tokenLines.map((line) => <p key={line}>{line}</p>)}</div>
           </PopoverContent>
-        </Popover> : null}
+        </Popover></LateTrigger> : null}
       </div>
       {message.role === "user" ? <SentImages message={message} /> : null}
       {message.role === "user" ? (
@@ -404,10 +461,10 @@ function ChatMessageCardComponent({
       {transcript}
       {bridge && settledAnswer ? settledAnswer.cards.map((card) => <EarningsChatCard key={card.evidenceId} bridge={bridge} loupistId={loupistId} loupistName={loupistName} assetId={card.assetId} eventId={card.eventId} />) : null}
 
-      {charts.map((block) => <ChatArtifactBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} asOf={message.as_of} />)}
+      {unplaced(charts).map((block) => renderBlock("chart_publish", block, block.key))}
       {bridge ? connectionSetups.map((block) => <ConnectionSetupCard key={block.key} bridge={bridge} loupistId={loupistId} entryId={block.entryId}
-        onAskAgain={onFillComposer && previousQuestion ? () => onFillComposer(previousQuestion) : undefined} />) : null}
-      {grids.map((block) => <ChatGridBlock key={block.key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} />)}
+        onAskAgain={askAgain} />) : null}
+      {unplaced(grids).map((block) => renderBlock("grid_publish", block, block.key))}
 
       {message.role === "assistant" && <MessageSchedules receipts={message.schedule_receipts ?? []} />}
 
@@ -438,10 +495,10 @@ function ChatMessageCardComponent({
         </div>
       )}
 
-      {message.role === "assistant" ? <TurnFooter footer={view.footer} now={now} announce={view.announce} guiding={guiding}>
+      {message.role === "assistant" ? <TurnFooter footer={view.footer} announce={view.announce} guiding={guiding}>
         {settled ? <>
           {settled.sources.length > 0 ? (
-            <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<>{t("chatMessageCard.sourceCount", { formattedCount: formatNumber(settled.sources.length) })}</>}>
+            <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<><span>{t("chatMessageCard.sourceCount", { formattedCount: formatNumber(settled.sources.length) })}</span><span className="message-sources-site"> · {sourceIdentityLabel(settled.sources[0]!)}{settled.sources.length > 1 ? ` +${formatNumber(settled.sources.length - 1)}` : ""}</span></>}>
               <ol>{settled.sources.map((evidence, index) => <SourceRow key={evidence.id} evidence={evidence} number={index + 1} />)}</ol>
             </Disclosure>
           ) : null}
@@ -463,10 +520,14 @@ function ChatMessageCardComponent({
           {settled.feedback && onSaveFeedback && onTeachFeedback ? <AnswerFeedback bridge={bridge} loupistId={loupistId} chatId={chatId} message={message} onSave={onSaveFeedback} onTeach={onTeachFeedback} feedbackBusy={feedbackBusy} /> : null}
           {note ? <p className="message-model-note">{note}</p> : null}
           {settled.runState ? (
-            <div className="message-run-state" role={settled.runState.kind === "failed" ? "alert" : "status"}>
-              {settled.runState.kind === "failed" ? <ChatErrorState kind={settled.runState.failure} retryInSeconds={settled.runState.retryInSeconds} provider={providerName ?? t("chatError.yourProvider")}
-                fallback={failureMessages()[settled.runState.failure] ?? failureMessages().other} onRetry={onRetry}
-                onProviderAction={onProviderAction ? (action) => onProviderAction(action, message.execution_model?.provider) : undefined} /> : <>
+            // A failure is a bordered block with its actions; a stop is the user's own doing: one quiet line.
+            <div className="message-run-state" data-kind={settled.runState.kind} role={settled.runState.kind === "failed" ? "alert" : "status"}>
+              {settled.runState.kind === "failed" ? <>
+                <ChatErrorState kind={settled.runState.failure} retryInSeconds={settled.runState.retryInSeconds} provider={providerName ?? t("chatError.yourProvider")}
+                  fallback={failureMessages()[settled.runState.failure] ?? failureMessages().other} onRetry={onRetry}
+                  onProviderAction={onProviderAction ? (action) => onProviderAction(action, message.execution_model?.provider) : undefined} />
+                {settled.runState.kept ? <p className="message-run-state-kept">{t("chatMessageCard.failedKept")}</p> : null}
+              </> : <>
                 <p>{settled.runState.label}</p>
                 {onRetry ? <button type="button" onClick={onRetry}>{t("chatMessageCard.tryAgain")}</button> : null}
               </>}
@@ -475,7 +536,6 @@ function ChatMessageCardComponent({
         </> : null}
       </TurnFooter> : null}
       {message.role === "assistant" && complete && message.as_of_report ? <AsOfNote report={message.as_of_report} loupistName={loupistName} /> : null}
-      {message.role === "assistant" && answerText ? <AnswerOutline messageId={message.id} markdown={answerText} defaultOpen={outlineOpen} /> : null}
       {message.role === "assistant" && complete && onNextStep ? <NextSteps loupistId={loupistId} chatId={chatId} messageId={message.id} onAsk={onNextStep} /> : null}
       {message.role === "user" && (onEditUser || onEarlierVersion || onLaterVersion) ? <div className="message-actions message-action-bar">
         {onEditUser ? <button type="button" aria-label={t("chatMessageCard.editMessage")} title={t("chatMessageCard.edit")} disabled={editDisabled} onClick={() => onEditUser(message)}>{t("chatMessageCard.edit")}</button> : null}
@@ -484,6 +544,93 @@ function ChatMessageCardComponent({
       </div> : null}
     </article>
   );
+}
+
+/** A block of the turn (a card, a question, an approval) that rises in when it arrives while the reader watches. */
+function TurnBlock({ kind, leaving = false, blockRef, children }: { kind: "card" | "ask"; leaving?: boolean; blockRef?: Ref<HTMLDivElement>; children: ReactNode }) {
+  const arrived = useArrived();
+  return <div ref={blockRef} className="turn-block" data-turn-item={kind} data-enter={(arrived && !leaving) || undefined}
+    data-leaving={leaving ? "" : undefined} aria-hidden={leaving || undefined} inert={leaving || undefined}>{children}</div>;
+}
+
+/**
+ * Where a sensitivity card stands. While the reply streams it is a ruled frame
+ * of the card's reserved height; at commit the card fills it, keeping at least
+ * that height, so nothing below moves. A card read later has no frame to keep.
+ */
+function SensitivitySlot({ children }: { children?: ReactNode }) {
+  const [held] = useState(!children);
+  return <div className="sensitivity-slot" data-turn-item="card" data-held={held || undefined}>
+    {children ?? <div className="sensitivity-pending" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div>}
+  </div>;
+}
+
+/** A card's exit (`--gg-motion-fast`): a card the stopped reply takes away fades out where it stood. */
+export const CARD_LEAVE_MS = 120;
+
+/**
+ * A card where its publish step started. When its block goes away (the reply
+ * stopped while it was preparing, or before the card it had filled was saved),
+ * the same frame the reader saw, drawn as it was, fades out in place and is then
+ * removed (DIRECTION 5.7); under reduced motion it is hidden at once. The turn
+ * keeps the height it had when the card began to leave (`--turn-hold`), so the
+ * scroll range never shrinks under the reader and the page does not snap.
+ */
+function TurnCard({ block, render }: { block: ChartBlock | undefined; render: (block: ChartBlock) => ReactNode }) {
+  const [last, setLast] = useState(block);
+  if (block && (!last || !sameBlock(block, last))) setLast(block);
+  const leaving = !block && last ? last : undefined;
+  const frame = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!leaving) return undefined;
+    holdTurnHeight(frame.current);
+    const timer = window.setTimeout(() => setLast(undefined), CARD_LEAVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [leaving]);
+  const shown = block ?? leaving;
+  // One element whether shown or leaving, so the drawn card is kept, never mounted again for its exit.
+  return shown ? <TurnBlock kind="card" leaving={!block} blockRef={frame}>{render(shown)}</TurnBlock> : null;
+}
+
+/** The outline and details triggers arrive at commit; the meta row already has their height. */
+function LateTrigger({ children }: { children: ReactNode }) {
+  const arrived = useArrived();
+  return <span className="message-meta-late" data-enter={arrived || undefined}>{children}</span>;
+}
+
+/** Re-renders when the host has been silent for 15 s ("Still working"), not every second. */
+function useStallClock(lastActivityAt: number, running: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  const stalled = running && now - lastActivityAt >= STALL_AFTER_MS;
+  useEffect(() => {
+    if (!running || stalled) return;
+    const timer = window.setInterval(() => {
+      const current = Date.now();
+      if (current - lastActivityAt >= STALL_AFTER_MS) setNow(current);
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [lastActivityAt, running, stalled]);
+  return stalled ? now : lastActivityAt;
+}
+
+/**
+ * The host's `completed` is not the commit: the turn reads as running until the
+ * answer's last received word is revealed, at most 400 ms (DIRECTION 5.9).
+ */
+function useCommitGate(status: ChatMessage["status"], hasAnswer: boolean): [boolean, () => void] {
+  const [previous, setPrevious] = useState(status);
+  const [holding, setHolding] = useState(false);
+  if (previous !== status) {
+    setPrevious(status);
+    setHolding(previous === "streaming" && status === "complete" && hasAnswer);
+  }
+  useEffect(() => {
+    if (!holding) return;
+    const timer = window.setTimeout(() => setHolding(false), DRAIN_LIMIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [holding]);
+  const release = useCallback(() => setHolding(false), []);
+  return [holding, release];
 }
 
 /** Follow-up chips from what this answer changed on the Map (S7). */
@@ -496,7 +643,7 @@ function NextSteps({ loupistId, chatId, messageId, onAsk }: { loupistId: string;
 }
 
 function ChatMessageCardInTurn(props: Props) {
-  return <TurnProvider message={props.message} loupistId={props.loupistId}><ChatMessageCardComponent {...props} /></TurnProvider>;
+  return <TurnProvider message={props.message} loupistId={props.loupistId}><TurnArrivalProvider><ChatMessageCardComponent {...props} /></TurnArrivalProvider></TurnProvider>;
 }
 
 export const ChatMessageCard = memo(ChatMessageCardInTurn);

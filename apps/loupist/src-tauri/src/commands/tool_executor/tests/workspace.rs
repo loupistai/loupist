@@ -27,6 +27,17 @@ async fn workspace_capture_retains_exact_bytes_with_local_attribution_after_ackn
         )
         .await
         .unwrap();
+    assert!(result["next"].as_str().unwrap().contains("source_save"));
+    let read_only = executor
+        .execute_for_delivery(
+            &super::policy(true, false),
+            ToolMethod::WorkspaceCapture,
+            json!({"path":"filing.csv"}),
+            "read-only",
+        )
+        .await
+        .unwrap();
+    assert!(read_only.get("next").is_none());
     let reference = result["result_ref"].as_str().unwrap();
     let save = json!({"result_ref": reference, "title":"Local filing", "coverage":"included_full"});
     assert!(executor

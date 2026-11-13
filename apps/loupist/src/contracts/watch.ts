@@ -54,6 +54,11 @@ export type WatchSettings = {
   watched: WatchAsset[];
   /** Followed assets with every kind off ("Also followed, not watched here"). */
   notWatched: WatchAsset[];
+  /**
+   * Listed assets with no saved choice here: the ones "Watch all" gives class defaults.
+   * An asset the user switched fully off is in `notWatched` but not here.
+   */
+  undecidedAssetIds: string[];
 };
 
 /**
@@ -86,6 +91,9 @@ export type WatchEvent = {
 };
 
 export type WatchSettingSetRequest = Wire.WatchSettingSetRequest;
+export type WatchDefaultsApplyRequest = Wire.WatchDefaultsApplyRequest;
+/** How many assets are watched now, and per kind which followed assets still need a data connection. */
+export type WatchDefaultsApplyResult = Wire.WatchDefaultsApplyResult;
 export type WatchEventsListRequest = { loupistId: string; sinceMs?: number; limit: number };
 
 export interface WatchBridge {
@@ -95,6 +103,12 @@ export interface WatchBridge {
   watchPauseSet(request: { loupistId: string; paused: boolean }): Promise<WatchSettings>;
   /** Runs every enabled kind once for this Loupist; resolves when the check finished. */
   watchCheckNow(request: { loupistId: string }): Promise<{ newAlerts: number; settings: WatchSettings }>;
+  /**
+   * "Watch all": turns proactive updates on and applies the class defaults (filings, results
+   * and dividends where they apply) to followed assets with no decision yet. Host command
+   * `watch_defaults_apply`.
+   */
+  watchDefaultsApply(request: WatchDefaultsApplyRequest): Promise<WatchDefaultsApplyResult>;
   /** Newest first. */
   watchEventsList(request: WatchEventsListRequest): Promise<WatchEvent[]>;
   /** The alerts were on screen (Thread message for 1 s, or Schedule › Watching opened). */

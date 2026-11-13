@@ -29,7 +29,7 @@ it("quotes a used principle and sets it aside for this chat until Undo", async (
   const user = userEvent.setup();
   const toggle = vi.fn(async () => {});
   render(<Harness messages={[answer()]} toggle={toggle} />);
-  await user.click(screen.getByRole("button", { name: "Used 1 page" }));
+  await user.click(screen.getByRole("button", { name: "Used your principle" }));
   const panel = screen.getByText("Used · Principle").closest("li")!;
   expect(within(panel).getByText("Check cash flow before profit")).toBeVisible();
   await user.click(within(panel).getByRole("button", { name: "Not this time" }));

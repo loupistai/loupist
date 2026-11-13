@@ -1,6 +1,6 @@
 //! `ask_user`: the model asks the user one question mid-reply and the call
 //! waits for the answer, the wait limit or the run stopping. A question nobody
-//! answers is not an error: the result tells the model what to assume.
+//! answers is not an error and never grants destructive authority.
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -40,17 +40,8 @@ fn invalid(field: &str, expected: String) -> BrokerError {
 }
 
 fn unanswered(question: &ChatQuestion) -> Value {
-    let (assumed, next) = match question.recommended_label() {
-        Some(label) => (
-            json!(label),
-            format!("The user did not answer. Continue with the recommended option \"{label}\" and say in the answer which one you used."),
-        ),
-        None => (
-            Value::Null,
-            "The user did not answer. Continue with your most reasonable assumption and say in the answer which one you used.".into(),
-        ),
-    };
-    json!({"answered": false, "assumed": assumed, "next": next})
+    json!({"answered": false, "assumed": question.recommended_label(), "next":
+        "The user did not answer. For a research or presentation choice, use the recommended option and say which one you used. Do not delete, stop, edit or pause a schedule; disable a watch or briefing; retire a Lens section; unfollow an asset or replace the research focus; or update, resolve or forget Bot memory. Finish the reply and say what you need answered before making any of those changes. Other research, saves and work products may continue."})
 }
 
 impl AppToolExecutor {
@@ -62,14 +53,14 @@ impl AppToolExecutor {
             .is_some_and(ChatSurface::interactive)
         {
             return Err(BrokerError::Execution(format!(
-                "ask_user is unavailable in a {} turn: there is no one to answer, so assume and say what you assumed",
+                "ask_user is unavailable in a {} turn: there is no one to answer; do not treat a missing answer as permission to change anything",
                 self.capture.surface.as_ref().map_or("host", ChatSurface::name)
             )));
         }
-        let request: Input = serde_json::from_value(params).map_err(|error| {
+        let request: Input = serde_json::from_value(params).map_err(|_| {
             invalid(
                 "ask_user",
-                format!("{{question, options: [{{label, description?}}] (2 to 4), recommended?: index}}: {error}"),
+                "{question, options: [{label, description?}] (2 to 4), recommended?: index}".into(),
             )
         })?;
         let options = request
@@ -101,6 +92,8 @@ impl AppToolExecutor {
             answer: None,
             requested_at_ms: chrono::Utc::now().timestamp_millis(),
         };
+        // Raise the guard before publishing a card, including synchronous sinks.
+        let pending = self.capture.turn_taint.begin_question();
         // Nobody to ask: a run without cards.
         let Some(sink) = self.capture.question_sink.as_ref() else {
             question.state = QuestionState::Expired;
@@ -122,6 +115,7 @@ impl AppToolExecutor {
             QuestionState::Expired
         };
         question.answer = answer.clone();
+        pending.settle(answer.is_some());
         sink(call_id, question.clone());
         Ok(match answer {
             Some(QuestionAnswer::Choice(index)) => {

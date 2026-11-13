@@ -1,6 +1,8 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "@/i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
+import { UpdateSettingsCard } from "../../components/settings/UpdateSettingsCard";
 import type { UpdateState } from "../../types";
 import { mainTab, openApp } from "../renderApp";
 
@@ -27,6 +29,20 @@ const openUpdates = async (status: UpdateState) => {
 };
 
 describe("Loupist · Updates", () => {
+  it("does not call the app up to date before a successful check", async () => {
+    await openUpdates({ ...current, last_checked_at_ms: null });
+    await screen.findByRole("button", { name: "Check for updates" });
+    expect(screen.queryByText("Loupist is up to date")).not.toBeInTheDocument();
+    expect(screen.getByText("Check for updates to see the installed and latest versions.")).toBeVisible();
+  });
+
+  it("does not call a failed check up to date", async () => {
+    await openUpdates({ ...current, error: "Could not check for updates." });
+    await screen.findByRole("button", { name: "Check for updates" });
+    expect(screen.queryByText("Loupist is up to date")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not check for updates.");
+  });
+
   it("loads native status and checks manually from Settings", async () => {
     const { user, check } = await openUpdates(current);
     await user.click(await screen.findByRole("button", { name: "Check for updates" }));
@@ -42,6 +58,14 @@ describe("Loupist · Updates", () => {
     expect(install).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Install and restart" }));
     await waitFor(() => expect(install).toHaveBeenCalledWith({ offer_id: OFFER_ID }));
+  });
+
+  it("dates a Korean release in the long form", async () => {
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    try {
+      render(<UpdateSettingsCard status={available} phase="idle" error={null} onCheck={vi.fn()} onInstall={vi.fn()} />);
+      expect(screen.getByText("2026년 8월 9일")).toBeVisible();
+    } finally { await act(async () => { await i18n.changeLanguage("en"); }); }
   });
 
   it("shows active-work blockers without offering force quit", async () => {

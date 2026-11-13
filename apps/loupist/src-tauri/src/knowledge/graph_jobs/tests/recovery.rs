@@ -489,3 +489,97 @@ fn startup_does_not_decode_terminal_job_receipts() {
     }).unwrap();
     assert_eq!(status(&store, &running), JOB_QUEUED);
 }
+
+#[test]
+fn an_expired_lease_recovers_without_restart_and_fences_the_old_attempt() {
+    let (_dir, store) = open();
+    let (job, _) = queued_pair(&store, "loupist-a");
+    let settings = enabled();
+    let running = claim(&store, &settings, &job.job_id, AT);
+    let old_attempt = running.document.attempt_id.as_deref().unwrap();
+    let expiry = running.document.lease_expires_at_ms.unwrap();
+    let recover = |at, live: &std::collections::HashSet<String>| {
+        store
+            .transact(|write| recover_expired(write.tx, at, live))
+            .unwrap()
+            .len()
+    };
+    assert_eq!(recover(expiry - 1, &Default::default()), 0);
+    assert_eq!(
+        recover(
+            expiry,
+            &std::collections::HashSet::from(["loupist-a".to_owned()])
+        ),
+        0
+    );
+    assert_eq!(recover(expiry, &Default::default()), 1);
+    let retried = claim(&store, &settings, &job.job_id, expiry + 1);
+    assert_eq!(retried.status, JOB_RUNNING);
+    assert_ne!(retried.document.attempt_id, running.document.attempt_id);
+    assert!(store
+        .graph_note_inference(&job.job_id, old_attempt)
+        .is_err());
+    let artifact = r#"{"nodes":[],"claims":[]}"#;
+    assert!(store
+        .graph_publish_and_complete(
+            &mut enabled(),
+            &job.job_id,
+            old_attempt,
+            artifact,
+            &sha256(artifact.as_bytes()),
+            expiry + 2,
+            false
+        )
+        .is_err());
+    assert_eq!(store.graph_job("loupist-a", &job.job_id).unwrap(), retried);
+}
+
+#[test]
+fn expired_paid_attempts_use_the_existing_retry_then_persist_quarantine() {
+    let (_dir, store) = open();
+    let (job, _) = queued_pair(&store, "loupist-a");
+    let mut at = AT;
+    for expected in [JOB_QUEUED, JOB_RECONCILE] {
+        let settings = settings_of(&store, "loupist-a");
+        let running = claim(&store, &settings, &job.job_id, at);
+        store
+            .graph_note_inference(&job.job_id, running.document.attempt_id.as_deref().unwrap())
+            .unwrap();
+        at = running.document.lease_expires_at_ms.unwrap();
+        assert_eq!(
+            store
+                .transact(|write| recover_expired(write.tx, at, &Default::default()))
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(status(&store, &job), expected);
+    }
+    assert!(settings_of(&store, "loupist-a")
+        .quarantined_generations
+        .contains(&job.document.generation_id));
+}
+
+#[test]
+fn an_old_running_document_without_lease_identity_can_be_reclaimed() {
+    let (_dir, store) = open();
+    let (job, _) = queued_pair(&store, "loupist-a");
+    store.transact(|write| {
+        let mut old = serde_json::to_value(&job.document)?;
+        old.as_object_mut().unwrap().remove("attemptId");
+        old["leaseExpiresAtMs"] = serde_json::Value::Null;
+        old["obsoleteWorkerState"] = json!({"pid": 123});
+        write.tx.execute("UPDATE knowledge_graph_outbox SET status = 'running', payload_json = ?1 WHERE job_id = ?2",
+            params![serde_json::to_string(&old)?, job.job_id])?;
+        Ok(())
+    }).unwrap();
+    assert_eq!(
+        store
+            .transact(|write| recover_expired(write.tx, AT, &Default::default()))
+            .unwrap(),
+        std::slice::from_ref(&job.job_id)
+    );
+    let recovered = store.graph_job("loupist-a", &job.job_id).unwrap();
+    assert_eq!(recovered.status, JOB_QUEUED);
+    assert!(recovered.document.attempt_id.is_none());
+}

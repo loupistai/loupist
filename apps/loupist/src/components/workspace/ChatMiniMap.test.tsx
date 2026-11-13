@@ -27,7 +27,7 @@ it('opens the local Map from its answer chip, highlights every added node, and o
  render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[answer]} onOpen={onOpen}><Surface onOpenFull={onOpenFull} /></ChatMapProvider>);
  fireEvent.click(await screen.findByRole('button', { name: /Show 3 new on the map/ }));
  expect(onOpen).toHaveBeenCalledOnce();
- expect(screen.getByRole('tab', { name: 'Map' })).toHaveAttribute('aria-selected', 'true');
+ expect(screen.getByRole('tab', { name: 'Chat map' })).toHaveAttribute('aria-selected', 'true');
  expect(await screen.findByRole('img')).toHaveAttribute('data-highlight', 'a,b,c');
  fireEvent.click(screen.getByRole('button', { name: 'List view' }));
  expect(screen.getByRole('table', { name: 'List view' })).toBeVisible();
@@ -40,11 +40,11 @@ it('keeps other chats and answers out of the chip and resets immediately on a ch
  const view = render(<ChatMapProvider {...props}><Surface /></ChatMapProvider>);
  await waitFor(() => expect(bridge.knowledgeGrowthEvents).toHaveBeenCalled());
  expect(screen.queryByRole('button', { name: /on the map/ })).toBeNull();
- fireEvent.click(screen.getByRole('tab', { name: 'Map' }));
+ fireEvent.click(screen.getByRole('tab', { name: 'Chat map' }));
  await screen.findByRole('img');
  view.rerender(<ChatMapProvider {...props} chatId="empty"><Surface /></ChatMapProvider>);
  expect(screen.queryByRole('img')).toBeNull();
- fireEvent.click(screen.getByRole('tab', { name: 'Map' }));
+ fireEvent.click(screen.getByRole('tab', { name: 'Chat map' }));
  expect(await screen.findByText('Companies and topics from this chat appear here.')).toBeVisible();
 });
 it('retries failed requests and reads every growth-event page before filtering the chat', async () => {
@@ -52,7 +52,7 @@ it('retries failed requests and reads every growth-event page before filtering t
  vi.mocked(bridge.knowledgeMap).mockRejectedValueOnce(new Error('offline'));
  vi.mocked(bridge.knowledgeGrowthEvents).mockResolvedValueOnce({ events: [event('a', 'other')], nextCursor: 'next' }).mockResolvedValue({ events: [event('b')], nextCursor: null });
  render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[answer]} onOpen={vi.fn()}><Surface /></ChatMapProvider>);
- fireEvent.click(screen.getByRole('tab', { name: 'Map' }));
+ fireEvent.click(screen.getByRole('tab', { name: 'Chat map' }));
  expect(await screen.findByRole('alert')).toBeVisible();
  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
  expect(await screen.findByRole('button', { name: /Show 1 new on the map/ })).toBeVisible();
@@ -125,7 +125,7 @@ it('marks the Map tab at a chat\'s first names when the panel is busy, and only 
  vi.mocked(bridge.knowledgeGrowthEvents).mockResolvedValue({ events: [event('a')], nextCursor: null });
  view.rerender(<ChatMapProvider {...props} refreshKey={1}><Surface /></ChatMapProvider>);
  await waitFor(() => expect(onFirstNames).toHaveBeenCalledOnce());
- expect(await screen.findByText('New in Map')).toBeInTheDocument();
+ expect(await screen.findByText('New in Chat map')).toBeInTheDocument();
  vi.mocked(bridge.knowledgeGrowthEvents).mockResolvedValue({ events: [event('a'), event('b')], nextCursor: null });
  view.rerender(<ChatMapProvider {...props} refreshKey={2}><Surface /></ChatMapProvider>);
  await waitFor(() => expect(bridge.knowledgeGrowthEvents).toHaveBeenCalledTimes(3));

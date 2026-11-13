@@ -4,14 +4,13 @@ use std::{
     collections::BTreeMap,
     fs::File,
     io::{Read, Write},
-    path::Path,
-    sync::Mutex,
+    path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
+    time::SystemTime,
 };
 
 #[cfg(unix)]
 use std::fs::OpenOptions;
-#[cfg(not(unix))]
-use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -271,6 +270,7 @@ pub struct ConfigUpdateRequest {
     pub unset: Vec<Vec<String>>,
 }
 
+#[derive(Clone)]
 struct LoadedConfig {
     revision: String,
     document: Option<Document>,
@@ -278,6 +278,54 @@ struct LoadedConfig {
     explicit: Option<ConfigDocument>,
     diagnostics: Vec<ConfigDiagnostic>,
     warnings: Vec<ConfigDiagnostic>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct ConfigStamp {
+    modified: SystemTime,
+    length: u64,
+    #[cfg(unix)]
+    identity: (u64, u64, i64, i64),
+    #[cfg(windows)]
+    identity: (u64, u64),
+    #[cfg(not(any(unix, windows)))]
+    created: Option<SystemTime>,
+}
+
+impl ConfigStamp {
+    fn read(file: &File) -> Option<Self> {
+        let metadata = file.metadata().ok()?;
+        if !metadata.is_file() || metadata.len() > MAX_CONFIG_BYTES as u64 {
+            return None;
+        }
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+        #[cfg(windows)]
+        let identity = crate::fs::windows::filesystem_identity(file).ok()?;
+        Some(Self {
+            modified: metadata.modified().ok()?,
+            length: metadata.len(),
+            #[cfg(unix)]
+            identity: (
+                metadata.dev(),
+                metadata.ino(),
+                metadata.ctime(),
+                metadata.ctime_nsec(),
+            ),
+            #[cfg(windows)]
+            identity: (identity.device, identity.inode),
+            #[cfg(not(any(unix, windows)))]
+            created: metadata.created().ok(),
+        })
+    }
+}
+
+#[derive(Default)]
+struct ConfigCache(BTreeMap<(PathBuf, bool), (ConfigStamp, LoadedConfig)>);
+
+fn config_cache() -> &'static Mutex<ConfigCache> {
+    static CACHE: OnceLock<Mutex<ConfigCache>> = OnceLock::new();
+    CACHE.get_or_init(Default::default)
 }
 
 fn digest(bytes: &[u8]) -> String {
@@ -358,7 +406,7 @@ impl ConfigDirectory {
             _parents: parents,
         })
     }
-    fn read(&self) -> Result<Option<Vec<u8>>, CommandError> {
+    fn open_file(&self) -> Result<Option<File>, CommandError> {
         #[cfg(unix)]
         let file = {
             use rustix::fs::{openat, Mode, OFlags};
@@ -388,6 +436,14 @@ impl ConfigDirectory {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(io_error(error)),
         };
+        Ok(Some(file))
+    }
+
+    fn read(&self) -> Result<Option<Vec<u8>>, CommandError> {
+        self.open_file()?.map(Self::read_file).transpose()
+    }
+
+    fn read_file(file: File) -> Result<Vec<u8>, CommandError> {
         let metadata = file.metadata().map_err(io_error)?;
         if !metadata.is_file() || metadata.len() > MAX_CONFIG_BYTES as u64 {
             return Err(config_error(
@@ -401,7 +457,7 @@ impl ConfigDirectory {
         if bytes.len() > MAX_CONFIG_BYTES {
             return Err(config_error("Configuration exceeds 256 KiB"));
         }
-        Ok(Some(bytes))
+        Ok(bytes)
     }
     fn replace(&self, bytes: &[u8], expected_revision: &str) -> Result<(), CommandError> {
         if bytes.len() > MAX_CONFIG_BYTES {
@@ -478,7 +534,41 @@ fn diagnostic(
 }
 fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
     let path = directory.join(FILE_NAME);
-    let bytes = match ConfigDirectory::open(directory).and_then(|directory| directory.read()) {
+    let opened = ConfigDirectory::open(directory).and_then(|directory| directory.open_file());
+    let file = match opened {
+        Ok(file) => file,
+        Err(error) => {
+            return LoadedConfig {
+                revision: "unavailable".into(),
+                document: None,
+                explicit: None,
+                diagnostics: vec![diagnostic(&path, error.message, None, None)],
+                warnings: Vec::new(),
+            };
+        }
+    };
+    let key = (path.clone(), matches!(scope, ConfigScope::Global));
+    let stamp = file.as_ref().and_then(ConfigStamp::read);
+    if let Some(stamp) = &stamp {
+        if let Some((_, loaded)) = config_cache()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .0
+            .get(&key)
+            .filter(|(cached, _)| cached == stamp)
+        {
+            return loaded.clone();
+        }
+    }
+    let bytes = match file
+        .as_ref()
+        .map(|file| {
+            file.try_clone()
+                .map_err(io_error)
+                .and_then(ConfigDirectory::read_file)
+        })
+        .transpose()
+    {
         Ok(bytes) => bytes,
         Err(error) => {
             return LoadedConfig {
@@ -490,6 +580,22 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
             }
         }
     };
+    let loaded = parse_config(&path, scope, bytes);
+    if let Some(stamp) =
+        stamp.filter(|stamp| file.as_ref().and_then(ConfigStamp::read).as_ref() == Some(stamp))
+    {
+        let mut cache = config_cache()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if cache.0.len() >= 64 {
+            cache.0.clear();
+        }
+        cache.0.insert(key, (stamp, loaded.clone()));
+    }
+    loaded
+}
+
+fn parse_config(path: &Path, scope: &ConfigScope, bytes: Option<Vec<u8>>) -> LoadedConfig {
     let revision = revision(bytes.as_deref());
     let source = match bytes.map(String::from_utf8).transpose() {
         Ok(value) => value.unwrap_or_default(),
@@ -499,7 +605,7 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
                 document: None,
                 explicit: None,
                 diagnostics: vec![diagnostic(
-                    &path,
+                    path,
                     "Configuration must be UTF-8 text",
                     None,
                     None,
@@ -516,7 +622,7 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
                 document: None,
                 explicit: None,
                 diagnostics: vec![diagnostic(
-                    &path,
+                    path,
                     format!("Invalid TOML: {}", error.message()),
                     Some(&source),
                     error.span().map(|span| span.start),
@@ -539,7 +645,7 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
                 document: Some(document),
                 explicit: None,
                 diagnostics: vec![diagnostic(
-                    &path,
+                    path,
                     "Unsupported configuration key or invalid value type",
                     Some(&source),
                     offset,
@@ -557,7 +663,7 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
                 revision,
                 document: Some(document),
                 explicit: None,
-                diagnostics: vec![diagnostic(&path, message, Some(&source), offset)],
+                diagnostics: vec![diagnostic(path, message, Some(&source), offset)],
                 warnings: Vec::new(),
             };
         }
@@ -566,7 +672,7 @@ fn load(directory: &Path, scope: &ConfigScope) -> LoadedConfig {
         .into_iter()
         .map(|message| {
             let offset = validation_offset(&source, &message);
-            diagnostic(&path, message, Some(&source), offset)
+            diagnostic(path, message, Some(&source), offset)
         })
         .collect();
     LoadedConfig {

@@ -81,3 +81,42 @@ fn preset_and_review_changes_post_one_plain_language_card_and_chat_changes_do_no
         .iter()
         .all(|post| post.labels.iter().all(|label| label != "ProcessNode")));
 }
+
+#[test]
+fn a_vocabulary_card_hidden_by_an_edit_is_already_posted() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", &temporary.path().join("workspace"), 1),
+    );
+    add(
+        &state,
+        Producer::Preset,
+        "ProcessNode",
+        "Process node",
+        "공정 노드",
+        10,
+    );
+    assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 1);
+    let before = state
+        .store
+        .get_chat(&home_thread_id("loupist-a"))
+        .unwrap()
+        .unwrap();
+    let mut edited = before.clone();
+    let mut messages = vec![crate::test_fixtures::chat_message(
+        "hidden-user",
+        ChatRole::User,
+        "Earlier question",
+    )];
+    messages.append(&mut edited.messages);
+    edited.versions.push(crate::domain::ChatVersion {
+        id: "hidden-vocabulary".into(),
+        after_message_id: None,
+        messages,
+        archived_at_ms: before.updated_at_ms,
+    });
+    state.store.replace_chat(&before, &edited).unwrap();
+    assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 0);
+}

@@ -39,7 +39,7 @@ const ATTRIBUTE_PREAMBLE: &str = "\n\n<<graphiti.attr_extraction.preamble.v1>>\n
 
 /// Default answer tokens (Graphiti's LLMConfig max_tokens for the host client).
 pub(crate) const DEFAULT_MAX_TOKENS: u32 = 4096;
-pub(crate) const EXTRACT_EDGES_MAX_TOKENS: u32 = 16384;
+pub(super) use super::super::graph_inference::MAX_ANSWER_TOKENS as EXTRACT_EDGES_MAX_TOKENS;
 const MAX_FRAME_BYTES: usize = 2_000_000;
 const MAX_EMBED_TEXTS: usize = 256;
 const EMBED_CACHE_LIMIT: usize = 1024;

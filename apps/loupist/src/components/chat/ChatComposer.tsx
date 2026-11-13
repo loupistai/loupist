@@ -2,10 +2,9 @@ import i18n, { useTranslation } from "@/i18n";
 import type { ChatDraft } from "../../app/useChatDrafts";
 import {
   ClipboardIcon,
-  EyeIcon,
   EyeOffIcon,
   ArrowUpIcon,
-  CornerDownLeftIcon,
+  CornerDownRightIcon,
   FileIcon,
   LibraryIcon,
   MapIcon,
@@ -26,6 +25,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useInputModality } from "@/lib/inputModality";
+import { skillPresentation } from "@/lib/agentSkills";
 import { formatNumber } from "@/i18n/format";
 import { composeSubmission, composerChipInlineText, contextGroupLabel, rankText, type ComposerChip, type ContextOption } from "../../chat/composerChips";
 import type { FileUIPart } from "ai";
@@ -40,11 +40,13 @@ import {
   PromptInputBody,
   PromptInputButton,
   PromptInputFooter,
-  PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
   usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
+import { InputGroupButton } from "@/components/ui/input-group";
+import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type {
   ConfiguredModel,
@@ -63,6 +65,7 @@ import { asOfProblem, formatAsOf, typedAsOf } from "../../chat/asOf";
 import { fileSize } from "../../chat/fileSize";
 import {
   DropdownMenuLabel,
+  DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
@@ -364,6 +367,7 @@ function ComposerPromptTools({
   onAddKnowledgePin?: (pin: KnowledgePin) => void;
 }) {
   useTranslation("chat");
+  const accountConnected = hasAccount(models, providers);
   const addTrigger = useRef<HTMLButtonElement>(null);
   const [addMenuOffset, setAddMenuOffset] = useState({ side: 4, align: 0 });
   // The + menu shows its focus ring for keys only (WebKit would ring it after a click from the composer).
@@ -379,15 +383,6 @@ function ComposerPromptTools({
   };
   return (
     <PromptInputTools className="composer-tools">
-      <PromptInputButton
-        className="composer-private-toggle"
-        aria-label={t("chatComposer.dontRememberThisChat")}
-        aria-pressed={privateChat}
-        tooltip={t(privateChat ? "chatComposer.privateChatOn" : "chatComposer.dontRememberThisChat")}
-        onClick={() => onPrivateChatChange(!privateChat)}
-      >
-        {privateChat ? <EyeOffIcon aria-hidden="true" /> : <EyeIcon aria-hidden="true" />}
-      </PromptInputButton>
       <PromptInputActionMenu onOpenChange={anchorAddMenu}>
         <PromptInputActionMenuTrigger
           ref={addTrigger}
@@ -398,7 +393,14 @@ function ComposerPromptTools({
         >
           <PlusIcon />
         </PromptInputActionMenuTrigger>
-        <PromptInputActionMenuContent className="composer-add-menu" data-input={modality} side="top" align="start" sideOffset={addMenuOffset.side} alignOffset={addMenuOffset.align}>
+        {/* Closing returns to the message, not the "+" button: its tooltip would cover the Private chip just turned on. */}
+        <PromptInputActionMenuContent className="composer-add-menu" data-input={modality} side="top" align="start" sideOffset={addMenuOffset.side} alignOffset={addMenuOffset.align}
+          onCloseAutoFocus={(event) => {
+            const textarea = addTrigger.current?.closest("form")?.querySelector("textarea");
+            if (!textarea) return;
+            event.preventDefault();
+            textarea.focus();
+          }}>
           <DropdownMenuLabel>{t("chatComposer.addToThisMessage")}</DropdownMenuLabel>
           <PromptInputActionAddAttachments label={t("chatComposer.attach.files")} />
           <ClipboardAttachmentAction onError={onAttachmentError} />
@@ -410,9 +412,15 @@ function ComposerPromptTools({
               <LibraryIcon /><span className="composer-add-menu-label">{source.label}</span>
             </PromptInputActionMenuItem>)}
           </> : null}
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem className="composer-private-item" data-composer-private checked={privateChat} onCheckedChange={(checked) => onPrivateChatChange(checked === true)}>
+            <EyeOffIcon aria-hidden="true" />
+            <span className="composer-private-item-copy"><span>{t("chatComposer.privateChat")}</span><small>{t("chatComposer.privateMenuDetail")}</small></span>
+          </DropdownMenuCheckboxItem>
         </PromptInputActionMenuContent>
       </PromptInputActionMenu>
-      <ChatModelMenu
+      {/* Without an AI account the connect action takes the send slot (ChatComposer renders it there). */}
+      {accountConnected ? <ChatModelMenu
         models={models}
         providers={providers}
         selection={modelSelection}
@@ -422,19 +430,23 @@ function ComposerPromptTools({
         onOpenUsage={onOpenUsage}
         auto={modelAuto}
         onResetToAuto={onModelResetToAuto}
-      />
+      /> : null}
     </PromptInputTools>
   );
 }
 
-function ComposerRunActions({
+/**
+ * Guide and Send next, offered beside the tile only while a reply runs and the
+ * composer has text. Send next is then the primary control and the tile's Stop
+ * steps back to an outline.
+ */
+function ComposerRunExtras({
   showSend,
   showGuide,
   canSteer,
   guidePending,
   onQueue,
   onSteer,
-  onAbort,
   onPreserveFocus,
 }: {
   showSend: boolean;
@@ -443,14 +455,11 @@ function ComposerRunActions({
   guidePending: boolean;
   onQueue: () => void;
   onSteer: () => void;
-  onAbort: () => void;
   onPreserveFocus: (event: { preventDefault: () => void }) => void;
 }) {
   useTranslation("chat");
-  // Empty while a reply runs: one stop square. Text makes Send next the primary
-  // control; Guide stays a smaller alternate and Stop stays beside them.
   return (
-    <div className="composer-run-actions">
+    <>
       {showGuide ? (
         <PromptInputButton
           aria-label={t("chatComposer.guideThisResponse")}
@@ -467,7 +476,7 @@ function ComposerRunActions({
           onMouseDown={onPreserveFocus}
           onClick={onSteer}
         >
-          <CornerDownLeftIcon />
+          <CornerDownRightIcon />
         </PromptInputButton>
       ) : null}
       {showSend ? (
@@ -485,41 +494,68 @@ function ComposerRunActions({
           <ArrowUpIcon />
         </PromptInputButton>
       ) : null}
-      <PromptInputButton
-        aria-label={t("chatComposer.stopResponse")}
-        className="composer-stop-action"
-        tooltip={t("chatComposer.stopResponse")}
-        variant={showSend ? "outline" : "default"}
-        onClick={onAbort}
-      >
-        <SquareIcon />
-      </PromptInputButton>
-    </div>
+    </>
   );
 }
 
-function ComposerSubmit({
+/**
+ * Send and Stop are one 28 px tile at the composer's trailing edge (DIRECTION
+ * 10.2). The same button stays mounted from idle to running and back: its two
+ * icons cross-fade in place (120 ms) and its box never changes. Pressing it
+ * leaves focus in the textarea. After Stop it dims and ignores presses until
+ * the host confirms.
+ */
+function ComposerTile({
+  running,
   prompt,
   hasModel,
   disabledReason,
+  onAbort,
+  onPreserveFocus,
 }: {
+  running: boolean;
   prompt: string;
   hasModel: boolean;
   disabledReason?: string;
+  onAbort: () => void;
+  onPreserveFocus: (event: { preventDefault: () => void }) => void;
 }) {
   useTranslation("chat");
   const attachments = usePromptInputAttachments();
+  const [tooltip, setTooltip] = useState(false);
+  const submitting = !running && attachments.isSubmitting;
   const empty = !prompt.trim() && attachments.files.length === 0;
+  const label = running ? t("chatComposer.stopResponse") : t("chatComposer.send");
   return (
-    <PromptInputSubmit
-      className="composer-submit"
-      aria-label={t("chatComposer.send")}
-      status={attachments.isSubmitting ? "submitted" : "ready"}
-      disabled={empty || !hasModel || attachments.isSubmitting}
-      title={!hasModel ? disabledReason : undefined}
-    />
+    <Tooltip open={running && tooltip} onOpenChange={setTooltip}>
+      <TooltipTrigger asChild>
+        <InputGroupButton
+          className={cn("composer-tile", running ? "composer-stop-action" : "composer-submit")}
+          data-state={running ? "stop" : "send"}
+          aria-label={label}
+          size="icon-sm"
+          variant="default"
+          type={running ? "button" : "submit"}
+          disabled={!running && (empty || !hasModel || submitting)}
+          title={!running && !hasModel ? disabledReason : undefined}
+          onMouseDown={onPreserveFocus}
+          onClick={running ? onAbort : undefined}
+        >
+          <span className="composer-tile-icon" data-icon="send" aria-hidden="true">{submitting ? <Spinner /> : <ArrowUpIcon />}</span>
+          <span className="composer-tile-icon" data-icon="stop" aria-hidden="true"><SquareIcon /></span>
+        </InputGroupButton>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        {t("chatComposer.stopResponse")}
+        <span className="ml-2 text-muted-foreground">{shortcutFor("stop")}</span>
+      </TooltipContent>
+    </Tooltip>
   );
 }
+
+/** Any AI account can run a model: without one, the composer asks to connect instead of offering Send. */
+const hasAccount = (models: readonly ConfiguredModel[], providers: readonly ModelProviderOption[]) =>
+  providers.some((provider) => provider.credential_source !== "missing") || models.some((model) => model.credential_source !== "missing");
 
 export function ChatComposer({
   attachmentDraft,
@@ -624,12 +660,14 @@ export function ChatComposer({
     const query = activeTrigger.query;
     const commandQuery = query.trim().toLowerCase();
     const skillOptions = skills.flatMap((skill) => {
-      const score = rankText(query, [skill.name, skill.description, skill.id]);
+      // Bundled Skills show their localized name, as Settings › Skills does; the chip still invokes the id.
+      const { name } = skillPresentation(skill);
+      const score = rankText(query, [name, skill.name, skill.description, skill.id]);
       return score ? [{
         id: `skill:${skill.id}`,
         kind: "skill" as const,
-        label: skill.name,
-        name: skill.name,
+        label: name,
+        name,
         // Bundled Skills read a short line for people; the agent-facing description stays in the prompt metadata.
         detail: (t as unknown as (key: string, options: { defaultValue: string }) => string)(`skillBlurb.${skill.id}`, { defaultValue: skill.description }),
         group: t("chatComposer.skills"),
@@ -906,6 +944,12 @@ export function ChatComposer({
         }
       }
     }
+    // Esc stops the reply in progress (the Stop tile's shortcut); an open menu took it above.
+    if (isRunning && event.key === "Escape" && !isStopping) {
+      event.preventDefault();
+      onAbort();
+      return;
+    }
     // Enter queues. ⌘Enter / Ctrl+Enter guides the reply in progress. Shift+Enter stays a new line.
     if (isRunning && event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -1026,7 +1070,7 @@ export function ChatComposer({
               aria-autocomplete="list"
               aria-controls={activeTrigger ? assistId : undefined}
               aria-activedescendant={activeTrigger && assistOptions.length ? `${assistId}-${activeOption}` : undefined}
-              placeholder={asOf ? t("asOf.placeholder", { date: formatAsOf(asOf) }) : placeholder}
+              placeholder={asOf ? t("asOf.placeholder", { date: formatAsOf(asOf) }) : !hasAccount(models, providers) && onOpenModelSettings ? t("chatComposer.connectToAsk") : placeholder}
               value={prompt}
               onChange={handlePromptChange}
               onSelect={event => inline.rememberSelection(event.currentTarget)}
@@ -1044,7 +1088,10 @@ export function ChatComposer({
             />
           </div>
         </PromptInputBody>
-        {privateChat ? <div className="composer-private-status"><span>{t("chatComposer.privateNotSavedToMemory")}</span></div> : null}
+        {privateChat ? <div className="composer-private-status"><span className="composer-private-chip" title={t("chatComposer.privateStatus")} aria-description={t("chatComposer.privateStatus")}>
+          <EyeOffIcon aria-hidden="true" /><span>{t("chatComposer.privateChip")}</span>
+          <button type="button" aria-label={t("chatComposer.privateOff")} onClick={() => onPrivateChatChange(false)}><XIcon aria-hidden="true" /></button>
+        </span></div> : null}
         <ComposerChipTray
           chips={ownedChips.filter(chip => chip.kind === "skill")}
           asOf={asOf}
@@ -1071,32 +1118,38 @@ export function ChatComposer({
             evidenceSources={evidenceSources}
             onAddKnowledgePin={onAddKnowledgePin}
           />
-          {isRunning ? (
-            <ComposerRunActions
-              showSend={showSend}
-              showGuide={showGuide}
-              canSteer={canSteer}
-              guidePending={guidance?.phase === "pending"}
-              onQueue={queueFollowUp}
-              onSteer={steerCurrent}
-              onAbort={onAbort}
-              onPreserveFocus={preserveComposerFocus}
-            />
+          {!isRunning && !hasAccount(models, providers) && onOpenModelSettings ? (
+            <ChatModelMenu models={models} providers={providers} selection={modelSelection} onSelectionChange={onModelSelectionChange}
+              onManageModels={onOpenModelSettings} auto={modelAuto} onResetToAuto={onModelResetToAuto} />
           ) : (
-            <ComposerSubmit
-              prompt={submission}
-              hasModel={Boolean(
-                !sendDisabledReason && selectedModel && selectedModel.credential_source !== "missing" &&
-                modelSelection.thinking_level,
-              )}
-              disabledReason={
-                sendDisabledReason ?? (selectedModel?.credential_source === "missing"
-                  ? t("chatComposer.connectAModelProvider")
-                  : modelSelection.model_profile_id
-                  ? t("chatComposer.chooseAThinkingLevel")
-                  : t("chatComposer.chooseAModel"))
-              }
-            />
+            <div className="composer-run-actions">
+              {isRunning ? <ComposerRunExtras
+                showSend={showSend}
+                showGuide={showGuide}
+                canSteer={canSteer}
+                guidePending={guidance?.phase === "pending"}
+                onQueue={queueFollowUp}
+                onSteer={steerCurrent}
+                onPreserveFocus={preserveComposerFocus}
+              /> : null}
+              <ComposerTile
+                running={isRunning}
+                prompt={submission}
+                hasModel={Boolean(
+                  !sendDisabledReason && selectedModel && selectedModel.credential_source !== "missing" &&
+                  modelSelection.thinking_level,
+                )}
+                disabledReason={
+                  sendDisabledReason ?? (selectedModel?.credential_source === "missing"
+                    ? t("chatComposer.connectAModelProvider")
+                    : modelSelection.model_profile_id
+                    ? t("chatComposer.chooseAThinkingLevel")
+                    : t("chatComposer.chooseAModel"))
+                }
+                onAbort={onAbort}
+                onPreserveFocus={preserveComposerFocus}
+              />
+            </div>
           )}
         </PromptInputFooter>
         {showRunHelp ? <p id={runHelpId} className="composer-run-help">{hasAttachedContext

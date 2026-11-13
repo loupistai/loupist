@@ -211,8 +211,11 @@ impl AppToolExecutor {
         params: Value,
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
-        if !policy.propose_memory_updates || !policy.use_memory {
+        if !policy.use_memory {
             return Err(BrokerError::MemoryDisabled);
+        }
+        if !policy.propose_memory_updates {
+            return Err(BrokerError::ProposalDisabled);
         }
         let request: Input = serde_json::from_value(params).map_err(|_| {
             BrokerError::invalid(
@@ -242,7 +245,7 @@ impl AppToolExecutor {
     ) -> Result<(), BrokerError> {
         let screens =
             crate::commands::knowledge::screen_filing(&self.state, loupist_id, &filing.deltas)
-                .map_err(|error| BrokerError::Execution(error.to_string()))?;
+                .map_err(command_error)?;
         let said_ops = &filing.said_ops;
         for (index, (delta, screen)) in filing.deltas.iter_mut().zip(screens).enumerate() {
             if let Some((field, reason)) = screen.refusals.first() {

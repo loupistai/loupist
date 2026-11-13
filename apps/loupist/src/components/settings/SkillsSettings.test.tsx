@@ -99,3 +99,31 @@ it("translates bundled Skill metadata while preserving personal Skill content", 
     await act(async () => { await i18n.changeLanguage("en"); });
   }
 });
+
+it("lists a bundled Skill by its short line for people and keeps the full description for its detail", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  render(<View bridge={bridge} loupists={await bridge.loupistList()} />);
+  await screen.findByRole("switch", { name: "Skill Creator: disabled" });
+  const blurb = i18n.t("chat:skillBlurb.dividend-income");
+  const full = i18n.t("settings:bundledSkills.dividend-income.description");
+  expect(blurb).not.toBe(full);
+  expect(screen.getByText(blurb)).toBeVisible();
+  expect(screen.queryByText(full)).toBeNull();
+});
+
+it("shows a bundled Skill's description once, its instructions, and its files behind the shared disclosure", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  render(<View bridge={bridge} loupists={await bridge.loupistList()} />);
+  await screen.findByRole("switch", { name: "Skill Creator: disabled" });
+  const user = userEvent.setup();
+  await user.click(screen.getByText(i18n.t("chat:skillBlurb.dividend-income")));
+  const dialog = await screen.findByRole("dialog");
+  const full = i18n.t("settings:bundledSkills.dividend-income.description");
+  const instructions = await waitFor(() => { const pre = dialog.querySelector(".skill-instructions")!; expect(pre.textContent).toMatch(/^# Dividend income/); return pre; });
+  expect(instructions.textContent).not.toContain(full);
+  expect(within(dialog).getAllByText(full)).toHaveLength(1);
+  const files = dialog.querySelector("details")!;
+  expect(files).toHaveClass("ui-disclosure");
+  await user.click(within(files).getByText(i18n.t("settings:skillsSettings.includedFilesAndLocation")));
+  expect(within(files).getByText("SKILL.md")).toBeVisible();
+});

@@ -27,11 +27,11 @@ function renderPalette(extra: { attention?: AttentionItem[]; actions?: PaletteAc
 it("shows recent chats and actions with an empty query, filters as the user types, and runs the highlighted row with the keyboard", async () => {
   const user = userEvent.setup();
   const newChat = vi.fn();
-  const handlers = renderPalette({ actions: [{ id: "new-chat", label: "New chat", keys: "⌘N", run: newChat }] });
+  const handlers = renderPalette({ actions: [{ id: "new-chat", label: "New research", keys: "⌘N", run: newChat }] });
   const list = screen.getByRole("listbox", { name: "Command palette" });
   // Three recent chats, newest first, then the actions.
   expect(within(list).getAllByRole("option").map((row) => row.textContent)).toEqual([
-    expect.stringContaining("Hanul margin review"), expect.stringContaining("Inventory days"), expect.stringContaining("Supplier map"), expect.stringContaining("New chat"),
+    expect.stringContaining("Hanul margin review"), expect.stringContaining("Inventory days"), expect.stringContaining("Supplier map"), expect.stringContaining("New research"),
   ]);
   const input = screen.getByRole("combobox", { name: "Command palette" });
   await user.type(input, "dividend");
@@ -171,4 +171,12 @@ it("lists every shortcut the app handles on Settings › Keyboard", () => {
   const rows = screen.getAllByRole("row").slice(1);
   expect(rows).toHaveLength(SHORTCUTS.length);
   expect(screen.getByRole("row", { name: /Command palette/ })).toBeInTheDocument();
+});
+
+it("names an untitled research session as the sidebar does", () => {
+  render(<CommandPalette open bridge={new MockLoupistBridge({ delay_ms: 0 })} loupists={[loupist]} selectedLoupistId={loupist.id}
+    threadsByLoupist={{ [loupist.id]: [thread("t9", "", "2026-10-29T00:00:00Z")] }} attention={[]} actions={[]}
+    onOpenAttention={vi.fn()} onOpenThread={vi.fn()} onOpenMapNode={vi.fn()} onOpenPrinciple={vi.fn()} onOpenBriefing={vi.fn()} onOpenChange={vi.fn()} />);
+  const list = screen.getByRole("listbox", { name: "Command palette" });
+  expect(within(list).getAllByRole("option")[0]).toHaveTextContent("Untitled research session");
 });

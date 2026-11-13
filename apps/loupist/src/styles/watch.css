@@ -16,10 +16,10 @@
 .watching-reader > .briefings-back { justify-self: start; }
 .watching-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--gg-space-2); }
 .watching-head h2 { margin: 0; }
-.watching-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
-.watching-actions [data-slot="button"] { gap: var(--gg-space-2); }
+.watching-controls { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+
 .watching-privacy { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
-.watching-consent { margin: 0; color: var(--gg-color-text-secondary); }
+
 /* The matrix scrolls sideways inside its own box when the reader is narrow; the asset column stays put. */
 .watching-matrix-scroll { min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; }
 /* With stocks and crypto or commodities, each class has its own table and a label above it. */
@@ -40,13 +40,13 @@
 .watching-hint { margin: calc(-1 * var(--gg-space-2)) 0 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 /* Paused reads at a glance: the word itself, then the matrix dimmed. */
 .watching-status[data-paused] .watching-paused { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-semibold); }
-.watching-asset { display: grid; }
+.watching-asset { display: grid; min-width: 0; }
+/* Following: the row menu sits beside the name, inside the column that stays put. */
+.watching-asset-line { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-1); }
+.watching-asset-line .following-row-menu { flex: none; color: var(--gg-color-text-secondary); }
 .watching-asset strong { font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); }
 .watching-asset small, .watching-last { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
-.watching-check { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; cursor: pointer; }
-.watching-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--gg-color-accent); cursor: inherit; }
-.watching-check[data-disabled] { cursor: not-allowed; opacity: .5; }
-.watching-na { color: var(--gg-color-text-tertiary); }
+
 .watching-matrix[data-paused] tbody { color: var(--gg-color-text-secondary); }
 .watching-section { display: grid; gap: var(--gg-space-2); }
 .watching-alerts { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
@@ -56,8 +56,6 @@
 @keyframes watching-arrive { from { opacity: 0; } to { opacity: 1; } }
 .watching-alert p { margin: 0; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); overflow-wrap: anywhere; }
 .watching-alert .asset-change-day { padding-top: 2px; }
-.watching-not-here { display: grid; gap: var(--gg-space-2); margin: 0; padding: 0; list-style: none; }
-.watching-not-here li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-2); min-height: 36px; }
 
 /* Thread: one message per check batch, up to five events. */
 .thread-watch { display: grid; gap: var(--gg-space-2); }
@@ -89,4 +87,47 @@
 @media (prefers-reduced-motion: reduce) {
   .watching-alert[data-arrived] { animation: none; }
   .watching-matrix, .watch-switch [data-slot="switch-thumb"] { transition: none; }
+}
+/* Row utilities stay quieter than the alert sentence. */
+.watching-alert [data-slot="button"] { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-regular); }
+.watching-reader .schedule-section-label { margin-inline: 0; }
+/* Following: each kind cell is a Watch-for checkbox with a 28px hit area. */
+.watching-check { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; cursor: pointer; }
+.watching-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--gg-color-action); cursor: inherit; }
+.watching-check[data-disabled] { cursor: not-allowed; opacity: .5; }
+.watching-asset-open { padding: 0; border: 0; background: none; color: var(--gg-color-text-primary); font: inherit; font-weight: var(--gg-weight-medium); text-align: start; cursor: pointer; }
+.watching-asset-open:hover { text-decoration: underline; }
+
+/* Following: the asset page's frame; two columns when the pane is wide, one when compact. */
+.following-page { width: min(100%, var(--gg-size-page)); margin: 0 auto; padding: var(--gg-space-4) var(--gg-space-6) var(--gg-space-8); container: following-pane / inline-size; }
+.following-head h1 { margin: 0; font-size: var(--gg-text-page); line-height: var(--gg-leading-page); font-weight: var(--gg-weight-semibold); }
+.following-head p { margin: var(--gg-space-1) 0 0; max-width: 72ch; }
+.following-body { display: grid; grid-template-columns: minmax(0, var(--gg-size-reading-column)) var(--gg-size-mini-map); gap: var(--gg-space-6); margin-top: var(--gg-space-4); align-items: start; }
+.following-main { display: grid; gap: var(--gg-space-4); min-width: 0; }
+.following-main .watching-reader { padding: 0; }
+.following-side { display: grid; gap: var(--gg-space-2); justify-items: start; }
+.following-caption { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
+.following-caption:lang(ko) { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); letter-spacing: 0; text-transform: none; }
+.following-empty { margin: 0 0 var(--gg-space-3); color: var(--gg-color-text-secondary); }
+/* Follows the Watching table cannot list: a name and its menu per row. */
+.following-unlisted { display: grid; margin: 0 0 var(--gg-space-3); padding: 0; list-style: none; }
+.following-unlisted li { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-2); min-height: 36px; border-bottom: 1px solid var(--gg-color-border-subtle); font-size: var(--gg-text-control); }
+.following-unlisted .following-row-menu { flex: none; color: var(--gg-color-text-secondary); }
+.following-watch-all { align-items: center; }
+.following-watch-all p { flex: 1 1 24ch; max-width: 60ch; margin: 0; }
+.following-needs { display: grid; gap: var(--gg-space-1); margin: 0; padding: 0; list-style: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+@container following-pane (max-width: 900px) {
+  .following-page { padding-inline: var(--gg-space-4); }
+  .following-body { grid-template-columns: minmax(0, 1fr); }
+}
+.following-main .watching-reader.briefings-reader { padding: 0; margin: 0; max-width: none; }
+
+/* F1/F3: Watching's status and controls sit in the Following header; privacy is the last line of the side column. */
+.following-head { display: grid; gap: var(--gg-space-1); }
+.watching-status-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); }
+.watching-status-row .watching-status { margin: 0; flex: 1 1 24ch; }
+.watching-status-row [role="alert"], .watching-status-row [role="status"] { flex-basis: 100%; margin: 0; }
+.following-privacy { margin: var(--gg-space-3) 0 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
+@container following-pane (max-width: 900px) {
+  .following-intro[data-has-follows] { display: none; }
 }

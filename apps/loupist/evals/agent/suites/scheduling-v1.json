@@ -23,6 +23,20 @@
               "expect": {
                 "trace": [
                   {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity",
+                    "id": "schedules"
+                  },
+                  {
                     "assert": "scheduled_tasks",
                     "count": 2,
                     "tasks": [
@@ -84,6 +98,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -154,6 +174,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_update",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -223,6 +249,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_set_status",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -292,6 +324,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_set_status",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -335,6 +373,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_delete",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -358,9 +402,23 @@
           "memory": "off",
           "turns": [
             {
-              "user": "매일 보고서 요약을 예약하면 편할까? 아직 등록하지 말고 장단점만 짧게 말해 줘.",
+              "user": "먼저 지금 등록된 예약을 확인해 줘. 매일 보고서 요약을 예약하면 편할까? 아직 등록하지 말고 장단점만 짧게 말해 줘.",
               "expect": {
                 "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_list"
+                    ],
+                    "metric": "tool_validity",
+                    "id": "schedules"
+                  },
                   {
                     "assert": "scheduled_tasks",
                     "count": 0,
@@ -370,6 +428,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_list",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -397,6 +461,20 @@
               "expect": {
                 "trace": [
                   {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_handoff"
+                    ],
+                    "metric": "tool_validity",
+                    "id": "schedules"
+                  },
+                  {
                     "assert": "scheduled_tasks",
                     "count": 1,
                     "tasks": [
@@ -423,6 +501,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_handoff",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -449,6 +533,20 @@
               "user": "Create two paused schedules, North review and South review. Each should summarize its matching file north.md or south.md every 120 minutes. Each schedule should continue in its own dedicated conversation. Do not execute the work now.",
               "expect": {
                 "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity",
+                    "id": "schedules"
+                  },
                   {
                     "assert": "scheduled_tasks",
                     "count": 2,
@@ -479,6 +577,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -517,6 +621,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_update",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -544,6 +654,20 @@
               "expect": {
                 "trace": [
                   {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity",
+                    "id": "schedules"
+                  },
+                  {
                     "assert": "scheduled_tasks",
                     "count": 2,
                     "tasks": [
@@ -567,6 +691,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -599,6 +729,17 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_list",
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "schedule_delete",
+                    "metric": "connection_honesty"
                   }
                 ]
               }
@@ -626,6 +767,20 @@
               "expect": {
                 "trace": [
                   {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity",
+                    "id": "schedules"
+                  },
+                  {
                     "assert": "scheduled_tasks",
                     "count": 2,
                     "tasks": [
@@ -649,6 +804,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -681,6 +842,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_list",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -708,9 +875,24 @@
               "expect": {
                 "trace": [
                   {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_handoff"
+                    ],
+                    "metric": "tool_validity",
+                    "id": "schedules"
+                  },
+                  {
                     "assert": "tool_called",
                     "tool": "schedule_handoff",
-                    "metric": "task_success"
+                    "metric": "task_success",
+                    "successful": true
                   },
                   {
                     "assert": "scheduled_tasks",
@@ -733,6 +915,20 @@
               "expect": {
                 "trace": [
                   {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity",
+                    "id": "schedules"
+                  },
+                  {
                     "assert": "scheduled_tasks",
                     "count": 1,
                     "tasks": [
@@ -751,6 +947,12 @@
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
                   }
                 ]
               }
@@ -758,6 +960,105 @@
           ]
         }
       ]
+    },
+    {
+      "id": "S-008",
+      "title": "A repeated followed-name briefing updates the single host briefing",
+      "tags": [
+        "regression",
+        "en"
+      ],
+      "split": "regression",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Brief me on what I follow every day at 8am Seoul time.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_briefing",
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 1,
+                    "tasks": [
+                      {
+                        "title": "Briefings",
+                        "status": "active",
+                        "schedule": {
+                          "kind": "daily",
+                          "hour": 8,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul"
+                        }
+                      }
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Every weekday at 8am, brief me on my followed names.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "schedule_create",
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 1,
+                    "tasks": [
+                      {
+                        "title": "Briefings",
+                        "status": "active",
+                        "schedule": {
+                          "kind": "weekly",
+                          "hour": 8,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ]
+                        }
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_briefing",
+                    "successful": true,
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "existing-briefing-updated",
+                    "criterion": "The answer says a briefing already existed at 8:00 every day and now runs on weekdays at 8:00; it does not say a second briefing or task was created.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "language": "en"
     }
   ]
 }

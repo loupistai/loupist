@@ -69,9 +69,8 @@ export function pressMenu(trigger: Element | null | undefined) {
 
 /** Clicks a Map toolbar action, through "More" when a narrow toolbar has folded it there. */
 export async function clickMapAction(selector: string, root: ParentNode = document) {
-  await until(() => root.querySelector(selector), `Map action did not initialize: ${selector}`);
-  if ([...root.querySelectorAll(selector)].some(visible)) return click(selector, root);
   const more = await until(() => select("[data-map-more]", root), "More actions not visible");
+  if ([...root.querySelectorAll(selector)].some(visible)) return click(selector, root);
   // The menu opens on pointer down, as a mouse press does.
   pressMenu(more);
   await click(`[role="menu"] ${selector}`);
@@ -91,9 +90,14 @@ export async function selectPanel(kind: "lens" | "world" | "materials") {
   await click(`[data-workspace-kind="${kind}"]`);
 }
 
-export async function navigate(root: HTMLElement, tab: "map" | "lens" | "schedule" | "settings") {
+export async function navigate(root: HTMLElement, tab: "map" | "lens" | "following" | "schedule" | "settings") {
   await until(() => root.querySelector('textarea[data-chat-composer]'), "Chat did not initialize");
   if (tab === "map" || tab === "lens") { await selectPanel(tab === "map" ? "world" : "lens"); return; }
+  if (tab === "following") {
+    await openNavigation('[data-sidebar-place="following"] button');
+    await click('[data-sidebar-place="following"] button');
+    return;
+  }
   if (tab === "schedule") {
     await openNavigation(".loupist-chat-row[data-home]");
     const more = await until(() => document.querySelector<HTMLButtonElement>("[data-bot-menu]"), "Bot menu did not initialize");
@@ -181,7 +185,7 @@ export async function submitPrompt(root: HTMLElement, prompt = previewKo() ? "í•
 
 /** jsdom has no scroll geometry; those runs check the scenario reaches the thread. */
 // The live dot is aria-hidden, so landmarks use its visible run header.
-export const runningHeader = () => select(".message.assistant.streaming .chat-progress") ?? select(".message.assistant.streaming");
+export const runningHeader = () => select(".message.assistant.streaming .turn-live") ?? select(".message.assistant.streaming");
 
 /** This chat's research map: four names around one hub, with `events` as the growth this chat added. */
 export function chatResearchMap(bridge: PreviewBridge, events: () => GrowthEvent[], names = ["Hanul Precision", "Morrow Components", "Capacity utilization", "Operating margin"]) {

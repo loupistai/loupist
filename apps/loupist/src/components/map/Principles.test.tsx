@@ -17,7 +17,7 @@ it("reloads a conflicting revision before editing again", async () => {
   await bridge.principleUpdate({ loupistId, recordId: principle.recordId, expectedRevisionId: principle.revisionId, statement: "Compare the same reporting periods." });
   await user.type(screen.getByRole("textbox", { name: "Why" }), "A local draft");
   await user.click(screen.getByRole("button", { name: "Save" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("This rule changed elsewhere. Reload it to edit.");
+  expect(await screen.findByRole("alert")).toHaveTextContent("This principle changed elsewhere. Reload it to edit.");
   expect(saved).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "Reload" }));
@@ -36,7 +36,7 @@ it("preserves a failed draft for retry and gives duplicates a specific message",
   expect(screen.getByRole("textbox", { name: "Statement" })).toHaveValue("Compare cash flows.");
   create.mockRejectedValueOnce({ code: "duplicate_principle" });
   await user.click(screen.getByRole("button", { name: "Try again" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("You already have this rule.");
+  expect(await screen.findByRole("alert")).toHaveTextContent("You already have this principle.");
   expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
 });
 it("opens a principle's origin Chat and applications, and edits it in the inspector", async () => {
@@ -48,7 +48,7 @@ it("opens a principle's origin Chat and applications, and edits it in the inspec
   const openChat = vi.fn(), select = vi.fn(), close = vi.fn();
   render(<MapInspector bridge={bridge} location={{ loupistId, surface: "world" }} node={node} map={map} onClose={close} onSelect={select} onOpen={vi.fn()} onAsk={vi.fn()} onOpenChat={openChat} />);
   expect(await screen.findByText("Profit is not cash.")).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "Open Chat" }));
+  await user.click(screen.getByRole("button", { name: "Open conversation" }));
   expect(openChat).toHaveBeenCalledWith("original-chat");
   await user.click(screen.getByRole("button", { name: map.nodes[0].label }));
   expect(select).toHaveBeenCalledWith(map.nodes[0]);

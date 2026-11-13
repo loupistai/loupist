@@ -8,10 +8,12 @@ seal: transcript, Memory, model/runtime, credentials, configuration and resource
 hashes. A Skill mention does not change Memory access. Invalid host context must
 fail startup rather than become model text.
 
-The model receives a compact capability index and uses `capability_load` with an
-exact ID to expose tools. Mentioned connections are preloaded. Reuse tools already
-loaded in this Chat, and load the same id again when the host says those tools are
-unavailable or tells the model to reconnect. Repeated loads return a short receipt.
+Ordinary research tools allowed for the turn preload, including enabled web
+research. The catalog marks charts and schedules on-demand (`preload: false`);
+the index names their tools and when to load them, and marks loaded packs on
+subsequent turns. Use `capability_load` with an exact pack or connection ID to
+expose its tools; mentioned enabled connections preload too. Reuse loaded connection tools, and load again only when the
+host says they are unavailable or asks for reconnection. Repeated loads return a short receipt.
 Unavailable bundled entries retain enough purpose/context
 to name the connection the user needs to configure. Loading cannot grant access.
 An artifact id already returned in this Chat, including by `chart_publish`, or
@@ -20,17 +22,33 @@ discover an unknown target id.
 [Connections](../capabilities/connections.md) owns IDs and credential behavior.
 
 `research_open` (always permitted, no component, Bot only, one per reply) hands a
-question that needs depth or several steps to a research session: `title`, `question`,
+question that needs depth or several steps to a separate Chat: `title`, `question`,
 `brief`, `pins` of `{lens}` or `{world}` ids and a `requestKey`. It stages; the reply's
-commit inserts one `chat_handoffs` row and the session Chat in the same transaction, a
+commit inserts one `chat_handoffs` row and the separate Chat in the same transaction, a
 repeated key creates nothing, and a reply that does not finish hands nothing off. After
-the commit the host runs the session once through ordinary Chat admission with the
-unattended allowlist and the Bot turn's model and Memory flags, and the Bot shows a
-`handoff` card ([Home Thread](../ui/home-thread.md#home-thread)). A session or an
+the commit the host runs that Chat once through ordinary Chat admission with the
+unattended allowlist and the Bot turn's model and Memory flags, and Bot shows a
+`handoff` card ([Bot](../ui/home-thread.md#home-thread)). A separate Chat or an
 unattended run does not list the tool and the broker refuses it by surface.
 
-The `schedules` component is independent of Memory. Read current IDs/revisions
-before editing and keep a stable creation key within the turn. Agent modes are
+The general `schedules` tools are independent of Memory. `schedule_watch` and
+`schedule_briefing` read and save Memory settings, so their executor guards require
+both Memory access and Save learning; a Private chat or either missing grant
+refuses them before any read or write, even though their catalog permission is
+`always`. Generic `schedule_set_status` and `schedule_run_now` also require both
+grants when their saved target is a Briefing task, before any status mutation or
+run admission; custom tasks remain independent of Memory. Generic update and
+delete already refuse host-authored Briefing tasks. Other schedule tools keep
+their existing permission classes. Their run
+receipts expose control metadata (IDs, status, times and a fixed failure notice);
+briefing context and answer summaries stay in the run's Chat, because they can
+contain Memory and third-party text. Read current IDs/revisions
+before editing and keep a stable creation key within the turn. List receipts
+include task `kind` (`briefing`, `earnings`, `custom`); use `schedule_briefing`
+to change the one host briefing. A request for existing work updates that task
+or leaves it unchanged. A new custom task created in Bot with a live title (NFKC, case-folded,
+whitespace collapsed) is refused, while same-key retries and distinct titles
+at the same time remain valid. Agent modes are
 fresh history or the task's own dedicated Chat; scheduled runs cannot mutate
 schedules. Use [Scheduled Chats](../runtime/scheduled-runs.md#scheduled-chats) and the
 [scheduling evaluation](../../apps/loupist/evals/README.md#scheduling-evaluation).
@@ -93,16 +111,16 @@ change, and applies it with the reply together with the asking message; a stoppe
 reply applies nothing, and a change whose name the map gained since staging is
 skipped and listed in the answer's `memory_update.skippedKinds`. [Worlds](../knowledge/worlds.md#presets-changes-and-undo) owns the rules.
 
-`loupist_setup` (Memory save in `memory-save`, Bot and research sessions only, one call
+`loupist_setup` (Memory save in `memory-save`, Bot and interactive Chats only, one call
 per reply, refused in scheduled and delegated runs by the unattended allowlist and by
 the chat surface) sets a Loupist up from what the user says. It takes `follow` (at most
 ten `{symbol, market?, name?}`), `unfollow` (at most ten `{symbol, market?}`), `focus`
 (1–280 characters, replacing the research focus) and `preset` (a `LoupistTemplate`
 id). Rust checks each field when the call arrives and refuses by field
 (`follow[1].symbol`, `focus`, `preset`); nothing applies until the reply commits, and a
-stopped reply changes nothing. The watchlist lives in the app database, outside the
+stopped reply changes nothing. The followed list lives in the app database, outside the
 reply's transaction, so its changes apply just before that transaction through the
-watchlist commands' own functions (`commands/user_context.rs`) and stay if the commit
+Following commands' own functions (`commands/user_context.rs`) and stay if the commit
 then fails; a market the user did not give stays unknown, and an asset already
 followed under any market is not added again. In the reply's
 transaction the focus is written to the Loupist profile, the World settings'
@@ -115,7 +133,7 @@ are listed in `skippedKinds`. `SYSTEM.md` tells the agent to call it in the repl
 the user says what they research, what to follow or picks a starting point, and never
 to send them to settings.
 
-`connection_setup` (core, Bot and research sessions only, three calls per reply) takes
+`connection_setup` (core, Bot and interactive Chats only, three calls per reply) takes
 one `id`: a catalog entry id (`fred.macro`), the entry's English or Korean display name,
 or a plugin id or group name (`World Bank`, `세계은행`) that covers exactly one entry,
 compared case-insensitively with `-`, `_` and `.` read as spaces
@@ -132,7 +150,7 @@ authority is sealed at start. The progress step's target is the resolved entry i
 which the renderer reads to draw the [setup card](../ui/chat-composer.md#chat-composer);
 a failed step draws nothing. `SYSTEM.md`, the capability index, `resolveCapability`,
 the provider setup notices and the KRX approval text all name this tool instead of
-sending the user to Connections.
+sending the user to Data connections.
 
 `thesis_update` (Memory save, staged until the reply commits) takes `assetId`, 1–3
 `evidence` citation URLs from the turn and either `to` with a `reason` (≤ 280
@@ -147,7 +165,12 @@ that the app computes every difference.
 
 `journal_save` accepts `thesis {symbol, market, role}` for a reason or line the user
 stated; a `line` needs a check, whose `byDate` is then optional, and a thesis entry
-needs no `sourceReads`, `worldReads` or `lensReads`. `SYSTEM.md` tells the agent to
+needs no `sourceReads`, `worldReads` or `lensReads`. One reply may save one reason
+and one checked line for the same asset, in either order; the commit writes the
+reason first, atomically with the line and Chat. Other second entries and any
+third entry are refused. Thesis receipts add `saved_as` (`reason` or `line`) and
+`next`: only a line is tested against figures, and a line without an active or
+staged reason asks for one because readings need it. `SYSTEM.md` tells the agent to
 read the page for a followed asset, save the user's stated reasons and lines with
 `thesis`, and move the read one step only on a dated original fact read in the turn,
 never to agree with the user and never under an as-of date. It also points the agent at
@@ -180,7 +203,7 @@ projects it into the reply's progress plan, keeps each step's first activation
 time and marks unfinished steps Not done when the run ends. It creates no evidence
 and touches no Memory, and scheduled runs may call it.
 
-`ask_user` (core, Bot and research sessions only, two calls per reply) lets the agent
+`ask_user` (core, Bot and interactive Chats only, two calls per reply) lets the agent
 settle a real fork without ending the reply. It takes `question` (1-300 characters),
 `options` (2-4 of `{label` 1-60 characters, unique ignoring case; `description?` up to
 160`}`) and `recommended?` (an index into `options`); Rust refuses by field
@@ -189,7 +212,21 @@ settle a real fork without ending the reply. It takes `question` (1-300 characte
 stopping. The result is `{answered: true, choice: "<label>"}` or
 `{answered: true, text}`; with no answer it is `{answered: false, assumed: "<recommended
 label>" | null, next}`, not an error, and `next` tells the model to continue with the
-assumption and say which one it used. A text answer's URLs count as typed by the user for
+research or presentation default and say which one it used. The `assumed` label
+is only the recommendation. Before publishing the card, Rust raises a reply-local
+pending-question counter; while any question is waiting, and after any question
+ends unanswered, it refuses schedule deletion, stopping, editing and pausing;
+watch or briefing disables; Lens section retirement; unfollowing an asset or
+replacing the research focus; and Bot memory update, resolve and forget. The
+returned `next` and tool description name this same list. Ordinary reads,
+research, calculations, other saves and work products (artifact revision,
+native write/edit and Python) keep their existing authority. A supplied `focus`
+replaces the focus, so it is guarded even when the old focus is empty. There are
+no Chat or artifact delete tools. Pi registers `ask_user` as sequential, which the
+pinned runtime applies to its whole tool batch. Answering a card drops only its
+pending count; dropping the call without an answer preserves the guard. A later
+answer does not clear the
+guard in the same reply; a new reply starts fresh. A text answer's URLs count as typed by the user for
 the untrusted-text rule, and the answer joins the private text no URL may carry after
 third-party text. The description tells the model to ask only when the answer
 changes the work materially and no sensible default exists, never for credentials or
@@ -204,7 +241,15 @@ conflicting judgments. Test serialized schemas and Rust validation together.
 Chart/data contracts are owned by [Financial analysis](../analysis.md).
 
 Native file calls follow the [path policy](../runtime/permissions.md) without
-permission cards. `run_python` stays allowed after third-party text, after a
+permission cards. Both native reads and grep check exported-file trust; grep
+checks every admitted file candidate before the extension searches it. The trust
+scan shares a 32 MiB byte budget and 500 ms deadline per call and checks run
+cancellation between bounded reads. A tagged candidate or an incomplete scan
+raises the turn's third-party-text tier and delimits the grep response;
+ordinary user files keep their existing tier. Path refusals name the applicable
+boundary, including read-only attachments, Git metadata and hard-linked aliases.
+Memory saves distinguish disabled Memory reads from disabled saving.
+`run_python` stays allowed after third-party text, after a
 custom-connection result and in unattended runs, without a card. `ask_user` asks
 about task choices, never tool permission. Unattended runs retain their host
 allowlist, and that allowlist includes `run_python`.

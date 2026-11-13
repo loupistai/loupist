@@ -74,11 +74,11 @@ export function financeScenarios({ base, select, until, click, hasLayout, naviga
     await click(`[data-schedule-task="${task}"] .schedule-task-summary`, root);
   };
   const watching = (id: string, title: string, landmark: string, settings: () => ReturnType<typeof previewWatchSettings>, events: () => ReturnType<typeof previewWatchEvents>): PreviewScenario => ({
-    // Watching opens at its header: title, status, Check now or Resume, and the privacy line above the matrix.
-    ...base(id, title, () => select(landmark) && select(".watching-head"), async root => {
+    // Watching opens as the Following page: its header carries the status with Check now and Pause or Resume.
+    ...base(id, title, () => select(landmark) && select("[data-testid=following-page] .watching-status-row"), async root => {
       await openSchedule(root, "watching");
       await until(() => select(landmark), "Watching did not open");
-      await reveal(".watching-reader", "Watching did not open", "start");
+      await reveal("[data-testid=following-page]", "Following did not open", "start");
     }),
     setup: async bridge => {
       await prepareFixture(bridge, "answer");

@@ -52,7 +52,9 @@ Remove what it added takes back the pack's own relationships, the support it add
 others (a relationship left without a Source goes), the names nothing else uses and its
 Sources' place in the World, then queues the same load; a running World job refuses it.
 Source records are immutable, so the pack's Sources are hidden from the Library, search
-and reads. Pending suggestions are dropped; accepted items stay unless the user also
+and reads, including direct reads by record and revision id. A capture independently
+retained by the user's research or a Source read saved with a Chat keeps that Source
+available after removal. Pending suggestions are dropped; accepted items stay unless the user also
 archives them (a standing perspective is never archived).
 
 `packOrigin` names the pack behind an accepted Lens item, or a name or relationship a

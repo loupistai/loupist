@@ -1169,7 +1169,7 @@ def workspace_find_smoke(executable: Path, runtime_dir: Path, agent_dir: Path) -
                 "--provider",
                 "google",
                 "--model",
-                "gemini-2.5-flash",
+                "gemini-3.5-flash-lite",
             ],
             cwd=root,
             stdin=subprocess.PIPE,
@@ -1237,6 +1237,39 @@ def workspace_find_smoke(executable: Path, runtime_dir: Path, agent_dir: Path) -
             finish_smoke_process(process, process_group, job, completed=completed)
 
 
+def provider_smoke_environment(
+    runtime_dir: Path, root: Path, result_path: Path, smoke_key: str
+) -> dict[str, str]:
+    environment = pi_environment(runtime_dir)
+    environment.update(
+        {
+            "PI_CODING_AGENT_DIR": str(root),
+            "GEMINI_API_KEY": "loupist-provider-bootstrap",
+            "LOUPIST_PROVIDER_RESULT_FILE": str(result_path),
+        }
+    )
+    if "LOUPIST_PROVIDER_API_KEY" in environment or smoke_key in environment.values():
+        raise RuntimeError("provider smoke key must not enter the environment")
+    return environment
+
+
+def provider_smoke_key_answer(
+    message: dict[str, Any], smoke_key: str
+) -> dict[str, str] | None:
+    request_id = message.get("id")
+    if (
+        message.get("type") != "extension_ui_request"
+        or message.get("method") != "input"
+        or message.get("title") != "loupist-provider/1:api_key"
+        or not isinstance(request_id, str)
+        or not request_id
+        or len(request_id.encode("utf-8")) > 128
+        or any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in request_id)
+    ):
+        return None
+    return {"type": "extension_ui_response", "id": request_id, "value": smoke_key}
+
+
 def provider_extension_smoke(
     executable: Path,
     runtime_dir: Path,
@@ -1275,14 +1308,8 @@ def provider_extension_smoke(
         descriptor = os.open(result_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         os.close(descriptor)
         smoke_key = "loupist-packaged-provider-smoke"
-        environment = pi_environment(runtime_dir)
-        environment.update(
-            {
-                "PI_CODING_AGENT_DIR": str(root),
-                "GEMINI_API_KEY": "loupist-provider-bootstrap",
-                "LOUPIST_PROVIDER_RESULT_FILE": str(result_path),
-                "LOUPIST_PROVIDER_API_KEY": smoke_key,
-            }
+        environment = provider_smoke_environment(
+            runtime_dir, root, result_path, smoke_key
         )
         process = subprocess.Popen(
             [
@@ -1301,7 +1328,7 @@ def provider_extension_smoke(
                 "--provider",
                 "google",
                 "--model",
-                "gemini-2.5-flash",
+                "gemini-3.5-flash-lite",
             ],
             cwd=root,
             stdin=subprocess.PIPE,
@@ -1332,22 +1359,50 @@ def provider_extension_smoke(
                 },
             )
             deadline = time.monotonic() + TIMEOUT_SECONDS
+            acknowledged = False
+            answered = False
             while True:
+                encoded_result = result_path.read_text(encoding="utf-8")
+                if acknowledged and encoded_result:
+                    try:
+                        result = json.loads(encoded_result)
+                    except json.JSONDecodeError:
+                        result = None
+                    if result is not None:
+                        if not answered:
+                            raise RuntimeError(
+                                "provider smoke completed without a private key prompt"
+                            )
+                        break
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise RuntimeError("packaged Pi provider command timed out")
-                message = read_json_line(lines, remaining)
+                try:
+                    line = lines.get(timeout=min(remaining, 0.1))
+                except queue.Empty:
+                    continue
+                if not line:
+                    raise RuntimeError("packaged Pi closed without a provider result")
+                message = json.loads(line)
+                if not isinstance(message, dict):
+                    raise RuntimeError("packaged Pi provider response is not an object")
+                if message.get("type") == "extension_error":
+                    raise RuntimeError("packaged provider extension failed")
+                answer = provider_smoke_key_answer(message, smoke_key)
+                if answer is not None and not answered:
+                    send_json(process, answer)
+                    answered = True
                 if (
                     message.get("type") == "response"
                     and message.get("id") == "credential-smoke"
                 ):
                     if message.get("success") is not True:
                         raise RuntimeError("packaged Pi provider command failed")
-                    break
+                    acknowledged = True
 
-            result = json.loads(result_path.read_text(encoding="utf-8"))
             if (
-                result.get("protocol") != "loupist-provider/1"
+                not isinstance(result, dict)
+                or result.get("protocol") != "loupist-provider/1"
                 or result.get("type") != "credential_updated"
                 or result.get("provider") != "anthropic"
                 or result.get("models") != []

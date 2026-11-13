@@ -23,13 +23,34 @@ tools, and any unverified boundary is reported.
 | Change assumptions | Rerun a saved local script with explicit inputs and parameters, then import a new result revision |
 | A custom chart, report or shareable export | Native workspace Python or JavaScript with saved inputs, code and output files |
 
-App charts render inline in the answer as cards (Expand, Copy data, Ask); drawing tools and range selection stay in the panel's chart view, reachable from saved work. The panel's chart fits the default bottom dock without scrolling: study panes take a quarter of its height, a short chart shows its legend on hover, and price-axis labels the last-price tag would cover are dropped.
-Analytic axes and legends use the dataset's readable column labels. Numeric tick
-precision follows the scale so distinct small values do not all display as zero. Legends
+App charts render inline in the answer as cards (Expand, Copy data, Ask). Copy data, the data view's rows and Save as CSV write each number with the digits it has: a fraction a provider stored as a 32-bit float prints as its shortest 32-bit decimal (225.3, not 225.3000030517578); integers and other values print exactly as stored. Drawing tools and range selection stay in the panel's chart view, reachable from saved work. The panel's chart fits the default bottom dock without scrolling: study panes take a quarter of its height, a short chart shows its legend on hover, and price-axis labels the last-price tag would cover are dropped.
+Analytic axes and legends use the dataset's readable column labels. A value axis
+counts large amounts at the scales answers print them, in the interface language
+(`chartFormat.ts`, `amountScale`): 조, 억 or 만 in Korean ("300조"), tn, bn or m in
+English ("300tn"); below 1,000만 or 1m, and for a column whose semantic type is a
+price, a percentage, a ratio, a rate or a score, digits stay plain with their
+decimals. Tick precision is that of a step for twice the ticks the axis asks for,
+trailing zeros dropped, so adjacent ticks read apart and distinct small values do not
+all display as zero. The currency a value column names (its id, "revenue_krw", or
+its label, "매출(원)") appears once, in the value axis title ("Revenue (KRW)",
+"매출 (원)"), or for folded series as "In KRW" / "단위: 원" when their labels do not
+say it. Bar labels use the same units ("302.2조"), and hovering a mark gives the
+exact stored value ("302조 2,312억 원", "₩302,231,360,000,000"). A category or time
+axis never formats a period as a quantity: a date prints in the app's date format
+("Jan 31", "1월 31일"), a string such as "2024Q3" or "FY2025" as given, and a numeric
+x column is a category (one band per value, printed as given) when its semantic type
+names a period, date, category or identifier, its column kind is a string or date,
+or, with no type saying it is a quantity, every value is an integer from 1800 to
+2200, a year. The panel's chart, the answer's card and Save as PNG draw the same
+view, so they agree, and a language change draws the chart again. Legends
 wrap below the plot as the panel changes width, keeping room for the data;
 display labels do not change series identity or stored values.
 Financial charts can attach a selected date range to a follow-up question. Theme changes restyle the open chart while retaining local drawings and zoom.
 Position, entry, stop and target overlays name their source or analytical basis.
+A chart's caption, like a table's notes, may name its sources by `#evidence-…`
+target: the card draws each as a citation (its number in the answer, or the source's
+name), an unresolved one reads "source", and table exports write the source's name,
+never the raw id.
 The agent preserves user-supplied values; when asked to choose levels, it labels
 them as an analytical proposal with its evidence and assumptions, never an order
 or the user's own Journal judgment.

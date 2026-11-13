@@ -222,26 +222,9 @@ if [ "${LOUPIST_REQUIRE_DISTRIBUTION_SIGNING:-0}" = 1 ]; then
             exit 1
         fi
     done
-    codesign --verify --strict --verbose=2 \
-        -R 'anchor apple generic' \
-        "$TAURI_ROOT/resources/python-runtime/loupist-python-worker"
-    find "$RUNTIME_DIR" -type f -exec sh -c '
-        for binary do
-            if LC_ALL=C file "$binary" | grep -q "Mach-O"; then
-                codesign --verify --strict --verbose=2 "$binary"
-            fi
-        done
-    ' sh {} +
-    for entitlement in \
-        com.apple.security.cs.allow-jit \
-        com.apple.security.cs.allow-unsigned-executable-memory; do
-        if ! codesign --display --entitlements :- "$PI_BINARY" 2>/dev/null \
-            | plutil -extract "$entitlement" raw -o - - \
-            | grep -qx true; then
-            echo "signed Pi resource is missing entitlement $entitlement" >&2
-            exit 1
-        fi
-    done
+    python3 "$SCRIPT_DIR/macos_release_signing.py" verify-runtime \
+        --pi "$RUNTIME_DIR" \
+        --worker "$TAURI_ROOT/resources/python-runtime/loupist-python-worker"
 else
     echo "Unsigned/ad-hoc staging validated. Signing and notarization were not asserted."
 fi

@@ -144,7 +144,19 @@ export type MessageResponseProps = Omit<
   workspacePath?: string;
   workspaceBasePath?: string;
   mermaidPlugin?: DiagramPlugin;
+  /**
+   * While a reply streams, and until the diagram renderer is ready, a Mermaid
+   * fence is a 240 px ruled frame instead of code, so the diagram renders into
+   * the space it held and nothing below it moves (DIRECTION 5.9).
+   */
+  holdDiagrams?: boolean;
 };
+
+/** The frame a Mermaid diagram renders into once the reply settles. */
+function PendingDiagram() {
+  return <div className="message-diagram-pending" data-streamdown="mermaid-pending" aria-hidden="true"><i /><i /><i /><i /></div>;
+}
+const DIAGRAM_HOLD = [{ language: "mermaid", component: PendingDiagram }];
 
 type LoadedPlugins = { code?: CodeHighlighterPlugin; math?: MathPlugin };
 
@@ -203,6 +215,7 @@ export const MessageResponse = memo(
     workspacePath,
     workspaceBasePath,
     mermaidPlugin,
+    holdDiagrams = false,
     ...props
   }: MessageResponseProps) => {
     const { t: translate } = useTranslation("chat");
@@ -236,10 +249,12 @@ export const MessageResponse = memo(
     const resolvedComponents = useMemo(() => hasLinkAction ? { ...components, a: LoupistMarkdownLink, ...(hasFileAction ? { img: LoupistMarkdownImage } : {}) } : components, [components, hasLinkAction, hasFileAction]);
     const streamdownPlugins = useMemo(
       () =>
-        mermaidPlugin
+        holdDiagrams
+          ? { ...contentPlugins, renderers: DIAGRAM_HOLD }
+          : mermaidPlugin
           ? { ...contentPlugins, mermaid: mermaidPlugin }
           : contentPlugins,
-      [contentPlugins, mermaidPlugin],
+      [contentPlugins, mermaidPlugin, holdDiagrams],
     );
     const controlTranslations = useMemo<Partial<StreamdownTranslations>>(() => ({
       close: translate("messageResponse.streamdown.close"),

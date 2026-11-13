@@ -81,7 +81,7 @@ describe("outline (X16)", () => {
       <AnswerOutline messageId="a1" markdown={long} />
       <div className="message-content"><h2>Revenue</h2><h2>Margin</h2><h3>Costs</h3></div>
     </article>);
-    fireEvent.click(screen.getByText("Outline"));
+    fireEvent.click(screen.getByRole("button", { name: "Outline" }));
     fireEvent.click(screen.getByRole("button", { name: "Margin" }));
     // The heading takes focus, so keyboard and screen-reader users land where the eye does.
     expect(document.activeElement?.tagName).toBe("H2");

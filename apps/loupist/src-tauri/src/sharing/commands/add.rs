@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{ipc::Channel, State};
 
-use super::save::write_new_file;
 use super::{admit, internal, knowledge_error, with_tx};
 use crate::app::{AppState, CommandError};
 use crate::knowledge::{shared_pack, BlobStore};
@@ -235,6 +234,57 @@ pub(crate) fn seed_shared_pack(
     Ok(row.import_id)
 }
 
+/// Copies are a derived update baseline. Only the active import version owns one;
+/// accepted records retain their text and rights in SQLite after pack removal.
+/// Hold the database lock through pruning so concurrent retain/update/remove calls
+/// cannot delete a version whose reference has just changed.
+pub(crate) fn prune_copies(state: &AppState, loupist_id: &str, import_id: &str) {
+    if !state.store.is_folder_catalog()
+        || !import_id.starts_with("imp_")
+        || !import_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        return;
+    }
+    // Resolve catalog metadata before taking the folder database lock.
+    let Ok(directory) = state.store.loupist_data_dir(loupist_id) else {
+        return;
+    };
+    let Ok(mut connection) = state.store.lock_loupist(loupist_id) else {
+        return;
+    };
+    let Ok(tx) = connection.transaction() else {
+        return;
+    };
+    let Ok(row) = store::import(&tx, loupist_id, import_id) else {
+        return;
+    };
+    let Ok(root) = crate::fs::secure_delete::SecureDeletionRoot::open(&directory) else {
+        return;
+    };
+    let relative = std::path::Path::new("packs").join(import_id);
+    match row {
+        None => {
+            let _ = root.remove_tree(&relative);
+        }
+        Some(row) => {
+            let Ok(entries) = std::fs::read_dir(directory.join(&relative)) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let Some(version) = name.to_str().and_then(|name| name.parse::<u32>().ok()) else {
+                    continue;
+                };
+                if version != row.version {
+                    let _ = root.remove_tree(&relative.join(name));
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn retain_copy(
     state: &AppState,
     loupist_id: &str,
@@ -245,23 +295,44 @@ pub(crate) fn retain_copy(
     if !state.store.is_folder_catalog() {
         return;
     }
+    // Resolve catalog metadata before taking the folder database lock.
     let Ok(directory) = state.store.loupist_data_dir(loupist_id) else {
         return;
     };
-    let target = directory
-        .join("packs")
-        .join(import_id)
-        .join(version.to_string());
-    if std::fs::create_dir_all(&target).is_err() {
+    let Ok(mut connection) = state.store.lock_loupist(loupist_id) else {
+        return;
+    };
+    let Ok(tx) = connection.transaction() else {
+        return;
+    };
+    let Ok(Some(row)) = store::import(&tx, loupist_id, import_id) else {
+        return;
+    };
+    if row.version != version {
         return;
     }
+    let Ok(root) = crate::fs::secure_delete::SecureDeletionRoot::open(&directory) else {
+        return;
+    };
+    let target = std::path::Path::new("packs")
+        .join(import_id)
+        .join(version.to_string());
     for (path, bytes) in files {
         let destination = target.join(path);
-        if let Some(parent) = destination.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let _ = write_new_file(&destination, bytes);
+        let Some(parent) = destination.parent() else {
+            continue;
+        };
+        let Some(name) = destination.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let Ok(guard) = root.ensure_private_subdirectory(parent) else {
+            continue;
+        };
+        let _ = guard.write_atomic(&directory.join(parent), name, bytes, false);
     }
+    drop(tx);
+    drop(connection);
+    prune_copies(state, loupist_id, import_id);
 }
 
 #[tauri::command(rename_all = "snake_case")]

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { readKnowledgeMap } from "../../knowledge/mapRead";
 import type { LoupistBridge, KnowledgeLocation, WorldGraphView } from "../../types";
 import type { KnowledgeMap } from "../../contracts/knowledge";
 
@@ -20,7 +21,7 @@ export function useMapData(bridge: LoupistBridge, loupistId: string, refreshKey:
     if (!active) return;
     let cancelled = false;
     setLoading(true); setError(false);
-    void bridge.knowledgeMap({ loupistId, maxNodes: 1000 }).then((map) => {
+    void readKnowledgeMap(bridge, loupistId, { fresh: true }).then((map) => {
       if (!cancelled) setResult({ loupistId, map, arrivedAt: performance.now() });
     }).catch(() => { if (!cancelled) setError(true); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };

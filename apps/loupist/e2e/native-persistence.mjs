@@ -23,6 +23,7 @@ import {
   clickControl,
   dialogByTitle,
   openMainTab,
+  openMapLibrary,
   preferEnglish,
   readVisibleMapStats,
   scrub,
@@ -151,6 +152,9 @@ async function createLoupist() {
   await selectLoupist(NEW_LOUPIST);
 }
 
+// A saved Chat with no messages is listed as "Untitled research session"; "New research" names the command.
+const EMPTY_CHAT = "Untitled research session";
+
 /** The composer's /new command creates and opens a saved, empty Chat. */
 async function createChatFromComposer() {
   await openMainTab(browser, "chat");
@@ -158,11 +162,11 @@ async function createChatFromComposer() {
   const composer = await displayed("#main-panel-chat textarea[data-chat-composer]");
   await composer.click();
   await composer.setValue("/new");
-  await (await displayed('[role="listbox"] [role="option"][aria-label="New chat"]')).click();
-  await browser.waitUntil(async () => (await chatTitles()).filter((title) => title === "New chat").length === before.filter((title) => title === "New chat").length + 1, {
+  await (await displayed('[role="listbox"] [role="option"][aria-label="New research"]')).click();
+  await browser.waitUntil(async () => (await chatTitles()).filter((title) => title === EMPTY_CHAT).length === before.filter((title) => title === EMPTY_CHAT).length + 1, {
     timeout: 15_000, timeoutMsg: "The /new command did not save a Chat",
   });
-  await browser.waitUntil(async () => (await browser.$(chatRow("New chat")).getAttribute("aria-current")) === "page", {
+  await browser.waitUntil(async () => (await browser.$(chatRow(EMPTY_CHAT)).getAttribute("aria-current")) === "page", {
     timeout: 10_000, timeoutMsg: "The new Chat did not open",
   });
 }
@@ -179,10 +183,10 @@ async function renameChat(from, to) {
     timeout: 5_000, timeoutMsg: "The Chat options menu did not open",
   });
   await (await visibleWithText('[role="menuitem"]', "Rename")).click();
-  const dialog = await dialogByTitle(browser, "Rename Chat");
+  const dialog = await dialogByTitle(browser, "Rename research session");
   await setField("#rename-thread-name", to);
   await clickButton("Save", dialog);
-  await waitGone(dialog, "The Rename Chat dialog did not close");
+  await waitGone(dialog, "The Rename research session dialog did not close");
   await browser.$(chatRow(to)).waitForExist({ timeout: 15_000, timeoutMsg: `Chat was not renamed to ${to}` });
 }
 
@@ -247,13 +251,7 @@ async function closeLibrary() {
 async function openLibrary(tabLabel) {
   await openMainTab(browser, "map");
   await mapStats();
-  const direct = await browser.$("[data-testid=map-view] button[data-map-library]");
-  if (await direct.isDisplayed().catch(() => false)) await direct.click();
-  else {
-    await clickControl(browser, "[data-testid=map-view] [data-map-more]");
-    await (await displayed('[role="menuitemcheckbox"][data-map-library]')).click();
-  }
-  const library = await displayed("[data-testid=map-view] aside[data-testid=map-library]");
+  const library = await openMapLibrary(browser);
   const tab = await childWithText(library, '[role="tab"]', tabLabel);
   if ((await tab.getAttribute("aria-selected")) !== "true") {
     await tab.click();
@@ -269,9 +267,13 @@ async function openLibrary(tabLabel) {
 }
 
 async function openMemorySegment(segment) {
+  if (segment === "about") {
+    await openMainTab(browser, "following");
+    return displayed("[data-testid=memory-about]");
+  }
   await openMainTab(browser, "lens");
   const page = await displayed('section[data-testid=memory-page]');
-  const tabIndex = { about: 1, pages: 2, history: 3 }[segment];
+  const tabIndex = { pages: 1, history: 2 }[segment];
   assert.ok(tabIndex, `Unknown What it knows segment: ${segment}`);
   await (await displayed(`section[data-testid=memory-page] [role="tablist"] [role="tab"]:nth-child(${tabIndex})`)).click();
   await browser.waitUntil(async () => (await page.getAttribute('data-segment')) === segment, {
@@ -336,10 +338,13 @@ async function verifyPrinciple() {
   assert.equal((await history.$$("h4")).length, 2, "The revised method did not show Then and Now");
 }
 
+/** Following lists each followed asset as a Watching row (or, when it cannot be watched, in the list above the add field). */
+const FOLLOWED = "[data-testid=following-page] .following-main";
+
 async function verifyFollowedAndHoldings({ copied }) {
   await openMemorySegment("about");
-  const chips = await browser.$("[data-testid=memory-about] [data-testid=memory-chips]");
-  const names = await chips.getText();
+  const list = await browser.$(FOLLOWED);
+  const names = (await list.isExisting()) ? await list.getText() : "";
   assert.equal(names.includes("NWHLD"), !copied, "Followed assets belong to app data, not a copied Loupist folder");
   const summary = await (await displayed("[data-holdings-kinds]")).getText();
   if (copied) assert.doesNotMatch(summary, /3 assets/u, "Global holdings followed a copied folder");
@@ -351,11 +356,17 @@ async function followAndImportHoldings() {
   const follow = async symbol => {
     await setField("[data-testid=memory-follow-add] input", `${symbol}:US`);
     await (await displayed('[data-testid=memory-follow-add] button[type="submit"]')).click();
-    await waitForText(await displayed("[data-testid=memory-chips]"), symbol);
+    await waitForText(await displayed(FOLLOWED), symbol);
   };
   await follow("LMHLD");
-  await (await displayed('button[aria-label="Stop following LMHLD"]')).click();
-  await browser.waitUntil(async () => !(await (await displayed("[data-testid=memory-chips]")).getText()).includes("LMHLD"), { timeout: 10_000 });
+  // Each followed row's menu: Open asset page, Stop following.
+  await displayed('button[aria-label="More actions for LMHLD"]');
+  await clickControl(browser, 'button[aria-label="More actions for LMHLD"]');
+  await (await visibleWithText('[role="menuitem"]', "Stop following LMHLD")).click();
+  await browser.waitUntil(async () => {
+    const list = await browser.$(FOLLOWED);
+    return !(await list.isExisting()) || !(await list.getText()).includes("LMHLD");
+  }, { timeout: 10_000, timeoutMsg: "LMHLD stayed in what you follow" });
   await follow("NWHLD");
   await (await displayed("button[data-testid=memory-holdings-update]")).click();
   const sheet = await displayed("[data-holdings-sheet]");
@@ -383,7 +394,7 @@ async function followAndImportHoldings() {
 }
 
 async function addJournalEntry() {
-  const library = await openLibrary("Journal & notes");
+  const library = await openLibrary("Journal");
   await clickButton("New entry", library);
   const form = await displayed("[data-testid=map-view] aside[data-testid=map-library] form[data-testid=journal-form]");
   const [judgment, reasoning] = await form.$$("textarea");
@@ -394,27 +405,27 @@ async function addJournalEntry() {
   const reader = await displayed("[data-testid=map-view] aside[data-testid=map-reader] article[data-testid=knowledge-journal]");
   await waitForText(reader, JOURNAL.judgment);
   await waitForText(reader, JOURNAL.reasoning);
-  await openLibrary("Journal & notes");
+  await openLibrary("Journal");
   const row = await visibleWithText("[data-testid=map-view] aside[data-testid=map-library] button[data-testid=journal-library-row]", JOURNAL.judgment);
   return row.getAttribute("data-research-id");
 }
 
 async function verifyJournal(id) {
-  const library = await openLibrary("Journal & notes");
+  const library = await openLibrary("Journal");
   await waitForText(library, FIXTURE.journal);
-  await waitForText(library, FIXTURE.note);
   const row = await displayed(`[data-testid=map-view] aside[data-testid=map-library] button[data-testid=journal-library-row][data-research-id="${id}"]`);
   await waitForText(row, JOURNAL.judgment);
   await row.click();
   const reader = await displayed('[data-testid=map-view] aside[data-testid=map-reader] article[aria-label]');
   await waitForText(reader, JOURNAL.judgment);
   await waitForText(reader, JOURNAL.reasoning);
-  await openLibrary("Journal & notes");
+  await openLibrary("Journal");
   await (await visibleWithText("[data-testid=map-view] button[data-testid=journal-library-row]", FIXTURE.journal)).click();
   const frozen = await displayed("[data-testid=knowledge-journal]");
   await waitForText(frozen, "Metric will exceed the threshold");
   await clickButton("Read saved source", frozen);
   await waitForText(await displayed("[data-testid=knowledge-journal-source] [data-testid=knowledge-passage]"), "sealed-world-anchor sentence");
+  await waitForText(await openLibrary("Notes"), FIXTURE.note);
 }
 
 async function replayMap() {
@@ -473,7 +484,7 @@ async function expand(selector) {
   await browser.waitUntil(async () => (await details.getAttribute("open")) !== null, { timeout: 5_000, timeoutMsg: `${selector} did not open` });
 }
 
-/** Chat preferences for the global defaults or the folder Loupist, with the file it edits. */
+/** Chat defaults for the global defaults or the folder Loupist, with the file it edits. */
 async function chatPreferences(scope) {
   if (scope === "global") await settingsSection("agent");
   else {
@@ -487,7 +498,7 @@ async function chatPreferences(scope) {
   await browser.waitUntil(async () => {
     observed = (await browser.$("[data-testid=agent-config-file] button[title]").getAttribute("title").catch(() => "")) ?? "";
     return Boolean(observed) && (await realFile(observed)) === expected;
-  }, { timeout: 10_000, timeoutMsg: `Chat preferences did not switch to ${scope}` }).catch((error) => {
+  }, { timeout: 10_000, timeoutMsg: `Chat defaults did not switch to ${scope}` }).catch((error) => {
     throw new Error(`${error.message}; actual=${observed}; expected=${expected}`);
   });
   await expand("[data-testid=agent-config-advanced]");
@@ -595,19 +606,19 @@ async function seed() {
   await step("create a Chat with /new and rename it", async () => {
     await selectLoupist(FOLDER_LOUPIST);
     await createChatFromComposer();
-    await renameChat("New chat", CHAT);
+    await renameChat(EMPTY_CHAT, CHAT);
   });
   await step("save a Source from the Map Library", async () => {
     record.sourceId = await addSource();
   });
-  await step("save a rule in What it knows", addPrinciple);
+  await step("save a principle in Lens", addPrinciple);
   await step("follow and unfollow assets; validate, preview and commit holdings", followAndImportHoldings);
   await step("save a Journal entry in the Library", async () => {
     record.journalId = await addJournalEntry();
     assert.ok(record.journalId, "The Journal entry has no identity");
   });
   await step("save Loupist instructions", saveInstructions);
-  await step("save global and Loupist Chat preferences and the theme", seedSettings);
+  await step("save global and Loupist Chat defaults and the theme", seedSettings);
   await step("record the Map with the World and the new Journal entry", async () => {
     await selectLoupist(FOLDER_LOUPIST);
     record.mapStats = await settledMapStats();
@@ -645,7 +656,7 @@ async function verify(record, { copied }) {
     assert.equal(await settledMapStats(), record.mapStats);
   });
   await step("the Library keeps the Source", () => verifySource(record.sourceId));
-  await step("What it knows keeps the rule and learned method", verifyPrinciple);
+  await step("Lens keeps the principle and learned method", verifyPrinciple);
   await step(copied ? "global followed assets and holdings stay with the original app" : "followed assets and committed holdings survive restart", () => verifyFollowedAndHoldings({ copied }));
   await step("the Library keeps the Journal entry", () => verifyJournal(record.journalId));
   await step("Loupist instructions", verifyInstructions);

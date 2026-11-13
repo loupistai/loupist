@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { FolderOpenIcon, ShieldCheckIcon } from "lucide-react";
 import { errorMessage } from "../lib/errors";
 import type { ChatThread, LoupistCreateRequest, LoupistImportRequest } from "../types";
+import type { WatchlistAddRequest } from "@/contracts/userContext";
 import { LoupistTemplateFields, templateDraft, type LoupistDraft } from "@/components/onboarding/LoupistTemplateFields";
 import "@/styles/sharing.css";
 
@@ -114,6 +115,8 @@ type AppDialogsProps = {
   onUseLinkOrFile?: () => void;
   /** "Browse the Gallery" (W19.6); absent when no community index is configured. */
   onBrowseGallery?: () => void;
+  /** A template's starter chip follows that asset right away. */
+  onFollowStarter?: (entry: WatchlistAddRequest) => Promise<void>;
 };
 
 export function AppDialogs({
@@ -132,6 +135,7 @@ export function AppDialogs({
   currentWorkspacePath,
   onUseLinkOrFile,
   onBrowseGallery,
+  onFollowStarter,
 }: AppDialogsProps) {
   useTranslation();
   const {
@@ -212,7 +216,8 @@ export function AppDialogs({
           }}>
             <DialogHeader><DialogTitle>{i18n.t("onboarding:wizard.newLoupist")}</DialogTitle>
               <DialogDescription>{i18n.t("onboarding:wizard.newLoupistBody")}</DialogDescription></DialogHeader>
-            <DialogBody><LoupistTemplateFields draft={dialogs.loupistDraft} onChange={dialogs.setLoupistDraft} busy={loupistMutationBusy} />
+            <DialogBody><LoupistTemplateFields draft={dialogs.loupistDraft} onChange={dialogs.setLoupistDraft} busy={loupistMutationBusy} onFollow={onFollowStarter} />
+              <p className="onboarding-spending" data-background-reading>{i18n.t("onboarding:wizard.backgroundReading")}</p>
               {loupistMutationError && <div className="inline-error" role="alert">{loupistMutationError}</div>}</DialogBody>
             {onUseLinkOrFile ? <div className="loupist-shared-entry" data-loupist-shared-entry><span>{i18n.t("sharing:fromShared")}</span>
               {onBrowseGallery ? <Button type="button" variant="ghost" size="sm" disabled={loupistMutationBusy} data-browse-gallery onClick={onBrowseGallery}>{i18n.t("sharing:browseGallery")}</Button> : null}

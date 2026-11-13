@@ -164,4 +164,21 @@ describe("Chat submission ownership", () => {
       bridge.setStreamDelay(0);
     }
   });
+  it("keeps the composer focused and mounted when the first message creates the research session", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const create = vi.spyOn(bridge, "chatCreate");
+    await openApp(bridge);
+    await user.click(newChatButton());
+    const draft = composer();
+    await user.type(draft, "First question in a new session");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+    await screen.findByText("First question in a new session", { selector: ".message.user *" });
+    expect(composer()).toBe(draft);
+    expect(draft).toHaveFocus();
+    // Another new session is a fresh composer.
+    await user.click(newChatButton());
+    expect(composer()).not.toBe(draft);
+  });
 });

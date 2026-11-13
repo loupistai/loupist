@@ -136,11 +136,10 @@ async fn scheduled_dispatch_defers_capacity_before_claiming_or_creating_chat() {
     drop(registrations);
 }
 
-/// A briefing's followed-asset refresh runs before scheduler admission, so a
-/// dispatch or Run now in progress never waits behind its reads, and it does
-/// not start once the scheduler stops.
+/// Followed assets refresh only after a briefing owns an admitted occurrence;
+/// stopping the scheduler prevents a new refresh.
 #[tokio::test]
-async fn a_briefing_refreshes_followed_assets_outside_admission_and_stops_with_the_scheduler() {
+async fn a_briefing_refreshes_followed_assets_after_admission_and_stops_with_the_scheduler() {
     use crate::knowledge::assets;
     let directory = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
@@ -173,29 +172,34 @@ async fn a_briefing_refreshes_followed_assets_outside_admission_and_stops_with_t
         .unwrap()
         .is_some_and(|page| page.refreshed_at_ms.is_some())
     };
-    // Another dispatch holds admission; the briefing's refresh still runs.
+    // A blocked admission has performed neither refresh nor a durable claim.
+    use std::future::Future;
     let held = state.scheduled.hold_admission().await;
     let dispatch = state
         .scheduled
         .dispatch(&state, &loupist.id, &task.id, true);
     tokio::pin!(dispatch);
-    let reached = tokio::time::timeout(std::time::Duration::from_secs(20), async {
-        loop {
-            tokio::select! {
-                _ = &mut dispatch => panic!("the briefing claimed while admission was held"),
-                _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {
-                    if refreshed(&state) {
-                        break;
-                    }
-                }
-            }
-        }
-    })
-    .await;
-    assert!(reached.is_ok(), "the refresh waited for admission");
+    assert!(matches!(
+        std::future::poll_fn(|cx| std::task::Poll::Ready(dispatch.as_mut().poll(cx))).await,
+        std::task::Poll::Pending
+    ));
+    assert!(!refreshed(&state));
+    assert!(state
+        .store
+        .scheduled_task_runs(&loupist.id, &task.id)
+        .unwrap()
+        .is_empty());
     drop(held);
-    // The run itself fails without a model runtime; its receipt is durable.
-    let _ = dispatch.await;
+    // The refresh now runs once; the missing model runtime then fails the run.
+    let run = dispatch.await.unwrap().unwrap();
+    assert!(refreshed(&state));
+    assert_eq!(run.status, RunStatus::Failed);
+    assert!(state
+        .scheduled
+        .dispatch(&state, &loupist.id, &task.id, false)
+        .await
+        .unwrap()
+        .is_none());
 
     // Once the scheduler stops, no refresh starts.
     let other = tempfile::tempdir().unwrap();
@@ -269,7 +273,7 @@ async fn scheduled_admission_failure_is_durable_and_not_retried_on_every_tick() 
             .unwrap()
             .unwrap()
             .status,
-        TaskStatus::Paused
+        TaskStatus::Active
     );
     assert!(state
         .scheduled
@@ -338,12 +342,12 @@ async fn scheduled_dispatch_requires_current_loupist_binding_and_shutdown_admiss
         .is_empty());
 }
 
-#[test]
-fn scheduled_pause_and_history_remain_available_during_memory_recovery() {
+#[tokio::test]
+async fn deletion_quarantine_blocks_scheduled_commands_and_runs_until_cleared() {
     let directory = tempfile::tempdir().unwrap();
     let workspace = tempfile::tempdir().unwrap();
     let state = AppState::for_test(directory.path().join("app"));
-    let loupist = profile("loupist-scheduled-recovery", workspace.path(), 1);
+    let loupist = profile("loupist-scheduled-quarantine", workspace.path(), 1);
     seed_profile(state.store.as_ref(), &loupist);
     let task = state
         .store
@@ -351,9 +355,42 @@ fn scheduled_pause_and_history_remain_available_during_memory_recovery() {
         .unwrap();
     state.quarantine_loupist(
         &loupist.id,
-        crate::app::QuarantineSource::MemoryWrite,
-        "recovery fixture",
+        crate::app::QuarantineSource::Deletion,
+        "pending deletion",
     );
+    assert_eq!(
+        service::list(&state, &loupist.id).unwrap_err().code,
+        "loupist_storage_unavailable"
+    );
+    for status in [TaskStatus::Paused, TaskStatus::Active] {
+        assert_eq!(
+            service::set_status(&state, &loupist.id, &task.id, task.revision, status)
+                .unwrap_err()
+                .code,
+            "loupist_storage_unavailable"
+        );
+    }
+    assert_eq!(
+        service::delete(&state, &loupist.id, &task.id, task.revision)
+            .unwrap_err()
+            .code,
+        "loupist_storage_unavailable"
+    );
+    assert_eq!(
+        state
+            .scheduled
+            .dispatch(&state, &loupist.id, &task.id, true)
+            .await
+            .unwrap_err()
+            .code,
+        "loupist_storage_unavailable"
+    );
+    assert!(state
+        .store
+        .scheduled_task_runs(&loupist.id, &task.id)
+        .unwrap()
+        .is_empty());
+    state.clear_loupist_quarantine(&loupist.id, crate::app::QuarantineSource::Deletion);
     assert_eq!(service::list(&state, &loupist.id).unwrap().len(), 1);
     let paused = service::set_status(
         &state,
@@ -364,17 +401,207 @@ fn scheduled_pause_and_history_remain_available_during_memory_recovery() {
     )
     .unwrap();
     assert_eq!(paused.status, TaskStatus::Paused);
-    assert_eq!(
-        service::set_status(
-            &state,
-            &loupist.id,
-            &task.id,
-            paused.revision,
-            TaskStatus::Active
-        )
-        .unwrap_err()
-        .code,
-        "loupist_recovery_required"
-    );
     service::delete(&state, &loupist.id, &task.id, paused.revision).unwrap();
+}
+
+#[tokio::test]
+async fn run_now_rejects_an_active_claim_and_finishes_one_host_run_without_model_work() {
+    use tauri::Manager;
+    let directory = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(directory.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", workspace.path(), 1),
+    );
+    let task = state
+        .store
+        .scheduled_task_create_kind(
+            "loupist-a",
+            "earnings-loupist-a",
+            draft(TaskStatus::Paused),
+            crate::scheduled_tasks::types::TaskKind::Earnings,
+            1,
+        )
+        .unwrap();
+    let (claim, live) = state
+        .scheduled
+        .claim_host_run(&state, "loupist-a", &task.id, true)
+        .await
+        .unwrap()
+        .unwrap();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state.clone());
+    let request = || TaskRequest {
+        loupist_id: "loupist-a".into(),
+        task_id: task.id.clone(),
+    };
+    assert_eq!(
+        scheduled_task_run_now(request(), app.state())
+            .await
+            .unwrap_err()
+            .code,
+        "conflict"
+    );
+    assert_eq!(
+        state
+            .store
+            .scheduled_task_runs("loupist-a", &task.id)
+            .unwrap()
+            .len(),
+        1
+    );
+    state
+        .store
+        .scheduled_task_finish(
+            "loupist-a",
+            &claim.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            claim.run.started_at_ms + 1,
+        )
+        .unwrap();
+    drop(live);
+    let run = scheduled_task_run_now(request(), app.state())
+        .await
+        .unwrap();
+    assert_eq!(run.status, RunStatus::Succeeded);
+    assert_eq!(
+        state
+            .store
+            .scheduled_task_runs("loupist-a", &task.id)
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn schedule_commands_pause_resume_and_delete_with_undelivered_history() {
+    use tauri::Manager;
+    let directory = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(directory.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", workspace.path(), 1),
+    );
+    let host = state
+        .store
+        .scheduled_task_create_kind(
+            "loupist-a",
+            "earnings-loupist-a",
+            draft(TaskStatus::Active),
+            crate::scheduled_tasks::types::TaskKind::Earnings,
+            1,
+        )
+        .unwrap();
+    let task = state
+        .store
+        .scheduled_task_create("loupist-a", draft(TaskStatus::Paused), 1)
+        .unwrap();
+    let claim = state
+        .store
+        .scheduled_task_claim_with("loupist-a", &task.id, 2, true, |_| Ok(()))
+        .unwrap()
+        .unwrap()
+        .0;
+    state
+        .store
+        .scheduled_task_finish(
+            "loupist-a",
+            &claim.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            3,
+        )
+        .unwrap();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state.clone());
+    let paused = scheduled_task_set_status(
+        StatusRequest {
+            loupist_id: "loupist-a".into(),
+            task_id: host.id.clone(),
+            expected_revision: host.revision,
+            status: TaskStatus::Paused,
+        },
+        app.state(),
+    )
+    .unwrap();
+    assert_eq!(paused.status, TaskStatus::Paused);
+    let resumed = scheduled_task_set_status(
+        StatusRequest {
+            loupist_id: "loupist-a".into(),
+            task_id: host.id,
+            expected_revision: paused.revision,
+            status: TaskStatus::Active,
+        },
+        app.state(),
+    )
+    .unwrap();
+    assert_eq!(resumed.status, TaskStatus::Active);
+    let current = state
+        .store
+        .scheduled_task_get("loupist-a", &task.id)
+        .unwrap()
+        .unwrap();
+    scheduled_task_delete(
+        RevisionRequest {
+            loupist_id: "loupist-a".into(),
+            task_id: task.id.clone(),
+            expected_revision: current.revision,
+        },
+        app.state(),
+    )
+    .unwrap();
+    assert!(state
+        .store
+        .scheduled_task_get("loupist-a", &task.id)
+        .unwrap()
+        .is_none());
+    assert!(state
+        .store
+        .scheduled_task_run_get("loupist-a", &claim.run.run_id)
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn resident_command_persists_the_setting_across_profile_restart() {
+    use tauri::Manager;
+    const CHILD_ENV: &str = "LOUPIST_TEST_RESIDENT_COMMAND_DIR";
+    if let Some(profile) = std::env::var_os(CHILD_ENV) {
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(AppState::for_persistent_test(profile.into()));
+        let settings = crate::briefings::desktop::briefing_resident_settings_set(
+            serde_json::from_value(serde_json::json!({"keepRunning": false})).unwrap(),
+            app.state(),
+        )
+        .unwrap();
+        assert!(!settings.keep_running);
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let profile = directory.path().join("app");
+    // Tauri's mock manager can retain its AppState. A joined child establishes
+    // a real process exit and lock-release boundary without unsafe unmanage.
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "commands::scheduled_tasks::tests::resident_command_persists_the_setting_across_profile_restart"])
+        .env(CHILD_ENV, &profile).output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let reopened = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    reopened.manage(AppState::for_persistent_test(profile));
+    assert!(
+        !crate::briefings::desktop::briefing_resident_settings_get(reopened.state())
+            .unwrap()
+            .keep_running
+    );
 }

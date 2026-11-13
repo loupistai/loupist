@@ -1,12 +1,9 @@
 import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import {
-  BookOpenIcon,
-  ChartNoAxesCombinedIcon,
   FileTextIcon,
   FolderIcon,
   GlobeIcon,
-  NetworkIcon,
   PlusIcon,
   XIcon,
 } from "lucide-react";
@@ -40,6 +37,9 @@ type Props = {
   onNewBrowser: () => void;
   onOpenFiles?: () => void;
 };
+
+/** Matches `.workspace-tabs { scroll-padding-inline }`. */
+const TAB_SCROLL_PADDING = 16;
 
 const tabIcon = (tab: ChatWorkspaceTab) => {
   if (tab.kind === "files") return <FolderIcon />;
@@ -131,11 +131,26 @@ export function WorkspaceTabBar({
     const list = tabsRef.current;
     const selected = list?.querySelector<HTMLElement>('[data-active="true"]');
     if (!list || !selected) return;
-    const left = selected.offsetLeft;
-    const right = left + selected.offsetWidth;
+    // Scroll with the strip's inline padding, so the selected tab, even the first, is never cut mid-glyph.
+    const left = Math.max(0, selected.offsetLeft - TAB_SCROLL_PADDING);
+    const right = selected.offsetLeft + selected.offsetWidth + TAB_SCROLL_PADDING;
     if (left < list.scrollLeft) list.scrollLeft = left;
     else if (right > list.scrollLeft + list.clientWidth) list.scrollLeft = right - list.clientWidth;
   }, [activeTab?.id, activeTabTitle, mapSelected, evidenceSelected, workSelected]);
+  // A soft fade marks the edge that has more tabs past it.
+  useEffect(() => {
+    const list = tabsRef.current;
+    if (!list) return;
+    const mark = () => {
+      list.toggleAttribute("data-overflow-start", list.scrollLeft > 1);
+      list.toggleAttribute("data-overflow-end", list.scrollLeft + list.clientWidth < list.scrollWidth - 1);
+    };
+    mark();
+    list.addEventListener("scroll", mark, { passive: true });
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(mark) : null;
+    observer?.observe(list);
+    return () => { list.removeEventListener("scroll", mark); observer?.disconnect(); };
+  }, [tabIds.length]);
   const evidenceTitle = t("workspaceTabBar.evidence");
   const workTitle = t("workspaceTabBar.work");
 
@@ -170,18 +185,18 @@ export function WorkspaceTabBar({
         style={{ gridTemplateColumns: `repeat(${tabIds.length}, max-content)` }}
       >
         <div className="workspace-tab-list" role="tablist" aria-label={t("workspaceTabBar.openWorkspaceTabs")}>
-        {chatMap ? <div className="workspace-tab workspace-tab-fixed" style={{ gridColumn: 1 }} data-active={mapSelected || undefined}><button id={workspaceTabButtonId(CHAT_MAP_TAB_ID)} type="button" role="tab" aria-selected={mapSelected} aria-controls={workspaceTabPanelId(CHAT_MAP_TAB_ID)} tabIndex={mapSelected ? 0 : -1} onClick={() => chatMap.select()} onKeyDown={event => moveTabFocus(event, CHAT_MAP_TAB_ID)}><NetworkIcon /><span>{t("workspaceTabBar.map")}</span>{chatMap.badged ? <NewContentBadge title={t("workspaceTabBar.map")} /> : null}</button></div> : null}
+        {chatMap ? <div className="workspace-tab workspace-tab-fixed" style={{ gridColumn: 1 }} data-active={mapSelected || undefined}><button id={workspaceTabButtonId(CHAT_MAP_TAB_ID)} type="button" role="tab" aria-selected={mapSelected} aria-controls={workspaceTabPanelId(CHAT_MAP_TAB_ID)} tabIndex={mapSelected ? 0 : -1} onClick={() => chatMap.select()} onKeyDown={event => moveTabFocus(event, CHAT_MAP_TAB_ID)}><span>{t("workspaceTabBar.map")}</span>{chatMap.badged ? <NewContentBadge title={t("workspaceTabBar.map")} /> : null}</button></div> : null}
         <div className="workspace-tab workspace-tab-fixed" style={{ gridColumn: tabIds.indexOf(EVIDENCE_TAB_ID) + 1 }} data-active={evidenceSelected || undefined}>
           <button id={workspaceTabButtonId(EVIDENCE_TAB_ID)} type="button" role="tab" aria-selected={evidenceSelected} aria-controls={workspaceTabPanelId(EVIDENCE_TAB_ID)} tabIndex={evidenceSelected ? 0 : -1}
             onClick={() => { chatMap?.deselect(); onSelectTab(EVIDENCE_TAB_ID); }} onKeyDown={event => moveTabFocus(event, EVIDENCE_TAB_ID)}>
-            <BookOpenIcon /><span>{evidenceTitle}</span>
+            <span>{evidenceTitle}</span>
             {badged(EVIDENCE_TAB_ID) && !evidenceSelected ? <NewContentBadge title={evidenceTitle} /> : null}
           </button>
         </div>
         <div className="workspace-tab workspace-tab-fixed" style={{ gridColumn: tabIds.indexOf(WORK_TAB_ID) + 1 }} data-active={workSelected || undefined}>
           <button id={workspaceTabButtonId(WORK_TAB_ID)} type="button" role="tab" aria-selected={workSelected} aria-controls={workspaceTabPanelId(WORK_TAB_ID)} tabIndex={workSelected ? 0 : -1}
             onClick={() => { chatMap?.deselect(); onSelectTab(WORK_TAB_ID); }} onKeyDown={event => moveTabFocus(event, WORK_TAB_ID)}>
-            <ChartNoAxesCombinedIcon /><span>{workTitle}</span>
+            <span>{workTitle}</span>
             {badged(WORK_TAB_ID) && !workSelected ? <NewContentBadge title={workTitle} /> : null}
           </button>
         </div>

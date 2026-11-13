@@ -3,19 +3,291 @@
   "suite": "smoke",
   "version": 1,
   "description": "Fictional two-session method learning through the production Rust Chat host.",
-  "scenarios": [{
-    "id": "L-SMOKE-001", "title": "Fictional Hanbit diluted-share method", "tags": ["lens", "carry-forward"], "split": "regression",
-    "connections": [], "workspace_files": {}, "seed": {"lens": [], "sources": []},
-    "hidden": {"outcome": {"fair_value_per_share": 40}},
-    "sessions": [
-      {"id": "teach-1", "role": "train", "memory": "remember", "turns": [{
-        "user": "This is a fictional research exercise. Learn and save a reusable method Lens titled 'Hanbit diluted-share rule': when valuing fictional Hanbit companies, divide equity value by fully diluted shares, including warrants, never basic shares alone. State the denominator and flag missing dilution data. Example: equity value 480, basic shares 10, warrant shares 2 gives fully diluted shares 12 and value per share 40. This is my explicit methodological feedback for future chats. Save the complete method now, then confirm what you saved. No web research is needed.",
-        "expect": {"trace": [{"assert": "tool_called", "tool": "lens_file", "metric": "save_recall"}], "memory": [{"assert": "committed", "kind": "lens", "min": 1, "title_contains": "Hanbit", "metric": "save_recall"}]}
-      }]},
-      {"id": "probe-1", "role": "probe", "memory": "read_only", "turns": [{
-        "user": "Value fictional Hanbit Aurora: equity value 720, basic shares 15, warrants convertible into 3 additional shares. Use the relevant saved method, explain the denominator and end with a JSON object containing metrics.fair_value_per_share. No web research is needed.",
-        "expect": {"trace": [{"assert": "tool_called", "tool": "lens_read", "metric": "carry_forward"}], "answer": [{"assert": "metrics", "values": {"fair_value_per_share": 40}, "metric": "carry_forward"}], "memory": [{"assert": "not_committed", "kind": "lens", "metric": "save_precision"}], "rubric": [{"id": "applies-diluted-shares", "criterion": "Uses 18 fully diluted shares as denominator and attributes this to the saved Hanbit method.", "metric": "carry_forward"}]}
-      }]}
-    ]
-  }]
+  "scenarios": [
+    {
+      "id": "L-SMOKE-001",
+      "title": "Fictional Hanbit diluted-share method",
+      "tags": [
+        "lens",
+        "carry-forward"
+      ],
+      "split": "regression",
+      "connections": [],
+      "workspace_files": {},
+      "seed": {
+        "lens": [],
+        "sources": []
+      },
+      "hidden": {
+        "outcome": {
+          "fair_value_per_share": 40
+        }
+      },
+      "sessions": [
+        {
+          "id": "teach-1",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "This is a fictional research exercise. Learn and save a reusable method Lens titled 'Hanbit diluted-share rule': when valuing fictional Hanbit companies, divide equity value by fully diluted shares, including warrants, never basic shares alone. State the denominator and flag missing dilution data. Example: equity value 480, basic shares 10, warrant shares 2 gives fully diluted shares 12 and value per share 40. This is my explicit methodological feedback for future chats. Save the complete method now, then confirm what you saved. No web research is needed.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_file",
+                    "metric": "save_recall"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "min": 1,
+                    "title_contains": "Hanbit",
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "min": 1,
+                    "title_contains": "Hanbit",
+                    "metric": "save_precision"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "probe-1",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Value fictional Hanbit Aurora: equity value 720, basic shares 15, warrants convertible into 3 additional shares. Use the relevant saved method, explain the denominator and end with a JSON object containing metrics.fair_value_per_share. No web research is needed.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "lens_read",
+                    "metric": "carry_forward"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "fair_value_per_share": 40
+                    },
+                    "metric": "carry_forward"
+                  },
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "boundary"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": "lens",
+                    "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "applies-diluted-shares",
+                    "criterion": "Uses 18 fully diluted shares as denominator and attributes this to the saved Hanbit method.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L-SMOKE-002",
+      "title": "Native Skill entrypoint read precedes a local calculation",
+      "split": "regression",
+      "tags": [
+        "instructed",
+        "skill-read"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "skill",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Read the bundled data-analysis Skill entrypoint SKILL.md with the native read tool, then calculate the arithmetic mean of 2, 4 and 12. End with a JSON object containing metrics.mean. No web research or saving is needed.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "skill_read",
+                    "id": "data-analysis",
+                    "metric": "retrieval"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "metrics",
+                    "values": {
+                      "mean": 6
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L-SMOKE-003",
+      "title": "No fictitious save when Memory is off",
+      "split": "regression",
+      "tags": [
+        "save-boundary",
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "blocked-save",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Please remember this research principle for future chats: always compare operating cash flow with profit. Tell me whether it was actually saved.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": [
+                      "source",
+                      "note",
+                      "lens",
+                      "principle",
+                      "journal"
+                    ],
+                    "metric": "boundary"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "boundary"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "disabled",
+                      "read-only",
+                      "cannot save",
+                      "can't save",
+                      "Memory is off",
+                      "memory is off",
+                      "turned off",
+                      "not saved",
+                      "not been saved",
+                      "haven't saved",
+                      "꺼져",
+                      "비활성",
+                      "읽기 전용",
+                      "저장할 수 없",
+                      "저장하지 않았",
+                      "저장하지 못",
+                      "저장되지 않"
+                    ],
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "L-SMOKE-004",
+      "title": "No fictitious save when Memory is read_only",
+      "split": "regression",
+      "tags": [
+        "save-boundary",
+        "ko"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "blocked-save",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "앞으로 쓸 조사 원칙으로 기억해 줘. 이익을 신뢰하기 전에 영업현금흐름과 비교해. 실제로 저장됐는지 알려 줘.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "not_committed",
+                    "kind": [
+                      "source",
+                      "note",
+                      "lens",
+                      "principle",
+                      "journal"
+                    ],
+                    "metric": "boundary"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "boundary"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "disabled",
+                      "read-only",
+                      "cannot save",
+                      "can't save",
+                      "Memory is off",
+                      "memory is off",
+                      "turned off",
+                      "not saved",
+                      "not been saved",
+                      "haven't saved",
+                      "꺼져",
+                      "비활성",
+                      "읽기 전용",
+                      "저장할 수 없",
+                      "저장하지 않았",
+                      "저장하지 못",
+                      "저장되지 않"
+                    ],
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
 }

@@ -7,7 +7,7 @@ pub(super) fn journal_argument_error(error: crate::knowledge::KnowledgeError) ->
             expected.split_whitespace().next().unwrap_or("journal"),
             format!("{code}: {expected}"),
         ),
-        error => BrokerError::Execution(error.to_string()),
+        error => knowledge_error(error),
     }
 }
 pub(super) fn parse_research_journal(
@@ -32,7 +32,12 @@ pub(super) fn parse_research_journal(
         at_ms,
         judgment: bounded_text(object.get("judgment"), 1, 1000)?,
         reasoning: optional_bounded_text(object.get("reasoning"), 0, 2000)?.unwrap_or_default(),
-        entities: optional_unique_strings(object.get("entities"), 30, 256)?,
+        entities: optional_unique_strings(object.get("entities"), 30, 256).map_err(|_| {
+            BrokerError::invalid(
+                "journal.entities",
+                "at most 30 unique nonempty World node ids, each at most 256 characters",
+            )
+        })?,
         check: crate::knowledge::journal::parse_check(object.get("check"))
             .map_err(journal_argument_error)?,
         outcome: None,

@@ -2,7 +2,7 @@ import { claimIdForEdge, entityLabel } from "../../knowledge/mapItems";
 import { relationName } from "../map/relations";
 import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useId, useState } from "react";
-import { libraryState } from "../map/libraryState";
+import { requestLibrary } from "../map/libraryState";
 import type { LoupistBridge, ChatMessage, GraphJobView, LensKind, MemoryUpdateChange } from "../../types";
 import { memoryChangeVerb } from "../../chat/memoryActivity";
 import { knowledgeLocationFromMemoryChange } from "../../knowledge/location";
@@ -10,6 +10,7 @@ import { chatReceipt, savesMemory, showsReceipt, thesisMovesFor, type SavedRecei
 import { useGo } from "../navigation/Open";
 import { useAssetNames } from "../assets/assetName";
 import { declinedSensitiveMemory, useChatSetAside } from "../../chat/chatSetAside";
+import { WatchAllOffer } from "./WatchAllOffer";
 import { ChatReceipt } from "./ChatReceipt";
 import { revealFirstNumberToCheck } from "./NumberChip";
 import { useChatMap } from "../workspace/ChatMapContext";
@@ -81,7 +82,7 @@ export function MessageMemoryRow({
   const openSaved = (change: MemoryUpdateChange) => {
     if (change.kind === "principle") { viewPrinciple(change.recordId); return; }
     if (change.kind === "Lens") { go?.({ kind: "lens", recordId: change.recordId }); return; }
-    if ((change.kind === "Journal" || change.kind === "Research") && bridge) Object.assign(libraryState(bridge, loupistId), { open: true, tab: "note" as const });
+    if ((change.kind === "Journal" || change.kind === "Research") && bridge) requestLibrary(bridge, loupistId, change.kind === "Journal" ? "journal" : "note");
     const location = knowledgeLocationFromMemoryChange(loupistId, change);
     if (location) go?.({ kind: "memory", location, title: change.title });
     else if (change.kind === "Research") go?.({ kind: "page", location: { loupistId, surface: "note" } });
@@ -121,6 +122,7 @@ export function MessageMemoryRow({
         onOpenThesis={go ? move => go({ kind: "asset", target: { loupistId, assetId: move.assetId, name: move.name, section: "history" } }) : undefined}
         onCheckNumbers={() => revealFirstNumberToCheck(message.id)}
       />
+      {receipt.setup.some(change => change.change === "followed") ? <WatchAllOffer bridge={bridge} loupistId={loupistId} refreshKey={message.id} onOpenFollowing={go ? () => go({ kind: "following" }) : undefined} onOpenConnections={go ? () => go({ kind: "settings", section: "connections" }) : undefined} /> : null}
       {learnedExpanded && digest ? <LearnedCard id={learnedId} bridge={bridge} loupistId={loupistId} digest={digest}
         onChanged={onWorldChanged} /> : null}
       {usedExpanded ? <UsedMemory id={usedId} bridge={bridge} loupistId={loupistId} refreshKey={chatMap?.map} pages={receipt.usedPages}
@@ -144,7 +146,8 @@ export function MessageMemoryRow({
               {change.basis ? <small>{t("messageMemoryRow.basis", { value: change.basis })}</small> : null}
               {change.futureUse ? <small>{t("messageMemoryRow.nextUse", { value: change.futureUse })}</small> : null}
             </> : null}
-            <WorldProcessingStatus active={active && expanded} jobId={change.worldJobId} initialStatus={change.worldStatus} readJob={onReadWorldJob} onChanged={onWorldChanged} />
+            <WorldProcessingStatus active={active && expanded} jobId={change.worldJobId} initialStatus={change.worldStatus} readJob={onReadWorldJob} onChanged={onWorldChanged}
+              retrySource={change.kind === "Source" && bridge ? () => bridge.knowledgeGraphRetrySource({ loupistId, recordId: change.recordId }) : undefined} />
             {learned && location && go ? <button type="button" onClick={() => go({ kind: "page", location })}>{t("messageMemoryRow.openIn", { value: t("workspaceEvidence.kind.world") })}</button> : null}
           </li>;
         })}

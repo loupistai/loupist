@@ -88,6 +88,32 @@ fn entropy(token: &str) -> f64 {
 }
 
 fn credential(text: &str, secrets: &[String]) -> bool {
+    credential_form(text, secrets)
+        || (text.contains('%') && credential_form(&percent_decode_once(text), secrets))
+}
+
+fn percent_decode_once(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let mut byte = [0];
+        if bytes[index] == b'%'
+            && bytes
+                .get(index + 1..index + 3)
+                .is_some_and(|pair| hex::decode_to_slice(pair, &mut byte).is_ok())
+        {
+            decoded.push(byte[0]);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+fn credential_form(text: &str, secrets: &[String]) -> bool {
     if crate::util::credential_text::contains_credential_text(text) {
         return true;
     }
@@ -131,9 +157,31 @@ fn credential(text: &str, secrets: &[String]) -> bool {
         }
     });
     high_entropy
-        || secrets
-            .iter()
-            .any(|secret| secret.len() >= 8 && text.contains(secret.as_str()))
+        || secrets.iter().any(|secret| match secret.chars().count() {
+            0..=3 => false,
+            4..=7 => text.match_indices(secret.as_str()).any(|(start, matched)| {
+                let joins = |c: char| {
+                    if secret.is_ascii() {
+                        c.is_ascii_alphanumeric()
+                    } else {
+                        c.is_alphanumeric()
+                    }
+                };
+                let before = &text[..start];
+                // The letter in an escaped whitespace/control character is a
+                // separator, not part of the following ASCII credential.
+                let escaped_separator = secret.is_ascii()
+                    && before
+                        .strip_suffix(['n', 'r', 't', 'b', 'f'])
+                        .is_some_and(|prefix| prefix.ends_with('\\'));
+                (escaped_separator || before.chars().next_back().is_none_or(|c| !joins(c)))
+                    && text[start + matched.len()..]
+                        .chars()
+                        .next()
+                        .is_none_or(|c| !joins(c))
+            }),
+            _ => text.contains(secret.as_str()),
+        })
 }
 
 /// Digit runs that may be grouped by single spaces or dashes ("1234-5678").
@@ -933,6 +981,118 @@ pub(crate) fn clean_and_scan(text: &str) -> (String, Vec<ItemFinding>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_short_credentials_require_whole_tokens_and_four_characters() {
+        for key in ["pine", "abc12", "abcdefg", "한국어키"] {
+            let context = PrivateContext {
+                secrets: vec![key.into()],
+                ..Default::default()
+            };
+            for text in [
+                key.to_owned(),
+                format!("key={key}"),
+                format!("({key})"),
+                format!("{key}-suffix"),
+            ] {
+                assert!(
+                    scan_private(&text, &context)
+                        .iter()
+                        .any(|hit| hit.class == PrivateClass::Credential),
+                    "{text}"
+                );
+            }
+            for text in [format!("x{key}"), format!("{key}x"), format!("3{key}4")] {
+                assert!(scan_private(&text, &context).is_empty(), "{text}");
+            }
+            let korean = format!("가{key}나");
+            assert_eq!(
+                credential(&korean, &[key.into()]),
+                key.is_ascii(),
+                "{korean}"
+            );
+        }
+        for key in ["", "a", "ab", "abc", "한글키"] {
+            assert!(!credential(key, &[key.into()]));
+        }
+        assert!(credential("xabcdefghx", &["abcdefgh".into()]));
+        for text in [
+            "pineapple",
+            "spine",
+            "alpine",
+            "3000",
+            "8080",
+            "en-US",
+            "ko-KR",
+            "fast",
+            "true",
+            "false",
+            "debug",
+            "json",
+        ] {
+            assert!(!credential(text, &["pine".into()]), "{text}");
+        }
+    }
+
+    #[test]
+    fn saved_short_ascii_credentials_survive_korean_and_encoded_separators() {
+        let context = PrivateContext {
+            secrets: vec!["pine".into()],
+            ..Default::default()
+        };
+        for text in [
+            "pine입니다",
+            "키는pine",
+            "가pine나",
+            "key%3Dpine",
+            "key%3dpine",
+            r"\npine",
+            r"\rpine",
+            r"\tpine",
+            r"\bpine",
+            r"\fpine",
+            "key%3D%70%69%6e%65",
+            "%0Apine",
+            "%FFpine",
+            "pine%61pple", // The original form itself contains a delimited key.
+        ] {
+            assert!(
+                scan_private(text, &context)
+                    .iter()
+                    .any(|hit| hit.class == PrivateClass::Credential),
+                "{text}"
+            );
+        }
+        for text in [
+            "pineapple",
+            "spine",
+            "alpine",
+            "spinet",
+            "supine",
+            "opined",
+            "pines",
+            "3pine",
+            "pine4",
+            r"\nspine",
+            "key%3Dspine",
+            "%73pine",
+            "%2570%2569%256e%2565",
+            "3000",
+            "en-US",
+            "fast",
+            "true",
+        ] {
+            assert!(scan_private(text, &context).is_empty(), "{text}");
+        }
+        assert!(
+            credential("pi%6Ee", &["pi%6Ee".into()]),
+            "the original form remains checked"
+        );
+        assert!(
+            !credential("pine", &[]),
+            "ordinary words alone are not saved credentials"
+        );
+    }
 
     fn context() -> PrivateContext {
         PrivateContext {

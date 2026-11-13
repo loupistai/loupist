@@ -26,10 +26,22 @@ use super::error::KnowledgeResult;
 use super::model::WorldSnapshotBody;
 use super::KnowledgeStore;
 
+#[cfg(test)]
 pub(crate) use job::drive_job;
-pub(super) use text::casefold;
+pub(crate) use job::drive_job_with_slots;
+pub(crate) use text::casefold;
 
 const QUERY_LIMIT: usize = 25;
+
+/// The canonical typed payload for a retained World revision. Callers establish
+/// record/revision authority before reaching this internal loader.
+pub(super) fn load_body(
+    tx: &rusqlite::Transaction<'_>,
+    revision_id: &str,
+) -> KnowledgeResult<WorldSnapshotBody> {
+    let stored = super::revision::load_revision(tx, revision_id)?;
+    Ok(serde_json::from_str(&stored.payload_json)?)
+}
 
 /// Hybrid World search over the derived index for one sealed revision.
 /// Returns `None` when that revision is not the
@@ -55,8 +67,7 @@ pub(crate) fn query_world(
             Some((stamped, stored)) if stamped == revision_id && stored == model => {}
             _ => return Ok(None),
         }
-        let stored = super::revision::load_revision(read.tx, revision_id)?;
-        let body: WorldSnapshotBody = serde_json::from_str(&stored.payload_json)?;
+        let body = load_body(read.tx, revision_id)?;
         let mut nodes = Vec::with_capacity(body.nodes.len());
         for node in &body.nodes {
             nodes.push(super::graph_projection::worker_node(node)?);

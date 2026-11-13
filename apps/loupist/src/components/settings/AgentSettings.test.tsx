@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ConfigScope, LoupistSummary, ModelCatalog } from "../../types";
@@ -25,7 +25,7 @@ describe("Agent configuration", () => {
     const fixture = await setup();
     const existing = (await fixture.bridge.loupistSelect("loupist-quality")).threads[0];
     render(<Settings {...fixture} />);
-    const privacy = await screen.findByRole("switch", { name: "Remember new chats" });
+    const privacy = await screen.findByRole("switch", { name: "Remember new conversations" });
     expect(privacy).toBeChecked();
     await user.click(privacy);
     await waitFor(async () => expect((await fixture.bridge.configRead({ scope: { kind: "global" } })).effective.chat.update_memory).toBe(false));
@@ -33,17 +33,32 @@ describe("Agent configuration", () => {
     expect(thread).toMatchObject({ use_memory: false, update_memory: false });
     expect((await fixture.bridge.loupistSelect("loupist-quality")).threads.find((item) => item.id === existing.id)).toMatchObject({ use_memory: existing.use_memory, update_memory: existing.update_memory });
     await user.selectOptions(screen.getByLabelText("Settings apply to"), "loupist-quality");
-    await waitFor(() => expect(screen.getByRole("switch", { name: "Remember new chats" })).toBeEnabled());
-    expect(screen.getByRole("switch", { name: "Remember new chats" })).not.toBeChecked();
-    await user.click(screen.getByRole("switch", { name: "Remember new chats" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Remember new conversations" })).toBeEnabled());
+    expect(screen.getByRole("switch", { name: "Remember new conversations" })).not.toBeChecked();
+    await user.click(screen.getByRole("switch", { name: "Remember new conversations" }));
     await waitFor(async () => expect((await fixture.bridge.configRead({ scope: { kind: "project", loupistId: "loupist-quality" } })).effective.chat.update_memory).toBe(true));
     expect(await fixture.bridge.chatCreate({ loupist_id: "loupist-quality" })).toMatchObject({ use_memory: true, update_memory: true });
-    await user.click(screen.getByRole("button", { name: "Reset Remember new chats" }));
-    await waitFor(() => expect(screen.getByRole("switch", { name: "Remember new chats" })).not.toBeChecked());
+    await user.click(screen.getByRole("button", { name: "Reset Remember new conversations" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Remember new conversations" })).not.toBeChecked());
     const reset = await fixture.bridge.configRead({ scope: { kind: "project", loupistId: "loupist-quality" } });
     expect(reset.explicit?.chat?.use_memory).toBeUndefined();
     expect(reset.explicit?.chat?.update_memory).toBeUndefined();
     expect(reset.effective.chat).toMatchObject({ use_memory: false, update_memory: false });
+  });
+
+  it("shows the chosen conversation context preset and saves the other one", async () => {
+    const user = userEvent.setup();
+    const fixture = await setup();
+    const current = await fixture.bridge.configRead({ scope: { kind: "global" } });
+    await fixture.bridge.configUpdate({ scope: current.scope, expectedRevision: current.revision, set: { pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 20000 } } }, unset: [] });
+    render(<Settings {...fixture} />);
+    await user.click(await screen.findByText("Advanced"));
+    const presets = screen.getByRole("radiogroup", { name: "Conversation context" });
+    expect(within(presets).getByRole("radio", { name: "Standard" })).toBeChecked();
+    expect(within(presets).getByRole("radio", { name: "Keep more" })).not.toBeChecked();
+    await user.click(within(presets).getByRole("radio", { name: "Keep more" }));
+    await waitFor(async () => expect((await fixture.bridge.configRead({ scope: { kind: "global" } })).effective.pi.compaction.keep_recent_tokens).toBe(40000));
+    await waitFor(() => expect(within(presets).getByRole("radio", { name: "Keep more" })).toBeChecked());
   });
 
   it("starts with Chat defaults and confirms a saved selection while advanced controls stay collapsed", async () => {

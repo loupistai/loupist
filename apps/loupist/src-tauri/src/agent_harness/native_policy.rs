@@ -53,14 +53,18 @@ pub struct NativeRequest {
 }
 
 impl NativeRequest {
-    /// `{name, path}`; an unknown name, a missing or oversized field, a NUL
-    /// byte or an extra field is malformed.
+    /// `{name, path, input?}`; `input` forwards model arguments for the broker's
+    /// text check and never determines path authority. Unknown fields, a bad
+    /// name, missing or oversized path, or a NUL byte are malformed.
     pub fn parse(params: &Value) -> Option<Self> {
         let object = params.as_object()?;
         if object
             .keys()
-            .any(|key| !matches!(key.as_str(), "name" | "path"))
+            .any(|key| !matches!(key.as_str(), "name" | "path" | "input"))
         {
+            return None;
+        }
+        if object.get("input").is_some_and(|input| !input.is_object()) {
             return None;
         }
         let tool = NativeTool::parse(object.get("name")?.as_str()?)?;
@@ -93,6 +97,8 @@ pub struct NativeRoots {
     /// This Chat's attachment folder, which the host asks the model to read.
     pub attachments: PathBuf,
     pub home: Option<PathBuf>,
+    /// Only the bundled agent skills directory, never its parent or prompt.
+    pub agent_skills: Option<PathBuf>,
 }
 
 impl NativeRoots {
@@ -113,13 +119,20 @@ impl NativeRoots {
             scratch: resolved(scratch),
             attachments: resolved(attachments),
             home: home.map(resolved),
+            agent_skills: None,
         }
+    }
+    pub fn with_agent_skills(mut self, root: &Path) -> Self {
+        self.agent_skills = Some(root.to_path_buf());
+        self
     }
 }
 
 /// First match wins, in this order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PathClass {
+    /// Read-only bundled instructions and references below the sealed skills root.
+    BundledSkill,
     /// A file a later turn loads as instructions or a Skill, plus the
     /// workspace's `.loupist/config.toml`.
     Instructions,
@@ -155,6 +168,10 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
     } else {
         roots.workspace.join(path)
     };
+    let declared_bundle = roots
+        .agent_skills
+        .as_ref()
+        .is_some_and(|root| path.starts_with(root) || path.starts_with(resolved(root)));
     let declared_git = git_dir(&lexical(&path), roots);
     let Some(path) = resolve_links(&path) else {
         return Classified {
@@ -162,13 +179,28 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
             path: lexical(&path),
         };
     };
-    let class = if credential(&path, roots.home.as_deref()) {
+    let bundled = roots
+        .agent_skills
+        .as_ref()
+        .is_some_and(|root| under(&path, &resolved(root)));
+    let class = if declared_bundle && !bundled {
+        PathClass::Outside
+    } else if credential(&path, roots.home.as_deref()) {
         PathClass::Credentials
     } else if declared_git
         || git_dir(&path, roots)
         || under(&path, &resolved(&roots.workspace.join(".git")))
     {
         PathClass::GitDir
+    } else if bundled {
+        PathClass::BundledSkill
+    } else if roots
+        .agent_skills
+        .as_ref()
+        .and_then(|root| root.parent())
+        .is_some_and(|root| under(&path, &resolved(root)))
+    {
+        PathClass::AppPrivate
     } else if instruction_file(&path, roots) {
         PathClass::Instructions
     } else if under(&path, &roots.scratch) {
@@ -212,6 +244,7 @@ pub enum Exposure {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeRefusal {
+    BundledSkill,
     /// The app's private data.
     AppPrivate,
     /// A credential store or startup file under the home folder.
@@ -256,6 +289,7 @@ pub fn decide(request: &NativeRequest, roots: &NativeRoots, exposure: Exposure) 
         return NativeDecision::Refuse(NativeRefusal::SearchCoversAppData);
     }
     let refusal = match class {
+        PathClass::BundledSkill if tool.writes() => NativeRefusal::BundledSkill,
         PathClass::Unresolvable => NativeRefusal::Unresolvable,
         PathClass::AppPrivate => NativeRefusal::AppPrivate,
         PathClass::Credentials => NativeRefusal::Credentials,
@@ -270,7 +304,8 @@ pub fn decide(request: &NativeRequest, roots: &NativeRoots, exposure: Exposure) 
         {
             NativeRefusal::HardLinkAfterUntrustedText
         }
-        PathClass::Scratch
+        PathClass::BundledSkill
+        | PathClass::Scratch
         | PathClass::Attachments
         | PathClass::Instructions
         | PathClass::Workspace
@@ -278,7 +313,8 @@ pub fn decide(request: &NativeRequest, roots: &NativeRoots, exposure: Exposure) 
         {
             NativeRefusal::HardLink
         }
-        PathClass::Scratch
+        PathClass::BundledSkill
+        | PathClass::Scratch
         | PathClass::Attachments
         | PathClass::Instructions
         | PathClass::Workspace => {
@@ -681,6 +717,7 @@ mod tests {
     fn kind(decision: &NativeDecision) -> &'static str {
         match decision {
             NativeDecision::AllowFile { .. } => "allow",
+            NativeDecision::Refuse(NativeRefusal::BundledSkill) => "refuse bundled_skill",
             NativeDecision::Refuse(NativeRefusal::AppPrivate) => "refuse app_private",
             NativeDecision::Refuse(NativeRefusal::Credentials) => "refuse credentials",
             NativeDecision::Refuse(NativeRefusal::GitDir) => "refuse git_dir",
@@ -697,6 +734,47 @@ mod tests {
 
     fn decided(request: &NativeRequest, roots: &NativeRoots, exposure: Exposure) -> &'static str {
         kind(&decide(request, roots, exposure))
+    }
+
+    #[test]
+    fn bundled_skills_are_readable_but_cannot_escape_or_be_changed() {
+        let f = fixture();
+        let agent = f.roots.workspace.join("bundled-agent");
+        let skills = agent.join("skills");
+        std::fs::create_dir_all(skills.join("lens/references")).unwrap();
+        let entry = skills.join("lens/SKILL.md");
+        std::fs::write(&entry, "skill").unwrap();
+        std::fs::write(agent.join("SYSTEM.md"), "private prompt").unwrap();
+        let roots = f.roots.clone().with_agent_skills(&skills);
+        for tool in ["read", "ls", "find", "grep"] {
+            assert_eq!(
+                decided(&request(tool, &entry), &roots, Exposure::ThisTurn),
+                "allow"
+            );
+        }
+        for tool in ["write", "edit"] {
+            assert_eq!(
+                decided(&request(tool, &entry), &roots, Exposure::Clean),
+                "refuse bundled_skill"
+            );
+        }
+        for path in [agent.join("SYSTEM.md"), skills.join("../SYSTEM.md")] {
+            assert!(matches!(
+                decide(&request("read", path), &roots, Exposure::Clean),
+                NativeDecision::Refuse(_)
+            ));
+        }
+        #[cfg(unix)]
+        {
+            let outside = f.roots.workspace.join("ordinary.txt");
+            std::fs::write(&outside, "outside").unwrap();
+            let alias = skills.join("lens/escape.md");
+            std::os::unix::fs::symlink(&outside, &alias).unwrap();
+            assert_eq!(
+                decided(&request("read", alias), &roots, Exposure::Clean),
+                "refuse outside"
+            );
+        }
     }
 
     #[test]
@@ -1411,7 +1489,17 @@ mod tests {
                 target: Some("/tmp/a".into()),
             })
         );
+        assert_eq!(
+            NativeRequest::parse(
+                &json!({"name":"read","path":"/tmp/a","input":{"path":"/private/other","limit":1}})
+            ),
+            NativeRequest::parse(&json!({"name":"read","path":"/tmp/a"})),
+            "the forwarded model input never determines path authority"
+        );
         for malformed in [
+            json!({"name":"read","path":"/tmp/a","input":null}),
+            json!({"name":"read","path":"/tmp/a","input":"text"}),
+            json!({"name":"read","path":"/tmp/a","input":[]}),
             json!({"name":"browser","path":"/tmp/a"}),
             json!({"name":"bash","command":"ls"}),
             json!({"name":"read"}),

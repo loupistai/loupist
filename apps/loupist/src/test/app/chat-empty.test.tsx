@@ -19,7 +19,7 @@ describe("Loupist · New Chat", () => {
     expect(composer()).toHaveValue("");
     await chooseLoupist(user, "Quality Compounder");
     await user.click(newChatButton());
-    expect(await screen.findByRole("heading", { name: "New chat", level: 1 })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Untitled research session", level: 1 })).toBeVisible();
     expect(composer()).toHaveValue("Compare the next earnings report");
     expect(create).not.toHaveBeenCalled();
   });
@@ -39,7 +39,10 @@ describe("Loupist · New Chat", () => {
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByText("Response complete.");
     expect(create).not.toHaveBeenCalled();
-    expect(screen.queryByRole("article", { name: "Message from Quality Compounder" })).not.toBeInTheDocument();
+    // The first message replaces the morning message; the setup steps still open stay below the conversation.
+    expect(screen.queryByText(/^(One thing|\d+ things) to look at\.$/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "You could ask" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("article", { name: "Message from Quality Compounder" })).getByRole("region", { name: "Get set up" })).toBeVisible();
 
     await user.click(newChatButton());
     const questions = await screen.findByRole("region", { name: "You could ask" });
@@ -78,14 +81,14 @@ describe("Loupist · New Chat", () => {
     await openApp();
     await user.type(composer(), "Keep this question");
     await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
-    await user.click(screen.getByRole("menuitem", { name: "Manage models & providers" }));
-    expect(await screen.findByRole("heading", { name: "Models & providers", level: 1 })).toBeVisible();
+    await user.click(screen.getByRole("menuitem", { name: "Manage AI accounts" }));
+    expect(await screen.findByRole("heading", { name: "AI accounts", level: 1 })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back" }));
-    expect(screen.queryByRole("button", { name: "Chat preferences for this Loupist" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Chat defaults for this Loupist" })).toBeNull();
     await user.click(headerAction("Loupist settings"));
     expect(await screen.findByRole("textbox", { name: "Name" })).toHaveValue("Quality Compounder");
-    await user.click(screen.getByRole("button", { name: "Chat preferences" }));
-    expect(await screen.findByRole("switch", { name: "Remember new chats" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Chat defaults" }));
+    expect(await screen.findByRole("switch", { name: "Remember new conversations" })).toBeVisible();
     await user.click(await mainTab(/Chat/));
     expect(composer()).toHaveValue("Keep this question");
     await user.type(composer(), " /");

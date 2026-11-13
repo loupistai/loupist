@@ -169,3 +169,29 @@ it("keeps names outside a live node's glow halo, its own and a neighbour's", () 
   expect(placed.map((item) => item.node.id).sort()).toEqual(["live", "neighbour"]);
   for (const { box } of placed) expect(gap(box)).toBeGreaterThanOrEqual(halo);
 });
+// The pane edge sits just left of the ring and the legend covers the row to its right.
+const paneEdge = (box: { x: number; y: number; w: number; h: number }) => box.x >= -8 && (box.y > 5 || box.y + box.h < -5);
+it("names a Journal ring at the pane edge on its inward side", () => {
+  const journal = node("Inventory days below 50", 0, 0, { kind: "journal", degree: 0 });
+  const company = node("Hanul", 200, 0, { degree: 4 });
+  const nodes = [journal, company];
+  const [placed] = placeLabels([journal], nodes, measure, 1, {}, Infinity, paneEdge);
+  expect(placed.text).toBe(journal.label);
+  expect(placed.box.x).toBeGreaterThanOrEqual(-8);
+  expect(placed.box.x + placed.box.w / 2).toBeGreaterThan(journal.x);
+  // An ordinary name in the same place keeps to its own slots.
+  expect(placeLabels([{ ...journal, kind: "entity" }], nodes, measure, 1, {}, Infinity, paneEdge)).toHaveLength(0);
+});
+it("shortens a Journal ring's name before dropping it", () => {
+  const journal = node("Inventory days below fifty for two quarters", 0, 0, { kind: "journal", degree: 0 });
+  const fits = (box: { x: number; y: number; w: number; h: number }) => paneEdge(box) && box.x + box.w <= 120;
+  const [placed] = placeLabels([journal], [journal], measure, 1, {}, Infinity, fits);
+  expect(placed.text.endsWith("…")).toBe(true);
+  expect(placed.box.x + placed.box.w).toBeLessThanOrEqual(120);
+  expect(placeLabels([{ ...journal, kind: "entity" }], [journal], measure, 1, {}, Infinity, fits)).toHaveLength(0);
+});
+it("names ordinary nodes before a Journal ring", () => {
+  const journal = node("journal", 0, 0, { kind: "journal", degree: 0 });
+  const company = node("Hanul", 60, 60, { degree: 1 });
+  expect(placeLabels([journal, company], [journal, company], measure, 1, {}, 1).map((item) => item.node.id)).toEqual(["Hanul"]);
+});

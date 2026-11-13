@@ -1,7 +1,8 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { AssetsGrid, ChatEvidenceRef, ConflictGrid, NumberCheck } from "../../types";
-import { columnFit, ConflictCard, GridCard, headerLabel } from "./GridCard";
+import type { AssetsGrid, ChatArtifactView, ChatEvidenceRef, ConflictGrid, NumberCheck } from "../../types";
+import { GRID_SCHEMA } from "../../contracts/chat";
+import { ChatGridBlock, columnFit, ConflictCard, GridCard, headerLabel } from "./GridCard";
 import { ChatExecutionProvider } from "./ChatExecutionContext";
 import { renderWithOpen, destinations } from "../../test/open";
 import type { LoupistBridge } from "../../types";
@@ -61,6 +62,16 @@ describe("GridCard", () => {
     expect(screen.getByRole("button", { name: "1 number to check" })).toBeVisible();
     expect(screen.getByText(/Known as of Apr 1, 2026/u)).toBeVisible();
     expect(screen.getByRole("region", { name: "Table, scroll sideways" })).toHaveAttribute("tabindex", "0");
+  });
+
+  it("shows the values it rounds in a column with the same decimals, and its chip says the shown value was rounded", () => {
+    const amount = (value: string) => ({ value, evidence_id: DART.id, check: { ...check(value, "matched"), exact: value }, sort: 0 });
+    const rounded: AssetsGrid = { ...grid, cells: [[amount("₩47.214321조"), grid.cells[0]![1]!], [amount("₩43.600123조"), grid.cells[1]![1]!]] };
+    renderGrid({ grid: rounded });
+    const table = screen.getByRole("table", { name: "Dividend payers" });
+    expect(within(table).getByRole("button", { name: /^₩47\.21조, from OpenDART/u })).toHaveAttribute("data-status", "rounded");
+    expect(within(table).getByRole("button", { name: /^₩43\.60조, from OpenDART/u })).toHaveAttribute("data-status", "rounded");
+    expect(within(table).queryByText("₩43.6조")).toBeNull();
   });
 
   it("sorts by a column header and keeps empty cells last", async () => {
@@ -215,8 +226,38 @@ describe("wide grids", () => {
     expect(columnFit(766, 176, 8, 8 * wide.width! + 176 - 766).hidden).toBe(0);
   });
 
+  it("never makes a column narrower than its widest value, so a long amount does not run into the next one", () => {
+    // Four 112 px columns would fit, but "333,605,938,000,000원" with its padding needs 159 px: the grid scrolls instead.
+    const fit = columnFit(766, 176, 4, 0, 159);
+    expect(fit.width).toBeGreaterThanOrEqual(159);
+    expect(fit.hidden).toBe(1);
+    // Roomy enough for every column at that width: the columns share the row.
+    expect(columnFit(1000, 176, 4, 0, 159)).toEqual({ width: undefined, hidden: 0 });
+    // Wider than a column may be: held at 168 px.
+    expect(columnFit(766, 176, 4, 0, 400).width).toBe(168);
+  });
+
   it("breaks a slash term only after its slash", () => {
     expect(headerLabel("Net debt/EBITDA")).toBe("Net\u00a0debt/\u200bEBITDA");
     expect(headerLabel("Operating margin")).toBe("Operating margin");
   });
+});
+
+it("never draws a Loading frame between a preparing table and its delivered content", async () => {
+  const scope = { bridge: {} as LoupistBridge, loupistId: "loupist-a", threadId: "chat", surface: "session" as const, theme: "light" as const, active: true };
+  const staged: ChatArtifactView = {
+    artifact: { id: "grid-1", chat_session_id: "chat", kind: "grid", title: "Dividend payers", current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+    revision: { artifact_id: "grid-1", revision: 1, digest: "c".repeat(64), source_message_id: "answer", created_at_ms: 0, payload: { kind: "grid", schema: GRID_SCHEMA, grid } },
+    evidence_refs: [DART],
+  } as ChatArtifactView;
+  const ref = { artifact_id: "grid-1", revision: 1, kind: "grid" as const, title: "Dividend payers", digest: "c".repeat(64) };
+  const { container, rerender } = render(<ChatExecutionProvider value={scope}><ChatGridBlock block={{ kind: "building", key: "grid:grid-1", title: "Dividend payers", stepId: "step" }} /></ChatExecutionProvider>);
+  const added: string[] = [];
+  const observer = new MutationObserver((records) => { for (const record of records) for (const node of record.addedNodes) added.push(node.textContent ?? ""); });
+  observer.observe(container, { childList: true, subtree: true, characterData: true });
+  rerender(<ChatExecutionProvider value={scope}><ChatGridBlock block={{ kind: "ready", key: "grid:grid-1", artifact: ref, updating: false, staged }} /></ChatExecutionProvider>);
+  await Promise.resolve();
+  observer.disconnect();
+  expect(added.join("|")).not.toMatch(/Loading/);
+  expect(screen.getByRole("table", { name: "Dividend payers" })).toBeVisible();
 });

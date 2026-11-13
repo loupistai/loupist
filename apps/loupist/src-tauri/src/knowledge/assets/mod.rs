@@ -38,7 +38,7 @@ pub(crate) fn asset_error(code: &'static str, expected: &'static str) -> Knowled
 
 pub const MAX_REASON_CHARS: usize = 280;
 pub const MAX_EVIDENCE: usize = 3;
-const MAX_FACTS_BYTES: usize = 4096;
+const MAX_FACTS_CHARS: usize = 4096;
 /// The page lists 50 change rows, then "Show earlier".
 pub const MAX_CHANGE_ROWS: usize = 200;
 const DAY_MS: i64 = 86_400_000;
@@ -570,10 +570,7 @@ pub fn record_observations_with(
                 holdings_changes(&mut observation.facts, &prior);
             }
         }
-        let facts = serde_json::to_string(&observation.facts)?;
-        if facts.len() > MAX_FACTS_BYTES {
-            continue;
-        }
+        let facts = bounded_facts(&mut observation.facts)?;
         let dedupe_key = bounded_text(&observation.dedupe_key, 400);
         let evidence = serde_json::to_string(&observation.evidence)?;
         let inserted = tx.execute(
@@ -655,6 +652,58 @@ fn holdings_changes(facts: &mut Value, prior: &Value) {
         object.insert("entered".into(), json!(entered));
         object.insert("left".into(), json!(left));
         object.insert("moved".into(), json!(moved));
+    }
+}
+
+/// SQLite's length(TEXT) cap counts scalar values. Keep structured facts valid
+/// and retain evidence even when an upstream row exceeds that cap.
+fn bounded_facts(facts: &mut Value) -> KnowledgeResult<String> {
+    let mut text = serde_json::to_string(facts)?;
+    if text.chars().count() <= MAX_FACTS_CHARS {
+        return Ok(text);
+    }
+    if !facts.is_object() {
+        *facts = json!({"preview": facts.take()});
+    }
+    let object = facts.as_object_mut().expect("facts wrapped as an object");
+    object.insert("truncated".into(), Value::Bool(true));
+    loop {
+        text = serde_json::to_string(object)?;
+        if text.chars().count() <= MAX_FACTS_CHARS {
+            return Ok(text);
+        }
+        // Bound the largest field first, leaving small typed facts usable. A
+        // shortened string ends on a character boundary; containers retain a
+        // prefix of their entries. The row's marker records either kind of loss.
+        let key = object
+            .iter()
+            .filter(|(key, _)| key.as_str() != "truncated")
+            .max_by_key(|(_, value)| value.to_string().len())
+            .map(|(key, _)| key.clone())
+            .ok_or(KnowledgeError::Invalid(
+                "observation facts cannot be bounded",
+            ))?;
+        let value = object.get_mut(&key).expect("selected field");
+        match value {
+            Value::String(value) if value.chars().count() > 32 => {
+                let keep = value.chars().count() / 2;
+                *value = format!(
+                    "{}… [truncated]",
+                    value.chars().take(keep).collect::<String>()
+                );
+            }
+            Value::Array(values) if !values.is_empty() => {
+                values.truncate(values.len() / 2);
+            }
+            Value::Object(values) if !values.is_empty() => {
+                if let Some(last) = values.keys().next_back().cloned() {
+                    values.remove(&last);
+                }
+            }
+            _ => {
+                object.remove(&key);
+            }
+        }
     }
 }
 
@@ -2236,12 +2285,23 @@ fn glance(
         rows.push(row("expenseRatio", item));
     }
     if page.class == AssetClass::RatesFx {
+        let treasury = matches!(page.market.trim().to_uppercase().as_str(), "RATES" | "UST");
         let level = observed
             .iter()
             .filter(|item| item.kind == ObservationKind::Close)
+            .filter(|item| !treasury || item.facts["series"] == "10y")
             .max_by(|a, b| a.fact_date.cmp(&b.fact_date));
         if let Some(item) = level {
-            rows.push(GlanceRow { key: "level".into(), facts: json!({"value": item.facts["close"], "series": item.facts["series"], "unit": item.facts["unit"]}), date: Some(item.fact_date.clone()), evidence: vec![item.evidence.clone()] });
+            let mut facts = json!({"value": item.facts["close"], "series": item.facts["series"], "unit": item.facts["unit"]});
+            if treasury {
+                facts["name"] = json!("10-year Treasury yield");
+            }
+            rows.push(GlanceRow {
+                key: "level".into(),
+                facts,
+                date: Some(item.fact_date.clone()),
+                evidence: vec![item.evidence.clone()],
+            });
         }
     }
     rows
@@ -2315,9 +2375,20 @@ pub fn page_view(
     since_ms: i64,
     context: &ViewContext,
 ) -> KnowledgeResult<AssetPageView> {
-    let mut page = get_page(tx, loupist_id, asset_id)?.ok_or(KnowledgeError::NotFound)?;
     let world = world(tx, loupist_id)?;
-    let map = match &world {
+    Ok(page_view_with_world(tx, loupist_id, asset_id, since_ms, context, world.as_ref())?.0)
+}
+
+fn page_view_with_world(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    asset_id: &str,
+    since_ms: i64,
+    context: &ViewContext,
+    world: Option<&WorldSnapshotBody>,
+) -> KnowledgeResult<(AssetPageView, PageRecord)> {
+    let mut page = get_page(tx, loupist_id, asset_id)?.ok_or(KnowledgeError::NotFound)?;
+    let map = match world {
         Some(body) => {
             let matched = match_entity(body, &page);
             set_entity(
@@ -2446,7 +2517,7 @@ pub fn page_view(
         }
     });
     let since_day = day_of_ms(since_ms);
-    Ok(AssetPageView {
+    let view = AssetPageView {
         asset_id: page.asset_id.clone(),
         symbol: page.symbol.clone(),
         market: page.market.clone(),
@@ -2472,7 +2543,8 @@ pub fn page_view(
         refreshed_at_ms: page.refreshed_at_ms,
         created_at_ms: page.created_at_ms,
         revision: page.revision,
-    })
+    };
+    Ok((view, page))
 }
 
 /// Deltas for one asset or for every page, ordered for the Thread and briefings:
@@ -2721,20 +2793,16 @@ pub fn model_read(
     };
     // A reason or line the user wrote after the cutoff was not known then.
     let written = |at_ms: i64| as_of.is_none_or(|cutoff| day_of_ms(at_ms) <= cutoff);
-    let view = page_view(
+    let world = world(tx, loupist_id)?;
+    let (view, page) = page_view_with_world(
         tx,
         loupist_id,
         asset_id,
         chrono::Utc::now().timestamp_millis() - 30 * DAY_MS,
         context,
+        world.as_ref(),
     )?;
-    let delta = delta_for(
-        tx,
-        loupist_id,
-        &get_page(tx, loupist_id, asset_id)?.ok_or(KnowledgeError::NotFound)?,
-        world(tx, loupist_id)?.as_ref(),
-        0,
-    )?;
+    let delta = delta_for(tx, loupist_id, &page, world.as_ref(), 0)?;
     let rows: Vec<Value> = delta
         .rows
         .iter()
@@ -2771,7 +2839,7 @@ pub fn model_read(
         "note": if as_of.is_some() {
             "As-of read: only rows and line readings dated on or before the cutoff. The Loupist's read is today's view, so it is left out, and thesis_update is refused in an as-of answer."
         } else {
-            "Rows are host observations from structured tool reads, each with its fact date and source. To move the read, call thesis_update with evidence you read in this turn."
+            "Rows are host observations from structured tool reads, each with its fact date and source. To move the read, call thesis_update with evidence you read in this turn. When this turn reads a figure for a line's metric, record it with thesis_update lineReading."
         }
     }))
 }

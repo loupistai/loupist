@@ -87,6 +87,13 @@ it("walks from name to name through the Relationships view and back, and a selec
   expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
 });
 
+it("names a counterpart in full on its chip and leaves truncation to the chip's width", async () => {
+  const { MapRelationships } = await import("./MapRelationships");
+  const long = { ...map, nodes: [...nodes, company("shin", "Shin-Etsu Chemical Co.")], edges: [...map.edges, claim("c8", "shin", "tsmc", "SUPPLIES")] } as KnowledgeMap;
+  render(<MapRelationships map={long} node={nodes[0]!} onSelect={vi.fn()} />);
+  expect(screen.getByRole("button", { name: "Shin-Etsu Chemical Co." })).toHaveTextContent(/^Shin-Etsu Chemical Co\.$/);
+});
+
 it("points the canvas at a relationship while a chip is hovered or focused", async () => {
   const user = userEvent.setup();
   const onPoint = vi.fn();

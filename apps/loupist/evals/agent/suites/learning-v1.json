@@ -41,6 +41,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -162,6 +171,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -212,7 +230,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -240,6 +259,15 @@
                       "lens"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -327,6 +355,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -374,7 +411,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -403,6 +441,15 @@
                       "lens"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -459,7 +506,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -496,6 +544,15 @@
                       "lens"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -579,6 +636,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -626,7 +692,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -664,6 +731,15 @@
                       "lens"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -712,7 +788,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -747,11 +824,6 @@
                     "assert": "not_committed",
                     "kind": "lens",
                     "metric": "save_precision"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
-                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -769,8 +841,20 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -797,11 +881,6 @@
                   {
                     "assert": "not_committed",
                     "kind": "lens",
-                    "metric": "negative_transfer"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
                     "metric": "negative_transfer"
                   }
                 ],
@@ -830,7 +909,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -865,11 +945,6 @@
                     "assert": "not_committed",
                     "kind": "lens",
                     "metric": "save_precision"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
-                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -887,8 +962,20 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -915,11 +1002,6 @@
                   {
                     "assert": "not_committed",
                     "kind": "lens",
-                    "metric": "negative_transfer"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
                     "metric": "negative_transfer"
                   }
                 ],
@@ -951,7 +1033,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -986,11 +1069,6 @@
                     "assert": "not_committed",
                     "kind": "lens",
                     "metric": "save_precision"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
-                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1008,8 +1086,20 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1036,11 +1126,6 @@
                   {
                     "assert": "not_committed",
                     "kind": "lens",
-                    "metric": "negative_transfer"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
                     "metric": "negative_transfer"
                   }
                 ],
@@ -1069,7 +1154,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1098,6 +1184,15 @@
                       "note"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -1144,7 +1239,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1176,6 +1272,15 @@
                       "note"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -1222,7 +1327,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1251,6 +1357,15 @@
                       "note"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -1297,7 +1412,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1329,6 +1445,15 @@
                       "note"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -1372,7 +1497,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1400,6 +1526,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1429,6 +1563,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1503,6 +1645,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1532,6 +1682,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1574,7 +1732,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1602,6 +1761,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1631,6 +1798,14 @@
                       "note"
                     ],
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1703,6 +1878,15 @@
                     ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
+                    "min": 1
                   }
                 ],
                 "rubric": [
@@ -1748,7 +1932,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1777,6 +1962,15 @@
                       "note"
                     ],
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -1823,7 +2017,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1869,9 +2064,21 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -1914,7 +2121,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1960,9 +2168,21 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -2008,7 +2228,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2055,9 +2276,21 @@
                 "memory": [
                   {
                     "assert": "committed",
-                    "kind": "lens",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
                     "metric": "save_recall",
                     "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "principle",
+                      "lens"
+                    ],
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -2138,7 +2371,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2173,6 +2407,13 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Headline share count"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
                     "min": 1,
                     "title_contains": "Headline share count"
                   }
@@ -2273,11 +2514,6 @@
                     "assert": "not_committed",
                     "kind": "lens",
                     "metric": "save_precision"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
-                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -2297,6 +2533,12 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall",
+                    "title_contains": "Unspecified growth method"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
                     "title_contains": "Unspecified growth method"
                   }
                 ],
@@ -2324,11 +2566,6 @@
                   {
                     "assert": "not_committed",
                     "kind": "lens",
-                    "metric": "negative_transfer"
-                  },
-                  {
-                    "assert": "not_committed",
-                    "kind": "lens_proposal",
                     "metric": "negative_transfer"
                   }
                 ],
@@ -2380,7 +2617,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2407,6 +2645,13 @@
                     "assert": "committed",
                     "kind": "source",
                     "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Solsup backlog"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_precision",
                     "min": 1,
                     "title_contains": "Solsup backlog"
                   }
@@ -2454,7 +2699,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2487,6 +2733,20 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall",
+                    "min": 1,
+                    "title_contains": "Marrow margin view"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "title_contains": "Marrow margin original"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
                     "min": 1,
                     "title_contains": "Marrow margin view"
                   }
@@ -2522,6 +2782,19 @@
                     "assert": "committed",
                     "kind": "lens",
                     "metric": "save_recall",
+                    "min": 1
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "title_contains": "Marrow margin restatement"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
                     "min": 1
                   }
                 ],
@@ -2639,6 +2912,13 @@
                     "metric": "save_recall",
                     "min": 1,
                     "title_contains": "Headline EPS correction"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "lens",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "title_contains": "Headline EPS correction"
                   }
                 ],
                 "rubric": [
@@ -2701,11 +2981,12 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     }
   ],
   "budget": {
-    "maxInputTokensPerTurn": 250000,
+    "maxInputTokensPerTurn": 500000,
     "maxTurns": 250
   }
 }

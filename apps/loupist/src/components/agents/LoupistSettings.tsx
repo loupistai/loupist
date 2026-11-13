@@ -1,4 +1,4 @@
-import { skillPresentation } from "../../lib/agentSkills";
+import { SKILL_TOOLING_IDS, skillBlurb, skillPresentation } from "../../lib/agentSkills";
 import i18n, { useTranslation } from "../../i18n";
 import { CONFIG_CHANGED_EVENT, notifyConfigurationChanged } from "../../app/useConfiguration";
 import { Disclosure } from "../ui/disclosure";
@@ -65,9 +65,6 @@ type Props = {
   selectedAgent: LoupistSummary | null;
   mutationBusy: boolean;
   mutationError: string | null;
-  recoveryBusy: boolean;
-  recoveryError: string | null;
-  onRecover: () => void;
   onReconnect?: () => void;
   catalog: ModelCatalog | null;
   onChanged: () => void;
@@ -86,9 +83,6 @@ export function LoupistSettings({
   selectedAgent,
   mutationBusy,
   mutationError,
-  recoveryBusy,
-  recoveryError,
-  onRecover,
   onReconnect,
   catalog,
   onChanged,
@@ -266,12 +260,18 @@ export function LoupistSettings({
 
   const skillItems = useMemo<AgentCapabilityItem[]>(
     () =>
-      skills.filter((skill) => !skill.fixed).map((skill) => ({
-        id: skill.id,
-        ...skillPresentation(skill),
-        enabled: skill.enabled,
-        locked: false,
-      })),
+      skills.filter((skill) => !skill.fixed)
+        // Tools for making Skills come last under "Advanced", as in Settings › Skills.
+        .sort((a, b) => Number(SKILL_TOOLING_IDS.has(a.id)) - Number(SKILL_TOOLING_IDS.has(b.id)))
+        .map((skill) => ({
+          id: skill.id,
+          ...skillPresentation(skill),
+          // The row shows the short line for people; the model-facing description stays in Settings › Skills' detail.
+          description: skillBlurb(skill),
+          enabled: skill.enabled,
+          locked: false,
+          ...(SKILL_TOOLING_IDS.has(skill.id) ? { group: i18n.t("settings:skillsSettings.advancedSkills") } : {}),
+        })),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
     [skills, i18n.language],
   );
@@ -384,11 +384,11 @@ export function LoupistSettings({
               </Disclosure>
               <Disclosure title={i18n.t("knowledge:memoryPage.about.learning")} data-loupist-section="learning">
                 <LoupistLearningSettings key={selectedAgent.id} bridge={bridge} loupistId={selectedAgent.id} onChanged={onChanged} />
-                <Button variant="destructive" size="sm" data-memory-reset onClick={() => setResetOpen(true)}>{i18n.t("knowledge:memoryPage.about.reset")}</Button>
+                <Button variant="outline" size="sm" className="justify-self-start self-start" data-memory-reset onClick={() => setResetOpen(true)}>{i18n.t("knowledge:memoryPage.about.reset")}</Button>
                 <MemoryResetDialog bridge={bridge} loupistId={selectedAgent.id} name={selectedAgent.name} open={resetOpen} onOpenChange={setResetOpen} onChanged={onChanged} />
               </Disclosure>
             </> : null}
-            {!available ? <LoupistAvailabilityBoundary availability={selectedAgent.availability} busy={recoveryBusy || mutationBusy} error={recoveryError} onRecover={onRecover} onReconnect={onReconnect} onRemove={() => setDeleteOpen(true)} className="agent-workspace-recovery" compact /> : null}
+            {!available ? <LoupistAvailabilityBoundary availability={selectedAgent.availability} busy={mutationBusy} error={mutationError} onReconnect={onReconnect} onRemove={() => setDeleteOpen(true)} className="agent-workspace-recovery" compact /> : null}
             {available ? <Disclosure title={i18n.t("settings:loupistSettings.skillsConnections")} data-loupist-section="capabilities">
               <div className="agent-capabilities-toolbar">
                 <div className="agent-capabilities-heading"><span role="status" className="agent-save-status">{savedMessage ? <><CheckIcon aria-hidden="true" />{savedMessage}</> : i18n.t("settings:loupistSettings.changesSaveAutomaticallyForThisLoupist")}</span></div>
@@ -402,19 +402,21 @@ export function LoupistSettings({
             </Disclosure> : null}
             {available ? <Disclosure title={i18n.t("app:navigation.worldProcessing")} open={worldOpen} onOpenChange={setWorldOpen} data-loupist-section="world">
               <div className="world-settings-card"><WorldProcessingSettings key={selectedAgent.id} bridge={bridge} loupistId={selectedAgent.id} active={worldOpen} onChanged={onChanged} onManageProviders={onManageProviders} /></div>
-              <LoupistTracking key={`${selectedAgent.id}:tracking`} bridge={bridge} loupistId={selectedAgent.id} />
+              <Disclosure className="loupist-tracking-advanced" title={i18n.t("app:tracking.advanced")} data-loupist-tracking-advanced>
+                <LoupistTracking key={`${selectedAgent.id}:tracking`} bridge={bridge} loupistId={selectedAgent.id} />
+              </Disclosure>
             </Disclosure> : null}
             <Disclosure title={i18n.t("settings:loupistSettings.localWorkspace")} data-loupist-section="workspace">
-            <section className="agent-workspace-card" aria-labelledby="agent-workspace-heading">
-              <header className="agent-section-heading"><div><h2 id="agent-workspace-heading">{i18n.t("settings:loupistSettings.localWorkspace")}</h2><p className="agent-config-description">{i18n.t("settings:loupistSettings.workspaceCaption")}</p></div><span className="agent-workspace-state">{available ? i18n.t("settings:loupistSettings.connected") : i18n.t("settings:loupistSettings.needsAttention")}</span></header>
+            {/* The disclosure's title names this block; no second heading or rule inside it. */}
+            <div className="agent-workspace-card">
+              <div className="agent-section-heading"><p className="agent-config-description">{i18n.t("settings:loupistSettings.workspaceCaption")}</p><span className="agent-workspace-state">{available ? i18n.t("settings:loupistSettings.connected") : i18n.t("settings:loupistSettings.needsAttention")}</span></div>
               <p className="workspace-path agent-workspace-path" aria-label={i18n.t("settings:loupistSettings.workspaceFolder")}>{selectedAgent.workspace_path}</p>
               {available ? <>
-                <div className="agent-workspace-actions"><Button variant="outline" size="sm" disabled={openingFolder} onClick={() => void revealWorkspace()}><FolderOpenIcon />{openingFolder ? i18n.t("settings:loupistSettings.opening") : i18n.t("settings:loupistSettings.showInFileManager")}</Button>{onReconnect ? <Button variant="ghost" size="sm" disabled={mutationBusy} onClick={onReconnect}>{i18n.t("settings:loupistSettings.reconnectFolder")}</Button> : null}</div>
+                <div className="agent-workspace-actions"><Button variant="outline" size="sm" disabled={openingFolder} onClick={() => void revealWorkspace()}><FolderOpenIcon />{openingFolder ? i18n.t("settings:loupistSettings.opening") : i18n.t("settings:runDiagnostics.reveal")}</Button>{onReconnect ? <Button variant="ghost" size="sm" disabled={mutationBusy} onClick={onReconnect}>{i18n.t("settings:loupistSettings.reconnectFolder")}</Button> : null}</div>
               </> : null}
-            </section>
-
+            </div>
             </Disclosure>
-            <section className="agent-removal-card" aria-labelledby="agent-removal-heading"><div><h2 id="agent-removal-heading">{i18n.t("settings:loupistSettings.removeFromThisApp")}</h2><p>{i18n.t("settings:loupistSettings.yourWorkspaceFolderChatsAndMemoryStayOn")}</p>{!removable ? <p>{i18n.t("settings:loupistSettings.reconnectOrRecoverThisLoupistBeforeRemovingIt")}</p> : null}</div><Button type="button" size="sm" variant="outline" disabled={mutationBusy || !removable} onClick={() => setDeleteOpen(true)}><Trash2Icon /> {i18n.t("settings:loupistSettings.removeLoupist")}</Button></section>
+            <section className="agent-removal-card" aria-labelledby="agent-removal-heading"><div><h2 id="agent-removal-heading">{i18n.t("settings:loupistSettings.removeFromThisApp")}</h2><p>{i18n.t("settings:loupistSettings.yourWorkspaceFolderChatsAndMemoryStayOn")}</p>{!removable ? <p>{i18n.t("settings:loupistSettings.reconnectThisLoupistBeforeRemovingIt")}</p> : null}</div><Button type="button" size="sm" variant="outline" disabled={mutationBusy || !removable} onClick={() => setDeleteOpen(true)}><Trash2Icon /> {i18n.t("settings:loupistSettings.removeLoupist")}</Button></section>
           </div>
         ) : <div className="agent-editor-empty"><p>{i18n.t("settings:loupistSettings.selectALoupistToEditIt")}</p></div>}
       </div>

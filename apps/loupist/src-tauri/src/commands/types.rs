@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     agent_harness::AgentHarnessSnapshot,
-    app::{CommandError, LoupistAvailability, LoupistRecoveryAction},
+    app::{CommandError, LoupistAvailability},
     chat::artifacts::{ChatArtifact, ChatArtifactRef, ChatArtifactRevision},
     chat::chart::ChartDataset,
     chat::progress::{ChatProgress, ChatProgressPatch},
@@ -94,14 +94,6 @@ pub struct LoupistReconnectRequest {
 #[serde(deny_unknown_fields)]
 pub struct LoupistDeleteRequest {
     pub loupist_id: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[serde(deny_unknown_fields)]
-pub struct LoupistRecoverRequest {
-    pub loupist_id: String,
-    pub action: LoupistRecoveryAction,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -597,6 +589,14 @@ pub enum ChatStreamEvent {
     Evidence {
         run_id: String,
         evidence: Box<crate::domain::ChatEvidenceRef>,
+    },
+    /// A chart or table this reply published, sent once its publish call is
+    /// delivered so the card fills in place while the answer is written. It
+    /// is not saved: the `Artifact` reference follows only if the reply
+    /// commits, and a stopped or failed reply drops it.
+    ArtifactStaged {
+        run_id: String,
+        view: Box<ChatArtifactViewDto>,
     },
     Artifact {
         run_id: String,

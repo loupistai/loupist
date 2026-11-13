@@ -48,11 +48,15 @@ the hostname for HTTP(S) URLs or the retained label for other origins.
 
 ## Working notes and Journal
 
-Substantial work can have one current Working note per Chat; the Bot keeps
-[Bot memory](../ui/home-thread.md#bot-memory) instead. An update replaces its
-body in the completed-turn transaction and checks the expected identity; failed or
+Substantial work can have one current Working note per Chat; Bot keeps
+[Bot memory](../ui/home-thread.md#bot-memory) (tool `bot_memory`) instead. An update replaces its
+body in the completed-turn transaction and keeps its research id, so links resolve
+to the current body after an update. The expected id checks whether the Chat has
+that note; it is not a body revision token. Failed or
 cancelled turns preserve the existing note. Earlier Chats' notes can be referenced
-by a new note, and discovery can expose later corrections. Discovery reads the
+by a new note, and discovery can expose later corrections even after the referenced
+note is updated. Research search accepts at most 200 Unicode scalar values
+(characters), including Korean text. Discovery reads the
 1,000 most recently stored current candidates per Loupist, then sorts that bounded
 window by recorded time; repeated replacement of other Chats' notes does not
 consume that window. Notes remain available
@@ -61,8 +65,11 @@ evidence nor standing instructions. Research readers expose the Source excerpts,
 World view and Lens documents captured with the saved work.
 
 A Journal entry records the user's own judgment, with optional reasoning, linked
-World entities and a dated check. Entity links are validated against the complete
-current World, including entities outside the Map's display limit. The Loupist’s
+World entities and a dated check. Entity links use current World node ids, not
+names or ticker labels. Chat validates them against the complete current World
+before staging, including entities outside the Map's display limit; an unknown
+link is refused at `journal.entities` so the same turn can omit or repair it. The
+completed-turn transaction checks the links again. The Loupist’s
 own view belongs in research notes, not in the user’s Journal.
 Map → Library → Notes lists Your journal before Research notes. Focusing a field in that form scrolls it clear of the sticky search. The user can
 create, edit and archive entries there through `journal_create`, `journal_update`,

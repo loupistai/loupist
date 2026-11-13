@@ -8,6 +8,7 @@
 //! the same regular file with the same content hash as the snapshot.
 
 use std::{
+    cmp::Reverse,
     collections::BTreeMap,
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
@@ -53,6 +54,8 @@ pub(crate) struct Prepared {
     files: BTreeMap<String, FileStamp>,
     dirs: BTreeMap<String, DirStamp>,
     pub(crate) omitted: Vec<String>,
+    pub(crate) omitted_count: usize,
+    pub(crate) scan_truncated: bool,
     pub(crate) untrusted_inputs: bool,
 }
 
@@ -76,10 +79,45 @@ pub(crate) struct Artifact {
     pub bytes: u64,
 }
 
+#[derive(Clone, Copy)]
+enum SnapshotRoot {
+    Workspace,
+    Attachments,
+    Scratch,
+}
+
+struct Candidate {
+    root: SnapshotRoot,
+    relative: String,
+    identity: DirStamp,
+    length: u64,
+    modified: (i128, i128),
+    writable: bool,
+}
+
+impl Candidate {
+    fn guest_path(&self) -> String {
+        match self.root {
+            SnapshotRoot::Workspace => self.relative.clone(),
+            SnapshotRoot::Attachments => format!("/attachments/{}", self.relative),
+            SnapshotRoot::Scratch => format!("/scratch/{}", self.relative),
+        }
+    }
+
+    fn priority(&self) -> (bool, Reverse<(i128, i128)>, String) {
+        (
+            !matches!(self.root, SnapshotRoot::Workspace) || !self.relative.starts_with("outputs/"),
+            Reverse(self.modified),
+            self.guest_path(),
+        )
+    }
+}
+
 struct Budget {
     files: usize,
     bytes: u64,
     entries: usize,
+    candidates: Vec<Candidate>,
 }
 
 pub(crate) fn prepare(roots: &NativeRoots) -> Result<Prepared, PythonError> {
@@ -109,12 +147,15 @@ pub(crate) fn prepare(roots: &NativeRoots) -> Result<Prepared, PythonError> {
         files: BTreeMap::new(),
         dirs: BTreeMap::new(),
         omitted: Vec::new(),
+        omitted_count: 0,
+        scan_truncated: false,
         untrusted_inputs: false,
     };
     let mut budget = Budget {
         files: 0,
         bytes: 0,
         entries: 0,
+        candidates: Vec::new(),
     };
     copy_tree(
         &workspace_fd,
@@ -128,45 +169,121 @@ pub(crate) fn prepare(roots: &NativeRoots) -> Result<Prepared, PythonError> {
         &mut budget,
         &mut prepared,
     )?;
-    if roots.attachments.is_dir() {
-        if let Ok(fd) = open_dir(&roots.attachments) {
+    let attachment_fd = roots
+        .attachments
+        .is_dir()
+        .then(|| open_dir(&roots.attachments).ok())
+        .flatten();
+    let scratch_fd = roots
+        .scratch
+        .is_dir()
+        .then(|| open_dir(&roots.scratch).ok())
+        .flatten();
+    for (source, target, logical, writable) in [
+        (
+            attachment_fd.as_ref(),
+            &snap_attachments,
+            &roots.attachments,
+            false,
+        ),
+        (scratch_fd.as_ref(), &snap_scratch, &roots.scratch, true),
+    ] {
+        if let Some(source) = source {
             copy_tree(
-                &fd,
-                &snap_attachments,
-                &roots.attachments,
+                source,
+                target,
+                logical,
                 "",
                 0,
                 false,
-                false,
+                writable,
                 roots,
                 &mut budget,
                 &mut prepared,
             )?;
         }
     }
-    if roots.scratch.is_dir() {
-        if let Ok(fd) = open_dir(&roots.scratch) {
-            copy_tree(
-                &fd,
-                &snap_scratch,
-                &roots.scratch,
-                "",
-                0,
-                false,
-                true,
-                roots,
-                &mut budget,
-                &mut prepared,
-            )?;
-        }
+    // Reserve outputs even when file selection omits every ordinary file.
+    if statat(&workspace_fd, "outputs", AtFlags::SYMLINK_NOFOLLOW)
+        .is_ok_and(|meta| FileType::from_raw_mode(meta.st_mode) == FileType::RegularFile)
+    {
+        return Err(PythonError::failed(
+            "workspace outputs must be a directory; rename the outputs file before running Python",
+        ));
     }
     ensure_outputs(&mut prepared)?;
+    budget.candidates.sort_by_key(Candidate::priority);
+    for candidate in std::mem::take(&mut budget.candidates) {
+        if budget.files >= MAX_SNAPSHOT_FILES
+            || candidate.length > MAX_SNAPSHOT_BYTES.saturating_sub(budget.bytes)
+        {
+            prepared.omit(candidate.guest_path(), false);
+            continue;
+        }
+        let (source, destination) = match candidate.root {
+            SnapshotRoot::Workspace => (&workspace_fd, &snap_workspace),
+            SnapshotRoot::Attachments => (
+                attachment_fd.as_ref().expect("collected attachment root"),
+                &snap_attachments,
+            ),
+            SnapshotRoot::Scratch => (
+                scratch_fd.as_ref().expect("collected scratch root"),
+                &snap_scratch,
+            ),
+        };
+        let path = Path::new(&candidate.relative);
+        let parent = path.parent().expect("relative file parent");
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("UTF-8 file name");
+        let source = open_relative_dir(source, parent)?;
+        let destination = open_relative_dir(destination, parent)?;
+        let mode = Mode::from_raw_mode(if candidate.writable { 0o644 } else { 0o444 });
+        let Some(copied) = copy_file(
+            &source,
+            &destination,
+            name,
+            mode,
+            candidate.identity,
+            MAX_FILE_BYTES.min(MAX_SNAPSHOT_BYTES.saturating_sub(budget.bytes)),
+        )?
+        else {
+            prepared.omit(candidate.guest_path(), false);
+            continue;
+        };
+        prepared.untrusted_inputs |= crate::commands::export_trust::contains_at(
+            &roots.app_data,
+            &hex::encode(copied.sha256),
+        )
+        .map_err(|_| PythonError::failed("workspace input trust could not be checked"))?;
+        budget.files += 1;
+        budget.bytes += copied.len;
+        if matches!(candidate.root, SnapshotRoot::Workspace) && candidate.writable {
+            prepared.files.insert(
+                candidate.relative,
+                FileStamp {
+                    dev: candidate.identity.dev,
+                    ino: candidate.identity.ino,
+                    sha256: copied.sha256,
+                },
+            );
+        }
+    }
     // WASI preopen rights enforce read-only access. Keep owner-write on host
     // directories so TempDir can remove every private copy on all exit paths.
     Ok(prepared)
 }
 
 impl Prepared {
+    fn omit(&mut self, path: String, subtree: bool) {
+        self.omitted_count = self.omitted_count.saturating_add(1);
+        self.scan_truncated |= subtree;
+        self.omitted.push(path);
+        self.omitted.sort();
+        self.omitted.truncate(32);
+    }
+
     pub(crate) fn snapshot_dir(&self) -> &Path {
         self.staging.path()
     }
@@ -799,19 +916,21 @@ fn copy_tree(
     budget: &mut Budget,
     prepared: &mut Prepared,
 ) -> Result<(), PythonError> {
-    if depth > 32 {
-        return Ok(());
-    }
+    // Bound metadata memory while choosing entries independently of directory
+    // enumeration order. A skipped directory represents an unscanned subtree.
+    let root = if workspace {
+        SnapshotRoot::Workspace
+    } else if guest_writable {
+        SnapshotRoot::Scratch
+    } else {
+        SnapshotRoot::Attachments
+    };
+    let remaining = MAX_TREE_ENTRIES.saturating_sub(budget.entries);
+    let mut ordered = BTreeMap::new();
     let entries =
         Dir::read_from(host_dir).map_err(|_| PythonError::failed("workspace snapshot failed"))?;
     for entry in entries {
         let entry = entry.map_err(|_| PythonError::failed("workspace snapshot failed"))?;
-        budget.entries += 1;
-        if budget.entries > MAX_TREE_ENTRIES {
-            return Err(PythonError::failed(
-                "workspace snapshot has too many entries",
-            ));
-        }
         let Ok(name) = entry.file_name().to_str() else {
             continue;
         };
@@ -819,28 +938,14 @@ fn copy_tree(
         {
             continue;
         }
-        let meta = match statat(host_dir, name, AtFlags::SYMLINK_NOFOLLOW) {
-            Ok(meta) => meta,
-            Err(_) => continue,
+        let Ok(meta) = statat(host_dir, name, AtFlags::SYMLINK_NOFOLLOW) else {
+            continue;
         };
         let kind = FileType::from_raw_mode(meta.st_mode);
-        if kind == FileType::Symlink
-            || matches!(
-                kind,
-                FileType::Socket
-                    | FileType::Fifo
-                    | FileType::CharacterDevice
-                    | FileType::BlockDevice
-            )
-        {
+        if !matches!(kind, FileType::Directory | FileType::RegularFile) {
             continue;
         }
         let logical = logical_dir.join(name);
-        let path = if relative.is_empty() {
-            name.to_owned()
-        } else {
-            format!("{relative}/{name}")
-        };
         let class = classify(&logical, roots).class;
         let allowed = if workspace {
             class == PathClass::Workspace
@@ -850,10 +955,32 @@ fn copy_tree(
                 PathClass::Attachments | PathClass::Scratch | PathClass::Workspace
             )
         };
-        if !allowed {
+        if !allowed || (kind == FileType::RegularFile && meta.st_nlink != 1) {
             continue;
         }
-        if kind == FileType::Directory {
+        let key = (
+            !(workspace && depth == 0 && name == "outputs"),
+            Reverse((i128::from(meta.st_mtime), i128::from(meta.st_mtime_nsec))),
+            name.to_owned(),
+        );
+        ordered.insert(key, (name.to_owned(), meta));
+        if ordered.len() > remaining {
+            let (_, (name, meta)) = ordered.pop_last().expect("entry inserted");
+            let directory = FileType::from_raw_mode(meta.st_mode) == FileType::Directory;
+            let path = join_relative(relative, &name);
+            prepared.omit(omission_path(root, &path, directory), directory);
+        }
+    }
+    for (_, (name, meta)) in ordered {
+        let kind = FileType::from_raw_mode(meta.st_mode);
+        let path = join_relative(relative, &name);
+        let directory = kind == FileType::Directory;
+        if budget.entries >= MAX_TREE_ENTRIES || (directory && depth >= 32) {
+            prepared.omit(omission_path(root, &path, directory), directory);
+            continue;
+        }
+        budget.entries += 1;
+        if directory {
             if workspace && depth == 0 && protected_dir(device(&meta), meta.st_ino, roots) {
                 continue;
             }
@@ -867,25 +994,25 @@ fn copy_tree(
                     .count()
                     >= MAX_WRITABLE_DIRS - 1
             {
+                prepared.omit(omission_path(root, &path, true), true);
+                continue;
+            }
+            let host_child = openat(host_dir, name.as_str(), dir_flags(), Mode::empty())
+                .map_err(|_| PythonError::failed("workspace snapshot failed"))?;
+            let opened =
+                fstat(&host_child).map_err(|_| PythonError::failed("workspace snapshot failed"))?;
+            if opened.st_dev != meta.st_dev || opened.st_ino != meta.st_ino {
                 return Err(PythonError::failed(
-                    "workspace has too many writable folders",
+                    "workspace changed while creating the snapshot; try again",
                 ));
             }
-            mkdir_at(snap_dir, name, Mode::from_raw_mode(0o755))?;
-            let host_child = openat(host_dir, name, dir_flags(), Mode::empty())
-                .map_err(|_| PythonError::failed("workspace snapshot failed"))?;
-            let snap_child = openat(snap_dir, name, dir_flags(), Mode::empty())
+            mkdir_at(snap_dir, &name, Mode::from_raw_mode(0o755))?;
+            let snap_child = openat(snap_dir, name.as_str(), dir_flags(), Mode::empty())
                 .map_err(|_| PythonError::failed("workspace snapshot failed"))?;
             if workspace && depth == 0 {
-                prepared.writable.push(name.to_owned());
-                prepared.dirs.insert(
-                    name.to_owned(),
-                    DirStamp {
-                        dev: device(&meta),
-                        ino: meta.st_ino,
-                    },
-                );
-            } else if workspace && writable_ancestor(&path, prepared) {
+                prepared.writable.push(name.clone());
+            }
+            if workspace && writable_ancestor(&path, prepared) {
                 prepared.dirs.insert(
                     path.clone(),
                     DirStamp {
@@ -897,7 +1024,7 @@ fn copy_tree(
             copy_tree(
                 &host_child,
                 &snap_child,
-                &logical,
+                &logical_dir.join(&name),
                 &path,
                 depth + 1,
                 workspace,
@@ -906,48 +1033,48 @@ fn copy_tree(
                 budget,
                 prepared,
             )?;
-            continue;
-        }
-        if kind != FileType::RegularFile || meta.st_nlink != 1 {
-            continue;
-        }
-        if meta.st_size < 0 || meta.st_size as u64 > MAX_FILE_BYTES {
-            if prepared.omitted.len() < 32 {
-                prepared.omitted.push(path);
-            }
-            continue;
-        }
-        if budget.files >= MAX_SNAPSHOT_FILES
-            || budget.bytes.saturating_add(meta.st_size as u64) > MAX_SNAPSHOT_BYTES
-        {
-            return Err(PythonError::failed("workspace snapshot is too large"));
-        }
-        let writable = workspace && writable_ancestor(&path, prepared);
-        let file_mode = Mode::from_raw_mode(if guest_writable || writable {
-            0o644
+        } else if meta.st_size < 0 || meta.st_size as u64 > MAX_FILE_BYTES {
+            prepared.omit(omission_path(root, &path, false), false);
         } else {
-            0o444
-        });
-        let copied = copy_file(host_dir, snap_dir, name, file_mode)?;
-        prepared.untrusted_inputs |= crate::commands::export_trust::contains_at(
-            &roots.app_data,
-            &hex::encode(copied.sha256),
-        )
-        .map_err(|_| PythonError::failed("workspace input trust could not be checked"))?;
-        budget.files += 1;
-        budget.bytes += copied.len;
-        if writable {
-            prepared.files.insert(
-                path,
-                FileStamp {
+            budget.candidates.push(Candidate {
+                root,
+                relative: path.clone(),
+                identity: DirStamp {
                     dev: device(&meta),
                     ino: meta.st_ino,
-                    sha256: copied.sha256,
                 },
-            );
+                length: meta.st_size as u64,
+                modified: (i128::from(meta.st_mtime), i128::from(meta.st_mtime_nsec)),
+                writable: guest_writable || (workspace && writable_ancestor(&path, prepared)),
+            });
         }
     }
     Ok(())
+}
+
+fn omission_path(root: SnapshotRoot, path: &str, directory: bool) -> String {
+    let mut path = match root {
+        SnapshotRoot::Workspace => path.to_owned(),
+        SnapshotRoot::Attachments => format!("/attachments/{path}"),
+        SnapshotRoot::Scratch => format!("/scratch/{path}"),
+    };
+    if directory {
+        path.push('/');
+    }
+    path
+}
+
+fn open_relative_dir(root: &OwnedFd, path: &Path) -> Result<OwnedFd, PythonError> {
+    let mut current = openat(root, ".", dir_flags(), Mode::empty())
+        .map_err(|_| PythonError::failed("workspace snapshot failed"))?;
+    for component in path.components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err(PythonError::failed("workspace snapshot path is invalid"));
+        };
+        current = openat(&current, name, dir_flags(), Mode::empty())
+            .map_err(|_| PythonError::failed("workspace snapshot failed"))?;
+    }
+    Ok(current)
 }
 
 struct Copied {
@@ -960,7 +1087,9 @@ fn copy_file(
     snap_dir: &OwnedFd,
     name: &str,
     mode: Mode,
-) -> Result<Copied, PythonError> {
+    expected: DirStamp,
+    max_bytes: u64,
+) -> Result<Option<Copied>, PythonError> {
     let source = openat(
         host_dir,
         name,
@@ -969,7 +1098,11 @@ fn copy_file(
     )
     .map_err(|_| PythonError::failed("workspace snapshot failed"))?;
     let meta = fstat(&source).map_err(|_| PythonError::failed("workspace snapshot failed"))?;
-    if FileType::from_raw_mode(meta.st_mode) != FileType::RegularFile || meta.st_nlink != 1 {
+    if FileType::from_raw_mode(meta.st_mode) != FileType::RegularFile
+        || meta.st_nlink != 1
+        || device(&meta) != expected.dev
+        || meta.st_ino != expected.ino
+    {
         return Err(PythonError::failed("workspace snapshot failed"));
     }
     let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
@@ -988,19 +1121,21 @@ fn copy_file(
             break;
         }
         len += count as u64;
-        if len > MAX_FILE_BYTES {
-            return Err(PythonError::failed("workspace snapshot is too large"));
+        if len > max_bytes {
+            drop(output);
+            unlinkat(snap_dir, name, AtFlags::empty())
+                .map_err(|_| PythonError::failed("workspace snapshot failed"))?;
+            return Ok(None);
         }
         hasher.update(&buffer[..count]);
         output
             .write_all(&buffer[..count])
             .map_err(|_| PythonError::failed("workspace snapshot failed"))?;
     }
-    output.sync_all().ok();
-    Ok(Copied {
+    Ok(Some(Copied {
         sha256: hasher.finalize().into(),
         len,
-    })
+    }))
 }
 
 fn ensure_outputs(prepared: &mut Prepared) -> Result<(), PythonError> {
@@ -1111,4 +1246,43 @@ fn read_fd_hash(file: &File) -> Result<[u8; 32], PythonError> {
 
 fn sha256(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+
+    fn candidate(root: SnapshotRoot, path: &str, modified: i128) -> Candidate {
+        Candidate {
+            root,
+            relative: path.into(),
+            identity: DirStamp { dev: 1, ino: 1 },
+            length: 1,
+            modified: (modified, 0),
+            writable: false,
+        }
+    }
+
+    #[test]
+    fn outputs_priority_is_exact_and_other_entries_use_recency_then_path() {
+        let mut files = vec![candidate(SnapshotRoot::Workspace, "outputs/old.txt", 0)];
+        let negatives = [
+            (SnapshotRoot::Workspace, "outputs-old/new.txt"),
+            (SnapshotRoot::Workspace, "outputs_backup/new.txt"),
+            (SnapshotRoot::Workspace, "notes/outputs/new.txt"),
+            (SnapshotRoot::Workspace, "Outputs/new.txt"),
+            (SnapshotRoot::Attachments, "outputs/new.txt"),
+            (SnapshotRoot::Scratch, "outputs/new.txt"),
+        ];
+        for (index, (root, path)) in negatives.into_iter().enumerate() {
+            files.push(candidate(root, path, 10 + index as i128));
+        }
+        files.push(candidate(SnapshotRoot::Workspace, "notes/z.txt", 1));
+        files.push(candidate(SnapshotRoot::Workspace, "notes/a.txt", 1));
+        files.sort_by_key(Candidate::priority);
+        assert_eq!(files[0].guest_path(), "outputs/old.txt");
+        assert_eq!(files[1].guest_path(), "/scratch/outputs/new.txt");
+        assert_eq!(files[7].guest_path(), "notes/a.txt");
+        assert_eq!(files[8].guest_path(), "notes/z.txt");
+    }
 }

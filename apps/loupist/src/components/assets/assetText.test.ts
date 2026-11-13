@@ -1,6 +1,7 @@
 import i18n from "@/i18n";
 import type { AssetEvidence } from "../../contracts/assets";
-import { citationNumbers, dartReport, datedSentence, rowSentence } from "./assetText";
+import { citationNumbers, dartReport, datedSentence, glanceLabel, glanceValue, rowSentence } from "./assetText";
+import type { AssetGlanceRow } from "../../contracts/assets";
 import { localAssetName } from "./assetName";
 
 afterEach(async () => { await i18n.changeLanguage("en"); });
@@ -55,4 +56,19 @@ it("uses the Korean name for a Korean listing in Korean, and the followed name o
   expect(localAssetName({ name: "Hanul Precision", assetId: "a1" }, { nodes, pages }, "en")).toBe("Hanul Precision");
   // Matched by name when the page has no entity yet.
   expect(localAssetName({ name: "Hanul Precision", symbol: "HANUL", market: "KRX" }, { nodes }, "ko")).toBe("한울정밀");
+});
+
+it("labels a rates level with its named series and keeps the generic label for FX", async () => {
+  const level = (facts: Record<string, unknown>) => ({ key: "level", facts, date: "2026-10-30", evidence: [] }) as unknown as AssetGlanceRow;
+  expect(glanceLabel(level({ value: 4.12, unit: "%", name: "10-year Treasury yield" }))).toBe("10-year Treasury yield");
+  expect(glanceLabel(level({ value: 1385.2 }))).toBe("Level");
+  expect(glanceValue(level({ value: 4.12, unit: "%", name: "10-year Treasury yield" }))).toBe("4.12%");
+  await i18n.changeLanguage("ko");
+  expect(glanceLabel(level({ value: 4.12, unit: "%", name: "10-year Treasury yield" }))).toBe("미국채 10년물 금리");
+  expect(glanceLabel(level({ value: 1385.2 }))).toBe("수준");
+});
+
+it("shows an expense ratio as reported, never with a guessed unit", () => {
+  const row = { key: "expenseRatio", facts: { ratio: 0.0009 }, date: "2026-10-30", evidence: [] } as unknown as AssetGlanceRow;
+  expect(glanceValue(row)).toBe("0.0009 (as reported)");
 });

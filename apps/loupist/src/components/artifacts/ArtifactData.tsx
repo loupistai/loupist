@@ -5,12 +5,11 @@ import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { CheckIcon, ClipboardIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ChartDataset } from "../../types";
-import { datasetCsv, exportFileName, utf8Bytes } from "../../chat/exportChat";
+import { datasetCellText as cellText, datasetCsv, exportFileName, utf8Bytes } from "../../chat/exportChat";
 
 const t = i18n.getFixedT(null, "chat");
 
 const PAGE_SIZE = 25;
-const cellText = (value: unknown) => value == null ? "" : String(value);
 const quotedCell = (value: unknown) => {
   const text = cellText(value);
   return /[\t\n\r"]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;

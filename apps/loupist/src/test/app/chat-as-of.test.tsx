@@ -83,8 +83,8 @@ describe("as-of answers", () => {
       message={{ id: "answer", role: "assistant", status: "complete", content: "Done.", created_at: "2026-03-03T00:00:00Z", as_of: "2026-03-03", progress: { startedAtMs: 1, finishedAtMs: 50_000, items: [
         { id: "quote", kind: "tool", toolName: "kis_read", category: "finance", operation: "read", action: "Read market data", target: "990221", status: "skipped", startedAtMs: 1, finishedAtMs: 2, href: null },
       ] } }} />);
-    // A refused lookup is not a failure: the summary says "skipped" and the details stay closed until asked.
-    const summary = screen.getByRole("button", { name: /1 lookup skipped for Mar 3, 2026/ });
+    // A refused lookup is not a failure: the receipt says nothing failed and the details stay closed until asked.
+    const summary = screen.getByRole("button", { name: "Worked 50s · 1 step" });
     expect(summary).not.toHaveTextContent(/failed/u);
     expect(summary).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(summary);

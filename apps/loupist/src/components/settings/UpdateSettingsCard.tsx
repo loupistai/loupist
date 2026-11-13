@@ -27,7 +27,8 @@ type Props = {
 const displayPublishedAt = (value: string) => {
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) return value;
-  return formatDate(timestamp, { dateStyle: "medium" });
+  // Korean reads the long form (2026년 11월 4일), not "2026. 11. 4.", as Schedule and sources do.
+  return formatDate(timestamp, { dateStyle: i18n.language.toLowerCase().startsWith("ko") ? "long" : "medium" });
 };
 
 export function UpdateSettingsCard({
@@ -39,6 +40,11 @@ export function UpdateSettingsCard({
 }: Props) {
   useTranslation("settings");
   const offer = updateState?.supported === true ? updateState.offer : null;
+  const upToDate =
+    updateState?.supported === true &&
+    !offer &&
+    updateState?.last_checked_at_ms != null &&
+    !error;
   const busy = phase !== "idle";
   const status =
     phase === "checking"
@@ -68,10 +74,10 @@ export function UpdateSettingsCard({
             <dt>{i18n.t("settings:updateSettingsCard.currentVersion")}</dt>
             <dd>{updateState?.current_version ?? i18n.t("settings:updateSettingsCard.loading")}</dd>
           </div>
-          <div>
+          {offer?.version ? <div>
             <dt>{i18n.t("settings:updateSettingsCard.availableVersion")}</dt>
-            <dd>{offer?.version ?? "—"}</dd>
-          </div>
+            <dd>{offer.version}</dd>
+          </div> : null}
         </dl>
 
         {updateState?.supported === false ? (
@@ -82,7 +88,7 @@ export function UpdateSettingsCard({
               <p>{i18n.t("settings:updateSettingsCard.thisDevelopmentBuildDoesNotInstallUpdatesAutomatically")}</p>
             </div>
           </div>
-        ) : updateState && !offer ? (
+        ) : upToDate ? (
           <div className="update-summary">
             <CheckCircle2Icon aria-hidden="true" />
             <div>

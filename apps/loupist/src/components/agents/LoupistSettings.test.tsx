@@ -8,7 +8,7 @@ it("offers global Retry when a focus reload fails after a failed capability togg
   const agents = await bridge.loupistList();
   const catalog = vi.spyOn(bridge, "agentSkillCatalog");
   vi.spyOn(bridge, "loupistCapabilityDisable").mockRejectedValueOnce(new Error("Toggle failed."));
-  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={agents[0]} mutationBusy={false} mutationError={null} recoveryBusy={false} recoveryError={null} onRecover={vi.fn()} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
+  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={agents[0]} mutationBusy={false} mutationError={null} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
   const user = userEvent.setup();
   await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
   await user.click(await screen.findByRole("switch", { name: "World Bank Indicators: enabled" }));
@@ -24,7 +24,7 @@ it("preserves capability search, filter and confirmation through configuration a
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const agents = await bridge.loupistList();
   const catalog = vi.spyOn(bridge, "agentSkillCatalog");
-  const props = { catalog: null, onChanged: vi.fn(), onBack: vi.fn(), onManageProviders: vi.fn(), bridge, selectedAgent: agents[0], mutationBusy: false, mutationError: null, recoveryBusy: false, recoveryError: null, onRecover: vi.fn(), onOpenMarketplace: vi.fn(), onDelete: vi.fn(), onAgentUpdated: vi.fn() };
+  const props = { catalog: null, onChanged: vi.fn(), onBack: vi.fn(), onManageProviders: vi.fn(), bridge, selectedAgent: agents[0], mutationBusy: false, mutationError: null, onOpenMarketplace: vi.fn(), onDelete: vi.fn(), onAgentUpdated: vi.fn() };
   const view = render(<LoupistSettings {...props} />);
   const user = userEvent.setup();
   await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
@@ -57,24 +57,42 @@ it("searches the selected Loupist’s capabilities and reveals that Loupist’s 
     { id: "filing", name: "Filing comparison", description: "Compare financial statements", enabled: true, fixed: false },
     { id: "valuation", name: "Valuation", description: "Model cash flows", enabled: false, fixed: false },
   ]);
-  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={selectedAgent} mutationBusy={false} mutationError={null} recoveryBusy={false} recoveryError={null} onRecover={vi.fn()} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
+  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={selectedAgent} mutationBusy={false} mutationError={null} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
   const user = userEvent.setup();
   await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
   expect(await screen.findByRole("switch", { name: "Filing comparison: enabled" })).toBeChecked();
   await user.type(screen.getByRole("searchbox", { name: "Search skills and connections" }), "cash flows");
   expect(screen.queryByRole("switch", { name: "Filing comparison: enabled" })).toBeNull();
   expect(screen.getByRole("switch", { name: "Valuation: disabled" })).not.toBeChecked();
-  await user.click(document.querySelector('[data-loupist-section="workspace"] > summary')!);
-  await user.click(screen.getByRole("button", { name: "Show in file manager" }));
+  const workspace = document.querySelector<HTMLElement>('[data-loupist-section="workspace"]')!;
+  await user.click(workspace.querySelector("summary")!);
+  // The disclosure's title is the block's only heading.
+  expect(within(workspace).queryByRole("heading")).toBeNull();
+  await user.click(within(workspace).getByRole("button", { name: "Reveal in Finder" }));
   await waitFor(() => expect(reveal).toHaveBeenCalledExactlyOnceWith({ loupist_id: selectedAgent.id }));
   expect(screen.getByLabelText("Workspace folder")).toHaveTextContent(selectedAgent.workspace_path);
+});
+
+it("lists Skill Creator last under Advanced, as Settings › Skills does", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const agents = await bridge.loupistList();
+  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={agents[0]} mutationBusy={false} mutationError={null} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
+  const user = userEvent.setup();
+  await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
+  const creator = await screen.findByRole("switch", { name: /^Skill Creator:/ });
+  const list = creator.closest(".agent-capability-list")!;
+  const switches = within(list as HTMLElement).getAllByRole("switch");
+  expect(switches.at(-1)).toBe(creator);
+  const advanced = within(list as HTMLElement).getByRole("heading", { level: 3, name: "Advanced" });
+  expect(advanced.compareDocumentPosition(creator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(advanced.compareDocumentPosition(switches[0]) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
 });
 
 it("filters capabilities by availability and opens the selected connection’s details", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const agents = await bridge.loupistList();
   const openConnection = vi.fn();
-  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={agents[0]} mutationBusy={false} mutationError={null} recoveryBusy={false} recoveryError={null} onRecover={vi.fn()} onOpenMarketplace={openConnection} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
+  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={agents[0]} mutationBusy={false} mutationError={null} onOpenMarketplace={openConnection} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
   const user = userEvent.setup();
   await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
   await screen.findByRole("switch", { name: "Research: enabled" });
@@ -94,7 +112,7 @@ it("shows the unavailable workspace and blocks mutations until it is reconnected
   const selectedAgent = { ...agents[0], availability: { status: "workspace_unavailable" as const } };
   const reconnect = vi.fn();
   const skillCatalog = vi.spyOn(bridge, "agentSkillCatalog");
-  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={selectedAgent} mutationBusy={false} mutationError={null} recoveryBusy={false} recoveryError={null} onRecover={vi.fn()} onReconnect={reconnect} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
+  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={selectedAgent} mutationBusy={false} mutationError={null} onReconnect={reconnect} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
   await userEvent.click(document.querySelector('[data-loupist-section="workspace"] > summary')!);
   expect(screen.getByLabelText("Workspace folder")).toHaveTextContent(selectedAgent.workspace_path);
   expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
@@ -108,7 +126,7 @@ it("keeps a failed tool toggle unchanged and lets the user retry", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const agents = await bridge.loupistList();
   const disable = vi.spyOn(bridge, "loupistCapabilityDisable").mockRejectedValueOnce(new Error("Workspace is temporarily busy."));
-  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={agents[0]} mutationBusy={false} mutationError={null} recoveryBusy={false} recoveryError={null} onRecover={vi.fn()} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
+  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={agents[0]} mutationBusy={false} mutationError={null} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
   const user = userEvent.setup();
   await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
   await user.click(await screen.findByRole("switch", { name: "World Bank Indicators: enabled" }));
@@ -126,7 +144,7 @@ it("saves a profile, publishes its new identity, and discards later edits", asyn
   const [loupist] = await bridge.loupistList();
   const update = vi.spyOn(bridge, "loupistProfileUpdate");
   const onUpdated = vi.fn();
-  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={loupist} mutationBusy={false} mutationError={null} recoveryBusy={false} recoveryError={null} onRecover={vi.fn()} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={onUpdated} />);
+  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={loupist} mutationBusy={false} mutationError={null} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={onUpdated} />);
   const user = userEvent.setup();
   const save = screen.getByRole("button", { name: "Save" });
   expect(save).toBeDisabled();
@@ -155,7 +173,7 @@ it("retains a failed profile draft and retries it", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const [loupist] = await bridge.loupistList();
   const update = vi.spyOn(bridge, "loupistProfileUpdate").mockRejectedValueOnce(new Error("Workspace is busy."));
-  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={loupist} mutationBusy={false} mutationError={null} recoveryBusy={false} recoveryError={null} onRecover={vi.fn()} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
+  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={loupist} mutationBusy={false} mutationError={null} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
   const user = userEvent.setup();
   await user.type(screen.getByLabelText("Name", { exact: true }), " edited");
   await user.click(screen.getByRole("button", { name: "Save" }));

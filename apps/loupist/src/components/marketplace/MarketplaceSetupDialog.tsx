@@ -342,7 +342,11 @@ export function MarketplaceSetupDialog({
         }}
       >
         {entry && (
-          <DialogContent className="marketplace-setup-dialog">
+          <DialogContent className="marketplace-setup-dialog" onOpenAutoFocus={(event) => {
+            // Start in the key field (direction T4), not on the "Get a key" link above it.
+            const field = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLInputElement>('input[type="password"]:not(:disabled), input:not([type="hidden"]):not(:disabled)');
+            if (field) { event.preventDefault(); field.focus(); }
+          }}>
             <form
               className="dialog-form marketplace-setup-form"
               onSubmit={(event) => {
@@ -595,9 +599,11 @@ export function MarketplaceSetupDialog({
               </DialogBody>
               <DialogFooter>
                 {onManageLoupists ? <Button type="button" variant="ghost" className="marketplace-manage-access" onClick={() => leave(onManageLoupists)}><SlidersHorizontalIcon />{i18n.t("connections:marketplaceSetupDialog.loupistAccess")}</Button> : null}
-                <Button type="button" variant="outline" onClick={requestClose}>
-                  {i18n.t("connections:marketplaceSetupDialog.done")}</Button>
-                {entry.setup && connector?.readiness !== "runtime_unavailable" ? <Button type="submit" disabled={Boolean(setupBusy)}>
+                {/* Before a verified setup: Cancel and the filled Save & verify. Once ready: Done is the filled button; saving changed settings stays possible. */}
+                {connectionState(connector) === "ready" ? <Button type="button" onClick={requestClose}>
+                  {i18n.t("connections:marketplaceSetupDialog.done")}</Button> : <Button type="button" variant="ghost" onClick={requestClose}>
+                  {i18n.t("connections:marketplaceSetupDialog.cancel")}</Button>}
+                {entry.setup && connector?.readiness !== "runtime_unavailable" ? <Button type="submit" variant={connectionState(connector) === "ready" ? "outline" : "default"} disabled={Boolean(setupBusy)}>
                   {setupBusy === "save" ? <LoaderCircleIcon className="animate-spin" aria-hidden="true" /> : null}
                   {setupBusy === "save"
                     ? setupProgress

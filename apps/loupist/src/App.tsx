@@ -17,6 +17,9 @@ import {
   useState,
 } from "react";
 import { createLoupistBridge } from "./bridge/tauriBridge";
+import { HoldingsSheet } from "./components/holdings/HoldingsSheet";
+import { FollowingPage } from "./components/briefings/FollowingPage";
+import { requestLibrary } from "./components/map/libraryState";
 import { ChatView } from "./components/ChatView";
 import { DismissOnOpen, OpenProvider } from "./components/navigation/Open";
 import { useAppOpen } from "./app/useAppOpen";
@@ -75,6 +78,7 @@ import { chatMarkdown, exportFileName, utf8Bytes } from "./chat/exportChat";
 import { printChat } from "./components/print/printDocuments";
 import { errorMessage } from "./lib/errors";
 import { CommandPalette, type PaletteAction, type PaletteGroup } from "./components/app/CommandPalette";
+import { titledExport } from "./lib/exportTitle";
 import { usePersistedChatDraft } from "./app/usePersistedChatDraft";
 import { useChatDrafts } from "./app/useChatDrafts";
 import { useFileDropGuard } from "./app/useFileDropGuard";
@@ -190,7 +194,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   const openLoupistSettingsFor = async (id: string, remove = false, section?: LoupistSettingsSection) => {
     loupistSettingsReturnFocus.current = document.activeElement?.closest("[role=menu]") ? document.querySelector(".loupist-header-identity") : document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (id !== selectedLoupist?.id || loupist.loading) {
-      const opened = await loupist.selectLoupist(id, loupists.find(item => item.id === id));
+      const opened = await loupist.selectLoupist(id);
       if (!opened) return;
     }
     dispatchSurface({ type: "openLoupistSettings", loupistId: id, section, remove });
@@ -230,7 +234,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   const [inboxFocus, setInboxFocus] = useState<{ loupistId: string; runId: string | null } | null>(null);
   useEffect(() => bridge.onInboxOpen(event => {
     void (async () => {
-      if (event.loupistId !== selectedLoupist?.id && !await selectLoupist(event.loupistId, loupists.find(item => item.id === event.loupistId))) return;
+      if (event.loupistId !== selectedLoupist?.id && !await selectLoupist(event.loupistId)) return;
       setInboxFocus(event); setTab("schedule");
     })();
   }), [bridge, selectLoupist, loupists, selectedLoupist?.id, setTab]);
@@ -242,11 +246,14 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     setTab("chat");
   }, [dispatchSurface, setTab]);
   /** ⌘1–⌘4, the native View menu and the palette's open rows. */
+  const homeLoupistId = selectedLoupist?.id;
   const navigate = useCallback((destination: AppDestinationId) => {
     setMemoryPage(null);
     dispatchSurface({ type: "closeAssetPage" });
+    // ⌘1 is Home: the Loupist's home Thread (`home-{id}` on the host), not the last topic Chat.
+    if (destination === "chat" && homeLoupistId) setActiveThreadForLoupist(homeLoupistId, `home-${homeLoupistId}`);
     goTo(destination);
-  }, [dispatchSurface, goTo]);
+  }, [dispatchSurface, goTo, homeLoupistId, setActiveThreadForLoupist]);
   const startChatFor = useCallback((loupistId: string) => {
     pendingComposerFocus.current = chatSessionKey(loupistId, EMPTY_CHAT_THREAD_ID);
     showChat();
@@ -471,7 +478,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     setPendingLearningLocation(undefined);
   }, [pendingLearningLocation, selectedLoupistId, openMemory, openLens]);
   const openLearnedMethod = async (loupistId: string, recordId: string) => {
-    if (loupistId !== selectedLoupistId && !await loupist.selectLoupist(loupistId, loupists.find(item => item.id === loupistId))) throw new Error("Loupist unavailable");
+    if (loupistId !== selectedLoupistId && !await loupist.selectLoupist(loupistId)) throw new Error("Loupist unavailable");
     setNoteReaderOpen(false); setMemoryPage(null); dispatchSurface({ type: "closeAssetPage" });
     setPendingLearningLocation({ loupistId, surface: "lens", recordId });
     showPanel("lens");
@@ -622,10 +629,11 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       void printChat(thread, loupistName).catch((cause) => threadActions.setMutationError(errorMessage(cause, i18n.t("app:app.couldNotPrint"))));
       return;
     }
-    void bridge.exportSave({ suggestedName: `${exportFileName(thread.title)}.md`, kind: "md", bytes: utf8Bytes(chatMarkdown(thread, loupistName)) })
+    void bridge.exportSave(titledExport({ suggestedName: `${exportFileName(thread.title)}.md`, kind: "md" as const, bytes: utf8Bytes(chatMarkdown(thread, loupistName)) }))
       .catch((cause) => threadActions.setMutationError(errorMessage(cause, i18n.t("app:app.couldNotExport"))));
   };
   const activeExportThread = threads.find((thread) => thread.id === activeThreadId && thread.messages.length > 0);
+  const [holdingsOpen, setHoldingsOpen] = useState(false);
   const paletteActions: PaletteAction[] = [
     ...(selectedLoupist ? [{ id: "new-chat", label: i18n.t("app:palette.actions.newChat"), keys: shortcutFor("newChat"), run: startNewChat }] : []),
     ...APP_DESTINATIONS.map((destination, index) => ({ id: destination.id, label: destination.action, keys: tabShortcut(index + 1), run: () => navigate(destination.id) })),
@@ -634,12 +642,14 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       { id: "export-chat", label: i18n.t("app:palette.actions.exportChat"), run: () => exportThread(activeExportThread) },
       { id: "print-chat", label: i18n.t("app:palette.actions.printChat"), run: () => exportThread(activeExportThread, "pdf") },
     ] : []),
+    { id: "import-holdings", label: i18n.t("app:palette.actions.importHoldings"), run: () => setHoldingsOpen(true) },
+    ...(selectedLoupist ? [{ id: "new-journal-entry", label: i18n.t("app:palette.actions.newJournalEntry"), run: () => { requestLibrary(bridge, selectedLoupist.id, "journal", { journalNew: true }); navigate("map"); } }] : []),
     { id: "settings", label: i18n.t("app:palette.actions.settings"), keys: shortcutFor("settings"), run: () => openSettings() },
     { id: "keyboard", label: i18n.t("app:palette.actions.keyboard"), run: () => openSettings("keyboard") },
   ];
   const openAttention = async (item: AttentionItem) => {
     if (item.kind === "lineCrossed" && item.recordId) {
-      if (item.loupistId !== selectedLoupistId && !await loupist.selectLoupist(item.loupistId, loupists.find(candidate => candidate.id === item.loupistId))) return;
+      if (item.loupistId !== selectedLoupistId && !await loupist.selectLoupist(item.loupistId)) return;
       setMemoryPage(null);
       dispatchSurface({ type: "openAssetPage", page: { loupistId: item.loupistId, assetId: item.recordId, name: item.title, key: Date.now() } });
       return;
@@ -659,7 +669,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       return;
     }
     if (item.kind === "checkDue" && item.recordId) {
-      if (item.loupistId !== selectedLoupistId && !await loupist.selectLoupist(item.loupistId, loupists.find(candidate => candidate.id === item.loupistId))) return;
+      if (item.loupistId !== selectedLoupistId && !await loupist.selectLoupist(item.loupistId)) return;
       setPendingLearningLocation({ loupistId: item.loupistId, surface: "note", objectId: item.recordId, selection: { kind: "journal", journalId: item.recordId } });
       showPanel("world");
       return;
@@ -684,6 +694,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     openScheduledTask,
     showBriefing: (loupistId, runId) => { setInboxFocus({ loupistId, runId }); setTab("schedule"); },
     openSettings,
+    openFollowing: () => setTab("following"),
   });
   // Surfaces outside chat still take a plain link opener.
   const openLink = useCallback((url: string) => { void appOpen({ kind: "link", url }); }, [appOpen]);
@@ -694,7 +705,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       if (threadId) chat.setActiveThreadForLoupist(loupistId, threadId);
       return;
     }
-    void loupist.selectLoupist(loupistId, loupists.find((item) => item.id === loupistId), threadId);
+    void loupist.selectLoupist(loupistId, threadId);
   };
 
   // The palette finds names and principles in every Loupist (shell spec X7); another Loupist's
@@ -742,10 +753,13 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     chat, model, configuration, loupist, workspace, drafts, threadActions, draftWrites, fileWrites,
     refreshKnowledge, onOpenModelSettings: openModelSettings,
     onOpenChatPreferences: (loupistId) => { void openLoupistSettingsFor(loupistId, false, "chat"); },
+    onOpenFollowing: () => setTab("following"),
   });
 
+  const holdingsSheet = <HoldingsSheet bridge={bridge} open={holdingsOpen} onOpenChange={setHoldingsOpen} />;
   const appDialogs = <AppDialogs
           dialogs={dialogs}
+          onFollowStarter={async (entry) => { await bridge.watchlistAdd(entry); }}
           selectedLoupistName={selectedLoupist?.name}
           currentWorkspacePath={selectedLoupist?.workspace_path}
           loupistMutationBusy={loupist.mutationBusy}
@@ -806,6 +820,9 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
         <div className="app-body">
         <AppNavigation
           tab={tab}
+          scheduleUnread={selectedLoupist ? inboxCounts[selectedLoupist.id] ?? 0 : 0}
+          activePanel={workspace.open && (workspace.kind === "world" || workspace.kind === "lens") ? workspace.kind : null}
+          onDestination={navigate}
           selectedLoupist={selectedLoupist}
           loading={loupist.loading}
           threadsByLoupist={chat.threadsByLoupist}
@@ -881,9 +898,6 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                       selectedAgent={selectedLoupist}
                       mutationBusy={loupist.mutationBusy}
                       mutationError={dialogs.createLoupistOpen || dialogs.reconnectLoupistOpen ? null : loupist.mutationError}
-                      recoveryBusy={loupist.recoveryBusy}
-                      recoveryError={loupist.recoveryError}
-                      onRecover={() => void loupist.recoverSelectedLoupist()}
                       onReconnect={dialogs.openReconnectLoupist}
                       onOpenMarketplace={(entryId) => openSettings("connections", { entryId: entryId ?? null })}
                       onDelete={loupist.deleteLoupist}
@@ -963,13 +977,12 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   >
                     {i18n.t("app:app.tryAgain")}</button>
                 </main>
-              ) : selectedLoupist && (selectedLoupist.availability.status === "earlier_version" || selectedLoupist.availability.status === "newer_version" || (selectedLoupist.availability.status === "recovery_required" && tab !== "schedule")) ? (
+              ) : selectedLoupist && (selectedLoupist.availability.status === "earlier_version" || selectedLoupist.availability.status === "newer_version") ? (
                 <LoupistAvailabilityBoundary
                   availability={selectedLoupist.availability}
-                  busy={loupist.recoveryBusy}
-                  error={loupist.recoveryError}
-                  onRecover={() => void loupist.recoverSelectedLoupist()}
-                      onReconnect={dialogs.openReconnectLoupist}
+                  busy={loupist.mutationBusy}
+                  error={loupist.mutationError}
+                  onReconnect={dialogs.openReconnectLoupist}
                   onRemove={() => void openLoupistSettingsFor(selectedLoupist.id, true)}
                 />
               ) : selectedLoupist ? (
@@ -984,8 +997,11 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   >
                     {chatViewProps ? <ChatView key={selectedLoupist.id} {...chatViewProps} /> : null}
                   </div>
+                  {tab === "following" ? <div className="app-panel following-route" id="main-panel-following" aria-labelledby="current-location">
+                    <FollowingPage key={selectedLoupist.id} bridge={bridge} loupist={selectedLoupist} onOpenConnections={connectionId => openSettings("connections", { entryId: connectionId })} />
+                  </div> : null}
                   {tab === "schedule" ? <div className="app-panel" id="main-panel-schedule" aria-labelledby="current-location">
-                    <ScheduleView onOpenModelSettings={() => openSettings("model")} modelCatalog={model.catalog} initialRunId={inboxFocus?.loupistId === selectedLoupist.id ? inboxFocus.runId ?? undefined : undefined} initialTaskId={scheduledFocus?.loupistId === selectedLoupist.id ? scheduledFocus.taskId : undefined} onInitialConsumed={() => { setInboxFocus(null); setScheduledFocus(null); }} key={`${selectedLoupist.id}:${selectedLoupist.workspace_path}`} bridge={bridge} loupist={selectedLoupist} theme={resolvedTheme}
+                    <ScheduleView onOpenModelSettings={() => openSettings("model")} onAskHome={askInChat} onOpenFollowing={() => setTab("following")} modelCatalog={model.catalog} initialRunId={inboxFocus?.loupistId === selectedLoupist.id ? inboxFocus.runId ?? undefined : undefined} initialTaskId={scheduledFocus?.loupistId === selectedLoupist.id ? scheduledFocus.taskId : undefined} onInitialConsumed={() => { setInboxFocus(null); setScheduledFocus(null); }} key={`${selectedLoupist.id}:${selectedLoupist.workspace_path}`} bridge={bridge} loupist={selectedLoupist} theme={resolvedTheme}
                       open={(item, to, how) => appOpenIn(item.threadId, to, how)}
                       onOpenMap={disputedEntityIds => {
                         if (disputedEntityIds?.length) {
@@ -1011,7 +1027,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
               </ViewBoundary>
               </div>
             </div>
-            {selectedLoupist && selectedLoupist.availability.status !== "recovery_required" &&
+            {selectedLoupist &&
               workspaceThreadId && (
                 <ChatWorkspacePanel
                   bridge={bridge}
@@ -1140,7 +1156,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
           </DialogContent>
         </Dialog>
 
-        {appDialogs}
+        {appDialogs}{holdingsSheet}
         {sharingVisible ? <PackLinkDialog bridge={bridge} open={packLinkOpen} onOpenChange={setPackLinkOpen} onOpened={result => openPackReview(result)} /> : null}
         {sharingVisible ? <DeepLinkConfirm bridge={bridge} source={packReview ? null : deepLinks.link} onClose={deepLinks.clear} onOpened={result => openPackReview(result)} /> : null}
         <CommandPalette

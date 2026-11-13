@@ -17,6 +17,7 @@ fn fixture() -> (tempfile::TempDir, AppState) {
 
 fn staged(markdown: &str, expected: Option<&str>) -> StagedResearch {
     StagedResearch {
+        thesis_pair: None,
         source_reads: Vec::new(),
         world_reads: Vec::new(),
         lens_reads: Vec::new(),
@@ -95,21 +96,20 @@ fn working_notes_replace_the_body_atomically_and_refuse_stale_or_foreign_access(
     let revised = staged("Monthly contribution: 750.", Some(&first.research_id));
     persist(&state, &revised, true, true).unwrap();
     let second = page(&state).current.unwrap();
-    assert_ne!(first.research_id, second.research_id);
-    assert!(persist(
-        &state,
-        &staged("Stale", Some(&first.research_id)),
-        true,
-        true
-    )
-    .is_err());
+    assert_eq!(first.research_id, second.research_id);
+    assert!(persist(&state, &staged("Stale creation", None), true, true).is_err());
     // Search and exact reads see only the current body, and only for its Loupist.
     let hits = crate::commands::knowledge::host_search(&state, "loupist-a", "Savings", "research")
         .unwrap();
     let hits = hits.as_array().unwrap();
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0]["researchId"], second.research_id);
-    assert!(read_working_context(&state, "loupist-a", &first.research_id).is_err());
+    assert_eq!(
+        read_working_context(&state, "loupist-a", &first.research_id)
+            .unwrap()
+            .markdown,
+        second.markdown
+    );
     assert!(read_working_context(&state, "loupist-b", &second.research_id).is_err());
     assert!(working_notes_page(
         &state,

@@ -54,9 +54,9 @@ impl SetupState {
         }
         match self {
             Self::Unavailable => "This connection cannot run in this Loupist build, so the card in this reply only says it is unavailable here. Tell the user that plainly; do not ask for a key or promise that setup will make it work.",
-            Self::NeedsSetup => "The card in this reply asks the user for this connection's setup. Any key goes in the card, never in chat: do not ask for one and never repeat one. The connection works from the user's next message, so finish this reply without it and say the card is ready.",
-            Self::OffHere => "This connection is set up but off for this Loupist; the card in this reply offers to turn it on. It works from the user's next message, so finish this reply without it. Never ask for or repeat a key in chat.",
-            Self::Ready => "This connection is set up and on for this Loupist, but this reply started before it was on, so it works from the user's next message. Finish this reply without it. Never ask for or repeat a key in chat.",
+            Self::NeedsSetup => "The card in this reply asks the user for this connection's setup. Any key goes in the card, never in chat: do not ask for one and never repeat one. The connection works from the user's next message, so finish this reply without it and say the card is ready. The card changes nothing else: answer from what the user gave you and, with saving on, keep the facts they stated with their origin exactly as you would without the card.",
+            Self::OffHere => "This connection is set up but off for this Loupist; the card in this reply offers to turn it on. It works from the user's next message, so finish this reply without it. The card changes nothing else: answer from what the user gave you and, with saving on, keep the facts they stated with their origin exactly as you would without the card. Never ask for or repeat a key in chat.",
+            Self::Ready => "This connection is set up and on for this Loupist, but this reply started before it was on, so it works from the user's next message. Finish this reply without it. The card changes nothing else: answer from what the user gave you and, with saving on, keep the facts they stated with their origin exactly as you would without the card. Never ask for or repeat a key in chat.",
         }
         .into()
     }

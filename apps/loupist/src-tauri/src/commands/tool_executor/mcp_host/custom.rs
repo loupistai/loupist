@@ -1,4 +1,5 @@
 use super::*;
+use crate::broker::CustomApprovalRefusal;
 use crate::commands::tool_executor::approval::AskOutcome;
 use crate::custom_connections::policy::ApprovalChoice;
 use crate::custom_connections::{service, ConnectionError};
@@ -9,7 +10,23 @@ use crate::custom_connections::{service, ConnectionError};
 enum CardAnswer {
     Allowed(ApprovalChoice),
     Declined,
+    TimedOut,
     Unasked,
+}
+
+fn card_answer(outcome: AskOutcome) -> CardAnswer {
+    use crate::chat::approvals::ApprovalDecision;
+    match outcome {
+        AskOutcome::Answered(ApprovalDecision::Once) => {
+            CardAnswer::Allowed(ApprovalChoice::AllowOnce)
+        }
+        AskOutcome::Answered(ApprovalDecision::Always) => {
+            CardAnswer::Allowed(ApprovalChoice::Always)
+        }
+        AskOutcome::Answered(ApprovalDecision::Deny) => CardAnswer::Declined,
+        AskOutcome::NoAnswer => CardAnswer::TimedOut,
+        AskOutcome::Unasked => CardAnswer::Unasked,
+    }
 }
 
 fn failure(error: ConnectionError, connection_id: &str, tool_name: &str) -> BrokerError {
@@ -51,7 +68,7 @@ impl AppToolExecutor {
         request: &McpToolCallRequest,
         card: &service::ToolCard,
     ) -> CardAnswer {
-        use crate::chat::approvals::{self, ApprovalDecision, ApprovalState, ChatApproval};
+        use crate::chat::approvals::{self, ApprovalState, ChatApproval};
         let approval = ChatApproval {
             request_id: uuid::Uuid::new_v4().to_string(),
             item_id: None,
@@ -62,18 +79,7 @@ impl AppToolExecutor {
             state: ApprovalState::Waiting,
             requested_at_ms: chrono::Utc::now().timestamp_millis(),
         };
-        match self.ask_user(approval).await {
-            AskOutcome::Answered(ApprovalDecision::Once) => {
-                CardAnswer::Allowed(ApprovalChoice::AllowOnce)
-            }
-            AskOutcome::Answered(ApprovalDecision::Always) => {
-                CardAnswer::Allowed(ApprovalChoice::Always)
-            }
-            AskOutcome::Answered(ApprovalDecision::Deny) | AskOutcome::NoAnswer => {
-                CardAnswer::Declined
-            }
-            AskOutcome::Unasked => CardAnswer::Unasked,
-        }
+        card_answer(self.ask_user(approval).await)
     }
 
     pub(super) async fn custom_mcp_connect(&self, id: &str) -> Result<Value, BrokerError> {
@@ -131,7 +137,7 @@ impl AppToolExecutor {
             )
             .await;
         // An interactive turn asks the user instead of refusing a read-only tool outright.
-        let mut declined = false;
+        let mut refusal = None;
         if matches!(result, Err(ConnectionError::ApprovalRequired)) {
             if let Some(card) = self.approvable_tool(&connection, &request.tool_name) {
                 drop(service);
@@ -167,7 +173,11 @@ impl AppToolExecutor {
                         }
                     }
                     CardAnswer::Declined => {
-                        declined = true;
+                        refusal = Some(CustomApprovalRefusal::Declined);
+                        Err(ConnectionError::ApprovalRequired)
+                    }
+                    CardAnswer::TimedOut => {
+                        refusal = Some(CustomApprovalRefusal::TimedOut);
                         Err(ConnectionError::ApprovalRequired)
                     }
                     CardAnswer::Unasked => Err(ConnectionError::ApprovalRequired),
@@ -185,15 +195,38 @@ impl AppToolExecutor {
                             tool_name: request.tool_name.clone(),
                             reason: if self.capture.unattended_run_id.is_some() {
                                 crate::domain::ChatToolRefusalReason::BlockedUnattended
-                            } else if declined {
+                            } else if refusal.is_some() {
                                 crate::domain::ChatToolRefusalReason::Declined
                             } else {
                                 crate::domain::ChatToolRefusalReason::NeedsApproval
                             },
                         });
                     if let Some(run_id) = self.capture.scheduled_run_id() {
-                        self.state.store.scheduled_run_skip_tool(&self.loupist_id, run_id, &request.tool_name, "Custom MCP tool requires an existing Always approval and an unchanged read-only definition")
-                            .map_err(|_| BrokerError::Execution("Could not record refused unattended tool".into()))?;
+                        self.state
+                            .store
+                            .scheduled_run_skip_tool(
+                                &self.loupist_id,
+                                run_id,
+                                &request.tool_name,
+                                CustomApprovalRefusal::Unattended.message(),
+                            )
+                            .map_err(|_| {
+                                BrokerError::Execution(
+                                    "Could not record refused unattended tool".into(),
+                                )
+                            })?;
+                    }
+                    let cause = if self.capture.unattended_run_id.is_some() {
+                        Some(CustomApprovalRefusal::Unattended)
+                    } else {
+                        refusal
+                    };
+                    if let Some(cause) = cause {
+                        return Err(BrokerError::CustomApprovalRefused {
+                            connection_id: request.server_id.clone(),
+                            tool_name: request.tool_name.clone(),
+                            cause,
+                        });
                     }
                 }
                 return Err(failure(error, &request.server_id, &request.tool_name));
@@ -232,7 +265,48 @@ impl AppToolExecutor {
                 None,
             )
             .await?;
-        attach_result_ref(&mut result, &result_ref);
+        if result.get("isError").and_then(Value::as_bool) != Some(true) && returned_no_rows(&result)
+        {
+            self.capture
+                .stage(delivery_id, |pending| {
+                    pending.unlisted_results.insert(result_ref.clone());
+                })
+                .await;
+            describe_empty_read(&mut result);
+            result["result_ref"] = json!(result_ref);
+        } else {
+            attach_result_ref(&mut result, &result_ref);
+        }
         Ok(json!({"result":result}))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chat::approvals::ApprovalDecision;
+
+    #[test]
+    fn approval_timeout_and_decline_are_distinct_without_changing_allowed_or_unasked_cards() {
+        assert!(matches!(
+            card_answer(AskOutcome::NoAnswer),
+            CardAnswer::TimedOut
+        ));
+        assert!(matches!(
+            card_answer(AskOutcome::Answered(ApprovalDecision::Deny)),
+            CardAnswer::Declined
+        ));
+        assert!(matches!(
+            card_answer(AskOutcome::Answered(ApprovalDecision::Once)),
+            CardAnswer::Allowed(ApprovalChoice::AllowOnce)
+        ));
+        assert!(matches!(
+            card_answer(AskOutcome::Answered(ApprovalDecision::Always)),
+            CardAnswer::Allowed(ApprovalChoice::Always)
+        ));
+        assert!(matches!(
+            card_answer(AskOutcome::Unasked),
+            CardAnswer::Unasked
+        ));
     }
 }

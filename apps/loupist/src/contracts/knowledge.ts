@@ -311,7 +311,7 @@ export type KnowledgeSourceRetainRequest = {
 };
 
 /** One World processing job; the renderer never reads the job's stored document. */
-export type GraphJobView = Omit<Wire.GraphJobView, "document">;
+export type GraphJobView = Wire.GraphJobView;
 
 export type GraphProcessingSettings = {
   enrichmentEnabled: boolean;

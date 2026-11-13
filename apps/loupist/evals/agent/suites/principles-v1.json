@@ -4,7 +4,7 @@
   "version": 1,
   "description": "Fictional product regression and private-context capability scenarios; deterministic checks precede independent binary rubrics.",
   "budget": {
-    "maxInputTokensPerTurn": 250000,
+    "maxInputTokensPerTurn": 500000,
     "maxTurns": 120
   },
   "scenarios": [
@@ -31,6 +31,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -66,6 +72,32 @@
               }
             }
           ]
+        },
+        {
+          "id": "explicit-teaching",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this research principle for future work: Compare operating cash flow with reported profit before trusting earnings.",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -92,6 +124,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -117,11 +155,8 @@
                   {
                     "assert": "contains_any",
                     "values": [
-                      "2026-09-29",
-                      "September 29, 2026",
-                      "29 September 2026",
-                      "2026년 9월 29일",
-                      "2026년9월29일"
+                      "Checked against your principles",
+                      "내 원칙 점검"
                     ],
                     "metric": "carry_forward"
                   }
@@ -162,6 +197,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -230,6 +271,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ],
                 "rubric": [
@@ -266,18 +313,22 @@
                   {
                     "assert": "contains_any",
                     "values": [
-                      "8"
+                      "condition is met",
+                      "condition has been met",
+                      "condition is satisfied",
+                      "condition holds",
+                      "below the 10% threshold",
+                      "매도 조건에 해당",
+                      "매도 조건이 충족",
+                      "조건 충족"
                     ],
                     "metric": "task_success"
                   },
                   {
                     "assert": "contains_any",
                     "values": [
-                      "2026-09-29",
-                      "September 29, 2026",
-                      "29 September 2026",
-                      "2026년 9월 29일",
-                      "2026년9월29일"
+                      "Checked against your principles",
+                      "내 원칙 점검"
                     ],
                     "metric": "task_success"
                   },
@@ -330,6 +381,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -373,6 +430,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -402,7 +465,7 @@
                   {
                     "assert": "not_committed",
                     "kind": "principle",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ]
               }
@@ -434,6 +497,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -465,6 +534,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -490,11 +565,8 @@
                   {
                     "assert": "contains_any",
                     "values": [
-                      "2026-09-29",
-                      "September 29, 2026",
-                      "29 September 2026",
-                      "2026년 9월 29일",
-                      "2026년9월29일"
+                      "Checked against your principles",
+                      "내 원칙 점검"
                     ],
                     "metric": "carry_forward"
                   }
@@ -535,6 +607,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -555,6 +633,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -614,6 +698,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -644,12 +734,39 @@
         "lens": [
           {
             "title": "Cash conversion method",
-            "markdown": "Classify cash conversion below 80% as weak.",
-            "applicability": "Earnings quality",
-            "assumptions": "Profit is positive.",
-            "procedure": "Divide cash flow by profit. Below 80% is weak.",
-            "principles": "Use the stated threshold consistently.",
-            "limitations": "No investment action follows."
+            "summary": "Classify cash conversion below 80% as weak.",
+            "sections": [
+              {
+                "key": "overview",
+                "heading": "Overview",
+                "markdown": "Classify cash conversion below 80% as weak."
+              },
+              {
+                "key": "use-when",
+                "heading": "Use when",
+                "markdown": "Earnings quality"
+              },
+              {
+                "key": "assumptions",
+                "heading": "Assumptions",
+                "markdown": "Profit is positive."
+              },
+              {
+                "key": "steps",
+                "heading": "Steps",
+                "markdown": "Divide cash flow by profit. Below 80% is weak."
+              },
+              {
+                "key": "principles",
+                "heading": "Principles",
+                "markdown": "Use the stated threshold consistently."
+              },
+              {
+                "key": "limits",
+                "heading": "Limits",
+                "markdown": "No investment action follows."
+              }
+            ]
           }
         ]
       }
@@ -677,6 +794,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -727,6 +850,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -998,6 +1127,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -1018,6 +1153,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }
@@ -1068,6 +1209,12 @@
                     "kind": "principle",
                     "count": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "principle",
+                    "count": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }

@@ -251,6 +251,9 @@ impl PiLaunchConfig {
         let system_prompt = crate::eval_harness::artifacts::registered_bytes(&self.system_prompt)
             .and_then(|bytes| String::from_utf8(bytes).ok())
             .unwrap_or(system_prompt);
+        let system_prompt = system_prompt
+            .replace("<!-- safety:locked -->", "")
+            .replace("<!-- /safety:locked -->", "");
         let mut arguments = vec!["--mode".into(), "rpc".into()];
         if let Some(session) = &self.session {
             arguments.extend([
@@ -561,85 +564,17 @@ fn e2e_provider_failure_detail(message: &str) -> &'static str {
 // this function. Keep inspection bounded even if a provider returns a body.
 #[cfg(any(debug_assertions, test, feature = "e2e", feature = "eval-harness"))]
 fn e2e_provider_failure_category(message: &str) -> &'static str {
-    let message: String = message.chars().take(8192).collect();
-    let message = message.to_ascii_lowercase();
-    let contains_any = |patterns: &[&str]| patterns.iter().any(|pattern| message.contains(pattern));
-    let has_status = |status: &str| {
-        message.starts_with(&format!("{status} "))
-            || message.starts_with(&format!("{status}:"))
-            || message.contains(&format!("http {status}"))
-            || message.contains(&format!("status {status}"))
-            || message.contains(&format!("status: {status}"))
-    };
-    if contains_any(&[
-        "no api key",
-        "missing api key",
-        "api key is missing",
-        "no credentials",
-        "missing credentials",
-        "not logged in",
-        "authentication credentials were not provided",
-    ]) {
-        "missing_auth"
-    } else if has_status("429")
-        || contains_any(&[
-            "rate limit",
-            "rate_limit",
-            "too many requests",
-            "usage limit",
-            "quota exceeded",
-            "insufficient_quota",
-        ])
-    {
-        "rate_limit"
-    } else if has_status("401")
-        || has_status("403")
-        || contains_any(&[
-            "unauthorized",
-            "forbidden",
-            "invalid api key",
-            "incorrect api key",
-            "invalid token",
-            "expired token",
-            "token has expired",
-            "invalid_grant",
-            "authentication failed",
-            "authentication_error",
-            "failed to extract accountid from token",
-        ])
-    {
-        "auth_rejected"
-    } else if contains_any(&["model_not_found", "unknown model", "unsupported model"])
-        || (message.contains("model")
-            && contains_any(&[
-                "not supported",
-                "does not exist",
-                "not available",
-                "do not have access",
-            ]))
-        || (message.contains("reasoning") && contains_any(&["not supported", "unsupported"]))
-    {
-        "model_unsupported"
-    } else if contains_any(&[
-        "fetch failed",
-        "network error",
-        "network request failed",
-        "connection error",
-        "connection refused",
-        "econnreset",
-        "econnrefused",
-        "enotfound",
-        "etimedout",
-        "timed out",
-        "timeout",
-        "socket hang up",
-        "websocket closed",
-        "websocket error",
-        "websocket transport is not available",
-    ]) {
-        "transport"
-    } else {
-        "unknown"
+    use provider_failure::ProviderFailure;
+    match ProviderFailure::classify(message) {
+        ProviderFailure::PlanLimit
+        | ProviderFailure::OutOfCredit
+        | ProviderFailure::RateLimited => "rate_limit",
+        ProviderFailure::PlanNotEligible | ProviderFailure::NeedsReconnect => "auth_rejected",
+        ProviderFailure::ModelGone => "model_unsupported",
+        ProviderFailure::Network => "transport",
+        ProviderFailure::Unavailable => "provider_unavailable",
+        ProviderFailure::ContextTooLong => "context_too_long",
+        ProviderFailure::Other => "unknown",
     }
 }
 
@@ -914,9 +849,6 @@ impl PiSupportLaunchConfig {
         }
         if let Some((name, value)) = &self.provider_credential {
             environment.insert(name.clone(), value.clone());
-        }
-        if let Some(value) = &self.mutation_api_key {
-            environment.insert("LOUPIST_PROVIDER_API_KEY".into(), value.clone());
         }
         environment
     }
@@ -1689,7 +1621,7 @@ impl PiProcess {
     }
 
     /// Answers one extension UI request (`ctx.ui.input`) by its string id. Used
-    /// only for a sign-in's pasted address or code, which Rust validated first.
+    /// for a sign-in's pasted address/code or the one expected API-key prompt.
     pub async fn respond_extension_ui(&self, request_id: &str, value: &str) -> Result<(), PiError> {
         bounded_rpc_value(request_id)?;
         if value.is_empty() || value.len() > 8 * 1024 || value.contains('\0') {
@@ -1955,6 +1887,11 @@ mod production_asset_isolation_tests {
             .iter()
             .position(|arg| arg == "--system-prompt")
             .unwrap();
-        assert_eq!(args[index + 1], LOUPIST_SYSTEM_PROMPT);
+        assert_eq!(
+            args[index + 1],
+            LOUPIST_SYSTEM_PROMPT
+                .replace("<!-- safety:locked -->", "")
+                .replace("<!-- /safety:locked -->", "")
+        );
     }
 }

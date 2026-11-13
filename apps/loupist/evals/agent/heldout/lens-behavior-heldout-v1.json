@@ -5,7 +5,7 @@
   "description": "Behavioral held-out Lens check, authored separately from the lifecycle suites and frozen before its first run: a user's correction, an explicit forget, a mature method's safeguard, conflicting same-day Sources, a stale value with no new Source, and adopting a check the assistant worked out. Never tune against these.",
   "budget": {
     "maxInputTokensPerTurn": 2000000,
-    "maxTurns": 40
+    "maxTurns": 42
   },
   "scenarios": [
     {
@@ -50,6 +50,15 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "quillon",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
                   }
                 ]
               }
@@ -70,6 +79,14 @@
                     "kind": "subject",
                     "title_matches": "quillon",
                     "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "(?<![\\d.,])2[.,]8(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "quillon",
+                    "metric": "save_precision",
                     "count": 1,
                     "section_matches": "(?<![\\d.,])2[.,]8(?![\\d])"
                   }
@@ -101,7 +118,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -159,6 +176,15 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "서진|seojin",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
                   }
                 ]
               }
@@ -179,6 +205,14 @@
                     "kind": "subject",
                     "title_matches": "서진|seojin",
                     "metric": "lens_update",
+                    "count": 1,
+                    "section_matches": "(?<![\\d.,])312(?![\\d])"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "서진|seojin",
+                    "metric": "save_precision",
                     "count": 1,
                     "section_matches": "(?<![\\d.,])312(?![\\d])"
                   }
@@ -205,7 +239,7 @@
                 "memory": [
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -261,6 +295,14 @@
                     "kind": "method",
                     "title_matches": ".",
                     "max": 1,
+                    "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "Pellmont",
+                    "min": 1,
+                    "basis": "span",
                     "metric": "save_precision"
                   }
                 ],
@@ -358,6 +400,15 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "orrin",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span"
                   }
                 ],
                 "rubric": [
@@ -387,7 +438,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -446,6 +497,16 @@
                     "title_matches": ".",
                     "max": 0,
                     "metric": "save_precision"
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "한결|hangyeol",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1,
+                    "basis": "span",
+                    "section_matches": "(?<![\\d.,])1,?300(?![\\d])"
                   }
                 ]
               }
@@ -468,7 +529,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -538,6 +599,14 @@
                     "metric": "save_recall",
                     "min": 1,
                     "max": 1
+                  },
+                  {
+                    "assert": "lens_pages",
+                    "kind": "method",
+                    "title_matches": ".",
+                    "metric": "save_precision",
+                    "min": 1,
+                    "max": 1
                   }
                 ],
                 "rubric": [
@@ -568,7 +637,7 @@
                   },
                   {
                     "assert": "lens_unchanged",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [

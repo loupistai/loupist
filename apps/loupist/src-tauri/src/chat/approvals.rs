@@ -7,7 +7,12 @@
 //! per Loupist, connection and tool, like an approval given in Settings.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -128,6 +133,7 @@ pub fn target_summary(arguments: &Value) -> Option<String> {
 }
 
 struct Pending {
+    token: Arc<()>,
     loupist_id: String,
     sender: oneshot::Sender<ApprovalDecision>,
 }
@@ -137,20 +143,68 @@ fn registry() -> &'static Mutex<HashMap<String, Pending>> {
     REGISTRY.get_or_init(Default::default)
 }
 
-/// Parks a call until the user decides; the caller must `forget` the id when done.
-pub fn register(request_id: &str, loupist_id: &str) -> oneshot::Receiver<ApprovalDecision> {
+/// A parked response removes its own registry entry even when its future is cancelled.
+pub struct Response<T> {
+    receiver: oneshot::Receiver<T>,
+    cleanup: Box<dyn Fn() + Send + Sync>,
+}
+
+impl<T> Response<T> {
+    pub(super) fn new(
+        receiver: oneshot::Receiver<T>,
+        cleanup: impl Fn() + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            receiver,
+            cleanup: Box::new(cleanup),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn try_recv(&mut self) -> Result<T, oneshot::error::TryRecvError> {
+        self.receiver.try_recv()
+    }
+}
+
+impl<T> Future for Response<T> {
+    type Output = Result<T, oneshot::error::RecvError>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.receiver).poll(cx)
+    }
+}
+
+impl<T> Drop for Response<T> {
+    fn drop(&mut self) {
+        (self.cleanup)();
+    }
+}
+
+/// Parks a call until the user decides, the wait expires or the caller cancels.
+pub fn register(request_id: &str, loupist_id: &str) -> Response<ApprovalDecision> {
     let (sender, receiver) = oneshot::channel();
+    let token = Arc::new(());
     registry()
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .insert(
             request_id.to_owned(),
             Pending {
+                token: token.clone(),
                 loupist_id: loupist_id.to_owned(),
                 sender,
             },
         );
-    receiver
+    let request_id = request_id.to_owned();
+    Response::new(receiver, move || {
+        let mut entries = registry().lock().unwrap_or_else(|error| error.into_inner());
+        if entries
+            .get(&request_id)
+            .is_some_and(|entry| Arc::ptr_eq(&entry.token, &token))
+        {
+            entries.remove(&request_id);
+        }
+    })
 }
 
 pub fn forget(request_id: &str) {
@@ -211,6 +265,19 @@ mod tests {
             decide("loupist-a", "req-1", ApprovalDecision::Once),
             Err(DecideError::NotWaiting)
         );
+    }
+
+    #[test]
+    fn cancelling_a_wait_removes_only_its_registration() {
+        let waiting = register("approval-cancel", "loupist-a");
+        assert!(registry().lock().unwrap().contains_key("approval-cancel"));
+        drop(waiting);
+        assert!(!registry().lock().unwrap().contains_key("approval-cancel"));
+        let old = register("approval-replaced", "loupist-a");
+        let mut current = register("approval-replaced", "loupist-a");
+        drop(old);
+        decide("loupist-a", "approval-replaced", ApprovalDecision::Once).unwrap();
+        assert_eq!(current.try_recv().unwrap(), ApprovalDecision::Once);
     }
 
     #[test]

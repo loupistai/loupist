@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Mutex,
     },
 };
@@ -19,7 +19,7 @@ use crate::{
 };
 
 pub const OUTBOUND_REFUSAL: &str = "Outbound access is paused for this turn because it read content from a custom connection. The user can ask again in a new message.";
-pub const UNTRUSTED_TEXT_REFUSAL: &str = "This reply read third-party text, so custom connections and schedule changes stay paused for the rest of this reply. Do not retry a paused call this reply and do not ask the user to send a new message to unlock it. Keep working with reads, workspace file tools, Python, web_search, web_fetch of search results and sites this reply already read, datasets, charts, Memory and market data.";
+pub const UNTRUSTED_TEXT_REFUSAL: &str = "This reply read outside text, so schedule changes and custom connections are paused until it ends. Do not retry here. Finish the answer and tell the user they can ask for this in their next message.";
 /// A native file tool aimed outside the Loupist folder, scratch and this
 /// Chat's attachments.
 pub const OUTSIDE_WORKSPACE_REFUSAL: &str = "This path is outside the Loupist folder, so native file tools do not touch it. Ask the user to attach the file to this chat or copy it into the Loupist folder, then work with that copy. Do not retry the outside path.";
@@ -28,9 +28,9 @@ pub const WEB_FETCH_PRIVATE_REFUSAL: &str = "This URL carries the user's own val
 /// A new website, or a long address on a known one, after third-party text.
 pub const WEB_FETCH_SITE_REFUSAL: &str = "After third-party text, this reply opens only search results, sites it already read, sites in the user's message and official filing and statistics sites; this address is new or long, so it did not open. Find the page with web_search and fetch the result's URL, which opens. Do not retry this address as typed.";
 /// An instruction or Skill write after third-party text.
-pub const INSTRUCTION_WRITE_REFUSAL: &str = "This file becomes instructions on later replies, and this reply read third-party text, so it is not written. Instruction and Skill writes stay paused for the rest of this reply; other workspace writes still work. Do not retry it this reply and do not ask the user to send a new message to unlock it.";
+pub const INSTRUCTION_WRITE_REFUSAL: &str = "This file becomes instructions on later replies, and this reply read third-party text, so it is not written. Instruction and Skill writes stay paused for the rest of this reply; other workspace writes still work. Do not retry it in this reply; tell the user they can ask for it in their next message.";
 /// A write to a hard-linked file after third-party text.
-pub const HARD_LINK_WRITE_REFUSAL: &str = "This file has another name on disk (a hard link), which can be a file a later reply loads as instructions, and this reply read third-party text, so it is not written. Write a new file instead. Do not retry this path this reply and do not ask the user to send a new message to unlock it.";
+pub const HARD_LINK_WRITE_REFUSAL: &str = "This file has another name on disk and is not touched.";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -55,6 +55,9 @@ pub struct TurnTaint {
     tainted: AtomicBool,
     untrusted_text: AtomicBool,
     memory_blocked: AtomicBool,
+    /// A missing answer never grants destructive authority later in this reply.
+    unanswered_question: AtomicBool,
+    pending_questions: AtomicUsize,
     origin: Mutex<Option<CustomOrigin>>,
     /// Sites this turn may read after third-party text.
     web: Mutex<SeenWeb>,
@@ -68,6 +71,27 @@ pub struct TurnTaint {
 struct SeenWeb {
     hosts: BTreeSet<String>,
     urls: BTreeSet<String>,
+}
+
+/// Dropping a waiting call without an answer also preserves the reply's guard.
+pub(crate) struct PendingQuestion<'a> {
+    taint: &'a TurnTaint,
+    answered: bool,
+}
+
+impl PendingQuestion<'_> {
+    pub(crate) fn settle(mut self, answered: bool) {
+        self.answered = answered;
+    }
+}
+
+impl Drop for PendingQuestion<'_> {
+    fn drop(&mut self) {
+        if !self.answered {
+            self.taint.mark_unanswered_question();
+        }
+        self.taint.pending_questions.fetch_sub(1, Ordering::Release);
+    }
 }
 
 /// What `web_fetch` may do with one URL under the untrusted-text tier.
@@ -88,6 +112,18 @@ impl TurnTaint {
             self.memory_blocked.store(true, Ordering::Release);
         }
         self.tainted.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn mark_unanswered_question(&self) {
+        self.unanswered_question.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn begin_question(&self) -> PendingQuestion<'_> {
+        self.pending_questions.fetch_add(1, Ordering::AcqRel);
+        PendingQuestion {
+            taint: self,
+            answered: false,
+        }
     }
 
     pub fn mark_untrusted_text(&self) {
@@ -263,6 +299,15 @@ impl TurnTaint {
     }
 
     pub fn enforce(&self, method: ToolMethod, params: &Value) -> Result<(), BrokerError> {
+        // Read the counter before the flag: an unanswered call sets the flag
+        // before dropping its counter, leaving no settlement gap.
+        let pending_question = self.pending_questions.load(Ordering::Acquire) > 0;
+        if (pending_question || self.unanswered_question.load(Ordering::Acquire))
+            && destructive_change(method, params)
+        {
+            return Err(BrokerError::invalid("", "The user did not answer, so this change was not made.")
+                .with_next("The user did not answer. Finish the reply and say what you need answered; do not retry this change in this reply."));
+        }
         let tainted = self.tainted.load(Ordering::Acquire);
         let untrusted_text = self.untrusted_text.load(Ordering::Acquire);
         if tainted && outbound_capable(method, params) {
@@ -272,9 +317,41 @@ impl TurnTaint {
             return Err(BrokerError::UntrustedTextPaused);
         }
         if self.memory_blocked() && method.safety().memory.refused_after_dont_save() {
-            return Err(BrokerError::ProposalDisabled);
+            return Err(BrokerError::ConnectionDontSave);
         }
         Ok(())
+    }
+}
+
+/// Explicit changes to standing work and Memory. Ordinary saves and work
+/// products (artifact revision, native writes/edits and Python) stay available.
+fn destructive_change(method: ToolMethod, params: &Value) -> bool {
+    match method {
+        ToolMethod::ScheduleDelete | ToolMethod::ScheduleStop | ToolMethod::ScheduleUpdate => true,
+        ToolMethod::ScheduleSetStatus => params["status"] == "paused",
+        ToolMethod::ScheduleWatch | ToolMethod::ScheduleBriefing => params["enabled"] == false,
+        ToolMethod::BotMemory => params["changes"].as_array().is_some_and(|changes| {
+            changes.iter().any(|change| {
+                matches!(
+                    change["action"].as_str(),
+                    Some("forget" | "resolve" | "update")
+                )
+            })
+        }),
+        ToolMethod::LensFile => params["pages"].as_array().is_some_and(|pages| {
+            pages.iter().any(|page| {
+                page["ops"]
+                    .as_array()
+                    .is_some_and(|ops| ops.iter().any(|op| op["op"] == "retire"))
+            })
+        }),
+        ToolMethod::LoupistSetup => {
+            params.get("focus").is_some_and(|focus| !focus.is_null())
+                || params["unfollow"]
+                    .as_array()
+                    .is_some_and(|assets| !assets.is_empty())
+        }
+        _ => false,
     }
 }
 
@@ -542,7 +619,7 @@ pub(crate) fn delimit_asset_deltas(value: &mut Value) -> bool {
 pub(crate) fn native_read_delimiters() -> Value {
     let id = fresh_id();
     serde_json::json!({
-        "prefix": format!("<<untrusted id={id} source=\"app-exported text\">>\n"),
+        "prefix": format!("<<untrusted id={id} source=\"file text\">>\n"),
         "suffix": format!("\n<<end untrusted id={id}>>"),
     })
 }
@@ -843,7 +920,8 @@ fn char_windows(text: &str, size: usize) -> impl Iterator<Item = String> + '_ {
 /// Every network read, connection call and standing-work change
 /// (`ToolMethod::safety`).
 fn outbound_capable(method: ToolMethod, _params: &Value) -> bool {
-    method.safety().reach == Reach::Outbound
+    let safety = method.safety();
+    safety.reach == Reach::Outbound || safety.after_text == AfterText::Paused
 }
 
 /// The weaker tier keeps research reads (web, market data, Memory, files,
@@ -859,6 +937,132 @@ fn command_or_outbound_write(method: ToolMethod, params: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unanswered_questions_only_block_explicit_destructive_operations() {
+        use crate::broker::{tools::TOOL_CATALOG, BrokerError, ToolMethod};
+        use serde_json::json;
+        let state = super::TurnTaint::default();
+        let refused = [
+            (ToolMethod::ScheduleDelete, json!({})),
+            (ToolMethod::ScheduleStop, json!({})),
+            (
+                ToolMethod::ScheduleUpdate,
+                json!({"title":"A clearer title"}),
+            ),
+            (ToolMethod::ScheduleSetStatus, json!({"status":"paused"})),
+            (ToolMethod::ScheduleWatch, json!({"enabled":false})),
+            (ToolMethod::ScheduleBriefing, json!({"enabled":false})),
+            (
+                ToolMethod::BotMemory,
+                json!({"changes":[{"action":"forget","id":"entry"}]}),
+            ),
+            (
+                ToolMethod::BotMemory,
+                json!({"changes":[{"action":"resolve","id":"entry"}]}),
+            ),
+            (
+                ToolMethod::BotMemory,
+                json!({"changes":[{"action":"update","id":"entry","text":"A preference"}]}),
+            ),
+            (
+                ToolMethod::LensFile,
+                json!({"pages":[{"ops":[{"op":"put"},{"op":"retire","key":"old"}]}]}),
+            ),
+            (
+                ToolMethod::LoupistSetup,
+                json!({"unfollow":[{"symbol":"AAPL"}]}),
+            ),
+            (ToolMethod::LoupistSetup, json!({"focus":"A new focus"})),
+        ];
+        for (method, params) in &refused {
+            state.enforce(*method, params).unwrap();
+        }
+        state.mark_unanswered_question();
+        for (method, params) in &refused {
+            let error = state.enforce(*method, params).unwrap_err();
+            assert!(matches!(error, BrokerError::WithNext { source, next }
+                if matches!(*source, BrokerError::InvalidArguments { ref field, .. } if field.is_empty())
+                    && next.contains("did not answer") && next.contains("Finish the reply")));
+        }
+        // Exhaustive negative corpus: no other catalog method changes policy.
+        for tool in &TOOL_CATALOG.tools {
+            let Some(method) = ToolMethod::from_tool_name(&tool.name) else {
+                continue;
+            };
+            if !matches!(
+                method,
+                ToolMethod::ScheduleDelete | ToolMethod::ScheduleStop | ToolMethod::ScheduleUpdate
+            ) {
+                state
+                    .enforce(method, &json!({}))
+                    .unwrap_or_else(|error| panic!("{}: {error}", tool.name));
+            }
+        }
+        for (method, params) in [
+            (ToolMethod::ScheduleSetStatus, json!({"status":"active"})),
+            (ToolMethod::ScheduleWatch, json!({"enabled":true})),
+            (ToolMethod::ScheduleBriefing, json!({"enabled":true})),
+            (
+                ToolMethod::BotMemory,
+                json!({"changes":[{"action":"remember","text":"A preference"}]}),
+            ),
+            (
+                ToolMethod::LensFile,
+                json!({"pages":[{"ops":[{"op":"put","key":"new","markdown":"A fact"}]}]}),
+            ),
+            (
+                ToolMethod::LoupistSetup,
+                json!({"follow":[{"symbol":"AAPL"}],"preset":"equity","unfollow":[],"focus":null}),
+            ),
+            (ToolMethod::ArtifactPublish, json!({"mode":"revise"})),
+            (
+                ToolMethod::NativeAuthorize,
+                json!({"name":"read","path":"notes.txt"}),
+            ),
+            (
+                ToolMethod::NativeAuthorize,
+                json!({"name":"write","path":"notes.txt"}),
+            ),
+            (
+                ToolMethod::NativeAuthorize,
+                json!({"name":"edit","path":"notes.txt"}),
+            ),
+            (ToolMethod::PythonRun, json!({"code":"print(1)"})),
+            (ToolMethod::Calculate, json!({"operation":"sum"})),
+            (ToolMethod::WebSearch, json!({"query":"research"})),
+        ] {
+            state.enforce(method, &params).unwrap();
+        }
+        assert!(!state.has_untrusted_content());
+        super::TurnTaint::default()
+            .enforce(ToolMethod::ScheduleDelete, &json!({}))
+            .unwrap();
+    }
+
+    #[test]
+    fn every_waiting_question_must_settle_before_destructive_authority_returns() {
+        let taint = super::TurnTaint::default();
+        let first = taint.begin_question();
+        let second = taint.begin_question();
+        assert!(taint
+            .enforce(ToolMethod::ScheduleDelete, &json!({}))
+            .is_err());
+        first.settle(true);
+        assert!(taint
+            .enforce(ToolMethod::ScheduleDelete, &json!({}))
+            .is_err());
+        second.settle(true);
+        taint
+            .enforce(ToolMethod::ScheduleDelete, &json!({}))
+            .unwrap();
+        let abandoned = taint.begin_question();
+        drop(abandoned);
+        taint.begin_question().settle(true);
+        assert!(taint
+            .enforce(ToolMethod::ScheduleDelete, &json!({}))
+            .is_err());
+    }
+
     use super::*;
     use serde_json::json;
 
@@ -907,6 +1111,8 @@ mod tests {
             // Its model-chosen id is a path segment on api.llama.fi.
             ToolMethod::DefillamaRead,
             ToolMethod::ScheduleRunNow,
+            ToolMethod::ScheduleDelete,
+            ToolMethod::ScheduleStop,
         ] {
             assert!(matches!(
                 taint.enforce(method, &injected),
@@ -926,7 +1132,7 @@ mod tests {
             .is_ok());
         assert!(matches!(
             taint.enforce(ToolMethod::SourceSave, &json!({})),
-            Err(BrokerError::ProposalDisabled)
+            Err(BrokerError::ConnectionDontSave)
         ));
         assert!(taint.memory_blocked());
         taint.mark("custom-test", "Private source", false);
@@ -993,6 +1199,8 @@ mod tests {
             (ToolMethod::ScheduleUpdate, json!({})),
             (ToolMethod::ScheduleSetStatus, json!({})),
             (ToolMethod::ScheduleRunNow, json!({})),
+            (ToolMethod::ScheduleDelete, json!({})),
+            (ToolMethod::ScheduleStop, json!({})),
         ] {
             assert!(
                 matches!(

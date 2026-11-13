@@ -16,7 +16,7 @@ export function measureShellLayout() {
     .flatMap(element => {
       const bounds = box(element);
       return bounds ? [{ bounds, mobile: element.dataset.mobile === "true",
-        railButtons: element.closest('[data-collapsible="icon"]') ? [...element.querySelectorAll('.navigation-search,.loupist-home-icon,[data-testid=navigation-new],#main-tab-settings')].map(box).filter(Boolean) : [],
+        railButtons: element.closest('[data-collapsible="icon"]') ? [...element.querySelectorAll('.navigation-search,[data-testid=loupist-chat-row][data-home] button[data-testid=loupist-chat-button],[data-sidebar-place] button,[data-testid=navigation-new],#main-tab-settings')].map(box).filter(Boolean) : [],
         footer: box(element.querySelector('[data-slot="sidebar-footer"]')) }] : [];
     });
   const content = document.querySelector(".conversation-content");
@@ -28,7 +28,7 @@ export function measureShellLayout() {
     composer: rect(".composer-shell"),
     heading: rect(".workspace-heading"),
     titleColumn: rect(".workspace-chat-title"), readingColumn: box(content),
-    headingItems: [...document.querySelectorAll(".workspace-chat-folder, .thread-statuses")].map(box).filter(Boolean),
+    headingItems: [...document.querySelectorAll(".thread-statuses")].map(box).filter(Boolean),
     chatWidth: rect(".chat-workspace")?.width,
     chatGutter: content ? parseFloat(getComputedStyle(content).paddingLeft) : null,
     titleGutter: document.querySelector(".workspace-chat-title")

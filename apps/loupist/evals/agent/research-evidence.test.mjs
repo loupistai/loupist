@@ -149,7 +149,7 @@ test('calculation evidence stays unknown when results, arguments or checks are u
 test('research assertion options validate before any paid run', () => {
   for (const min_items of [0, 1, 7, 2.5, '4']) {
     const copy = structuredClone(suite);
-    copy.scenarios.find(item => item.id === 'T-052').sessions[0].turns[0].expect.trace[0].min_items = min_items;
+    copy.scenarios.find(item => item.id === 'T-052').sessions[0].turns[0].expect.trace.find(item => item.assert === 'plan_progress').min_items = min_items;
     assert.throws(() => validateSuite(copy), /plan_progress/);
   }
   for (const invalid of [{ operation: '' }, { formula: '' }, { text: '' }, { inputs: {} }, { inputs: { numerator: '38100000000' } }]) {
@@ -157,4 +157,13 @@ test('research assertion options validate before any paid run', () => {
     Object.assign(copy.scenarios.find(item => item.id === 'T-055').sessions[0].turns[0].expect.answer[0], invalid);
     assert.throws(() => validateSuite(copy), /calculation_chip/);
   }
+});
+
+test('folder scoping precedes plans; research reads and grep still count as work', () => {
+  for (const name of ['ls', 'find']) assert.equal(score(traceFor('T-053', { tool_calls: [{name,outcome:'ok',args:{}}, ...progress()] }), 'plan_progress'), true);
+  for (const call of [{name:'read',args:{path:'report.md'}},{name:'grep',args:{pattern:'margin'}}]) {
+    assert.equal(score(traceFor('T-053', {tool_calls:[{...call,outcome:'ok'},...progress()]}), 'plan_progress'),false);
+  }
+  const calls = progress().map(call => call.name === 'dart_financials' ? {name:'read',outcome:'ok',args:{path:'/agent/skills/dividend-income/references/rules.md'}} : call);
+  assert.equal(score(traceFor('T-053',{tool_calls:calls}),'plan_progress'),false,'Skill references cannot substitute for completed research steps');
 });

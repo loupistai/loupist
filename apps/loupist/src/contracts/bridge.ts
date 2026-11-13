@@ -52,7 +52,6 @@ import type {
   LoupistImportRequest,
   LoupistReconnectRequest,
   LoupistDeleteRequest,
-  LoupistRecoverRequest,
   LoupistSummary,
   LoupistProfileUpdateRequest,
   MarketplaceCredentialRequest,
@@ -122,7 +121,8 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   principleUpdate(request: PrincipleUpdateRequest): Promise<Principle>;
   principleArchive(request: PrincipleArchiveRequest): Promise<Principle>;
   /** Saves prepared bytes through the native save dialog; Rust checks the size and that the extension matches the kind. */
-  exportSave(request: { suggestedName: string; bytes: number[]; kind: "png" | "mp4" | "webm" | "md" | "csv" }): Promise<string | null>;
+  /** `title` is the Save dialog's title in the interface language (`exportTitle`). */
+  exportSave(request: { suggestedName: string; bytes: number[]; kind: "png" | "mp4" | "webm" | "md" | "csv"; title: string }): Promise<string | null>;
   pickFile(request: { title: string; filters: { name: string; extensions: string[] }[] }): Promise<string | null>;
   onMenuAction(handler: (action: string) => void): () => void;
 
@@ -258,7 +258,6 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   workspaceUiWrite(state: WorkspaceUiState): Promise<WorkspaceUiState>;
   loupistList(): Promise<LoupistSummary[]>;
   loupistSelect(loupist_id: string): Promise<LoupistWorkspace>;
-  loupistRecover(request: LoupistRecoverRequest): Promise<LoupistSummary>;
   loupistProfileUpdate(request: LoupistProfileUpdateRequest): Promise<LoupistSummary>;
   loupistImport(request: LoupistImportRequest): Promise<LoupistSummary>;
   loupistCreate(request: LoupistCreateRequest): Promise<LoupistSummary>;
@@ -303,8 +302,6 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   chatRetryLast(request: ChatRetryRequest): Promise<{ prompt: string; as_of?: string }>;
   /** Opens a research session that runs on its own and reports into the Bot; a repeated key returns the same one. */
   researchHandoffStart(request: ResearchHandoffRequest): Promise<ResearchHandoffReceipt>;
-  /** Links discovery found after World publications, newest first. */
-  knowledgeConnections(request: { loupistId: string }): Promise<import("./knowledge").ConnectionView[]>;
   /** Not useful: the link stays recorded so it is never found again. */
   knowledgeConnectionDismiss(request: { loupistId: string; connectionId: string }): Promise<import("./knowledge").ConnectionView>;
   /** Look into it: records that a research hand-off was started for the link. */
@@ -338,6 +335,7 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   ): Promise<KnowledgeResearchPage>;
   knowledgeSourceRetain(request: KnowledgeSourceRetainRequest): Promise<RetainedSource>;
   knowledgeGraphJob(request: { loupistId: string; jobId: string }): Promise<GraphJobView>;
+  knowledgeGraphRetrySource(request: { loupistId: string; recordId: string }): Promise<GraphJobView>;
   knowledgeFollowedStatus(request: { loupistId: string }): Promise<import("./knowledge").FollowedStatus>;
   knowledgeGraphRecover(request: { loupistId: string }): Promise<GraphProcessingView>;
   knowledgeGraphPause(request: {

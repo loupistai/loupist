@@ -7,4 +7,9 @@ export type InboxOpen = { loupistId: string, runId: string | null };
 
 export type ResidentRequest = { keepRunning: boolean };
 
-export type ResidentSettings = { keepRunning: boolean, notificationPermissionAsked: boolean };
+export type ResidentSettings = {
+  keepRunning: boolean,
+  notificationPermissionAsked: boolean,
+  /** None follows the automatic default; Some preserves the user's choice. */
+  keepRunningChoice: boolean | null,
+};

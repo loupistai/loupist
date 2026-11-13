@@ -1207,7 +1207,7 @@ mod tests {
                 value["scenarios"][0]["seed"] = json!("model");
             }),
             ("template seed without a curated template", |value| {
-                value["scenarios"][0]["research_focus"] = json!("Companies I hold and watch");
+                value["scenarios"][0]["research_focus"] = json!("Companies I hold and follow");
                 value["scenarios"][0]["seed"] = json!("template");
                 value["scenarios"][0]["template"] = json!("portfolio");
             }),

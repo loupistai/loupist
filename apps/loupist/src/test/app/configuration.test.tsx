@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ConfigUpdateRequest } from "../../types";
-import { chooseLoupist, mainTab, newChatButton, openApp, selectedLoupistButton, openChat } from "../renderApp";
+import { chooseLoupist, mainTab, newChatButton, openApp, selectedLoupistButton, openChat, togglePrivateChat } from "../renderApp";
 
 const updateGlobal = async (bridge: MockLoupistBridge, set: ConfigUpdateRequest["set"]) => {
   const global = await bridge.configRead({ scope: { kind: "global" } });
@@ -40,10 +40,10 @@ it.each([false, true])("applies current Memory defaults to a new Chat unless the
   const chatSend = vi.spyOn(bridge, "chatSend");
   await openApp(bridge);
   await user.click(newChatButton());
-  await screen.findByRole("heading", { name: "New chat" });
+  await screen.findByRole("heading", { name: "Untitled research session" });
   if (explicit) {
-    await user.click(screen.getByRole("button", { name: "Private chat: don't remember this chat" }));
-    await user.click(screen.getByRole("button", { name: "Private chat: don't remember this chat" }));
+    await togglePrivateChat();
+    await togglePrivateChat();
   }
   await updateGlobal(bridge, { chat: { use_memory: false, update_memory: false } });
   await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Use my current Chat preferences");

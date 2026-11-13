@@ -268,19 +268,12 @@ fn draft_table(state: &AppState, id: &DraftIdentity) -> Result<(), CommandError>
     text(&id.loupist_id, 256, false)?;
     text(&id.thread_id, 256, false)?;
     state.ensure_loupist_available(&id.loupist_id)?;
-    if id.thread_id != "__empty-chat__"
-        && !state
+    if id.thread_id != "__empty-chat__" {
+        let connection = state
             .store
             .lock_loupist(&id.loupist_id)
-            .map_err(map_store)?
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM chat_sessions WHERE loupist_id=?1 AND id=?2)",
-                [&id.loupist_id, &id.thread_id],
-                |row| row.get::<_, bool>(0),
-            )
-            .map_err(map_internal)?
-    {
-        return Err(CommandError::not_found("draft chat"));
+            .map_err(map_store)?;
+        require_draft_chat(&connection, id)?;
     }
     state
         .store
@@ -305,6 +298,82 @@ fn draft_table(state: &AppState, id: &DraftIdentity) -> Result<(), CommandError>
     Ok(())
 }
 
+fn require_draft_chat(
+    connection: &rusqlite::Connection,
+    id: &DraftIdentity,
+) -> Result<(), CommandError> {
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM chat_sessions WHERE loupist_id=?1 AND id=?2)",
+            [&id.loupist_id, &id.thread_id],
+            |row| row.get(0),
+        )
+        .map_err(map_internal)?;
+    if !exists {
+        return Err(CommandError::not_found("draft chat"));
+    }
+    Ok(())
+}
+
+/// Keep the canonical Chat lock through its profile-local draft write, so a
+/// deletion either clears the completed write or wins before this final check.
+fn with_draft_chat(
+    state: &AppState,
+    id: &DraftIdentity,
+    write: impl FnOnce(&mut rusqlite::Connection) -> Result<(), CommandError>,
+) -> Result<(), CommandError> {
+    if id.thread_id == "__empty-chat__" {
+        let mut catalog = state.store.lock().map_err(map_store)?;
+        return write(&mut catalog);
+    }
+    let mut owner = state
+        .store
+        .lock_loupist(&id.loupist_id)
+        .map_err(map_store)?;
+    require_draft_chat(&owner, id)?;
+    let result = if state.store.is_folder_catalog() {
+        let mut catalog = state.store.lock().map_err(map_store)?;
+        write(&mut catalog)
+    } else {
+        // The single-database store already holds the profile connection.
+        write(&mut owner)
+    };
+    drop(owner);
+    result
+}
+
+/// Drafts live in the app profile even when the Chat lives in its folder.
+/// Clear them after successful deletion; a failed deletion keeps unsent work.
+pub(super) fn clear_chat_drafts(
+    state: &AppState,
+    loupist: &str,
+    thread: &str,
+) -> Result<(), CommandError> {
+    let mut db = state.store.lock().map_err(map_store)?;
+    let tx = db.transaction().map_err(|error| map_store(error.into()))?;
+    for table in [
+        "composer_draft_context",
+        "composer_draft_files",
+        "composer_drafts",
+    ] {
+        let exists: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?1)",
+                [table],
+                |row| row.get(0),
+            )
+            .map_err(|error| map_store(error.into()))?;
+        if exists {
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE loupist_id=?1 AND thread_id=?2"),
+                [loupist, thread],
+            )
+            .map_err(|error| map_store(error.into()))?;
+        }
+    }
+    tx.commit().map_err(|error| map_store(error.into()))
+}
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -315,7 +384,7 @@ pub struct DraftAttachment {
     url: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn chat_draft_files_write(
     state: State<'_, AppState>,
     request: DraftIdentity,
@@ -353,14 +422,24 @@ pub fn chat_draft_files_write(
         }
     }
     draft_table(&state, &request)?;
-    let db = state.store.lock().map_err(map_store)?;
-    if files.is_empty() {
-        db.execute("DELETE FROM composer_draft_files WHERE loupist_id=?1 AND thread_id=?2", [request.loupist_id,request.thread_id])
-    } else {
-        db.execute("INSERT INTO composer_draft_files VALUES(?1,?2,?3) ON CONFLICT(loupist_id,thread_id) DO UPDATE SET files=excluded.files",
-            [request.loupist_id,request.thread_id,serde_json::to_string(&files).map_err(map_internal)?])
-    }.map_err(map_internal)?;
-    Ok(())
+    write_draft_files(&state, &request, &files)
+}
+
+fn write_draft_files(
+    state: &AppState,
+    request: &DraftIdentity,
+    files: &[DraftAttachment],
+) -> Result<(), CommandError> {
+    let json = serde_json::to_string(files).map_err(map_internal)?;
+    with_draft_chat(state, request, |db| {
+        if files.is_empty() {
+            db.execute("DELETE FROM composer_draft_files WHERE loupist_id=?1 AND thread_id=?2", [&request.loupist_id,&request.thread_id])
+        } else {
+            db.execute("INSERT INTO composer_draft_files VALUES(?1,?2,?3) ON CONFLICT(loupist_id,thread_id) DO UPDATE SET files=excluded.files",
+                rusqlite::params![request.loupist_id,request.thread_id,json])
+        }.map_err(map_internal)?;
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -534,28 +613,29 @@ pub fn chat_draft_write(
         return Err(CommandError::invalid("draft is too long"));
     }
     draft_table(&state, &request)?;
-    let mut connection = state.store.lock().map_err(map_store)?;
-    let tx = connection.transaction().map_err(map_internal)?;
-    let key = [&request.loupist_id, &request.thread_id];
-    if draft.prompt.is_empty() && context.is_none() {
-        tx.execute(
-            "DELETE FROM composer_drafts WHERE loupist_id=?1 AND thread_id=?2",
-            key,
-        )
-        .map_err(map_internal)?;
-    } else {
-        tx.execute("INSERT INTO composer_drafts VALUES (?1,?2,?3) ON CONFLICT(loupist_id,thread_id) DO UPDATE SET prompt=excluded.prompt", rusqlite::params![key[0],key[1],draft.prompt]).map_err(map_internal)?;
-        if let Some(json) = context {
-            tx.execute("INSERT INTO composer_draft_context VALUES (?1,?2,?3) ON CONFLICT(loupist_id,thread_id) DO UPDATE SET context=excluded.context", rusqlite::params![key[0],key[1],json]).map_err(map_internal)?;
-        } else {
+    with_draft_chat(&state, &request, |connection| {
+        let tx = connection.transaction().map_err(map_internal)?;
+        let key = [&request.loupist_id, &request.thread_id];
+        if draft.prompt.is_empty() && context.is_none() {
             tx.execute(
-                "DELETE FROM composer_draft_context WHERE loupist_id=?1 AND thread_id=?2",
+                "DELETE FROM composer_drafts WHERE loupist_id=?1 AND thread_id=?2",
                 key,
             )
             .map_err(map_internal)?;
+        } else {
+            tx.execute("INSERT INTO composer_drafts VALUES (?1,?2,?3) ON CONFLICT(loupist_id,thread_id) DO UPDATE SET prompt=excluded.prompt", rusqlite::params![key[0],key[1],draft.prompt]).map_err(map_internal)?;
+            if let Some(json) = context {
+                tx.execute("INSERT INTO composer_draft_context VALUES (?1,?2,?3) ON CONFLICT(loupist_id,thread_id) DO UPDATE SET context=excluded.context", rusqlite::params![key[0],key[1],json]).map_err(map_internal)?;
+            } else {
+                tx.execute(
+                    "DELETE FROM composer_draft_context WHERE loupist_id=?1 AND thread_id=?2",
+                    key,
+                )
+                .map_err(map_internal)?;
+            }
         }
-    }
-    tx.commit().map_err(map_internal)
+        tx.commit().map_err(map_internal)
+    })
 }
 
 #[tauri::command(rename_all = "snake_case")]

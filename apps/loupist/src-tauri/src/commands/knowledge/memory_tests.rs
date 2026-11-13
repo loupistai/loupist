@@ -95,6 +95,7 @@ fn research(
     lens_reads: Vec<String>,
 ) -> StagedResearch {
     StagedResearch {
+        thesis_pair: None,
         source_reads: Vec::new(),
         world_reads: Vec::new(),
         lens_reads: Vec::new(),
@@ -299,6 +300,171 @@ async fn world_catalog_exposes_only_current_content_with_loupist_isolation() {
         Ok(())
     })
     .unwrap();
+}
+
+#[test]
+fn a_followed_asset_reason_commits_without_a_memory_read() {
+    // journal_save stages a thesis reason with no reads (the asset page is its
+    // context); the reply commit must accept what staging accepted.
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStore::open_in_memory().unwrap();
+    store.create_loupist(&loupist_profile("loupist-a")).unwrap();
+    store.create_chat(&chat("chat-1", "loupist-a")).unwrap();
+    let blobs = BlobStore::open(directory.path().join("blobs")).unwrap();
+    let identity = crate::knowledge::assets::AssetIdentity {
+        symbol: "NVDA".into(),
+        market: "NASDAQ".into(),
+        name: "NVDA".into(),
+    };
+    let reason = StagedResearch {
+        thesis_pair: None,
+        journal: Some(StagedResearchJournal {
+            thesis: Some((
+                crate::knowledge::assets::JournalThesis {
+                    asset_id: crate::knowledge::assets::asset_id("NVDA", "NASDAQ"),
+                    role: crate::knowledge::assets::ThesisRole::Reason,
+                },
+                identity,
+            )),
+            check: None,
+            judgment: "Data-center growth slows in 2027 as capex normalizes.".into(),
+            ..research(Vec::new(), Vec::new(), Vec::new())
+                .journal
+                .unwrap()
+        }),
+        ..research(Vec::new(), Vec::new(), Vec::new())
+    };
+    let changes = save_turn(
+        &store,
+        &blobs,
+        "loupist-a",
+        "chat-1",
+        "turn-1",
+        true,
+        &[],
+        &[],
+        Some(&reason),
+    )
+    .unwrap();
+    assert!(changes.iter().any(|change| change.kind == "Journal"));
+    assert_eq!(count(&store, "SELECT COUNT(*) FROM knowledge_journals"), 1);
+
+    // An entry that is not a reason or line still needs an acknowledged read.
+    let unread = research(Vec::new(), Vec::new(), Vec::new());
+    assert!(save_turn(
+        &store,
+        &blobs,
+        "loupist-a",
+        "chat-1",
+        "turn-2",
+        true,
+        &[],
+        &[],
+        Some(&unread),
+    )
+    .is_err());
+    assert_eq!(count(&store, "SELECT COUNT(*) FROM knowledge_journals"), 1);
+}
+
+#[test]
+fn followed_asset_thesis_pair_commits_reason_before_line_atomically_in_both_orders() {
+    for reverse in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let store = SqliteStore::open_in_memory().unwrap();
+        store.create_loupist(&loupist_profile("loupist-a")).unwrap();
+        store.create_chat(&chat("chat-1", "loupist-a")).unwrap();
+        let blobs = BlobStore::open(directory.path().join("blobs")).unwrap();
+        let mut reason = research(Vec::new(), Vec::new(), Vec::new());
+        let journal = reason.journal.as_mut().unwrap();
+        journal.check = None;
+        journal.thesis = Some((
+            crate::knowledge::assets::JournalThesis {
+                asset_id: crate::knowledge::assets::asset_id("NVDA", "NASDAQ"),
+                role: crate::knowledge::assets::ThesisRole::Reason,
+            },
+            crate::knowledge::assets::AssetIdentity {
+                symbol: "NVDA".into(),
+                market: "NASDAQ".into(),
+                name: "NVDA".into(),
+            },
+        ));
+        let mut line = journal.clone();
+        line.thesis.as_mut().unwrap().0.role = crate::knowledge::assets::ThesisRole::Line;
+        line.check = Some(crate::knowledge::JournalCheck {
+            claim: "Margin below 8%".into(),
+            metric: "operating margin".into(),
+            direction: "below".into(),
+            threshold: 8.0,
+            unit: Some("%".into()),
+            by_date: None,
+            confidence: None,
+        });
+        reason.thesis_pair = Some(line);
+        if reverse {
+            std::mem::swap(&mut reason.journal, &mut reason.thesis_pair);
+        }
+        // A failed reply rolls back both rows and the new asset page.
+        let current = store.get_chat("chat-1").unwrap().unwrap();
+        let mut failed = current.clone();
+        failed.messages.push(message("failed", 30));
+        assert!(store
+            .replace_chat_with(&current, &failed, |tx| {
+                persist_saved_turn(
+                    tx,
+                    &blobs,
+                    "loupist-a",
+                    "chat-1",
+                    "failed",
+                    30,
+                    &[],
+                    true,
+                    &[],
+                    &[],
+                    Some(&reason),
+                )
+                .map_err(|e| StoreError::Invalid(e.to_string()))?;
+                Err(StoreError::Invalid("failed reply".into()))
+            })
+            .is_err());
+        assert_eq!(count(&store, "SELECT COUNT(*) FROM knowledge_journals"), 0);
+        let changes = save_turn(
+            &store,
+            &blobs,
+            "loupist-a",
+            "chat-1",
+            "saved",
+            true,
+            &[],
+            &[],
+            Some(&reason),
+        )
+        .unwrap();
+        assert_eq!(
+            changes
+                .iter()
+                .filter(|change| change.kind == "Journal")
+                .count(),
+            2
+        );
+        assert_eq!(count(&store, "SELECT COUNT(*) FROM knowledge_journals"), 2);
+        let mut connection = store.lock_loupist("loupist-a").unwrap();
+        let tx = connection.transaction().unwrap();
+        let first_role: String = tx.query_row("SELECT json_extract(body_json, '$.thesis.role') FROM knowledge_journals ORDER BY rowid LIMIT 1", [], |row| row.get(0)).unwrap();
+        assert_eq!(
+            first_role, "reason",
+            "even a line-first call writes its reason first"
+        );
+        let rows = crate::knowledge::journal::list(&tx, "loupist-a").unwrap();
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row
+                    .check
+                    .as_ref()
+                    .is_some_and(|check| check.threshold == 8.0 && check.by_date.is_none()))
+                .count(),
+            1
+        );
+    }
 }
 
 #[test]
@@ -644,6 +810,7 @@ fn journals_keep_the_acknowledged_snapshot_and_refuse_unacknowledged_or_foreign_
     assert!(save("loupist-a", "turn-unacked", &[], &cited).is_err());
     assert!(save("loupist-b", "turn-foreign", &reads, &cited).is_err());
     let analysis = StagedResearch {
+        thesis_pair: None,
         journal: None,
         ..research(Vec::new(), Vec::new(), Vec::new())
     };
@@ -811,6 +978,7 @@ fn staged_source_refs_freeze_note_inputs_and_world_jobs_only_on_commit() {
     crate::knowledge::store_settings(&store.lock().unwrap(), "loupist-a", &settings).unwrap();
     let source = staged("Original issuer claim, not the researcher's conclusion.");
     let note = StagedResearch {
+        thesis_pair: None,
         source_reads: vec![source.request_ref.clone()],
         journal: None,
         working_note: Some(crate::knowledge::WorkingNoteDraft {
@@ -1167,4 +1335,103 @@ fn lens_reads_links_search_and_filing_stay_within_the_loupist() {
         lens_read(&state, request("loupist-a")).unwrap().revision_id,
         private.revision_id
     );
+}
+
+#[test]
+fn removed_pack_sources_are_unreadable_unless_research_independently_retained_them() {
+    use crate::sharing::{pack::License, store as packs};
+    let directory = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(directory.path().join("app"));
+    state
+        .store
+        .create_loupist(&loupist_profile("loupist-a"))
+        .unwrap();
+    let (pack_only, researched) = with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+        let write = KnowledgeWrite::bind(tx, blobs);
+        let mut imported = text_source("loupist-a", "shared_pack:import-a", b"Pack reference");
+        imported.source_class = SourceClass::ImportedContributor;
+        imported.authorship = Authorship::ImportedContributor;
+        let pack_only = write.retain_new_source(imported.clone())?;
+        imported.material.as_mut().unwrap().bytes = b"Research reference".to_vec();
+        imported.material.as_mut().unwrap().selector = Selector::ByteRange { start: 0, end: 18 };
+        let researched = write.retain_new_source(imported)?;
+        packs::insert_import(
+            tx,
+            "loupist-a",
+            &packs::ImportRow {
+                import_id: "import-a".into(),
+                pack_id: "pack-a".into(),
+                name: "Shared desk".into(),
+                author: None,
+                version: 1,
+                license: License::Cc0,
+                source_url: None,
+                repo: None,
+                path: None,
+                commit: None,
+                mode: packs::ImportMode::Merge,
+                added_at_ms: 1,
+                blocked_reason: None,
+                origin: vec![],
+                checked_at_ms: None,
+            },
+        )?;
+        for source in [&pack_only, &researched] {
+            packs::insert_world_ref(tx, "loupist-a", "import-a", "source", &source.record_id)?;
+        }
+        // The user's research retains a further capture of the same Source.
+        let own = text_source("loupist-a", "publisher", b"Own retained research");
+        let researched = write.retain_source(own.into_capture(
+            researched.record_id.clone(),
+            Some(researched.revision_id.clone()),
+            Some(researched.source_id.clone()),
+        ))?;
+        Ok((pack_only, researched))
+    })
+    .unwrap();
+    let request = |saved: &crate::knowledge::RetainedSource| KnowledgeSourceReadRequest {
+        loupist_id: "loupist-a".into(),
+        record_id: saved.record_id.clone(),
+        revision_id: saved.revision_id.clone(),
+        source_id: Some(saved.source_id.clone()),
+        span_id: saved.span_id.clone(),
+        purpose: "renderer_inspection".into(),
+        world_record_id: None,
+        world_revision_id: None,
+    };
+    assert!(source_read(&state, request(&pack_only)).is_ok());
+    with_loupist_knowledge(&state, "loupist-a", |tx, _| {
+        packs::mark_removed(tx, "loupist-a", "import-a", 10)?;
+        Ok(())
+    })
+    .unwrap();
+    assert!(source_read(&state, request(&pack_only)).is_err());
+    assert!(source_read(&state, request(&researched)).is_ok());
+    let catalog = catalog(
+        &state,
+        KnowledgeCatalogRequest {
+            loupist_id: "loupist-a".into(),
+        },
+    )
+    .unwrap();
+    assert!(!catalog
+        .sources
+        .iter()
+        .any(|item| item.record_id == pack_only.record_id));
+    assert!(catalog
+        .sources
+        .iter()
+        .any(|item| item.record_id == researched.record_id));
+    for (saved, readable) in [(&pack_only, false), (&researched, true)] {
+        let read = HostReadRequest {
+            scope: "source".into(),
+            revision_id: Some(saved.revision_id.clone()),
+            span_id: saved.span_id.clone(),
+            ..empty_read(&saved.record_id)
+        };
+        assert_eq!(
+            host_prepare_read(&state, "loupist-a", &read).is_ok(),
+            readable
+        );
+    }
 }

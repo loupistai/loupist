@@ -10,16 +10,27 @@ type StepLabels = Record<string, { running: string; done: string }>;
 const englishLabels = (resources.en.chat as { toolProgress: StepLabels }).toolProgress;
 
 /**
- * A step label in the interface language. A tool step names its tool; when the
- * host used that tool's catalog wording, the translated entry replaces it.
- * Labels the host composed itself ("Opened Morrow research tools", "Reading
- * hanul.example") and steps without a tool name pass through unchanged.
+ * A tool step's own words in the interface language: the catalog's label for
+ * its tool, whatever the host wrote, so a Korean interface never shows the
+ * host's English mid-run ("Reading hanul.example"). Undefined for a step whose
+ * tool the catalog does not have; its host wording then stands.
  */
-export function localizedProgressLabel(label: string, tool: string | undefined): string {
+export function catalogStepLabel(tool: string | undefined, form: "running" | "done"): string | undefined {
   const entry = tool && Object.hasOwn(englishLabels, tool) ? englishLabels[tool] : undefined;
-  if (!entry) return label;
-  const form = label === entry.running ? "running" : label === entry.done ? "done" : undefined;
-  return form ? tDynamic(`toolProgress.${tool}.${form}`, { defaultValue: label }) : label;
+  if (!entry) return undefined;
+  return tDynamic(`toolProgress.${tool}.${form}`, { defaultValue: entry[form] });
+}
+
+/**
+ * A data read whose tool has a localized noun (a bundled market-data read such as
+ * `mcp__openbb__equity_fundamental_income`): "Reading income statements" /
+ * "손익계산서 읽는 중", so the host's English tool wording never reaches a Korean
+ * live line. Undefined for a tool without a known noun.
+ */
+export function readStepLabel(tool: string | undefined, form: "running" | "done"): string | undefined {
+  const name = tool?.split("__").at(-1);
+  if (!name || !i18n.exists(`chat:asOf.reads.${name}`)) return undefined;
+  return tDynamic(`readStep.${form}`, { read: tDynamic(`asOf.reads.${name}`) });
 }
 
 /**

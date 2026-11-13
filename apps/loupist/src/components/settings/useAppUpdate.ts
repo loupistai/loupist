@@ -32,6 +32,7 @@ export function useAppUpdate(bridge: LoupistBridge) {
       if (!mounted.current || epoch !== requestEpoch.current) return;
       setStatus(current => JSON.stringify(current) === JSON.stringify(next) ? current : next);
       setStatusError(null);
+      if (!next.error) setActionError(null);
     } catch (cause) {
       if (!mounted.current || epoch !== requestEpoch.current) return;
       setStatusError(errorMessage(cause, i18n.t("settings:useAppUpdate.couldNotReadUpdateStatus")));

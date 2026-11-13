@@ -24,7 +24,8 @@ output digests, Source record/revision/span binding, selected extraction model,
 inference/usage status and sealed revision id. Rust commits publication and job
 completion atomically, then discards the extraction JSON. Superseded World revisions
 are also removed; these receipts are provenance and deduplication records, not a
-World history or restore feature. Recovery rebuilds the derived index from the
+World history or restore feature. Job polling returns the receipt fields without
+the internal extraction document or retained Source text. Recovery rebuilds the derived index from the
 current canonical World and retained Source evidence. An uncertain publication
 instead keeps its extraction JSON while quarantined for reconciliation.
 Publication bounds extracted node names and descriptions, drops unreadable nodes
@@ -36,7 +37,7 @@ Each episode runs after the one before it, whose text is its extraction context;
 that episode completed or can no longer finish, the next one runs.
 Every World extracts with one shared core vocabulary, listed once in
 `knowledge/world_extract/ontology.rs`: the entity types Organization, Person, Asset,
-Product, Place, Policy, Event, Metric, Technology and Segment, and seventeen relation
+Product, Place, Policy, Event, Technology and Segment, and seventeen relation
 types (SUPPLIES, COMPETES_WITH, PARTNERS_WITH, SUBSIDIARY_OF, ACQUIRED, INVESTED_IN,
 LEADS, OFFERS, USES, REPORTS, LOCATED_IN, AFFECTS, PART_OF, REQUIRES, OPERATES_IN,
 ISSUES, OWNS) with allowed endpoint types. `world_schema.rs` reads its reserved
@@ -50,6 +51,28 @@ rates_fx, real_asset, prediction, private), rendered from the enum, and its
 estate and private deals are Assets of class `real_asset` and `private`. An entity
 that fits no type stays `Entity`, and a relationship that fits no type keeps a
 specific open name, so the vocabulary guides extraction without closing it.
+`Metric` stays reserved for existing Maps, which remain readable, but new measured
+values are claims about their subject. `REPORTS` uses the same subject in both
+endpoint roles, with the exact value, unit, period, basis and status in its text.
+Extraction and publication reject new nodes named as quantities, measurements,
+figures with units or sentences, including under custom kinds. Numeric product
+names, tickers, security maturities, fiscal entities and named events remain valid.
+A `REPORTS` claim from an admitted subject to a newly rejected value node keeps
+its full text and uses the subject in both roles. Other relationships are not
+rewritten, and existing measurement nodes and their claims stay as stored.
+Named or uniquely qualified dated occurrences remain Event entities alongside
+their participants and quantitative claims. Their identifying names use actors,
+action and date or period; reported amounts stay in claims.
+A qualified occurrence title can contain a verb or a monetary qualifier without
+becoming a measurement. Admission requires an actual occurrence term and a named
+participant or subject beyond generic action, date and unit words; a contract's
+value or amount remains a measurement. Institutions keep their Organization role
+separate from what they issue or oversee, and quantitative claims keep their
+specific metric names and stated counterparty roles beside the value.
+Measurement claims keep each metric's exact Source wording, language and qualifiers.
+English claims retain a non-English metric label with its English rendering beside
+it. A synonym, accounting term or acronym cannot replace the stated label:
+operating profit, operating income, EBIT and adjusted operating profit stay distinct.
 
 ### Queue and interruptions
 
@@ -73,16 +96,48 @@ the Map, which the episode before it can change.
 
 Each request has a time limit, four minutes by default and at most five
 (`DEFAULT_TIMEOUT_MS`, `MAX_TIMEOUT_MS`); saved limits, including 60 seconds, are
-preserved. A queued job runs under the saved limit; its call allowance
-stays as frozen. One attempt may use every model wave at its full limit
-(`attempt_budget_ms`).
-An episode that exhausts its frozen call allowance pauses without repeating paid
-calls or quarantining other Sources; resume does not replay its paid attempt.
+preserved. The clock starts after a paid call acquires its shared slot, so waiting
+for another job does not consume its provider time. One attempt's lease allows
+every model wave at its full limit (`attempt_budget_ms`); an active host worker
+keeps ownership while waiting. Entity and relation extraction share the provider's
+8192-answer-token ceiling; thinking may use its separate bounded allowance.
+
+A newly queued Source span has one frozen model-call allowance across its episodes.
+Each model dispatch reserves a call durably, a refusal refunds it, and completed
+or uncertain calls stay spent across retries and restarts. The next episode gets
+its predecessor's unused calls; splitting a Source cannot increase its total.
+Previously saved positive per-chunk allowances stay as saved, since an old
+completed receipt does not say how many of its calls were unused.
+An episode that exhausts its allowance pauses its unfunded tail without repeating
+paid calls or quarantining other Sources; resume does not replay its paid attempt
+or requeue its blocked followers.
+The explicit `knowledge_graph_retry_source` bridge action can retry one stopped
+span of the Source's current revision with a fresh allowance from current settings.
+It requeues only that span's unfunded tail, sharing the new allowance; it refuses
+active, uncertain, quarantined, stale-revision or user-paused work. Duplicate clicks
+while queued cannot refill it. If this attempt exhausts its allowance again it
+stops again; only another explicit Source retry can fund it. Resuming Map building,
+settings changes and restarts never refill a spent allowance.
+Its Library row, Source reader and Chat status then read "Map building stopped for this source"; a row reads "Map
+building paused" only while the user has paused Map building (`source_processing`
+and `knowledge_graph_job` report such a job as `paused`, an exhausted one keeps
+`paused_budget`). Chat reads parked jobs once on opening and offers Refresh status
+without scheduling work.
+Only in `paused_budget` do those three places offer a neutral "Try again", which
+says it uses one more allowance of the Map building setting's model requests per
+source and is the only renderer caller of this bridge action
+(`components/knowledge/SourceRetry.tsx`). It is disabled while the host decides,
+shows the host's refusal inline, and on success refreshes the row or reader and
+follows the returned job like other Map building progress. The reader's settings
+button continues to manage global processing.
 Revision and growth-event timestamps reflect extraction completion.
 
 An attempt that publishes nothing ends one of three ways (`finish_unpublished` in
 `knowledge/graph_jobs.rs`). Publication is one transaction, so the World is unchanged
-in each case.
+in each case. Driver errors settle their claimed attempt. Each scheduler pass also
+settles expired leases that have no live host worker, using the same retry and
+quarantine rules, without restarting the app. Replacement attempts have a new
+identity: an old worker cannot record calls or publish after reclamation.
 
 - **Nothing paid was sent** (the provider went away, its settings changed under
   it): the attempt cost nothing and queues again, up to three times, then fails
@@ -102,7 +157,7 @@ in each case.
 After a quarantine the graph worker queues the recovery itself
 (`recover_world_unattended`): the rebuild calls no model, re-queues the jobs that
 never ran, and enqueues Sources saved during the quarantine. If that rebuild fails,
-the next one waits for World processing recovery in Loupist settings, so a broken
+the next one waits for Map building recovery in Loupist settings, so a broken
 rebuild cannot loop.
 Only a committed `reconcile_required` receipt may add a generation to quarantine;
 a rolled-back attempt cannot leave a quarantine without a recovery receipt.
@@ -111,8 +166,8 @@ while paused; recovery rebuilds remain runnable while extraction is paused.
 
 ### Keeping the Mac awake
 
-Settings → World processing offers one application-wide choice, off by default:
-keep this Mac awake while the World is processing (`keep_awake` in the host
+Loupist settings → Map building offers one application-wide choice, off by default:
+keep this Mac awake during Map building (`keep_awake` in the host
 `application_settings` row, read once at startup). Rust holds a single
 `PreventUserIdleSystemSleep` IOKit assertion exactly while the choice is on, World
 jobs are running and the Mac is not on battery or UPS power; an unknown power source
@@ -187,15 +242,28 @@ resolver finds to be an existing node ("Acme Corporation" for "Acme Corp") also
 stays an alias of that node, unless a name or alias already folds to it, within
 the 16-alias cap, so a Lens anchor filed under that spelling resolves exactly. One attribute call per
 episode fills every typed entity's fields. World stores names, summaries, relation
-names and facts in English whatever the Source language; the original text stays in
+names and fact prose in English, retaining original-language metric labels beside
+their English rendering; the original text stays in
 the retained Source and its evidence spans. Research focus, preferred relationship
 names and anchor entities add emphasis on top of the core schema. Editing this guidance retains saved anchor identifiers as identifiers. Publication time,
 observation period and validity remain distinct. Extraction preserves quantitative
 units and basis, directed roles and conflicting attributed reports; source content
 is data, not extraction instructions. Temporal bounds require explicit effective
-instants; date-only precision is retained in the fact text. Invalidation needs
+instants; date-only precision is retained in the fact text. A replacement needs
 ordered start instants on both claims, so a date-only correction can be retained
-without structurally ending the earlier claim.
+without structurally ending the earlier claim. An explicit termination can instead
+close an earlier claim at its end instant without restating a start instant. The
+resolver must select the same assertion as explicitly ended or replaced, and the
+earlier claim must start before that boundary; different relation labels or
+endpoints do not by themselves establish a replacement. Denials, rumours,
+allegations and unrelated later facts do not establish an ending.
+End-bounded resolution supplies the relation, participant identities and stored
+validity beside the fact text, distinguishing an open relationship described in
+the past tense from a historical event. A different explicit end cannot disappear
+through verbatim or model-selected deduplication; ending an older claim still
+requires the resolver to select it and the time guards to pass. Other resolutions
+keep their existing fact-only requests. Restating an earlier start with an explicit
+end closes the old interval at the end, preserving the stated start.
 
 ### Discovery after publication
 
@@ -217,7 +285,7 @@ claims about a pending page only once that Source is among them. Then
 not withdrawn, keeping each claim's direction and endpoint roles, to a name the seed
 could not reach within two hops before, with at least one hop on a claim this
 publication added. Seeds are the followed assets that `resolve_followed` matches
-exactly (an ambiguous symbol seeds nothing; the watchlist and holdings are read from
+exactly (an ambiguous symbol seeds nothing; the followed list and holdings are read from
 the app database before the Loupist transaction opens) plus the nodes open idea
 pages are anchored to. A middle node with more than 40 neighbours is never walked
 through, and a Place or Metric node is neither a far name nor a middle: a shared
@@ -225,7 +293,7 @@ country or a reported number is not a connection. The score prefers a far name i
 low-degree middles, parallel support and recent claims. Work is bounded (claims per
 node, expansions per publication, 50 candidates), and a result says when it was
 cut short. `knowledge_connections` keeps one row per (seed, far) pair for ever, with
-`status` moving `new → shown → opened | dismissed | filed`; the Bot shows at most
+`status` moving `new → shown → opened | dismissed | filed`; Bot shows at most
 three a day ([link posts](../ui/home-thread.md#home-thread)). A link is new to this
 Loupist, never a claim that the market missed it.
 

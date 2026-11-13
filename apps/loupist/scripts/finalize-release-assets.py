@@ -10,10 +10,13 @@ import re
 import shutil
 from pathlib import Path
 
+from release_profile import validate_signing_record
+
 from release_asset_contract import (
     METADATA_ARTIFACTS,
     METADATA_DOWNLOAD_ALIASES,
     METADATA_MACOS_BUNDLE_VERSION,
+    METADATA_MACOS_SIGNING,
     METADATA_REPOSITORY,
     METADATA_SCHEMA_VERSION,
     METADATA_SOURCE_COMMIT,
@@ -57,6 +60,8 @@ def main() -> int:
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--workflow-run-id", required=True)
     parser.add_argument("--macos-bundle-version", required=True)
+    parser.add_argument("--signing-report", required=True, type=Path)
+    parser.add_argument("--allow-dry-run", action="store_true")
     parser.add_argument("--assets", required=True, type=Path)
     arguments = parser.parse_args()
 
@@ -81,6 +86,19 @@ def main() -> int:
     if not arguments.assets.is_dir() or arguments.assets.is_symlink():
         raise RuntimeError("release assets path must be a real directory")
 
+    require_regular_file(arguments.signing_report)
+    report = json.loads(arguments.signing_report.read_text(encoding="utf-8"))
+    if (
+        set(report) != {"macos_signing", "updater_public_key"}
+        or not isinstance(report["updater_public_key"], str)
+        or not report["updater_public_key"].strip()
+    ):
+        raise RuntimeError(
+            "signing report must contain signing facts and embedded updater key"
+        )
+    signing = validate_signing_record(
+        report["macos_signing"], allow_dry_run=arguments.allow_dry_run
+    )
     canonical = canonical_asset_names(arguments.version)
     for name in canonical:
         require_regular_file(arguments.assets / name)
@@ -105,6 +123,7 @@ def main() -> int:
         METADATA_SOURCE_COMMIT: arguments.source_commit,
         METADATA_WORKFLOW_RUN_ID: arguments.workflow_run_id,
         METADATA_MACOS_BUNDLE_VERSION: arguments.macos_bundle_version,
+        METADATA_MACOS_SIGNING: signing,
         METADATA_UPDATER_MANIFEST: UPDATER_MANIFEST_NAME,
         METADATA_ARTIFACTS: {
             name: {"sha256": sha256(arguments.assets / name)} for name in canonical

@@ -1,9 +1,9 @@
 import { formatDate, formatDateTime, formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { dispose, init, registerLocale, type KLineData, type Chart, type OverlayCreate, type Styles, type DeepPartial, type IndicatorCreate } from "klinecharts";
-import { ChevronDownIcon } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MoreHorizontalIcon } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { ChartDataset, ChartDocument } from "../../types";
 import { datasetRows, numericValue, timestampValue } from "./dataset";
 import { drawingOverlays, indicatorConfig, periodFor, ticksClearOfLastPrice } from "./financialAdapter";
@@ -82,9 +82,11 @@ type Props = {
   onAskRange?: (range: { start: string; end: string }) => void;
   /** Inline answer cards show the chart alone; drawing and range tools stay in the panel. */
   compact?: boolean;
+  /** The chart's identity (symbol, interval, studies), drawn at the start of the toolbar row. */
+  lead?: ReactNode;
 };
 
-export default function FinancialChart({ chart, dataset, onAskRange, compact = false }: Props) {
+export default function FinancialChart({ chart, dataset, onAskRange, compact = false, lead }: Props) {
   useTranslation("chat");
   const colors = useChartTokens();
   const colorsRef = useRef(colors);
@@ -289,14 +291,16 @@ export default function FinancialChart({ chart, dataset, onAskRange, compact = f
 
   return (
     <div className="chart-financial-stage gg-num">
-      {/* One row of chrome so the plot keeps its height in a docked or short panel: drawing tools
-          sit behind "Draw", then zoom, then the range to ask about. */}
+      {/* One row of chrome so the plot keeps its height in a docked or short panel: the symbol, the
+          range to ask about, then drawing, colour, zoom and Latest behind "…" (chat design change 24). */}
       {compact ? null : <div className="chart-local-toolbar" role="toolbar" aria-label={t("financialChart.chartControls")}>
+        {lead}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button type="button" className="chart-draw-trigger" aria-pressed={editable || undefined}>{t("financialChart.draw")}<ChevronDownIcon aria-hidden="true" /></button>
+            <button type="button" className="chart-more-trigger" aria-pressed={editable || undefined} aria-label={t("financialChart.moreControls")} title={t("financialChart.moreControls")}><MoreHorizontalIcon aria-hidden="true" /></button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>{t("financialChart.draw")}</DropdownMenuLabel>
             <DropdownMenuItem onSelect={() => draw("segment")}>{t("financialChart.trend")}</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => draw("horizontalStraightLine")}>{t("financialChart.level")}</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => draw("rect")}>{t("financialChart.rectangle")}</DropdownMenuItem>
@@ -307,14 +311,13 @@ export default function FinancialChart({ chart, dataset, onAskRange, compact = f
               instanceRef.current?.overrideOverlay({ lock: !next });
             }}>{editable ? t("financialChart.stopEditingDrawings") : t("financialChart.editDrawings")}</DropdownMenuItem>
             <DropdownMenuItem disabled={historySize < 2} onSelect={undo}>{t("financialChart.undoDrawing")}</DropdownMenuItem>
+            <label className="chart-color-row">{t("financialChart.drawingColor")}<input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => instanceRef.current?.zoomAtCoordinate(1.2)}>{t("financialChart.zoomIn")}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => instanceRef.current?.zoomAtCoordinate(.8)}>{t("financialChart.zoomOut")}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => instanceRef.current?.scrollToRealTime()}>{t("financialChart.latest")}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <input type="color" aria-label={t("financialChart.drawingColor")} value={color} onChange={(event) => setColor(event.target.value)} />
-        <span className="chart-toolbar-gap" aria-hidden="true" />
-        <button type="button" onClick={() => instanceRef.current?.zoomAtCoordinate(1.2)}>{t("financialChart.zoomIn")}</button>
-        <button type="button" onClick={() => instanceRef.current?.zoomAtCoordinate(.8)}>{t("financialChart.zoomOut")}</button>
-        <button type="button" onClick={() => instanceRef.current?.scrollToRealTime()}>{t("financialChart.latest")}</button>
-        <span className="chart-toolbar-gap" aria-hidden="true" />
         <label>{t("financialChart.from")}<select aria-label={t("financialChart.rangeStart")} value={rangeStart} onChange={(event) => setRangeStart(Number(event.target.value))}>{rows.map((row, index) => <option key={index} value={index}>{rangeDateLabel(row[timeColumn])}</option>)}</select></label>
         <label>{t("financialChart.to")}<select aria-label={t("financialChart.rangeEnd")} value={rangeEnd} onChange={(event) => setRangeEnd(Number(event.target.value))}>{rows.map((row, index) => <option key={index} value={index}>{rangeDateLabel(row[timeColumn])}</option>)}</select></label>
         {onAskRange && <button type="button" disabled={rangeStart > rangeEnd || !rows.length} onClick={() => onAskRange({ start: String(rows[rangeStart]?.[timeColumn]), end: String(rows[rangeEnd]?.[timeColumn]) })}>{t("financialChart.askAboutRange")}</button>}

@@ -15,6 +15,7 @@ case "$SESSION_INFO" in
     *) echo "LOUPIST_E2E_SESSION_INFO must be absolute." >&2; exit 1 ;;
 esac
 APP_PID=
+DEV_SERVER_PID=
 CREATED_STATE_ROOT=
 LIVE_PI_AGENT_DATA_DIR=
 
@@ -52,6 +53,13 @@ cleanup() {
     if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
         terminate_process_tree "$APP_PID"
         wait "$APP_PID" 2>/dev/null || true
+    fi
+    if [ -n "$DEV_SERVER_PID" ] && kill -0 "$DEV_SERVER_PID" 2>/dev/null; then
+        kill "$DEV_SERVER_PID" 2>/dev/null || true
+        wait "$DEV_SERVER_PID" 2>/dev/null || true
+    fi
+    if [ -n "${DEV_SERVER_RECEIPT:-}" ]; then
+        rm -f -- "$DEV_SERVER_RECEIPT" "$DEV_SERVER_RECEIPT.tmp"
     fi
     if [ -n "$CREATED_STATE_ROOT" ]; then
         rm -rf -- "$CREATED_STATE_ROOT"
@@ -150,7 +158,36 @@ if [ -n "${LOUPIST_E2E_PICK_FILE:-}" ]; then
     E2E_PICK_FILE=$LOUPIST_E2E_PICK_FILE
 fi
 
+if [ "${LOUPIST_E2E_REUSE_DEV_SERVER:-}" = "1" ] && [ -n "${LOUPIST_E2E_DEV_PORT:-}" ]; then
+    echo "LOUPIST_E2E_DEV_PORT cannot be combined with LOUPIST_E2E_REUSE_DEV_SERVER." >&2
+    exit 1
+fi
 
+E2E_DEV_PORT=${LOUPIST_E2E_DEV_PORT:-0}
+E2E_DEV_URL=http://localhost:1420
+
+E2E_STARTUP_TIMEOUT_MS=${LOUPIST_E2E_STARTUP_TIMEOUT_MS:-300000}
+case "$E2E_STARTUP_TIMEOUT_MS" in
+    *[!0-9]*|'')
+        echo "LOUPIST_E2E_STARTUP_TIMEOUT_MS must be a positive integer." >&2
+        exit 1
+        ;;
+esac
+if [ "$E2E_STARTUP_TIMEOUT_MS" -le 0 ]; then
+    echo "LOUPIST_E2E_STARTUP_TIMEOUT_MS must be a positive integer." >&2
+    exit 1
+fi
+
+if [ "${LOUPIST_E2E_REUSE_DEV_SERVER:-}" != "1" ]; then
+    DEV_SERVER_RECEIPT=$(mktemp "$E2E_STATE_ROOT/vite.XXXXXX")
+    rm -f -- "$DEV_SERVER_RECEIPT"
+    "$NODE_BINARY" "$SCRIPT_DIR/dev-server.mjs" start "$E2E_DEV_PORT" "$DEV_SERVER_RECEIPT" &
+    DEV_SERVER_PID=$!
+    E2E_DEV_URL=$("$NODE_BINARY" "$SCRIPT_DIR/dev-server.mjs" wait "$DEV_SERVER_PID" "$DEV_SERVER_RECEIPT" "$E2E_STARTUP_TIMEOUT_MS")
+fi
+
+# Resolve WebDriver only after Vite owns its port. The embedded driver requires
+# an explicit port and does not report an OS-assigned listener.
 if [ -n "${LOUPIST_E2E_PORT:-}" ]; then
     case "$LOUPIST_E2E_PORT" in
         *[!0-9]*|'')
@@ -179,69 +216,6 @@ fi
 WEBDRIVER_PORT=$("$NODE_BINARY" "$SCRIPT_DIR/wait-session.mjs" --resolve-port "$WEBDRIVER_PORT")
 export TAURI_WEBDRIVER_PORT="$WEBDRIVER_PORT"
 
-if [ "${LOUPIST_E2E_REUSE_DEV_SERVER:-}" = "1" ] && [ -n "${LOUPIST_E2E_DEV_PORT:-}" ]; then
-    echo "LOUPIST_E2E_DEV_PORT cannot be combined with LOUPIST_E2E_REUSE_DEV_SERVER." >&2
-    exit 1
-fi
-
-E2E_DEV_PORT=
-E2E_DEV_URL=http://localhost:1420
-if [ -n "${LOUPIST_E2E_DEV_PORT:-}" ]; then
-    case "$LOUPIST_E2E_DEV_PORT" in
-        *[!0-9]*|'')
-            echo "LOUPIST_E2E_DEV_PORT must be an integer from 1024 to 65535 other than 1420." >&2
-            exit 1
-            ;;
-    esac
-    if [ "$LOUPIST_E2E_DEV_PORT" -lt 1024 ] || [ "$LOUPIST_E2E_DEV_PORT" -gt 65535 ] || [ "$LOUPIST_E2E_DEV_PORT" -eq 1420 ]; then
-        echo "LOUPIST_E2E_DEV_PORT must be an integer from 1024 to 65535 other than 1420." >&2
-        exit 1
-    fi
-    if [ "$LOUPIST_E2E_DEV_PORT" = "$WEBDRIVER_PORT" ]; then
-        WEBDRIVER_PORT=$("$NODE_BINARY" -e '
-          const net = require("node:net");
-          const banned = new Set(process.argv.slice(1).map(Number));
-          const alloc = () => new Promise((resolve, reject) => {
-            const server = net.createServer();
-            server.unref();
-            server.once("error", reject);
-            server.listen(0, "127.0.0.1", () => {
-              const port = server.address().port;
-              server.close(() => resolve(port));
-            });
-          });
-          (async () => {
-            for (let attempt = 0; attempt < 20; attempt += 1) {
-              const port = await alloc();
-              if (!banned.has(port)) {
-                process.stdout.write(String(port));
-                return;
-              }
-            }
-            process.exit(1);
-          })().catch((error) => {
-            console.error(error.message);
-            process.exit(1);
-          });
-        ' "$LOUPIST_E2E_DEV_PORT" 1420)
-        export TAURI_WEBDRIVER_PORT="$WEBDRIVER_PORT"
-    fi
-    E2E_DEV_PORT=$LOUPIST_E2E_DEV_PORT
-    E2E_DEV_URL="http://127.0.0.1:$E2E_DEV_PORT"
-fi
-
-E2E_STARTUP_TIMEOUT_MS=${LOUPIST_E2E_STARTUP_TIMEOUT_MS:-300000}
-case "$E2E_STARTUP_TIMEOUT_MS" in
-    *[!0-9]*|'')
-        echo "LOUPIST_E2E_STARTUP_TIMEOUT_MS must be a positive integer." >&2
-        exit 1
-        ;;
-esac
-if [ "$E2E_STARTUP_TIMEOUT_MS" -le 0 ]; then
-    echo "LOUPIST_E2E_STARTUP_TIMEOUT_MS must be a positive integer." >&2
-    exit 1
-fi
-
 echo "Loupist E2E profile: com.monarchjuno.loupist.e2e"
 echo "Loupist E2E state: $E2E_APP_DATA_DIR"
 echo "Loupist E2E workspace: $E2E_WORKSPACE_DIR"
@@ -263,17 +237,13 @@ const config = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 config.build = { beforeDevCommand: "", devUrl: "http://localhost:1420" };
 process.stdout.write(JSON.stringify(config));
 ' "$APP_ROOT/src-tauri/tauri.e2e.conf.json")
-elif [ -n "$E2E_DEV_PORT" ]; then
+else
     E2E_CONFIG=$("$NODE_BINARY" -e '
 const fs = require("node:fs");
 const config = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-const port = process.argv[2];
-config.build = {
-  beforeDevCommand: `npm run dev -- --host 127.0.0.1 --port ${port} --strictPort`,
-  devUrl: `http://127.0.0.1:${port}`,
-};
+config.build = { beforeDevCommand: "", devUrl: process.argv[2] };
 process.stdout.write(JSON.stringify(config));
-' "$APP_ROOT/src-tauri/tauri.e2e.conf.json" "$E2E_DEV_PORT")
+' "$APP_ROOT/src-tauri/tauri.e2e.conf.json" "$E2E_DEV_URL")
 fi
 
 cd "$APP_ROOT"

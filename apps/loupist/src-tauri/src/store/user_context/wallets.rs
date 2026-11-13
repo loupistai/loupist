@@ -175,7 +175,7 @@ impl SqliteStore {
             params![wallet_id, wallet_name],
         )? == 0
         {
-            return Err(StoreError::Invalid("wallet is not on this computer".into()));
+            return Err(StoreError::Invalid("wallet is not on this Mac".into()));
         }
         Ok(connection.query_row(
             &format!("SELECT {WALLET_COLUMNS} FROM user_wallet_addresses WHERE id = ?1"),

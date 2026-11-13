@@ -2,19 +2,21 @@ import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import i18n, { useTranslation } from "@/i18n";
 import { useGo } from "../navigation/Open";
 import { formatAsOf } from "../../chat/asOf";
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
-import { CheckIcon, ClipboardIcon, Maximize2Icon, MessageCircleIcon, Minimize2Icon } from "lucide-react";
+import { lazy, memo, Suspense, useEffect, useState, type ReactNode } from "react";
+import { EllipsisIcon, Maximize2Icon, Minimize2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatArtifactRef, ChatArtifactView } from "../../types";
-import type { ChartBlock } from "../../chat/chartBlocks";
+import { sameBlock, type ChartBlock } from "../../chat/chartBlocks";
 import { CHART_SCHEMA } from "../../contracts/chat";
 import { chatArtifactRef } from "../artifacts/ArtifactContent";
 import { datasetTsv } from "../artifacts/ArtifactData";
 import { useChatExecution } from "./ChatExecutionContext";
 import { ChartBoundary } from "../artifacts/ChartBoundary";
 import { ChartSnapshotContext, type ChartSnapshotSlot } from "../charts/chartSnapshot";
-import { SaveChartPng } from "../charts/SaveChartPng";
+import { useSaveChartPng } from "../charts/SaveChartPng";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { titledExport } from "../../lib/exportTitle";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -43,6 +45,8 @@ type Props = {
   askDisabled?: boolean;
   /** An as-of answer's date, shown after the title. */
   asOf?: string;
+  /** A failed chart puts the question that asked for it back in the composer. */
+  onAskAgain?: () => void;
 };
 
 type ViewState = { status: "loading" } | { status: "ready"; view: ChatArtifactView } | { status: "unavailable" };
@@ -52,13 +56,16 @@ type ViewState = { status: "loading" } | { status: "ready"; view: ChatArtifactVi
  * Loupist starts building it until the chart is drawn, so the thread never jumps.
  * Each answer draws its retained revision and notes when a newer version exists.
  */
-export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
+export const ChatArtifactBlock = memo(function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain }: Props) {
   const go = useGo();
   useTranslation("chat");
   const scope = useChatExecution();
   const wide = useWideWindow();
   const [expanded, setExpanded] = useState(false);
-  const [view, setView] = useState<ViewState>({ status: "loading" });
+  const staged = block.kind === "ready" ? block.staged : undefined;
+  const [read, setView] = useState<ViewState>(() => staged ? { status: "ready", view: staged } : { status: "loading" });
+  // Staged content draws in the render that delivers it: a card that was preparing never shows a Loading frame first.
+  const view: ViewState = staged ? { status: "ready", view: staged } : read;
   const [attempt, setAttempt] = useState(0);
   // The drawn chart leaves its snapshot here for "Save as PNG…".
   const [snapshot] = useState<ChartSnapshotSlot>(() => ({ current: null }));
@@ -70,17 +77,22 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
 
   useEffect(() => {
     if (!artifactId) return undefined;
+    // Delivered before the commit: drawn as delivered, so the card fills while the answer is written.
+    if (staged) { setView({ status: "ready", view: staged }); return undefined; }
     if (!scope) { setView({ status: "unavailable" }); return undefined; }
     let live = true;
-    setView({ status: "loading" });
+    // A card already drawing this revision keeps it while the stored copy is read, so it never blinks.
+    setView((current) => current.status === "ready" && current.view.artifact.id === artifactId && current.view.revision.revision === revision ? current : { status: "loading" });
     void scope.bridge.chatArtifactRead(scope.loupistId, scope.threadId, artifactId, revision ?? undefined)
       .then((next) => { if (live) setView({ status: "ready", view: next }); })
       .catch(() => { if (live) setView({ status: "unavailable" }); });
     return () => { live = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scope's fields; a new scope object for the same thread must not re-read.
-  }, [artifactId, revision, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
+  }, [artifactId, revision, staged, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
 
   const title = block.kind === "ready" ? (view.status === "ready" ? view.view.artifact.title : block.artifact.title) : block.title;
+  // The card owns the save, so a failure stays visible after the "…" menu closes.
+  const png = useSaveChartPng(snapshot, title, (request) => scope ? scope.bridge.exportSave(titledExport(request)) : Promise.reject(new Error("no chat scope")));
   const building = block.kind === "building" || (block.kind === "ready" && block.updating);
   const current = view.status === "ready" && block.kind === "ready" ? view.view : null;
   // The answer recorded the revision it published; a newer stored one belongs to a later answer.
@@ -88,6 +100,10 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
   const loaded = current && block.kind === "ready" && current.revision.revision === block.artifact.revision ? current : null;
   const dataset = loaded?.chart_dataset;
   const isExpanded = expanded && wide;
+  // A card that was preparing while the reader watched fills with a fade; one read later is drawn at once.
+  const [wasBuilding, setWasBuilding] = useState(building);
+  if (building && !wasBuilding) setWasBuilding(true);
+  const filled = wasBuilding && !building;
 
   const copyData = async () => {
     if (!dataset) return;
@@ -96,13 +112,13 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
 
   let body: ReactNode = null;
   if (block.kind === "building") {
-    // The first draw: the card already has its final size, so the status sits where the chart will appear.
-    body = <div className="chat-artifact-block-state" role="status">
-      <span className="chat-artifact-block-skeleton" aria-hidden="true"><span /><span /><span /><span /><span /><span /></span>
-      <p>{t("chatBlock.building")}</p>
-    </div>;
+    // The first draw: the card already has its final size; still, ruled paper stands where the chart will appear.
+    body = <div className="chat-artifact-block-ruled" aria-hidden="true"><i /><i /><i /><i /></div>;
   } else if (block.kind === "failed") {
-    body = <p className="chat-artifact-block-state" role="alert">{t("chatBlock.couldNotBuildChart")}</p>;
+    body = <div className="chat-artifact-block-state" role="alert">
+      <p>{t("chatBlock.couldNotBuildChart")}</p>
+      {onAskAgain ? <Button type="button" variant="ghost" size="sm" data-ask-again onClick={onAskAgain}>{t("chatBlock.askAgain")}</Button> : null}
+    </div>;
   } else if (block.kind === "ready" && view.status === "unavailable") {
     body = <div className="chat-artifact-block-state" role="alert">
       <p>{t("chatBlock.unavailable")}</p>
@@ -131,29 +147,29 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
       className="chat-artifact-block"
       data-state={revisedLater ? "revised" : block.kind === "ready" ? "ready" : block.kind}
       data-expanded={isExpanded || undefined}
+      data-filled={filled || undefined}
       aria-label={t("chatBlock.chartLabel", { title: title || t("chatBlock.untitled") })}
       aria-busy={building || undefined}
     >
       <header className="chat-artifact-block-header">
         <span className="chat-artifact-block-title" title={title}>{title || t("chatBlock.untitled")}</span>
         {asOf ? <span className="chat-artifact-block-asof">{t("asOf.chip", { date: formatAsOf(asOf) })}</span> : null}
-        {block.kind === "ready" && block.updating ? (
-          <span className="chat-artifact-block-building" role="status">
-            {t("chatBlock.building")}
-            <span className="chat-artifact-block-shimmer" aria-hidden="true" />
-          </span>
+        {building ? (
+          <span className="chat-artifact-block-building" role="status">{t("chatBlock.building")}</span>
         ) : loaded ? (
+          <>{/* Outside the bar and the menu, which take turns being hidden by width. */}
+          {copyError ? <span className="chat-artifact-block-error" role="alert">{t("chatBlock.couldNotCopy")}</span>
+            : png.failed ? <span className="chat-artifact-block-error" role="alert">{t("chartExport.couldNotSave")}</span> : null}
           <div className="chat-artifact-block-actions">
-            {copyError ? <span className="chat-artifact-block-error" role="alert">{t("chatBlock.couldNotCopy")}</span> : null}
             {wide ? <Button type="button" variant="ghost" size="sm" aria-pressed={isExpanded} onClick={() => setExpanded((value) => !value)}>
               {isExpanded ? <Minimize2Icon aria-hidden="true" /> : <Maximize2Icon aria-hidden="true" />}
               {isExpanded ? t("chatBlock.collapse") : t("chatBlock.expand")}
             </Button> : null}
+            {/* Text-only, like the table card's actions; under 720 px they fold into "…" (chat design change 25). */}
             {dataset ? <Button type="button" variant="ghost" size="sm" onClick={() => void copyData()}>
-              {copied ? <CheckIcon aria-hidden="true" /> : <ClipboardIcon aria-hidden="true" />}
               {copied ? t("chatBlock.copied") : t("chatBlock.copyData")}
             </Button> : null}
-            {dataset && scope ? <SaveChartPng slot={snapshot} title={title} onSave={(request) => scope.bridge.exportSave(request)} /> : null}
+            {dataset && scope ? <Button type="button" variant="ghost" size="sm" disabled={png.busy} onClick={() => void png.save()}>{t("chartExport.savePng")}</Button> : null}
             {onAsk ? <Button
               type="button"
               variant="ghost"
@@ -163,10 +179,11 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
               aria-label={t("chatBlock.askAbout", { title })}
               onClick={() => onAsk(chatArtifactRef(loaded))}
             >
-              <MessageCircleIcon aria-hidden="true" />
               {t("chatBlock.ask")}
             </Button> : null}
           </div>
+          <ChartCardMore copy={dataset ? () => void copyData() : undefined} png={dataset && scope ? png : undefined}
+            ask={onAsk ? () => onAsk(chatArtifactRef(loaded)) : undefined} askDisabled={askDisabled} /></>
         ) : null}
       </header>
       {revisedLater && current ? <div className="chat-artifact-block-header" role="status">
@@ -180,4 +197,23 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf }: Props) {
       <div className="chat-artifact-block-body">{body}</div>
     </section>
   );
+}, (before, after) => sameBlock(before.block, after.block) && before.onAsk === after.onAsk && before.askDisabled === after.askDisabled
+  && before.asOf === after.asOf && before.onAskAgain === after.onAskAgain);
+
+/** The chart card's actions folded into one "…" menu under 720 px, as the table card's are. */
+function ChartCardMore({ copy, png, ask, askDisabled }: {
+  copy?: () => void; png?: { save: () => Promise<void>; busy: boolean }; ask?: () => void; askDisabled?: boolean;
+}) {
+  useTranslation("chat");
+  return <div className="chat-artifact-block-more">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon-sm" aria-label={t("grid.more")}><EllipsisIcon aria-hidden="true" /></Button></DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {copy ? <DropdownMenuItem onSelect={copy}>{t("chatBlock.copyData")}</DropdownMenuItem> : null}
+        {png ? <DropdownMenuItem disabled={png.busy} onSelect={() => void png.save()}>{t("chartExport.savePng")}</DropdownMenuItem> : null}
+        {ask ? <DropdownMenuItem disabled={askDisabled} onSelect={ask}>{t("chatBlock.ask")}</DropdownMenuItem> : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  </div>;
 }
+

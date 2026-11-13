@@ -315,3 +315,35 @@ async fn dataset_import_rejects_invalid_files_and_foreign_lineage_before_persist
         .unwrap();
     assert_eq!(count, 0);
 }
+
+#[tokio::test]
+async fn exports_clean_widened_floats_without_changing_the_pinned_dataset() {
+    let temporary = tempfile::tempdir().unwrap();
+    let executor = executor(&temporary);
+    let payload = json!([{"price":f64::from(225.3_f32),"precise":0.1 + 0.2,"integer":18446744073709551615_u64}]);
+    let reference = executor
+        .state
+        .store
+        .dataset_put("loupist-a", "float-export", &payload, json!({}))
+        .unwrap();
+    for format in ["json", "csv"] {
+        executor.execute(&policy(), ToolMethod::DatasetExport, json!({"dataset_id":reference.dataset_id,"revision":reference.revision,"path":format!("exports/clean.{format}"),"format":format})).await.unwrap();
+        let bytes = std::fs::read_to_string(
+            temporary
+                .path()
+                .join(format!("loupist-a/exports/clean.{format}")),
+        )
+        .unwrap();
+        assert!(bytes.contains("225.3"), "{bytes}");
+        assert!(!bytes.contains("225.300003"), "{bytes}");
+        assert!(bytes.contains("0.30000000000000004"), "{bytes}");
+        assert!(bytes.contains("18446744073709551615"), "{bytes}");
+    }
+    let (saved, rows, _) = executor
+        .state
+        .store
+        .dataset("loupist-a", &reference.dataset_id, reference.revision)
+        .unwrap();
+    assert_eq!(saved, reference);
+    assert_eq!(rows, payload);
+}

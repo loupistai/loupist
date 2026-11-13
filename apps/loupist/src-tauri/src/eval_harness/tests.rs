@@ -1,4 +1,64 @@
 use super::*;
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn workspace_skill_copy_is_traced_with_host_workspace_authority() {
+    let root = tempfile::Builder::new()
+        .prefix("eval-skill-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let workspace = root.path().join("workspace");
+    let copy = workspace.join("skills/data-analysis/SKILL.md");
+    fs::create_dir_all(copy.parent().unwrap()).unwrap();
+    fs::write(&copy, "This workspace file is not the bundled Skill.").unwrap();
+    let mut state = AppState::for_eval(root.path().join("app"));
+    scripted(&mut state, root.path());
+    fs::write(
+        root.path().join("replay-case.json"),
+        json!({"name":"read", "method":"native.authorize",
+        "args":{"name":"read", "path":copy}})
+        .to_string(),
+    )
+    .unwrap();
+    let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
+        .await
+        .unwrap();
+    let chat = new_chat(&state, &loupist.id, "workspace Skill copy").unwrap();
+    let session = Session {
+        id: "probe".into(),
+        role: "probe".into(),
+        memory: "off".into(),
+        turns: vec![],
+    };
+    let result = run_turn(
+        &state,
+        &chat,
+        &session,
+        &Turn {
+            user: "REPLAY_CASE_EVAL: read the workspace file".into(),
+            ..Default::default()
+        },
+        "fixture",
+        "medium",
+        60_000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result["status"], "completed", "{result}");
+    let read = result["tool_calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|call| call["name"] == "read")
+        .unwrap();
+    assert_eq!(read["outcome"], "ok");
+    assert_eq!(
+        read["native_authorization"],
+        json!({"class":"Workspace", "skill_id":null})
+    );
+    state.shutdown().await.unwrap();
+}
+
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 #[tokio::test]
 async fn invalid_pi_agent_directory_is_rejected_before_chat_side_effects() {
@@ -548,6 +608,39 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
         .unwrap();
         assert_eq!(result["status"], expected, "{mode}: {result}");
         assert_eq!(result["failureKind"], json!(failure), "{result}");
+        if mode == "COMMIT_FAILURE_EVAL" {
+            assert_eq!(
+                result["memory_commit_failure"],
+                json!({"stage":"lens","reason":"storage"}),
+                "{result}"
+            );
+        }
+        let local_logs: Vec<Value> = fs::read_dir(workspace.join(".loupist/logs"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "jsonl")
+            })
+            .flat_map(|path| {
+                fs::read_to_string(path)
+                    .unwrap()
+                    .lines()
+                    .map(|line| serde_json::from_str::<Value>(line).unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let local_chat = local_logs
+            .iter()
+            .find(|record| record["kind"] == "chat")
+            .unwrap();
+        assert_eq!(
+            local_chat["memoryCommitFailure"],
+            result["memory_commit_failure"]
+        );
+        let serialized = format!("{result} {local_chat}");
+        assert!(!serialized.contains("private fixture commit detail"));
+        assert!(!serialized.contains("private fixture store detail"));
         if mode != "EMPTY_NO_WRITE_EVAL" {
             assert!(
                 result["tool_calls"]
@@ -1001,4 +1094,64 @@ fn an_eval_turn_settles_a_waiting_question_at_once() {
         Err(tokio::sync::oneshot::error::TryRecvError::Closed),
         "the ask_user call resolves unanswered"
     );
+}
+
+#[test]
+fn lens_seed_contract_refuses_retired_fields_and_unknown_section_fields() {
+    for field in [
+        "markdown",
+        "applicability",
+        "assumptions",
+        "procedure",
+        "principles",
+        "limitations",
+    ] {
+        let mut input = json!({"title":"A method"});
+        input[field] = json!("This text must not disappear");
+        assert!(
+            serde_json::from_value::<LensSeed>(input).is_err(),
+            "{field}"
+        );
+    }
+    assert!(serde_json::from_value::<LensSeed>(json!({
+        "title":"A method", "sections":[{"key":"steps", "heading":"Steps", "markdown":"Check cash", "body":"must not disappear"}]
+    })).is_err());
+}
+
+#[test]
+fn repository_lens_seeds_decode_with_their_current_page_bodies() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../evals/agent");
+    let mut repaired = 0;
+    for folder in ["suites", "heldout"] {
+        for entry in fs::read_dir(root.join(folder)).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|ext| ext != "json") {
+                continue;
+            }
+            let suite: Suite = serde_json::from_slice(&fs::read(&path).unwrap())
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            for scenario in suite.scenarios {
+                for page in scenario.seed.lens {
+                    assert!(
+                        !page.sections.is_empty(),
+                        "{}: {}",
+                        path.display(),
+                        scenario.id
+                    );
+                    assert!(page
+                        .sections
+                        .iter()
+                        .all(|section| !section.markdown.trim().is_empty()));
+                    if scenario.id.starts_with("B-")
+                        || ["P-C02", "T-007", "T-031"].contains(&scenario.id.as_str())
+                    {
+                        assert_eq!(page.sections.len(), 6, "{}", scenario.id);
+                        assert!(!page.summary.is_empty());
+                        repaired += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(repaired, 19);
 }

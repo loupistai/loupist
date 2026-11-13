@@ -2,6 +2,7 @@
 //! with its staged Memory, receipts, citations and artifacts, then emits the
 //! completion, or recovers it when the commit outcome is ambiguous.
 use super::*;
+use crate::runs::log::{CommitStage, MemoryCommitFailure};
 
 /// Borrowed view of a completed turn for its canonical commit.
 pub(super) struct CompletedTurn<'a> {
@@ -25,6 +26,21 @@ pub(super) struct CompletedTurn<'a> {
     pub generation_ms: Option<u64>,
     pub resumed: bool,
     pub token_usage: AssistantTokenUsage,
+}
+
+fn record_commit_failure(sink: &ChatEventSink, stage: CommitStage, code: &str) {
+    if let Some((_, record)) = sink
+        .run_log
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_mut()
+    {
+        // Preserve the first failing phase when the enclosing Chat transaction
+        // reports the same error again after rollback.
+        record
+            .memory_commit_failure
+            .get_or_insert_with(|| MemoryCommitFailure::from_code(stage, code));
+    }
 }
 
 /// `Break` means a failed reply was already persisted and emitted, so the
@@ -318,6 +334,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         capture.principle_user_message_id.as_deref(),
                     )
                     .map_err(|error| {
+                        record_commit_failure(on_event, CommitStage::BotMemory, "invalid");
                         on_event.set_failure_kind(ChatFailureKind::MemoryCommitFailed);
                         CommandError::internal(error)
                     })?;
@@ -367,6 +384,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         saved_research.as_ref(),
                     )
                     .map_err(|error| {
+                        record_commit_failure(on_event, CommitStage::Research, error.code.as_str());
                         on_event.set_failure_kind(classify_turn_failure(
                             &error,
                             ChatFailureKind::MemoryCommitFailed,
@@ -383,6 +401,11 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                                 created_at_ms,
                             )
                             .map_err(|error| {
+                                record_commit_failure(
+                                    on_event,
+                                    CommitStage::Principles,
+                                    error.code.as_str(),
+                                );
                                 on_event.set_failure_kind(classify_turn_failure(
                                     &error,
                                     ChatFailureKind::MemoryCommitFailed,
@@ -406,6 +429,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                                 &saved.retained,
                             )
                             .map_err(|error| {
+                                record_commit_failure(on_event, CommitStage::Lens, error.code());
                                 on_event.set_failure_kind(ChatFailureKind::MemoryCommitFailed);
                                 crate::store::StoreError::Invalid(error.to_string())
                             })?,
@@ -420,7 +444,10 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         &lens_deliveries,
                         created_at_ms,
                     )
-                    .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
+                    .map_err(|e| {
+                        record_commit_failure(on_event, CommitStage::Deliveries, e.code());
+                        crate::store::StoreError::Invalid(e.to_string())
+                    })?;
                     crate::commands::knowledge::principles::persist_citations(
                         transaction,
                         &blobs,
@@ -430,7 +457,10 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         &citation_reads,
                         created_at_ms,
                     )
-                    .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
+                    .map_err(|e| {
+                        record_commit_failure(on_event, CommitStage::Citations, e.code());
+                        crate::store::StoreError::Invalid(e.to_string())
+                    })?;
                     turn_assets = crate::commands::assets::commit_turn(
                         transaction,
                         task_loupist_id,
@@ -440,7 +470,10 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         &saved_theses,
                         &turn_observations,
                     )
-                    .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
+                    .map_err(|e| {
+                        record_commit_failure(on_event, CommitStage::Assets, e.code());
+                        crate::store::StoreError::Invalid(e.to_string())
+                    })?;
                     crate::commands::tool_executor::commit_earnings(
                         transaction,
                         task_loupist_id,
@@ -449,7 +482,10 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         &saved_earnings,
                         unattended,
                     )
-                    .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
+                    .map_err(|e| {
+                        record_commit_failure(on_event, CommitStage::Earnings, e.code());
+                        crate::store::StoreError::Invalid(e.to_string())
+                    })?;
                     let mut skipped_kinds = crate::commands::tool_executor::commit_vocabulary(
                         transaction,
                         task_loupist_id,
@@ -457,7 +493,10 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         created_at_ms,
                         &saved_vocabulary,
                     )
-                    .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
+                    .map_err(|e| {
+                        record_commit_failure(on_event, CommitStage::Vocabulary, e.code());
+                        crate::store::StoreError::Invalid(e.to_string())
+                    })?;
                     let mut setup = watchlist_changes.clone();
                     if let Some(staged) = &saved_setup {
                         let (changed, skipped) = crate::commands::tool_executor::commit_setup(
@@ -467,7 +506,16 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                             thread_id,
                             created_at_ms,
                             staged,
-                        )?;
+                        )
+                        .map_err(|e| {
+                            let code = if matches!(e, crate::store::StoreError::Conflict(_)) {
+                                "conflict"
+                            } else {
+                                "internal"
+                            };
+                            record_commit_failure(on_event, CommitStage::Setup, code);
+                            e
+                        })?;
                         setup.extend(changed);
                         skipped_kinds.extend(skipped);
                     }
@@ -477,7 +525,16 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                             task_loupist_id,
                             staged,
                             created_at_ms,
-                        )?;
+                        )
+                        .map_err(|e| {
+                            let code = if matches!(e, crate::store::StoreError::Conflict(_)) {
+                                "conflict"
+                            } else {
+                                "internal"
+                            };
+                            record_commit_failure(on_event, CommitStage::Handoff, code);
+                            e
+                        })?;
                     }
                     if host_composed && changes.is_empty() && setup.is_empty() {
                         on_event.set_failure_kind(ChatFailureKind::EmptyReply);
@@ -603,6 +660,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         performance,
                     );
                 } else {
+                    record_commit_failure(on_event, CommitStage::Chat, error.code.as_str());
                     if error.code == "conflict" {
                         on_event.set_failure_kind(ChatFailureKind::CancelledByConflict);
                     }

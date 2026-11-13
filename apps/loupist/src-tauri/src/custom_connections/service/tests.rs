@@ -2,6 +2,41 @@ use super::*;
 use crate::custom_connections::fixture::{Response, Server};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+#[test]
+fn protected_values_fail_closed_on_a_credential_load_error() {
+    let root = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(root.path().to_path_buf());
+    let mut service = Service::open(
+        state.artifacts.app_data_dir.join("custom-connections"),
+        state.credential_environment.to_string(),
+    )
+    .unwrap();
+    for name in ["First", "Second"] {
+        service
+            .add_pending(ParsedConnection {
+                name: name.into(),
+                transport: TransportConfig::Http {
+                    url: "https://fixture.example/mcp".into(),
+                },
+                secrets: Secrets::default(),
+            })
+            .unwrap();
+    }
+    let mut loads = 0;
+    let result = protected_values_with_loader(&state, |_, _| {
+        loads += 1;
+        if loads == 2 {
+            return Err(ConnectionError::CredentialStore);
+        }
+        Ok(Secrets {
+            env: BTreeMap::from([("API_KEY".into(), "first-secret".into())]),
+            ..Default::default()
+        })
+    });
+    assert!(matches!(result, Err(ConnectionError::CredentialStore)));
+    assert_eq!(loads, 2, "a partial list must never reach the scan");
+}
+
 fn read_tool(description: &str) -> Value {
     json!({"name":"read_prices", "description":description, "inputSchema":{"type":"object"}, "annotations":{"readOnlyHint":true}})
 }
@@ -281,6 +316,61 @@ async fn echoed_bearer_is_scrubbed_and_credentials_never_enter_configuration_or_
             .headers
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn ordinary_short_settings_can_appear_in_results_while_short_secrets_cannot() {
+    let server = Server::start(|_, request| {
+        let body = request.json();
+        match body["method"].as_str().unwrap() {
+            "initialize" => initialized(&body),
+            "notifications/initialized" => Response::status(202),
+            "tools/list" => Response::json(json!({"jsonrpc":"2.0","id":body["id"],"result":{"tools":[read_tool("Read prices")]}})),
+            "tools/call" => Response::json(json!({"jsonrpc":"2.0","id":body["id"],"result":{"content":[],"structuredContent":{"value":body["params"]["arguments"]["value"]}}})),
+            _ => Response::status(400),
+        }
+    }).await;
+    let (_root, mut service, id) = setup(&server).await;
+    let tool = service.record(&id).unwrap().tools[0].clone();
+    service
+        .stored
+        .approvals
+        .approve("loupist-a", &id, &tool, ApprovalChoice::Always);
+    for (name, value, allowed) in [
+        ("PORT", json!("3000"), true),
+        ("PORT", json!(3000), true),
+        ("TOKEN", json!("3000"), false),
+        ("TOKEN", json!(3000), false),
+        ("cookie", json!("3000"), false),
+        ("mode", json!("3000"), true),
+        ("mode", json!(true), true),
+        ("auth", json!(true), false),
+    ] {
+        let secrets = Secrets {
+            env: BTreeMap::from([(
+                name.into(),
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| value.to_string()),
+            )]),
+            ..Default::default()
+        };
+        credentials::save(&service.credential_environment, &id, &secrets).unwrap();
+        let result = service
+            .call(
+                "loupist-a",
+                &id,
+                "read_prices",
+                json!({"value":value}),
+                false,
+            )
+            .await;
+        assert_eq!(result.is_ok(), allowed, "{name}");
+        if let Err(error) = result {
+            assert!(!error.to_string().contains("3000"));
+        }
+    }
 }
 
 #[tokio::test]

@@ -8,6 +8,8 @@ mod app;
 mod bridge_contract;
 mod briefings;
 mod broker;
+#[cfg(target_os = "macos")]
+mod bundle_self_test;
 mod calculations;
 mod chat;
 mod commands;
@@ -127,6 +129,15 @@ fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Run before Tauri construction, single-instance registration or app-data
+    // recovery: preflight must never open the production profile or a window.
+    #[cfg(target_os = "macos")]
+    if let Some(result) = bundle_self_test::requested(std::env::args_os()) {
+        if let Err(error) = &result {
+            eprintln!("Release helper preflight failed: {error}");
+        }
+        std::process::exit(if result.is_ok() { 0 } else { 1 });
+    }
     let context = tauri::generate_context!();
     let builder = tauri::Builder::default();
     // `main` starts the Windows UI on an explicitly sized worker thread so
@@ -289,7 +300,6 @@ pub fn run() {
             briefings::desktop::briefing_resident_settings_set,
             commands::loupist::loupist_list,
             commands::loupist::loupist_select,
-            commands::loupist::loupist_recover,
             commands::loupist::loupist_create,
             commands::loupist::loupist_import,
             commands::loupist::loupist_profile_update,
@@ -316,6 +326,7 @@ pub fn run() {
             commands::earnings::earnings_snapshot_get,
             commands::earnings::earnings_events_list,
             commands::earnings::earnings_prepare,
+            commands::watch::watch_defaults_apply,
             commands::watch::watch_settings_list,
             commands::watch::watch_setting_set,
             commands::watch::watch_pause_set,
@@ -392,7 +403,6 @@ pub fn run() {
             commands::knowledge::knowledge_lens_read,
             commands::knowledge::knowledge_lens_search,
             commands::knowledge::knowledge_lens_pages_for_node,
-            commands::knowledge::knowledge_connections,
             commands::knowledge::knowledge_connection_dismiss,
             commands::knowledge::knowledge_connection_open,
             commands::knowledge::memory_section_forget,
@@ -408,6 +418,7 @@ pub fn run() {
             commands::knowledge::followed::knowledge_followed_status,
             commands::knowledge::knowledge_graph_recover,
             commands::knowledge::knowledge_graph_pause,
+            commands::knowledge::knowledge_graph_retry_source,
             commands::knowledge::knowledge_graph_settings_get,
             commands::knowledge::knowledge_graph_settings_set,
             commands::power::world_keep_awake_get,

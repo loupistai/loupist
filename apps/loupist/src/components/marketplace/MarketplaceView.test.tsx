@@ -35,12 +35,12 @@ async function renderView(patch?: (snapshot: Awaited<ReturnType<MockLoupistBridg
 const cardOf = (name: string) => within(screen.getByRole("heading", { name, level: 4 }).closest("article")!);
 
 describe("connection states", () => {
-  it("calls an unconfigured optional source Not connected and counts only real problems under Needs attention", async () => {
+  it("leaves an unconfigured optional source unmarked and counts only real problems under Needs attention", async () => {
     const { user } = await renderView((snapshot) => {
       const alpha = snapshot.connectors.find((connector) => connector.entry_id === "alpha-vantage.market-data")!;
       alpha.credentials = alpha.credentials.map((credential) => ({ ...credential, stored: true, pending: true, verification: "rejected", last_error: "The provider rejected these credentials." }));
     });
-    expect(cardOf("FRED").getByText("Not connected")).toBeVisible();
+    expect(cardOf("FRED").queryByText("Not connected")).toBeNull();
     expect(cardOf("FRED").queryByText("Needs setup")).toBeNull();
     expect(cardOf("Alpha Vantage").getByText("Needs attention")).toBeVisible();
     await user.click(screen.getByRole("radio", { name: "Needs attention 1" }));
@@ -58,7 +58,7 @@ describe("connection states", () => {
     await renderView();
     expect(cardOf("SEC EDGAR").getByText("Contact email only")).toBeVisible();
     expect(cardOf("SEC EDGAR").queryByText("No API key required")).toBeNull();
-    expect(cardOf("SEC EDGAR").getByText("Not connected")).toBeVisible();
+    expect(cardOf("SEC EDGAR").queryByText("Not connected")).toBeNull();
   });
 });
 
@@ -84,12 +84,15 @@ describe("connection list", () => {
     expect(screen.queryByRole("heading", { name: "FRED", level: 4 })).toBeNull();
   });
 
-  it("puts Available connections above Your connections and hides the Loupist picker until a connection exists", async () => {
+  it("keeps your own connections in a closed advanced disclosure below Available connections, without a Loupist picker until one exists", async () => {
     await renderView();
     const available = screen.getByRole("heading", { name: "Available connections", level: 2 });
-    const custom = screen.getByRole("heading", { name: "Your connections", level: 2 });
+    const custom = document.querySelector<HTMLDetailsElement>("[data-custom-connections]")!;
+    expect(custom.querySelector("summary")).toHaveTextContent("Add your own connection (advanced)");
+    expect(custom.open).toBe(false);
     expect(available.compareDocumentPosition(custom) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByRole("button", { name: "+ Add a connection" })).toBeVisible();
+    custom.querySelector("summary")!.click();
+    expect(await screen.findByRole("button", { name: "Add a connection" })).toBeVisible();
     expect(screen.queryByRole("combobox", { name: "Loupist" })).toBeNull();
   });
 

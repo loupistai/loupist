@@ -14,7 +14,7 @@ use std::{
 
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tokio::sync::{watch, Mutex as AsyncMutex};
+use tokio::sync::{watch, Mutex as AsyncMutex, Notify};
 
 use crate::{
     app::{AppState, CommandError},
@@ -25,9 +25,25 @@ use crate::{
     },
     runs::maintenance::MaintenanceActivityKind,
 };
-use types::{Run, RunStatus, TaskKind, TaskStatus};
+use types::{Run, RunStatus, TaskKind};
 
 pub(crate) const USER_STOPPED: &str = "Stopped before completion";
+pub(crate) const APP_QUIT: &str = "Interrupted when the app quit.";
+// Older receipts used this for both graceful quit and crash recovery; do not
+// turn an ambiguous historical interruption into a failure.
+const LEGACY_INTERRUPTED: &str = "Interrupted before completion.";
+
+// Recheck capacity/offline folders and wall-clock changes at least once a minute.
+const MAX_POLL_SLEEP: Duration = Duration::from_secs(60);
+const RETRY_POLL_SLEEP: Duration = Duration::from_secs(5);
+
+fn poll_delay(next_due: Option<i64>, now: i64) -> Duration {
+    match next_due {
+        Some(due) if due <= now => RETRY_POLL_SLEEP,
+        Some(due) => Duration::from_millis(due.saturating_sub(now) as u64).min(MAX_POLL_SLEEP),
+        None => MAX_POLL_SLEEP,
+    }
+}
 
 struct Lifetime(watch::Sender<bool>);
 impl Drop for Lifetime {
@@ -52,6 +68,9 @@ struct Inner {
     stop: watch::Sender<bool>,
     worker: Mutex<Option<tokio::task::JoinHandle<()>>>,
     admission: AsyncMutex<()>,
+    changed: Notify,
+    #[cfg(test)]
+    briefing_refreshes: std::sync::atomic::AtomicUsize,
     live: Mutex<HashMap<String, LiveRun>>,
     /// Local watchers and earnings captures (no model call).
     watch: Arc<crate::commands::watch::Runtime>,
@@ -83,6 +102,9 @@ impl Default for ScheduledSupervisor {
                 stop: stop.clone(),
                 worker: Mutex::new(None),
                 admission: AsyncMutex::new(()),
+                changed: Notify::new(),
+                #[cfg(test)]
+                briefing_refreshes: std::sync::atomic::AtomicUsize::new(0),
                 live: Mutex::new(HashMap::new()),
                 watch: Arc::new(crate::commands::watch::Runtime::default()),
                 watch_worker: Mutex::new(None),
@@ -98,7 +120,8 @@ impl ScheduledSupervisor {
         self.inner.watch.clone()
     }
 
-    #[cfg(feature = "eval-harness")]
+    // Only the growth eval, a test module, installs an observer.
+    #[cfg(all(test, feature = "eval-harness"))]
     pub(crate) fn observe_eval(&self, observer: EvalObserver) {
         *self.inner.eval_observer.lock().expect("eval observer lock") = Some(observer);
     }
@@ -147,20 +170,25 @@ impl ScheduledSupervisor {
         }
         let mut stopped = self.inner.stop.subscribe();
         *worker = Some(tokio::spawn(async move {
-            let mut tick = tokio::time::interval(Duration::from_secs(1));
-            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
+                if *stopped.borrow() {
+                    break;
+                }
+                if let Err(error) = state.scheduled.poll(&state).await {
+                    if error.code != "maintenance_active" {
+                        eprintln!("Scheduled task lookup failed: {}", error.code);
+                    }
+                }
+                let delay = state
+                    .store
+                    .scheduled_tasks_next_due()
+                    .map(|due| poll_delay(due, now_ms()))
+                    .unwrap_or(MAX_POLL_SLEEP);
                 tokio::select! {
                     biased;
                     _ = stopped.changed() => { if *stopped.borrow() { break; } }
-                    _ = tick.tick() => {
-                        if *stopped.borrow() { break; }
-                        if let Err(error) = state.scheduled.poll(&state).await {
-                            if error.code != "maintenance_active" {
-                                eprintln!("Scheduled task lookup failed: {}", error.code);
-                            }
-                        }
-                    }
+                    _ = state.scheduled.inner.changed.notified() => {}
+                    _ = tokio::time::sleep(delay) => {}
                 }
             }
         }));
@@ -220,6 +248,10 @@ impl ScheduledSupervisor {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn changed(&self) {
+        self.inner.changed.notify_one();
     }
 
     pub fn stop(&self) {
@@ -321,27 +353,6 @@ impl ScheduledSupervisor {
             ))
             .await;
         }
-        // A briefing checks followed assets before its prompt is built, without
-        // a model call. The refresh runs before admission so Run now, other
-        // schedules and maintenance never wait behind its reads, and it stops
-        // with the scheduler. What is not reached in time stays "not checked".
-        if !*self.inner.stop.borrow() {
-            let briefing = task.is_some_and(|task| {
-                task.kind == TaskKind::Briefing && (manual || task.status == TaskStatus::Active)
-            });
-            if briefing {
-                // Boxed: a refresh runs tools, and a tool can start a scheduled run.
-                let _ = Box::pin(crate::commands::assets::refresh_followed(
-                    state,
-                    loupist_id,
-                    crate::commands::assets::BRIEFING_BUDGET,
-                    Some(self.inner.stop.subscribe()),
-                ))
-                .await;
-                // Wallet balances are refreshed for the held flags (≤ 30 s).
-                crate::commands::user_context::refresh_wallets(state, None).await;
-            }
-        }
         let _admission = self.inner.admission.lock().await;
         if *self.inner.stop.borrow() {
             return Err(CommandError::conflict("Scheduled tasks are stopping"));
@@ -373,7 +384,7 @@ impl ScheduledSupervisor {
             return if !manual
                 && matches!(
                     error.code.as_str(),
-                    "conflict" | "maintenance_active" | "loupist_recovery_required"
+                    "conflict" | "maintenance_active" | "loupist_storage_unavailable"
                 ) {
                 Ok(None)
             } else {
@@ -386,41 +397,6 @@ impl ScheduledSupervisor {
         let mut run = claim.run;
         let task = claim.task;
         let run_id = run.run_id.clone();
-        let prompt = if task.kind == TaskKind::Briefing {
-            match crate::briefings::build_prompt(
-                state,
-                loupist_id,
-                task.last_run_at_ms,
-                run.started_at_ms,
-            )
-            .and_then(|(prompt, context)| {
-                admission.untrusted_text = context.carries_untrusted_text();
-                state
-                    .store
-                    .scheduled_run_briefing_context(loupist_id, &run_id, context.clone())
-                    .map_err(map_store)?;
-                run.briefing_context = Some(context);
-                Ok(prompt)
-            }) {
-                Ok(prompt) => prompt,
-                Err(error) => {
-                    let finished = state
-                        .store
-                        .scheduled_task_finish(
-                            loupist_id,
-                            &run_id,
-                            RunStatus::Failed,
-                            Some(&bounded_error(&error.message)),
-                            now_ms(),
-                        )
-                        .map_err(map_store)?;
-                    crate::briefings::desktop::completed(state, &finished);
-                    return Ok(Some(finished));
-                }
-            }
-        } else {
-            task.prompt.clone()
-        };
         self.inner
             .live
             .lock()
@@ -434,13 +410,119 @@ impl ScheduledSupervisor {
                     subscriber: None,
                 },
             );
+        let preparing = HostRunGuard {
+            inner: Arc::downgrade(&self.inner),
+            run_id: run_id.clone(),
+        };
+        drop(_admission);
+        // The durable claim and Chat admission own this occurrence before any
+        // refresh. A busy or already-running task performs no external reads.
+        if task.kind == TaskKind::Briefing {
+            #[cfg(test)]
+            self.inner
+                .briefing_refreshes
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let _ = Box::pin(crate::commands::assets::refresh_followed(
+                state,
+                loupist_id,
+                crate::commands::assets::BRIEFING_BUDGET,
+                Some(self.inner.stop.subscribe()),
+            ))
+            .await;
+            crate::commands::user_context::refresh_wallets(state, None).await;
+        }
+        let prompt = if task.kind == TaskKind::Briefing {
+            match crate::briefings::build_prompt(state, loupist_id, task.last_run_at_ms, now_ms())
+                .and_then(|(prompt, context)| {
+                    admission.untrusted_text = context.carries_untrusted_text();
+                    state
+                        .store
+                        .scheduled_run_briefing_context(loupist_id, &run_id, context.clone())
+                        .map_err(map_store)?;
+                    run.briefing_context = Some(context);
+                    Ok(prompt)
+                }) {
+                Ok(prompt) => prompt,
+                Err(error) => {
+                    let finished = state
+                        .store
+                        .scheduled_task_finish(
+                            loupist_id,
+                            &run_id,
+                            RunStatus::Failed,
+                            Some(&bounded_error(&error.message)),
+                            now_ms(),
+                        )
+                        .map_err(map_store)?;
+                    if let Ok(mut live) = self.inner.live.lock() {
+                        live.remove(&run_id);
+                    }
+                    crate::briefings::desktop::completed(state, &finished);
+                    return Ok(Some(finished));
+                }
+            }
+        } else {
+            task.prompt.clone()
+        };
+        if let Ok(mut live) = self.inner.live.lock() {
+            if let Some(current) = live.get_mut(&run_id) {
+                current.run = run.clone();
+            }
+        }
+        let sink = self.chat_event_sink(state, &run);
+        let request = ChatSendRequest {
+            run_id: run_id.clone(),
+            loupist_id: loupist_id.to_owned(),
+            thread_id: run
+                .thread_id
+                .clone()
+                .ok_or_else(|| CommandError::internal("scheduled Chat target is missing"))?,
+            prompt,
+            use_memory: task.use_memory,
+            update_memory: task.update_memory,
+            as_of: None,
+            model_profile_id: task.model_profile_id,
+            thinking_level: task.thinking_level,
+            run_options: task.run_options,
+            mentioned_connection_ids: vec![],
+            attachments: vec![],
+            pins: vec![],
+            selected_artifact: None,
+        };
+        // Completion delivery owns the live entry once ordinary Chat launch starts.
+        preparing.detach();
+        if let Err(error) = send_chat(request, sink, state, Some(admission)).await {
+            if let Ok(mut live) = self.inner.live.lock() {
+                live.remove(&run_id);
+            }
+            let finished = state
+                .store
+                .scheduled_task_finish(
+                    loupist_id,
+                    &run_id,
+                    RunStatus::Failed,
+                    Some(&bounded_error(&error.message)),
+                    now_ms(),
+                )
+                .map_err(map_store)?;
+            crate::briefings::desktop::completed(state, &finished);
+            // A claimed run is a durable receipt, including admission failure.
+        }
+        state
+            .store
+            .scheduled_task_run_get(loupist_id, &run_id)
+            .map_err(map_store)
+    }
+
+    /// The completion path used by ordinary scheduled Chat, including typed provider failures.
+    pub(crate) fn chat_event_sink(&self, state: &AppState, run: &Run) -> ChatEventSink {
         let inner = Arc::downgrade(&self.inner);
         let store = state.store.clone();
         let binding = run.clone();
         let completion_state = state.clone();
-        crate::briefings::desktop::changed(loupist_id);
+        crate::briefings::desktop::changed(&run.loupist_id);
         let baseline_inner = inner.clone();
-        let baseline_id = run_id.clone();
+        let baseline_id = run.run_id.clone();
         #[allow(unused_mut)]
         let mut sink = ChatEventSink::new(move |event| {
             let terminal = match &event {
@@ -449,15 +531,28 @@ impl ScheduledSupervisor {
                     RunStatus::Interrupted,
                     Some(
                         if *completion_state.scheduled.inner.stop.borrow() {
-                            "Interrupted before completion."
+                            APP_QUIT
                         } else {
                             USER_STOPPED
                         }
                         .to_owned(),
                     ),
                 )),
-                ChatStreamEvent::Error { message, .. } => {
-                    Some((RunStatus::Failed, Some(bounded_error(message))))
+                ChatStreamEvent::Error {
+                    message,
+                    failure_kind,
+                    ..
+                } => {
+                    let error = match failure_kind {
+                        crate::domain::ChatFailureKind::NeedsReconnect => {
+                            crate::pi::provider_failure::NEEDS_RECONNECT.to_owned()
+                        }
+                        crate::domain::ChatFailureKind::ModelGone => {
+                            crate::pi::provider_failure::MODEL_GONE.to_owned()
+                        }
+                        _ => bounded_error(message),
+                    };
+                    Some((RunStatus::Failed, Some(error)))
                 }
                 _ => None,
             };
@@ -507,6 +602,7 @@ impl ScheduledSupervisor {
                     }
                     if terminal.is_some() {
                         live.remove(&binding.run_id);
+                        inner.changed.notify_one();
                     }
                 }
             }
@@ -530,46 +626,7 @@ impl ScheduledSupervisor {
                 .expect("eval observer lock")
                 .clone();
         }
-        let request = ChatSendRequest {
-            run_id: run_id.clone(),
-            loupist_id: loupist_id.to_owned(),
-            thread_id: run
-                .thread_id
-                .clone()
-                .ok_or_else(|| CommandError::internal("scheduled Chat target is missing"))?,
-            prompt,
-            use_memory: task.use_memory,
-            update_memory: task.update_memory,
-            as_of: None,
-            model_profile_id: task.model_profile_id,
-            thinking_level: task.thinking_level,
-            run_options: task.run_options,
-            mentioned_connection_ids: vec![],
-            attachments: vec![],
-            pins: vec![],
-            selected_artifact: None,
-        };
-        if let Err(error) = send_chat(request, sink, state, Some(admission)).await {
-            if let Ok(mut live) = self.inner.live.lock() {
-                live.remove(&run_id);
-            }
-            let finished = state
-                .store
-                .scheduled_task_finish(
-                    loupist_id,
-                    &run_id,
-                    RunStatus::Failed,
-                    Some(&bounded_error(&error.message)),
-                    now_ms(),
-                )
-                .map_err(map_store)?;
-            crate::briefings::desktop::completed(state, &finished);
-            // A claimed run is a durable receipt, including admission failure.
-        }
-        state
-            .store
-            .scheduled_task_run_get(loupist_id, &run_id)
-            .map_err(map_store)
+        sink
     }
 
     pub fn watch(
@@ -596,7 +653,7 @@ impl ScheduledSupervisor {
         let events = current.replay.events().ok_or_else(|| {
             CommandError::new(
                 "scheduled_stream_limit",
-                "This long run can be read from its Chat after completion",
+                "This long run can be read from its research session after completion",
             )
         })?;
         // Replay and subscription occur under the same mutex as live delivery.
@@ -614,10 +671,16 @@ impl ScheduledSupervisor {
     }
 }
 
-/// Keeps a host run in the live set (protected from recovery) while it works.
+/// Keeps host work or Chat preparation protected from recovery until it ends.
 pub(crate) struct HostRunGuard {
     inner: std::sync::Weak<Inner>,
     run_id: String,
+}
+
+impl HostRunGuard {
+    fn detach(mut self) {
+        self.inner = std::sync::Weak::new();
+    }
 }
 
 impl Drop for HostRunGuard {
@@ -625,6 +688,7 @@ impl Drop for HostRunGuard {
         if let Some(inner) = self.inner.upgrade() {
             if let Ok(mut live) = inner.live.lock() {
                 live.remove(&self.run_id);
+                inner.changed.notify_one();
             }
         }
     }

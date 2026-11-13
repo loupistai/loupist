@@ -15,10 +15,10 @@
     "discussThisLensWhatShouldWeRevise": "Discuss this Lens: {{label}}. What should we revise, and on what evidence?",
     "skillCreatorTurnedOnForThisLoupist": "Skill Creator turned on for this Loupist.",
     "skillCreatorTurnedOnForAllLoupists": "Skill Creator turned on for all Loupists.",
-    "correctTheConfigurationFileInSettingsChat": "Correct the configuration file in Loupist settings → Chat preferences to start a new run.",
-    "theConfiguredChatDefaultsAreUnavailableFor": "The configured Chat defaults are unavailable for the current model. Review Loupist settings → Chat preferences or choose a model in Chat.",
-    "correctTheConfigurationFileBeforeSending": "Correct the configuration file in Loupist settings → Chat preferences before sending.",
-    "showOrLoadAModelInSettings": "Show or load a model in Settings to send messages. Your saved chats, World and Lens are available.",
+    "correctTheConfigurationFileInSettingsChat": "Correct the configuration file in Loupist settings → Chat defaults to start a new run.",
+    "theConfiguredChatDefaultsAreUnavailableFor": "The configured Chat defaults are unavailable for the current model. Review Loupist settings → Chat defaults or choose a model in Chat.",
+    "correctTheConfigurationFileBeforeSending": "Correct the configuration file in Loupist settings → Chat defaults before sending.",
+    "showOrLoadAModelInSettings": "Show or load a model in Settings to send messages. Your saved chats, Map and Lens are available.",
     "pleaseLookAtWorkspaceFile": "Please look at workspace file {{path}}. ",
     "source": "Source",
     "openingView": "Opening {{view}}",
@@ -26,7 +26,7 @@
     "skillDraftGlobalEmpty": "{{skill}} Create a reusable skill in my personal skill folder for all Loupists.\n\nThe workflow I want to create: ",
     "skillDraftLoupist": "{{skill}} Create a reusable skill in this Loupist's skill folder.\n\n{{brief}}",
     "skillDraftLoupistEmpty": "{{skill}} Create a reusable skill in this Loupist's skill folder.\n\nThe workflow I want to create: ",
-    "workspaceUnavailableDescription": "<0>Workspace folder unavailable.</0> Reconnect the original or copied Loupist folder to open its saved chats, World and Lens.",
+    "workspaceUnavailableDescription": "<0>Workspace folder unavailable.</0> Reconnect the original or copied Loupist folder to open its saved chats, Map and Lens.",
     "couldNotExport": "Couldn’t export this chat.",
     "couldNotPrint": "Couldn’t open printing. Try again.",
     "correctThis": "Correct this: "
@@ -41,7 +41,6 @@
     "couldNotLoadYourLoupists": "Could not load your Loupists.",
     "couldNotPrepareThisAgent": "Could not prepare this agent.",
     "couldNotReconnectThisFolder": "Could not reconnect this folder.",
-    "memoryRecoveryCouldNotFinishSafely": "Memory recovery could not finish safely.",
     "couldNotDeleteThisAgent": "Could not delete this agent.",
     "theAgentWasCreatedButTheAgentList": "The agent was created, but the agent list could not be refreshed."
   },
@@ -51,7 +50,7 @@
     "couldNotReloadModelSettings": "Could not reload model settings."
   },
   "useThreadActions": {
-    "couldNotCreateANewChat": "Could not create a new chat.",
+    "couldNotCreateANewChat": "Could not start new research.",
     "couldNotRenameThisSession": "Could not rename this session.",
     "couldNotDeleteThisSession": "Could not delete this session."
   },
@@ -89,17 +88,17 @@
   },
   "viewBoundary": {
     "couldNotDisplay": "Could not display {{name}}",
-    "reloadTheAppToTryAgainYourSaved": "Reload the app to try again. Your saved research stays on this device.",
+    "reloadTheAppToTryAgainYourSaved": "Reload the app to try again. Your saved research stays on this Mac.",
     "tryAgainOrUseTheSidebarToOpen": "Try again, or use the sidebar to open another view.",
     "reloadApp": "Reload app",
     "tryAgain": "Try again",
     "unavailable": "{{name}} unavailable"
   },
   "navigation": {
-    "connections": "Connections",
+    "connections": "Data connections",
     "connectionsDataSourcesApiKeyDartKrxOpenbb": "connections data sources api key dart krx openbb",
     "addDataSourcesAndChooseWhichLoupistsCan": "Add data sources and choose which Loupists can use them.",
-    "modelsProviders": "Models & providers",
+    "modelsProviders": "AI accounts",
     "accountsConnectApiKeySignInModels": "accounts connect api key sign in models",
     "connectYourAccountsAndChooseTheModelsAvailable": "Choose which AI models your Loupists can use in Chat.",
     "modelsCaption": "Your AI accounts",
@@ -109,8 +108,7 @@
     "skills": "Skills",
     "skillsCreatorInstallerInstructionsWorkflowsCreateInstallZip": "skills creator installer instructions workflows create install zip github",
     "addAndManageReusableWorkflowsForYourLoupists": "Manage shared skills and defaults for all Loupists. Customize one Loupist on its settings page.",
-    "skillsCaption": "Extra abilities like documents and charts",
-    "worldProcessing": "World processing",
+    "worldProcessing": "Map building",
     "memorySourcesRelationshipsProcessingModelLimits": "memory sources relationships processing model limits",
     "chooseHowEachLoupistConnectsWhatItLearns": "Choose how each Loupist connects what it learns from saved sources.",
     "worldProcessingCaption": "How new sources become map knowledge",
@@ -125,19 +123,15 @@
     "keyboardDescription": "Shortcuts for working without the mouse."
   },
   "emptyChat": {
-    "newChat": "New chat"
+    "newChat": "Untitled research session"
   },
   "workspaceUiState": {
     "untitled": "Untitled"
   },
   "loupistAvailabilityBoundary": {
     "workspaceFolderUnavailable": "Workspace folder unavailable",
-    "memoryNeedsRecovery": "Memory needs recovery",
-    "thisLoupistSFolderWasMovedOrIs": "This Loupist’s folder was moved or is unavailable. Reconnect the original or copied folder to open its chats, World and Lens.",
-    "anInterruptedUpdateWasSavedRecoverMemoryTo": "An interrupted update was saved. Recover Memory to continue.",
+    "thisLoupistSFolderWasMovedOrIs": "This Loupist’s folder was moved or is unavailable. Reconnect the original or copied folder to open its chats, Map and Lens.",
     "reconnectFolder": "Reconnect folder",
-    "recovering": "Recovering…",
-    "recoverMemory": "Recover memory",
     "earlierVersion": "Made by an earlier version",
     "earlierVersionBody": "This Loupist was made by an earlier version and can't be opened. Create a new Loupist.",
     "newerVersion": "Saved by a newer version",
@@ -154,16 +148,18 @@
     "splitTopBottom": "Split top and bottom",
     "splitLeftRight": "Split left and right",
     "sessions": "Research sessions",
+    "sessionsEmpty": "Start new research to dig into one question. Briefings and alerts stay in Bot.",
     "newResearch": "New research",
+    "newResearchHint": "New research: dig into one question. Briefings and alerts stay in Bot.",
     "principles": "Research principles",
     "taskHistory": "Scheduled tasks",
     "moreActions": "More",
     "loupists": "Loupists",
     "newLoupist": "New Loupist",
-    "newChat": "New chat",
+    "newChat": "New research",
     "settings": "Settings",
     "search": "Search",
-    "newChatShortcut": "New chat {{shortcut}}",
+    "newChatShortcut": "New research {{shortcut}}",
     "updateAvailable": "Update available",
     "loupistSettings": "Loupist settings",
     "removeLoupist": "Remove Loupist…",
@@ -171,16 +167,16 @@
     "close": "Close",
     "tabs": {
       "lens": "Lens",
-      "chat": "Chat",
+      "chat": "Bot",
       "map": "Map",
-      "schedule": "Schedule"
+      "schedule": "Schedule",
+      "following": "Following"
     },
     "searchShortcut": "Search {{shortcut}}",
     "unreadBriefings": "{{count}} unread briefings",
     "needsAttention": "Needs attention",
     "panel": "Panel",
-    "togglePanel": "Show or hide the panel ({{shortcut}})",
-    "whatItKnows": "What it knows"
+    "togglePanel": "Show or hide the panel ({{shortcut}})"
   },
   "loupistProfile": {
     "profile": "Profile",
@@ -228,7 +224,7 @@
     "refinedMethod": "Refined a method · {{date}}",
     "deferred": "Nothing worth keeping yet · {{date}}",
     "failed": "Couldn't run · {{date}}",
-    "empty": "Your Loupist reviews new information after your World grows.",
+    "empty": "Your Loupist reviews new information as your Map grows.",
     "fewFacts": "Too few related facts",
     "covered": "Already covered by '{{title}}'",
     "checks": "Output didn't pass checks",
@@ -242,6 +238,7 @@
   },
   "tracking": {
     "heading": "What the map tracks",
+    "advanced": "Advanced",
     "core": "Every map tracks companies, people, products, technologies, industries, markets and assets, places, policies, events and metrics.",
     "intro": "Also tracked for this Loupist:",
     "relations": "Links: {{list}}",
@@ -318,12 +315,12 @@
   },
   "palette": {
     "title": "Command palette",
-    "placeholder": "Search chats, names, principles, briefings…",
+    "placeholder": "Search research sessions, names, principles, briefings…",
     "empty": "Nothing matches.",
     "moreIn": "More from {{group}}",
     "groups": {
       "attention": "Needs attention",
-      "chats": "Chats",
+      "chats": "Research sessions",
       "following": "What you follow",
       "map": "Map",
       "principles": "Principles",
@@ -331,13 +328,14 @@
       "actions": "Actions"
     },
     "actions": {
-      "newChat": "New chat",
-      "openChat": "Open chat",
-      "openMap": "Open World",
+      "newChat": "New research",
+      "openChat": "Open Bot",
+      "openMap": "Open Map",
       "openLens": "Open Lens",
       "openSchedule": "Open schedule",
-      "allChats": "All chats",
-      "whatItKnows": "What {{loupistSubject}} knows",
+      "importHoldings": "Import holdings…",
+      "newJournalEntry": "New Journal entry",
+      "allChats": "All research sessions",
       "togglePanel": "Show or hide the panel",
       "settings": "Settings",
       "keyboard": "Keyboard shortcuts",

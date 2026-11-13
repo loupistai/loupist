@@ -46,13 +46,13 @@ it("lists and selects a new topic chat under the Thread, and its title says whic
   expect(await screen.findByRole("heading", { name: "Bot", level: 1 })).toBeVisible();
   const chats = document.querySelector<HTMLElement>(".loupist-navigation")!;
   await user.click(screen.getByRole("button", { name: "New research" }));
-  expect(await screen.findByRole("heading", { name: "New chat", level: 1 })).toBeVisible();
-  const rows = [...chats.querySelectorAll(".loupist-chat-button")];
+  expect(await screen.findByRole("heading", { name: "Untitled research session", level: 1 })).toBeVisible();
+  const rows = [...chats.querySelectorAll(".loupist-chat-button[data-thread-id]")];
   expect(rows[0]).toHaveAccessibleName("Bot");
-  expect(rows[1]).toHaveAccessibleName("New chat");
-  expect(within(chats).getByRole("button", { name: "New chat" })).toHaveAttribute("aria-current", "page");
+  expect(rows[1]).toHaveAccessibleName("Untitled research session");
+  expect(within(chats).getByRole("button", { name: "Untitled research session" })).toHaveAttribute("aria-current", "page");
   // An unsent chat has nothing to rename or delete yet.
-  expect(within(chats).queryByRole("button", { name: "Options for New chat" })).toBeNull();
+  expect(within(chats).queryByRole("button", { name: "Options for Untitled research session" })).toBeNull();
 });
 
 const handoffCard = (status: "running" | "done", content: string): ChatMessage => ({

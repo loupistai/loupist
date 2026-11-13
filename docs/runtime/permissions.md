@@ -31,9 +31,12 @@ summary into authority ([context delivery](../agent/context-delivery.md#memory-a
 
 ## Path classes
 
-Targets are canonicalized first (symlinks of the existing ancestor resolved, `..`
-removed, a dangling symlink followed to where it points, up to 40 hops), then
-matched in this order; the first match wins. A link chain that loops or cannot
+A target declared under the bundled `skills/` root is checked for escape before
+resolved-path matching: if `..` or a symlink resolves outside that root, it is Outside, even
+when the destination would otherwise be admitted Workspace. Targets are resolved
+(symlinks of the existing ancestor followed, `..` removed, a dangling symlink
+followed to where it points, up to 40 hops), then matched in this order; the first
+match wins. A link chain that loops or cannot
 be read is refused for every tool. The extension's `canonicalTargetPath` resolves
 the same way, so its write pin agrees with Rust. A root is found among the
 target's ancestors by exact spelling or by the filesystem identity (`(dev,
@@ -56,32 +59,37 @@ counts at whatever depth it spells the root, while on a case-sensitive volume
    file or folder itself and everything in it, a nested repository's too) and
    the `hooks/**` and `config` of a bare `*.git` or a submodule's
    `.git/modules/<path>`. Another repository's git directory is Outside.
-3. Instructions: workspace `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`,
+3. BundledSkill: the sealed agent `skills/` root, including `SKILL.md` and
+   supporting references. Native file tools may read, list and search it, never
+   write or edit it. The adjacent prompt, extension and catalog are AppPrivate,
+   even when the agent resources sit inside the workspace.
+4. Instructions: workspace `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`,
    `.loupist/AGENTS.md`, `.loupist/config.toml`, Skill entries under `.loupist`,
    `.agents` and `.pi`, the global `AGENTS.md` and everything under the global
    `skills` folder.
-4. Scratch: this run's `TMPDIR` (`<app data>/loupists/<id>/pi-runtime/<chat>/temp`).
-5. Attachments: this Chat's attachment folder, which the host asks the model to read.
-6. AppPrivate: anything else under the app data root (credentials, other Chats'
+5. Scratch: this run's `TMPDIR` (`<app data>/loupists/<id>/pi-runtime/<chat>/temp`).
+6. Attachments: this Chat's attachment folder, which the host asks the model to read.
+7. AppPrivate: anything else under the app data root (credentials, other Chats'
    runtime folders, `.pi/settings.json`) or under the Loupist's data folder
    `<workspace>/.loupist` (the database, other Chats' attachments, the activity
    log), except its `skills` folder.
-7. Workspace: inside the selected workspace, the Loupist folder. A default
+8. Workspace: inside the selected workspace, the Loupist folder. A default
    Loupist is created inside the app-data namespace: its strictly nested selected
    workspace counts as Workspace, while its own `.loupist` store, other Loupists,
    runtime folders and the rest of app data remain private. Selecting the app-data
    root itself or a parent never grants access to its private contents.
-8. Outside: everything else.
+9. Outside: everything else.
 
 ## Policy table
 
 | Tool | Class | Clean | ThisTurn, Custom |
 | --- | --- | --- | --- |
-| read, ls | Instructions, Scratch, Attachments, Workspace | Allow | Allow |
+| read, ls | BundledSkill, Instructions, Scratch, Attachments, Workspace | Allow | Allow |
 | read, ls | AppPrivate, Credentials, GitDir | Refuse `protected_path` | Refuse `protected_path` |
 | read, ls | Outside | Refuse `outside_workspace` | Refuse `outside_workspace` |
 | find, grep | root contains the app data root | Refuse `protected_path` | Refuse `protected_path` |
 | find, grep | otherwise | as read | as read |
+| write, edit | BundledSkill | Refuse `bundled_skill` | Refuse `bundled_skill` |
 | write, edit | Scratch, Workspace | Allow | Allow |
 | write, edit | Scratch, Workspace: an existing file with another hard link | Refuse `protected_path` | Refuse `untrusted_text_paused` |
 | write, edit | Instructions | Allow | Refuse `untrusted_text_paused` |
@@ -144,7 +152,7 @@ The offline packages are numpy, pandas, scipy, matplotlib, statsmodels and sciki
 
 On macOS the worker is signed with the hardened runtime and `com.apple.security.cs.allow-unsigned-executable-memory`. Wasmtime 50 maps executable memory with W^X `mmap` rather than Apple's `MAP_JIT`, so that entitlement is required for the worker to run. The Loupist app binary does not receive it. Pi keeps its own entitlement file for the Node runtime. That file is not applied to the app.
 
-Rust copies allowed guest writes back to the host, including writes made before cancellation or timeout. Copy-back preserves existing file permission bits and removes partial new files and replacement temporary files if a write fails. It reapplies the native path policy to every destination, including newly created names, and admits only ordinary workspace content. It uses descriptor-relative nofollow and openat checks and refuses symlink races, replaced parents and hard-link aliases. The host does not extract guest archives onto itself. If a host file changes during the call, copy-back does not overwrite it. The snapshot is limited to 2,000 files and 32 MiB; copy-back is limited to 256 changed files and 32 MiB, with an 8 MiB limit per file. Walks visit at most 10,000 entries and 32 directory levels; at most 256 writable roots, including `outputs`, are admitted. If the workspace already has an ordinary file named `outputs`, the call explains that it must be renamed before Python can run. Snapshot omissions and copy-back truncation are reported independently. Oversized output files and changed host files are reported individually so other allowed results survive. Removing or renaming an existing directory is reported as a conflict and leaves its original host subtree intact; remove individual files when needed.
+Rust copies allowed guest writes back to the host, including writes made before cancellation or timeout. Copy-back preserves existing file permission bits and removes partial new files and replacement temporary files if a write fails. It reapplies the native path policy to every destination, including newly created names, and admits only ordinary workspace content. It uses descriptor-relative nofollow and openat checks and refuses symlink races, replaced parents and hard-link aliases. The host does not extract guest archives onto itself. If a host file changes during the call, copy-back does not overwrite it. The snapshot is limited to 2,000 files and 32 MiB. Large folders produce a partial snapshot: existing `outputs/` files first, then newer modification times, then path. Files that do not fit are omitted rather than rejecting the call. The result reports `snapshot_omitted_count`, up to eight `snapshot_omitted_paths`, and `snapshot_scan_truncated`; when a subtree could not be scanned, the count is a lower bound and the path ends in `/`. Omitted host files never become deletion candidates during copy-back. Snapshot selection retains at most 10,000 admitted entries and 32 directory levels; directory enumeration uses bounded candidate storage. Copy-back is limited to 256 changed files and 32 MiB, with an 8 MiB limit per file. Copy-back walks visit at most 10,000 entries and 32 directory levels; at most 256 writable roots, including `outputs`, are admitted. If the workspace already has an ordinary file named `outputs`, the call explains that it must be renamed before Python can run. Snapshot omissions and copy-back truncation are reported independently. Oversized output files and changed host files are reported individually so other allowed results survive. Removing or renaming an existing directory is reported as a conflict and leaves its original host subtree intact; remove individual files when needed.
 
 ## Residual risk
 

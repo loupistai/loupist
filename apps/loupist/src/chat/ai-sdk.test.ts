@@ -1,5 +1,5 @@
 import { readUIMessageStream } from "ai";
-import { applyChatProgressPatch, applyChatProgressSnapshot, fromLoupistUIMessage, TauriChatTransport, toLoupistUIMessage } from "./ai-sdk";
+import { applyChatProgressPatch, applyChatProgressSnapshot, fromLoupistUIMessage, fromStoreKeepingAnswers, TauriChatTransport, toLoupistUIMessage } from "./ai-sdk";
 import type { LoupistUIMessage } from "./ai-sdk";
 import type { ChatMessage, ChatSendRequest, ChatStreamEvent, LoupistBridge } from "../types";
 import { evidenceFixture } from "../test/evidenceFixtures";
@@ -143,8 +143,8 @@ describe("native stream transport", () => {
     const answers = projections.map((message) => {
       const turn = deriveTurnView({ message, now: 2, lastActivityAt: 2, stopping: false, retry: { attempt: 1, offered: false } });
       const prose = turn.segments.filter((segment) => segment.kind === "prose");
-      // Narration stays narration: only the draft and its settled text read as the answer.
-      if (message.progress) expect(prose.filter((segment) => segment.tone === "narration").map((segment) => segment.text)).toEqual(["Checking."]);
+      // A note stays a note: only the draft and its settled text read as the answer.
+      if (message.progress) expect(prose.filter((segment) => segment.tone === "note").map((segment) => segment.text)).toEqual(["Checking."]);
       return prose.filter((segment) => segment.tone === "answer");
     });
     expect(answers.every((segments) => segments.length <= 1 && segments.every((segment) => segment.key === draft.id))).toBe(true);
@@ -236,6 +236,44 @@ describe("native stream transport", () => {
     expect(onAdmission).toHaveBeenCalledExactlyOnceWith({ accepted: true, runId });
   });
 
+  it("shows a staged chart in the streaming answer but lists it as published only at commit", async () => {
+    const onArtifact = vi.fn();
+    const artifact = { artifact_id: "chart-1", revision: 1, kind: "chart" as const, title: "Margin", digest: "a".repeat(64) };
+    const view = {
+      artifact: { id: "chart-1", chat_session_id: "chat-a", kind: "chart" as const, title: "Margin", current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+      revision: { artifact_id: "chart-1", revision: 1, digest: "a".repeat(64), source_message_id: "answer", created_at_ms: 0, payload: { kind: "markdown" as const, schema: "loupist-markdown/1" as const, markdown: "" } },
+      chart_dataset: null,
+    };
+    let finish = () => {};
+    const stream = await new TauriChatTransport({ chatSend: vi.fn(async (sent: ChatSendRequest, onEvent: (event: ChatStreamEvent) => void) => {
+      const run_id = sent.run_id!;
+      onEvent({ type: "started", run_id });
+      onEvent({ type: "artifact_staged", run_id, view });
+      finish = () => {
+        onEvent({ type: "artifact", run_id, artifact });
+        onEvent({ type: "completed", ...completedRun, run_id, message_id: "charted", final_text: "Done.", created_at: "2026-11-01T00:00:00Z",
+          execution_model: { profile_id: "test", name: "Test", provider: "test", model: "test", thinking_level: "medium", run_options: {} },
+          agent_harness: { schema: "test", mode: "chat", skill_ids: [], capability_ids: [], digest: "test" } });
+      };
+      return { run_id };
+    }), chatAbort: vi.fn() } as unknown as LoupistBridge, undefined, onArtifact).sendMessages({ ...request, body });
+    const projections: ChatMessage[] = [];
+    let finished = false;
+    for await (const message of readUIMessageStream<LoupistUIMessage>({ stream: stream as ReadableStream<never> })) {
+      const projected = fromLoupistUIMessage(message);
+      projections.push(projected);
+      if (projected.staged_artifacts && !finished) {
+        finished = true;
+        expect(projected).toMatchObject({ status: "streaming", staged_artifacts: [view] });
+        expect(projected.artifact_refs).toBeUndefined();
+        expect(onArtifact).not.toHaveBeenCalled();
+        finish();
+      }
+    }
+    expect(projections.at(-1)).toMatchObject({ status: "complete", artifact_refs: [artifact], staged_artifacts: [view] });
+    expect(onArtifact).toHaveBeenCalledExactlyOnceWith("loupist-a", "chat-a", artifact);
+  });
+
   it("carries custom tool refusals from stream completion into the answer", async () => {
     const tool_refusals = [{ connection_id: "custom-one", connection_name: "Company research", tool_name: "read_filings", reason: "needs_approval" as const }];
     const stream = await transport(async (sent, onEvent) => {
@@ -247,5 +285,26 @@ describe("native stream transport", () => {
       return { run_id };
     }).sendMessages({ ...request, body });
     expect((await project(stream as ReadableStream<never>)).at(-1)!.tool_refusals).toEqual(tool_refusals);
+  });
+});
+
+describe("reconciling with the saved Chat", () => {
+  it("keeps the ids of messages already on screen, so a stopped turn does not remount or move", () => {
+    const asked: LoupistUIMessage = { id: "client-user-1", role: "user", parts: [{ type: "text", text: "Explain margins." }] };
+    const answering: LoupistUIMessage = { id: "client-assistant-1", role: "assistant", metadata: { status: "streaming", answer_key: "answer-1" }, parts: [{ type: "text", text: "Margins" }] };
+    const earlier = toLoupistUIMessage({ id: "msg-0", role: "assistant", content: "Hello.", created_at: "2026-11-13T00:00:00Z" });
+    const stored: ChatMessage[] = [
+      { id: "msg-0", role: "assistant", content: "Hello.", created_at: "2026-11-13T00:00:00Z" },
+      { id: "msg-1", role: "user", content: "Explain margins.", created_at: "2026-11-13T00:01:00Z" },
+      { id: "msg-2", role: "assistant", content: "Margins", status: "aborted", created_at: "2026-11-13T00:01:01Z" },
+    ];
+    const next = fromStoreKeepingAnswers([earlier, asked, answering], stored);
+    expect(next.map((message) => message.id)).toEqual(["msg-0", "client-user-1", "client-assistant-1"]);
+    expect(next.map((message) => fromLoupistUIMessage(message).id)).toEqual(["msg-0", "msg-1", "msg-2"]);
+    expect(next[2]?.metadata?.answer_key).toBe("answer-1");
+    expect(fromLoupistUIMessage(next[2]!).status).toBe("aborted");
+    // A different question in that place is a different message.
+    const replaced = fromStoreKeepingAnswers([earlier, { ...asked, parts: [{ type: "text", text: "Something else" }] }], stored.slice(0, 2));
+    expect(replaced.map((message) => message.id)).toEqual(["msg-0", "msg-1"]);
   });
 });

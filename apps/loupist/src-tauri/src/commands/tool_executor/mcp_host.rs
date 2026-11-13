@@ -34,6 +34,21 @@ const MCP_SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 type SharedMcpServer = Arc<Mutex<Option<TurnMcpServer>>>;
 
+fn protected_values(
+    credentials: &BTreeMap<String, String>,
+    app_data: &std::path::Path,
+    scratch: &std::path::Path,
+) -> Vec<String> {
+    credentials
+        .values()
+        .cloned()
+        .chain([
+            app_data.to_string_lossy().into_owned(),
+            scratch.to_string_lossy().into_owned(),
+        ])
+        .collect()
+}
+
 #[derive(Default)]
 pub(super) struct McpTurnSessions {
     by_server: BTreeMap<String, SharedMcpServer>,
@@ -185,6 +200,49 @@ enum McpInvocation {
     Stopped(Option<BrokerError>),
 }
 
+/// Empty row containers, including OpenBB models whose fields are all null.
+/// Zero and false are data; nonempty structured metadata is not an empty row section.
+fn empty_row(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::String(text) => text.trim().is_empty(),
+        Value::Array(values) => values.iter().all(empty_row),
+        Value::Object(values) => values.values().all(empty_row),
+        Value::Bool(_) | Value::Number(_) => false,
+    }
+}
+
+fn returned_no_rows(payload: &Value) -> bool {
+    match payload
+        .get("structuredContent")
+        .filter(|value| !value.is_null())
+    {
+        Some(structured) => match structured.get("results") {
+            Some(Value::Array(rows)) => rows.iter().all(empty_row),
+            Some(Value::Null) => true,
+            None => empty_row(structured),
+            _ => false,
+        },
+        None => payload
+            .get("content")
+            .and_then(Value::as_array)
+            .is_none_or(|parts| {
+                parts.iter().all(|part| {
+                    part["type"] == "text"
+                        && part["text"]
+                            .as_str()
+                            .is_some_and(|text| text.trim().is_empty())
+                })
+            }),
+    }
+}
+
+fn describe_empty_read(payload: &mut Value) {
+    payload["status"] = json!("ok");
+    payload["row_count"] = json!(0);
+    payload["next"] = json!("No data was returned for this request. Try another enabled provider or change the request. Do not cite this empty result.");
+}
+
 /// Invocation: forwards the admitted call and checks what came back. A result
 /// from a provider the call did not admit, or one echoing a credential, stops
 /// the session; a cutoff read keeps only rows on or before the cutoff.
@@ -237,7 +295,10 @@ async fn invoke_mcp_tool(
     if contains_protected_value(&original, &server.sensitive_values) {
         return Ok(McpInvocation::Stopped(None));
     }
-    let as_of = match plan.dated {
+    let blank = crate::mcp::result_is_blank(&result);
+    // A 204 is already empty, including under a cutoff. Do not run the dated
+    // row filter, which requires a structured row section.
+    let as_of = match plan.dated.filter(|_| !blank) {
         Some((route, cutoff, bounded)) => {
             match point_in_time::filter_result(route, &mut result, cutoff, bounded) {
                 Ok(summary) => Some(summary),
@@ -251,6 +312,9 @@ async fn invoke_mcp_tool(
             .map_err(|_| BrokerError::Execution("MCP result was invalid".into()))?,
         None => original,
     };
+    if blank && !plan.control_tool {
+        payload["structuredContent"] = json!({"results": []});
+    }
     if let Some(as_of) = as_of {
         payload["as_of"] = as_of;
     }
@@ -487,7 +551,11 @@ impl AppToolExecutor {
                 scratch
             }
         };
-        let sensitive_values = authority.credentials.values().cloned().collect::<Vec<_>>();
+        let sensitive_values = protected_values(
+            &authority.credentials,
+            &self.state.artifacts.app_data_dir,
+            &scratch,
+        );
         let providerless_tool_policy = authority.runtime.providerless_tool_policy.clone();
         let provider_receipt_pointer = authority.runtime.provider_receipt_pointer.clone();
         let control_tool_names = authority.runtime.control_tool_names.clone();
@@ -623,7 +691,7 @@ impl AppToolExecutor {
                 .state
                 .store
                 .dataset_fresh(&self.loupist_id, &plan.request_key, max_age)
-                .map_err(|error| BrokerError::Execution(error.to_string()))?,
+                .map_err(command_error)?,
             _ => None,
         };
 
@@ -653,8 +721,18 @@ impl AppToolExecutor {
         } else {
             let reused = retained.is_some();
             let compact = payload.to_string().len() > 16 * 1024;
-            let (reference, fetched_at) =
-                self.retain_mcp_read(&plan, &payload, retained, compact)?;
+            let (reference, fetched_at) = match retained {
+                Some(retained) => retained,
+                None => {
+                    let (reference, fetched_at) = self.retain_dataset(
+                        &plan.request_key,
+                        &payload,
+                        json!({"producer":"mcp", "request":plan.capture_request,"publication_policy":"provider-declared; unknown availability is not point-in-time evidence","model_coverage":if compact {"bounded_sample"} else {"complete"},
+                            "trust": crate::custom_connections::taint::retained_trust(ToolMethod::McpCall, &plan.capture_request, &self.state.artifacts.mcp_runtimes)}),
+                    )?;
+                    (reference, Some(fetched_at))
+                }
+            };
             let mut model_payload =
                 self.shape_mcp_read(&mut payload, &reference, fetched_at, reused, compact)?;
             let result_ref = match self
@@ -670,9 +748,26 @@ impl AppToolExecutor {
                 Ok(result_ref) => result_ref,
                 Err(error) => return mcp_call_error_with_inventory(tools, error),
             };
-            attach_result_ref(&mut payload, &result_ref);
-            if let Some(delivered) = &mut model_payload {
-                attach_result_ref(delivered, &result_ref);
+            if returned_no_rows(&payload) {
+                // Nothing the answer can rely on: host reads still resolve it
+                // by result_ref, but it has no citation_url and is never one
+                // of the answer's Sources.
+                self.capture
+                    .stage(delivery_id, |pending| {
+                        pending.unlisted_results.insert(result_ref.clone());
+                    })
+                    .await;
+                describe_empty_read(&mut payload);
+                payload["result_ref"] = json!(result_ref);
+                if let Some(delivered) = &mut model_payload {
+                    describe_empty_read(delivered);
+                    delivered["result_ref"] = json!(result_ref);
+                }
+            } else {
+                attach_result_ref(&mut payload, &result_ref);
+                if let Some(delivered) = &mut model_payload {
+                    attach_result_ref(delivered, &result_ref);
+                }
             }
             model_payload.unwrap_or(payload)
         };
@@ -724,7 +819,7 @@ impl AppToolExecutor {
         cutoff: Option<chrono::NaiveDate>,
     ) -> Result<McpCallPlan, BrokerError> {
         let Some(tool) = server.tools.get(&request.tool_name) else {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid("tool_name", "Not in this connection's active tool list. Use an active tool, or load this connection again if it stopped."));
         };
         if let Err(error) =
             validate_provider_argument(tool, &request.arguments, &server.enabled_provider_ids)
@@ -789,29 +884,6 @@ impl AppToolExecutor {
         })
     }
 
-    /// Provenance: the dataset revision that retains a data read in full, the
-    /// reused one or a new one recorded with its request and trust.
-    fn retain_mcp_read(
-        &self,
-        plan: &McpCallPlan,
-        payload: &Value,
-        retained: Option<(crate::datasets::DatasetRef, Option<String>)>,
-        compact: bool,
-    ) -> Result<(crate::datasets::DatasetRef, Option<String>), BrokerError> {
-        if let Some(retained) = retained {
-            return Ok(retained);
-        }
-        let fetched_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-        let reference = self.state.store.dataset_put(
-            &self.loupist_id,
-            &plan.request_key,
-            payload,
-            json!({"producer":"mcp", "request":plan.capture_request,"fetched_at":fetched_at,"publication_policy":"provider-declared; unknown availability is not point-in-time evidence","model_coverage":if compact {"bounded_sample"} else {"complete"},
-                "trust": crate::custom_connections::taint::retained_trust(ToolMethod::McpCall, &plan.capture_request, &self.state.artifacts.mcp_runtimes)}),
-        ).map_err(|error| BrokerError::Execution(error.to_string()))?;
-        Ok((reference, Some(fetched_at)))
-    }
-
     /// Result shaping: stamps the retained dataset on the full payload and, for
     /// a large one, returns the bounded summary the model receives instead.
     fn shape_mcp_read(
@@ -835,7 +907,7 @@ impl AppToolExecutor {
             .state
             .store
             .dataset_describe(&self.loupist_id, &reference.dataset_id, reference.revision)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+            .map_err(command_error)?;
         let mut delivered = json!({"dataset_ref":reference,"fetched_at":payload["fetched_at"],"data_summary":description,"model_delivery":{"coverage":"bounded_sample","retained":"complete"}});
         if let Some(as_of) = payload.get("as_of") {
             delivered["as_of"] = as_of.clone();
@@ -944,8 +1016,12 @@ impl AppToolExecutor {
             .get(&request.server_id)
             .and_then(|runtime| runtime.provider_config_fields.get(provider))
             .is_some_and(|fields| !fields.is_empty());
-        if matches!(error, BrokerError::MethodDenied) && needs_setup {
-            return error.with_next(PROVIDER_SETUP_NEXT);
+        if matches!(
+            error,
+            BrokerError::MethodDenied | BrokerError::InvalidArguments { .. }
+        ) && needs_setup
+        {
+            return BrokerError::invalid("provider", format!("Provider {provider} needs setup. If connection_setup is available, call it with this provider's connection name so the user finishes setup in a card; otherwise tell the user to check this provider in Connections."));
         }
         error
     }
@@ -1111,7 +1187,7 @@ fn setup_notices<'a>(
         .collect()
 }
 
-const PROVIDER_SETUP_NEXT: &str = "This provider needs setup before it can run (SEC EDGAR needs a contact email). If connection_setup is available, call it with the provider's connection id or name so the user finishes it in a card (otherwise point them to Connections), or use another provider listed in the tool schema and name it when citing.";
+const PROVIDER_SETUP_NEXT: &str = "The providers named above need setup before they can run. If connection_setup is available, call it with the named connection id so the user finishes setup in a card; otherwise tell the user to check that provider in Connections. Use another provider only when its tool schema lists it, and name it when citing.";
 
 fn connect_response(server_id: &str, tools: Vec<Value>, notices: &[String]) -> Value {
     let mut response = json!({ "server_id": server_id, "tools": tools });
@@ -1279,7 +1355,7 @@ fn ensure_inventory_contains_no_protected_values(
         .map_err(|_| BrokerError::Execution("MCP tool inventory was invalid".into()))?;
     if contains_protected_value(&inventory, sensitive_values) {
         return Err(BrokerError::Execution(
-            "MCP tool inventory contained protected credential data".into(),
+            "MCP tool inventory contained protected private data".into(),
         ));
     }
     Ok(())
@@ -1394,7 +1470,10 @@ fn validate_provider_argument(
         });
     let provider = arguments.get("provider").and_then(Value::as_str);
     if required && provider.is_none() {
-        return Err(BrokerError::Malformed);
+        return Err(BrokerError::invalid(
+            "provider",
+            "Choose a provider listed in this active tool's schema.",
+        ));
     }
     if let Some(provider) = provider {
         let schema_allows = provider_schema
@@ -1402,7 +1481,7 @@ fn validate_provider_argument(
             .and_then(Value::as_array)
             .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(provider)));
         if !enabled_provider_ids.contains(provider) || !schema_allows {
-            return Err(BrokerError::MethodDenied);
+            return Err(BrokerError::invalid("provider", "Not enabled for this tool in this run. Choose a provider listed in the active tool schema, or use connection_setup for the provider you need."));
         }
     }
     Ok(())
@@ -1764,12 +1843,18 @@ done
     }
 
     #[test]
-    fn credential_echoes_are_refused_in_results_and_inventory() {
-        let secrets = vec!["provider-secret-123".to_owned()];
+    fn credentials_and_private_paths_are_refused_in_results_and_inventory() {
+        let secrets = protected_values(
+            &BTreeMap::from([("api_key".into(), "provider-secret-123".into())]),
+            std::path::Path::new("/private/app-data"),
+            std::path::Path::new("/private/scratch"),
+        );
         let mut keyed_echo = serde_json::Map::new();
         keyed_echo.insert("provider-secret-123".into(), json!("credential-shaped key"));
         for echoed in [
             json!({"content": [{"type": "text", "text": "error: provider-secret-123"}]}),
+            json!({"content": [{"type": "text", "text": "Read /private/app-data/key.json"}]}),
+            json!({"structuredContent": {"path":"/private/scratch/runtime.json"}}),
             Value::Object(keyed_echo),
         ] {
             assert!(contains_protected_value(&echoed, &secrets));
@@ -1943,11 +2028,11 @@ done
         assert!(!tool_names(&connected_b).contains(&"equity_quote".to_owned()));
         assert!(matches!(
             call(&executor_b, "equity_quote", quote("fmp")).await,
-            Err(BrokerError::MethodDenied)
+            Err(BrokerError::InvalidArguments { .. })
         ));
         assert!(matches!(
             call(&executor_a, "equity_quote", quote("fmp")).await,
-            Err(BrokerError::MethodDenied)
+            Err(BrokerError::InvalidArguments { .. })
         ));
         call(&executor_a, "equity_quote", quote("yfinance"))
             .await
@@ -2027,7 +2112,7 @@ done
                 json!({"symbol": "TEST", "provider": "yfinance"})
             )
             .await,
-            Err(BrokerError::MethodDenied)
+            Err(BrokerError::InvalidArguments { .. })
         ));
         assert_eq!(
             fs::read_to_string(&spawned.transcript)
@@ -2274,6 +2359,127 @@ done
             2
         );
         assert!(!transcript.contains("max_age"));
+        turn.shutdown_mcp().await;
+        wait_for_exit_marker(&spawned.exited).await;
+    }
+
+    #[test]
+    fn empty_rows_do_not_mistake_zero_false_or_other_data_for_missing_values() {
+        for rows in [
+            json!([]),
+            json!([{}]),
+            json!([null, {"price":null, "nested":[]}]),
+            json!([{"value":" "}]),
+        ] {
+            assert!(returned_no_rows(
+                &json!({"structuredContent":{"results":rows}})
+            ));
+        }
+        for rows in [
+            json!([{"price":0}]),
+            json!([{"flag":false}]),
+            json!([{"symbol":"AAA"}]),
+            json!([{}, {"value":1}]),
+            json!({"value":null}),
+        ] {
+            assert!(!returned_no_rows(
+                &json!({"structuredContent":{"results":rows}})
+            ));
+        }
+        assert!(!returned_no_rows(
+            &json!({"structuredContent":{"notice":"data"}})
+        ));
+        assert!(!returned_no_rows(
+            &json!({"content":[{"type":"image","data":""}]})
+        ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_blank_provider_reply_keeps_the_session_and_a_host_result_ref() {
+        let _guard = crate::mcp::MCP_PROCESS_TEST_LOCK.lock().await;
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let turn = capture(&temporary, "blank", None);
+        let script = ASSET_REFRESH_SCRIPT.replace(
+            "reply \"$id\" ''",
+            r#"printf '{"jsonrpc":"2.0","id":"%s","result":{"content":[{"type":"text","text":""}],"isError":false}}\n' "$id""#,
+        );
+        let spawned = spawn_script_server(&temporary, "blank", "sec", None, &script).await;
+        install(&turn, spawned.server).await;
+        let executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
+        let delivery = new_id("mcp-call");
+        let empty = executor.mcp_call(&policy("loupist-a", None), json!({"server_id":"openbb", "tool_name":"etf_info", "arguments":{"symbol":"MORR","provider":"sec"}}), &delivery).await.unwrap();
+        executor.capture.commit_delivery(&delivery).await;
+        assert_eq!(empty["result"]["status"], "ok", "{empty}");
+        assert_eq!(empty["result"]["row_count"], 0);
+        assert!(empty["result"]["next"]
+            .as_str()
+            .unwrap()
+            .contains("another enabled provider"));
+        assert!(empty["result"]["result_ref"].is_string());
+        assert!(empty["result"].get("citation_url").is_none());
+        assert!(turn.evidence_refs.lock().await.is_empty());
+        let bars = call(
+            &executor,
+            "equity_price_historical",
+            json!({"symbol":"MORR","provider":"sec"}),
+        )
+        .await
+        .unwrap();
+        assert!(bars["result"]["citation_url"].is_string(), "{bars}");
+        turn.shutdown_mcp().await;
+        wait_for_exit_marker(&spawned.exited).await;
+    }
+
+    /// A provider that answered with no rows (cboe before yfinance) is shown
+    /// to the model as empty but is not a citable result or a listed Source.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_read_that_returned_no_rows_is_not_a_source_of_the_answer() {
+        let _guard = crate::mcp::MCP_PROCESS_TEST_LOCK.lock().await;
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let turn = capture(&temporary, "no-rows", None);
+        let spawned =
+            spawn_script_server(&temporary, "no-rows", "sec", None, ASSET_REFRESH_SCRIPT).await;
+        install(&turn, spawned.server).await;
+        let executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
+        let read = |tool: &'static str| {
+            let executor = &executor;
+            async move {
+                let delivery = new_id("mcp-call");
+                let result = executor
+                    .mcp_call(
+                        &policy("loupist-a", None),
+                        json!({"server_id": "openbb", "tool_name": tool, "arguments": {"symbol": "MORR", "provider": "sec"}}),
+                        &delivery,
+                    )
+                    .await
+                    .unwrap();
+                executor.capture.commit_delivery(&delivery).await;
+                result
+            }
+        };
+        let empty = read("etf_holdings").await;
+        assert_eq!(empty["result"]["structuredContent"]["results"], json!([]));
+        assert!(empty["result"].get("citation_url").is_none(), "{empty}");
+        let bars = read("equity_price_historical").await;
+        assert!(bars["result"]["citation_url"].is_string(), "{bars}");
+        let evidence = turn.evidence_refs.lock().await.clone();
+        assert_eq!(
+            evidence
+                .iter()
+                .map(|item| item.tool_name.as_str())
+                .collect::<Vec<_>>(),
+            ["equity_price_historical"]
+        );
+        assert!(!returned_no_rows(
+            &json!({"content": [{"type": "text", "text": "rows"}], "structuredContent": {"provider": "sec", "results": {"symbol": "MORR"}}})
+        ));
+        assert!(returned_no_rows(
+            &json!({"content": [{"type": "text", "text": " "}], "isError": false})
+        ));
         turn.shutdown_mcp().await;
         wait_for_exit_marker(&spawned.exited).await;
     }

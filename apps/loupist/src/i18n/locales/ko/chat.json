@@ -7,15 +7,15 @@
     "loupistIsContinuingAResponseStartedBeforeReload": "루피스트가 새로고침 전에 시작한 응답을 이어가고 있어요.",
     "connectTheQueuedMessageSModelProviderBeforeSending": "대기 중인 메시지를 보내려면 이 모델의 AI 서비스를 연결해 주세요.",
     "reconnectTheWorkspaceFolderBeforeSendingQueuedMessagesWere": "메시지를 보내려면 작업 폴더를 다시 연결해 주세요. 대기 중인 메시지는 유지되어 있어요.",
-    "chooseAnAvailableModelInChatOrSettingsChat": "대화 또는 루피스트 설정 → 대화 설정에서 사용 가능한 모델을 선택해 주세요.",
+    "chooseAnAvailableModelInChatOrSettingsChat": "대화 또는 루피스트 설정 → 대화 기본값에서 사용 가능한 모델을 선택해 주세요.",
     "couldNotReadConfigurationBeforeSending": "메시지를 보내기 전에 설정을 읽지 못했어요. 다시 시도해 주세요.",
     "chatWithLoupist": "루피스트와 대화",
     "openWorkspaceFiles": "작업 폴더 파일 열기",
-    "chatPreferencesForThisLoupist": "이 루피스트의 대화 설정",
+    "chatPreferencesForThisLoupist": "이 루피스트의 대화 기본값",
     "stopping": "중지 중",
     "updatingTheAnswer": "답변 업데이트 중",
     "stillWorking": "작업 중",
-    "iDLikeToChangeTheWorkingNote": "작업 노트를 이렇게 바꿔 주세요: ",
+    "iDLikeToChangeTheWorkingNote": "리서치 노트를 이렇게 바꿔 주세요: ",
     "modelSetup": "모델 설정",
     "openSettings": "설정 열기",
     "reconnectTheWorkspaceFolderToSendMessages": "메시지를 보내려면 작업 폴더를 다시 연결해 주세요",
@@ -24,7 +24,7 @@
     "chartRange": "선택한 차트 범위: {{start}}~{{end}}.",
     "withChartRange": "{{text}}\n\n선택한 차트 범위: {{start}}~{{end}}.",
     "retainedRequestError": "{{error}} 요청은 보관되어 있어요. 다시 보내기 전에 대화를 확인해 주세요.",
-    "appendWorkingNoteRequest": "{{prompt}}\n\n작업 노트를 이렇게 바꿔 주세요: "
+    "appendWorkingNoteRequest": "{{prompt}}\n\n리서치 노트를 이렇게 바꿔 주세요: "
   },
   "answerFeedback": {
     "availableWhenTheReplyFinishes": "답변이 끝나면 사용할 수 있어요",
@@ -39,7 +39,7 @@
     "cancel": "취소",
     "teachTheLoupist": "루피스트에게 알려주기",
     "pleaseRevisitThisAnswerUsingMyCorrectionAnswerExcerpt": "제가 수정한 내용을 바탕으로 답변을 다시 검토해 주세요.\n\n답변 발췌:\n{{value1}}{{value2}}\n\n수정할 내용:\n{{value3}}",
-    "characterCount": "{{formattedCount}} / 4000자 · 이 기기에 저장돼요"
+    "characterCount": "{{formattedCount}} / 4000자 · 이 Mac에 저장돼요"
   },
   "chatActivityDetailView": {
     "thisActivityIsNotAvailableInThisChat": "이 대화에서 해당 활동을 볼 수 없어요.",
@@ -93,7 +93,8 @@
     "send": "보내기",
     "messageLoupist": "루피스트에게 메시지",
     "askLoupistToAddContextForCommands": "{{loupistName}}에게 질문…",
-    "newChat": "새 대화",
+    "askYourLoupist": "루피스트에게 질문…",
+    "newChat": "새 리서치",
     "model": "모델",
     "attachFiles": "파일 첨부",
     "manageSkillsAndConnections": "스킬 및 연결 관리",
@@ -102,7 +103,7 @@
     "selectedWork": "선택한 작업",
     "addedToThisMessage": "메시지에 추가됨",
     "pinnedKnowledge": "고정한 지식",
-    "connectAModelProvider": "모델 연결하기",
+    "connectAModelProvider": "AI 계정 연결",
     "chooseAThinkingLevel": "추론 수준 선택",
     "chooseAModel": "모델 선택",
     "sendNextWaitsForThisReplyGuideThisResponse": "다음에 보내기는 현재 답변이 끝날 때까지 기다려요. 지침 추가는 지금 지침을 전달해요.",
@@ -117,16 +118,19 @@
     "shortcutClose": "닫기",
     "escapeKey": "esc",
     "versionLabel": "버전 {{version}}",
-    "startAFreshConversation": "새 대화 시작",
+    "startAFreshConversation": "리서치 세션 시작",
     "chooseTheModel": "모델 선택",
     "changeWhatThisMessageRemembers": "비공개 대화 켜거나 끄기",
     "chooseWhatThisLoupistCanUse": "이 루피스트가 사용할 기능 선택",
     "attachmentName": "첨부 파일",
     "removeAttachment": "{{value1}} 제거",
     "removeContextChip": "{{label}} 제거",
-    "dontRememberThisChat": "비공개 대화: 이 대화는 기억하지 않기",
-    "privateChatOn": "비공개 대화 켜짐: 이 대화는 기억하지 않아요",
-    "privateNotSavedToMemory": "비공개 대화 · 기억에 남기지 않아요",
+    "privateChat": "비공개 대화",
+    "privateMenuDetail": "루피스트가 기억을 쓰지도 남기지도 않아요",
+    "privateChip": "비공개 · 기억 사용 안 함",
+    "privateOff": "비공개 대화 끄기",
+    "connectToAsk": "AI 계정을 연결하면 질문할 수 있어요…",
+    "privateStatus": "비공개 대화: 루피스트가 기억을 쓰지도 남기지도 않아요. 대화 기록은 저장되고, AI 서비스로도 전송돼요.",
     "informationDisclosure": "AI는 틀릴 수 있어요. 투자자문업자가 아니에요.",
     "moreChips": "{{formattedCount}}개 더",
     "attachments": {
@@ -219,12 +223,13 @@
     "rate_limited": "AI 계정이 바빴어요.",
     "offline": "AI 계정에 연결하지 못했어요.",
     "provider_unavailable": "AI 계정 서비스에 문제가 있었어요.",
-    "context_too_long": "이 대화가 모델에 비해 너무 길어요. 새 대화를 시작하거나 큰 첨부를 빼 주세요.",
+    "context_too_long": "이 대화가 모델에 비해 너무 길어요. 새 리서치를 시작하거나 큰 첨부를 빼 주세요.",
     "needs_reconnect": "AI 계정 로그인이 더 이상 작동하지 않아요.",
     "plan_limit": "ChatGPT 요금제 한도에 도달했어요.",
     "plan_not_eligible": "이 ChatGPT 요금제는 다른 앱에서 쓸 수 없어요.",
     "out_of_credit": "AI 계정의 크레딧이 떨어졌어요.",
-    "model_gone": "이 모델은 더 이상 제공되지 않아요."
+    "model_gone": "이 모델은 더 이상 제공되지 않아요.",
+    "failedKept": "지금까지의 단계와 글은 남겨 두었어요."
   },
   "chatModelMenu": {
     "modelSettingsForThisMessage": "이 메시지의 모델 설정",
@@ -297,7 +302,7 @@
     "thisSampleAlsoHasADisplayLimit": "이 데이터도 표시되는 양에 한도가 있어요.",
     "resultDetails": "결과 세부 정보",
     "recorded": "기록됨",
-    "provider": "제공자",
+    "provider": "제공처",
     "dataAsOf": "데이터 기준일",
     "published": "발행일",
     "coverage": "제공 범위",
@@ -311,8 +316,8 @@
     "inspectResult": "결과 {{value1}} 살펴보기"
   },
   "chatWorkingContext": {
-    "couldNotLoadTheWorkingNote": "작업 노트를 불러오지 못했어요. 다시 시도해 주세요.",
-    "workingNote": "작업 노트",
+    "couldNotLoadTheWorkingNote": "리서치 노트를 불러오지 못했어요. 다시 시도해 주세요.",
+    "workingNote": "리서치 노트",
     "tryAgain": "다시 시도",
     "theCurrentResearchNoteForThisConversation": "이 대화의 현재 리서치 노트예요.",
     "noteEvidence": "노트 근거",
@@ -329,8 +334,8 @@
     "updatedDate": "{{date}} 업데이트",
     "attributedSource": "출처: {{attribution}}",
     "numberedSource": "자료 {{value1}}",
-    "numberedWorld": "World {{value1}}",
-    "numberedLens": "Lens {{value1}} · {{value2}}"
+    "numberedWorld": "지도 {{value1}}",
+    "numberedLens": "렌즈 {{value1}} · {{value2}}"
   },
   "messageMemoryRow": {
     "savedInThisAnswer": "이 답변에서 저장됨",
@@ -350,7 +355,7 @@
     "savedPrinciples_other": "원칙 {{formattedCount}}개 저장",
     "savedJournal_other": "저널 {{formattedCount}}개 저장",
     "savedNotes_other": "리서치 노트 {{formattedCount}}개 저장",
-    "savedWorld_other": "World 항목 {{formattedCount}}개 저장",
+    "savedWorld_other": "지도에 {{formattedCount}}개 추가",
     "nothingNew": "새로 저장한 내용 없음",
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
@@ -363,10 +368,11 @@
     "numbersToCheck_other": "확인할 숫자 {{formattedCount}}개",
     "learned_other": "새로 배운 것 {{formattedCount}}개",
     "ideas_other": "아이디어 {{formattedCount}}개",
-    "usedPages_other": "페이지 {{formattedCount}}개 사용"
+    "usedPages_other": "페이지 {{formattedCount}}개 사용",
+    "usedPrinciples_other": "내 원칙 {{formattedCount}}개 사용"
   },
   "messageSchedules": {
-    "draftFilesFailed": "첨부파일을 이 기기에 임시 저장하지 못했어요.",
+    "draftFilesFailed": "첨부파일을 이 Mac에 임시 저장하지 못했어요.",
     "needsTime": "봇에서 시간 확인",
     "handedToBot": "봇에 전달됨 · {{status}}",
     "scheduledTasks": "예약 작업",
@@ -384,53 +390,40 @@
     "discarded": "취소됨",
     "nextRun": "다음 실행 {{date}}",
     "couldNotChange": "바꾸지 못했어요. 다시 시도해 주세요.",
-    "proposalHint": "켜기 전에는 실행되지 않아요."
+    "proposalHint": "켜기 전에는 실행되지 않아요.",
+    "spending": "예약 작업은 실행할 때마다 AI 계정을 사용해요."
   },
   "worldProcessingStatus": {
-    "sourceSavedCouldNotRefreshWorldStatus": "자료 저장됨 · World 상태를 새로고침하지 못했어요",
-    "sourceSavedCheckWorldForProcessingDetails": "자료 저장됨 · World에서 처리 내용을 확인해 주세요",
+    "sourceSavedCouldNotRefreshWorldStatus": "자료 저장됨 · 지도 상태를 새로고침하지 못했어요",
+    "sourceSavedCheckWorldForProcessingDetails": "자료 저장됨 · 지도에서 처리 내용을 확인해 주세요",
     "refreshStatus": "상태 새로고침",
-    "queued": "World: 대기 중",
-    "running": "World: 관계 처리 중",
-    "completed": "World: 관계 업데이트 완료",
-    "paused": "World: 처리 일시정지",
-    "paused_budget": "World: 처리 일시정지",
-    "failed_before_mutation": "World: 처리 실패",
-    "reconcile_required": "World: 결과 불확실 — World에서 확인해 주세요",
-    "reconciled_without_retry": "자료 유지됨 · 중단된 World 처리는 재시도하지 않았어요",
-    "cancelled_before_start": "World: 처리 취소됨",
-    "no_text": "자료 저장됨 · World가 처리할 수 있는 텍스트가 없어요",
-    "disabled": "자료 저장됨 · World 처리 꺼짐",
-    "not_configured": "자료 저장됨 · 루피스트 설정에서 World 처리를 설정해 주세요",
+    "queued": "지도: 대기 중",
+    "running": "지도: 관계 연결 중",
+    "completed": "지도: 관계 업데이트 완료",
+    "paused": "지도: 구성 일시정지",
+    "paused_budget": "지도: 이 자료의 지도 구성 멈춤",
+    "failed_before_mutation": "지도: 구성 실패",
+    "reconcile_required": "지도: 결과 불확실 — 지도에서 확인해 주세요",
+    "reconciled_without_retry": "자료 유지됨 · 중단된 지도 구성은 재시도하지 않았어요",
+    "cancelled_before_start": "지도: 구성 취소됨",
+    "no_text": "자료 저장됨 · 지도에 반영할 수 있는 텍스트가 없어요",
+    "disabled": "자료 저장됨 · 지도 구성 꺼짐",
+    "not_configured": "자료 저장됨 · 루피스트 설정에서 지도 구성을 설정해 주세요",
     "saved": "자료를 저장했어요"
   },
   "chatStatusPill": {
-    "jumpToLatest": "최신으로 이동"
+    "jumpToLatest": "최신으로 이동",
+    "failed": "답변을 끝내지 못했어요"
   },
   "turn": {
-    "writing": "메시지 작성 중",
-    "thinkingItThrough": "생각을 정리하는 중",
-    "waitingForNextStep": "다음 단계를 기다리는 중",
-    "waitingForModel": "응답을 기다리는 중",
-    "stoppedCount": "{{stoppedCount}}개 중지",
-    "pausedCount": "{{pausedCount}}개 일시 중지",
+    "writing": "답변 작성 중",
     "research": {
-      "activity": "리서치 기록",
-      "calculations": "계산",
-      "sources": "자료 조사",
-      "finance": "금융 데이터",
-      "memory": "저장된 리서치",
-      "outputs": "리서치 결과물",
-      "failedAttempt_other": "실행 {{count}}건 실패",
-      "unavailable_other": "조회 {{count}}건 건너뜀",
-      "unavailableAsOf_other": "{{date}} 기준 조회 {{count}}건 건너뜀",
-      "declined": "승인 거절",
-      "expired": "승인 요청 만료"
+      "failedAttempt_other": "실행 {{count}}건 실패"
     },
-    "readSources_other": "자료 {{formattedCount}}개 읽음",
-    "working": "작업 중",
     "stillWorking": "계속 작업 중",
-    "waitingForYou": "확인을 기다리는 중"
+    "waitingForYou": "확인을 기다리는 중",
+    "starting": "시작하는 중",
+    "thinking": "생각하는 중"
   },
   "browserWorkspaceView": {
     "goBack": "뒤로",
@@ -443,6 +436,7 @@
     "tryAgain": "다시 시도",
     "openInBrowser": "브라우저에서 열기",
     "viewSavedPassage": "저장한 본문 보기",
+    "savedPassage": "저장한 본문",
     "browseInLoupist": "루피스트에서 탐색",
     "enterAnHTTPOrHTTPSAddressAboveSearchQueries": "위에 HTTP 또는 HTTPS 주소를 입력해 주세요. 검색어는 검색 엔진으로 전송되지 않아요.",
     "browserContent": "브라우저 내용",
@@ -491,15 +485,15 @@
     "kind": {
       "source": "자료",
       "savedSource": "저장한 자료",
-      "lens": "Lens",
-      "world": "World",
+      "lens": "렌즈",
+      "world": "지도",
       "journal": "저널",
       "note": "리서치 노트",
       "file": "파일"
     },
     "jumpToCitedPassage": "인용 구절로 이동",
     "createdIn": "생성 위치",
-    "provider": "제공자",
+    "provider": "제공처",
     "retrieved": "조회일",
     "published": "발행일",
     "dataAsOf": "데이터 기준일",
@@ -581,9 +575,9 @@
   },
   "workspaceKnowledgeReader": {
     "couldNotOpenThisSavedReference": "저장된 참고 자료를 열지 못했어요. 다시 시도해 주세요.",
-    "exploreThisSavedWorldAndItsEvidence": "저장된 World와 근거를 살펴보세요.",
-    "openWorld": "World 열기",
-    "openInLens": "Lens에서 열기",
+    "exploreThisSavedWorldAndItsEvidence": "저장된 지도와 근거를 살펴보세요.",
+    "openWorld": "지도 열기",
+    "openInLens": "렌즈에서 열기",
     "retryReference": "참고 자료 다시 불러오기",
     "openingSavedReference": "저장된 참고 자료 여는 중…",
     "thisReferenceIsUnavailable": "이 참고 자료를 사용할 수 없어요."
@@ -598,7 +592,7 @@
     "chart": "차트",
     "document": "문서",
     "closeTab": "{{title}} 탭 닫기",
-    "map": "지도",
+    "map": "대화 지도",
     "evidence": "근거",
     "newContent": "{{tab}}에 새 항목",
     "work": "결과물",
@@ -684,8 +678,16 @@
     "interactiveAnalyticChart": "대화형 분석 차트",
     "chartCouldNotBeRendered": "차트를 표시하지 못했어요"
   },
+  "chartAxis": {
+    "unit": "{{scale}} {{currency}}",
+    "titleWithUnit": "{{label}} ({{unit}})",
+    "unitOnly": "단위: {{unit}}",
+    "series": "계열",
+    "value": "값"
+  },
   "financialChart": {
     "chartControls": "차트 도구",
+    "moreControls": "차트 도구 더 보기",
     "draw": "그리기",
     "stopEditingDrawings": "그리기 편집 끝내기",
     "volumeIndicator": "거래량",
@@ -766,8 +768,8 @@
     "datasetResult": "데이터셋 결과",
     "toolResult": "도구 결과",
     "aSavedAnalysisResultThisIsNotAnOriginal": "저장된 분석 결과예요. 원본 자료나 별도로 검증된 사실이 아니에요.",
-    "worldSearch": "World 검색",
-    "lensSearch": "Lens 검색",
+    "worldSearch": "지도 검색",
+    "lensSearch": "렌즈 검색",
     "numberedSource": "출처 {{number}}: {{title}}",
     "memoryLabel": "기억: {{memoryTitle}}",
     "resultLabel": "결과: {{title}}"
@@ -781,7 +783,7 @@
     "createKind": "만든 {{kind}}"
   },
   "memoryPreview": {
-    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "저장된 미리보기가 완전하지 않아요. World나 Lens에서 관련 기록을 열어 내용을 읽어 주세요.",
+    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "저장된 미리보기가 완전하지 않아요. 지도나 렌즈에서 관련 기록을 열어 내용을 읽어 주세요.",
     "noMatchingSavedRecords": "검색한 저장 기록이 없어요.",
     "moreMatchesAreAvailableInMemory": "기억에 더 많은 검색 결과가 있어요.",
     "noEntitiesOrRelationshipsInThisSavedView": "저장된 화면에 이름이나 관계가 없어요.",
@@ -791,7 +793,7 @@
   },
   "searchComposerContext": {
     "savedSource": "저장된 자료",
-    "savedJudgment": "저장된 판단 기록",
+    "savedJudgment": "저널 항목",
     "savedWork": "저장된 작업",
     "chart": "차트",
     "document": "문서",
@@ -833,7 +835,7 @@
     "unsupportedLink": "지원하지 않는 링크예요.",
     "couldNotOpenThisLink": "링크를 열지 못했어요",
     "couldNotOpenThisLinkAlert": "링크를 열지 못했어요. 주소를 확인해 주세요.",
-    "openLinkedLens": "연결된 Lens 열기",
+    "openLinkedLens": "연결된 렌즈 열기",
     "openFile": "{{localPath}} 열기",
     "openExternalLink": "{{externalUrl}} 열기",
     "streamdown": {
@@ -876,8 +878,6 @@
     "couldNotReadOrSendTheAttachedMessageYour": "첨부된 메시지를 읽거나 보내지 못했어요. 초안과 파일은 유지되어 있어요. 다시 시도하거나 파일을 제거한 뒤 다시 첨부해 주세요.",
     "uploadFiles": "파일 업로드",
     "whatWouldYouLikeToKnow": "무엇이 궁금한가요?",
-    "stop": "중지",
-    "submit": "제출",
     "fileSizeLimit": "{{value1}}MB보다 큰 파일은 추가하지 않았어요."
   },
   "aiSdk": {
@@ -906,7 +906,7 @@
     "title": "{{name}} 연결",
     "loading": "{{name}} 상태를 확인하고 있어요…",
     "needsSetup": "{{name}} 연결을 쓰려면 먼저 설정이 필요해요.",
-    "keyNote": "키는 설정 창에 입력하고 이 기기에만 저장돼요. 루피스트는 키를 보지 않아요.",
+    "keyNote": "키는 설정 창에 입력하고 이 Mac에만 저장돼요. 루피스트는 키를 보지 않아요.",
     "setUp": "설정하기",
     "offHere": "{{name}} 연결은 설정돼 있지만 이 루피스트에서는 꺼져 있어요.",
     "useHere": "이 루피스트에서 사용",
@@ -924,6 +924,7 @@
     "readOnly": "이 연결은 요청 내용을 받아요. 이 도구는 데이터를 읽기만 해요.",
     "allowOnce": "이번만 허용",
     "always": "이 연결은 항상 허용",
+    "alwaysShort": "항상 허용",
     "notNow": "나중에",
     "allowedOnce": "이번만 허용함 · {{tool}}",
     "alwaysAllowed": "항상 허용 · {{tool}} ({{connection}})",
@@ -953,8 +954,9 @@
     "view": "보기"
   },
   "chatBlock": {
-    "building": "만드는 중…",
+    "building": "준비 중",
     "couldNotBuildChart": "차트를 만들지 못했어요.",
+    "askAgain": "다시 요청",
     "updatedSince": "이 답변 뒤에 바뀌었어요.",
     "openLatest": "최신 버전 열기",
     "unavailable": "이 차트는 더 이상 열 수 없어요.",
@@ -990,7 +992,7 @@
     "checkDue": "{{date}}까지 확인할 것: {{claim}}",
     "checkDueToday": "오늘 확인할 것: {{claim}}",
     "checkLate": "{{date}} <0>기한 지남</0>: {{claim}}",
-    "review": "확인",
+    "review": "검토",
     "reviewCheck": "확인할 것 검토하기",
     "youCouldAsk": "이렇게 물어볼 수 있어요",
     "askGreeting": "무엇을 리서치해 볼까요?",
@@ -1026,6 +1028,42 @@
       "exDividend": "배당락일",
       "recordDate": "배당 기준일",
       "check": "확인할 것: {{claim}}"
+    },
+    "setup": {
+      "label": "시작 준비",
+      "count": "{{total}}개 중 {{done}}개",
+      "hide": "숨기기",
+      "done": "완료",
+      "needsAccount": "AI 계정이 필요해요",
+      "holdings": "보유 자산 가져오기 (CSV)…",
+      "follow": {
+        "label": "관심 자산 추가하기",
+        "insert": "다음을 관심 자산에 추가해 줘: "
+      },
+      "principle": {
+        "label": "원칙 가르치기",
+        "insert": "내 원칙: ",
+        "example": "예: 마진 회복을 믿기 전에 증설 비용이 일시적인지 확인하기"
+      },
+      "briefing": {
+        "label": "매일 아침 브리핑 받기",
+        "insert": "평일 오전 8시에 브리핑을 보내 줘."
+      }
+    },
+    "focusSubject": {
+      "portfolio": "내 포트폴리오",
+      "semiconductors": "반도체",
+      "dividends": "배당주",
+      "technology": "미국 빅테크",
+      "crypto": "가상자산",
+      "macro": "매크로와 금리",
+      "commodities": "원자재",
+      "realAssets": "실물자산"
+    },
+    "homeLine": "브리핑, 알림, 확인이 필요한 일이 이 대화로 모여요.",
+    "readTogether": {
+      "label": "자료 함께 읽기",
+      "insert": "이 자료를 같이 읽고 중요한 점을 알려 줘: "
     }
   },
   "toolProgress": {
@@ -1094,8 +1132,8 @@
       "done": "이 대화에서 기억함"
     },
     "note_save": {
-      "running": "작업 노트 저장 중",
-      "done": "작업 노트 저장함"
+      "running": "리서치 노트 저장 중",
+      "done": "리서치 노트 저장함"
     },
     "journal_save": {
       "running": "저널 저장 중",
@@ -1118,16 +1156,16 @@
       "done": "이 루피스트 설정함"
     },
     "lens_file": {
-      "running": "알게 된 것 Lens에 기록 중",
-      "done": "알게 된 것 Lens에 기록함"
+      "running": "알게 된 것 렌즈에 기록 중",
+      "done": "알게 된 것 렌즈에 기록함"
     },
     "lens_search": {
-      "running": "Lens 검색 중",
-      "done": "Lens 검색함"
+      "running": "렌즈 검색 중",
+      "done": "렌즈 검색함"
     },
     "lens_read": {
-      "running": "Lens 읽는 중",
-      "done": "Lens 읽음"
+      "running": "렌즈 읽는 중",
+      "done": "렌즈 읽음"
     },
     "world_job": {
       "running": "자료 처리 상태 확인 중",
@@ -1150,8 +1188,8 @@
       "done": "질문함"
     },
     "research_open": {
-      "running": "조사 세션 여는 중",
-      "done": "조사 세션 열었음"
+      "running": "리서치 세션 여는 중",
+      "done": "리서치 세션 열었음"
     },
     "worldbank_series": {
       "running": "거시 데이터 읽는 중",
@@ -1354,7 +1392,7 @@
     "oilInventoryDown": "{{name}}: {{date}}까지 한 주 동안 미국 상업용 원유 재고가 {{amount}} 배럴 줄었어요 (EIA).",
     "oilInventory": "{{name}}: EIA 주간 석유 보고서가 나왔어요 ({{date}}까지 한 주).",
     "prepare": "전후 비교 준비",
-    "from": "출처: 지켜보기 · 예약에서 열기",
+    "from": "출처: 지켜보기 · 관심 자산에서 열기",
     "more": "+{{formattedCount}}개 더",
     "label": "지켜보기 알림"
   },
@@ -1373,7 +1411,7 @@
     "offlineReads": "데이터 출처나 네트워크에 연결하지 못해 일부 데이터를 가져오지 못했어요. 연결을 확인한 뒤 다시 물어봐 주세요.",
     "couldNotReach": "{{provider}}에 연결하지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.",
     "providerUnavailable": "{{provider}}에 지금 문제가 있어요. 잠시 뒤 다시 시도해 주세요.",
-    "contextTooLong": "이 대화가 모델에 비해 너무 길어요. 새 대화를 시작하거나 큰 첨부를 빼 주세요.",
+    "contextTooLong": "이 대화가 모델에 비해 너무 길어요. 새 리서치를 시작하거나 큰 첨부를 빼 주세요.",
     "yourProvider": "AI 계정",
     "waitingOffline": "다시 연결되면 보낼게요.",
     "planLimit": "ChatGPT 요금제 한도에 도달했어요. 루피스트가 저절로 다시 시도하지 않아요.",
@@ -1475,20 +1513,19 @@
     "comparison": "기업이나 자산을 나란히 비교해요",
     "data-analysis": "데이터를 분석하고 무엇을 보여 주는지 설명해요",
     "dividend-income": "배당이 얼마나 안정적인지 살펴봐요",
-    "documents": "워드 문서를 쓰거나 고쳐요",
+    "word-documents": "워드 문서를 쓰거나 고쳐요",
     "events-stats": "과거 이벤트 전후의 가격 움직임을 살펴봐요",
     "filings": "기업 공시를 읽고 비교해요",
     "fund-compare": "ETF나 펀드를 나란히 비교해요",
     "goal-math": "목표 금액과 적립식 투자를 계산해요",
     "journal": "판단과 점검 시점을 기록해요",
     "lens": "루피스트가 일하는 방식을 가르치거나 고쳐요",
-    "pdf": "PDF를 읽거나 채우거나 만들어요",
+    "pdf": "PDF를 읽거나 합치거나 텍스트 PDF를 만들어요",
     "portfolio-risk": "보유 자산의 집중도와 위험을 살펴봐요",
     "presentations": "발표 자료를 만들어요",
     "research": "근거를 찾아 질문을 조사해요",
     "rule-test": "규칙을 과거 데이터로 검증해요",
     "skill-creator": "새 스킬을 만들어요",
-    "skill-installer": "링크에서 스킬을 설치해요",
     "spreadsheets": "스프레드시트를 만들거나 고쳐요",
     "valuation": "기업 가치를 추정해요",
     "visualize": "데이터로 차트를 그려요",
@@ -1547,7 +1584,7 @@
     "labelCalculated": "{{value}}, 계산값. 계산 보기",
     "labelSourced": "{{value}}, 출처: {{source}}",
     "inputs": "입력값",
-    "calculatedHere": "이 컴퓨터에서 계산함",
+    "calculatedHere": "이 Mac에서 계산함",
     "notLinked": "출처와 연결되지 않음",
     "grid": "{{rows}} × {{cols}} 표 (하나의 값이 아님)",
     "fromStep": "이 답변의 작업 단계에서",
@@ -1651,7 +1688,7 @@
     "moreColumnsLabel_one": "항목 {{formattedCount}}개 더 보기",
     "moreColumnsLabel_other": "항목 {{formattedCount}}개 더 보기",
     "knownAsOf": "{{date}} 기준",
-    "building": "만드는 중…",
+    "building": "준비 중",
     "failed": "이 표를 만들지 못했어요",
     "retry": "다시 시도",
     "sortDesc": "높은 순",
@@ -1710,6 +1747,10 @@
     "outsideCount_other": "칸 {{formattedCount}}개는 계산 범위를 벗어나요",
     "copy": "데이터 복사"
   },
+  "readStep": {
+    "running": "{{read}} 읽는 중",
+    "done": "{{read}} 읽음"
+  },
   "asOf": {
     "panelTitle": "기준일",
     "set": "날짜 설정",
@@ -1757,8 +1798,8 @@
       "asset_page_read": "자산 페이지",
       "world_search": "저장한 노트",
       "world_read": "저장한 노트",
-      "lens_search": "Lens",
-      "lens_read": "Lens",
+      "lens_search": "렌즈",
+      "lens_read": "렌즈",
       "conversation_memory": "이전 대화",
       "chat_history": "이전 메시지",
       "dataset_query": "분석 데이터",
@@ -1799,5 +1840,26 @@
     "running": "이전 대화 확인 중…",
     "done": "이전 대화 확인함",
     "incomplete": "이전 대화를 끝까지 확인하지 못했어요"
+  },
+  "watchAll": {
+    "actionOne": "{{name}} 지켜보기",
+    "action_other": "관심 자산 {{formattedCount}}개 모두 지켜보기",
+    "note": "관심 자산의 공시, 실적 발표일, 배당을 루피스트가 열려 있는 동안 매시간 확인해요. AI 사용량은 들지 않고, 데이터 제공처에는 이름만 보내요.",
+    "done_other": "관심 자산 {{formattedCount}}개를 지켜보고 있어요. <0>관심 자산</0>에서 바꿀 수 있어요.",
+    "failed": "지켜보기를 켜지 못했어요. 다시 시도해 주세요."
+  },
+  "ledger": {
+    "steps_other": "{{formattedCount}}단계",
+    "plan": "계획 {{n}}개 중 {{k}}번째 · {{label}}",
+    "worked": "{{duration}} 작업",
+    "stoppedAfter": "{{duration}} 후 중지",
+    "sources_other": "자료 {{formattedCount}}개",
+    "seconds": "{{s}}초",
+    "minutes": "{{m}}분 {{s}}초",
+    "stepSeconds": "{{value}}초",
+    "more": "+{{formattedCount}}"
+  },
+  "citedNote": {
+    "source": "출처"
   }
 }

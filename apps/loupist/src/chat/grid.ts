@@ -1,5 +1,6 @@
 import i18n from "@/i18n";
 import type { AssetsGrid, ChatEvidenceRef, GridCell, GridEmptyCell, GridEmptyReason, GridValueCell } from "../types";
+import { citedPlainText } from "./citedText";
 import { sourceIdentityLabel } from "./evidence";
 import { exportFootnote, needsChecking } from "./numberChecks";
 
@@ -53,14 +54,82 @@ export function gridCounts(grid: AssetsGrid) {
   return { linked: values.length, toCheck: values.filter((cell) => needsChecking(cell.check)).length };
 }
 
-const quotedTsv = (text: string) => (/[\t\n\r"]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text);
+// One number in an amount, with more than two decimals: "₩32.765719조", "$394.3281bn".
+const LONG_AMOUNT = /^([^\d]*?)(\d[\d,]*)\.(\d{3,})([^\d]*)$/u;
+const CURRENCY_MARK = /[$₩€£¥￦]|원|달러|엔|유로|\b[A-Z]{3}\b/u;
+
+// One number in an amount, with two decimals or fewer, as the model wrote it: "₩47.21조", "$1.2bn".
+const SHORT_AMOUNT = /^[^\d]*?\d[\d,]*(?:\.(\d{1,2}))?[^\d]*$/u;
+
+/** A money value's long tail rounded to two places, without trailing zeros: the fewest decimals it needs. */
+function roundedAmount(text: string) {
+  if (!CURRENCY_MARK.test(text)) return null;
+  const match = LONG_AMOUNT.exec(text);
+  if (!match) return null;
+  const [, before, whole, fraction, after] = match;
+  const rounded = Number(`${whole!.replaceAll(",", "")}.${fraction}`).toFixed(2).replace(/\.?0+$/u, "");
+  const [integer, decimals = ""] = rounded.split(".");
+  // Keep the model's grouping: a comma-grouped whole part stays grouped.
+  const grouped = whole!.includes(",") ? integer!.replace(/\B(?=(\d{3})+(?!\d))/gu, ",") : integer!;
+  return { before: before!, integer: grouped, decimals, after: after! };
+}
+
+/** The decimals one money value shows on its own: as rounded, or as the model wrote it; 0 for anything else. */
+function amountDecimals(text: string): number {
+  const rounded = roundedAmount(text);
+  if (rounded) return rounded.decimals.length;
+  return CURRENCY_MARK.test(text) ? SHORT_AMOUNT.exec(text)?.[1]?.length ?? 0 : 0;
+}
+
+/**
+ * How many decimals the values a table rounds show in one column: the most any
+ * money value in the column shows (at most two), so the column reads evenly
+ * ("₩43.60조" under "₩47.21조", never "₩43.6조"). Values the model wrote
+ * with two decimals or fewer count, but are themselves shown as written.
+ */
+export function columnDecimals(values: readonly string[]): number {
+  return Math.min(2, Math.max(0, ...values.map(amountDecimals)));
+}
+
+/** `columnDecimals` for each column of a grid's value cells. */
+export function gridDecimals(grid: AssetsGrid): number[] {
+  return grid.columns.map((_, column) => columnDecimals(grid.cells.flatMap((row) => {
+    const cell = row[column];
+    return cell && isValueCell(cell) ? [cell.value] : [];
+  })));
+}
+
+/**
+ * A money value as a table shows it: the model's own words, with a long tail of
+ * decimals rounded to two ("₩32.765719조" → "₩32.77조", "$394.3281bn" →
+ * "$394.33bn"), as the answer prints amounts, padded to its column's
+ * `decimals` ("₩43.600123조" → "₩43.60조" beside "₩47.21조"). Anything else
+ * (two decimals or fewer, a percent, a multiple, a 조-and-억 amount) is shown
+ * as written. The exact value stays in the cell's number chip.
+ */
+export function shownAmount(text: string, decimals = 0): string {
+  const rounded = roundedAmount(text);
+  if (!rounded) return text;
+  const tail = rounded.decimals.padEnd(Math.min(2, decimals), "0");
+  return `${rounded.before}${rounded.integer}${tail ? `.${tail}` : ""}${rounded.after}`;
+}
+
+/** A value cell's check as its chip reads it: about the shown text, so a rounded tail offers the exact value. */
+export function shownCheck(cell: GridValueCell, decimals = 0): GridValueCell["check"] {
+  const shown = shownAmount(cell.value, decimals);
+  if (shown === cell.value) return cell.check;
+  return { ...cell.check, text: shown, status: cell.check.status === "matched" ? "rounded" : cell.check.status };
+}
+
+const quotedTsv =(text: string) => (/[\t\n\r"]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text);
 
 /** Tab-separated header and rows for pasting into a spreadsheet; empty cells are blank. */
 export function gridTsv(grid: AssetsGrid) {
+  const decimals = gridDecimals(grid);
   const header = [t("grid.asset"), ...grid.columns.map((column) => column.label)];
   const rows = grid.rows.map((row, index) => [row.label, ...grid.columns.map((_, column) => {
     const cell = grid.cells[index]?.[column];
-    return cell && isValueCell(cell) ? cell.value : "";
+    return cell && isValueCell(cell) ? shownAmount(cell.value, decimals[column]) : "";
   })]);
   return [header, ...rows].map((line) => line.map(quotedTsv).join("\t")).join("\n");
 }
@@ -82,6 +151,12 @@ export function currencyOf(value: string): string {
   return "";
 }
 
+/** A model-written note for a file: each citation target becomes its source's name. */
+const noteText = (note: string, evidenceRefs: readonly ChatEvidenceRef[]) => citedPlainText(note, (id) => {
+  const evidence = evidenceRefs.find((item) => item.id === id);
+  return evidence ? evidence.provider ?? sourceIdentityLabel(evidence) : t("citedNote.source");
+});
+
 const isoDay = (evidence: ChatEvidenceRef | undefined) => (evidence?.published_at ?? evidence?.retrieved_at ?? "").slice(0, 10);
 
 /**
@@ -96,7 +171,7 @@ export function gridCsv(grid: AssetsGrid, evidenceRefs: readonly ChatEvidenceRef
       const cell = grid.cells[rowIndex]?.[columnIndex];
       const base = [row.label, row.symbol, row.market, column.label, column.period ?? "", column.basis ?? ""];
       if (!cell || isEmptyCell(cell)) {
-        lines.push([...base, "", column.unit, "", cell?.empty ?? "not_checked", "", "", cell?.note ?? ""]);
+        lines.push([...base, "", column.unit, "", cell?.empty ?? "not_checked", "", "", cell?.note ? noteText(cell.note, evidenceRefs) : ""]);
         return;
       }
       const evidence = evidenceRefs.find((item) => item.id === cell.evidence_id);
@@ -135,18 +210,19 @@ export function gridMarkdown(title: string, grid: AssetsGrid, evidenceRefs: read
   const header = [t("grid.asset"), ...grid.columns.map((column) => [column.label, column.period].filter(Boolean).join(" · "))];
   lines.push(`| ${header.map(markdownCell).join(" | ")} |`, `| ${header.map((_, index) => (index === 0 ? "---" : "---:")).join(" | ")} |`);
   const footnotes: string[] = [];
+  const decimals = gridDecimals(grid);
   grid.rows.forEach((row, rowIndex) => {
     const cells = grid.columns.map((_, columnIndex) => {
       const cell = grid.cells[rowIndex]?.[columnIndex];
       if (!cell || isEmptyCell(cell)) return emptyReason(cell?.empty ?? "not_checked");
       const evidence = evidenceRefs.find((item) => item.id === cell.evidence_id);
       footnotes.push(`[^${footnotes.length + 1}]: ${exportFootnote(cell.check, evidence, evidenceRefs)}`);
-      return `${cell.value}[^${footnotes.length}]`;
+      return `${shownAmount(cell.value, decimals[columnIndex])}[^${footnotes.length}]`;
     });
     lines.push(`| ${[row.label, ...cells].map(markdownCell).join(" | ")} |`);
   });
   lines.push("");
-  for (const note of grid.notes ?? []) lines.push(note, "");
+  for (const note of grid.notes ?? []) lines.push(noteText(note, evidenceRefs), "");
   if (footnotes.length) lines.push(...footnotes, "");
   lines.push(`_${t("grid.exportNotice")}_`, "");
   return lines.join("\n");

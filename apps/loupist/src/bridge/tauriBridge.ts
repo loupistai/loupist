@@ -156,7 +156,6 @@ const bridge = (): StrictBridge => ({
 
   loupistList: () => call("loupist_list"),
   loupistSelect: (loupist_id) => call("loupist_select", { loupist_id }),
-  loupistRecover: request("loupist_recover"),
   loupistProfileUpdate: request("loupist_profile_update"),
   loupistImport: request("loupist_import"),
   loupistCreate: request("loupist_create"),
@@ -196,7 +195,6 @@ const bridge = (): StrictBridge => ({
   chatSteer: request("chat_steer"),
   chatRetryLast: request("chat_retry_last"),
   researchHandoffStart: request("research_handoff_start"),
-  knowledgeConnections: request("knowledge_connections"),
   knowledgeConnectionDismiss: request("knowledge_connection_dismiss"),
   knowledgeConnectionOpen: request("knowledge_connection_open"),
   chatAbort: (run_id) => call("chat_abort", { run_id }),
@@ -231,6 +229,7 @@ const bridge = (): StrictBridge => ({
   knowledgeFollowedStatus: request("knowledge_followed_status"),
   knowledgeGraphRecover: request("knowledge_graph_recover"),
   knowledgeGraphPause: request("knowledge_graph_pause"),
+  knowledgeGraphRetrySource: request("knowledge_graph_retry_source"),
   knowledgeGraphSettingsGet: request("knowledge_graph_settings_get"),
   knowledgeGraphSettingsSet: request("knowledge_graph_settings_set"),
   worldKeepAwakeGet: () => call("world_keep_awake_get"),
@@ -295,6 +294,7 @@ const bridge = (): StrictBridge => ({
   earningsEventsList: request("earnings_events_list"),
   earningsPrepare: request("earnings_prepare"),
 
+  watchDefaultsApply: request("watch_defaults_apply"),
   watchSettingsList: request("watch_settings_list"),
   watchSettingSet: request("watch_setting_set"),
   watchPauseSet: request("watch_pause_set"),

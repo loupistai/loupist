@@ -149,7 +149,7 @@ export class MockUserContext implements UserContextBridge {
     return structuredClone(this.wallets);
   }
   async walletRename({ walletId, name }: { walletId: string; name?: string | null }) {
-    const wallet = this.wallets.find(item => item.id === walletId) ?? fail("invalid_request", "Wallet is not on this computer.");
+    const wallet = this.wallets.find(item => item.id === walletId) ?? fail("invalid_request", "Wallet is not on this Mac.");
     wallet.name = name?.trim() || null;
     return structuredClone(wallet);
   }

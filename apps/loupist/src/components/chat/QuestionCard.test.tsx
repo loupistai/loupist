@@ -24,7 +24,8 @@ it("answers with an option, marks the recommended one and shows the wait", async
   expect(within(card).getByText(/^waiting 0:1\d$/)).toBeVisible();
   const options = within(within(card).getByRole("group", { name: "Options" })).getAllByRole("button");
   expect(options.map((option) => option.textContent)).toEqual(["Last 4 quartersRecommendedTrailing twelve months", "Last 3 years"]);
-  expect(options[0]).toHaveAttribute("data-variant", "default");
+  expect(options[0]).toHaveAttribute("data-recommended");
+  expect(options[0]).toHaveAttribute("data-variant", "outline");
   expect(options[1]).toHaveAttribute("data-variant", "outline");
   await user.click(options[1]);
   expect(answer).toHaveBeenCalledWith({ loupist_id: "loupist-one", request_id: "q-1", choice: 1 });
@@ -64,4 +65,38 @@ it("says when the question is no longer waiting and lets the user try again", as
   await user.click(screen.getByRole("button", { name: /^Last 3 years/ }));
   expect(await screen.findByRole("alert")).toHaveTextContent("This question is no longer waiting.");
   expect(screen.getByRole("button", { name: /^Last 3 years/ })).toBeEnabled();
+});
+
+it("focuses the recommended answer when the card arrives after streaming, and leaves focus alone while streaming", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const answer = vi.spyOn(bridge, "chatQuestionAnswer").mockResolvedValue();
+  const streaming = render(<QuestionCards questions={[waiting()]} bridge={bridge} loupistId="loupist-one" streaming />);
+  expect(document.body).toHaveFocus();
+  streaming.unmount();
+  render(<QuestionCards questions={[waiting()]} bridge={bridge} loupistId="loupist-one" />);
+  expect(screen.getByRole("button", { name: /Last 4 quarters/ })).toHaveFocus();
+  await user.keyboard("{Enter}");
+  expect(answer).toHaveBeenCalledWith(expect.objectContaining({ choice: 0 }));
+});
+
+it("keeps the turn's height when the card is answered, so the collapsing card cannot pull the page up", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const answer = vi.spyOn(bridge, "chatQuestionAnswer").mockRejectedValueOnce(new Error("offline")).mockResolvedValue();
+  const view = (question: ChatQuestion) => <section className="turn" data-turn-reserve=""><QuestionCards questions={[question]} bridge={bridge} loupistId="loupist-one" /></section>;
+  const { container, rerender } = render(view(waiting()));
+  const turn = container.querySelector<HTMLElement>(".turn")!;
+  vi.spyOn(turn, "getBoundingClientRect").mockReturnValue({ height: 612.4 } as DOMRect);
+  // An answer that did not go through releases the hold; the card stays.
+  await user.click(screen.getByRole("button", { name: /^Last 3 years/ }));
+  expect(await screen.findByRole("alert")).toBeVisible();
+  expect(turn.style.getPropertyValue("--turn-hold")).toBe("");
+  await user.click(screen.getByRole("button", { name: /^Last 3 years/ }));
+  expect(answer).toHaveBeenCalledTimes(2);
+  expect(turn.style.getPropertyValue("--turn-hold")).toBe("613px");
+  // The card settles into its line in place; the turn keeps its height while the reply runs on.
+  rerender(view(waiting({ state: "answered", answer: { choice: 1 } })));
+  expect(screen.getByText("You answered: Last 3 years")).toHaveClass("question-line");
+  expect(turn.style.getPropertyValue("--turn-hold")).toBe("613px");
 });

@@ -1,6 +1,9 @@
 # Watchers
 
-A watcher checks a saved condition on a cadence and posts an alert to the home Thread. It does not notify the operating system.
+A watcher checks a saved condition on a cadence and posts an alert to Bot. It does
+not notify the operating system. On a new install, nothing is watched until
+the user chooses Watch all or switches an applicable Watch-for kind on. Following
+an asset alone starts no checks.
 
 ### Watchers
 
@@ -14,7 +17,8 @@ and where it was delivered: `message`, `morning` or `baseline`). No holdings qua
 value enters them.
 
 Equity kinds are `filings`, `results`, `insiders`, `holders`, `flows` and `dividends`;
-filings, results and dividends start on, the others off; flows apply only to Korean
+when class defaults are applied, filings, results and dividends are on, the others
+off; flows apply only to Korean
 stocks, dividends only to an asset that paid in the last two years. Class kinds
 (`knowledge/watch/class.rs`) are `cryptoMove` (≥10% in a day or ≥20% in 7 days),
 `drawdown` (crossing −20/−30/−50% below the 90-day high), `depeg` (a USD stablecoin
@@ -24,8 +28,9 @@ value locked down ≥20% in 7 days, for coins mapped to a DefiLlama chain or pro
 position changes sign, for 17 mapped roots) and `oilInventory` (a new EIA weekly report,
 crude only). They are read from the route's rows, only the latest complete day or report
 can fire, and a level already crossed at the point before does not fire again. Class
-kinds start on only in a Loupist made from that class's template, otherwise off; a first
-explicit choice turns off only the same class's other kinds. Class alerts have no
+defaults enable these kinds only in a Loupist made from that class's template,
+otherwise off. For an undecided asset, the first explicit choice leaves the other
+kinds of that class off. Class alerts have no
 observation row; a price read still records the page's closes.
 Detection reads structured rows and dated observations, never model text, and one filing
 fires at most one alert: 8-K, 10-Q, 10-K, 6-K, 20-F, DEF 14A and S-1 (amendments
@@ -49,7 +54,21 @@ the asset tables.
 While the app runs, `commands/watch.rs` checks what each Loupist follows against data
 sources only, with no model call; nothing runs while the app is closed. A loop started
 with the scheduler ticks every minute, and the first scheduled check waits two minutes
-after launch. A Loupist is checked after watch consent and while its watchers are running. Existing active briefings retain their earlier opt-in on first access. New explicit watch requests enable the chosen asset and kind. Creating a new briefing leaves watch consent unchanged.
+after launch. A Loupist is checked after watch consent and while its watchers are
+running. Earlier installations with an active briefing at the first consent read keep
+that opt-in in `legacy` mode: class defaults apply to undecided followed assets,
+including new follows in the open Loupist. Existing per-asset decisions stay.
+New installations use explicit choices instead. An explicit watch request enables
+the chosen asset and kind and turns on an untouched
+Results before and after task; a task the user paused stays paused. `watch_defaults_apply`
+records consent and applies the class defaults to every currently followed asset with
+no saved choice. Existing per-asset choices stay intact, and a repeated call changes
+nothing. It returns `watchedAssets` and `needsConnections` grouped by kind and
+connection with their `assetIds`; it changes no Chat privacy or as-of state. Other
+watch kinds keep their choices. Creating a new briefing leaves watch consent unchanged.
+`watch_settings_list` names those assets with no saved choice in `undecidedAssetIds`
+(an asset switched fully off is decided), and Following and the first follow receipt
+offer Watch all only for them, hiding it when there are none.
 [Watch kinds](watchers.md#watchers) map to routes: filings (holders, and every
 Korean kind except flows; OpenDART, or SEC filings through OpenBB), insider trades
 (`sec`, `fmp` or `intrinio` only), the earnings calendar (`nasdaq`, `fmp` or `tmx`; one
@@ -68,16 +87,29 @@ that wants it: the first one holding the grant reads, the others get a copy in t
 dataset store, and a Loupist without the grant records `needs_connection`. The app makes
 at most 60 reads per rolling hour across all Loupists (`MAX_READS_PER_HOUR`); a pass
 reads the least recently checked routes first and defers the rest. A failed read keeps
-the last good state and names the connection that did not answer. Check now
+the last good state and names the connection that did not answer. Failed routes retry
+after 15 minutes, then one hour, four hours and daily; success resets the backoff.
+The consecutive-failure count lives in the running app: after restart, a persisted
+failure uses the 15-minute delay from its last attempt. An idle minute with no due
+route leaves the last-check timestamp and saved watch state unchanged. Check now
 (`watch_check_now`) checks every enabled kind of one Loupist once, ignoring cadence but
 not the budget, one check at a time.
 
 A check records dated observations on the asset pages and turns new ones of the kinds
-that are on into alerts; a route's first check only sets its starting point. The first
+that are on into alerts; a route's first check only sets its starting point. That starting point is saved
+with the observations, so skipping the later alert/delivery phase cannot make a
+first read alert on the next pass. Pending observations from an earlier watch read,
+an asset-page refresh or a briefing refresh remain eligible when their route is not
+due this pass. Delivery uses that Loupist's saved route status: `needs_connection`
+withholds the route's alerts and keeps the page's scan point behind them until the
+grant is restored. The first
 check after launch, or the day's first check, hands its alerts to the morning message;
-later ones post in the [home Thread](../ui/home-thread.md). No OS notification is sent for a watch
-event. Schedule › Watching fades the right edge of a class table only when that table is wider than the pane. Watch for on the asset page and Schedule › Watching use `watch_settings_list`,
-`watch_setting_set` (guarded by the asset's revision; turning a kind on needs consent and
+later ones post in [Bot](../ui/home-thread.md). No OS notification is sent for a watch
+event. Following, also opened by Schedule's Watching row, offers Pause or Resume
+and Check now (unavailable while paused), and reports how many new alerts a check
+found. It fades the right edge of a class table only when that table is wider than
+the pane. Watch-for controls there and on asset pages use `watch_settings_list`,
+`watch_defaults_apply`, `watch_setting_set` (guarded by the asset's revision; turning a kind on needs consent and
 a kind that applies), `watch_pause_set`, `watch_check_now`, `watch_events_list` and
 `watch_events_seen`; Rust emits `watch-changed` after each change.
 

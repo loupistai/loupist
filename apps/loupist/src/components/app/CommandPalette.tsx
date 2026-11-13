@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { chatTitle } from "../../app/chatTitle";
 import { formatDate } from "@/i18n/format";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -7,6 +8,7 @@ import type { AttentionItem } from "../../contracts/attention";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { nodeColorKey } from "../../knowledge/mapKinds";
 import { entityLabel } from "../../knowledge/mapItems";
+import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { attentionNamesLoupist, attentionWhat } from "./NeedsAttention";
 import type { WatchlistEntry } from "../../contracts/userContext";
 import { useAssetPageOpener } from "../assets/assetOpener";
@@ -35,7 +37,7 @@ async function readLoupist(bridge: LoupistBridge, loupistId: string): Promise<Lo
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), READ_BUDGET_MS); });
   const read = Promise.all([
-    bridge.knowledgeMap({ loupistId, maxNodes: 1000 }).catch(() => null),
+    readKnowledgeMap(bridge, loupistId).catch(() => null),
     bridge.principleList({ loupistId }).catch(() => []),
     bridge.inboxList({ loupistId, limit: 20 }).catch(() => null),
   ]).then(([map, principles, inbox]): LoupistIndex => ({
@@ -131,7 +133,7 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
         .sort((a, b) => Number(b.loupist.id === selectedLoupistId) - Number(a.loupist.id === selectedLoupistId) || Date.parse(b.thread.updated_at) - Date.parse(a.thread.updated_at));
       for (const { thread, loupist } of q ? chats : chats.slice(0, RECENT_CHATS)) {
         const date = Date.parse(thread.updated_at);
-        all.push({ key: `chat:${loupist.id}:${thread.id}`, group: "chats", label: thread.home ? t("thread.title") : thread.title,
+        all.push({ key: `chat:${loupist.id}:${thread.id}`, group: "chats", label: chatTitle(thread),
           caption: [loupist.name, Number.isFinite(date) ? formatDate(date, { year: undefined, month: "short", day: "numeric" }) : ""].filter(Boolean).join(" · "),
           run: () => onOpenThread(loupist.id, thread.id) });
       }

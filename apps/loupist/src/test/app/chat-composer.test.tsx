@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import { openApp, privateChatToggle } from "../renderApp";
+import { openApp, privateChatOn, togglePrivateChat } from "../renderApp";
 
 type User = ReturnType<typeof userEvent.setup>;
 const composer = () => screen.getByRole("textbox", { name: "Message Loupist" });
@@ -26,7 +26,7 @@ describe("Loupist · Chat composer", () => {
     vi.spyOn(bridge, "loupistSelect").mockResolvedValue(workspace);
     const chatSend = vi.spyOn(bridge, "chatSend");
     await openApp(bridge);
-    expect(privateChatToggle()).toHaveAttribute("aria-pressed", "true");
+    expect(privateChatOn()).toBe(true);
     await send(user, "Keep this research private");
     await waitFor(() => expect(chatSend).toHaveBeenCalled());
     expect(chatSend.mock.calls[0][0]).toMatchObject({ use_memory: false, update_memory: false });
@@ -83,13 +83,13 @@ describe("Loupist · Chat composer", () => {
     await openApp(bridge);
     await send(user, "Start analysis");
     await screen.findByRole("button", { name: "Stop response" });
-    await user.click(privateChatToggle());
+    await togglePrivateChat();
     await chooseModelOption(user, "Max");
     await user.upload(screen.getByLabelText("Upload files"), new File(["original attachment"], "queued.txt", { type: "text/plain" }));
     await user.type(composer(), "Use this next");
     await user.click(screen.getByRole("button", { name: "Send next" }));
     expect(within(screen.getByLabelText("Pending chat instructions")).getByText(/Memory off/)).toHaveTextContent("1 file");
-    await user.click(privateChatToggle());
+    await togglePrivateChat();
     await chooseModelOption(user, "Medium");
     bridge.setStreamDelay(0);
     await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(2), { timeout: 15_000 });
@@ -105,7 +105,7 @@ describe("Loupist · Chat composer", () => {
     let rejectStart!: (error: Error) => void;
     const chatSend = vi.spyOn(bridge, "chatSend").mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectStart = reject; }));
     await openApp(bridge);
-    await user.click(privateChatToggle());
+    await togglePrivateChat();
     await user.upload(screen.getByLabelText("Upload files"), new File(["keep original"], "kept.txt", { type: "text/plain" }));
     await send(user, "Rejected request");
     await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
@@ -146,11 +146,11 @@ describe("Loupist · Chat composer", () => {
     await user.type(composer(), "@sec");
     await user.click(await screen.findByRole("option", { name: /SEC EDGAR/ }));
     await user.type(composer(), "/world");
-    expect(await screen.findByRole("option", { name: /World/ })).toBeVisible();
+    expect(await screen.findByRole("option", { name: /^Map\b/ })).toBeVisible();
     await user.keyboard("{Enter}");
     const added = screen.getByRole("list", { name: "Added to this message" });
     expect(added).toHaveTextContent("SEC EDGAR");
-    expect(screen.getByRole("list", { name: "Message modes" })).toHaveTextContent("World");
+    expect(screen.getByRole("list", { name: "Message modes" })).toHaveTextContent("Map");
     expect(chatSend).not.toHaveBeenCalled();
 
     fireEvent.change(composer(), { target: { value: "$research $world @sec.edgar Samsung Electronics" } });
@@ -165,7 +165,7 @@ describe("Loupist · Chat composer", () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const chatSend = vi.spyOn(bridge, "chatSend");
     await openApp(bridge);
-    await user.click(privateChatToggle());
+    await togglePrivateChat();
     fireEvent.change(composer(), { target: { value: `${selection} inspect the evidence` } });
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Send" }));
@@ -200,7 +200,7 @@ describe("Loupist · Chat composer", () => {
     await chooseModelOption(user, "Max");
     await send(user, "First turn keeps Memory enabled");
     await screen.findByText("Response complete.");
-    await user.click(privateChatToggle());
+    await togglePrivateChat();
     await send(user, "Second turn disables Memory");
     await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(2));
     expect(chatSend.mock.calls.map(([request]) => request.thinking_level)).toEqual(["max", "max"]);
@@ -245,8 +245,8 @@ describe("Loupist · Chat composer", () => {
     const user = userEvent.setup();
     await openApp();
     await user.type(composer(), "/new");
-    await user.click(await screen.findByRole("option", { name: "New chat" }));
-    await screen.findByRole("heading", { name: "New chat" });
+    await user.click(await screen.findByRole("option", { name: "New research" }));
+    await screen.findByRole("heading", { name: "Untitled research session" });
     await send(user, "삼성전자 실적 분석해봐");
     expect(await screen.findByRole("heading", { name: "삼성전자 실적 분석해봐" }, { timeout: 15_000 })).toBeVisible();
     expect(screen.getByRole("button", { name: /^삼성전자 실적 분석해봐$/ })).toBeVisible();

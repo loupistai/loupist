@@ -28,6 +28,19 @@ export type WatchCheckNowRequest = { loupistId: string };
 
 export type WatchCheckResult = { newAlerts: number, settings: WatchSettingsView };
 
+export type WatchDefaultsApplyRequest = { loupistId: string };
+
+export type WatchDefaultsApplyResult = {
+  watchedAssets: number,
+  needsConnections: Array<WatchDefaultsConnectionNeed>,
+};
+
+export type WatchDefaultsConnectionNeed = {
+  kind: WatchKind,
+  connection: ConnectionRef,
+  assetIds: Array<string>,
+};
+
 export type WatchEventsListRequest = { loupistId: string, sinceMs?: number | null, limit: number };
 
 export type WatchEventsSeenRequest = {
@@ -56,4 +69,10 @@ export type WatchSettingsView = {
   lastCheckedMs?: number,
   watched: Array<WatchAssetView>,
   notWatched: Array<WatchAssetView>,
+  /**
+   * Listed assets with no saved choice in this Loupist, in follow order: the
+   * ones Watch all (`watch_defaults_apply`) gives class defaults. An asset
+   * the user switched fully off is decided and is not here.
+   */
+  undecidedAssetIds: Array<string>,
 };

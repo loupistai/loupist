@@ -70,11 +70,12 @@ td .number-chip { display: inline-block; min-height: 28px; line-height: 28px; fo
 .number-chip-formula { display: grid; gap: 2px; padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-sunken); font-family: var(--gg-font-mono); font-size: var(--gg-text-meta); overflow-wrap: anywhere; }
 .number-chip-formula button { justify-self: start; }
 .number-chip-grid { color: var(--gg-color-text-secondary); }
-.number-chip-caption { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); letter-spacing: .04em; text-transform: uppercase; }
+.number-chip-caption { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); }
 .number-chip-caption:lang(ko) { letter-spacing: 0; text-transform: none; }
 .number-chip-here { letter-spacing: normal; text-transform: none; }
 .number-chip-inputs { display: grid; gap: var(--gg-space-1); margin: 0; }
-.number-chip-inputs > div { display: grid; grid-template-columns: 128px auto minmax(0, 1fr); align-items: baseline; gap: var(--gg-space-2); }
+.number-chip-inputs > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; gap: var(--gg-space-2); }
+.number-chip-inputs > div > :last-child { white-space: nowrap; }
 .number-chip-inputs dt { overflow: hidden; color: var(--gg-color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
 .number-chip-inputs dd { margin: 0; }
 .number-chip-source { min-width: 0; text-align: end; }
@@ -118,9 +119,6 @@ td .number-chip { display: inline-block; min-height: 28px; line-height: 28px; fo
 .composer-asof-panel { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-4); animation: number-chip-in var(--gg-motion-fast) var(--gg-ease-out); }
 .composer-asof-panel p { margin: 0; }
 .composer-asof-title { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
-.composer-asof-field { height: var(--gg-size-field); padding: 0 var(--gg-space-3); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-app); color: var(--gg-color-text-primary); font: inherit; }
-.composer-asof-field:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; }
-.composer-asof-field[aria-invalid="true"] { border-color: var(--gg-color-negative); }
 .composer-asof-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
 .composer-asof-quick { display: flex; flex-wrap: wrap; gap: var(--gg-space-1); }
 .composer-asof-explain { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
@@ -139,7 +137,7 @@ td .number-chip { display: inline-block; min-height: 28px; line-height: 28px; fo
 .journal-then-now .journal-outcome-card { display: grid; gap: var(--gg-space-1); padding: 0; border: 0; }
 .journal-then-now > section { display: grid; gap: var(--gg-space-2); padding: var(--gg-space-3) var(--gg-space-4); }
 .journal-then-now > section + section { border-top: 1px solid var(--gg-color-border-subtle); }
-.journal-then-now h3 { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: .04em; text-transform: uppercase; }
+.journal-then-now h3 { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); }
 .journal-then-now:lang(ko) h3 { letter-spacing: 0; text-transform: none; }
 .journal-then-now p { margin: 0; }
 .journal-then-now-with { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }

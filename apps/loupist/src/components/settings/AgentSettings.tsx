@@ -8,11 +8,15 @@ import { CheckIcon, FolderOpenIcon, RefreshCwIcon } from "lucide-react";
 import type { ConfigDocument, ConfigScope, ConfigSnapshot, LoupistSummary, LoupistBridge, ModelCatalog } from "../../types";
 import { notifyConfigurationChanged, useConfiguration } from "../../app/useConfiguration";
 import { Button } from "../ui/button";
+import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { Input } from "../ui/input";
 import { NativeSelect } from "../ui/native-select";
 import { Switch } from "../ui/switch";
 import { thinkingLabel, runControlLabel, runChoiceLabel, visibleCatalogModels } from "../../lib/modelSelection";
 import { ProviderPlanLine } from "../models/ProviderPlanLine";
+
+/** Conversation context presets: how much recent conversation stays before older turns are summarized. */
+const CONTEXT_PRESETS = [{ id: "standard", keep: 20000 }, { id: "keepMore", keep: 40000 }] as const;
 
 function leaf(document: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((value, key) => value && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined, document);
@@ -29,7 +33,7 @@ function SettingField({ snapshot, path, relatedPaths = [], label, description, d
   const sources = paths.map((key) => snapshot.sources[key] ?? "default");
   const source = sources.includes("project") ? "project" : sources.includes("global") ? "global" : "default";
   return <div className="agent-config-field">
-    <div className="agent-config-label"><label htmlFor={`config-${path}`}>{label}</label>{description ? <p className="agent-config-description" id={`config-description-${path}`}>{description}</p> : null}{<span className="agent-config-source">{source === "default" ? i18n.t("settings:agentSettings.appDefault") : source === "global" ? snapshot.scope.kind === "project" ? i18n.t("settings:agentSettings.usingGlobalDefaults") : i18n.t("settings:agentSettings.yourGlobalDefault") : i18n.t("settings:agentSettings.customizedForThisLoupist")}</span>}</div>
+    <div className="agent-config-label"><label htmlFor={`config-${path}`}>{label}</label>{description ? <p className="agent-config-description" id={`config-description-${path}`}>{description}</p> : null}{source === "default" ? null : <span className="agent-config-source">{source === "global" ? snapshot.scope.kind === "project" ? i18n.t("settings:agentSettings.usingGlobalDefaults") : i18n.t("settings:agentSettings.yourGlobalDefault") : i18n.t("settings:agentSettings.customizedForThisLoupist")}</span>}</div>
     <div className="agent-config-control">{children}{explicit ? <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => onReset(path)} aria-label={i18n.t("settings:agentSettings.resetLabel", { label: label })} title={snapshot.scope.kind === "project" ? i18n.t("settings:agentSettings.useGlobalDefault") : i18n.t("settings:agentSettings.useAppDefault")}>{snapshot.scope.kind === "project" ? i18n.t("settings:agentSettings.useDefault") : i18n.t("settings:agentSettings.reset")}</Button> : null}</div>
   </div>;
 }
@@ -101,8 +105,8 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange 
     {config.error ? <div className="inline-error config-diagnostics" role="alert"><p>{config.error}</p><Button variant="outline" size="sm" onClick={() => notifyConfigurationChanged()} disabled={config.busy}><RefreshCwIcon /> {i18n.t("settings:agentSettings.reload")}</Button></div> : null}
     <ConfigurationDiagnostics snapshot={snapshot} />
     {snapshot ? <>
-      <section className="settings-section" aria-labelledby="chat-defaults-title"><div className="settings-section-heading"><h3 id="chat-defaults-title">{i18n.t("settings:agentSettings.chatDefaults")}</h3><p>{i18n.t("settings:agentSettings.startEachChatYourWayYouCanChange")}</p></div><div className="agent-config-fields">
-        <SettingField {...field("chat.model_profile_id", i18n.t("settings:agentSettings.defaultModel"), i18n.t("settings:agentSettings.theModelToUseWhenStartingAChat"))}><NativeSelect id="config-chat.model_profile_id" aria-describedby="config-description-chat.model_profile_id" disabled={disabled} value={profileId} onChange={(event) => event.target.value ? void save("chat.model_profile_id", event.target.value) : reset("chat.model_profile_id")}><option value="">{scope.kind === "project" ? i18n.t("settings:agentSettings.useGlobalDefaultModel") : i18n.t("settings:agentSettings.automaticLastUsedModel")}</option>{profileId && !currentModel ? <option value={profileId}>{i18n.t("settings:agentSettings.unavailableModel")}</option> : null}{models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</NativeSelect></SettingField>
+      <section className="settings-section"><div className="agent-config-fields">
+        <SettingField {...field("chat.model_profile_id", i18n.t("settings:agentSettings.defaultModel"), i18n.t("settings:agentSettings.theModelToUseWhenStartingAChat"))}><NativeSelect id="config-chat.model_profile_id" aria-describedby="config-description-chat.model_profile_id" disabled={disabled} value={profileId} onChange={(event) => event.target.value ? void save("chat.model_profile_id", event.target.value) : reset("chat.model_profile_id")}><option value="">{scope.kind === "project" ? i18n.t("settings:agentSettings.useGlobalDefaultModel") : i18n.t("settings:agentSettings.automaticRecommendedModel")}</option>{profileId && !currentModel ? <option value={profileId}>{i18n.t("settings:agentSettings.unavailableModel")}</option> : null}{models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</NativeSelect></SettingField>
         <ProviderPlanLine className="agent-config-plan-line" provider={catalog?.providers.find((provider) => provider.id === optionModel?.provider)} onOpenUsage={(provider) => { void bridge.providerOpenUsage({ provider }).catch(() => {}); }} />
         <SettingField {...field("chat.thinking_level", i18n.t("settings:agentSettings.reasoningLevel"), i18n.t("settings:agentSettings.howMuchTimeTheModelSpendsThinkingBefore"))}><NativeSelect id="config-chat.thinking_level" aria-describedby="config-description-chat.thinking_level" disabled={disabled} value={thinking ?? "__automatic__"} onChange={(event) => event.target.value === "__automatic__" ? reset("chat.thinking_level") : void save("chat.thinking_level", event.target.value)}><option value="__automatic__">{scope.kind === "project" ? i18n.t("settings:agentSettings.useGlobalDefaultReasoningLevel") : i18n.t("settings:agentSettings.modelDefault")}</option>{thinking !== null && thinking !== undefined && !thinkingLevels.includes(thinking) ? <option value={thinking}>{i18n.t("settings:agentSettings.unavailableThinking", { level: thinking })}</option> : null}{thinkingLevels.map((level) => <option value={level} key={level}>{thinkingLabel(level) || i18n.t("settings:agentSettings.none")}</option>)}</NativeSelect></SettingField>
         <SettingField
@@ -118,7 +122,6 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange 
             onCheckedChange={(remember) => void update({ chat: { use_memory: remember, update_memory: remember } })}
           />
         </SettingField>
-        {optionModel?.run_controls.map((control) => <SettingField key={control.id} {...field(`chat.run_options.${control.id}`, runControlLabel(control))}><NativeSelect id={`config-chat.run_options.${control.id}`} disabled={disabled} value={snapshot.effective.chat.run_options[control.id] ?? control.default_choice} onChange={(event) => void update({ chat: { run_options: { [control.id]: event.target.value } } })}>{snapshot.effective.chat.run_options[control.id] !== undefined && !control.choices.some((choice) => choice.id === snapshot.effective.chat.run_options[control.id]) ? <option value={snapshot.effective.chat.run_options[control.id]}>{i18n.t("settings:agentSettings.unavailableChoice")}</option> : null}{control.choices.map((choice) => <option key={choice.id} value={choice.id}>{runChoiceLabel(control, choice)}</option>)}</NativeSelect></SettingField>)}
         {unavailableOptions.length ? <div className="inline-error config-diagnostics" role="alert"><strong>{optionModel ? i18n.t("settings:agentSettings.unavailableOptionsForModel", { model: optionModel.name }) : i18n.t("settings:agentSettings.unavailableOptions")}</strong><p>{i18n.t("settings:agentSettings.resetTheseOptionsBeforeStartingChatOrChoose")}</p><ul>{unavailableOptions.map(([key], index) => {
           const local = snapshot.explicit?.chat?.run_options?.[key] !== undefined;
           const source = snapshot.sources[`chat.run_options.${key}`];
@@ -128,17 +131,25 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange 
         })}</ul></div> : null}
       </div></section>
       <Disclosure className="agent-config-advanced" data-testid="agent-config-advanced" title={i18n.t("settings:agentSettings.advanced")} description={i18n.t("settings:agentSettings.contextLimitsAndRecoveryFromFailedRequests")}>
-        <div className="agent-config-group"><h4>{i18n.t("settings:agentSettings.conversationContext")}</h4><p>{i18n.t("settings:agentSettings.standardFitsANormalResearchChatKeepMore")}</p><div className="agent-config-presets"><Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void update({ pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 20000 } } })}>{i18n.t("settings:agentSettings.standard")}</Button><Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void update({ pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 40000 } } })}>{i18n.t("settings:agentSettings.keepMore")}</Button></div><details><summary>{i18n.t("settings:agentSettings.customAmounts")}</summary><div className="agent-config-fields">
+        {optionModel?.run_controls.length ? <div className="agent-config-group" data-run-controls><h4>{i18n.t("settings:agentSettings.performanceGroup")}</h4><div className="agent-config-fields">
+          {optionModel?.run_controls.map((control) => <SettingField key={control.id} {...field(`chat.run_options.${control.id}`, runControlLabel(control), control.id === "performance" ? i18n.t("settings:agentSettings.performanceDescription") : undefined)}><NativeSelect id={`config-chat.run_options.${control.id}`} aria-describedby={control.id === "performance" ? `config-description-chat.run_options.${control.id}` : undefined} disabled={disabled} value={snapshot.effective.chat.run_options[control.id] ?? control.default_choice} onChange={(event) => void update({ chat: { run_options: { [control.id]: event.target.value } } })}>{snapshot.effective.chat.run_options[control.id] !== undefined && !control.choices.some((choice) => choice.id === snapshot.effective.chat.run_options[control.id]) ? <option value={snapshot.effective.chat.run_options[control.id]}>{i18n.t("settings:agentSettings.unavailableChoice")}</option> : null}{control.choices.map((choice) => <option key={choice.id} value={choice.id}>{runChoiceLabel(control, choice)}</option>)}</NativeSelect></SettingField>)}
+        </div></div> : null}
+        <div className="agent-config-group"><h4>{i18n.t("settings:agentSettings.conversationContext")}</h4><p>{i18n.t("settings:agentSettings.standardFitsANormalResearchChatKeepMore")}</p>{/* The preset shows as chosen only when the kept amount is exactly its own; a custom amount selects neither. */}
+          <SegmentedControl className="agent-config-presets" aria-label={i18n.t("settings:agentSettings.conversationContext")} disabled={disabled}
+            value={CONTEXT_PRESETS.find(preset => preset.keep === snapshot.effective.pi.compaction.keep_recent_tokens)?.id ?? ""}
+            onValueChange={id => { const preset = CONTEXT_PRESETS.find(candidate => candidate.id === id); if (preset) void update({ pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: preset.keep } } }); }}>
+            {CONTEXT_PRESETS.map(preset => <SegmentedControlItem key={preset.id} value={preset.id}>{i18n.t(`settings:agentSettings.${preset.id}`)}</SegmentedControlItem>)}
+          </SegmentedControl><Disclosure title={i18n.t("settings:agentSettings.customAmounts")}><div className="agent-config-fields">
           <NumberSetting {...field("pi.compaction.reserve_tokens", i18n.t("settings:agentSettings.reservedTokens"), i18n.t("settings:agentSettings.leaveRoomForTheModelSNextResponse"))} max={Number.MAX_SAFE_INTEGER} onSave={save} onDirtyChange={onNumberDirtyChange} />
           <NumberSetting {...field("pi.compaction.keep_recent_tokens", i18n.t("settings:agentSettings.recentTokensToKeep"), i18n.t("settings:agentSettings.keepThisMuchRecentConversationBeforeSummarizingOlder"))} max={Number.MAX_SAFE_INTEGER} onSave={save} onDirtyChange={onNumberDirtyChange} />
-        </div></details></div>
+        </div></Disclosure></div>
         <div className="agent-config-group"><h4>{i18n.t("settings:agentSettings.requestRecovery")}</h4><p>{i18n.t("settings:agentSettings.retryAutomaticallyWhenAProviderHasATemporary")}</p><div className="agent-config-fields">
           <SettingField {...field("pi.retry.enabled", i18n.t("settings:agentSettings.retryFailedRequests"))}><NativeSelect id="config-pi.retry.enabled" disabled={disabled} value={String(snapshot.effective.pi.retry.enabled)} onChange={(event) => void save("pi.retry.enabled", event.target.value === "true")}><option value="true">{i18n.t("settings:agentSettings.enabled")}</option><option value="false">{i18n.t("settings:agentSettings.disabled")}</option></NativeSelect></SettingField>
           <NumberSetting {...field("pi.retry.max_retries", i18n.t("settings:agentSettings.maximumRetries"), i18n.t("settings:agentSettings.numberOfAttemptsAfterTheFirstFailure"))} max={10} onSave={save} onDirtyChange={onNumberDirtyChange} />
-          <details><summary>{i18n.t("settings:agentSettings.customTiming")}</summary>
+          <Disclosure title={i18n.t("settings:agentSettings.customTiming")}>
           <NumberSetting {...field("pi.retry.base_delay_ms", i18n.t("settings:agentSettings.initialRetryDelayMs"), i18n.t("settings:agentSettings.waitThisLongBeforeTheFirstRetry"))} max={300000} onSave={save} onDirtyChange={onNumberDirtyChange} />
           <NumberSetting {...field("pi.retry.max_agent_delay_ms", i18n.t("settings:agentSettings.maximumRetryDelayMs"), i18n.t("settings:agentSettings.limitHowLongAProviderCanAskThe"))} max={300000} onSave={save} onDirtyChange={onNumberDirtyChange} />
-          </details>
+          </Disclosure>
         </div></div>
         <RunDiagnostics bridge={bridge} loupistId={scope.kind === "project" ? scope.loupistId : null} />
       </Disclosure>

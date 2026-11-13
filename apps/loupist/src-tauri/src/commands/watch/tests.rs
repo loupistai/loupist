@@ -1008,3 +1008,913 @@ async fn class_kinds_start_off_outside_their_template_and_turn_on_one_by_one() {
     assert!(kind_state(&view, &btc, WatchKind::Drawdown).enabled);
     assert!(!kind_state(&view, &btc, WatchKind::CryptoMove).enabled);
 }
+
+/// Leave new observations committed between the read and delivery phases, or
+/// commit them through the same observation path as an asset/briefing refresh.
+async fn deferred_filing_events(origin: Option<ObservationOrigin>, missing_grant: bool) {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "990221", "KRX", "Solsup Foods");
+    defaults(&state, "loupist-a");
+    let page = followed_pages(&state, "loupist-a").unwrap().remove(0);
+    for kind in [WatchKind::Holders, WatchKind::Insiders] {
+        enable(&state, "loupist-a", &page.asset_id, kind);
+    }
+    // Use explicit pass times, rather than waiting for a cadence or racing a
+    // maintenance request against the running pass.
+    let start = DateTime::parse_from_rfc3339("2099-06-15T03:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let today = start.with_timezone(&chrono::Local).date_naive();
+    let old_date = today - Duration::days(200);
+    let mut reader = Scripted::default();
+    reader.script(
+        "dart_filing_search",
+        Some("990221"),
+        dart(&[("20980101000001", old_date, "사업보고서 (2098.12)")]),
+    );
+    let runtime = Runtime::default();
+    let baseline = run_pass_with(&state, &runtime, Scope::Scheduled, start, &mut reader)
+        .await
+        .unwrap();
+    assert_eq!(baseline["loupist-a"], 0);
+    assert!(events(&state, "loupist-a").is_empty());
+    let scanned = with_assets(&state, "loupist-a", false, |tx| {
+        watch::scanned_to(tx, "loupist-a", &page.asset_id)
+    })
+    .unwrap();
+    let captured = start
+        + if origin.is_none() {
+            Duration::hours(2)
+        } else {
+            Duration::minutes(10)
+        };
+    reader.script(
+        "dart_filing_search",
+        Some("990221"),
+        dart(&[
+            ("20990615000001", today, "분기보고서 (2099.03)"),
+            ("20990615000002", today, "주식등의대량보유상황보고서(일반)"),
+            ("20990615000003", today, "현금ㆍ현물배당결정"),
+            (
+                "20990615000004",
+                today - Duration::days(9),
+                "임원ㆍ주요주주특정증권등소유상황보고서",
+            ),
+            (
+                "20990615000005",
+                today - Duration::days(4),
+                "임원ㆍ주요주주특정증권등소유상황보고서",
+            ),
+            (
+                "20990615000006",
+                today - Duration::days(1),
+                "임원ㆍ주요주주특정증권등소유상황보고서",
+            ),
+            ("20980101000001", old_date, "사업보고서 (2098.12)"),
+        ]),
+    );
+    let read = route_read(Route::Filings, &page, today).unwrap();
+    let ReadOutcome::Ok { payload, provider } = reader.read(&state, "loupist-a", &read, None).await
+    else {
+        panic!("scripted read")
+    };
+    with_assets(&state, "loupist-a", true, |tx| {
+        if let Some(origin) = origin {
+            let tool_read = observe::ToolRead {
+                tool: read.tool,
+                provider: provider.as_deref(),
+                payload: &payload,
+                dataset: serde_json::from_value(payload["dataset_ref"].clone()).ok(),
+                retrieved_at: None,
+                citation_url: None,
+                today,
+                session_day: today,
+            };
+            assert_eq!(
+                assets::record_observations(
+                    tx,
+                    "loupist-a",
+                    &page.asset_id,
+                    observe::extract(&tool_read, &page.symbol),
+                    origin,
+                    None,
+                    captured.timestamp_millis(),
+                )?,
+                6,
+            );
+        } else {
+            apply_read(
+                tx,
+                "loupist-a",
+                &page,
+                Route::Filings,
+                &read,
+                &payload,
+                provider.as_deref(),
+                today,
+                captured,
+                true,
+            )?;
+            watch::record_route(
+                tx,
+                "loupist-a",
+                &page.asset_id,
+                Route::Filings,
+                "ok",
+                OPENDART_CONNECTION,
+                captured.timestamp_millis(),
+            )?;
+            // Phase 1 committed; phase 2 never ran.
+        }
+        if missing_grant {
+            watch::record_route(
+                tx,
+                "loupist-a",
+                &page.asset_id,
+                Route::Filings,
+                "needs_connection",
+                OPENDART_CONNECTION,
+                captured.timestamp_millis(),
+            )?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    assert!(events(&state, "loupist-a").is_empty());
+    // Another asset's due (failed) read triggers delivery while Solsup's
+    // filings route is not due. Its retry triggers the following pass too.
+    follow(&state, "990222", "KRX", "Other Foods");
+    defaults(&state, "loupist-a");
+    reader.calls.clear();
+    let next = run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        captured + Duration::minutes(1),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(next["loupist-a"], if missing_grant { 0 } else { 4 });
+    if missing_grant {
+        assert!(events(&state, "loupist-a").is_empty());
+        assert_eq!(
+            with_assets(&state, "loupist-a", false, |tx| {
+                watch::scanned_to(tx, "loupist-a", &page.asset_id)
+            })
+            .unwrap(),
+            scanned,
+            "events withheld for a missing grant must remain eligible",
+        );
+        // Restoring the route's grant makes the held events eligible even
+        // without another read of that route.
+        with_assets(&state, "loupist-a", true, |tx| {
+            watch::record_route(
+                tx,
+                "loupist-a",
+                &page.asset_id,
+                Route::Filings,
+                "ok",
+                OPENDART_CONNECTION,
+                captured.timestamp_millis(),
+            )
+        })
+        .unwrap();
+    }
+    let retry = run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        captured + Duration::minutes(16),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(retry["loupist-a"], if missing_grant { 4 } else { 0 });
+    let kinds: BTreeSet<_> = events(&state, "loupist-a")
+        .iter()
+        .map(|event| event.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        BTreeSet::from([
+            WatchKind::Filings,
+            WatchKind::Holders,
+            WatchKind::Dividends,
+            WatchKind::Insiders,
+        ]),
+    );
+    assert_eq!(events(&state, "loupist-a").len(), 4);
+    assert_eq!(reader.calls_to("dart_filing_search"), 2);
+    assert!(reader
+        .calls
+        .iter()
+        .all(|(_, _, args)| *args != read.arguments));
+}
+
+#[tokio::test]
+async fn deferred_filing_events_after_a_skipped_delivery_alert_once_without_rereading() {
+    deferred_filing_events(None, false).await;
+}
+
+#[tokio::test]
+async fn deferred_filing_events_from_asset_and_briefing_refreshes_alert_once_without_rereading() {
+    deferred_filing_events(Some(ObservationOrigin::Refresh), false).await;
+    deferred_filing_events(Some(ObservationOrigin::Briefing), false).await;
+}
+
+#[tokio::test]
+async fn deferred_filing_events_wait_for_the_grant_without_advancing_the_scan() {
+    deferred_filing_events(Some(ObservationOrigin::Refresh), true).await;
+}
+
+#[tokio::test]
+async fn first_read_stays_a_baseline_when_delivery_was_skipped() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    defaults(&state, "loupist-a");
+    let page = followed_pages(&state, "loupist-a").unwrap().remove(0);
+    let at = Utc::now() + Duration::seconds(10);
+    let read = route_read(Route::Filings, &page, at.date_naive()).unwrap();
+    let mut reader = Scripted::default();
+    reader.ensure(&state, "loupist-a");
+    // Earlier manual research already knew this observation kind.
+    for (offset, accession) in [(0, "earlier"), (1, "first-watch-read")] {
+        reader.script(
+            "equity_fundamental_filings",
+            Some("MORR"),
+            sec(vec![sec_row(
+                "10-Q",
+                day(-1),
+                accession,
+                "Quarterly report",
+            )]),
+        );
+        let ReadOutcome::Ok { payload, provider } =
+            reader.read(&state, "loupist-a", &read, None).await
+        else {
+            panic!("scripted read")
+        };
+        with_assets(&state, "loupist-a", true, |tx| {
+            apply_read(
+                tx,
+                "loupist-a",
+                &page,
+                Route::Filings,
+                &read,
+                &payload,
+                provider.as_deref(),
+                at.date_naive(),
+                at + Duration::seconds(offset),
+                offset == 1,
+            )?;
+            if offset == 1 {
+                // Research already retained this exact row as new. The first
+                // watch read sees it again and must save its own starting point.
+                apply_read(
+                    tx,
+                    "loupist-a",
+                    &page,
+                    Route::Filings,
+                    &read,
+                    &payload,
+                    provider.as_deref(),
+                    at.date_naive(),
+                    at + Duration::seconds(offset),
+                    false,
+                )?;
+                // Phase 1 committed; maintenance/cancellation skipped phase 2.
+                watch::record_route(
+                    tx,
+                    "loupist-a",
+                    &page.asset_id,
+                    Route::Filings,
+                    "ok",
+                    OPENBB_CONNECTION,
+                    at.timestamp_millis(),
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    }
+    follow(&state, "OTHR", "NASDAQ", "Other Components");
+    defaults(&state, "loupist-a");
+    reader.calls.clear();
+    let result = run_pass_with(
+        &state,
+        &Runtime::default(),
+        Scope::Scheduled,
+        at + Duration::minutes(1),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result["loupist-a"], 0);
+    assert!(events(&state, "loupist-a").is_empty());
+    assert!(reader
+        .calls
+        .iter()
+        .all(|(_, _, args)| *args != read.arguments));
+    // A later genuinely new filing still alerts.
+    reader.script(
+        "equity_fundamental_filings",
+        Some("MORR"),
+        sec(vec![sec_row("8-K", day(0), "later", "Current report")]),
+    );
+    let result = run_pass_with(
+        &state,
+        &Runtime::default(),
+        Scope::Loupist("loupist-a".into()),
+        at + Duration::hours(2),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result["loupist-a"], 1);
+}
+
+#[tokio::test]
+async fn class_starting_points_survive_a_skipped_delivery_phase() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = class_fixture(
+        &temporary,
+        "loupist-crypto",
+        crate::domain::LoupistTemplate::Crypto,
+    );
+    follow(&state, "ETH", "CRYPTO", "Ethereum");
+    defaults(&state, "loupist-crypto");
+    let page = followed_pages(&state, "loupist-crypto").unwrap().remove(0);
+    let at = Utc::now();
+    let read = route_read(Route::Price, &page, at.date_naive()).unwrap();
+    let mut reader = Scripted::default();
+    reader.ensure(&state, "loupist-crypto");
+    reader.script(
+        "crypto_price_historical",
+        Some("ETHUSD"),
+        coin_bars(
+            -1,
+            &[
+                2000.0, 2010.0, 2020.0, 2030.0, 2040.0, 2050.0, 2060.0, 2070.0, 1760.0,
+            ],
+        ),
+    );
+    let ReadOutcome::Ok { payload, provider } =
+        reader.read(&state, "loupist-crypto", &read, None).await
+    else {
+        panic!("scripted read")
+    };
+    with_assets(&state, "loupist-crypto", true, |tx| {
+        let signals = apply_read(
+            tx,
+            "loupist-crypto",
+            &page,
+            Route::Price,
+            &read,
+            &payload,
+            provider.as_deref(),
+            at.date_naive(),
+            at,
+            false,
+        )?;
+        assert!(!signals.is_empty());
+        watch::record_route(
+            tx,
+            "loupist-crypto",
+            &page.asset_id,
+            Route::Price,
+            "ok",
+            OPENBB_CONNECTION,
+            at.timestamp_millis(),
+        )
+    })
+    .unwrap();
+    let alerts = run_pass_with(
+        &state,
+        &Runtime::default(),
+        Scope::Loupist("loupist-crypto".into()),
+        at + Duration::hours(1),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(alerts["loupist-crypto"], 0);
+    assert!(events(&state, "loupist-crypto").is_empty());
+}
+
+#[tokio::test]
+async fn shared_routes_use_only_granted_loupists_and_fan_out_to_every_granted_recipient() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a", "loupist-b", "loupist-c"]);
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    for id in ["loupist-a", "loupist-b", "loupist-c"] {
+        defaults(&state, id);
+    }
+    let runtime = Runtime::default();
+    let mut reader = Scripted::default();
+    reader.ungranted.insert("loupist-a".into());
+    reader.script(
+        "equity_fundamental_filings",
+        Some("MORR"),
+        sec(vec![sec_row(
+            "10-Q",
+            day(-1),
+            "baseline",
+            "Quarterly report",
+        )]),
+    );
+    let at = Utc::now();
+    run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+        .await
+        .unwrap();
+    assert_eq!(reader.calls_to("equity_fundamental_filings"), 1);
+    assert!(reader.calls.iter().all(|(id, ..)| id == "loupist-b"));
+    for id in ["loupist-b", "loupist-c"] {
+        assert!(!with_assets(&state, id, false, |tx| assets::observations(
+            tx,
+            id,
+            &page_id("MORR", "NASDAQ")
+        ))
+        .unwrap()
+        .is_empty());
+    }
+    assert!(
+        with_assets(&state, "loupist-a", false, |tx| assets::observations(
+            tx,
+            "loupist-a",
+            &page_id("MORR", "NASDAQ")
+        ))
+        .unwrap()
+        .is_empty()
+    );
+    // Even when the granted reader fails, a recipient without the grant is
+    // missing a connection, not treated as having attempted that read.
+    reader.offline = true;
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        at + Duration::hours(2),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    let route = with_assets(&state, "loupist-a", false, |tx| {
+        watch::route_state(tx, "loupist-a", &page_id("MORR", "NASDAQ"), Route::Filings)
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(route.status, "needs_connection");
+}
+
+#[tokio::test]
+async fn an_idle_minute_does_not_write_or_advance_the_last_check() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    defaults(&state, "loupist-a");
+    let runtime = Runtime::default();
+    let mut reader = Scripted::default();
+    let at = Utc::now();
+    run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+        .await
+        .unwrap();
+    let before = state
+        .store
+        .lock_loupist("loupist-a")
+        .unwrap()
+        .total_changes();
+    let checked = settings_view(&state, &runtime, "loupist-a")
+        .unwrap()
+        .last_checked_ms;
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        at + Duration::minutes(1),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        state
+            .store
+            .lock_loupist("loupist-a")
+            .unwrap()
+            .total_changes(),
+        before
+    );
+    assert_eq!(
+        settings_view(&state, &runtime, "loupist-a")
+            .unwrap()
+            .last_checked_ms,
+        checked
+    );
+}
+
+#[tokio::test]
+async fn failed_routes_back_off_and_success_resets_the_retry_delay() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    defaults(&state, "loupist-a");
+    let runtime = Runtime::default();
+    let mut reader = Scripted {
+        offline: true,
+        ..Default::default()
+    };
+    let mut at = Utc::now();
+    run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+        .await
+        .unwrap();
+    for (index, minutes) in [15, 60, 240, 1440].into_iter().enumerate() {
+        let calls = reader.calls_to("equity_calendar_earnings");
+        run_pass_with(
+            &state,
+            &runtime,
+            Scope::Scheduled,
+            at + Duration::minutes(minutes - 1),
+            &mut reader,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            reader.calls_to("equity_calendar_earnings"),
+            calls,
+            "retry {index} came early"
+        );
+        at += Duration::minutes(minutes);
+        run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+            .await
+            .unwrap();
+        assert_eq!(
+            reader.calls_to("equity_calendar_earnings"),
+            calls + 1,
+            "retry {index} was deferred"
+        );
+    }
+    reader.offline = false;
+    reader.script_from(
+        "equity_calendar_earnings",
+        None,
+        "nasdaq",
+        json!({"results": []}),
+    );
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Loupist("loupist-a".into()),
+        at,
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    reader.offline = true;
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Loupist("loupist-a".into()),
+        at + Duration::minutes(1),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    let calls = reader.calls_to("equity_calendar_earnings");
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        at + Duration::minutes(15),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(reader.calls_to("equity_calendar_earnings"), calls);
+    run_pass_with(
+        &state,
+        &runtime,
+        Scope::Scheduled,
+        at + Duration::minutes(16),
+        &mut reader,
+    )
+    .await
+    .unwrap();
+    assert_eq!(reader.calls_to("equity_calendar_earnings"), calls + 1);
+}
+
+#[test]
+fn explicit_watch_consent_enables_untouched_results_without_enabling_other_kinds() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", &temporary.path().join("workspace"), 1),
+    );
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    super::super::earnings::ensure_task(&state, "loupist-a", false).unwrap();
+    let set = || WatchSettingSetRequest {
+        loupist_id: "loupist-a".into(),
+        asset_id: page_id("MORR", "NASDAQ"),
+        kind: WatchKind::Filings,
+        enabled: true,
+        expected_revision: 1,
+    };
+    update_setting(&state, set()).unwrap();
+    let task = state
+        .store
+        .scheduled_tasks_list("loupist-a")
+        .unwrap()
+        .into_iter()
+        .find(|task| task.kind == TaskKind::Earnings)
+        .unwrap();
+    assert_eq!(task.status, TaskStatus::Active);
+    let switches = with_assets(&state, "loupist-a", false, |tx| {
+        watch::switches(tx, "loupist-a")
+    })
+    .unwrap();
+    let switch = &switches[&page_id("MORR", "NASDAQ")];
+    assert!(switch.enabled(WatchKind::Filings));
+    assert!(!switch.enabled(WatchKind::Results));
+    state
+        .store
+        .scheduled_task_set_status(
+            "loupist-a",
+            &task.id,
+            task.revision,
+            TaskStatus::Paused,
+            now_ms(),
+        )
+        .unwrap();
+    let mut request = set();
+    request.expected_revision = switch.revision;
+    update_setting(&state, request).unwrap();
+    assert_eq!(
+        state
+            .store
+            .scheduled_tasks_list("loupist-a")
+            .unwrap()
+            .into_iter()
+            .find(|task| task.kind == TaskKind::Earnings)
+            .unwrap()
+            .status,
+        TaskStatus::Paused
+    );
+}
+
+#[tokio::test]
+async fn watch_pause_command_stops_reads_and_resume_restarts_them() {
+    use tauri::Manager;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "MORR", "NASDAQ", "Morrow Components");
+    defaults(&state, "loupist-a");
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state.clone());
+    let paused = watch_pause_set(
+        app.state(),
+        WatchPauseSetRequest {
+            loupist_id: "loupist-a".into(),
+            paused: true,
+        },
+    )
+    .unwrap();
+    assert!(paused.paused);
+    let runtime = Runtime::default();
+    let mut reader = Scripted::default();
+    let at = Utc::now();
+    run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+        .await
+        .unwrap();
+    assert!(reader.calls.is_empty());
+    let resumed = watch_pause_set(
+        app.state(),
+        WatchPauseSetRequest {
+            loupist_id: "loupist-a".into(),
+            paused: false,
+        },
+    )
+    .unwrap();
+    assert!(!resumed.paused);
+    run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)
+        .await
+        .unwrap();
+    assert_eq!(reader.calls_to("equity_fundamental_filings"), 1);
+}
+
+#[tokio::test]
+async fn manual_watch_check_with_nothing_followed_finishes_without_a_read() {
+    use tauri::Manager;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state);
+    let checked = watch_check_now(
+        app.state(),
+        WatchCheckNowRequest {
+            loupist_id: "loupist-a".into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(checked.new_alerts, 0);
+    assert!(!checked.settings.checking);
+}
+
+#[test]
+fn defaults_command_records_consent_keeps_choices_and_preserves_private_dated_drafts() {
+    use tauri::Manager;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", &temporary.path().join("workspace"), 1),
+    );
+    for (symbol, market) in [("MORR", "NASDAQ"), ("000660", "KRX"), ("KEEP", "NYSE")] {
+        follow(&state, symbol, market, symbol);
+    }
+    for mut binding in state.store.list_loupist_capabilities("loupist-a").unwrap() {
+        binding.enabled = false;
+        binding.updated_at_ms += 1;
+        state.store.save_loupist_capability(&binding).unwrap();
+    }
+    followed_pages(&state, "loupist-a").unwrap();
+    with_assets(&state, "loupist-a", true, |tx| {
+        watch::set_kind(
+            tx,
+            "loupist-a",
+            &page_id("KEEP", "NYSE"),
+            WatchKind::Filings,
+            false,
+            1,
+            2,
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    super::super::earnings::ensure_task(&state, "loupist-a", false).unwrap();
+    let mut chat = crate::commands::tests::chat("private-chat", "loupist-a", 3);
+    chat.memory_policy.use_memory = false;
+    chat.memory_policy.update_memory = false;
+    let mut question = crate::test_fixtures::chat_message(
+        "question",
+        crate::domain::ChatRole::User,
+        "Earlier research",
+    );
+    question.as_of = Some("2026-10-01".into());
+    chat.messages.push(question);
+    state.store.create_chat(&chat).unwrap();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state.clone());
+    let draft_id = || {
+        serde_json::from_value(json!({"loupist_id": "loupist-a", "thread_id": "private-chat"}))
+            .unwrap()
+    };
+    super::super::workspace_ui::chat_draft_write(
+        app.state(),
+        draft_id(),
+        serde_json::from_value(
+            json!({"prompt": "Keep this private", "context": {"asOf": "2026-10-01", "pins": []}}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let draft = serde_json::to_value(
+        super::super::workspace_ui::chat_draft_read(app.state(), draft_id()).unwrap(),
+    )
+    .unwrap();
+    let before = settings_view(&state, &Runtime::default(), "loupist-a").unwrap();
+    assert!(before.consent_off && before.watched.is_empty());
+    let result = watch_defaults_apply(
+        app.state(),
+        WatchDefaultsApplyRequest {
+            loupist_id: "loupist-a".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(result.watched_assets, 2);
+    assert!(!consent_mode(&state, "loupist-a").unwrap().eq("off"));
+    assert!(result
+        .needs_connections
+        .iter()
+        .any(|need| need.kind == WatchKind::Filings
+            && need.connection.id == OPENDART_CONNECTION
+            && need.asset_ids == [page_id("000660", "KRX")]));
+    assert!(result
+        .needs_connections
+        .iter()
+        .any(|need| need.kind == WatchKind::Results
+            && need.asset_ids.contains(&page_id("MORR", "NASDAQ"))));
+    let switches = with_assets(&state, "loupist-a", false, |tx| {
+        watch::switches(tx, "loupist-a")
+    })
+    .unwrap();
+    assert!(switches[&page_id("MORR", "NASDAQ")].enabled(WatchKind::Dividends));
+    assert!(switches[&page_id("KEEP", "NYSE")]
+        .kinds
+        .values()
+        .all(|enabled| !enabled));
+    assert_eq!(
+        state
+            .store
+            .scheduled_tasks_list("loupist-a")
+            .unwrap()
+            .into_iter()
+            .find(|task| task.kind == TaskKind::Earnings)
+            .unwrap()
+            .status,
+        TaskStatus::Active
+    );
+    let changes = state.store.lock().unwrap().total_changes();
+    assert_eq!(
+        watch_defaults_apply(
+            app.state(),
+            WatchDefaultsApplyRequest {
+                loupist_id: "loupist-a".into()
+            }
+        )
+        .unwrap(),
+        result
+    );
+    assert_eq!(state.store.lock().unwrap().total_changes(), changes);
+    assert_eq!(state.store.get_chat(&chat.id).unwrap().unwrap(), chat);
+    assert_eq!(
+        serde_json::to_value(
+            super::super::workspace_ui::chat_draft_read(app.state(), draft_id()).unwrap()
+        )
+        .unwrap(),
+        draft
+    );
+}
+
+#[test]
+fn defaults_command_applies_class_defaults_only_for_the_matching_template() {
+    for (template, watched) in [(None, 0), (Some(crate::domain::LoupistTemplate::Crypto), 1)] {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let mut saved = profile("loupist-a", &temporary.path().join("workspace"), 1);
+        saved.template = template;
+        seed_profile(state.store.as_ref(), &saved);
+        follow(&state, "ETH", "CRYPTO", "Ethereum");
+        assert_eq!(
+            apply_defaults_with_consent(&state, "loupist-a")
+                .unwrap()
+                .watched_assets,
+            watched
+        );
+    }
+}
+
+#[test]
+fn settings_list_only_undecided_assets_for_watch_all() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", &temporary.path().join("workspace"), 1),
+    );
+    for (symbol, market) in [("MORR", "NASDAQ"), ("KEEP", "NYSE"), ("NEXT", "NYSE")] {
+        follow(&state, symbol, market, symbol);
+    }
+    followed_pages(&state, "loupist-a").unwrap();
+    // The user switched KEEP fully off: a decision, though nothing is watched.
+    with_assets(&state, "loupist-a", true, |tx| {
+        watch::set_kind(
+            tx,
+            "loupist-a",
+            &page_id("KEEP", "NYSE"),
+            WatchKind::Filings,
+            false,
+            1,
+            2,
+        )
+    })
+    .unwrap();
+    let before = settings_view(&state, &Runtime::default(), "loupist-a").unwrap();
+    assert_eq!(before.not_watched.len(), 3);
+    assert_eq!(
+        before.undecided_asset_ids,
+        [page_id("MORR", "NASDAQ"), page_id("NEXT", "NYSE")]
+    );
+    assert_eq!(
+        apply_defaults_with_consent(&state, "loupist-a")
+            .unwrap()
+            .watched_assets,
+        2
+    );
+    let after = settings_view(&state, &Runtime::default(), "loupist-a").unwrap();
+    assert!(after.undecided_asset_ids.is_empty());
+    assert_eq!(after.not_watched.len(), 1);
+    assert_eq!(after.not_watched[0].asset_id, page_id("KEEP", "NYSE"));
+    // A new follow is undecided until the user or Watch all chooses.
+    follow(&state, "LATE", "NASDAQ", "LATE");
+    let later = settings_view(&state, &Runtime::default(), "loupist-a").unwrap();
+    assert_eq!(later.undecided_asset_ids, [page_id("LATE", "NASDAQ")]);
+}

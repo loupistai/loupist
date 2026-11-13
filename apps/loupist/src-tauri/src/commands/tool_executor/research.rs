@@ -8,6 +8,8 @@ use super::*;
 fn web_error(error: crate::web::WebError) -> BrokerError {
     match error {
         crate::web::WebError::Offline(host) => BrokerError::Offline(host),
+        crate::web::WebError::UrlDenied => BrokerError::invalid("url", "Only http and https URLs without credentials or a custom port open."),
+        crate::web::WebError::NoTextLayer => BrokerError::Execution("This document is a scan with no text layer, so it cannot be read. Look for a text version or another source.".into()),
         error => BrokerError::Execution(error.to_string()),
     }
 }
@@ -195,9 +197,13 @@ impl AppToolExecutor {
                 .await
                 .get(source_id)
                 .cloned()
-                .ok_or(BrokerError::MethodDenied)?,
-            (None, Some(url)) => crate::web::source_from_url(url)
-                .map_err(|error| BrokerError::Execution(error.to_string()))?,
+                .ok_or_else(|| {
+                    BrokerError::invalid(
+                        "source_id",
+                        "Not from a web_search in this reply; search again or pass the URL.",
+                    )
+                })?,
+            (None, Some(url)) => crate::web::source_from_url(url).map_err(web_error)?,
             _ => return Err(BrokerError::Malformed),
         };
         // A direct URL can declare publication only in its fetched document.
@@ -311,12 +317,12 @@ impl AppToolExecutor {
             .payload
             .get("source_id")
             .and_then(Value::as_str)
-            .ok_or(BrokerError::MethodDenied)?;
+            .ok_or_else(|| BrokerError::invalid("result_ref", "This web result has no retained source in this reply. Fetch the URL again before selecting a passage."))?;
         let digest = original
             .payload
             .get("content_sha256")
             .and_then(Value::as_str)
-            .ok_or(BrokerError::MethodDenied)?;
+            .ok_or_else(|| BrokerError::invalid("result_ref", "This web result has no retained digest in this reply. Fetch the URL again before selecting a passage."))?;
         let snapshots = self.capture.web_fetch_snapshots.lock().await;
         let snapshot = snapshots.get(source_id).ok_or_else(||
             BrokerError::Execution("The acquired web snapshot is unavailable in this turn. Fetch the source again before selecting a passage.".into()))?;
@@ -413,6 +419,25 @@ fn parse_search_domains(value: Option<&Value>) -> Result<Vec<String>, BrokerErro
 #[cfg(test)]
 mod paging_tests {
     use super::*;
+
+    #[test]
+    fn web_refusals_name_the_url_boundary_and_scanned_document_repair() {
+        let BrokerError::InvalidArguments { field, expected } =
+            web_error(crate::web::WebError::UrlDenied)
+        else {
+            panic!("URL field repair")
+        };
+        assert_eq!(field, "url");
+        assert_eq!(
+            expected,
+            "Only http and https URLs without credentials or a custom port open."
+        );
+        assert_eq!(web_error(crate::web::WebError::NoTextLayer).to_string(),
+            "tool execution failed: This document is a scan with no text layer, so it cannot be read. Look for a text version or another source.");
+        assert!(
+            matches!(web_error(crate::web::WebError::Offline("example.com".into())), BrokerError::Offline(host) if host == "example.com")
+        );
+    }
 
     fn passage_executor(temporary: &tempfile::TempDir) -> (AppToolExecutor, ToolPolicy) {
         use crate::commands::tests::{chat, profile, seed_profile};

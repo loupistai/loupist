@@ -69,10 +69,10 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::knowledge::KnowledgeCatalogDto,
         crate::commands::knowledge::KnowledgeCatalogRequest,
         crate::commands::knowledge::KnowledgeConnectionRequest,
-        crate::commands::knowledge::KnowledgeConnectionsRequest,
         crate::commands::knowledge::KnowledgeGraphJobRequest,
         crate::commands::knowledge::KnowledgeGraphLoupistRequest,
         crate::commands::knowledge::KnowledgeGraphPauseRequest,
+        crate::commands::knowledge::KnowledgeGraphRetrySourceRequest,
         crate::commands::knowledge::KnowledgeGraphSettingsRequest,
         crate::commands::knowledge::KnowledgeJournalReadRequest,
         crate::commands::knowledge::KnowledgeJournalSourceReadRequest,
@@ -148,7 +148,6 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::types::LoupistImportRequest,
         crate::commands::types::LoupistProfileUpdateRequest,
         crate::commands::types::LoupistReconnectRequest,
-        crate::commands::types::LoupistRecoverRequest,
         crate::commands::types::LoupistSummary,
         crate::commands::types::LoupistWorkspace,
         crate::commands::types::RunStarted,
@@ -163,6 +162,8 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::user_context::WatchlistRemoveRequest,
         crate::commands::watch::WatchCheckNowRequest,
         crate::commands::watch::WatchCheckResult,
+        crate::commands::watch::WatchDefaultsApplyRequest,
+        crate::commands::watch::WatchDefaultsApplyResult,
         crate::commands::watch::WatchEventsListRequest,
         crate::commands::watch::WatchEventsSeenRequest,
         crate::commands::watch::WatchPauseSetRequest,
@@ -352,9 +353,9 @@ commands! {
         knowledge_catalog: crate::commands::knowledge::KnowledgeCatalogRequest => crate::commands::knowledge::KnowledgeCatalogDto;
         knowledge_connection_dismiss: crate::commands::knowledge::KnowledgeConnectionRequest => crate::knowledge::ConnectionView;
         knowledge_connection_open: crate::commands::knowledge::KnowledgeConnectionRequest => crate::knowledge::ConnectionView;
-        knowledge_connections: crate::commands::knowledge::KnowledgeConnectionsRequest => Vec<crate::knowledge::ConnectionView>;
         knowledge_graph_job: crate::commands::knowledge::KnowledgeGraphJobRequest => crate::knowledge::GraphJobView;
         knowledge_graph_pause: crate::commands::knowledge::KnowledgeGraphPauseRequest => crate::knowledge::GraphProcessingView;
+        knowledge_graph_retry_source: crate::commands::knowledge::KnowledgeGraphRetrySourceRequest => crate::knowledge::GraphJobView;
         knowledge_graph_recover: crate::commands::knowledge::KnowledgeGraphLoupistRequest => crate::knowledge::GraphProcessingView;
         knowledge_graph_settings_get: crate::commands::knowledge::KnowledgeGraphLoupistRequest => crate::knowledge::GraphProcessingView;
         knowledge_graph_settings_set: crate::commands::knowledge::KnowledgeGraphSettingsRequest => crate::knowledge::GraphProcessingView;
@@ -405,7 +406,6 @@ commands! {
         loupist_list: () => Vec<crate::commands::types::LoupistSummary>;
         loupist_profile_update: crate::commands::types::LoupistProfileUpdateRequest => crate::commands::types::LoupistSummary;
         loupist_reconnect: crate::commands::types::LoupistReconnectRequest => crate::commands::types::LoupistSummary;
-        loupist_recover: crate::commands::types::LoupistRecoverRequest => crate::commands::types::LoupistSummary;
         loupist_select: () => crate::commands::types::LoupistWorkspace;
         chat_question_answer: crate::commands::questions::QuestionAnswerRequest => ();
         artifact_restore: crate::commands::types::ChatArtifactRestoreRequest => crate::commands::types::ChatArtifactViewDto;
@@ -452,6 +452,7 @@ commands! {
         watchlist_add: crate::commands::user_context::WatchlistAddRequest => crate::store::user_context::WatchlistEntry;
         watchlist_list: () => Vec<crate::store::user_context::WatchlistEntry>;
         watchlist_remove: crate::commands::user_context::WatchlistRemoveRequest => ();
+        watch_defaults_apply: crate::commands::watch::WatchDefaultsApplyRequest => crate::commands::watch::WatchDefaultsApplyResult;
         watch_check_now: crate::commands::watch::WatchCheckNowRequest => crate::commands::watch::WatchCheckResult;
         watch_events_list: crate::commands::watch::WatchEventsListRequest => Vec<crate::knowledge::watch::WatchEventView>;
         watch_events_seen: crate::commands::watch::WatchEventsSeenRequest => ();
@@ -721,14 +722,14 @@ async fn command_signatures() {
             any::<crate::commands::knowledge::KnowledgeConnectionRequest>(),
             any(),
         );
-    let _: Result<Vec<crate::knowledge::ConnectionView>, CommandError> =
-        crate::commands::knowledge::knowledge_connections(
-            any::<crate::commands::knowledge::KnowledgeConnectionsRequest>(),
-            any(),
-        );
     let _: Result<crate::knowledge::GraphJobView, CommandError> =
         crate::commands::knowledge::knowledge_graph_job(
             any::<crate::commands::knowledge::KnowledgeGraphJobRequest>(),
+            any(),
+        );
+    let _: Result<crate::knowledge::GraphJobView, CommandError> =
+        crate::commands::knowledge::knowledge_graph_retry_source(
+            any::<crate::commands::knowledge::KnowledgeGraphRetrySourceRequest>(),
             any(),
         );
     let _: Result<crate::knowledge::GraphProcessingView, CommandError> =
@@ -984,12 +985,6 @@ async fn command_signatures() {
             any(),
         )
         .await;
-    let _: Result<crate::commands::types::LoupistSummary, CommandError> =
-        crate::commands::loupist::loupist_recover(
-            any::<crate::commands::types::LoupistRecoverRequest>(),
-            any(),
-        )
-        .await;
     let _: Result<crate::commands::types::LoupistWorkspace, CommandError> =
         crate::commands::loupist::loupist_select(any(), any()).await;
     let _: Result<(), CommandError> = crate::commands::questions::chat_question_answer(
@@ -1210,6 +1205,11 @@ async fn command_signatures() {
         any::<crate::commands::user_context::WatchlistRemoveRequest>(),
         any(),
     );
+    let _: Result<crate::commands::watch::WatchDefaultsApplyResult, CommandError> =
+        crate::commands::watch::watch_defaults_apply(
+            any(),
+            any::<crate::commands::watch::WatchDefaultsApplyRequest>(),
+        );
     let _: Result<crate::commands::watch::WatchCheckResult, CommandError> =
         crate::commands::watch::watch_check_now(
             any(),

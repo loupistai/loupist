@@ -103,8 +103,16 @@ fn restored_legacy_tray_ticker_keeps_its_only_content_without_inline_ranges() {
 }
 
 fn fixture() -> (tempfile::TempDir, AppState) {
+    fixture_with_folder_catalog(false)
+}
+
+fn fixture_with_folder_catalog(folder_catalog: bool) -> (tempfile::TempDir, AppState) {
     let temporary = tempfile::tempdir().unwrap();
-    let state = AppState::for_persistent_test(temporary.path().join("profile"));
+    let state = if folder_catalog {
+        AppState::for_folder_test(temporary.path().join("profile"))
+    } else {
+        AppState::for_persistent_test(temporary.path().join("profile"))
+    };
     for (loupist_id, thread_id) in [("loupist-a", "chat-a"), ("loupist-b", "chat-b")] {
         let workspace = temporary.path().join(loupist_id);
         std::fs::create_dir(&workspace).unwrap();
@@ -386,4 +394,206 @@ fn symlinked_preferences_cannot_read_or_overwrite_another_location() {
         .is_symlink());
     assert_eq!(std::fs::read(&outside_file).unwrap(), b"untouched");
     assert!(read_state(&state).unwrap().is_some());
+}
+
+#[tokio::test]
+async fn deleting_a_chat_removes_only_its_prompt_context_and_attachment_drafts() {
+    let (_temporary, state) = fixture();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state);
+    for (loupist, thread) in [
+        ("loupist-a", "chat-a"),
+        ("loupist-b", "chat-b"),
+        ("loupist-a", "__empty-chat__"),
+    ] {
+        let id = || DraftIdentity {
+            loupist_id: loupist.into(),
+            thread_id: thread.into(),
+        };
+        chat_draft_write(
+            app.state(),
+            id(),
+            serde_json::from_value(json!({"prompt": "Unsent", "context": {"asOf": "2026-11-01"}}))
+                .unwrap(),
+        )
+        .unwrap();
+        chat_draft_files_write(
+            app.state(),
+            id(),
+            vec![DraftAttachment {
+                id: "file".into(),
+                filename: "report.txt".into(),
+                media_type: "text/plain".into(),
+                url: "data:text/plain;base64,cmVwb3J0".into(),
+            }],
+        )
+        .unwrap();
+    }
+    super::super::records::chat_delete(
+        super::super::types::ChatDeleteRequest {
+            loupist_id: "loupist-a".into(),
+            thread_id: "chat-a".into(),
+        },
+        app.state(),
+    )
+    .await
+    .unwrap();
+    let state = app.state::<AppState>();
+    assert!(state.store.get_chat("chat-a").unwrap().is_none());
+    let db = state.store.lock().unwrap();
+    for table in [
+        "composer_drafts",
+        "composer_draft_context",
+        "composer_draft_files",
+    ] {
+        let rows: Vec<(String, String)> = db
+            .prepare(&format!(
+                "SELECT loupist_id,thread_id FROM {table} ORDER BY loupist_id,thread_id"
+            ))
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            [
+                ("loupist-a".into(), "__empty-chat__".into()),
+                ("loupist-b".into(), "chat-b".into())
+            ]
+        );
+    }
+}
+
+fn draft_identity() -> DraftIdentity {
+    DraftIdentity {
+        loupist_id: "loupist-a".into(),
+        thread_id: "chat-a".into(),
+    }
+}
+
+fn draft_files() -> Vec<DraftAttachment> {
+    vec![DraftAttachment {
+        id: "file".into(),
+        filename: "report.txt".into(),
+        media_type: "text/plain".into(),
+        url: "data:text/plain;base64,cmVwb3J0".into(),
+    }]
+}
+
+async fn delete_draft_chat(app: &tauri::App<tauri::test::MockRuntime>) -> Result<(), CommandError> {
+    super::super::records::chat_delete(
+        super::super::types::ChatDeleteRequest {
+            loupist_id: "loupist-a".into(),
+            thread_id: "chat-a".into(),
+        },
+        app.state(),
+    )
+    .await
+}
+
+fn draft_row_count(state: &AppState, table: &str) -> i64 {
+    state
+        .store
+        .lock()
+        .unwrap()
+        .query_row(
+            &format!(
+                "SELECT count(*) FROM {table} WHERE loupist_id='loupist-a' AND thread_id='chat-a'"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+#[tokio::test]
+async fn review_storage_failed_chat_deletion_preserves_its_drafts() {
+    for folder_catalog in [false, true] {
+        let (_temporary, state) = fixture_with_folder_catalog(folder_catalog);
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(state);
+        let draft = json!({"prompt":"Unsent judgment", "context":{"asOf":"2026-11-01"}});
+        chat_draft_write(
+            app.state(),
+            draft_identity(),
+            serde_json::from_value(draft.clone()).unwrap(),
+        )
+        .unwrap();
+        chat_draft_files_write(app.state(), draft_identity(), draft_files()).unwrap();
+        app.state::<AppState>().store.lock_loupist("loupist-a").unwrap().execute_batch(
+            "CREATE TRIGGER reject_chat_deletion BEFORE DELETE ON chat_sessions BEGIN SELECT RAISE(ABORT, 'fixture deletion refusal'); END;"
+        ).unwrap();
+        assert!(delete_draft_chat(&app).await.is_err());
+        assert!(app
+            .state::<AppState>()
+            .store
+            .get_chat("chat-a")
+            .unwrap()
+            .is_some());
+        assert_eq!(
+            serde_json::to_value(chat_draft_read(app.state(), draft_identity()).unwrap()).unwrap(),
+            draft
+        );
+        assert_eq!(
+            chat_draft_files_read(app.state(), draft_identity())
+                .unwrap()
+                .len(),
+            1
+        );
+        for table in [
+            "composer_drafts",
+            "composer_draft_context",
+            "composer_draft_files",
+        ] {
+            assert_eq!(draft_row_count(&app.state(), table), 1);
+        }
+        app.state::<AppState>()
+            .store
+            .lock_loupist("loupist-a")
+            .unwrap()
+            .execute_batch("DROP TRIGGER reject_chat_deletion")
+            .unwrap();
+        // Write-before-delete: a successful retry removes every draft row.
+        delete_draft_chat(&app).await.unwrap();
+        for table in [
+            "composer_drafts",
+            "composer_draft_context",
+            "composer_draft_files",
+        ] {
+            assert_eq!(draft_row_count(&app.state(), table), 0);
+        }
+    }
+}
+
+#[tokio::test]
+async fn review_storage_draft_admitted_before_delete_cannot_write_afterwards() {
+    for folder_catalog in [false, true] {
+        let (_temporary, state) = fixture_with_folder_catalog(folder_catalog);
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(state);
+        // Pause the production write between its initial admission/table setup
+        // and its persistence half. Deletion wins this exact interleaving.
+        draft_table(&app.state(), &draft_identity()).unwrap();
+        delete_draft_chat(&app).await.unwrap();
+        let result = write_draft_files(&app.state(), &draft_identity(), &draft_files());
+        assert!(
+            result.is_err(),
+            "a late admitted write must not recreate an unreachable row"
+        );
+        assert_eq!(draft_row_count(&app.state(), "composer_draft_files"), 0);
+        assert!(chat_draft_files_write(app.state(), draft_identity(), draft_files()).is_err());
+        assert!(chat_draft_write(
+            app.state(),
+            draft_identity(),
+            serde_json::from_value(json!({"prompt":"late"})).unwrap()
+        )
+        .is_err());
+    }
 }

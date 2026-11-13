@@ -94,20 +94,20 @@ async function openDart() {
 }
 
 describe("leaving setup with a typed key", () => {
-  it("asks before Done discards a key that is typed but not saved", async () => {
+  it("asks before Cancel discards a key that is typed but not saved", async () => {
     const user = userEvent.setup();
     const { bridge, entry, connector } = await openDart();
     const onClose = vi.fn();
     render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={connector} onClose={onClose} onChanged={vi.fn()} />);
     const key = screen.getByLabelText("OpenDART API key");
     await user.type(key, "typed-but-unsaved");
-    await user.click(screen.getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     const confirmation = screen.getByRole("dialog", { name: "Discard the key you typed?" });
     expect(onClose).not.toHaveBeenCalled();
     await user.click(within(confirmation).getByRole("button", { name: "Keep editing" }));
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByLabelText("OpenDART API key")).toHaveValue("typed-but-unsaved");
-    await user.click(screen.getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     await user.click(within(screen.getByRole("dialog", { name: "Discard the key you typed?" })).getByRole("button", { name: "Discard" }));
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -117,7 +117,7 @@ describe("leaving setup with a typed key", () => {
     const { bridge, entry, connector } = await openDart();
     const onClose = vi.fn();
     render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={connector} onClose={onClose} onChanged={vi.fn()} />);
-    await user.click(screen.getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog", { name: "Discard the key you typed?" })).toBeNull();
   });

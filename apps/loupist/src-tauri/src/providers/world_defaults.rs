@@ -254,10 +254,10 @@ mod tests {
     fn world_defaults_require_the_reviewed_model_and_effort_pair() {
         let mut luna = model("openai", "gpt-6-luna");
         luna.thinking_levels = vec!["off".into(), "max".into()];
-        let options = options_from_catalog(catalog(vec![luna, model("openai", "gpt-4.1-mini")]));
+        let options = options_from_catalog(catalog(vec![luna, model("openai", "gpt-5.4-mini")]));
         let selection = options.default_model.unwrap();
-        assert_eq!(selection.model_profile_id, "openai/gpt-4.1-mini");
-        assert_eq!(selection.thinking_level, "off");
+        assert_eq!(selection.model_profile_id, "openai/gpt-5.4-mini");
+        assert_eq!(selection.thinking_level, "high");
         for (provider, id, effort) in [
             ("anthropic", "claude-haiku-5-5", "medium"),
             ("anthropic", "claude-haiku-4-5", "low"),
@@ -278,6 +278,7 @@ mod tests {
     #[test]
     fn a_provider_prefers_its_newest_reviewed_model_and_keeps_older_ones_as_fallbacks() {
         for (provider, newest, older) in [
+            ("openai", "gpt-6.1-terra", "gpt-5.6-terra"),
             ("anthropic", "claude-haiku-5-5", "claude-haiku-4-5"),
             ("anthropic", "claude-sonnet-5-5", "claude-sonnet-4-6"),
             ("minimax", "MiniMax-M3.1-Flash", "MiniMax-M3"),
@@ -299,6 +300,24 @@ mod tests {
             assert_eq!(
                 older_only.default_model.unwrap().model_profile_id,
                 format!("{provider}/{older}")
+            );
+        }
+    }
+
+    #[test]
+    fn retiring_models_are_never_selected_as_world_defaults() {
+        for (provider, id) in [
+            ("openai", "gpt-5-mini"),
+            ("openai", "gpt-4.1-mini"),
+            ("anthropic", "claude-sonnet-4-5"),
+            ("groq", "llama-3.3-70b-versatile"),
+        ] {
+            let options = options_from_catalog(catalog(vec![model(provider, id)]));
+            assert!(options.default_model.is_none(), "{provider}/{id}");
+            assert_eq!(
+                options.catalog.models.len(),
+                1,
+                "manual selection remains available"
             );
         }
     }
@@ -348,11 +367,11 @@ mod tests {
     fn world_defaults_use_available_fallbacks_without_guessing_or_escalating_to_a_flagship() {
         let options = options_from_catalog(catalog(vec![
             model("openai", "gpt-6-astra"),
-            model("openai", "gpt-4.1-mini"),
+            model("openai", "gpt-5.4-mini"),
         ]));
         assert_eq!(
             options.default_model.unwrap().model_profile_id,
-            "openai/gpt-4.1-mini"
+            "openai/gpt-5.4-mini"
         );
         let options = options_from_catalog(catalog(vec![model("openai", "gpt-6-astra")]));
         assert!(options.default_model.is_none());

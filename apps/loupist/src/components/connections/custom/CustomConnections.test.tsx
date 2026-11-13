@@ -27,13 +27,16 @@ it("connects then requires a choice for every eligible tool before Done", async 
   await user.type(screen.getByRole("textbox", { name: "Server URL" }), "https://research.example/mcp");
   await user.click(screen.getByRole("button", { name: "Connect" }));
   expect(await screen.findByRole("button", { name: "Done" })).toBeDisabled();
+  // Why Done waits is said beside Done, not below the tool list.
+  expect(screen.getByRole("button", { name: "Done" }).parentElement).toHaveTextContent("Choose for each tool");
   expect(screen.getByText("Read prices")).toBeVisible();
   expect(screen.getByText("read_prices")).toBeVisible();
-  await user.click(within(screen.getByRole("group", { name: "Approval for Read prices" })).getByRole("button", { name: "Allow" }));
+  await user.click(within(screen.getByRole("radiogroup", { name: "Approval for Read prices" })).getByRole("radio", { name: "Allow" }));
   expect(screen.getByRole("button", { name: "Done" })).toBeDisabled();
-  await user.click(within(screen.getByRole("group", { name: "Approval for Read filings" })).getByRole("button", { name: "Don’t allow" }));
+  await user.click(within(screen.getByRole("radiogroup", { name: "Approval for Read filings" })).getByRole("radio", { name: "Don’t allow" }));
   expect(screen.getByRole("button", { name: "Done" })).toBeEnabled();
-  expect(screen.queryByRole("group", { name: "Approval for Place order" })).toBeNull();
+  expect(screen.queryByRole("radiogroup", { name: "Approval for Place order" })).toBeNull();
+  expect(screen.queryByText(/Choose for each tool/)).toBeNull();
   const enable = vi.spyOn(bridge, "customConnectionSetEnabled");
   await user.click(screen.getByRole("button", { name: "Done" }));
   expect(onClose).toHaveBeenCalledOnce();
@@ -48,11 +51,11 @@ it("enables the current Loupist at confirm, then Allow sticks before Done closes
   const user = userEvent.setup();
   await user.type(screen.getByRole("textbox", { name: "Server URL" }), "https://research.example/mcp");
   await user.click(screen.getByRole("button", { name: "Connect" }));
-  const allow = await screen.findByRole("button", { name: "Allow" });
+  const allow = await screen.findByRole("radio", { name: "Allow" });
   const listed = await bridge.customConnectionList({ loupist_id: "loupist-one" });
   expect(listed.some(record => record.enabled)).toBe(true);
   await user.click(allow);
-  expect(screen.getByRole("button", { name: "Allow" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("radio", { name: "Allow" })).toHaveAttribute("aria-checked", "true");
   expect(screen.getByRole("button", { name: "Done" })).toBeEnabled();
   await user.click(screen.getByRole("button", { name: "Done" }));
   expect(onClose).toHaveBeenCalledOnce();
@@ -109,9 +112,9 @@ it("resets the displayed choice when the host returns a changed definition", asy
   const bridge = setup(); const record = await connection(bridge); record.tools[0].approval = "always";
   const props = { bridge, loupistId: "loupist-one", onChanged: vi.fn(), onError: vi.fn() };
   const view = render(<ToolReview {...props} connection={record} />);
-  expect(screen.getByRole("button", { name: "Allow" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("radio", { name: "Allow" })).toHaveAttribute("aria-checked", "true");
   view.rerender(<ToolReview {...props} connection={{ ...record, tools: record.tools.map(tool => ({ ...tool, definition_hash: "new-hash", definition_changed: true, approval: null })) }} />);
-  expect(screen.getByRole("button", { name: "Allow" })).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByRole("radio", { name: "Allow" })).toHaveAttribute("aria-checked", "false");
   expect(screen.getByText("Changed since you allowed it. Review again.")).toBeVisible();
 });
 it("requires confirmation before removing and writes per-Loupist enablement", async () => {

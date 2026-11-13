@@ -121,4 +121,39 @@ describe("home Thread guidance", () => {
     expect(screen.getByText("Hello")).toBeVisible();
     expect(screen.queryByRole("region", { name: "You could ask" })).toBeNull();
   });
+
+  it("keeps the open setup steps after the first message and ticks off one done elsewhere when Home is shown again", async () => {
+    localStorage.removeItem("loupist.setupHidden.v1");
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    let followed: Awaited<ReturnType<MockLoupistBridge["watchlistList"]>> = [];
+    vi.spyOn(bridge, "watchlistList").mockImplementation(async () => followed);
+    vi.spyOn(bridge, "principleList").mockResolvedValue([]);
+    vi.spyOn(bridge, "briefingSettingsGet").mockResolvedValue({ enabled: false, schedule: null, task: null } as unknown as Awaited<ReturnType<MockLoupistBridge["briefingSettingsGet"]>>);
+    const sent: ChatMessage[] = [{ ...post, id: "user-1", role: "user", content: "Follow a few companies for me." }];
+    const props = { loupistId: "loupist-quality", loupistName: "Loupist", bridge, home: true, messageKeys: ["user-1"], onSuggestion: vi.fn(), onReadAttachment: vi.fn() };
+    const view = render(<ChatConversation {...props} messages={sent} />);
+    const setup = await screen.findByRole("region", { name: "Get set up" });
+    expect(setup).toHaveTextContent("0 of 3");
+    // The user follows AAPL on Following, then comes back to Home.
+    view.rerender(<ChatConversation {...props} messages={sent} active={false} />);
+    followed = [{ symbol: "AAPL", market: "NASDAQ", displayName: "Apple", addedAtMs: 0 }] as typeof followed;
+    view.rerender(<ChatConversation {...props} messages={sent} active />);
+    await waitFor(() => expect(screen.getByRole("region", { name: "Get set up" })).toHaveTextContent("1 of 3"));
+  });
+
+  it("ticks off Follow on the empty Home after following an asset on Following", async () => {
+    localStorage.removeItem("loupist.setupHidden.v1");
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    let followed: Awaited<ReturnType<MockLoupistBridge["watchlistList"]>> = [];
+    vi.spyOn(bridge, "watchlistList").mockImplementation(async () => followed);
+    vi.spyOn(bridge, "principleList").mockResolvedValue([]);
+    vi.spyOn(bridge, "briefingSettingsGet").mockResolvedValue({ enabled: false, schedule: null, task: null } as unknown as Awaited<ReturnType<MockLoupistBridge["briefingSettingsGet"]>>);
+    const props = { loupistId: "loupist-quality", loupistName: "Loupist", bridge, home: true, messages: [], messageKeys: [], onSuggestion: vi.fn(), onReadAttachment: vi.fn() };
+    const view = render(<ChatConversation {...props} />);
+    expect(await screen.findByRole("region", { name: "Get set up" })).toHaveTextContent("0 of 3");
+    view.rerender(<ChatConversation {...props} active={false} />);
+    followed = [{ symbol: "AAPL", market: "NASDAQ", displayName: "Apple", addedAtMs: 0 }] as typeof followed;
+    view.rerender(<ChatConversation {...props} active />);
+    await waitFor(() => expect(screen.getByRole("region", { name: "Get set up" })).toHaveTextContent("1 of 3"));
+  });
 });

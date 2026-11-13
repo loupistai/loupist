@@ -11,9 +11,14 @@
 | OpenBB MCP worker | Loupist-scoped read-only financial data under captured connector grants |
 
 Native file tools run as the user. Rust decides every file call before it runs
-and never asks. File tools reach the Loupist folder, this run's scratch and this
-Chat's attachments, and refuse the app's private data (credentials, the database,
-Pi runtime files), home credential locations and everything outside the folder.
+and never asks. File tools reach the Loupist folder, this run's scratch, this
+Chat's attachments and the bounded global instruction paths: global `AGENTS.md`
+and `skills/**`. The sealed bundled agent `skills/` root also admits read, ls,
+find and grep, never write or edit; the adjacent prompt, extension and catalog stay
+private. A declared bundled path that resolves outside that root through `..` or a
+symlink is refused even if its target would otherwise be admitted. Other private
+app data (credentials, databases, Pi runtime files), home credential locations and
+paths outside the admitted roots are refused.
 `run_python` is the only agent code execution tool. It does not inherit the host
 environment, the network or a shell
 ([Native tool permissions](permissions.md)). Its guest view of the workspace is
@@ -66,21 +71,34 @@ workspace instruction files still follow the [workspace contract](chat-turns.md#
 | `<workspace>/.loupist/loupist.sqlite3` | Loupist profile, Chats, Memory/growth events, asset pages, results events, watch settings and alerts, graph jobs, the derived World index (`world_index_*`: entity and claim vectors, FTS5), datasets, artifacts, sharing records and scheduled definitions/history |
 | `<workspace>/.loupist/knowledge-blobs/` | Retained material referenced by that Loupist's database |
 | `<workspace>/.loupist/packs/` | Files of each [shared pack](../knowledge/sharing.md#sharing) added, by import and version |
-| Global `catalog.sqlite3` | Folder registrations, environment identity, model-provider status, the watchlist, holdings snapshots, read-only wallet addresses and other shared host state |
+| Global `catalog.sqlite3` | Folder registrations, environment identity, model-provider status, what you follow, holdings snapshots, read-only wallet addresses and other shared host state |
 | Private Chat runtime | Disposable Pi session cache, output spill files and process leases |
 | Native credential store | Environment-scoped release connector secrets and the GitHub sharing token; debug builds keep both in process memory |
 
 Rust routes canonical operations to the owning Loupist. An exclusive folder lock
 prevents concurrent app instances from writing the same data. Loupist databases use
 full synchronous rollback journaling. Removing a Loupist unregisters it and preserves
-its folder. Missing or replaced folders require reconnection, which validates the
+its folder, Chats and Memory. Import can reopen an app-created workspace directly
+under this profile's `loupists/` directory only when it contains a valid existing
+Loupist; the profile root and disposable runtime folders remain private. Missing
+or replaced folders require reconnection, which validates the
 profile, preserves its Loupist id and requires a newer update time; absent filesystem
 identities do not establish that two folders are the same. Copy/reopen rules are in
 [Folder portability](../knowledge/growth.md#folder-portability). Versions, upgrades
 and refusals are in [Schema versions and upgrades](#schema-versions-and-upgrades).
 Workspace tabs retain their saved references while a registered folder is unavailable;
-only an available folder can establish that a Chat was deleted. Shared store-error
-mapping and Memory transaction setup keep raw SQLite diagnostics out of renderer messages.
+only an available folder can establish that a Chat was deleted. Draft writes recheck
+the Chat in its canonical database and hold that database lock through the
+profile-local write, serializing with deletion. The empty-Chat composer remains a
+separate draft identity with no Chat row. Shared store-error mapping and Memory
+transaction setup keep raw SQLite diagnostics out of renderer messages.
+
+An interrupted Memory transaction rolls back through the current transaction entry
+points; it does not create a folder recovery state or require a renderer recovery
+command. The host still quarantines pending deletions: hidden Loupists admit no
+Chat, scheduled run or Memory write until deletion finishes. Quarantine is private
+in-memory host state, rebuilt from the deletion journal at startup, and is not
+part of the stored folder format.
 
 Holdings are app-level. Each import is a snapshot of one source (`csv`, `kis`,
 `crypto_file`, or one per wallet address), and holdings are the union of the latest
@@ -112,7 +130,7 @@ snapshot.
 
 The global `catalog.sqlite3` and every folder's `loupist.sqlite3` share one schema
 (`initialize_schema` in `store/schema.rs`) and one upgrade ladder
-(`store/upgrade.rs`). The store schema is version 5 (`PRAGMA user_version`), the
+(`store/upgrade.rs`). The store schema is version 6 (`PRAGMA user_version`), the
 Knowledge schema version 7 (`knowledge_schema`) and the Knowledge format version 1.
 A fresh database is created at the current versions.
 
@@ -141,6 +159,16 @@ keeps rowids, indexes and triggers, including the Memory immutability triggers;
 it may add no foreign-key violation. `store/tests/upgrade.rs` upgrades the frozen
 baseline (`store/tests/fixtures/baseline-store4-knowledge6.sql`) and requires the
 same shape as a fresh database.
+
+Store 6 adds covering indexes for Source lookups by `span_id` and
+`representation_id`. They are non-unique because retained material may appear in
+several records; the normal backup and one-step transaction rules apply.
+
+Folder connections start in DELETE journal mode and leave it there on reopen;
+the catalog uses WAL. Record reads check already bound folders for ownership before
+opening other registrations. A failed ownership probe is skipped so an unavailable
+folder cannot block records in another folder; a located owner still passes the
+folder and database identity checks.
 
 Store 5 also restores the `piSessionCache` key that builds before it removed from
 stored Chats on reconnect and import. Chat writes compare the stored text with the
@@ -259,7 +287,11 @@ Loupist version wrote: a connector or connector field it no longer declares, or 
 Skill it now keeps always on. Such a setting is ignored and reported as a warning
 (`warnings`); its text stays in the file and saves and runs continue. A save
 request may name only settings this version has. Saves check revisions and preserve
-comments; admission rereads and freezes the effective settings.
+comments; admission checks the file and freezes the effective settings. Parsed
+configuration is cached by path and scope, modification time, length and filesystem
+identity (including Unix change time). Each hit still opens the file without
+following a link; external replacement, deletion and writes invalidate the cache.
+The process keeps at most 64 parsed files.
 Rust emits no configuration event: after its own save the renderer tells its other
 views through the `loupist-configuration-changed` window event, and edits made outside
 the app are read at reload, app activation and scope changes.

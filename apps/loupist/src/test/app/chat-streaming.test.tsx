@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ChatStreamEvent } from "../../types";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import { chooseLoupist, loupistIsRunning, newChatButton, openApp, privateChatToggle, waitForLoupistRunning, openChat } from "../renderApp";
+import { chooseLoupist, loupistIsRunning, newChatButton, openApp, privateChatOn, waitForLoupistRunning, openChat } from "../renderApp";
 import { completedRun } from "../streamFixtures";
 
 type User = ReturnType<typeof userEvent.setup>;
@@ -28,7 +28,7 @@ describe("Loupist · Chat streaming and concurrency", () => {
     await openApp(bridge);
     await send(user, "오늘 하이닉스 어땠어?");
     expect(await screen.findByText("오늘 하이닉스 어땠어?")).toBeVisible();
-    expect(await screen.findByLabelText("Response status")).toHaveTextContent("Waiting for the model");
+    expect(await screen.findByLabelText("Response status")).toHaveTextContent("Starting");
     expect(screen.getByRole("button", { name: "Stop response" })).toBeVisible();
   });
 
@@ -61,7 +61,8 @@ describe("Loupist · Chat streaming and concurrency", () => {
     await user.click(within(progress).getByRole("button"));
     expect(within(progress).getByText("Reviewed earlier conversation")).toBeVisible();
     expect(progress).not.toHaveTextContent("Summarized earlier messages");
-    expect(within(message).getByText("Tool preamble that must not become the final answer.")).toBeVisible();
+    // The note stays on the page, and the open timeline lists it in its place too.
+    expect(within(message).getAllByText("Tool preamble that must not become the final answer.")).toHaveLength(2);
   });
 
   it("streams Markdown in the answer body across tool use, guidance and settlement", async () => {
@@ -81,17 +82,18 @@ describe("Loupist · Chat streaming and concurrency", () => {
     const [{ run_id }, observer] = chatSend.mock.calls[0]!;
     const emit = (event: ChatStreamEvent) => act(async () => observer(event));
     await emit({ type: "phase", run_id, phase: "thinking" });
-    await waitFor(() => expect(screen.getByLabelText("Response status")).toHaveTextContent("Thinking it through"));
+    await waitFor(() => expect(screen.getByLabelText("Response status")).toHaveTextContent("Thinking"));
     await emit({ type: "phase", run_id, phase: "writing" });
     const preamble = { id: "note", kind: "commentary" as const, text: "보고서를 확인할게요." };
     await emit({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: Date.now(), items: [preamble], finishedAtMs: null } });
     await waitFor(() => expect(document.querySelector(".message.streaming .message-content")).toHaveTextContent(preamble.text));
-    const originalNote = screen.getByText(preamble.text);
+    const originalNote = document.querySelector<HTMLElement>(".message.streaming .message-content")!;
     await emit({ type: "phase", run_id, phase: "tool" });
     const read = { id: "read", kind: "tool" as const, category: "files" as const, operation: "read" as const, action: "Read filing", status: "succeeded" as const, target: null, href: null, startedAtMs: 0, finishedAtMs: null };
     await emit({ type: "progress_patch", run_id, patch: { sequence: 2, upsertItems: [read] } });
     const history = await screen.findByLabelText("Work progress");
-    expect(screen.getByText(preamble.text)).toBe(originalNote);
+    expect(originalNote).toHaveTextContent(preamble.text);
+    expect(document.querySelector(".message.streaming .message-content")).toBe(originalNote);
     expect(history).not.toContainElement(originalNote);
     expect(within(history).getByRole("button")).toHaveAttribute("aria-expanded", "false");
     await emit({ type: "phase", run_id, phase: "writing" });
@@ -99,7 +101,8 @@ describe("Loupist · Chat streaming and concurrency", () => {
     const write = (sequence: number, text: string, id = "draft") => emit({
       type: "progress_patch", run_id, patch: { sequence, upsertItems: [{ id, kind: "commentary", text }] },
     });
-    await write(3, heading);
+    // A heading shows once its line ends.
+    await write(3, `${heading}\n\n`);
     const title = await screen.findByRole("heading", { name: "영업이익" });
     const body = title.closest<HTMLElement>(".message-content")!;
     expect(body).not.toBeNull();
@@ -286,7 +289,7 @@ describe("Loupist · Chat streaming and concurrency", () => {
     await act(async () => resolveSelection(stale));
     await openChat("Canonical remote thread title");
     expect(await screen.findByText(/I reviewed.*Preserve this response across a stale selection/)).toBeVisible();
-    expect(privateChatToggle()).toHaveAttribute("aria-pressed", "true");
+    expect(privateChatOn()).toBe(true);
   });
 
   it("rehydrates completed Chat messages from the native store after remount", async () => {

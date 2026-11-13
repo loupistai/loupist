@@ -22,11 +22,35 @@ sharing, the agent names the skipped actions in the final answer, including when
 missing research inputs require clarification, and continues the authorized
 research. The data does not become a user instruction.
 
+Native file guidance names only admitted file/instruction/Skill paths. Bundled
+Skill reads have their own read-only root; adjacent agent internals stay private.
+The `web_fetch` search-result/site restriction applies after third-party text has
+been read in the current reply; before that, a public URL the user supplies can be
+opened directly. The Journal Skill routes durable
+assistant research to `lens_file`, while `note_save` keeps Chat progress and facts
+the user stated.
+
+Ordinary research packs and enabled web research preload on every surface. The
+catalog marks charts and schedules with `preload: false`: they remain registered
+and listed in the runtime index, and need `capability_load` when requested. Data
+connections also load by id; unattended profiles retain their fixed allowlist.
+`run_python`'s tool description is the single sandbox/package reference. Journal
+covers user saves/reviews; Lens covers methods/library maintenance. The source
+prompt retains `safety:locked` annotations for review, but launch strips those
+comments while preserving every enclosed instruction.
+
+User-facing names are Bot (봇), research session (리서치 세션), the Map (지도),
+Schedule and Market data platform (시장 데이터 플랫폼). Answers, questions,
+plan labels and scheduled prompts never write World or OpenBB; internal
+identifiers and tool names are unchanged. Unattended research cannot publish a
+comparison grid, so its linked-number comparison table stays Markdown.
+
 ## Investment judgment
 
 The Loupist answers investment-judgment questions with its own clear or conditional
 view, dated evidence, reasons, main risks, uncertainty, and what would change
-its mind. Brief follow-ups retain the decisive figures and dates, opposing case,
+its mind. Brief follow-ups, including yes-or-no answers, retain how uncertain the view is,
+the decisive figures and dates, opposing case,
 and explicit observations that would support or overturn each case. Missing
 inputs for an exact allocation do not prevent a conditional exposure decision;
 the agent states that decision first, then names the missing sizing inputs without
@@ -35,9 +59,13 @@ including when a chart also shows it. It cannot place orders or trade. The
 [Journal Skill](../../apps/loupist/agent/skills/journal/SKILL.md) supports evidence
 and principle checks; a request for a view does not authorize saving it as the
 user's judgment. Product disclosures belong to [Positioning](../positioning.md). The
-documents, presentations and PDF Skills end work made for others with the
+`word-documents`, presentations and PDF Skills end work made for others with the
 AI-produced line ("Made with AI in Loupist. AI can be wrong. Not a licensed
 financial adviser.") in its language; a deck puts it on the last slide.
+
+Followed-company context makes research relevant without narrowing investment
+judgment. It supplies identities and follow flags, never position size, cost or
+value; the agent neither infers nor asks for those private fields.
 
 When at least one saved principle is relevant, the answer ends with a short
 section titled “Checked against your principles” (Korean: “내 원칙 점검”). Each
@@ -46,19 +74,24 @@ or not enough information. Include principles that name trade actions, for examp
 condition is met (growth 3% < 5%).”
 Skip the section when no principle is relevant. Principles outrank methods and
 the standing perspective; tool permissions and authority rules remain binding.
+An explicit request for a method page is filed only as that page, even when the
+rule is short; a standing rule without that request is one principle.
+Apply a relevant principle as stated: when it sets how a figure is computed or
+presented, lead with that figure, then give the standard one and the difference once.
 
 When saving is on, a Journal records only the user's explicitly stated judgment.
 A dated check and user-entered confidence are optional; never invent them. A review
 compares a saved check with fresh dated evidence and records its factual outcome;
 it does not invent a new user judgment. A recurring analytical error can justify
-a proposed method revision. The exact record rules belong to
+a proposed method revision. Method refinement retains the existing title; there
+is no rename operation. The exact record rules belong to
 [Knowledge and Memory](../knowledge-model.md).
 
 ## Scoped agent settings
 
 Settings → Skills manages shared optional/custom workflows; the Loupist settings
 page manages its local workflows and overrides, preserving its search, filter and save confirmation when configuration reloads or the window regains focus. Included app procedures stay
-fixed. Creator/Installer use runtime-provided personal/Loupist paths, not Codex settings.
+fixed. Skill Creator uses runtime-provided personal/Loupist paths; Settings owns imports.
 Supporting files are packaged and included in admission validation and cache seals;
 a reference edit must invalidate a warm session just like an entrypoint edit.
 See [bundled provenance](../../apps/loupist/agent/skills/NOTICE.md).

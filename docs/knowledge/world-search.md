@@ -20,7 +20,7 @@ inference callbacks encode their texts in bounded batches, sharing one model
 lookup for the batch.
 
 Fresh folders receive World processing settings from Rust. New Loupist uses these
-defaults; Settings → World processing exposes enablement and model selection.
+defaults; Loupist settings → Map building exposes enablement and model selection.
 Focusing a field there scrolls it into the settings column.
 Defaults prefer connected,
 supported text models using the ordered policy in
@@ -30,11 +30,11 @@ newest low-cost model first and keeps older ones as fallbacks; flagship models a
 never recommended. `agent/world-model-defaults.test.mjs` sends every pair through
 Pi's request serializer and response parser. GPT-6 Luna stays at high effort: on the
 World ontology corpus, medium was 42% faster but stored 14–18% fewer claims. Existing folders keep their
-saved choices; changing the Chat model does not change World processing.
+saved choices; changing the Chat model does not change Map building.
 
 An enabled new Loupist without a suitable default stores a pending marker. Connecting
 or reloading a supported provider can complete that setup once. Explicitly saving
-World preferences clears the marker. Processing consumes the selected provider's
+Map building preferences clears the marker. Processing consumes the selected provider's
 usage and sends retained text to it; account disconnection leaves Sources readable.
 [Shared providers](../runtime/providers.md#shared-providers-and-world-processing) owns
 credential and isolated inference boundaries.
@@ -54,7 +54,7 @@ missing World relationships for it prove nothing.
 
 Startup resumes untouched work and reruns attempts the app's exit cut short within
 their allowance ([interruptions](worlds.md#queue-and-interruptions)); an uncertain paid
-attempt past it quarantines. Recover World processing rebuilds the derived index from the confirmed
+attempt past it quarantines. Recover map building rebuilds the derived index from the confirmed
 SQLite snapshot with local embeddings. Recovery does not authorize re-extraction
 of uncertain work, and preserves pause/uncertainty state. A confirmed rebuild lets
 untouched queued work continue. World processing publishes World; a shared pack's

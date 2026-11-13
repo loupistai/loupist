@@ -17,13 +17,6 @@ const appLauncher = read(resolve(e2eRoot, "run-app.sh"));
 assert.match(appLauncher, /\/usr\/bin\/env -i/);
 assert.match(appLauncher, /LOUPIST_E2E_APP_DATA_DIR/);
 
-const windowsSmokeLauncher = read(resolve(e2eRoot, "run-native-smoke.ps1"));
-assert.match(windowsSmokeLauncher, /ProcessStartInfo/);
-assert.match(windowsSmokeLauncher, /\.Environment\.Clear\(\)/);
-assert.match(windowsSmokeLauncher, /LOUPIST_E2E_APP_DATA_DIR/);
-assert.match(windowsSmokeLauncher, /Get-NetTCPConnection/);
-assert.match(windowsSmokeLauncher, /Get-CimInstance/);
-
 const devLauncher = read(resolve(e2eRoot, "run-dev-app.sh"));
 assert.match(devLauncher, /\/usr\/bin\/env -i/);
 
@@ -90,7 +83,6 @@ for (const name of [
 for (const name of [
   "run-native-smoke.sh",
   "run-native-persistence.sh",
-  "run-native-smoke.ps1",
 ]) {
   assert.doesNotMatch(
     read(resolve(e2eRoot, name)),

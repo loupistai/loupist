@@ -68,12 +68,14 @@ function planRun(bridge: PreviewBridge) {
   };
 }
 
-const stalledHeader = () => { const header = runningHeader(); return header?.querySelector("[data-heartbeat]") ? header : null; };
+const stalledHeader = () => { const header = runningHeader(); return header?.textContent?.includes(i18n.t("chat:turn.stillWorking")) ? header : null; };
 
 async function scrollThreadUp() {
   const thread = await until(() => select(".message-scroll"), "Thread did not appear");
   if (!hasLayout()) return;
   await until(() => thread.scrollHeight - thread.clientHeight > 120, "Thread did not overflow");
+  // The reader's own wheel: it ends the send glide, which would otherwise carry a bare scrollTop back.
+  thread.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, bubbles: true }));
   thread.scrollTop = 0;
   thread.dispatchEvent(new Event("scroll"));
   // Let the pill's 180 ms entrance finish before the capture.
@@ -118,7 +120,7 @@ export const chatRunScenarios: PreviewScenario[] = [
   } },
   { ...base("chat-plan-running", "A multi-step reply works through its plan", () => {
     const active = select('.chat-plan [aria-current="step"]');
-    return active && select('.chat-progress[data-tone="live"] .chat-progress-toggle') && select('.chat-artifact-block[data-state="building"]') ? select(".chat-plan") : null;
+    return active && select('.turn-ledger[data-live] .chat-progress-toggle') && select('.chat-artifact-block[data-state="building"]') ? select(".chat-plan") : null;
   }, async (root) => {
     await submitPrompt(root, "Why did Hanul Precision’s margin fall while revenue grew?");
     await click("button[data-research-summary]", root);
@@ -193,12 +195,12 @@ export const chatRunScenarios: PreviewScenario[] = [
   },
   // A pending decision remains actionable with the activity summary folded.
   {
-    ...base("chat-approval-card", "A read-only connection waits for the user's OK", () => select(".chat-progress .approval-card"),
+    ...base("chat-approval-card", "A read-only connection waits for the user's OK", () => select(".turn-block .approval-card"),
       async root => { await submitPrompt(root, "Read Hanul Precision’s Q3 filings and tell me what changed."); await centerOn(".approval-card")(); }),
     setup: async (bridge) => { await prepareFixture(bridge, "answer"); approvalRun(bridge); },
   },
   {
-    ...base("chat-question-card", "The agent asks one question mid-reply and waits for the user", () => select(".chat-progress .question-card"),
+    ...base("chat-question-card", "The agent asks one question mid-reply and waits for the user", () => select(".turn-block .question-card"),
       async root => { await submitPrompt(root, "Compare Hanul Precision with its peers."); await centerOn(".question-card")(); }),
     setup: async (bridge) => {
       await prepareFixture(bridge, "answer");

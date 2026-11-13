@@ -82,7 +82,7 @@ impl LoupistTemplate {
     /// onboarding copy); Custom has none.
     pub fn default_focus(self) -> Option<&'static str> {
         match self {
-            Self::Portfolio => Some("Companies I hold and watch"),
+            Self::Portfolio => Some("Companies I hold and follow"),
             Self::Semiconductors => Some("Chips, memory, foundries and equipment"),
             Self::Dividends => Some("Dividend payers and payout safety"),
             Self::Technology => Some("Large US technology companies"),
@@ -354,5 +354,45 @@ impl DeletionJournal {
             ));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod release_compatibility_tests {
+    use super::*;
+
+    #[test]
+    fn the_upgrade_ladder_preserves_legacy_avatar_ids_and_missing_tone() {
+        let connection = rusqlite::Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(include_str!(
+                "../store/tests/fixtures/baseline-store4-knowledge6.sql"
+            ))
+            .unwrap();
+        let mut profile = crate::test_fixtures::loupist_profile("legacy-avatar");
+        profile.avatar = "cpu".into();
+        let mut stored = serde_json::to_value(&profile).unwrap();
+        stored.as_object_mut().unwrap().remove("tone");
+        let json = stored.to_string();
+        connection
+            .execute(
+                "INSERT INTO loupist_profiles VALUES (?1, 1, ?2, NULL, NULL, ?3)",
+                rusqlite::params![profile.id, profile.workspace_root, json],
+            )
+            .unwrap();
+        let upgraded = crate::store::upgraded_copy(&connection).unwrap();
+        let after: String = upgraded
+            .query_row("SELECT data_json FROM loupist_profiles", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            after, json,
+            "store upgrades do not rewrite this profile data"
+        );
+        let loaded: LoupistProfile = serde_json::from_str(&after).unwrap();
+        assert_eq!(loaded.avatar, "cpu");
+        assert_eq!(loaded.tone, LoupistTone::Balanced);
+        loaded.validate().unwrap();
     }
 }

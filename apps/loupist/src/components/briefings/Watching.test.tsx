@@ -20,9 +20,20 @@ async function reader(options: { paused?: boolean; events?: boolean } = {}) {
   return { bridge, loupist: loupist!, article, user: userEvent.setup() };
 }
 
+it("links a column that needs a connection to Data connections", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const [loupist] = await bridge.loupistList() as LoupistSummary[];
+  bridge.watch.install(loupist!.id, previewWatchSettings({}), previewWatchEvents());
+  const onOpenConnections = vi.fn();
+  render(<WatchingReader bridge={bridge} loupist={loupist!} settings={await bridge.watchSettingsList({ loupistId: loupist!.id })} onOpenConnections={onOpenConnections} embedded />);
+  const hint = screen.getByText(/needs Korea Investment/).closest("p")!;
+  await userEvent.setup().click(within(hint).getByRole("button", { name: "Data connections" }));
+  expect(onOpenConnections).toHaveBeenCalledWith("koreainvestment.market-data");
+});
+
 it("shows per-kind checks as a read-only table and keeps holdings private", async () => {
   const { bridge, article } = await reader();
-  expect(within(article).getByText("Your quantities and values never leave this computer. Checks ask data sources only about the names you follow.")).toBeVisible();
+  expect(within(article).getByText("Your quantities and values never leave this Mac. Checks ask data sources only about the names you follow.")).toBeVisible();
   const matrix = within(article).getByRole("table", {name:"Watching"});
   expect(within(matrix).getAllByRole("columnheader").map(header => header.textContent)).toEqual(["Asset", "Filings", "Results", "Insiders", "5% holders", "Flows", "Dividends", "Last alert"]);
   expect(within(matrix).queryByRole("checkbox")).toBeNull();
@@ -38,12 +49,29 @@ it("lists recent alerts with their sources and marks them seen when Watching ope
   await waitFor(() => expect(bridge.watch.seenCalls.flat()).toHaveLength(6));
 });
 
-it("shows pause state and the first-check explanation without offering manual controls", async () => {
+it("shows pause state and the first-check explanation; a paused watch can resume but not check", async () => {
   const { article } = await reader({paused:true,events:false});
   expect(await within(article).findByText("No alerts yet. The first check sets a starting point.")).toBeVisible();
   expect(within(article).getByText("Paused")).toBeVisible();
-  expect(within(article).queryByRole("button", {name:"Check now"})).toBeNull();
-  expect(within(article).queryByRole("button", {name:"Resume"})).toBeNull();
+  expect(within(article).getByRole("button", {name:"Check now"})).toBeDisabled();
+  expect(within(article).getByRole("button", {name:"Resume"})).toBeEnabled();
+});
+
+it("pauses, resumes and checks now on this computer, and says when a check fails", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const [loupist] = await bridge.loupistList() as LoupistSummary[];
+  bridge.watch.install(loupist!.id, previewWatchSettings(), []);
+  const onSettings = vi.fn();
+  render(<WatchingReader bridge={bridge} loupist={loupist!} settings={await bridge.watchSettingsList({ loupistId: loupist!.id })} onBack={vi.fn()} onSettings={onSettings} />);
+  const user = userEvent.setup();
+  const article = screen.getByRole("article", { name: "Watching" });
+  await user.click(within(article).getByRole("button", { name: "Pause" }));
+  await waitFor(() => expect(onSettings).toHaveBeenLastCalledWith(expect.objectContaining({ paused: true })));
+  await user.click(within(article).getByRole("button", { name: "Check now" }));
+  expect(await within(article).findByText("Checked. Nothing new.")).toBeVisible();
+  bridge.watch.checkFails = true;
+  await user.click(within(article).getByRole("button", { name: "Check now" }));
+  expect(await within(article).findByRole("alert")).toHaveTextContent("Couldn't check now. Try again in a moment.");
 });
 
 it("gives each asset class its own table, says why a class kind does not apply, and words class alerts", async () => {
@@ -75,4 +103,22 @@ it("gives each asset class its own table, says why a class kind does not apply, 
   expect(within(recent).getByText(/^WTI crude fell 5\.4% over 7 days/)).toBeVisible();
   expect(within(recent).getByText(/^Corvid Token closed 21\.4% below its 90-day high/)).toBeVisible();
   // "Watch" on a coin watched nowhere here turns on the class kinds that apply.
+});
+
+it("reaches every followed asset on the Following page when watched and not-watched pass 50 together", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const [loupist] = await bridge.loupistList() as LoupistSummary[];
+  bridge.watch.install(loupist!.id, previewWatchSettings(), []);
+  const settings = await bridge.watchSettingsList({ loupistId: loupist!.id });
+  const template = settings.watched[1]!;
+  const notWatched = Array.from({ length: 50 }, (_, index) => ({ ...template, assetId: `${template.assetId}-${index}`, symbol: `NW${index}`, name: `Unwatched ${index}`,
+    kinds: template.kinds.map(kind => ({ ...kind, enabled: false })) }));
+  render(<WatchingReader bridge={bridge} loupist={loupist!} settings={{ ...settings, notWatched }} embedded />);
+  const user = userEvent.setup();
+  const article = screen.getByRole("article", { name: "Watching" });
+  expect(within(article).getByText("Unwatched 46")).toBeVisible();
+  expect(within(article).queryByText("Unwatched 49")).toBeNull();
+  await user.click(within(article).getByRole("button", { name: "Show all" }));
+  expect(within(article).getByText("Unwatched 49")).toBeVisible();
+  expect(within(article).queryByRole("button", { name: "Show all" })).toBeNull();
 });

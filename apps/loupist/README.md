@@ -6,7 +6,7 @@
 
 </div>
 
-This directory contains the Loupist React and Tauri desktop product, its agent resources, read-only market-data worker, in-process World extraction and search, native workspace execution, native E2E harness, app-local locks, and release packaging.
+This directory contains the Loupist React and Tauri desktop product, its agent resources, read-only market-data worker, in-process World extraction and search, bounded workspace file tools and offline Python, native E2E harness, app-local locks, and release packaging.
 
 ## Development
 
@@ -14,7 +14,9 @@ For Linux cloud development, source tests and browser previews, follow
 [Linux cloud development](../../docs/dev/checks.md#linux-cloud-development).
 
 ```sh
-npm ci
+sh scripts/setup.sh
+# On the supported Mac, stage the bundled runtimes before the first native build:
+sh scripts/stage-macos-arm64.sh
 npm run tauri dev
 ```
 
@@ -29,7 +31,8 @@ starting again.
 
 Global defaults live in `config.toml` under the selected app root. Each Loupist can
 override Chat defaults, optional Skills and Pi settings in its workspace
-`.loupist/config.toml`; Settings → Chat preferences and Skills edit the same files. Each Skill
+`.loupist/config.toml`. Settings → Chat defaults and Skills edit shared defaults;
+the selected Loupist’s settings edit its overrides. Each Skill
 inherits independently, and resetting a local value restores the global default.
 Chat Memory defaults apply to new Chats. Canonical Chat and Memory remain in the
 Loupist folder.
@@ -41,16 +44,16 @@ enabled = false
 
 [chat]
 use_memory = true
-update_memory = false
+update_memory = true
 ```
 
-World, Lens, Journal and Visualize are fixed app Skills. World processing
-settings, connection grants, Scheduled tasks and execution state remain in
+Map (the internal World model), Lens, Journal and visualization are always available app workflows. Map building
+settings, connection grants, scheduled tasks and execution state remain in
 SQLite; credentials stay in the private credential stores.
 
-Settings → Skills lists included and user-added workflows, with search,
-enable/disable, scope and inheritance controls. Create a skill directly or use
-Skill Creator to draft one in Chat; Skill Installer helps add requested workflows.
+Settings → Skills lists included and user-added workflows, with search and
+shared enable/disable controls; Loupist settings manage local inheritance. Advanced holds Add skill, Create skill and
+Skill Creator, which starts off. Skill Installer is not bundled; Settings imports Skills without a model.
 Folder, single-skill ZIP and public GitHub folder imports preserve supporting files.
 Personal skills use `<app-root>/skills/<id>/SKILL.md`; Loupist skills use
 `<workspace>/.loupist/skills/<id>/SKILL.md`. Changes load on the next Chat turn.
@@ -72,12 +75,10 @@ npm run check
 dependency before running the same checks.
 
 The first release supports macOS 13 or newer on Apple Silicon only.
-Windows runtime, staging, and signing implementations remain available for future
-support. The manual [Windows compatibility workflow](../../.github/workflows/windows-compatibility.yml)
-runs native and package checks independently of release CI. Its optional signed
-build requires a matching version tag and Windows credentials, and uploads
-workflow artifacts only; it does not publish a release or updater feed.
-Release builds require staged sidecars and platform signing credentials; the
+Windows is not supported in this release.
+Release builds require staged sidecars and the credentials selected by
+`release-profile.json` (self-signed Beta or Developer ID); the
 [release workflow](../../.github/workflows/release.yml) defines the required
 configuration. Use the [release acceptance flow](../../LOUPIST.md) to verify
-the signed app.
+the app against its recorded signing mode. The Beta is not notarized; see
+[installation](../../installation.md) for first-launch approval and verification.

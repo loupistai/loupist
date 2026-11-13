@@ -21,6 +21,13 @@ export const chatScenarios: PreviewScenario[] = [
     ...base(id, title, () => select('textarea[data-chat-composer]') && select('.morning-message[aria-busy="false"] .morning-ask')),
     setup: bridge => prepareMorningFixture(bridge, state),
   })),
+  // First run: nothing followed and no briefing on, so the home message offers three first moves.
+  { ...base("thread-first-run-setup", "Morning message: a new user's first moves", () => select('.morning-message[aria-busy="false"] [data-morning-setup]')),
+    setup: async bridge => {
+      await prepareMorningFixture(bridge, "first-day");
+      bridge.watchlistList = async () => [];
+      bridge.briefingSettingsGet = async () => ({ enabled: false, task: null, schedule: { kind: "weekly", days: [1, 2, 3, 4, 5], hour: 8, minute: 0, timezone: "UTC" } });
+    } },
   // W15.9e: the event strip above the lead, and the same message with nothing ahead (no strip).
   { ...base("thread-upcoming", "Morning message: what is coming up for what you follow", () => select('.morning-message[aria-busy="false"] .morning-upcoming li:nth-child(5) .morning-upcoming-row')), setup: bridge => prepareUpcomingFixture(bridge, "events") },
   { ...base("thread-upcoming-none", "Morning message: nothing ahead, so no event strip", () => {
@@ -28,12 +35,35 @@ export const chatScenarios: PreviewScenario[] = [
     return message?.querySelector(".morning-ask") && !message.querySelector(".morning-upcoming") ? message : null;
   }), setup: bridge => prepareUpcomingFixture(bridge, "none") },
   base("chat-private", "Private chat with persistent disclosure", () => select(".composer-private-status") && select(".composer-disclosure"), async (root) => {
-    await click('.composer-private-toggle[aria-pressed="false"]', root);
+    const trigger = await until(() => root.querySelector<HTMLElement>(".composer-add-trigger"), "The + control did not render");
+    trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    (await until(() => select("[data-composer-private]"), "Private chat item did not render") as HTMLElement).click();
   }),
   { ...base("chat-answer", "Completed sourced answer", () => {
     const answer = select("article.message.assistant.complete");
     return answer && answer.querySelectorAll(".message-content p").length >= 2 && answer.querySelector(".chat-receipt") && answer.querySelector("button.loupist-citation") ? answer : null;
   }), setup: (bridge) => prepareFixture(bridge, "answer") },
+  // Chat design 33: the first answer that followed assets offers to watch them all.
+  { ...base("chat-follow-watch-offer", "A first follow offers Watch all", () => select('[data-watch-all="offer"] button')), setup: async (bridge) => {
+    await prepareFixture(bridge, "answer");
+    for (const entry of [{ symbol: "005930", market: "KRX", displayName: "Samsung Electronics" }, { symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }]) await bridge.watchlistAdd(entry);
+    // A new install watches nothing yet: both followed names are offered.
+    const listed = bridge.watchSettingsList.bind(bridge);
+    bridge.watchSettingsList = async (request) => {
+      const settings = await listed(request);
+      return { ...settings, watched: [], notWatched: [...settings.watched, ...settings.notWatched].slice(0, 2) };
+    };
+    const original = bridge.loupistSelect.bind(bridge);
+    bridge.loupistSelect = async (loupistId) => {
+      const workspace = await original(loupistId);
+      const message = workspace.threads[0].messages.find((item) => item.id === "preview-answer")!;
+      message.memory_update = { status: "applied", commitId: "preview-follow", changes: [], setup: [
+        { change: "followed", symbol: "005930", market: "KRX", name: "Samsung Electronics" },
+        { change: "followed", symbol: "AAPL", market: "NASDAQ", name: "Apple" },
+      ] };
+      return workspace;
+    };
+  } },
   { ...base("chat-no-account", "Saved answer after the last AI account is removed", () => {
     const connect = select("button.composer-model-menu:not([aria-label])");
     return connect && select("article.message.assistant.complete");

@@ -1,6 +1,42 @@
 /** Preview scenarios, in the capture order `src/preview/scenarios.ts` assembles. */
-import { prepareFixture, previewKo } from "../fixtures";
+import { prepareFixture, previewKo, type PreviewBridge } from "../fixtures";
+import { CHART_SCHEMA } from "../../contracts/chat";
+import type { ChartDataset, ChatArtifactView } from "../../types";
 import { base, centerOn, click, hasLayout, inlineChartFixture, select, selectAnswerWords, submitPrompt, until, type PreviewScenario } from "./kit";
+
+const REVENUE_CHART = "chart-revenue-by-year";
+
+/** The saved answer carries a bar chart of revenue in won by year, read back from the store. */
+async function revenueChartFixture(bridge: PreviewBridge) {
+  await prepareFixture(bridge, "answer");
+  const ko = previewKo();
+  const title = ko ? "연도별 매출" : "Revenue by year";
+  const dataset: ChartDataset = {
+    id: "dataset-revenue", digest: "e".repeat(64), lineage: { kind: "agent_authored", upstream_receipts: [] },
+    columns: [{ id: "year", label: ko ? "연도" : "Year", kind: "number" }, { id: "revenue_krw", label: ko ? "매출" : "Revenue", kind: "number" }],
+    rows: [[2021, 279_604_799_000_000], [2022, 302_231_360_000_000], [2023, 258_935_494_000_000], [2024, 300_870_903_000_000], [2025, 333_605_938_000_000]],
+  };
+  const view: ChatArtifactView = {
+    artifact: { id: REVENUE_CHART, chat_session_id: "preview-chat", kind: "chart", title, current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+    revision: { artifact_id: REVENUE_CHART, revision: 1, digest: "e".repeat(64), source_message_id: "preview-answer", created_at_ms: 0, payload: { kind: "chart", schema: CHART_SCHEMA, chart: {
+      dataset_id: dataset.id, dataset_digest: dataset.digest, studies: [], drawings: [], custom_series: [], note: null,
+      view: { kind: "bar", x: "year", y: ["revenue_krw"], color: null, semantic_types: {}, title: null, subtitle: null },
+    } } },
+    chart_dataset: dataset,
+  };
+  const original = bridge.loupistSelect.bind(bridge);
+  bridge.loupistSelect = async loupistId => {
+    const workspace = await original(loupistId);
+    const answer = workspace.threads.find(thread => thread.id === "preview-chat")?.messages.find(message => message.id === "preview-answer");
+    if (answer) Object.assign(answer, {
+      content: ko ? "매출은 2023년에 줄었다가 2025년에 다시 늘었어요." : "Revenue dipped in 2023 and grew again by 2025.",
+      artifact_refs: [{ artifact_id: REVENUE_CHART, revision: 1, kind: "chart", title, digest: "e".repeat(64) }],
+    });
+    return workspace;
+  };
+  const read = bridge.chatArtifactRead.bind(bridge);
+  bridge.chatArtifactRead = async (loupistId, chatId, artifactId, revisionId) => artifactId === REVENUE_CHART ? structuredClone(view) : read(loupistId, chatId, artifactId, revisionId);
+}
 
 /** Reading long threads: dividers, outlines, tables, charts, quotes and chips. */
 export const chatReadingScenarios: PreviewScenario[] = [
@@ -32,9 +68,11 @@ export const chatReadingScenarios: PreviewScenario[] = [
       return workspace;
     };
   } },
-  { ...base("chat-outline", "A long answer opens with its outline", () => select(".answer-outline[open]"), async () => {
-    await click(".answer-outline > summary");
-    await centerOn(".answer-outline[open]", "start")();
+  { ...base("chat-outline", "A long answer's outline opens from its first line", () => select(".answer-outline [data-level]"), async () => {
+    await centerOn("[data-answer-outline]", "start")();
+    const trigger = await until(() => select("[data-answer-outline]"), "Outline trigger did not render") as HTMLElement;
+    trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    trigger.click();
   }), setup: async (bridge) => {
     await prepareFixture(bridge, "answer");
     const ko = previewKo();
@@ -78,6 +116,11 @@ export const chatReadingScenarios: PreviewScenario[] = [
     await submitPrompt(root, "Chart Hanul Precision’s price and volume.");
     await until(() => select('.chat-artifact-block[data-state="ready"]'), "Chart card did not fill");
   }), setup: inlineChartFixture },
+  // A company's revenue by year as a model publishes it: years as numbers, no semantic types, won in the column id.
+  { ...base("chat-chart-revenue", "A revenue chart counts in 조 or tn and keeps its years", () => {
+    const card = select('.chat-artifact-block[data-state="ready"]');
+    return card && (!hasLayout() || card.querySelector(".chart-analytic-canvas svg [aria-roledescription='axis']")) ? card : null;
+  }, centerOn('.chat-artifact-block[data-state="ready"]')), setup: revenueChartFixture },
   // B73: Rust keeps only a chart's current revision; an earlier answer says its chart changed instead of drawing the newer one.
   { ...base("chat-chart-revised", "An earlier answer's chart was revised by a later answer", () => {
     const card = select('.chat-artifact-block[data-state="revised"]');

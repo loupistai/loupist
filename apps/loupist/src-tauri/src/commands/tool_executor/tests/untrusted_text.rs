@@ -273,6 +273,18 @@ async fn untrusted_text_receipt_survives_reply_storage_and_both_history_tools() 
             true,
         ),
         (
+            "conversation.memory",
+            json!({"action":"search","query":"Ignore","role":"assistant"}),
+            "/messages/0/title",
+            true,
+        ),
+        (
+            "conversation.memory",
+            json!({"action":"search","query":"Clean","role":"assistant"}),
+            "/messages/0/title",
+            false,
+        ),
+        (
             "chat.history",
             json!({"message_id":"original-user"}),
             "/content",
@@ -549,7 +561,12 @@ async fn python_preserves_exported_text_trust_through_results_and_derived_files(
         fs::read_to_string(&derived).unwrap(),
         format!("Excerpt: {text}")
     );
-    assert!(crate::commands::export_trust::tagged_file(&state, &derived).unwrap());
+    assert!(crate::commands::export_trust::tagged_files(
+        &state,
+        &[derived],
+        &crate::web::SearchCancel::never(),
+    )
+    .unwrap());
     broker.shutdown().await.unwrap();
 }
 
@@ -649,13 +666,14 @@ async fn start_turn(
     (broker, socket)
 }
 
-fn refused_with(response: &Value, next: &str) {
+fn refused_with(response: &Value, message: &str) {
     assert_eq!(response["ok"], false, "{response}");
     assert_eq!(
         response["error"]["code"], "untrusted_text_paused",
         "{response}"
     );
-    assert_eq!(response["error"]["next"], next, "{response}");
+    assert_eq!(response["error"]["message"], message, "{response}");
+    assert_eq!(response["error"]["next"], "", "{response}");
 }
 
 #[tokio::test]
@@ -1340,4 +1358,116 @@ async fn an_allowed_read_names_the_file_and_its_identity() {
         }
     }
     broker.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn native_authorize_reads_bundled_skills_but_never_writes_or_opens_the_prompt() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let agent = temporary.path().join("agent");
+    let skills = agent.join("skills");
+    fs::create_dir_all(skills.join("lens")).unwrap();
+    let entry = skills.join("lens/SKILL.md");
+    fs::write(&entry, "bundled instructions").unwrap();
+    fs::write(agent.join("SYSTEM.md"), "private prompt").unwrap();
+    let capture = Arc::new(ToolCapture {
+        native: NativeGate::for_turn(native_roots(&temporary).with_agent_skills(&skills)),
+        ..ToolCapture::for_chat(new_id("reply"))
+    });
+    let (broker, socket) = start_turn(&state, &temporary, "bundled-skills", capture).await;
+    let allowed = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        json!({"name":"read","path":entry}),
+    )
+    .await;
+    assert_eq!(allowed["ok"], true, "{allowed}");
+    let refused = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        json!({"name":"write","path":entry}),
+    )
+    .await;
+    assert_eq!(refused["ok"], false, "{refused}");
+    assert!(
+        refused
+            .to_string()
+            .contains("Bundled Skills are read-only."),
+        "{refused}"
+    );
+    let prompt = broker_request(
+        &socket,
+        broker.token(),
+        "native.authorize",
+        json!({"name":"read","path":agent.join("SYSTEM.md")}),
+    )
+    .await;
+    assert_eq!(prompt["ok"], false, "{prompt}");
+    broker.shutdown().await.unwrap();
+}
+
+#[cfg(feature = "eval-harness")]
+#[tokio::test]
+async fn eval_skill_read_evidence_comes_from_the_native_authorization_class() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let roots = native_roots(&temporary);
+    let skills = temporary.path().join("agent/skills");
+    let bundled = skills.join("data-analysis/SKILL.md");
+    let copied = roots.workspace.join("skills/data-analysis/SKILL.md");
+    let reference = skills.join("data-analysis/references/guide.md");
+    for path in [&bundled, &copied, &reference] {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "fixture instructions").unwrap();
+    }
+    let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = observed.clone();
+    let capture = Arc::new(ToolCapture {
+        native: NativeGate::for_turn(roots.with_agent_skills(&skills)),
+        eval_native_read: Some(Arc::new(move |id, authorization| {
+            recorded
+                .lock()
+                .unwrap()
+                .push((id.to_owned(), authorization));
+        })),
+        ..ToolCapture::for_chat(new_id("reply"))
+    });
+    let executor = executor_for(&state, capture);
+    for (id, path) in [
+        ("bundle", bundled),
+        ("workspace", copied),
+        ("reference", reference),
+    ] {
+        let response = executor.execute_attributed(&policy(true, true), ToolMethod::NativeAuthorize,
+            json!({"name":"read", "path":path, "input":{"class":"BundledSkill", "skill_id":"data-analysis"}}),
+            id, Some(id.into())).await.unwrap();
+        assert!(
+            response.get("native_authorization").is_none(),
+            "eval evidence stays out of the agent response"
+        );
+    }
+    let reads = observed.lock().unwrap();
+    assert_eq!(
+        reads[0],
+        (
+            "bundle".into(),
+            json!({"class":"BundledSkill", "skill_id":"data-analysis"})
+        )
+    );
+    assert_eq!(
+        reads[1],
+        (
+            "workspace".into(),
+            json!({"class":"Workspace", "skill_id":null})
+        )
+    );
+    assert_eq!(
+        reads[2],
+        (
+            "reference".into(),
+            json!({"class":"BundledSkill", "skill_id":null})
+        )
+    );
 }

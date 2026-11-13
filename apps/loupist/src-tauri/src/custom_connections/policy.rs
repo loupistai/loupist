@@ -160,9 +160,12 @@ pub fn definition_hash(tool: &McpTool) -> String {
     sha256(
         &serde_json::to_vec(&canonical(json!({
             "name": tool.name,
+            "title": tool.title,
             "description": tool.description,
             "inputSchema": tool.input_schema,
+            "outputSchema": tool.output_schema,
             "annotations": tool.annotations,
+            "_meta": tool.metadata,
         })))
         .expect("JSON values serialize"),
     )
@@ -541,6 +544,26 @@ mod tests {
         assert_eq!(definition_hash(&a), definition_hash(&b));
         b.annotations = Some(json!({"readOnlyHint":true,"openWorldHint":true}));
         assert_ne!(definition_hash(&a), definition_hash(&b));
+    }
+
+    #[test]
+    fn changes_to_output_schema_title_and_metadata_require_renewed_approval() {
+        let original = tool("prices");
+        let mut variants = vec![original.clone(); 3];
+        variants[0].title = Some("A different title".into());
+        variants[1].output_schema = Some(json!({"type":"object"}));
+        variants[2].metadata = Some(json!({"version":2}));
+        for changed in variants {
+            let mut approvals = Approvals::default();
+            assert!(approvals.approve("loupist", "source", &original, ApprovalChoice::Always));
+            approvals.recheck("source", std::slice::from_ref(&changed));
+            assert!(approvals.definition_changed("loupist", "source", &changed));
+            assert!(!approvals.consume("loupist", "source", &changed));
+            // Reverting the server's definition cannot resurrect the grant.
+            assert!(!approvals.consume("loupist", "source", &original));
+            assert!(approvals.approve("loupist", "source", &changed, ApprovalChoice::Always));
+            assert!(approvals.consume("loupist", "source", &changed));
+        }
     }
 
     #[test]

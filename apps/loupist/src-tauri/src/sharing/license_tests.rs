@@ -861,3 +861,41 @@ fn the_manifest_holds_the_full_documented_credit_count() {
         pack::MAX_CREDITS
     );
 }
+
+#[tokio::test]
+async fn summary_keeps_the_saved_nondefault_license_and_version() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let id = loupist(&state, "Research desk").await;
+    knowledge(&state, &id, |write| {
+        Ok(method(
+            write,
+            &id,
+            "Read filings",
+            "Read the annual filing.",
+        ))
+    });
+    let share = serde_json::from_value(serde_json::json!({
+        "loupistId": id, "scope": {"kind":"loupist"},
+        "sections": {"profile":true,"perspective":true,"methods":true,"principles":true,"map":true},
+        "excludedItemKeys":[], "acknowledgedFindingIds":[], "license":"CC-BY-4.0"
+    }))
+    .unwrap();
+    let built = commands::share::build_pack(&state, &share, None).unwrap();
+    commands::share::record_identity(&state, &id, &built).unwrap();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state);
+    let summary = commands::share::share_summary(
+        serde_json::from_value(serde_json::json!({
+            "loupistId": id, "scope": {"kind":"loupist"}
+        }))
+        .unwrap(),
+        app.state(),
+    )
+    .unwrap();
+    let value = serde_json::to_value(summary).unwrap();
+    assert_eq!(value["defaultLicense"], License::CcBy.id());
+    assert_eq!(value["nextVersion"], built.version);
+}

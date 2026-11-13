@@ -8,7 +8,6 @@
 .loupist-navigation { padding: 0 var(--gg-space-2); }
 .loupist-list-heading { display: flex; align-items: center; justify-content: space-between; min-height: var(--gg-size-control-sm); margin-inline: var(--gg-space-2) 0; }
 .loupist-list-heading [data-slot="sidebar-group-label"] { height: auto; padding: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: 0; text-transform: none; }
-.loupist-navigation-list { list-style: none; margin: 0; padding: 0; }
 .loupist-avatar { display: inline-flex; flex: 0 0 var(--gg-size-control-sm); width: var(--gg-size-control-sm); height: var(--gg-size-control-sm); align-items: center; justify-content: center; border-radius: var(--gg-radius-full); background: var(--gg-color-accent-soft); color: var(--gg-color-accent-ink); font-size: var(--gg-text-control); font-weight: var(--gg-weight-semibold); }
 .loupist-avatar { overflow: hidden; }
 .loupist-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -16,25 +15,25 @@
 .loupist-chat-button { height: var(--gg-size-control-md); border-radius: var(--gg-radius-md); padding: 0 var(--gg-space-7) 0 var(--gg-space-2); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); color: var(--gg-color-text-secondary); }
 .loupist-chat-button:hover { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
 .loupist-chat-button[data-selected="true"] { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); background: var(--gg-color-bg-selected); }
-.loupist-chat-row[data-home] .loupist-chat-button { height: auto; min-height: calc(var(--gg-size-control-md) + var(--gg-space-3)); align-items: center; padding-block: var(--gg-space-1); background: color-mix(in srgb, var(--gg-color-bg-selected) 72%, transparent); color: var(--gg-color-text-primary); }
-.loupist-chat-row[data-home] .loupist-chat-button:hover { background: var(--gg-color-bg-hover); }
-.loupist-chat-row[data-home] .loupist-chat-button[data-selected="true"] { background: var(--gg-color-bg-selected); }
 .loupist-home-icon { flex: none; width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); }
-.loupist-home-copy { display: flex; flex: 1; flex-direction: column; min-width: 0; }
-.loupist-chat-button > .loupist-home-copy { flex: 1; min-width: 0; }
-.loupist-home-copy .loupist-chat-title { overflow: hidden; color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-.loupist-home-copy small { overflow: hidden; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); text-overflow: ellipsis; white-space: nowrap; }
+/* Destination rows: the ⌘ key shows on hover or keyboard focus only (chat design change 16). */
+.loupist-place-key { margin-left: auto; color: var(--gg-color-text-tertiary); font: inherit; font-size: var(--gg-text-caption); opacity: 0; }
+.loupist-chat-button:is(:hover, :focus-visible) .loupist-place-key { opacity: 1; }
+.loupist-chat-button[data-panel-open] { color: var(--gg-color-text-primary); }
+.loupist-chat-button[data-panel-open] .loupist-home-icon { color: var(--gg-color-text-primary); }
 /* Only the title stretches; the draft dot, status dot and private mark keep their own size at the row's end. */
 .loupist-chat-button > .loupist-chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-running { width: calc(var(--gg-space-2) + var(--gg-space-1) / 2); height: calc(var(--gg-space-2) + var(--gg-space-1) / 2); }
+/* A running reply: a still ring, open at one quarter like the header's run indicator. Never animated:
+   while a reply runs, its live line's sheen is the one thing that loops. */
+.thread-running { flex: none; box-sizing: border-box; width: calc(var(--gg-space-2) + var(--gg-space-1) / 2); height: calc(var(--gg-space-2) + var(--gg-space-1) / 2); border: 2px solid var(--gg-color-accent); border-inline-start-color: transparent; border-radius: var(--gg-radius-full); }
+@media (forced-colors: active) { .thread-running { border-color: Highlight; border-inline-start-color: transparent; } }
 .loupist-chat-menu { position: absolute; right: 0; top: 0; opacity: 0; }
 .loupist-chat-row:hover .loupist-chat-menu, .loupist-chat-row:focus-within .loupist-chat-menu { opacity: 1; }
-.navigation-new-loupist { color: var(--gg-color-text-tertiary); }
 .navigation-footer { flex-shrink: 0; border-top: 1px solid var(--gg-color-border-subtle); padding: var(--gg-space-2); }
 .navigation-footer [data-slot="sidebar-menu-button"] { height: var(--gg-size-control-md); border-radius: var(--gg-radius-md); color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-regular); }
 .navigation-footer [data-slot="sidebar-menu-button"]:hover { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
 .shell-update-dot { margin-left: auto; width: var(--gg-space-2); height: var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
-.shell-unread { display: inline-flex; justify-content: center; align-items: center; min-width: calc(var(--gg-space-4) + var(--gg-space-1) / 2); height: calc(var(--gg-space-4) + var(--gg-space-1) / 2); padding: 0 var(--gg-space-1); border-radius: var(--gg-radius-full); background: var(--gg-color-accent); color: var(--gg-color-text-on-accent); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-semibold); }
+.shell-unread { display: inline-flex; justify-content: center; align-items: center; min-width: calc(var(--gg-space-4) + var(--gg-space-1) / 2); height: calc(var(--gg-space-4) + var(--gg-space-1) / 2); padding: 0 var(--gg-space-1); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-semibold); font-variant-numeric: tabular-nums; }
 .settings-search { display: flex; align-items: center; gap: var(--gg-space-2); padding: var(--gg-space-2); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-sm); }
 .settings-search svg { width: var(--gg-space-4); height: var(--gg-space-4); flex-shrink: 0; }
 .settings-search input { min-width: 0; width: 100%; background: transparent; color: var(--gg-color-text-primary); font-size: var(--gg-text-control); }
@@ -47,6 +46,8 @@
 [data-collapsible="icon"] .loupist-chat-row :is(.loupist-draft-dot, .loupist-status-dot, .thread-running, .loupist-private-mark) { position: absolute; top: var(--gg-space-1); right: var(--gg-space-1); margin: 0; }
 
 .shell-unread { margin-inline-start: var(--gg-space-2); }
+.loupist-schedule-row .shell-unread { margin-inline-start: auto; }
+.loupist-sessions-empty { margin: var(--gg-space-1) var(--gg-space-2) 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 
 /* Needs attention (E1): rows above the Loupists with a status dot; hidden when empty. */
 .needs-attention ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
@@ -56,7 +57,7 @@
 .needs-attention-text { flex: 1 1 auto; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow-wrap: break-word; line-height: var(--gg-leading-control); color: var(--gg-color-text-secondary); }
 .needs-attention-text strong { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); }
 .needs-attention-dot { flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: var(--gg-radius-full); background: var(--gg-color-text-tertiary); }
-.needs-attention-row:is([data-kind="approval"], [data-kind="question"], [data-kind="lineCrossed"]) .needs-attention-dot { background: var(--gg-color-warning); }
+.needs-attention-row:is([data-kind="approval"], [data-kind="question"], [data-kind="lineCrossed"]) .needs-attention-dot { background: var(--gg-color-accent); }
 /* Unread results take the info color so they never read as the amber "waiting on you" dot. */
 .needs-attention-row:is([data-kind="briefingConflict"], [data-kind="unreadResults"], [data-kind="watchAlerts"]) .needs-attention-dot { background: var(--gg-color-info); }
 .needs-attention-more { display: block; margin: var(--gg-space-1) 0 0; padding: 0 var(--gg-space-2); border: 0; background: transparent; color: var(--gg-color-text-tertiary); font: inherit; font-size: var(--gg-text-meta); text-align: left; }
@@ -65,7 +66,7 @@ button.needs-attention-more:hover { color: var(--gg-color-text-primary); }
 [data-collapsible="icon"] .needs-attention { display: none; }
 /* Loupist and chat status dots: amber waits for you, grey finished while you were away. */
 .loupist-status-dot { flex: none; width: 8px; height: 8px; margin-right: var(--gg-space-3); border-radius: var(--gg-radius-full); background: var(--gg-color-text-tertiary); }
-.loupist-status-dot[data-state="waiting"] { background: var(--gg-color-warning); }
+.loupist-status-dot[data-state="waiting"] { background: var(--gg-color-accent); }
 .loupist-chat-button .loupist-status-dot { margin-right: 0; margin-left: auto; }
 /* X15: unsent composer text; X12: a private chat in the badge slot. */
 .loupist-draft-dot { flex: none; width: 6px; height: 6px; border-radius: var(--gg-radius-full); background: var(--gg-color-text-tertiary); }
@@ -76,7 +77,7 @@ button.needs-attention-more:hover { color: var(--gg-color-text-primary); }
 .app-navigation [data-slot="sidebar-container"] { border-right-color: transparent; box-shadow: inset -1px 0 0 color-mix(in srgb, var(--gg-color-border-subtle) 60%, transparent); }
 :root[data-theme="dark"] .app-navigation [data-slot="sidebar-container"] { box-shadow: inset -1px 0 0 color-mix(in srgb, var(--gg-color-border-subtle) 40%, transparent); }
 /* "Needs attention" reads like the Loupists label above the Loupist list. */
-.needs-attention [data-slot="sidebar-group-label"] { height: auto; padding: var(--gg-space-4) var(--gg-space-3) var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); letter-spacing: .06em; text-transform: uppercase; }
+.needs-attention [data-slot="sidebar-group-label"] { height: auto; padding: var(--gg-space-4) var(--gg-space-3) var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: 0; text-transform: none; }
 .needs-attention [data-slot="sidebar-group-label"]:lang(ko) { letter-spacing: 0; text-transform: none; }
 /* On a short window "Needs attention" gives up height first and scrolls inside its group, so the Loupists,
    "What … knows" and New Loupist stay in view above the Settings footer. The group keeps its label and a row. */
@@ -95,7 +96,10 @@ button.needs-attention-more:hover { color: var(--gg-color-text-primary); }
   justify-content: center;
   padding: 0;
 }
-[data-collapsible="icon"] :is(.loupist-home-copy, #main-tab-settings > span) { display: none; }
+[data-collapsible="icon"] :is(.loupist-place-key, #main-tab-settings > span) { display: none; }
+/* The rail keeps the unread count as a dot inside the button's rounded corner, so the icon stays centred and whole. */
+[data-collapsible="icon"] .loupist-chat-button { position: relative; }
+[data-collapsible="icon"] .loupist-chat-button .shell-unread { position: absolute; top: 4px; right: 4px; width: 6px; min-width: 6px; height: 6px; padding: 0; margin: 0; overflow: hidden; color: transparent; background: var(--gg-color-text-secondary); }
 [data-collapsible="icon"] :is(.loupist-navigation, .navigation-footer) [data-slot="sidebar-menu"] {
   width: fit-content;
   align-self: center;

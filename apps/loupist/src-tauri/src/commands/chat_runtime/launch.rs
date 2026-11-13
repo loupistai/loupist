@@ -142,6 +142,10 @@ pub(super) async fn launch_chat_turn(
         capture.tool_trace = on_event.tool_trace.clone();
         capture.admit_untrusted_context(untrusted_context);
         capture.native = crate::commands::tool_executor::NativeGate::for_turn(native_roots);
+        #[cfg(feature = "eval-harness")]
+        {
+            capture.eval_native_read = on_event.eval_native_read.clone();
+        }
         // Sites the user names stay readable after third-party text arrives.
         // A host briefing prompt includes observation text, not a user message;
         // its embedded URLs must not be admitted as sites the user typed.
@@ -183,6 +187,14 @@ pub(super) async fn launch_chat_turn(
             let _ = evidence_event_sink.send(ChatStreamEvent::Evidence {
                 run_id: evidence_run_id.clone(),
                 evidence: Box::new(evidence),
+            });
+        }));
+        let artifact_event_sink = on_event.clone();
+        let artifact_run_id = run_id.clone();
+        capture.artifact_sink = Some(Arc::new(move |view| {
+            let _ = artifact_event_sink.send(ChatStreamEvent::ArtifactStaged {
+                run_id: artifact_run_id.clone(),
+                view: Box::new(view),
             });
         }));
         let entity_link_tx = entity_links.0.clone();
@@ -564,8 +576,12 @@ async fn build_turn_envelope(
     let lens_catalog = host_memory
         .as_ref()
         .map(|memory| (memory.lens_shown, memory.lens_total));
+    #[cfg(feature = "eval-harness")]
+    let now = crate::eval_harness::clock::now();
+    #[cfg(not(feature = "eval-harness"))]
+    let now = Utc::now();
     let turn_envelope = agent_harness::turn_envelope_block(
-        Utc::now(),
+        now,
         use_memory,
         &learned_index,
         charter.as_deref(),
@@ -578,7 +594,7 @@ async fn build_turn_envelope(
     )
     .unwrap_or_else(|_| {
         serde_json::to_string(&serde_json::json!({
-            "live_time": agent_harness::live_time_envelope(Utc::now())
+            "live_time": agent_harness::live_time_envelope(now)
         }))
         .unwrap_or_else(|_| r#"{"live_time":{"not_evidence":true}}"#.into())
     });

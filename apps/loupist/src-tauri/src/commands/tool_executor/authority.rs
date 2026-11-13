@@ -1,6 +1,7 @@
 //! The executor's own authority checks: the Loupist's enabled connections,
 //! the turn's Loupist and Chat scope, and a provider result's identity.
 use super::*;
+use rusqlite::OptionalExtension;
 
 impl AppToolExecutor {
     pub(super) fn capability_enabled(&self, entry_id: &str) -> bool {
@@ -33,13 +34,22 @@ impl AppToolExecutor {
                 "Loupist/tool root scope does not match".into(),
             ));
         }
-        let chat = self
+        // Read only the authoritative binding, not the entire transcript. Check
+        // it each time so deletion or a changed binding is still refused.
+        let chat_loupist: String = self
             .state
             .store
-            .get_chat(&policy.session_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?
+            .lock_loupist(&policy.loupist_id)
+            .map_err(|_| BrokerError::Execution("chat scope is unavailable".into()))?
+            .query_row(
+                "SELECT loupist_id FROM chat_sessions WHERE id = ?1",
+                [&policy.session_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| BrokerError::Execution("chat scope is unavailable".into()))?
             .ok_or_else(|| BrokerError::Execution("chat session is missing".into()))?;
-        if chat.loupist_id != policy.loupist_id {
+        if chat_loupist != policy.loupist_id {
             return Err(BrokerError::Execution(
                 "Loupist/session scope does not match".into(),
             ));

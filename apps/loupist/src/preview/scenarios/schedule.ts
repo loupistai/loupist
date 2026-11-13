@@ -8,14 +8,17 @@ export const scheduleScenarios: PreviewScenario[] = [
   // W15.23 and W15.6c: the Schedule tab manages scheduled work; results arrive in the home Thread.
   ...([
     ["schedule-list", "Scheduled tasks with saved names, cadence and a task menu", ".schedule-list"],
-    ["schedule-watching-setup", "Asset watch history keeps the saved choices read-only", ".watching-reader .watching-status"],
-    ["schedule-empty", "Nothing scheduled yet", ".schedule-list .briefings-empty"],
+    ["schedule-watching-setup", "Schedule's Watching row opens Following with its status and controls", "[data-testid=following-page] .watching-status"],
+    ["schedule-empty", "Nothing scheduled yet", ".schedule-list .schedule-empty"],
     ["schedule-create", "Request scheduled work in Bot", ".composer-shell textarea"],
     ["schedule-active-filter", "Active filter hides a paused task", "[data-schedule-filter='active']"],
     ["schedule-dialog", "Saved briefing cadence and run history", ".schedule-task-detail"],
     ["briefing-structured", "A briefing's sections above its answer", ".briefing-sections"],
     ["briefing-failed", "A briefing that could not finish", ".briefings-failure"],
     ["briefing-suggested", "A briefing keeps the changes that prompted it", ".briefing-sections"],
+    ["schedule-task-active", "An active task's own controls: pause, run now, delete and change with Bot", ".schedule-task-controls [data-schedule-status='paused']"],
+    ["schedule-task-paused", "A paused task offers Resume", ".schedule-task-controls [data-schedule-status='active']"],
+    ["schedule-task-failed", "A task whose last run failed says why, beside its controls", ".schedule-task-error"],
   ] as const).map(([id, title, landmark]): PreviewScenario => ({
     ...base(id, title, () => {
       if (id === "schedule-list") {
@@ -42,6 +45,11 @@ export const scheduleScenarios: PreviewScenario[] = [
       await navigate(root, "schedule");
       if (id === "schedule-watching-setup") await click('[data-schedule-task="watching"] .schedule-task-summary');
       if (id === "schedule-dialog") await click('[data-schedule-task="preview-briefing"] .schedule-task-summary');
+      if (id === "schedule-task-active" || id === "schedule-task-failed") await click('[data-schedule-task="preview-task-0"] .schedule-task-summary');
+      if (id === "schedule-task-paused") {
+        await click('[data-schedule-filter] [role="radio"][value="all"]');
+        await click('[data-schedule-task="preview-task-1"] .schedule-task-summary');
+      }
     }),
     setup: async bridge => {
       await prepareFixture(bridge, "answer");
@@ -56,6 +64,11 @@ export const scheduleScenarios: PreviewScenario[] = [
       const entity = (node: { id: string }, index: number) => ({ eventId: `briefing-growth-${index}`, loupistId: "loupist-quality", originChatId: "preview-chat", originMessageId: "preview-answer", atMs: Date.now(), kind: "entity_added" as const, subjectId: node.id, recordId: "preview-world", actor: "loupist" as const, summary: "", beforeSummary: null, afterSummary: null });
       const disputed = id === "briefing-suggested" ? [{ ...entity({ id: "map-claim-28" }, 9), kind: "claim_disputed" as const, subjectId: "map-claim-28", atMs: Date.now() + 3_600_000 }] : [];
       bridge.knowledgeGrowthEvents = async () => ({ events: [...map.nodes.filter(node => node.kind === "entity").slice(0, 3).map(entity), ...disputed], nextCursor: null });
+      if (id === "schedule-task-failed") {
+        const list = bridge.scheduledTasksList.bind(bridge);
+        bridge.scheduledTasksList = async request => (await list(request)).map(task => task.id === "preview-task-0" && task.latest_run
+          ? { ...task, latest_run: { ...task.latest_run, status: "failed" as const, error: "provider_auth: 401 unauthorized" } } : task);
+      }
     },
   })),
   { ...base("thread-home", "The home Thread: a delivered result and the morning news", () => select(".thread-delivery") && select('.morning-message[aria-busy="false"]'), async () => {

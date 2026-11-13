@@ -2,7 +2,7 @@ import i18n, { useTranslation } from "@/i18n";
 import { chatSessionKey } from "../../chat/sessionRegistry";
 import { useState } from "react";
 import {
-  ArrowLeftIcon, PlusIcon, SearchIcon, Settings2Icon, XIcon,
+  ApertureIcon, ArrowLeftIcon, CalendarClockIcon, NetworkIcon, PlusIcon, SearchIcon, SettingsIcon, StarIcon, XIcon, type LucideIcon,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent,
@@ -10,12 +10,13 @@ import {
   SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarTrigger, useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { SETTINGS_SECTIONS, type AppTab, type SettingsSection } from "../../app/navigation";
+import { SETTINGS_SECTIONS, type AppDestinationId, type AppTab, type SettingsSection } from "../../app/navigation";
 import { LoupistChatItem } from "./LoupistChatItem";
 import { NeedsAttention } from "./NeedsAttention";
 import type { AttentionItem } from "../../contracts/attention";
 import { getLoupistChatList, recentLoupistChats } from "./loupistNavigation";
-import { shortcutFor } from "../../app/shortcuts";
+import { shortcutFor, tabShortcut } from "../../app/shortcuts";
+import { APP_DESTINATIONS } from "../../app/navigation";
 import type { ChatThread, LoupistSummary } from "../../types";
 import "../../styles/navigation.css";
 
@@ -45,12 +46,18 @@ type Props = {
   onSearch: () => void;
   onDeleteThread: (thread: ChatThread) => void;
   onExportThread?: (thread: ChatThread, format: "md" | "pdf") => void;
+  /** Unread scheduled results for the selected Loupist, shown on the Schedule row. */
+  scheduleUnread?: number;
+  /** The panel open beside the chat, so the Map or Lens row shows as current. */
+  activePanel?: "world" | "lens" | null;
+  /** Opens a ⌘ destination (Map and Lens open their panel beside the chat). */
+  onDestination?: (id: AppDestinationId) => void;
 };
 
 export function AppNavigation({
   attention = [], finishedThreadKeys = new Set(), onOpenAttention, onMoreAttention, tab, selectedLoupist, loading, threadsByLoupist, activeThreadId,
   runningThreadKeys, draftThreadKeys = new Set(), settingsSection, updateAvailable, onTabChange, onSettingsSectionChange, onExitSettings,
-  onCreateThread, onSelectThread, onRenameThread, onDeleteThread, onExportThread, onSearch,
+  onCreateThread, onSelectThread, onRenameThread, onDeleteThread, onExportThread, onSearch, scheduleUnread = 0, activePanel = null, onDestination,
 }: Props) {
   useTranslation();
   const { isMobile, setOpenMobile, state } = useSidebar();
@@ -59,9 +66,30 @@ export function AppNavigation({
   const canStartChat = selectedLoupist != null && !loading && selectedLoupist.availability.status === "available";
   const [settingsSearch, setSettingsSearch] = useState("");
   const recent = selectedLoupist ? recentLoupistChats(getLoupistChatList(threadsByLoupist[selectedLoupist.id]), activeThreadId, selectedLoupist.id) : [];
+  const iconOnly = !isMobile && state === "collapsed";
+  const openDestination = (id: AppDestinationId) => { onDestination?.(id); closeMobile(); };
+  /** Home, Following, Map, Lens and Schedule: one row each, with the ⌘ key where the destination has one. */
+  // Map and Lens open a panel beside the chat, so they are pressed rather than the current page.
+  const placeRow = ({ id, icon: Icon, active, onClick, unread = 0, panel = false }: { id: "following" | AppDestinationId; icon: LucideIcon; active: boolean; onClick: () => void; unread?: number; panel?: boolean }) => {
+    const label = i18n.t(`app:shell.tabs.${id}`);
+    const index = APP_DESTINATIONS.findIndex(item => item.id === id);
+    const unreadId = `sidebar-${id}-unread`;
+    return <SidebarMenuItem key={id} className="loupist-chat-row loupist-place-row" data-sidebar-place={id}>
+      <SidebarMenuButton type="button" className="loupist-chat-button" data-sidebar-schedule={id === "schedule" || undefined} data-panel-open={panel && active ? "" : undefined}
+        isActive={!panel && active} aria-current={!panel && active ? "page" : undefined} aria-pressed={panel ? active : undefined}
+        aria-label={iconOnly ? label : undefined} aria-describedby={unread > 0 ? unreadId : undefined}
+        title={index >= 0 ? `${label} ${tabShortcut(index + 1)}` : label} onClick={onClick}>
+        <Icon className="loupist-home-icon" aria-hidden="true" />
+        {iconOnly ? null : <span className="loupist-chat-title">{label}</span>}
+        {unread > 0 ? <><span className="shell-unread" aria-hidden="true">{unread}</span><span className="sr-only" id={unreadId}>{i18n.t("app:shell.unreadBriefings", { count: unread })}</span></>
+          : !iconOnly && index >= 0 ? <kbd className="loupist-place-key" aria-hidden="true">{tabShortcut(index + 1)}</kbd> : null}
+      </SidebarMenuButton>
+    </SidebarMenuItem>;
+  };
+  const sessions = recent.filter(thread => !thread.home);
   const row = (thread: ChatThread) => {
     const key = chatSessionKey(thread.loupist_id, thread.id);
-    return <LoupistChatItem iconOnly={!isMobile && state === "collapsed"} key={key} thread={thread} active={thread.id === activeThreadId} running={runningThreadKeys.has(key)} finished={finishedThreadKeys.has(key)} draft={draftThreadKeys.has(key)}
+    return <LoupistChatItem iconOnly={iconOnly} key={key} thread={thread} active={thread.id === activeThreadId} running={runningThreadKeys.has(key)} finished={finishedThreadKeys.has(key)} draft={draftThreadKeys.has(key)}
       onSelect={item => { onSelectThread(item); closeMobile(); }} onSchedule={thread.home ? () => navigate("schedule") : undefined} onRename={onRenameThread} onDelete={onDeleteThread} onExport={onExportThread} />;
   };
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
@@ -117,18 +145,26 @@ export function AppNavigation({
           <SearchIcon /><span>{i18n.t("app:shell.search")}</span><kbd aria-hidden="true">{searchShortcut}</kbd>
         </Button>
         <Button variant="ghost" className="navigation-command navigation-new" data-testid="navigation-new" disabled={!canStartChat} aria-label={state === "collapsed" && !isMobile ? i18n.t("app:shell.newResearch") : undefined}
-          title={`${i18n.t("app:shell.newResearch")} ${newChatShortcut}`} onClick={() => { if (selectedLoupist) onCreateThread(selectedLoupist.id); closeMobile(); }}>
+          title={`${i18n.t("app:shell.newResearchHint")} ${newChatShortcut}`} onClick={() => { if (selectedLoupist) onCreateThread(selectedLoupist.id); closeMobile(); }}>
           <PlusIcon /><span>{i18n.t("app:shell.newResearch")}</span><kbd aria-hidden="true">{newChatShortcut}</kbd>
         </Button>
       </SidebarHeader>
       <SidebarContent>{onOpenAttention ? <NeedsAttention items={attention} onOpen={(item) => { onOpenAttention(item); closeMobile(); }} onMore={onMoreAttention ? () => { onMoreAttention(); closeMobile(); } : undefined} /> : null}<SidebarGroup className="loupist-navigation" data-testid="loupist-navigation">
-        <SidebarMenu>{recent.filter(thread => thread.home).map(row)}</SidebarMenu>
+        <SidebarMenu>{recent.filter(thread => thread.home).map(row)}
+          {selectedLoupist ? <>
+            {placeRow({ id: "following", icon: StarIcon, active: tab === "following", onClick: () => navigate("following") })}
+            {placeRow({ id: "map", icon: NetworkIcon, active: tab === "chat" && activePanel === "world", panel: true, onClick: () => openDestination("map") })}
+            {placeRow({ id: "lens", icon: ApertureIcon, active: tab === "chat" && activePanel === "lens", panel: true, onClick: () => openDestination("lens") })}
+            {placeRow({ id: "schedule", icon: CalendarClockIcon, active: tab === "schedule", onClick: () => navigate("schedule"), unread: scheduleUnread })}
+          </> : null}
+        </SidebarMenu>
         <div className="loupist-list-heading"><SidebarGroupLabel>{i18n.t("app:shell.sessions")}</SidebarGroupLabel></div>
-        <SidebarMenu>{(isMobile || state === "expanded") && recent.filter(thread => !thread.home).map(row)}</SidebarMenu>
+        {iconOnly ? null : sessions.length ? <SidebarMenu>{sessions.map(row)}</SidebarMenu>
+          : <p className="loupist-sessions-empty" data-sessions-empty>{i18n.t("app:shell.sessionsEmpty")}</p>}
       </SidebarGroup></SidebarContent>
       <SidebarFooter className="navigation-footer">
 
-        <SidebarMenu><SidebarMenuItem><SidebarMenuButton id="main-tab-settings" aria-label={i18n.t("app:shell.settings")} title={i18n.t("app:shell.settings")} onClick={() => navigate("settings")}><Settings2Icon /><span>{i18n.t("app:shell.settings")}</span>{updateAvailable ? <span className="shell-update-dot" aria-label={i18n.t("app:shell.updateAvailable")}><span className="sr-only">{i18n.t("app:shell.updateAvailable")}</span></span> : null}</SidebarMenuButton></SidebarMenuItem></SidebarMenu></SidebarFooter>
+        <SidebarMenu><SidebarMenuItem><SidebarMenuButton id="main-tab-settings" aria-label={i18n.t("app:shell.settings")} title={i18n.t("app:shell.settings")} onClick={() => navigate("settings")}><SettingsIcon /><span>{i18n.t("app:shell.settings")}</span>{updateAvailable ? <span className="shell-update-dot" aria-label={i18n.t("app:shell.updateAvailable")}><span className="sr-only">{i18n.t("app:shell.updateAvailable")}</span></span> : null}</SidebarMenuButton></SidebarMenuItem></SidebarMenu></SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );

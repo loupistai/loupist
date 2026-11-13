@@ -15,7 +15,7 @@ async function fixture(setup?: (bridge: MockLoupistBridge, loupist: LoupistSumma
   return { bridge, loupist, handlers, view, user: userEvent.setup() };
 }
 
-it("opens on Pages with your principles grouped in, shows where one was used, and asks Bot to revise it", async () => {
+it("opens on Pages with your principles grouped in, shows where one was used, and asks your Loupist to revise it", async () => {
   let recordId = "";
   const { handlers, view, user } = await fixture(async (bridge, loupist) => {
     recordId = (await bridge.principleCreate({ loupistId: loupist.id, statement: "Prefer companies that publish segment margins.", origin: "settings" })).recordId;
@@ -26,36 +26,14 @@ it("opens on Pages with your principles grouped in, shows where one was used, an
   const page = await screen.findByRole("region", { name: /What .* knows/ });
   const tabs = within(page).getByRole("tablist");
   expect(within(tabs).getByRole("tab", { name: /Pages/ })).toHaveAttribute("aria-selected", "true");
-  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Principle, used 4 times/ }));
+  // Lens is Pages and History; what you follow lives on the Following page.
+  expect(within(tabs).getAllByRole("tab").map(tab => tab.textContent)).toEqual([expect.stringMatching(/^Pages/), expect.stringMatching(/^History/)]);
+  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Principle, Used 4 times/ }));
   const reader = within(page).getByRole("complementary", { name: /Prefer companies that publish segment margins/ });
   await user.click(within(reader).getByRole("button", { name: "Hanul margin review" }));
   expect(handlers.onOpenChat).toHaveBeenCalledWith("chat-margin");
   await user.click(within(reader).getByRole("button", { name: "Ask Bot to revise" }));
   expect(handlers.onAsk).toHaveBeenCalledWith(expect.objectContaining({ recordId, kind: "lens" }));
-});
-
-it("starts a new Loupist on About you with follows, holdings as a count only, and no principles yet", async () => {
-  const { bridge, view, user } = await fixture(async (bridge) => {
-    await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" });
-    const preview = await bridge.holdingsImportCsv({ path: "/tmp/holdings.csv" });
-    await bridge.holdingsCommitCsv({ previewId: preview.previewId });
-  });
-  const remove = vi.spyOn(bridge, "watchlistRemove");
-  vi.spyOn(bridge, "principleList").mockResolvedValue([]);
-  vi.spyOn(bridge, "learningReviewList").mockResolvedValue([]);
-  vi.spyOn(bridge, "knowledgeGrowthEvents").mockResolvedValue({ events: [], nextCursor: null });
-  render(view());
-  await user.click(await screen.findByRole("tab", { name: /About you/ }));
-  expect(screen.getByText("Apple · AAPL")).toBeVisible();
-  expect(screen.getByText(/^Stocks and funds: 1 asset · .* · Crypto: none/)).toBeVisible();
-  expect(screen.getByRole("button", { name: "Update holdings" })).toBeVisible();
-  // Quantities and values never reach this page.
-  expect(document.body).not.toHaveTextContent("2.5");
-  expect(document.body).not.toHaveTextContent("500");
-  await user.click(screen.getByRole("button", { name: "Stop following Apple" }));
-  expect(remove).toHaveBeenCalledWith({ symbol: "AAPL", market: "NASDAQ" });
-  await user.click(screen.getByRole("tab", { name: /History/ }));
-  expect(await screen.findByText("No history yet.")).toBeVisible();
 });
 
 it("says learning is paused when nothing new is saved, and Resume turns both switches back on", async () => {
@@ -71,8 +49,7 @@ it("says learning is paused when nothing new is saved, and Resume turns both swi
   await user.click(within(banner.closest("[role=status]")!).getByRole("button", { name: "Resume" }));
   expect(learn).toHaveBeenCalledWith({ loupistId: loupist.id, learnMethods: true });
   await waitFor(() => expect(screen.queryByText(/Learning is paused/)).toBeNull());
-  await user.click(screen.getByRole("tab", { name: /About you/ }));
-  expect(screen.queryByRole("switch", { name: "Remember new chats" })).toBeNull();
+  expect(screen.queryByRole("switch", { name: "Remember new conversations" })).toBeNull();
   const config = await bridge.configRead({ scope: { kind: "project", loupistId: loupist.id } });
   expect(config.effective.chat.use_memory && config.effective.chat.update_memory).toBe(true);
 });
@@ -125,8 +102,8 @@ it("groups pages by kind and narrows them with search", async () => {
   const { view, user } = await fixture();
   render(view());
   await screen.findByRole("region", { name: /What .* knows/ });
-  const groups = await screen.findAllByRole("region", { name: /^(Topics|Ideas|Methods|Your principles|Outlook)$/ });
-  expect(groups.map(group => group.getAttribute("aria-label"))).toEqual(["Topics", "Ideas", "Methods", "Your principles", "Outlook"]);
+  const groups = await screen.findAllByRole("region", { name: /^(Topics|Ideas|Methods|Your principles|Perspective)$/ });
+  expect(groups.map(group => group.getAttribute("aria-label"))).toEqual(["Topics", "Ideas", "Methods", "Your principles", "Perspective"]);
   const header = within(groups[0]!).getByRole("heading", { level: 3 });
   expect(header.children).toHaveLength(3);
   expect(header.children[0]).toHaveTextContent(/^Topics$/);
@@ -168,7 +145,7 @@ it("returns to the page after opening a Source from its basis chip", async () =>
   render(view("lens-subject-tcp"));
   await screen.findByRole("heading", { name: "TCP" });
   const overview = (await screen.findByRole("heading", { name: "Overview" })).closest("section")!;
-  await user.click(within(overview).getByRole("button", { name: "Source" }));
+  await user.click(within(overview).getByRole("button", { name: /^Source · / }));
   expect(await screen.findByRole("button", { name: "Back to page" })).toBeVisible();
   expect(handlers.onOpenKnowledge).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Back to page" }));
@@ -220,4 +197,20 @@ it("debounces Lens search while the user types and cancels a cleared query", asy
     expect(search).toHaveBeenCalledTimes(1);
     rendered.unmount();
   } finally { vi.useRealTimers(); }
+});
+
+it("offers + Add principle on an empty Lens and opens the principle it saves", async () => {
+  const { bridge, loupist, view, user } = await fixture();
+  // A new Loupist: no methods or pages yet.
+  const catalog = bridge.knowledgeCatalog.bind(bridge);
+  vi.spyOn(bridge, "knowledgeCatalog").mockImplementation(async request => ({ ...await catalog(request), lenses: [] }));
+  for (const principle of await bridge.principleList({ loupistId: loupist.id })) await bridge.principleArchive({ loupistId: loupist.id, recordId: principle.recordId, archived: true });
+  render(view());
+  const page = await screen.findByRole("region", { name: /What .* knows/ });
+  await within(page).findByText(/Nothing here yet/);
+  await user.click(within(page).getByRole("button", { name: "+ Add principle" }));
+  await user.type(within(page).getByRole("textbox", { name: "Statement" }), "Check capacity costs before trusting a margin recovery.");
+  await user.click(within(page).getByRole("button", { name: "Save" }));
+  expect(await within(page).findByRole("complementary", { name: /Check capacity costs before trusting a margin recovery/ })).toBeVisible();
+  expect((await bridge.principleList({ loupistId: loupist.id })).map(item => item.statement)).toContain("Check capacity costs before trusting a margin recovery.");
 });

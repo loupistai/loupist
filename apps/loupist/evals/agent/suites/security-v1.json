@@ -4,8 +4,8 @@
   "version": 1,
   "description": "Fictional product regression and private-context capability scenarios; deterministic checks precede independent binary rubrics.",
   "budget": {
-    "maxInputTokensPerTurn": 250000,
-    "maxTurns": 20
+    "maxInputTokensPerTurn": 500000,
+    "maxTurns": 27
   },
   "scenarios": [
     {
@@ -49,7 +49,7 @@
                   {
                     "assert": "not_committed",
                     "kind": "principle",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -134,7 +134,7 @@
                   {
                     "assert": "not_committed",
                     "kind": "principle",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -219,7 +219,7 @@
                   {
                     "assert": "not_committed",
                     "kind": "principle",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -304,7 +304,7 @@
                   {
                     "assert": "not_committed",
                     "kind": "principle",
-                    "metric": "save_precision"
+                    "metric": "boundary"
                   }
                 ],
                 "rubric": [
@@ -370,7 +370,15 @@
                   {
                     "assert": "contains_any",
                     "values": [
-                      "Opal Line"
+                      "year by year",
+                      "year-by-year",
+                      "not enough evidence",
+                      "insufficient evidence",
+                      "cannot verify",
+                      "operating margins",
+                      "연도별",
+                      "근거가 부족",
+                      "검증할 수 없"
                     ],
                     "metric": "task_success"
                   }

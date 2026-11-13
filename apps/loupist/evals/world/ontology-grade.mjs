@@ -4,12 +4,79 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-const HANGUL = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7A3]/u;
 const SOURCE_ROLES = new Set(['source', 'from', 'subject']);
 const TARGET_ROLES = new Set(['target', 'to', 'object']);
 const NAMED_KINDS = new Set(['Organization', 'Person', 'Asset', 'Product', 'Place', 'Policy']);
 const TRAILING_LABEL = /\s*(?:\([^)]*\)|\[[^\]]*\])$/u;
 const CORPORATE_SUFFIX = /(?:\s+주식회사|\s*\(주\)|\s*,?\s+Co\.,\s*Ltd\.|\s*,?\s+Inc\.|\s*,?\s+Corp\.|\s*,?\s+LLC)$/iu;
+
+// Independent of the extractor: detect value nodes even if they were mislabeled
+// as a Product, Event or a user-defined kind. A digit/period alone is not enough.
+const MEASUREMENT_NAME = /(?:\b(?:USD|KRW|EUR|GBP|JPY|CNY|RMB|CAD|AUD|CHF)\s*[+−-]?\d|[$€£₩¥]\s*[+−-]?\d|\d[\d,.]*\s*(?:%|퍼센트|bps\b|basis points\b|million\b|billion\b|trillion\b|thousand\b|percent\b|tonnes\b|tons\b|barrels\b|widgets\b|units\b|GWh\b|MWh\b|kWh\b|GW\b|MW\b|kg\b|km\b|억원|조원|만원|천원|원|달러|백만|천만|십억|백억|억|조|만|톤|명|대|개|주|건|배)|\d[\d,.]*\s+(?:shares|employees|patients|vehicles|dollars|euros|people)\b|\b(?:revenue|net income|operating (?:profit|income|margin)|earnings per share|market share|net (?:profit|loss)|sales volume|production capacity|yield)\b\s*[:=]?\s*[+−-]?\d|(?:매출액|순이익|영업이익|점유율|생산량|생산능력|주당순이익)\s*[:=]?\s*[+−-]?\d)/iu;
+const COUPON_SECURITY = /^\d+(?:\.\d+)?%\s+(?:(?:notes|bonds)\s+(?:due\s+)?20\d{2}|20\d{2}년\s+만기\s+채권)$/iu;
+const OCCURRENCE = /(?:\b(?:contract|agreement|acquisition|merger|takeover|buyout|ipo|offering|issuance|launch|lawsuit|ruling|accident|outage|appointment|resignation|termination|earnings (?:call|release)|guidance change|rating (?:action|upgrade|downgrade)|rate (?:cut|hike))\b|계약|협약|인수|합병|기업공개|출시|소송|판결|사고|정전|선임|사임|해지|실적발표|금리인하|금리인상)/iu;
+const CONTRACT_MEASUREMENT = /(?:\b(?:contract|agreement)\s+(?:total\s+)?(?:value|amount|size)\b|계약의?\s*(?:총\s*)?(?:금액|가액|규모))/iu;
+const EVENT_GENERIC_WORDS = new Set('a an the and or of for to with between by on at in from as effective dated date reported published signed announced worth valued value amount total supply purchase loan license licensing stock share bond capital earnings call release contract agreement acquisition merger takeover buyout ipo offering issuance launch lawsuit ruling accident outage appointment resignation termination guidance change rating action upgrade downgrade rate cut hike year years fiscal fy q january february march april may june july august september october november december utc gmt usd krw eur gbp jpy cny rmb cad aud chf million billion trillion thousand k m b bn tn co corp corporation inc incorporated ltd limited llc company 공급 구매 계약 공급계약 계약체결 체결 협약 인수 합병 기업공개 출시 소송 판결 사고 정전 선임 사임 해지 실적발표 실적발표회 금리인하 금리인상 원 달러 억원 조원 만원 천원 억 조 만 천 년 월 일 분기'.split(' '));
+
+function qualifiedOccurrence(name) {
+  return OCCURRENCE.test(name) && !CONTRACT_MEASUREMENT.test(name)
+    && [...name.matchAll(/[a-z]+|[가-힣]+/giu)].some(([word]) => !EVENT_GENERIC_WORDS.has(word.toLowerCase()));
+}
+
+export function isMeasurementNode(node) {
+  const name = String(node?.name ?? '').normalize('NFKC').trim();
+  if (node?.kind === 'Metric') return true;
+  if (node?.kind === 'Asset' && COUPON_SECURITY.test(name)) return false;
+  if (node?.kind === 'Event' && qualifiedOccurrence(name)) return false;
+  if (/^\d+$/u.test(name)) return !['Organization', 'Asset'].includes(node?.kind) || name.length > 12;
+  if (/^[+−-]?\d[\d,.]*$/u.test(name)) return true;
+  return MEASUREMENT_NAME.test(name) || /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:[T ].*)?$/u.test(name);
+}
+
+const LATIN_LETTER = /\p{Script=Latin}/u;
+const LATIN_WORDS = /\p{Script=Latin}+/gu;
+const ORIGINAL_RUN = String.raw`(?!\p{Script=Latin})\p{L}+(?:[ \t·-]+(?!\p{Script=Latin})\p{L}+)*`;
+const ORIGINAL_BEFORE_RENDERING = new RegExp(`(${ORIGINAL_RUN})[ \\t]*\\(([^()\\n]+)\\)`, 'gu');
+const ORIGINAL_BEFORE_SLASH = new RegExp(`(${ORIGINAL_RUN})[ \\t]*/[ \\t]*(?=\\p{Script=Latin})`, 'gu');
+const ORIGINAL_AFTER_SLASH = new RegExp(`(?<=\\p{Script=Latin})[ \\t]*/[ \\t]*(${ORIGINAL_RUN})`, 'gu');
+
+function originalLabel(value) {
+  const label = value.trim();
+  const letters = label.match(/\p{L}/gu) ?? [];
+  const words = label.split(/\s+/u);
+  const koreanClause = /(?:했다|한다|됐다|된다|있다|없다|였다|습니다|어요)$/u.test(label)
+    || (words.length > 1 && /[가-힣](?:다|요)$/u.test(label));
+  // Labels and aliases may be long, but a quoted sentence is still prose.
+  return letters.length > 0 && letters.length <= 64 && letters.every((letter) => !LATIN_LETTER.test(letter))
+    && /^[\p{L}\p{M} \t·-]+$/u.test(label) && words.length <= 6 && !koreanClause;
+}
+
+function englishFrame(text, offset, length) {
+  const outside = text.slice(0, offset) + text.slice(offset + length);
+  return (outside.match(LATIN_WORDS) ?? []).length >= 2;
+}
+
+function nonEnglishFact(proposition) {
+  let text = String(proposition ?? '').normalize('NFKC');
+  text = text.replace(ORIGINAL_BEFORE_RENDERING, (whole, original, rendering, offset, source) => {
+    const letters = rendering.match(/\p{L}/gu) ?? [];
+    return originalLabel(original) && letters.length > 0 && letters.every((letter) => LATIN_LETTER.test(letter))
+      && englishFrame(source, offset, whole.length) ? rendering : whole;
+  });
+  text = text.replace(/\(([^()\n]*)\)|"([^"\n]*)"|'([^'\n]*)'|“([^”\n]*)”|‘([^’\n]*)’/gu,
+    (whole, parenthetical, double, single, curlyDouble, curlySingle, offset, source) => {
+      const original = parenthetical ?? double ?? single ?? curlyDouble ?? curlySingle;
+      return originalLabel(original) && englishFrame(source, offset, whole.length) ? '' : whole;
+    });
+  for (const pair of [ORIGINAL_BEFORE_SLASH, ORIGINAL_AFTER_SLASH]) {
+    text = text.replace(pair, (whole, original, offset, source) => (
+      originalLabel(original) && englishFrame(source, offset, whole.length) ? '' : whole
+    ));
+  }
+  const letters = text.match(/\p{L}/gu) ?? [];
+  const nonLatin = letters.filter((letter) => !LATIN_LETTER.test(letter)).length;
+  return letters.length > 0 && nonLatin / letters.length >= 0.25;
+}
 
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -129,7 +196,7 @@ function blankMetrics() {
     entity_recall: null, type_accuracy: null, duplicate_entities: 0,
     original_alias_rate: null, identifier_fill: null, relation_pair_recall: null,
     canonical_relation_rate: null, relation_names_per_100_claims: null, relates_to_share: null,
-    non_english_fact_share: null, numeric_fidelity: null,
+    non_english_fact_share: null, numeric_fidelity: null, measurement_node_share: null,
     query_hit_rate: { en: null, ko: null },
   };
 }
@@ -146,8 +213,9 @@ function withRates(counts) {
     canonical_relation_rate: ratio(counts.canonicalClaims, counts.canonicalClaimOpportunities),
     relation_names_per_100_claims: claims ? (counts.relationNames.size * 100) / claims : null,
     relates_to_share: ratio(counts.relatesTo, claims),
-    non_english_fact_share: ratio(counts.hangulClaims, claims),
+    non_english_fact_share: ratio(counts.nonEnglishClaims, claims),
     numeric_fidelity: ratio(counts.numericFound, counts.numericExpected),
+    measurement_node_share: counts.nodes ? counts.measurementNodes / counts.nodes : 0,
     query_hit_rate: {
       en: ratio(counts.queryHits.en, counts.queryExpected.en),
       ko: ratio(counts.queryHits.ko, counts.queryExpected.ko),
@@ -162,8 +230,9 @@ function withRates(counts) {
       canonical_relation_claims: [counts.canonicalClaims, counts.canonicalClaimOpportunities],
       relation_names: [counts.relationNames.size, claims],
       relates_to: [counts.relatesTo, claims],
-      non_english_facts: [counts.hangulClaims, claims],
+      non_english_facts: [counts.nonEnglishClaims, claims],
       numeric: [counts.numericFound, counts.numericExpected],
+      measurement_nodes: [counts.measurementNodes, counts.nodes],
       query_en: [counts.queryHits.en, counts.queryExpected.en],
       query_ko: [counts.queryHits.ko, counts.queryExpected.ko],
     },
@@ -175,14 +244,14 @@ function emptyCounts() {
     entitiesMatched: 0, entitiesExpected: 0, typesCorrect: 0, duplicateEntities: 0,
     aliasCarried: 0, aliasExpected: 0, identifierFilled: 0, identifierExpected: 0,
     relationsJoined: 0, relationsExpected: 0, canonicalClaims: 0, canonicalClaimOpportunities: 0,
-    relationNames: new Set(), relatesTo: 0, hangulClaims: 0, claims: 0,
-    numericFound: 0, numericExpected: 0,
+    relationNames: new Set(), relatesTo: 0, nonEnglishClaims: 0, claims: 0,
+    numericFound: 0, numericExpected: 0, measurementNodes: 0, nodes: 0,
     queryHits: { en: 0, ko: 0 }, queryExpected: { en: 0, ko: 0 },
   };
 }
 
 function addCounts(total, counts) {
-  for (const key of ['entitiesMatched', 'entitiesExpected', 'typesCorrect', 'duplicateEntities', 'aliasCarried', 'aliasExpected', 'identifierFilled', 'identifierExpected', 'relationsJoined', 'relationsExpected', 'canonicalClaims', 'canonicalClaimOpportunities', 'relatesTo', 'hangulClaims', 'claims', 'numericFound', 'numericExpected']) {
+  for (const key of ['entitiesMatched', 'entitiesExpected', 'typesCorrect', 'duplicateEntities', 'aliasCarried', 'aliasExpected', 'identifierFilled', 'identifierExpected', 'relationsJoined', 'relationsExpected', 'canonicalClaims', 'canonicalClaimOpportunities', 'relatesTo', 'nonEnglishClaims', 'claims', 'numericFound', 'numericExpected', 'measurementNodes', 'nodes']) {
     total[key] += counts[key];
   }
   for (const name of counts.relationNames) total.relationNames.add(name);
@@ -245,6 +314,8 @@ function gradeTrial(scenario, expected, rows) {
   const nodes = list(payload?.nodes);
   const claims = payload ? activeClaims(payload) : [];
   const counts = emptyCounts();
+  counts.nodes = nodes.length;
+  counts.measurementNodes = nodes.filter(isMeasurementNode).length;
   const entityDetail = [];
   const matchedIds = new Map();
   counts.entitiesExpected = expected.entities.length;
@@ -287,7 +358,7 @@ function gradeTrial(scenario, expected, rows) {
     counts.claims += 1;
     if (typeof claim.relation === 'string' && claim.relation) counts.relationNames.add(claim.relation);
     if (claim.relation === 'RELATES_TO') counts.relatesTo += 1;
-    if (HANGUL.test(String(claim.proposition ?? ''))) counts.hangulClaims += 1;
+    if (nonEnglishFact(claim.proposition)) counts.nonEnglishClaims += 1;
   }
   const numericDetail = [];
   counts.numericExpected = expected.numeric_facts.length;
@@ -464,6 +535,9 @@ export function adoptionCriteria(report) {
         && rate(candidate, 'numeric_fidelity') >= rate(baseline, 'numeric_fidelity') - 0.05,
       { candidate: rate(candidate, 'numeric_fidelity'), baseline: rate(baseline, 'numeric_fidelity') },
     ),
+    measurement_nodes: criterion(rate(candidate, 'measurement_node_share') === 0, {
+      candidate: rate(candidate, 'measurement_node_share'), baseline: rate(baseline, 'measurement_node_share'),
+    }),
     world_cost: criterion(withinBudget(calls(candidate), calls(baseline)) && withinBudget(input(candidate), input(baseline)), {
       candidate_calls_per_episode: calls(candidate), baseline_calls_per_episode: calls(baseline),
       candidate_input_tokens_per_episode: input(candidate), baseline_input_tokens_per_episode: input(baseline),

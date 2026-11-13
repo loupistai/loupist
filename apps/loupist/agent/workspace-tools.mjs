@@ -270,7 +270,8 @@ export function nativeRequest(workspaceRoot, name, input) {
 
 /** Native Pi file tools operate on the selected workspace while Pi itself keeps a private runtime CWD.
  * `authorize(name, request, signal, id)` asks Rust before every execution with the
- * `nativeRequest` above; Rust owns the permission policy, exported-text trust, the
+ * `nativeRequest` above plus the complete `input` for argument-text validation;
+ * Rust owns the permission policy, exported-text trust, the
  * canonical target (`resolved`) a read, write or edit is pinned to and the
  * `identity` a read must find. Analysis runs through the broker tool `run_python`. */
 export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
@@ -289,7 +290,7 @@ export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
       async execute(id, input, signal, onUpdate, ctx) {
         const writer = FILE_WRITERS[definition.name];
         const request = nativeRequest(workspaceRoot, definition.name, input);
-        const permission = authorize ? await authorize(definition.name, request, signal, id) : undefined;
+        const permission = authorize ? await authorize(definition.name, { ...request, input }, signal, id) : undefined;
         const boundary = permission?.untrusted_text;
         const deliver = (result) => boundary ? {
           ...result,

@@ -22,6 +22,8 @@ import { ChevronDownIcon, Settings2Icon } from "lucide-react";
 
 export type ModelSelectionMenuProps = {
   models: ConfiguredModel[];
+  /** Show the search field only from this many models (the composer passes 8); every model by default. */
+  searchFrom?: number;
   providers: ModelProviderOption[];
   selection: ModelRunSelection;
   disabled?: boolean;
@@ -73,6 +75,7 @@ const keepMenuOpen = (event: Event) => {
 
 export function ModelSelectionMenu({
   models,
+  searchFrom = 0,
   providers,
   selection,
   disabled = false,
@@ -167,7 +170,8 @@ export function ModelSelectionMenu({
         >
           <div className="model-menu-header">
             <strong>{contextLabel}</strong>
-            <Input autoFocus type="search" aria-label={i18n.t("settings:modelSelectionMenu.searchModels")} placeholder={i18n.t("settings:modelSelectionMenu.searchProvidersOrModels")} value={query}
+            {/* A short list fits at a glance: the composer hides search under eight models (chat design 35). */}
+            {models.length >= searchFrom ? <Input autoFocus type="search" aria-label={i18n.t("settings:modelSelectionMenu.searchModels")} placeholder={i18n.t("settings:modelSelectionMenu.searchProvidersOrModels")} value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -179,7 +183,7 @@ export function ModelSelectionMenu({
                 }
                 if (event.key === "Enter") event.preventDefault();
                 if (event.key !== "Escape" && event.key !== "Tab") event.stopPropagation();
-              }} />
+              }} /> : null}
           </div>
           <div className="model-menu-catalog" role="menu" aria-label={i18n.t("settings:modelSelectionMenu.availableModels")}>
           {auto && models.length ? <>

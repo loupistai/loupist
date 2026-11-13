@@ -1,28 +1,47 @@
 {
   "_status": "translated",
+  "general": {
+    "label": "일반",
+    "description": "앱이 언제 실행되는지, 그리고 어떤 정보가 이 Mac 밖으로 나가는지 확인해요.",
+    "keywords": "일반 메뉴 막대 백그라운드 실행 개인정보 알림 안내 키체인",
+    "keepRunning": "메뉴 막대에서 계속 실행",
+    "keepRunningDescription": "예약 작업과 지켜보기는 루피스트가 열려 있거나 메뉴 막대에 있을 때만 실행돼요.",
+    "keepRunningAutomatic": "브리핑이나 지켜보기를 켜서 함께 켜졌어요. 여기서 끌 수 있어요.",
+    "loadFailed": "이 설정을 불러오지 못했어요.",
+    "saveFailed": "이 설정을 바꾸지 못했어요. 다시 시도해 주세요.",
+    "betaNotice": "베타 버전입니다. Loupist가 서명했으며 Apple 공증은 받지 않았습니다.",
+    "aboutTitle": "정보 및 개인정보",
+    "privacyTitle": "이 Mac 밖으로 나가는 것",
+    "privacyStays": "이 Mac에 남는 것: 대화, 자료, 지도, 렌즈, 저널, 보유 자산. 모두 루피스트 폴더에 저장돼요. 루피스트 계정도 동기화도 없어요.",
+    "privacyProvider": "AI 서비스로 가는 것: 내 메시지, 그리고 답변이나 백그라운드 읽기에 쓰인 자료와 저장된 메모.",
+    "privacyDataSources": "데이터 제공처로 가는 것: 관심 자산이나 질문한 종목의 이름·코드, 추가한 지갑 주소. 보유 수량과 금액은 이 Mac 밖으로 나가지 않아요.",
+    "privacyWeb": "웹으로 가는 것: 루피스트가 여는 페이지와 검색어. 직접 추가한 연결에는 그 도구가 요청한 내용이 전달돼요.",
+    "privacyMakers": "루피스트 개발사로 가는 것: 없어요. 사용 통계나 텔레메트리를 보내지 않아요. 서명된 업데이트는 GitHub에서 하루에 한 번쯤 확인하고, 확인에 실패하면 더 일찍 다시 확인해요.",
+    "privacyKeys": "키와 로그인: 데이터 연결 키는 Mac 키체인에, AI 로그인과 키는 이 Mac의 루피스트 전용 앱 폴더에 보관해요.",
+    "applicationTitle": "앱"
+  },
   "appearance": {
-    "title": "화면",
-    "description": "화면과 언어를 원하는 대로 설정해요.",
     "theme": {
       "label": "테마",
       "system": "시스템",
       "light": "라이트",
       "dark": "다크",
-      "systemDescription": "기기의 화면 설정 따르기",
+      "systemDescription": "이 Mac의 화면 설정 따르기",
       "optionLabel": "{{theme}} 테마"
     },
     "language": {
       "label": "언어",
-      "description": "화면에 표시할 언어예요. 저장된 자료, Lens 문서, 대화 내용은 원래 언어를 유지해요.",
+      "description": "화면에 표시할 언어예요. 저장된 자료, 렌즈 문서, 대화 내용은 원래 언어를 유지해요.",
       "system": "시스템",
       "pseudo": "테스트 언어 (en-XA)"
     }
   },
   "settingsView": {
-    "savedAutomaticallyForAllLoupistsOnThisDevice": "이 기기의 모든 루피스트에 자동으로 저장돼요.",
-    "reload": "새로고침"
+    "savedAutomaticallyForAllLoupistsOnThisDevice": "이 Mac의 모든 루피스트에 자동으로 저장돼요."
   },
   "agentSettings": {
+    "performanceGroup": "응답 속도",
+    "performanceDescription": "빠름은 AI 서비스에 우선 처리 등급을 요청해요. API 키를 쓰면 비용이 더 들 수 있어요.",
     "diagnosticLine": "설정 파일에 문제가 있어요 ({{line}}번째 줄) — {{message}}",
     "diagnostic": "설정 파일에 문제가 있어요 — {{message}}",
     "unavailableThinking": "{{level}} (사용 불가)",
@@ -49,12 +68,10 @@
     "savedAppliesToNewResponses": "저장됨 · 새 응답부터 적용돼요",
     "selectionsSaveAutomaticallyChangesApplyToNewResponses": "선택한 내용은 자동으로 저장되며 새 응답부터 적용돼요.",
     "reload": "새로고침",
-    "chatDefaults": "대화 기본값",
-    "startEachChatYourWayYouCanChange": "원하는 설정으로 대화를 시작해요. 대화 입력창에서도 바꿀 수 있어요.",
     "defaultModel": "기본 모델",
     "theModelToUseWhenStartingAChat": "대화를 시작할 때 사용할 모델이에요.",
     "useGlobalDefaultModel": "전체 기본 모델 사용",
-    "automaticLastUsedModel": "자동 · 마지막으로 사용한 모델",
+    "automaticRecommendedModel": "자동 · 추천 모델",
     "unavailableModel": "사용할 수 없는 모델",
     "reasoningLevel": "추론 수준",
     "howMuchTimeTheModelSpendsThinkingBefore": "응답 전에 모델이 얼마나 깊이 생각할지 정해요.",
@@ -67,7 +84,7 @@
     "resetTheseOptionsBeforeStartingChatOrChoose": "대화를 시작하기 전에 이 옵션을 초기화하거나 대화에서 지원되는 옵션을 선택해 주세요. 전체 기본값에서 가져온 옵션은 해당 설정에서 바꿀 수 있어요.",
     "unavailableOptionIndex": "사용할 수 없는 옵션 {{index}}",
     "thisLoupist": "이 루피스트",
-    "global": "전 세계",
+    "global": "전체",
     "resetOption": "옵션 초기화",
     "editGlobalLabel": "전체 {{label}} 편집",
     "editGlobalDefaults": "전체 기본값 편집",
@@ -96,7 +113,7 @@
     "preferencesFile": "설정 파일",
     "openTheFolderOrReloadExternalChanges": "폴더를 열거나 외부 변경 사항을 다시 불러와요",
     "openPreferencesFile": "설정 파일 열기",
-    "privateChatDefaultDescription": "새 대화에서 저장된 기억을 활용하고 새로 알게 된 내용을 기억해요. 대화 내역은 그대로 남아요."
+    "privateChatDefaultDescription": "새로 시작하는 대화에서 저장된 기억을 활용하고 새로 알게 된 내용을 기억해요. 대화 내역은 그대로 남아요."
   },
   "modelSettingsPanel": {
     "loadModelsErrorTitle": "{{provider}} 모델을 불러오지 못했어요",
@@ -111,10 +128,10 @@
     "couldNotRemoveLabel": "{{label}} 연결을 제거하지 못했어요. 다시 시도해 주세요.",
     "reloadModels": "모델 다시 불러오기",
     "modelsUnavailable": "모델을 사용할 수 없어요",
-    "modelProviders": "AI 서비스",
+    "modelProviders": "AI 계정",
     "providerUpdated": "AI 서비스 설정을 변경했어요",
     "providerUpdateFailed": "AI 서비스 설정을 변경하지 못했어요",
-    "connectedProviders": "연결된 AI 서비스",
+    "connectedProviders": "연결된 AI 계정",
     "reloadModelsForLabel": "{{label}} 모델 다시 불러오기",
     "reconnectLabel": "{{label}} 다시 연결",
     "disconnectLabel": "{{label}} 연결 해제",
@@ -129,12 +146,12 @@
     "noMatchingModels": "검색한 모델이 없어요.",
     "bringYourPreferredAI": "원하는 AI 연결",
     "signInWithAnExistingAccountOrAdd": "기존 계정으로 로그인하거나 API 키를 추가해 대화를 시작해 보세요.",
-    "loadingModelProviders": "AI 서비스 불러오는 중…",
+    "loadingModelProviders": "AI 계정 불러오는 중…",
     "cancel": "취소",
-    "disconnectProvider": "AI 서비스 연결을 해제할까요?",
+    "disconnectProvider": "AI 계정 연결을 해제할까요?",
     "savedCredentialsForLabelWillBeRemovedIts": "{{label}}의 저장된 인증 정보가 삭제돼요. 해당 모델은 대화에서 더 이상 사용할 수 없어요.",
     "savedCredentialsWillBeRemoved": "저장된 인증 정보가 삭제돼요.",
-    "couldNotDisconnectProvider": "AI 서비스 연결을 해제하지 못했어요",
+    "couldNotDisconnectProvider": "AI 계정 연결을 해제하지 못했어요",
     "disconnecting": "연결 해제 중…",
     "providerConnected": "{{provider}}에 연결되었어요.",
     "disconnectConfirmationTitle": "{{label}} 연결을 해제할까요?",
@@ -150,6 +167,9 @@
     "customRemoveBody": "주소, 저장된 키, 모델이 루피스트에서 삭제돼요. 서버 자체는 바뀌지 않아요."
   },
   "skillsSettings": {
+    "caption": "분석과 차트를 위한 추가 기능",
+    "advancedSkills": "고급",
+    "advancedSkillsDescription": "나만의 스킬을 만들고 설치하는 도구예요.",
     "appDefaults": "{{name}}에 앱 기본값을 적용해요.",
     "globalDefaults": "{{name}}에 전체 기본값을 적용해요.",
     "disabledNotice": "{{name}} 기능을 껐어요. 다음 응답부터 적용돼요.",
@@ -216,7 +236,7 @@
     "quarterlyEarningsReview": "분기 실적 검토",
     "whenToUseIt": "사용 시점",
     "useWhenReviewingACompanySQuarterlyEarnings": "기업의 분기 실적을 검토할 때 사용해요.",
-    "describeTheWorkflowConventionsAndChecksThatMatter": "작업 흐름, 규칙, 확인할 내용을 설명해 주세요.",
+    "describeTheWorkflowConventionsAndChecksThatMatter": "작업 흐름, 관례, 확인할 내용을 설명해 주세요.",
     "draftWithLoupist": "루피스트와 초안 작성",
     "cancel": "취소",
     "skillSavedAvailableOnTheNextTurn": "스킬을 저장했어요. 다음 응답부터 사용할 수 있어요.",
@@ -268,18 +288,18 @@
   "worldSettings": {
     "loupist": "루피스트",
     "readiness": {
-      "recoveryRequired": "World 처리가 중단됐어요. 계속하려면 마지막으로 확인된 World를 복구해 주세요. 중단된 자료는 자동으로 다시 처리하지 않아요.",
-      "recovering": "마지막으로 확인된 World를 복원하는 중이에요. 모델을 쓰지 않고 중단된 처리도 다시 시도하지 않아요.",
-      "runtimeUnavailable": "World 처리를 사용할 수 없어요. 앱을 업데이트하거나 다시 설치해 주세요.",
-      "awaitingProvider": "지원되는 AI 서비스를 기다리는 중이에요. 연결되면 추천 World 모델을 골라 드려요.",
-      "chooseModel": "World 처리 모델을 골라 주세요.",
-      "modelUnavailable": "선택한 모델은 World 처리에 쓸 수 없어요.",
-      "connectProvider": "설정에서 선택한 AI 서비스를 연결해 주세요.",
-      "isolationUnsupported": "이 AI 서비스는 격리된, 재시도 없는 World 처리를 지원하지 않아요.",
+      "recoveryRequired": "지도 구성이 중단됐어요. 계속하려면 마지막으로 확인된 지도를 복구해 주세요. 중단된 자료는 자동으로 다시 처리하지 않아요.",
+      "recovering": "마지막으로 확인된 지도를 복원하는 중이에요. 모델을 쓰지 않고 중단된 처리도 다시 시도하지 않아요.",
+      "runtimeUnavailable": "지도 구성을 사용할 수 없어요. 앱을 업데이트하거나 다시 설치해 주세요.",
+      "awaitingProvider": "지원되는 AI 서비스를 기다리는 중이에요. 연결되면 추천 지도 구성 모델을 골라 드려요.",
+      "chooseModel": "지도 구성 모델을 골라 주세요.",
+      "modelUnavailable": "선택한 모델은 지도 구성에 쓸 수 없어요.",
+      "connectProvider": "설정에서 선택한 AI 계정을 연결해 주세요.",
+      "isolationUnsupported": "이 AI 서비스는 격리된, 재시도 없는 지도 구성을 지원하지 않아요.",
       "runtimeMissing": "모델 런타임을 사용할 수 없어요.",
       "chooseConnectedModel": "연결된 모델 중 사용할 수 있는 것을 골라 주세요.",
-      "notConnected": "설정에서 AI 서비스를 연결해 주세요.",
-      "accountWaiting": "이 계정은 요청이 통과될 때까지 기다리는 중이에요. 설정 › AI 모델 및 서비스를 확인해 주세요."
+      "notConnected": "설정에서 AI 계정을 연결해 주세요.",
+      "accountWaiting": "이 계정은 요청이 통과될 때까지 기다리는 중이에요. 설정 › AI 계정을 확인해 주세요."
     }
   },
   "useAppUpdate": {
@@ -304,15 +324,14 @@
     "couldNotUpdateThisLoupistSConnections": "이 루피스트의 연결을 변경하지 못했어요. 다시 시도해 주세요.",
     "connections": "연결",
     "settingsForName": "{{name}} 설정",
-    "chatPreferences": "대화 설정",
+    "chatPreferences": "대화 기본값",
     "localWorkspace": "내 작업 폴더",
-    "rememberNewChats": "새 대화 기억하기",
+    "rememberNewChats": "새로 시작하는 대화 기억하기",
     "workspaceCaption": "이 루피스트의 파일이 Mac에 저장되는 위치예요.",
     "connected": "연결됨",
     "needsAttention": "확인 필요",
     "workspaceFolder": "작업 폴더",
     "opening": "여는 중…",
-    "showInFileManager": "파일 관리자에서 보기",
     "reconnectFolder": "폴더 다시 연결",
     "skillsConnections": "스킬 및 연결",
     "changesSaveAutomaticallyForThisLoupist": "변경 사항은 이 루피스트에 자동으로 저장돼요.",
@@ -326,7 +345,7 @@
     "retry": "다시 시도",
     "skills": "스킬",
     "manageSkills": "스킬 관리",
-    "optionalResearchAndDocumentWorkflowsEnabledByDefault": "선택해서 사용하는 리서치 및 문서 작업 흐름이며 기본으로 켜져 있어요. World, Lens, 판단 기록, 시각화는 항상 사용할 수 있어요.",
+    "optionalResearchAndDocumentWorkflowsEnabledByDefault": "선택해서 사용하는 리서치 및 문서 작업 흐름이며 기본으로 켜져 있어요. 지도, 렌즈, 저널, 시각화는 항상 사용할 수 있어요.",
     "loadingSkills": "스킬 불러오는 중…",
     "noMatchingSkills": "검색한 스킬이 없어요.",
     "noSkillsAvailable": "사용 가능한 스킬이 없어요.",
@@ -336,7 +355,7 @@
     "connectAServiceToGiveThisLoupistMore": "서비스를 연결해 이 루피스트가 사용할 자료 제공처를 늘려 보세요.",
     "removeFromThisApp": "앱에서 제거",
     "yourWorkspaceFolderChatsAndMemoryStayOn": "작업 폴더, 대화, 기억은 디스크에 남아 있어요. 폴더를 루피스트로 다시 열 수 있어요.",
-    "reconnectOrRecoverThisLoupistBeforeRemovingIt": "제거하기 전에 이 루피스트를 다시 연결하거나 복구해 주세요.",
+    "reconnectThisLoupistBeforeRemovingIt": "제거하기 전에 이 루피스트를 다시 연결해 주세요.",
     "removeLoupist": "루피스트 제거",
     "selectALoupistToEditIt": "편집할 루피스트를 선택해 주세요.",
     "removeNameFromThisApp": "앱에서 “{{name}}” 루피스트를 제거해요.",
@@ -357,7 +376,7 @@
     "noMatchingModels": "검색한 모델이 없어요",
     "noConnectedModels": "연결된 모델이 없어요",
     "notConnected": "연결되지 않음",
-    "manageModelsProviders": "AI 모델 및 서비스 관리",
+    "manageModelsProviders": "AI 계정 관리",
     "selection": "{{model}} · {{thinking}}",
     "selectionWithOptions": "{{model}} · {{thinking}} · {{options}}",
     "thinkingForModel": "추론 수준 <0>{{model}}</0>"
@@ -377,16 +396,12 @@
     "standard": "표준",
     "fast": "빠름",
     "standardDescription": "AI 서비스의 표준 처리 등급을 사용해요.",
-    "fastDescription": "AI 서비스의 우선 처리 등급을 요청해요."
+    "fastDescription": "AI 서비스의 우선 처리 등급을 요청해요. API 키를 쓰면 비용이 더 들 수 있어요."
   },
   "bundledSkills": {
     "skill-creator": {
       "name": "스킬 만들기",
       "description": "지침, 참고 자료, 스크립트, 템플릿으로 다시 사용할 작업 흐름을 만들거나 개선해요."
-    },
-    "skill-installer": {
-      "name": "스킬 설치",
-      "description": "GitHub, ZIP 패키지, 로컬 폴더에서 스킬을 찾아 확인하고 추가해요."
     },
     "dividend-income": {
       "name": "배당 점검",
@@ -438,27 +453,27 @@
     },
     "pdf": {
       "name": "PDF",
-      "description": "스캔한 페이지와 재무 표를 포함해 PDF를 읽고 추출, 편집, 병합, 작성하거나 생성해요. PDF 구조, OCR, 양식, 페이지 배치가 중요할 때 사용해요."
+      "description": "오프라인 샌드박스의 Python으로 PDF 파일의 텍스트를 추출하고, 페이지를 합치거나 텍스트 PDF를 만들어요. 스캔한 페이지의 OCR과 렌더링은 지원하지 않고, 만든 PDF는 라틴 문자 글꼴만 써요."
     },
-    "documents": {
+    "word-documents": {
       "name": "Word 문서",
-      "description": "표, 스타일, 머리글, 출처, 변경 내용을 포함한 Word 문서와 템플릿(.docx/.dotx)을 만들고 확인하거나 편집해요. Word 파일이 필요할 때 사용하며, 일반 대화에는 문서 작업이 필요하지 않아요."
+      "description": "오프라인 샌드박스의 Python으로 .docx Word 파일을 읽고 만들거나 편집해요. 페이지를 렌더링하거나 PDF로 변환하지 못해서 배치를 눈으로 확인하지는 않아요."
     },
     "spreadsheets": {
       "name": "스프레드시트",
-      "description": "수식, 재무 모형, 서식, 차트를 포함한 .xlsx, .xlsm 등의 스프레드시트를 읽고 만들거나 편집해요. 통합 문서의 기능이 중요할 때 사용하며, 일반 CSV 분석에는 data-analysis를 사용할 수 있어요."
+      "description": "오프라인 샌드박스의 Python으로 저장된 수식과 기본 서식을 포함해 .xlsx 통합 문서와 CSV 파일을 읽거나 써요. 수식을 다시 계산하지 않고 시트를 렌더링하지도 않아요."
     },
     "presentations": {
       "name": "프레젠테이션",
-      "description": "재무 차트, 표, 발표자 노트, 슬라이드 배치를 포함한 PowerPoint 자료와 템플릿(.pptx/.potx)을 읽고 만들거나 편집해요. 발표 자료를 제작하거나 기존 자료를 다룰 때 사용해요."
+      "description": "오프라인 샌드박스의 Python으로 편집 가능한 텍스트, 표, 도형을 써서 .pptx 슬라이드를 읽고 만들거나 편집해요. 슬라이드를 렌더링하지 않아 배치를 눈으로 확인하지 않고, 차트 글자는 라틴 문자 글꼴만 써요."
     },
     "world": {
-      "name": "World",
-      "description": "이 루피스트가 이름, 사건, 관계에 대해 이미 알고 있는 내용을 살펴보거나 출처에 근거한 지식을 World에 정리할 때 사용해요."
+      "name": "지도",
+      "description": "이 루피스트가 이름, 사건, 관계에 대해 이미 알고 있는 내용을 살펴보거나 출처에 근거한 지식을 지도에 정리할 때 사용해요."
     },
     "lens": {
-      "name": "Lens",
-      "description": "사용자가 다시 사용할 방법, 규칙, 관례, 선호를 알려 주거나 수정할 때, 또는 이 루피스트의 관점과 방법을 살펴볼 때 사용해요. 일회성 요청에는 사용하지 않아요."
+      "name": "렌즈",
+      "description": "사용자가 다시 사용할 방법, 원칙, 관례, 선호를 알려 주거나 수정할 때, 또는 이 루피스트의 관점과 방법을 살펴볼 때 사용해요. 일회성 요청에는 사용하지 않아요."
     },
     "journal": {
       "name": "저널",
@@ -473,13 +488,15 @@
     "memory": "기억",
     "advanced": "고급",
     "import": "루피스트 가져오기",
-    "openSettings": "루피스트 설정 열기",
-    "keywords": "루피스트 프로필 말투 지침 대화 모델 기억 학습 스킬 연결 World 처리 폴더 가져오기 제거",
-    "description": "루피스트별 프로필, 대화, 학습, 스킬과 연결을 한곳에서 관리해요."
+    "keywords": "루피스트 프로필 말투 지침 대화 모델 기억 학습 스킬 연결 지도 구성 폴더 가져오기 제거",
+    "description": "루피스트별 프로필, 대화, 학습, 스킬과 연결을 한곳에서 관리해요.",
+    "settings": "설정",
+    "settingsFor": "설정: {{name}}",
+    "moreFor": "{{name}} 더보기",
+    "removeEllipsis": "제거…"
   },
   "custom": {
-    "title": "내 연결",
-    "addButton": "+ 연결 추가",
+    "addButton": "연결 추가",
     "empty": "회사 IR 데이터 서버나 리서치 도구 같은 나만의 데이터 소스를 연결해 보세요. 읽기 전용 도구만 사용할 수 있어요.",
     "loupist": "루피스트",
     "chooseLoupist": "도구 권한을 검토할 루피스트를 선택해 주세요.",
@@ -551,14 +568,16 @@
       "not_read_only": "내용을 바꿀 수 있는 도구라 루피스트가 쓰지 않도록 숨겼어요.",
       "financial_action": "거래나 결제 동작으로 보여서 차단했어요."
     },
-    "urlPlaceholder": "{{scheme}}…"
+    "urlPlaceholder": "{{scheme}}…",
+    "disclosure": "직접 연결 추가 (고급)",
+    "chooseEach": "도구마다 선택하면 완료할 수 있어요."
   },
   "runDiagnostics": {
     "title": "진단",
     "runLogs": "실행 기록",
     "reveal": "폴더에서 보기",
     "copy": "마지막 오류 정보 복사",
-    "description": "기기에 저장된 실행 정보예요. 전역 기본값에서는 앱 로그인 기록을 볼 수 있어요. 루피스트 실행 기록을 보려면 위에서 루피스트를 선택해 주세요.",
+    "description": "이 Mac에 저장된 실행 정보예요. 여기서는 앱 로그인 기록을 볼 수 있고, 루피스트 실행 기록은 해당 루피스트 설정에 있어요.",
     "copied": "마지막 오류 정보를 복사했어요.",
     "noError": "기록된 실행 오류가 없어요.",
     "failed": "실행 기록을 열 수 없어요. 다시 시도해 주세요.",
@@ -571,9 +590,9 @@
     "action": "동작",
     "keys": "키",
     "actions": {
-      "newChat": "새 대화",
+      "newChat": "새 리서치",
       "palette": "명령 팔레트",
-      "tabs": "대화 · World · Lens · 예약 작업",
+      "tabs": "봇 · 지도 · 렌즈 · 예약",
       "panel": "패널 보이기/숨기기",
       "settings": "설정",
       "send": "보내기",
@@ -586,7 +605,7 @@
   },
   "providers": {
     "getKey": "{{provider}}에서 키 받기",
-    "keyStays": "키는 이 기기에만 저장돼요. 요청은 {{provider}}(으)로 바로 가요.",
+    "keyStays": "키는 이 Mac에만 저장돼요. 요청은 {{provider}}(으)로 바로 가요.",
     "replacesChatgpt": "이 Mac의 ChatGPT 로그인을 대신해요. 언제든 다시 바꿀 수 있어요.",
     "keyRejected": "{{provider}}에서 이 키를 받지 않았어요. 확인하고 다시 시도해 주세요.",
     "localSearching": "이 Mac에서 모델 앱을 찾는 중…",
@@ -621,7 +640,7 @@
     "needsReconnect": "다시 연결 필요",
     "disconnected": "연결 끊김",
     "viaSignIn": "{{provider}}로 로그인 · {{date}}부터",
-    "viaKey": "이 기기에 저장된 API 키",
+    "viaKey": "이 Mac에 저장된 API 키",
     "viaLocal": "이 Mac에서 실행 · {{address}}",
     "viaEnvironment": "이 Mac 설정의 키 (개발용)",
     "viaCustom": "직접 입력한 주소 · {{address}}",
@@ -634,11 +653,9 @@
     "noticeNoCredit": "이 계정의 크레딧이 떨어졌어요.",
     "lastLimit": "마지막 한도 도달: {{date}}",
     "reconnectBody": "로그인이 더 이상 작동하지 않아요. 다시 연결하면 이어서 쓸 수 있어요. 대화와 지도는 그대로예요.",
-    "chatUses": "대화 모델: {{model}}",
-    "chatUsesAuto": "대화 모델: 자동",
     "models": "모델 ({{formattedCount}})",
     "inMenu": "메뉴에 표시",
-    "more": "다른 제공자 ({{formattedCount}})",
+    "more": "다른 AI 계정 ({{formattedCount}})",
     "connect": "연결",
     "reconnect": "다시 연결",
     "disconnect": "연결 해제",
@@ -649,8 +666,12 @@
     "apiKeyOptional": "API 키 (선택)",
     "showKey": "보기",
     "hideKey": "숨기기",
-    "addProvider": "제공자 추가",
+    "addProvider": "AI 계정 추가",
     "connectedRecommended": "추천",
-    "usedBy_other": "예약 작업 {{formattedCount}}개가 아직 이 계정을 써요."
+    "usedBy_other": "예약 작업 {{formattedCount}}개가 아직 이 계정을 써요.",
+    "chatDefault": "대화 기본 모델: {{model}}",
+    "changeKey": "키 바꾸기…",
+    "reconnectEllipsis": "다시 연결…",
+    "moreActions": "{{label}} 더보기"
   }
 }

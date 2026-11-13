@@ -65,8 +65,11 @@ impl AppToolExecutor {
         params: Value,
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
-        if !policy.propose_memory_updates || !policy.use_memory {
+        if !policy.use_memory {
             return Err(BrokerError::MemoryDisabled);
+        }
+        if !policy.propose_memory_updates {
+            return Err(BrokerError::ProposalDisabled);
         }
         let invalid = || BrokerError::InvalidArguments {
             field: "world_schema_update".into(),
@@ -102,7 +105,7 @@ impl AppToolExecutor {
             .collect();
         let live = self
             .live_extension(&policy.loupist_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+            .map_err(knowledge_error)?;
         let staged = self.capture.staged_vocabulary.lock().await;
         let mut preview = live;
         for earlier in staged.iter() {
@@ -122,8 +125,7 @@ impl AppToolExecutor {
         }
         preview.types.extend(types.iter().cloned());
         preview.relations.extend(relations.iter().cloned());
-        crate::knowledge::validate_extension(&preview)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+        crate::knowledge::validate_extension(&preview).map_err(knowledge_error)?;
         drop(staged);
         let names: Vec<String> = types
             .iter()

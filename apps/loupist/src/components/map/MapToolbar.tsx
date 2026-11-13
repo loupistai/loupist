@@ -1,11 +1,12 @@
 import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ListIcon, MoreHorizontalIcon, NetworkIcon, ScanIcon, SearchIcon, SlidersHorizontalIcon, WaypointsIcon } from "lucide-react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ImageIcon, ListIcon, MoreHorizontalIcon, SearchIcon, SlidersHorizontalIcon, VideoIcon, WaypointsIcon } from "lucide-react";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { useTranslation } from "../../i18n";
 import { Button } from "../ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Input } from "../ui/input";
+import { Disclosure } from "../ui/disclosure";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { entityCategories, nodeCategory } from "../../knowledge/mapKinds";
 import { entityLabel } from "../../knowledge/mapItems";
@@ -31,18 +32,20 @@ export type MapLocalControls = {
 export type MapWhatsNewControl = { count: number; open: boolean; onToggle: () => void };
 const scopeKey = { "1": "map.scope1", "2": "map.scope2", all: "map.scopeAll" } as const;
 
-export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect, list, onList, onFit, lenses, overlayId, onOverlay, appliedCounts, lensTitles, baseLensIds, libraryOpen, onLibrary, replayActive, onReplay, exportControl, disabled, fitDisabled = false, replayDisabled = false, listDisabled = false, local, whatsNew }: {
-  disabled?: boolean; fitDisabled?: boolean; replayDisabled?: boolean; listDisabled?: boolean;
+export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect, list, onList, lenses, overlayId, onOverlay, appliedCounts, lensTitles, baseLensIds, libraryOpen, onLibrary, replayActive, onReplay, exportActions, disabled, replayDisabled = false, listDisabled = false, empty = false, local, whatsNew }: {
+  disabled?: boolean; replayDisabled?: boolean; listDisabled?: boolean;
+  /** Nothing on the Map yet: What's new, Filter and More have nothing to act on. */
+  empty?: boolean;
   local?: MapLocalControls; whatsNew?: MapWhatsNewControl;
   replayActive?: boolean; onReplay?: () => void;
-  /** Export stays in the row while secondary actions live in More. */
-  exportControl?: ReactNode;
+  /** Image and replay-video export, offered in More. */
+  exportActions?: { image: () => void; video: () => void; disabled?: boolean };
   lenses: KnowledgeMapNode[]; overlayId?: string; onOverlay: (id: string | undefined) => void;
   /** How many World names each Lens is already applied to, and the title to show for a base perspective. */
   appliedCounts?: Record<string, number>; lensTitles?: Record<string, string>; baseLensIds?: ReadonlySet<string>;
   libraryOpen: boolean; onLibrary: () => void;
   nodes: KnowledgeMapNode[]; query: string; onQuery: (value: string) => void; filters: MapFilters; onFilters: (value: MapFilters) => void;
-  onSelect: (node: KnowledgeMapNode) => void; list: boolean; onList: () => void; onFit: () => void;
+  onSelect: (node: KnowledgeMapNode) => void; list: boolean; onList: () => void;
 }) {
   const { t, i18n } = useTranslation("knowledge");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -69,34 +72,33 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
       </div> : null}
     </div>
     {local ? <LocalControls local={local} disabled={disabled} scopeFolded={scopeFolded} /> : null}
-    {whatsNew ? <Button className="map-toolbar-button" disabled={disabled} variant="ghost" data-map-whats-new aria-expanded={whatsNew.open}
+    {whatsNew ? <Button className="map-toolbar-button" disabled={disabled || empty} variant="ghost" data-map-whats-new aria-expanded={whatsNew.open}
       aria-label={whatsNew.count ? t("map.whatsNewCount", { count: whatsNew.count, formattedCount: formatNumber(whatsNew.count) }) : t("map.whatsNew")} title={t("map.whatsNew")} onClick={whatsNew.onToggle}>
       <HistoryIcon /><span className="map-control-label">{t("map.whatsNew")}</span>
       {whatsNew.count ? <span className="map-badge gg-num" aria-hidden="true">{whatsNew.count > 99 ? "99+" : formatNumber(whatsNew.count)}</span> : null}
     </Button> : null}
-    <Popover open={filterOpen} onOpenChange={setFilterOpen}><PopoverTrigger asChild><Button className="map-toolbar-button" disabled={disabled} variant="ghost" aria-label={t("map.filter")} title={t("map.filter")} data-map-filter aria-pressed={filtersActive(filters) || !!overlayId}><SlidersHorizontalIcon /><span className="map-control-label">{t("map.filter")}</span></Button></PopoverTrigger><PopoverContent align="start" className="map-filters">
+    <Popover open={filterOpen} onOpenChange={setFilterOpen}><PopoverTrigger asChild><Button className="map-toolbar-button" disabled={disabled || empty} variant="ghost" aria-label={t("map.filter")} title={t("map.filter")} data-map-filter aria-pressed={filtersActive(filters) || !!overlayId}><SlidersHorizontalIcon /><span className="map-control-label">{t("map.filter")}</span></Button></PopoverTrigger><PopoverContent align="start" className="map-filters">
       {entityCategories.map((kind) => <label key={kind}><input type="checkbox" data-map-filter-kind={kind} checked={filters.kinds.includes(kind)} onChange={(e) => onFilters({ ...filters, kinds: e.target.checked ? [...filters.kinds, kind] : filters.kinds.filter((k) => k !== kind) })} />{t(`map.kind.${kind}`)}</label>)}
       <hr />{(["personal", "disputed"] as const).map((key) => <label key={key}><input type="checkbox" checked={filters[key]} onChange={(e) => onFilters({ ...filters, [key]: e.target.checked })} />{t(`map.filter${key === "personal" ? "Personal" : "Disputed"}`)}</label>)}
       <label><input type="checkbox" checked={filters.metrics} onChange={(e) => onFilters({ ...filters, metrics: e.target.checked })} />{t("map.filterMetrics")}</label>
-      {lenses.length ? <details className="map-lens-filter">
-        <summary>{t("map.lensOverlay")}</summary>
+      {lenses.length ? <Disclosure className="map-lens-filter" title={t("map.lensOverlay")}>
         <div className="map-lens-menu"><LensMenu lenses={lenses} overlayId={overlayId} onOverlay={onOverlay} disabled={disabled} appliedCounts={appliedCounts} lensTitles={lensTitles} baseLensIds={baseLensIds} onClose={() => setFilterOpen(false)} /></div>
-      </details> : null}
+      </Disclosure> : null}
       {filtersActive(filters) || overlayId ? <Button disabled={disabled} variant="link" onClick={() => { onFilters(defaultFilters()); onOverlay(undefined); }}>{t("map.clearFilters")}</Button> : null}
     </PopoverContent></Popover>
-    <Button className="map-toolbar-button" disabled={disabled} variant="ghost" data-map-library {...foldProps("library", true)} aria-label={t("map.library")} title={t("map.library")} aria-expanded={libraryOpen} onClick={onLibrary}><BookOpenIcon /><span className="map-control-label">{t("map.library")}</span></Button>
-    <Button className="map-toolbar-button" disabled={disabled || replayDisabled} variant="ghost" data-map-replay {...foldProps("replay", true)} aria-label={t("map.replay.label")} title={t("map.replay.label")} aria-pressed={replayActive} onClick={onReplay}><PlayIcon /><span className="map-control-label">{t("map.replay.label")}</span></Button>
+    <Button className="map-toolbar-button" disabled={disabled} variant="ghost" data-map-library aria-label={t("map.library")} title={t("map.library")} aria-expanded={libraryOpen} onClick={onLibrary}><BookOpenIcon /><span className="map-control-label">{t("map.library")}</span></Button>
     <div className="map-toolbar-spacer" />
-    <Button className="map-toolbar-button" disabled={disabled || fitDisabled} variant="ghost" data-map-fit {...foldProps("fit", true)} aria-label={t("map.fit")} title={t("map.fit")} onClick={onFit}><ScanIcon /><span className="map-control-label">{t("map.fit")}</span></Button>
-    {exportControl}
-    <Button className="map-toolbar-button" disabled={disabled || listDisabled} variant="ghost" data-map-list {...foldProps("list", true)} aria-label={listLabel} title={listLabel} aria-pressed={list} onClick={onList}>{list ? <WaypointsIcon /> : <ListIcon />}<span className="map-control-label">{listLabel}</span></Button>
     <DropdownMenu>
-      <DropdownMenuTrigger asChild><Button className="map-toolbar-button" variant="ghost" data-map-more disabled={disabled} aria-label={t("map.moreActions")} title={t("map.moreActions")}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild><Button className="map-toolbar-button" variant="ghost" data-map-more disabled={disabled || empty} aria-label={t("map.moreActions")} title={t("map.moreActions")}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="map-more-menu">
-        <DropdownMenuItem role="menuitemcheckbox" aria-checked={libraryOpen} data-map-library disabled={disabled} onSelect={onLibrary}><BookOpenIcon />{t("map.library")}</DropdownMenuItem>
         <DropdownMenuItem role="menuitemcheckbox" aria-checked={!!replayActive} data-map-replay disabled={disabled || replayDisabled} onSelect={onReplay}><PlayIcon />{t("map.replay.label")}</DropdownMenuItem>
-        <DropdownMenuItem data-map-fit disabled={disabled || fitDisabled} onSelect={onFit}><ScanIcon />{t("map.fit")}</DropdownMenuItem>
         <DropdownMenuItem role="menuitemcheckbox" aria-checked={list} data-map-list disabled={disabled || listDisabled} onSelect={onList}>{list ? <WaypointsIcon /> : <ListIcon />}{listLabel}</DropdownMenuItem>
+        {exportActions ? <>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>{t("map.export.label")}</DropdownMenuLabel>
+          <DropdownMenuItem data-map-export data-map-export-png disabled={disabled || exportActions.disabled} onSelect={exportActions.image}><ImageIcon />{t("map.export.image")}</DropdownMenuItem>
+          <DropdownMenuItem data-map-export-video disabled={disabled || exportActions.disabled} onSelect={exportActions.video}><VideoIcon />{t("map.export.video")}</DropdownMenuItem>
+        </> : null}
       </DropdownMenuContent>
     </DropdownMenu>
   </div>;
@@ -135,7 +137,9 @@ function LensMenu({ lenses, overlayId, onOverlay, disabled, appliedCounts, lensT
 function LocalControls({ local, disabled, scopeFolded }: { local: MapLocalControls; disabled?: boolean; scopeFolded: boolean }) {
   const { t, i18n } = useTranslation("knowledge");
   const [aroundOpen, setAroundOpen] = useState(false);
-  const [scopeOpen, setScopeOpen] = useState(false);
+  // Narrow, the Scope segment is hidden (by measurement or the container query): the Around menu carries the three choices.
+  const [scopeInMenu, setScopeInMenu] = useState(false);
+  const segment = useRef<HTMLDivElement>(null);
   const name = entityLabel(local.focal, i18n.language);
   const choose = (node: KnowledgeMapNode) => { local.onFocal(node); setAroundOpen(false); };
   const option = (node: KnowledgeMapNode) => <Button key={node.id} variant="ghost" disabled={disabled} aria-pressed={node.id === local.focal.id} onClick={() => choose(node)}>
@@ -149,25 +153,25 @@ function LocalControls({ local, disabled, scopeFolded }: { local: MapLocalContro
     local.onScope(next);
     event.currentTarget.querySelector<HTMLButtonElement>(`[data-scope="${next}"]`)?.focus();
   };
+  const openAround = (open: boolean) => {
+    if (open) setScopeInMenu(scopeFolded || (segment.current ? getComputedStyle(segment.current).display === "none" : false));
+    setAroundOpen(open);
+  };
   return <>
-    <Popover open={aroundOpen} onOpenChange={setAroundOpen}>
-      <PopoverTrigger asChild><Button className="map-toolbar-button map-around" disabled={disabled} variant="ghost" data-map-around aria-label={t("map.around", { name })} title={t("map.around", { name })}>
-        <i className="map-swatch is-watching map-around-glyph" aria-hidden="true" /><span className="map-control-label map-around-label">{t("map.around", { name })}</span><ChevronDownIcon className="map-around-chevron" />
+    <Popover open={aroundOpen} onOpenChange={openAround}>
+      <PopoverTrigger asChild><Button className="map-toolbar-button map-around" disabled={disabled} variant="ghost" data-map-around data-scope-folded={scopeFolded || undefined}
+        aria-label={scopeFolded ? `${t("map.around", { name })}, ${t("map.scope")}: ${t(scopeKey[local.scope])}` : t("map.around", { name })} title={t("map.around", { name })}>
+        <span className="map-control-label map-around-label">{t("map.around", { name })}</span><span className="map-around-name" aria-hidden="true">{name}</span><ChevronDownIcon className="map-around-chevron" />
       </Button></PopoverTrigger>
       <PopoverContent className="map-lens-menu map-around-menu" align="start" aria-label={t("map.aroundMenu")}>
+        {scopeInMenu ? <section aria-label={t("map.scope")} data-map-around-scope><h3>{t("map.scope")}</h3>{mapScopes.map((scope) => <Button key={scope} variant="ghost" disabled={disabled} data-around-scope={scope} aria-pressed={local.scope === scope} onClick={() => { local.onScope(scope); setAroundOpen(false); }}>{t(scopeKey[scope])}</Button>)}</section> : null}
         {local.followed.length ? <section aria-label={t("map.aroundWatching")}><h3>{t("map.aroundWatching")}</h3>{local.followed.slice(0, 12).map(option)}</section> : null}
         {local.recent.length ? <section aria-label={t("map.aroundRecent")}><h3>{t("map.aroundRecent")}</h3>{local.recent.map(option)}</section> : null}
         <Button variant="ghost" disabled={disabled} data-map-pick onClick={() => { setAroundOpen(false); local.onPickOnMap(); }}>{t("map.aroundPick")}</Button>
       </PopoverContent>
     </Popover>
-    <div className="map-segmented map-scope-segment" {...foldProps("scope", scopeFolded)} role="group" aria-label={t("map.scope")} onKeyDown={moveScope}>
+    <div ref={segment} className="map-segmented map-scope-segment" {...foldProps("scope", scopeFolded)} role="group" aria-label={t("map.scope")} onKeyDown={moveScope}>
       {mapScopes.map((scope) => <button type="button" key={scope} data-scope={scope} disabled={disabled} aria-pressed={local.scope === scope} tabIndex={local.scope === scope ? 0 : -1} onClick={() => local.onScope(scope)}>{t(scopeKey[scope])}</button>)}
     </div>
-    <Popover open={scopeOpen} onOpenChange={setScopeOpen}>
-      <PopoverTrigger asChild><Button className="map-toolbar-button map-scope-menu-button" disabled={disabled} variant="ghost" data-map-scope-menu data-scope-folded={scopeFolded || undefined} aria-label={`${t("map.scope")}: ${t(scopeKey[local.scope])}`} title={t("map.scope")}><NetworkIcon /></Button></PopoverTrigger>
-      <PopoverContent className="map-lens-menu" align="start">
-        {mapScopes.map((scope) => <Button key={scope} variant="ghost" disabled={disabled} aria-pressed={local.scope === scope} onClick={() => { local.onScope(scope); setScopeOpen(false); }}>{t(scopeKey[scope])}</Button>)}
-      </PopoverContent>
-    </Popover>
   </>;
 }

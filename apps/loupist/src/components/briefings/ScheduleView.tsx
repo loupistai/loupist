@@ -1,4 +1,5 @@
 import { whatsNewRows } from "../map/whatsNew";
+import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { briefingFailure } from "./briefingFailure";
 import { ChatMapProvider } from "../workspace/ChatMapContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,6 +9,10 @@ import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
 import type { BriefingContext, BriefingSettings, ChatMessage, LoupistSummary, LoupistBridge, InboxItem, RunSummaryItem, ScheduledRun, ScheduledTask, ScheduledTaskListItem, ModelCatalog } from "@/types";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
+import { EmptyState } from "../ui/empty-state";
+import { ChevronRightIcon } from "lucide-react";
+import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
+import { ScheduleTaskControls } from "./ScheduleTaskControls";
 import { Disclosure } from "../ui/disclosure";
 import { ChatMessageCard } from "../chat/ChatMessageCard";
 import { ChatExecutionProvider } from "../chat/ChatExecutionContext";
@@ -15,7 +20,8 @@ import { cadenceLabel, cadencePhrase, friendlyTimeZone, relativeRun, scheduledTa
 import { relationName } from "../map/relations";
 import { BriefingAssets } from "../assets/BriefingAssets";
 import { useWatchSettings } from "../assets/WatchFor";
-import { followedCount, WATCHING_TASK_ID, WatchingItem, WatchingReader } from "./Watching";
+import { followedCount, WATCHING_TASK_ID, WatchingItem } from "./Watching";
+import { FollowingPage } from "./FollowingPage";
 import { BriefingFollowRows, BriefingAheadRows, hasAheadRows, hasFollowRows } from "./BriefingFinance";
 import { revealFocused } from "../../lib/revealFocused";
 import { runSummary } from "./runSummary";
@@ -32,7 +38,11 @@ type Props = { onOpenModelSettings?: () => void; bridge: LoupistBridge; loupist:
   /** Opens what a run's answer cites beside that run's own Chat. */
   open: (run: InboxItem, to: ChatDestination, how?: OpenHow) => Promise<void>;
   onOpenMap?: (disputedEntityIds?: string[]) => void;
-  onInitialConsumed?: () => void; onOpenChat: (item: InboxItem) => Promise<void> };
+  onInitialConsumed?: () => void; onOpenChat: (item: InboxItem) => Promise<void>;
+  /** Puts a request into Home's composer (never sends): creating a task or changing its time or prompt is a conversation. */
+  onAskHome?: (text: string) => void;
+  /** Opens the Following page; without it the Watching row shows that page in the reader. */
+  onOpenFollowing?: () => void };
 
 /** The reader works on inbox items; run history arrives as stored runs. */
 export const inboxItemOf = (run: ScheduledRun): InboxItem => ({
@@ -68,7 +78,7 @@ function RunLinks({ run, open, children }: { run: InboxItem; open: Props["open"]
  * confirmation. Results are read in the Thread; a run opened here shows its
  * structured briefing and full answer.
  */
-export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupist, theme, initialRunId, initialTaskId, onInitialConsumed, onOpenChat, open, onOpenMap }: Props) {
+export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupist, theme, initialRunId, initialTaskId, onInitialConsumed, onOpenChat, open, onOpenMap, onAskHome, onOpenFollowing }: Props) {
   const { t, i18n } = useTranslation("briefings");
   const [settings, setSettings] = useState<BriefingSettings | null>(null);
   const [tasks, setTasks] = useState<ScheduledTaskListItem[]>([]);
@@ -116,6 +126,19 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     catch { setError(true); }
   }, [bridge, loupist.id]);
   useEffect(() => { if (focusTaskId && focusTaskId !== WATCHING_TASK_ID) void loadHistory(focusTaskId); }, [focusTaskId, loadHistory, tasks]);
+  // A run left open while it runs (Run now): the refreshed task list and history carry its
+  // result, so the reader takes the new snapshot and loads the answer.
+  useEffect(() => {
+    if (!selected) return;
+    // One list may be a read behind the other; a settled copy wins over a running one.
+    const copies = [...tasks.flatMap(task => task.latest_run ? [task.latest_run] : []), ...Object.values(history).flat()]
+      .filter(run => run.run_id === selected.runId);
+    const fresh = copies.find(run => run.status !== "running") ?? copies[0];
+    if (!fresh || (fresh.status === selected.status && fresh.message_id === selected.messageId)) return;
+    const next = inboxItemOf(fresh);
+    setSelected(current => current?.runId === next.runId ? { ...next, readAtMs: current.readAtMs ?? next.readAtMs } : current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reconciles on each refresh, keyed on the open run's id and state.
+  }, [tasks, history, selected?.runId, selected?.status, selected?.messageId]);
 
   // A run opened from a notification or a Thread message: find it across pages.
   useEffect(() => {
@@ -212,16 +235,17 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
   return <section className="briefings-view schedule-view" aria-label={t("schedule.title")}>
     <header className="briefings-bar"><h1>{t("schedule.title")}</h1>
       <p className="briefings-meta">{headerMeta}</p>
+      <p className="briefings-meta schedule-spending" data-schedule-spending>{t("schedule.spending")}</p>
     </header>
     {error && <p role="alert" className="briefings-error">{t("loadError")} <Button variant="ghost" onClick={() => void load()}>{t("retry")}</Button></p>}
     {loading ? <p role="status">{t("loading")}</p> : <div className="briefings-layout" data-reader-open={readerOpen || undefined} data-empty={(!visible.length && !selected && !watchingShown) || undefined}>
       <div className="schedule-list">
-        <div className="schedule-filter" role="group" aria-label={t("schedule.filterLabel")} data-schedule-filter={filter}>
-          <Button type="button" size="sm" variant={filter === "active" ? "secondary" : "ghost"} aria-pressed={filter === "active"} onClick={() => setFilter("active")}>{t("schedule.filterActive")}</Button>
-          <Button type="button" size="sm" variant={filter === "all" ? "secondary" : "ghost"} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>{t("schedule.filterAll")}</Button>
-        </div>
+        {ordered.length ? <SegmentedControl className="schedule-filter" value={filter} onValueChange={value => setFilter(value as typeof filter)} aria-label={t("schedule.filterLabel")} data-schedule-filter={filter}>
+          <SegmentedControlItem value="active">{t("schedule.filterActive")}</SegmentedControlItem>
+          <SegmentedControlItem value="all">{t("schedule.filterAll")}</SegmentedControlItem>
+        </SegmentedControl> : null}
         {watch && watchingShown ? <ul className="schedule-tasks schedule-pinned" aria-label={t("watch.title")}>
-          <WatchingItem settings={watch} current={watchingFocus && !selected} onOpen={() => { setSelected(null); setFocusTaskId(WATCHING_TASK_ID); setFocusExplicit(true); }} />
+          <WatchingItem settings={watch} current={watchingFocus && !selected} onOpen={() => { if (onOpenFollowing) { onOpenFollowing(); return; } setSelected(null); setFocusTaskId(WATCHING_TASK_ID); setFocusExplicit(true); }} />
         </ul> : null}
         {running.length ? <section aria-label={t("schedule.running")}>
           <h2 className="schedule-section-label">{t("schedule.running")}</h2>
@@ -233,8 +257,8 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
         </section> : null}
         <section aria-label={t("schedule.tasks")}>
           {visible.length ? <h2 className="schedule-section-label">{t("schedule.tasks")}</h2> : null}
-          {!ordered.length ? <div className="briefings-empty"><h3>{t("schedule.emptyTitle")}</h3><p>{t("schedule.emptyBody")}</p>
-            </div>
+          {!ordered.length ? <EmptyState className="schedule-empty" title={t("schedule.emptyTitle")} description={t("schedule.emptyBody")}
+              action={onAskHome ? <Button type="button" data-schedule-morning onClick={() => onAskHome(t("schedule.morningBriefingPrompt"))}>{t("schedule.morningBriefing")}</Button> : undefined} />
             : !visible.length ? <div className="briefings-empty"><h3>{t("schedule.noActiveTitle")}</h3><p>{t("schedule.noActiveBody")}</p>
               <Button type="button" variant="outline" onClick={() => setFilter("all")}>{t("schedule.showAll")}</Button></div>
             : <ul className="schedule-tasks">{visible.map(task => {
@@ -244,19 +268,21 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
             return <li key={task.id} className="schedule-task" data-schedule-task={task.id} data-status={task.awaiting_confirmation ? "awaiting" : task.status} data-current={current || undefined}>
               <div className="schedule-task-row">
                 <button type="button" className="schedule-task-summary" aria-current={current || undefined} onClick={() => openTask(task)}>
-                  <span className="schedule-task-heading"><strong title={task.title}>{displayTitle(task)}</strong>{state ? <span className="schedule-task-status">{state}</span> : null}</span>
+                  <span className="schedule-task-heading"><strong title={displayTitle(task)}>{displayTitle(task)}</strong>{state ? <span className="schedule-task-status">{state}</span> : null}</span>
                   <span className="briefings-meta">{cadence(task)}{next ? ` · ${next}` : ""}</span>
                 </button>
+                <ChevronRightIcon className="schedule-task-chevron" aria-hidden="true" />
               </div>
             </li>;
           })}</ul>}
         </section>
+        {ordered.length ? <p className="briefings-meta schedule-footer">{t("schedule.footer")}</p> : null}
       </div>
-      {readerOpen ? <div className="briefings-reader-scroll" onFocus={revealFocused}>{!selected && watchingFocus && watch ? <WatchingReader bridge={bridge} loupist={loupist} settings={watch} onBack={() => { setFocusExplicit(false); setFocusTaskId(null); }} />
+      {readerOpen ? <div className="briefings-reader-scroll" onFocus={revealFocused}>{!selected && watchingFocus && watch ? <FollowingPage bridge={bridge} loupist={loupist} onBack={() => { setFocusExplicit(false); setFocusTaskId(null); }} />
         : selected ? <article className="briefings-reader" ref={readerRef}><Button variant="ghost" className="briefings-back" data-print="omit" onClick={() => setSelected(null)}>{t("schedule.backTo", { title: focusTask ? displayTitle({ kind: focusTask.kind, title: focusTask.title }) : t("schedule.title") })}</Button><header><h2>{displayTitle(selected)}</h2><p className="briefings-meta">{formatDate(selected.startedAtMs)} · {formatTime(selected.startedAtMs)} · {loupist.name}</p></header>
         {selected.briefingContext?.changed ? <BriefingSections bridge={bridge} loupistId={loupist.id} loupistName={loupist.name} context={selected.briefingContext} startedAtMs={selected.startedAtMs} nextRun={briefingTask ? nextRun(briefingTask) : null} skipped={selected.skippedTools.map(tool => tool.name)}
           onOpenMap={onOpenMap} onOpenCheck={(journalId, title) => void open(selected, { kind: "memory", location: { loupistId: loupist.id, surface: "note", objectId: journalId, selection: { kind: "journal", journalId } }, title })} /> : null}
-        {readerLoading ? <p role="status">{t("loading")}</p> : readerError ? <div role="alert" className="briefings-failure"><h3>{t("failure.title")}</h3><p>{t(`failure.${failure}`)}</p>{failure === "auth" && onOpenModelSettings ? <Button variant="link" onClick={onOpenModelSettings}>{t("failure.models")}</Button> : null}<Disclosure className="briefings-failure-details" title={t("failure.details")}><pre>{readerError}</pre></Disclosure><Button onClick={() => setReaderRevision(value => value + 1)}>{t("retry")}</Button></div> : message ? <ChatMapProvider bridge={bridge} loupistId={loupist.id} chatId={selected.threadId ?? ""} messages={[message]} onOpen={() => onOpenMap ? onOpenMap() : void onOpenChat(selected)}><RunLinks run={selected} open={open}><ChatExecutionProvider value={executionScope}><ChatMessageCard outlineOpen message={message} loupistId={loupist.id} chatId={selected.threadId ?? undefined} loupistName={loupist.name} workspacePath={loupist.workspace_path} onReadAttachment={async (messageId, attachmentId) => (await bridge.chatAttachmentRead(loupist.id, selected.threadId!, messageId, attachmentId)).data_url} /></ChatExecutionProvider></RunLinks></ChatMapProvider> : <p>{selected.status === "running" ? t("preparingBody") : summaryText(selected.summaryItems, selected.summary)}</p>}
+        {readerLoading ? <p role="status">{t("loading")}</p> : readerError ? <div role="alert" className="briefings-failure"><h3>{t("failure.title")}</h3><p>{t(`failure.${failure}`)}</p>{failure === "auth" && onOpenModelSettings ? <Button variant="link" onClick={onOpenModelSettings}>{t("failure.models")}</Button> : null}<Disclosure className="briefings-failure-details" title={t("failure.details")}><pre>{readerError}</pre></Disclosure><Button onClick={() => setReaderRevision(value => value + 1)}>{t("retry")}</Button></div> : message ? <ChatMapProvider bridge={bridge} loupistId={loupist.id} chatId={selected.threadId ?? ""} messages={[message]} onOpen={() => onOpenMap ? onOpenMap() : void onOpenChat(selected)}><RunLinks run={selected} open={open}><ChatExecutionProvider value={executionScope}><ChatMessageCard message={message} loupistId={loupist.id} chatId={selected.threadId ?? undefined} loupistName={loupist.name} workspacePath={loupist.workspace_path} onReadAttachment={async (messageId, attachmentId) => (await bridge.chatAttachmentRead(loupist.id, selected.threadId!, messageId, attachmentId)).data_url} /></ChatExecutionProvider></RunLinks></ChatMapProvider> : <p>{selected.status === "running" ? t("preparingBody") : summaryText(selected.summaryItems, selected.summary)}</p>}
         {(selected.briefingContext || selected.skippedTools.length > 0) && <Disclosure title={t("checked")}>
           {selected.briefingContext && <><p>{t("companies", { symbols: selected.briefingContext.symbols.join(", ") || t("noCompanies") })}</p><p>{t("principles", { count: selected.briefingContext.principlesChecked })}</p><p>{t("facts", { count: selected.briefingContext.newFacts })}</p></>}
           {!!selected.skippedTools.length && <p>{t("skipped", { names: selected.skippedTools.map(tool => tool.name).join(", ") })}</p>}
@@ -275,9 +301,14 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
       </article> : focusTask ? <article className="briefings-reader schedule-task-detail" aria-label={displayTitle(focusTask)}>
         <Button variant="ghost" className="briefings-back" onClick={() => { setFocusExplicit(false); setSelected(null); }}>{t("schedule.back")}</Button>
         <header className="schedule-detail-header"><div><h2>{displayTitle(focusTask)}</h2>
-          <p className="briefings-meta">{[t(`schedule.kind.${focusTask.kind}`), cadence(focusTask), taskStatus(focusTask), nextRun(focusTask)].filter(Boolean).join(" · ")}</p></div>
+          <p className="briefings-meta schedule-detail-status"><strong>{taskStatus(focusTask)}</strong>{[t(`schedule.kind.${focusTask.kind}`) === displayTitle(focusTask) ? null : t(`schedule.kind.${focusTask.kind}`), cadence(focusTask), nextRun(focusTask)].filter(Boolean).map(part => ` · ${part}`).join("")}</p></div>
           </header>
-        {focusTask.kind === "custom" && focusTask.prompt ? <p className="schedule-task-prompt">{focusTask.prompt}</p> : null}
+        {focusTask.latest_run && ["failed", "interrupted"].includes(focusTask.latest_run.status) ? <p className="inline-error schedule-task-error" role="status">{t("schedule.lastFailed", { reason: t(`failure.${briefingFailure(focusTask.latest_run.error ?? focusTask.last_error)}`) })}{briefingFailure(focusTask.latest_run.error ?? focusTask.last_error) === "auth" && onOpenModelSettings ? <> <Button variant="link" onClick={onOpenModelSettings}>{t("failure.models")}</Button></> : null}</p> : null}
+        <ScheduleTaskControls key={`${focusTask.id}:${focusTask.revision}`} bridge={bridge} task={focusTask} title={displayTitle(focusTask)} running={focusTask.latest_run?.status === "running"} onAskHome={onAskHome}
+          onChanged={() => { void load(); void loadHistory(focusTask.id); }} onDeleted={() => { setFocusExplicit(false); setFocusTaskId(null); void load(); }} />
+        {/* A prompt that only repeats the title says nothing new; any other prompt is labelled as the request. */}
+        {focusTask.kind === "custom" && focusTask.prompt?.trim() && ![focusTask.title.trim(), displayTitle(focusTask).trim()].includes(focusTask.prompt.trim())
+          ? <><h3 className="schedule-section-label">{t("schedule.prompt")}</h3><p className="schedule-task-prompt">{focusTask.prompt}</p></> : null}
         <h3 className="schedule-section-label">{t("schedule.runs")}</h3>
         {(history[focusTask.id] ?? []).length ? <ol className="schedule-history" aria-label={t("schedule.history", { title: displayTitle(focusTask) })}>{(history[focusTask.id] ?? []).slice(0, HISTORY_ROWS).map(runRow)}</ol>
           : <p className="briefings-meta">{t("schedule.noRuns")}</p>}
@@ -300,7 +331,7 @@ function BriefingSections({ bridge, loupistId, loupistName, context, startedAtMs
   const [names, setNames] = useState<Record<string, string>>({});
   useEffect(() => {
     let live = true;
-    void bridge.knowledgeMap({ loupistId, maxNodes: 1000 }).then(next => { if (live) setMap(next); }).catch(() => {});
+    void readKnowledgeMap(bridge, loupistId).then(next => { if (live) setMap(next); }).catch(() => {});
     void bridge.watchlistList().then(entries => {
       if (live) setNames(Object.fromEntries(entries.flatMap(entry => entry.displayName?.trim() ? [[entry.symbol, entry.displayName.trim()]] : [])));
     }).catch(() => {});

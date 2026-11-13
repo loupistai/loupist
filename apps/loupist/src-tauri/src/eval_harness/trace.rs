@@ -13,6 +13,7 @@ use std::{collections::BTreeMap, time::Instant};
 pub(crate) struct PiTrace {
     calls: Vec<ToolCall>,
     starts: BTreeMap<String, (usize, Instant)>,
+    native_reads: BTreeMap<String, Value>,
     pub usage_seen: bool,
     error: Option<Value>,
 }
@@ -32,6 +33,8 @@ struct ToolCall {
     /// Actual Pi-delivered response, separate from the host display trace.
     result: Option<Value>,
     result_redacted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_authorization: Option<Value>,
 }
 
 impl ToolCall {
@@ -54,6 +57,7 @@ impl ToolCall {
             result_bytes: entry.result_bytes,
             result: None,
             result_redacted: None,
+            native_authorization: None,
         }
     }
 
@@ -72,6 +76,14 @@ impl ToolCall {
 }
 
 impl PiTrace {
+    /// Only the host's admitted native read supplies this evidence, never Pi.
+    pub fn native_read_authorized(&mut self, call_id: &str, authorization: Value) {
+        if !call_id.is_empty() {
+            self.native_reads
+                .insert(call_id.into(), bounded_json(&authorization));
+        }
+    }
+
     pub fn observe(&mut self, event: &Value) {
         self.usage_seen |= event.pointer("/message/usage").is_some();
         if let Some(diagnostic) =
@@ -107,6 +119,7 @@ impl PiTrace {
                     result_bytes: None,
                     result: None,
                     result_redacted: None,
+                    native_authorization: None,
                 });
             }
             Some("tool_execution_end") => {
@@ -183,10 +196,11 @@ fn redact(value: &Value) -> Value {
             map.iter()
                 .map(|(key, value)| {
                     let lower = key.to_lowercase();
+                    let compound: String =
+                        lower.chars().filter(char::is_ascii_alphanumeric).collect();
                     let sensitive = [
                         "secret",
                         "token",
-                        "key",
                         "password",
                         "passwd",
                         "authorization",
@@ -194,7 +208,40 @@ fn redact(value: &Value) -> Value {
                         "cookie",
                     ]
                     .iter()
-                    .any(|word| lower.contains(word));
+                    .any(|word| lower.contains(word))
+                        || [
+                            "apikey",
+                            "accesskey",
+                            "privatekey",
+                            "clientkey",
+                            "sessionkey",
+                            "authkey",
+                            "signingkey",
+                            "appkey",
+                            "crtfckey",
+                        ]
+                        .iter()
+                        .any(|word| compound.contains(word))
+                        || (lower == "key"
+                            && value.as_str().is_some_and(|text| {
+                                let encoded = text.len() >= 20
+                                    && text
+                                        .bytes()
+                                        .all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b));
+                                // A bare JWT has three base64url segments; the
+                                // text detector also handles prefixed Bearer tokens.
+                                let parts: Vec<_> = text.split('.').collect();
+                                let jwt = text.len() >= 20
+                                    && text.starts_with("eyJ")
+                                    && parts.len() == 3
+                                    && parts.iter().all(|part| {
+                                        !part.is_empty()
+                                            && part.bytes().all(|b| {
+                                                b.is_ascii_alphanumeric() || b"-_=".contains(&b)
+                                            })
+                                    });
+                                encoded || jwt
+                            }));
                     (
                         key.clone(),
                         if sensitive {
@@ -297,6 +344,13 @@ fn tool_calls(stored: Option<&ChatToolTrace>, pi: &PiTrace) -> Vec<ToolCall> {
             calls.push(host);
         }
     }
+    for call in calls.iter_mut().filter(|call| call.name == "read") {
+        call.native_authorization = call
+            .call_id
+            .as_ref()
+            .and_then(|id| pi.native_reads.get(id))
+            .cloned();
+    }
     calls
 }
 pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
@@ -305,6 +359,10 @@ pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
         json!({"kind":kind,"record_id":change.record_id,"title":change.title,"summary":null,"change_summary":bounded_text(&change.lesson),"operation":match change.operation.as_str() { "create"|"revise" => Some(change.operation.as_str()), _=>None }})
     }).collect::<Vec<_>>()).unwrap_or_default();
     let reads = message.memory_refs.iter().map(|read| json!({"kind":read.kind.to_lowercase(),"record_id":read.record_id,"title":read.title,"access":match read.access {MemoryAccess::ExactRead=>"exact_read",MemoryAccess::SearchDiscovered=>"search"}})).collect::<Vec<_>>();
+    let receipts = message.lens_receipts.iter().map(|receipt| json!({
+        "record_id": receipt.record_id, "revision_id": receipt.revision_id,
+        "kind": receipt.kind, "title": bounded_text(&receipt.title), "delivery": receipt.delivery,
+    })).collect::<Vec<_>>();
     let performance = message.performance.as_ref();
     let usage = performance.filter(|p| {
         pi.usage_seen
@@ -318,7 +376,7 @@ pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
         "agent_dir_sha256":message.agent_harness.as_ref().and_then(|h| crate::agent_harness::snapshot("chat", &h.skill_ids, &[]).ok()).map(|h|h.digest),
         "status":match message.status {ChatMessageStatus::Complete=>"completed",ChatMessageStatus::Error=>"failed",ChatMessageStatus::Aborted=>"aborted"},
         "error":if message.status == ChatMessageStatus::Error { pi.error.clone().unwrap_or_else(||bounded_json(&json!(message.content))) } else { Value::Null },
-        "tool_calls":tool_calls(message.tool_trace.as_ref(),pi),"memory_reads":reads,"memory_commits":commits,
+        "tool_calls":tool_calls(message.tool_trace.as_ref(),pi),"memory_reads":reads,"lens_receipts":receipts,"memory_commits":commits,
         "number_checks":message.number_checks,"sensitivity_cards":message.sensitivity_cards,"as_of_report":message.as_of_report,
         "usage":{"input":usage.map(|p|p.input_tokens),"output":usage.map(|p|p.output_tokens),"cache_read":usage.map(|p|p.cache_read_tokens),"cache_write":usage.map(|p|p.cache_write_tokens)},
         "performance":{"setup_ms":performance.map(|p|p.setup_ms),"first_text_ms":performance.and_then(|p|p.first_text_ms),"total_ms":performance.map(|p|p.total_ms)}
@@ -471,6 +529,207 @@ fn content_excerpt(title: &str, content: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn persisted_trace_keeps_context_and_exact_lens_delivery_receipts() {
+        let mut message = crate::test_fixtures::chat_message(
+            "answer",
+            crate::domain::ChatRole::Assistant,
+            "[Rule](lens:rec_rule)",
+        );
+        for delivery in ["context", "exact_read"] {
+            message.lens_receipts.push(crate::domain::LensReceipt {
+                record_id: "rec_rule".into(),
+                revision_id: "rev_current".into(),
+                revision_digest: "a".repeat(64),
+                kind: "principle".into(),
+                title: "Rule".into(),
+                delivery: delivery.into(),
+            });
+        }
+        let trace = persisted(&message, &PiTrace::default());
+        assert_eq!(trace["lens_receipts"].as_array().unwrap().len(), 2);
+        assert_eq!(trace["lens_receipts"][0]["delivery"], "context");
+        assert_eq!(trace["lens_receipts"][1]["delivery"], "exact_read");
+        assert_eq!(trace["lens_receipts"][0]["revision_id"], "rev_current");
+        assert_eq!(trace["lens_receipts"][0]["kind"], "principle");
+        assert!(trace["memory_reads"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn skill_authorization_is_host_only_and_bound_to_the_read_call() {
+        let mut pi = PiTrace::default();
+        // An agent event (or model argument) cannot manufacture host authority.
+        pi.observe(&json!({"type":"eval_native_read", "toolCallId":"workspace",
+            "native_authorization":{"class":"BundledSkill", "skill_id":"data-analysis"}}));
+        for id in ["bundle", "workspace", "unclassified"] {
+            pi.observe(
+                &json!({"type":"tool_execution_start", "toolCallId":id, "toolName":"read",
+                "args":{"path":"/workspace/skills/data-analysis/SKILL.md"}}),
+            );
+            pi.observe(&json!({"type":"tool_execution_end", "toolCallId":id, "isError":false, "result":{}}));
+        }
+        pi.native_read_authorized(
+            "bundle",
+            json!({"class":"BundledSkill", "skill_id":"data-analysis"}),
+        );
+        pi.native_read_authorized("workspace", json!({"class":"Workspace", "skill_id":null}));
+        pi.native_read_authorized(
+            "different-call",
+            json!({"class":"BundledSkill", "skill_id":"data-analysis"}),
+        );
+        let calls = json!(tool_calls(None, &pi));
+        assert_eq!(
+            calls[0]["native_authorization"]["skill_id"],
+            "data-analysis"
+        );
+        assert_eq!(calls[1]["native_authorization"]["class"], "Workspace");
+        assert!(calls[2].get("native_authorization").is_none());
+    }
+
+    #[test]
+    fn credential_field_names_are_redacted_without_hiding_section_metadata() {
+        for name in [
+            "secret",
+            "token",
+            "password",
+            "passwd",
+            "authorization",
+            "credential",
+            "cookie",
+            "api_key",
+            "apiKey",
+            "API-KEY",
+            "access_key",
+            "private_key",
+            "secret_key",
+            "client_key",
+            "session_key",
+            "auth_key",
+            "signing_key",
+            "signingKey",
+            "appKey",
+            "crtfc_key",
+        ] {
+            let input = json!({"nested": [{name: "synthetic fixture"}]});
+            assert_eq!(redact(&input)["nested"][0][name], "[redacted]", "{name}");
+        }
+        let metadata = json!({
+            "key": "overview", "keyword": "cash", "monkey": "x".repeat(40),
+            "key_points": ["basic shares", "token usage is not revenue"],
+            "ops": [{"key": "use-when"}, {"key": "user-judgment"}],
+        });
+        assert_eq!(redact(&metadata), metadata);
+    }
+
+    #[test]
+    fn bare_keys_keep_labels_but_redact_credential_values() {
+        for value in [
+            "overview",
+            "use-when",
+            "user-judgment",
+            "key_points",
+            "keyword",
+            "monkey",
+            "abcdefghijklmnopqrs",
+            "long section label with spaces",
+            "operating-margin-review",
+        ] {
+            let input = json!({"key": value});
+            assert_eq!(redact(&input), input, "{value}");
+        }
+        for value in [
+            "api_key=synthetic-fixture",
+            "Authorization: Bearer synthetic-fixture",
+            "sk-fixture",
+            "abcdefghijklmnopqrst",
+            "YWJjZGVmZ2hpamtsbW5vcA==",
+            "0123456789abcdef0123456789abcdef01234567",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.c3ludGhldGlj",
+        ] {
+            for name in ["key", "Key", "KEY"] {
+                assert_eq!(
+                    redact(&json!({name: value}))[name],
+                    "[redacted]",
+                    "{name}: {value}"
+                );
+            }
+        }
+        // Non-string section metadata is traversed, not hidden wholesale.
+        assert_eq!(redact(&json!({"key": null})), json!({"key": null}));
+        assert_eq!(
+            redact(&json!({"key": {"apiKey": "fixture"}})),
+            json!({"key": {"apiKey": "[redacted]"}})
+        );
+    }
+
+    #[test]
+    fn host_only_lens_arguments_remain_visible() {
+        let args = json!({"pages":[{"ops":[{"op":"put", "key":"user-judgment",
+            "markdown":"The user recorded a judgment, not a credential."}]}]});
+        let stored: ChatToolTrace = serde_json::from_value(json!({"entries":[{
+            "call_id":"host-lens", "name":"lens_file", "component":null, "args":args,
+            "start_offset_ms":0, "duration_ms":0, "outcome":"ok", "error":null, "result_bytes":null
+        }], "truncated":false}))
+        .unwrap();
+        let calls = json!(tool_calls(Some(&stored), &PiTrace::default()));
+        assert_eq!(calls[0]["args"], args);
+    }
+
+    #[test]
+    fn scripted_security_turns_keep_comparable_tool_arguments() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../evals/agent/fixtures/security-tool-args.json"
+        ))
+        .unwrap();
+        let turns = fixture["turns"].as_array().unwrap();
+        assert_eq!(turns.len(), 5);
+        for turn in turns {
+            // The old trace lost one S-R05 basis key. Exercise every section in
+            // its referenced page; none is presented as a recovered observation.
+            let variants = turn["valid_section_keys"]
+                .as_array()
+                .cloned()
+                .unwrap_or_else(|| vec![Value::Null]);
+            for variant in variants {
+                let mut scripted = turn.clone();
+                if let Some(pointer) = turn["unrecoverable_key_pointer"].as_str() {
+                    *scripted.pointer_mut(pointer).unwrap() = variant.clone();
+                }
+                let calls = scripted["calls"].as_array().unwrap();
+                let mut pi = PiTrace::default();
+                for (index, call) in calls.iter().enumerate() {
+                    let id = format!("scripted-{index}");
+                    pi.observe(&json!({"type":"tool_execution_start", "toolCallId":id,
+                        "toolName":call["name"], "args":call["args"]}));
+                    pi.observe(&json!({"type":"tool_execution_end", "toolCallId":id,
+                        "isError":call["outcome"] == "error", "result":{"error_code":call["error_code"]}}));
+                }
+                let message = crate::test_fixtures::chat_message(
+                    "scripted-security",
+                    crate::domain::ChatRole::Assistant,
+                    "Scripted turn complete.",
+                );
+                let built = persisted(&message, &pi);
+                let rebuilt = built["tool_calls"].as_array().unwrap();
+                assert_eq!(rebuilt.len(), calls.len());
+                for (actual, expected) in rebuilt.iter().zip(calls) {
+                    assert_eq!(actual["args"], expected["args"], "{}", turn["scenario_id"]);
+                    assert_eq!(actual["outcome"], expected["outcome"]);
+                }
+                // --nocapture exposes these fictional scripted records for an
+                // offline check with the JS grader, without calling a model.
+                println!(
+                    "REBUILT_SECURITY_TRACE {}",
+                    json!({
+                        "scenario_id":turn["scenario_id"], "section_key_variant":variant,
+                        "tool_calls":built["tool_calls"],
+                    })
+                );
+            }
+        }
+    }
+
     #[test]
     fn saved_excerpts_cover_content_and_bound_sensitive_text() {
         for (content, expected) in [

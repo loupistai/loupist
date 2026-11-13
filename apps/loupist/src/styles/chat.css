@@ -59,7 +59,7 @@
 .chat-model-setup-notice {
   flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
   width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); margin: 0 auto 10px; padding: var(--gg-space-3) 14px;
-  border: 1px solid var(--gg-color-border-subtle); border-radius: 10px; background: var(--gg-color-bg-hover);
+  border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover);
   color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: 1.5;
 }
 .chat-model-setup-notice > svg { flex: none; width: var(--gg-space-4); height: var(--gg-space-4); }
@@ -69,10 +69,16 @@
 .message-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 0; background: var(--gg-color-bg-app); scroll-padding-top: var(--gg-space-4); scroll-padding-bottom: var(--gg-space-2); }
 .conversation-content { width: min(100%, calc(var(--gg-size-chat-column) + 2 * var(--chat-gutter, var(--gg-space-5)))); min-height: 100%; margin-inline: auto; gap: var(--gg-space-7); padding: var(--gg-size-control-sm) var(--chat-gutter, var(--gg-space-5)) var(--gg-size-control-lg); }
 .message-scroll article { min-width: 0; max-width: 100%; }
+/* A turn is a question and everything up to the next one. The one being read keeps a viewport of room below its question,
+   so the question can sit at the top while a short reply writes beneath it. */
+.turn { display: flex; flex-direction: column; gap: var(--gg-space-7); min-width: 0; }
+/* An answered question collapses to one line; the turn keeps the height it had then (`--turn-hold`) while the
+   reply runs, so the scroll range never shrinks under the reader and the page does not jump. */
+.turn[data-turn-reserve] { min-height: max(calc(var(--turn-viewport, 100vh) - var(--gg-space-4) + var(--turn-lead, 0px)), var(--turn-hold, 0px)); }
 .message { margin: 0; }
 .message.user { width: fit-content; max-width: min(82%, 660px); margin-left: auto; padding: 0; }
 .message.user .message-meta { display: none; }
-.message.user .message-content { border: 1px solid var(--gg-color-border-subtle); border-radius: 14px; background: var(--gg-color-bg-hover); }
+.message.user .message-content { border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-hover); }
 /* The row is as tall as its details trigger from the start, so a finished answer adds nothing above its text. */
 .message-meta { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-size-control-xs); margin-bottom: 10px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
 .message-meta > span:first-child { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-semibold); }
@@ -81,16 +87,12 @@
 .message.assistant .message-content { width: 100%; max-width: 100%; min-width: 0; white-space: normal; font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); }
 /* Reading measure: prose stops near 72 characters while tables, code and charts keep the full column. */
 .message.assistant .message-content :is(p, ul, ol, blockquote, [data-streamdown^="heading-"]) { max-width: var(--gg-size-prose-measure); }
-/* A turn reads down the column: narration, one activity row per run of steps, then the answer. */
-.message.assistant > .is-assistant + .chat-progress,
-.message.assistant > .is-assistant + .is-assistant,
-.message.assistant > .chat-progress + .is-assistant { margin-top: var(--gg-space-3); }
-/* Narration is the answer's own text, one step back. */
+/* A turn reads down the column in the order it happened: notes, one ledger, cards, questions, then the answer. */
+.message.assistant > [data-turn-item] + [data-turn-item] { margin-top: var(--gg-space-3); }
+.turn-block > :is(.chat-artifact-block, .grid-card) { margin-top: 0; }
+/* A note is the answer's own text, one step back; it eases there in place when a tool call follows. */
+.message.assistant .message-content { transition: color var(--gg-motion-settle) var(--gg-ease-out); }
 .message-content.message-narration { color: var(--gg-color-text-secondary); }
-.chat-progress-toggle[data-research-summary] { flex-wrap: nowrap; }
-.chat-progress-toggle[data-research-summary] .chat-progress-heading { white-space: normal; overflow-wrap: anywhere; }
-.chat-progress-toggle[data-research-summary] .chat-progress-chevron { width: var(--gg-space-3); height: var(--gg-space-3); flex-basis: var(--gg-space-3); }
-.chat-work-count { font-variant-numeric: tabular-nums; color: var(--gg-color-text-tertiary); }
 .chat-work-sources { display: grid; gap: var(--gg-space-1); list-style: none; margin: 0; padding: 0; }
 .chat-work-sources button { text-align: start; font: inherit; color: var(--gg-color-accent); overflow-wrap: anywhere; }
 /* The empty Chat's landing: the Loupist's morning message, written like an answer. No cards, no section labels. */
@@ -105,16 +107,44 @@
 .morning-name-chip { display: inline-flex; align-items: center; gap: 6px; min-height: var(--gg-size-control-sm); padding: 0 var(--gg-space-3); border: 0; border-radius: var(--gg-radius-full); color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); font: inherit; font-size: var(--gg-text-control); line-height: 1.2; cursor: pointer; }
 .morning-name-chip:hover { background: var(--gg-color-bg-selected); }
 .morning-name-chip .map-swatch { width: 8px; height: 8px; }
-.morning-link { display: inline; min-height: var(--gg-size-control-sm); padding: 0; border: 0; color: var(--gg-color-accent-ink); background: transparent; font: inherit; cursor: pointer; }
-.morning-link:hover { text-decoration: underline; }
+.morning-link { display: inline; min-height: var(--gg-size-control-sm); padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
+.morning-link:hover { text-decoration-color: currentColor; }
 /* "See all in Map" closes the list of names on a line of its own, wherever the chips wrap. */
 .morning-link[data-line] { display: block; width: fit-content; margin-top: var(--gg-space-1); }
 .morning-skeleton { display: inline-block; width: min(320px, 70%); height: 10px; border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover); vertical-align: middle; }
 .morning-ask { margin-top: var(--gg-space-5); }
+.morning-setup { margin-top: var(--gg-space-5); }
+.morning-setup-head { display: flex; align-items: center; gap: var(--gg-space-2); margin-bottom: var(--gg-space-1); }
+.morning-setup-label { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); }
+.morning-setup-count { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; }
+.morning-setup-hide { min-height: var(--gg-size-control-sm); margin-left: auto; padding: 0 var(--gg-space-1); border: 0; border-radius: var(--gg-radius-xs); background: transparent; color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
+.morning-setup-hide:hover { text-decoration: underline; }
+.morning-setup-rows { display: grid; margin: 0; padding: 0; list-style: none; }
+.morning-setup-rows > li + li { border-top: 1px solid var(--gg-color-border-subtle); }
+.morning-setup-row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: var(--gg-space-2); width: 100%; min-height: 40px; padding: var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); text-align: left; }
+button.morning-setup-row { cursor: pointer; }
+button.morning-setup-row:not([aria-disabled="true"]):is(:hover, :focus-visible) { background: var(--gg-color-bg-hover); }
+button.morning-setup-row:not([aria-disabled="true"]):is(:hover, :focus-visible) .morning-question-go { opacity: 1; }
+.morning-setup-row[data-setup="connect"] strong { font-weight: var(--gg-weight-medium); }
+.morning-setup-row[data-setup="connect"] .morning-question-go { opacity: 1; }
+.morning-setup-mark { width: 16px; height: 16px; color: var(--gg-color-border-strong); }
+.morning-setup-text { display: grid; min-width: 0; }
+.morning-setup-text small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.morning-setup-rows > li[data-done] .morning-setup-row { min-height: 32px; color: var(--gg-color-text-secondary); }
+.morning-setup-rows > li[data-done] .morning-setup-mark { color: var(--gg-color-text-secondary); }
+button.morning-setup-row[aria-disabled="true"] { color: var(--gg-color-text-disabled); cursor: default; }
+.morning-setup-hint { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); white-space: nowrap; }
+.morning-setup-holdings { margin: var(--gg-space-2) 0 0 calc(var(--gg-space-2) + 16px + var(--gg-space-2)); font-size: var(--gg-text-control); }
+.morning-message .morning-lead[data-home-first] { font-size: var(--gg-text-title); line-height: var(--gg-leading-title); font-weight: var(--gg-weight-medium); }
+.morning-home-line { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.morning-setup-chip { min-height: var(--gg-size-control-sm); padding: var(--gg-space-1) var(--gg-space-3); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); line-height: var(--gg-leading-control); text-align: left; cursor: pointer; }
+.morning-setup-chip:hover { border-color: var(--gg-color-border-strong); background: var(--gg-color-bg-hover); }
+.morning-setup-chip:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
 .morning-ask-label { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
-.morning-ask ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--gg-space-2); }
-.morning-question { display: flex; width: 100%; align-items: center; gap: var(--gg-space-3); min-height: 44px; padding: var(--gg-space-2) var(--gg-space-3); border: 0; border-radius: var(--gg-radius-md); color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); font: inherit; text-align: left; cursor: pointer; }
-.morning-question:hover, .morning-question:focus-visible { background: var(--gg-color-bg-selected); }
+.morning-ask ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.morning-ask li + li { border-top: 1px solid var(--gg-color-border-subtle); }
+.morning-question { display: flex; width: 100%; align-items: center; gap: var(--gg-space-3); min-height: 40px; padding: var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); color: var(--gg-color-text-primary); background: transparent; font: inherit; font-size: var(--gg-text-body); text-align: left; cursor: pointer; }
+.morning-question:hover, .morning-question:focus-visible { background: var(--gg-color-bg-hover); }
 .morning-question span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .morning-question small { flex: 0 1 auto; min-width: 0; max-width: 45%; overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); text-overflow: ellipsis; white-space: nowrap; }
 .morning-question:hover small { color: var(--gg-color-text-secondary); }
@@ -203,12 +233,6 @@ svg foreignObject .katex:has(> math) {
   min-height: var(--gg-size-control-sm);
 }
 
-.chat-pending-badge {
-  color: var(--gg-color-text-secondary);
-  font-size: var(--gg-text-caption);
-  font-weight: var(--gg-weight-medium);
-}
-
 .chat-pending-text,
 .chat-pending-editor {
   margin: 0;
@@ -286,33 +310,36 @@ svg foreignObject .katex:has(> math) {
 }
 
 .message.assistant .message-content [data-streamdown^="heading-"] {
-  margin: 1.2em 0 0.45em;
+  margin: var(--gg-space-7) 0 var(--gg-space-2);
   color: var(--gg-color-text-primary);
   font-weight: var(--gg-weight-semibold);
   letter-spacing: -0.01em;
 }
 
+.message.assistant .message-content [data-streamdown^="heading-"]:first-child { margin-top: 0; }
+
+/* A real heading scale, so a long answer has scannable structure (chat design change 9). */
 .message.assistant .message-content [data-streamdown="heading-1"] {
+  font-size: var(--gg-text-heading);
+  line-height: var(--gg-leading-heading);
+}
+
+.message.assistant .message-content [data-streamdown="heading-2"] {
   font-size: var(--gg-text-title);
   line-height: var(--gg-leading-title);
 }
 
-.message.assistant .message-content [data-streamdown="heading-2"] {
+.message.assistant .message-content [data-streamdown="heading-3"] {
   font-size: var(--gg-text-subtitle);
   line-height: var(--gg-leading-subtitle);
-}
-
-.message.assistant .message-content [data-streamdown="heading-3"] {
-  font-size: var(--gg-text-reading);
-  line-height: var(--gg-leading-reading);
 }
 
 .message.assistant .message-content [data-streamdown="heading-4"],
 .message.assistant .message-content [data-streamdown="heading-5"],
 .message.assistant .message-content [data-streamdown="heading-6"] {
-  font-size: var(--gg-text-body);
-  line-height: var(--gg-leading-body);
-  color: var(--gg-color-text-secondary);
+  font-size: var(--gg-text-reading);
+  line-height: var(--gg-leading-reading);
+  color: var(--gg-color-text-primary);
 }
 
 .message.assistant .message-content [data-streamdown="unordered-list"],
@@ -364,10 +391,30 @@ svg foreignObject .katex:has(> math) {
   overflow-x: auto;
 }
 
+/* A table that scrolls sideways fades at its right edge (chat design change 10). */
+.message.assistant .message-content [data-streamdown="table-wrapper"][data-overflows] > div:has(> [data-streamdown="table"]) {
+  mask-image: linear-gradient(to right, var(--gg-color-text-primary) calc(100% - 24px), transparent);
+}
+
+/* Streamdown frames the table in its own rounded, filled box; ruled rows need none of it. */
+.message.assistant .message-content [data-streamdown="table-wrapper"] > div:has(> [data-streamdown="table"]) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.message.assistant .message-content [data-streamdown="table-header"] {
+  background: transparent;
+}
+
 .message.assistant .message-content [data-streamdown="table-wrapper"] {
   max-width: 100%;
   margin: 1em 0;
   overflow-x: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 /* A wide table scrolls inside its frame instead of squeezing columns; figures never split. */
@@ -387,15 +434,18 @@ svg foreignObject .katex:has(> math) {
 .message.assistant .message-content [data-streamdown="table-cell"] {
   max-width: 36ch;
   padding: var(--gg-space-2) var(--gg-space-3);
-  border: 1px solid var(--gg-color-border-subtle);
+  border: 0;
+  border-bottom: 1px solid var(--gg-color-border-subtle);
   text-align: left;
   vertical-align: top;
 }
 
+/* Ruled rows like the grid card: no cell boxes, no filled header (chat design change 10). */
 .message.assistant .message-content [data-streamdown="table-header-cell"] {
-  background: var(--gg-color-bg-hover);
+  background: transparent;
+  border-bottom-color: var(--gg-color-border-default);
   color: var(--gg-color-text-secondary);
-  font-weight: var(--gg-weight-semibold);
+  font-weight: var(--gg-weight-medium);
   white-space: nowrap;
 }
 
@@ -430,7 +480,7 @@ svg foreignObject .katex:has(> math) {
 
 .chat-progress {
   width: 100%;
-  margin: 0 0 var(--gg-space-3);
+  margin: 0;
   border: 0;
   background: transparent;
   color: var(--gg-color-text-secondary);
@@ -445,7 +495,8 @@ svg foreignObject .katex:has(> math) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 6px 2px 2px;
+  margin-left: -2px;
+  padding: 2px var(--gg-space-2) 2px 2px;
   border: 0;
   border-radius: var(--gg-radius-xs);
   color: var(--gg-color-text-secondary);
@@ -462,57 +513,12 @@ svg foreignObject .katex:has(> math) {
   background: var(--gg-color-bg-hover);
 }
 
-.chat-progress-toggle > svg:first-child {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 15px;
-}
-
 .chat-progress-heading {
   min-width: 0;
   overflow: hidden;
-  color: var(--gg-color-text-secondary);
+  color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.chat-progress[data-tone="problem"] .chat-progress-heading {
-  color: var(--gg-color-negative);
-}
-
-.chat-progress-chevron {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 14px;
-  color: var(--gg-color-text-secondary);
-  transform: rotate(-90deg);
-  transition: transform var(--gg-motion-fast) var(--gg-ease-out);
-}
-
-.chat-progress-chevron.open {
-  transform: rotate(0deg);
-}
-
-.chat-progress-live,
-.chat-status-pill-dot {
-  width: var(--gg-space-2);
-  height: var(--gg-space-2);
-  flex: 0 0 var(--gg-space-2);
-  border-radius: var(--gg-radius-full);
-  background: var(--gg-color-accent);
-}
-
-/* Actual reasoning and the stalled-run heartbeat have motion; elapsed time alone is not reasoning. */
-@media (prefers-reduced-motion: no-preference) {
-  .chat-progress-live[data-heartbeat],
-  .chat-status-pill-dot[data-heartbeat] {
-    animation: chat-run-heartbeat var(--gg-motion-heartbeat) var(--gg-ease-in-out) infinite;
-  }
-}
-
-@keyframes chat-run-heartbeat {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
 }
 
 .chat-progress-items {
@@ -623,8 +629,8 @@ svg foreignObject .katex:has(> math) {
 }
 
 .chat-plan-item[data-plan-status="active"] .chat-plan-dot {
-  border-color: var(--gg-color-accent);
-  background: var(--gg-color-accent);
+  border-color: var(--gg-color-text-primary);
+  background: var(--gg-color-text-primary);
 }
 
 .chat-plan-item[data-plan-status="done"] .chat-plan-row {
@@ -807,9 +813,22 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .composer-tools { min-width: 0; flex-wrap: wrap; gap: var(--gg-space-1); }
 .composer-private [data-slot="input-group"] { border-color: var(--gg-color-border-strong); }
 .composer-private-status { align-self: flex-start; max-width: 100%; padding: var(--gg-space-2) var(--gg-space-3) 0; }
-.composer-private-status > span { display: inline-block; padding: var(--gg-space-1) var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
-.composer-private-toggle { color: var(--gg-color-text-secondary); min-width: var(--gg-size-control-sm); min-height: var(--gg-size-control-sm); }
-.composer-private-toggle[aria-pressed="true"] { background: var(--gg-color-bg-hover); }
+.composer-private-chip { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-height: 24px; padding: 0 var(--gg-space-1) 0 var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.composer-private-chip > svg { width: 12px; height: 12px; flex: none; }
+.composer-private-chip button { position: relative; display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: var(--gg-radius-full); background: transparent; color: inherit; cursor: pointer; }
+.composer-private-chip button::after { content: ""; position: absolute; inset: -4px; }
+.composer-private-chip button:hover { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
+.composer-private-chip button svg { width: 12px; height: 12px; }
+.composer-private-item { align-items: flex-start; }
+.composer-private-item > svg { margin-top: 2px; }
+.composer-private-item-copy { display: grid; min-width: 0; }
+.composer-private-item-copy small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); white-space: normal; }
+/* Change 5: an empty composer's Send is a quiet tile; typing turns it the action color.
+   Its arrow stays at least 3:1 against the tile in both themes (tertiary: 4.9:1 light, 5.4:1 dark). */
+.composer-submit:disabled { opacity: 1; background: var(--gg-color-bg-hover); color: var(--gg-color-text-tertiary); }
+/* Change 6: without an AI account, Connect takes the send slot as the one filled button. */
+.composer-footer > .composer-model-menu { margin-left: auto; padding-inline: var(--gg-space-3); background: var(--gg-color-action); color: var(--gg-color-action-ink); font-weight: var(--gg-weight-medium); }
+.composer-footer > .composer-model-menu:hover { background: var(--gg-color-action); color: var(--gg-color-action-ink); opacity: .9; }
 .composer-disclosure { display: flex; align-items: center; justify-content: center; min-height: var(--gg-space-5); margin: 0; text-align: center; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
 .model-menu-advanced { display: flex; justify-content: space-between; }
 .model-menu-advanced[aria-expanded="true"] > svg { transform: rotate(180deg); }
@@ -930,8 +949,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .composer-footer {
   flex-wrap: wrap;
 }
-/* When the tools wrap, the send control stays at the trailing edge of its row. */
-.composer-submit { margin-left: auto; }
 
 .composer-run-actions {
   display: inline-flex;
@@ -1002,6 +1019,30 @@ button.chat-progress-names:hover { text-decoration: underline; }
   background: var(--gg-color-action);
 }
 
+/* Send and Stop are one 28 px tile at the trailing edge: the same button, its two icons cross-fading in place. */
+.composer-tile {
+  position: relative;
+  width: var(--gg-size-control-sm);
+  height: var(--gg-size-control-sm);
+  padding: 0;
+  transition: background-color var(--gg-motion-fast) var(--gg-ease-out), color var(--gg-motion-fast) var(--gg-ease-out), opacity var(--gg-motion-fast) var(--gg-ease-out), box-shadow var(--gg-motion-fast) var(--gg-ease-out);
+}
+.composer-tile-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transition: opacity var(--gg-motion-fast) var(--gg-ease-out), transform var(--gg-motion-fast) var(--gg-ease-out);
+}
+.composer-tile-icon > svg { width: 14px; height: 14px; }
+.composer-tile-icon[data-icon="stop"] > svg { fill: currentColor; }
+.composer-tile[data-state="send"] > [data-icon="stop"],
+.composer-tile[data-state="stop"] > [data-icon="send"] { opacity: 0; transform: scale(0.8); }
+.composer-run-actions > :not(.composer-tile) { animation: turn-fade-in var(--gg-motion-fast) var(--gg-ease-out) both; }
+/* After a press the tile dims and ignores presses until the host confirms the stop. */
+.composer-stopping .composer-stop-action { opacity: 0.55; pointer-events: none; }
+
 /* Once Send next is the primary control, Stop stays a square outline beside it. */
 .composer-run-actions:has(.composer-queue-action) .composer-stop-action {
   color: var(--gg-color-text-primary);
@@ -1032,7 +1073,9 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .chat-receipt-text { display: inline-flex; align-items: center; width: max-content; max-width: 100%; min-height: var(--gg-size-control-sm); }
 .chat-receipt .chat-receipt-segment { display: inline-flex; align-items: center; width: max-content; max-width: 100%; min-height: var(--gg-size-control-sm); text-align: start; text-decoration: none; }
 .chat-receipt .chat-receipt-segment:hover { color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: currentColor; }
-.chat-receipt .chat-receipt-segment[data-learned="true"], .chat-receipt-text[data-learned="true"] { color: var(--gg-color-accent-ink); }
+/* One amber per footer: only the receipt's leading segment takes the accent ink; the rest stay neutral. */
+.chat-receipt .chat-receipt-segment, .chat-receipt-text { color: var(--gg-color-text-secondary); }
+.chat-receipt .chat-receipt-item:first-child :is(.chat-receipt-segment, .chat-receipt-text[data-learned="true"]) { color: var(--gg-color-accent-ink); }
 /* The one segment that asks the user to act reads as an action, not a fact. */
 .chat-receipt [data-receipt="proposals"] .chat-receipt-segment { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); }
 
@@ -1058,23 +1101,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
   color: var(--gg-color-text-primary);
   text-decoration-color: currentColor;
 }
-
-.memory-proposal {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gg-space-2);
-}
-
-.memory-proposal button {
-  min-height: var(--gg-size-control-sm);
-  padding: 2px var(--gg-space-2);
-  border: 1px solid var(--gg-color-border-subtle);
-  border-radius: var(--gg-radius-xs);
-  text-decoration: none;
-}
-
-.memory-proposal button:disabled { opacity: 0.6; cursor: default; }
 
 .memory-update-changes {
   display: flex;
@@ -1114,6 +1140,16 @@ button.chat-progress-names:hover { text-decoration: underline; }
   color: var(--gg-color-text-secondary);
 }
 
+/* "Try again" for a Source that stopped: a neutral action on its own line under the status. */
+.world-status-retry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--gg-space-2);
+  margin-top: 2px;
+}
+
+.world-status-retry [role="alert"] { flex-basis: 100%; }
 
 .composer-assist {
   position: absolute;
@@ -1463,13 +1499,7 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .message-details-trigger:hover { background: var(--gg-color-bg-hover); }
 
 .workspace-chat-title { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 0; width: min(100%, calc(var(--gg-size-chat-column) + 2 * var(--chat-gutter, var(--gg-space-5)))); padding-inline: var(--chat-gutter, var(--gg-space-5)); box-sizing: border-box; }
-.workspace-chat-folder { flex: 0 1 auto; min-width: 0; max-width: 300px; color: var(--gg-color-text-secondary); }
-.workspace-chat-folder > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-
-.chat-progress-row.failed .chat-progress-status { color: var(--gg-color-negative); }
-/* A step paused by a security rule is not a failure: its glyph stays quiet (B92). */
-.chat-progress-row.failed .chat-progress-status[data-paused] { color: var(--gg-color-text-secondary); }
 .chat-progress-inspect { display: inline-flex; align-items: center; gap: 6px; text-align: left; text-decoration: none; }
 .chat-progress-inspect:hover { text-decoration: underline; }
 .chat-progress-inspect svg { width: var(--gg-space-3); height: var(--gg-space-3); flex: none; }
@@ -1496,14 +1526,21 @@ button.chat-progress-names:hover { text-decoration: underline; }
   .chat-progress-heading { flex: 1; }
   .chat-execution-detail { padding: 10px; }
 }
+/* The in-progress reply's motion (DIRECTION 9.2): opacity and transform only, as keyframes on mount. */
+@keyframes turn-fade-in { from { opacity: 0; } }
+@keyframes turn-fade-out { to { opacity: 0; } }
+@keyframes turn-rise-in { from { opacity: 0; transform: translateY(var(--gg-shift-enter)); } }
+@keyframes turn-tick-in { from { opacity: 0; transform: translateY(var(--gg-shift-tick)); } }
+@keyframes turn-tick-out { to { opacity: 0; transform: translateY(calc(-1 * var(--gg-shift-tick))); } }
+@keyframes turn-sheen { 0% { background-position: 100% 0; } 58%, 100% { background-position: 0% 0; } }
+/* Reduced motion: every entrance appears, the replaced line swaps, and the label stands still in the primary colour. */
 @media (prefers-reduced-motion: reduce) {
-  .chat-progress-chevron { transition: none; }
-  .chat-status-pill { animation: none; }
-  .chat-status-pill-dot,
-  .chat-progress-live {
-    animation: none;
-    opacity: 1;
-  }
+  .turn-ledger-chevron { transition: none; }
+  .turn-live[data-sheen] .turn-live-label { animation: none; background: none; color: var(--gg-color-text-primary); }
+  .turn-tick-out { display: none; }
+  :is(.turn-live, .turn-ledger-chips)[data-leaving] { display: none; }
+  /* A leaving card is hidden at once but keeps its room until it is removed, inside the turn's held height. */
+  .turn-block[data-leaving] { visibility: hidden; }
 }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @container chat-reading (max-width: 760px) {
@@ -1515,22 +1552,116 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gg-space-2); margin-top: 10px; font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
 div.message-action-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); margin-top: 10px; }
 div.message-action-bar > .message-actions { margin-top: 0; }
-/* The slot where a turn completes reserves one control height; the status line and the action row sit centered in it. */
-.turn-footer { display: grid; align-items: center; min-height: var(--gg-size-control-sm); margin-top: var(--gg-space-2); }
+/* The slot where a turn completes keeps one control's height from the first frame: the live line, then the action row in the same place. */
+.turn-footer { display: grid; align-items: center; min-height: var(--gg-size-control-sm); margin-top: var(--gg-space-3); }
+.turn-footer > :is(.turn-live, div.message-action-bar) { grid-area: 1 / 1; min-width: 0; }
+.turn-footer > .chat-guiding { grid-area: 2 / 1; }
 .turn-footer > div.message-action-bar { margin-top: 0; }
-.turn-status { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
-.turn-status-clock::before { content: "·"; margin-inline-end: var(--gg-space-2); }
-@media (prefers-reduced-motion: no-preference) {
-  .turn-status-label {
-    background: linear-gradient(90deg, var(--gg-color-text-secondary) 0 35%, var(--gg-color-text-primary) 50%, var(--gg-color-text-secondary) 65% 100%);
-    background-size: 200% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: turn-status-shimmer var(--gg-motion-shimmer) linear infinite;
-  }
+.turn-footer[data-state="settled"] > .turn-live { pointer-events: none; animation: turn-fade-out var(--gg-motion-fast) var(--gg-ease-in) both; }
+/* At commit the actions arrive one after another, after the live line has left. */
+.message-action-bar[data-arriving] > * { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; animation-delay: calc(var(--gg-motion-instant) + var(--gg-motion-stagger) * var(--turn-stagger, 0)); }
+.message-action-bar[data-arriving] > :nth-child(2) { --turn-stagger: 1; }
+.message-action-bar[data-arriving] > :nth-child(3) { --turn-stagger: 2; }
+.message-action-bar[data-arriving] > :nth-child(4) { --turn-stagger: 3; }
+.message-action-bar[data-arriving] > :nth-child(n + 5) { --turn-stagger: 4; }
+
+/* The live line: the turn's one present-tense status, always its last line. Left-packed, one line, never wraps. */
+.turn-live { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 0; margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); white-space: nowrap; }
+.turn-live-glyph { flex: none; display: grid; place-items: center; width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); }
+.turn-live-glyph > svg { width: 14px; height: 14px; }
+.turn-live-dot { display: inline-block; flex: none; width: var(--gg-space-2); height: var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
+.turn-live-text { min-width: 0; }
+.turn-live-text > * { display: flex; align-items: baseline; gap: var(--gg-space-2); min-width: 0; }
+.turn-live-label { flex: none; font-weight: var(--gg-weight-medium); color: var(--gg-color-text-secondary); }
+.turn-live-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--gg-color-text-tertiary); }
+.turn-live[data-tone="you"] .turn-live-label { color: var(--gg-color-accent-ink); }
+.turn-live-more { flex: none; height: 18px; padding: 0 6px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-full); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: 16px; font-variant-numeric: tabular-nums; }
+.turn-live-clock { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; }
+.turn-live-clock::before { content: "·"; margin-inline-end: var(--gg-space-2); }
+/* The one loop in a turn: a sheen passes over the label, then rests (1.4 s sweep, 1 s rest). Its lowest point is the resting colour. */
+.turn-live[data-sheen] .turn-live-label {
+  background: linear-gradient(100deg, var(--gg-color-text-secondary) 0 38%, var(--gg-color-text-primary) 50%, var(--gg-color-text-secondary) 62% 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: turn-sheen var(--gg-motion-sheen) linear infinite;
 }
-@keyframes turn-status-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+/* The optimistic shell fades in under the question, a moment after it. */
+.message.assistant[data-entering] { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) var(--gg-motion-fast) both; }
+.message.user[data-entering] { animation: turn-rise-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+
+/* A line of text replaced in place: the old one leaves upward as the new one rises in. */
+.turn-tick { display: inline-grid; min-width: 0; }
+.turn-tick > * { grid-area: 1 / 1; min-width: 0; }
+.turn-tick-in[data-replaced] { animation: turn-tick-in var(--gg-motion-normal) var(--gg-ease-out) 60ms both; }
+.turn-tick-out { pointer-events: none; animation: turn-tick-out var(--gg-motion-fast) var(--gg-ease-in) both; }
+
+/* The ledger: one line per turn. What was gathered while it ran; a receipt once it settles; the disclosure for every step. */
+.turn-ledger-toggle { color: var(--gg-color-text-secondary); }
+.turn-ledger-chevron { flex: none; width: var(--gg-space-3); height: var(--gg-space-3); transition: transform var(--gg-motion-fast) var(--gg-ease-out); }
+.turn-ledger-toggle[aria-expanded="true"] .turn-ledger-chevron { transform: rotate(90deg); }
+.turn-ledger-text { flex: 0 1 auto; font-variant-numeric: tabular-nums; }
+/* A failed attempt that was retried is a fact, not an alarm: never red. */
+.turn-ledger-failed { color: var(--gg-color-text-secondary); }
+.turn-ledger-chips { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-width: 0; overflow: hidden; }
+.turn-ledger-chips[data-leaving] { animation: turn-fade-out var(--gg-motion-fast) var(--gg-ease-in) both; }
+.turn-ledger-chip { flex: none; display: inline-flex; align-items: center; gap: var(--gg-space-1); height: 20px; max-width: 150px; padding: 0 6px 0 var(--gg-space-1); border-radius: var(--gg-radius-xs); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: 20px; }
+.turn-ledger-toggle:hover .turn-ledger-chip { background: var(--gg-color-bg-selected); }
+.turn-ledger-chip > svg, .turn-ledger-chip .source-favicon { flex: none; width: 12px; height: 12px; color: var(--gg-color-text-tertiary); }
+.turn-ledger-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.turn-ledger-chip-count { color: var(--gg-color-text-tertiary); font-variant-numeric: tabular-nums; }
+.turn-ledger-more { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-variant-numeric: tabular-nums; }
+/* The first five chips show and the rest are counted; three in a turn narrower than 560 px. Chips never reorder or scroll. */
+.turn-ledger-chip:nth-child(n + 6) { display: none; }
+.turn-ledger-more[data-k="3"] { display: none; }
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@container turn (max-width: 560px) {
+  .turn-ledger-chip:nth-child(n + 4) { display: none; }
+  .turn-ledger-more[data-k="3"] { display: inline; }
+  .turn-ledger-more[data-k="5"] { display: none; }
+}
+.message.assistant { container: turn / inline-size; }
+/* A running row is in the primary colour; a failed or stopped step says so in words, not in red. */
+.chat-progress-duration { color: var(--gg-color-text-tertiary); font-variant-numeric: tabular-nums; }
+.chat-progress-status { gap: var(--gg-space-1); }
+.chat-progress-items[data-opening] > *, .chat-progress-items[data-opening] .chat-progress-entry { animation: turn-fade-in var(--gg-motion-fast) var(--gg-ease-out) both; }
+.chat-progress-items:not([data-opening]) .chat-progress-entry[data-enter] { animation: turn-rise-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+.chat-progress-note { align-items: start; }
+.chat-progress-note-text { margin: 0; color: var(--gg-color-text-secondary); overflow-wrap: anywhere; }
+
+/* Blocks that arrive while the reader watches: the ledger fades in, chips, cards and questions rise in. */
+.turn-ledger[data-enter] { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+.turn-ledger-chip[data-enter], .turn-block[data-enter] { animation: turn-rise-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+/* A card the stopped reply takes away (preparing or filled) fades out where it stood, then is removed. */
+.turn-block[data-leaving] { pointer-events: none; animation: turn-fade-out var(--gg-motion-fast) var(--gg-ease-in) both; }
+/* The outline trigger keeps its 28 px target without growing the 24 px row it arrives in at commit. */
+.message-meta-late { display: inline-flex; align-items: center; margin-block: -2px; }
+.message-meta-late[data-enter] { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+
+/* A Markdown table being written: ruled paper of a fixed height, replaced by the whole table. */
+.message-table-pending { display: grid; grid-template-rows: 28px repeat(2, 36px); height: calc(28px + 2 * 36px); margin: 1em 0 0; border-bottom: 1px solid var(--gg-color-border-subtle); animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
+.message-table-pending > i { display: flex; align-items: center; gap: var(--gg-space-6); border-bottom: 1px solid var(--gg-color-border-subtle); }
+.message-table-pending > i:first-child { border-bottom-color: var(--gg-color-border-default); }
+.message-table-pending > i:last-child { border-bottom: 0; }
+.message-table-pending > i::before, .message-table-pending > i::after { content: ""; height: var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-border-default); }
+.message-table-pending > i::before { width: 24%; }
+.message-table-pending > i::after { width: 38%; }
+.message-table-pending > i:first-child::before, .message-table-pending > i:first-child::after { background: var(--gg-color-border-subtle); }
+/* A Mermaid diagram holds a 240 px ruled frame while the reply streams; the diagram renders into it at commit. */
+.message-diagram-pending { display: grid; grid-template-rows: repeat(4, 1fr); height: 240px; margin-block: 1rem; padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
+.message-diagram-pending > i { border-bottom: 1px solid var(--gg-color-border-subtle); }
+.message-diagram-pending > i:last-child { border-bottom: 0; }
+.message-content [data-streamdown="mermaid-block"] { min-height: 240px; }
+/* A sensitivity card holds a ruled frame of its reserved height while the reply streams; the card fills it at commit. */
+.sensitivity-slot { --sensitivity-reserve: 408px; }
+.sensitivity-pending { display: grid; grid-template-rows: 36px repeat(5, 1fr); box-sizing: border-box; height: var(--sensitivity-reserve); margin-block: var(--gg-space-3); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
+.sensitivity-pending > i { border-bottom: 1px solid var(--gg-color-border-subtle); }
+.sensitivity-pending > i:first-child { border-bottom-color: var(--gg-color-border-default); }
+.sensitivity-pending > i:last-child { border-bottom: 0; }
+.sensitivity-slot[data-held] > .sensitivity-card { box-sizing: border-box; min-height: var(--sensitivity-reserve); }
+/* Headings and tables arrive whole, with one fade. */
+.message.assistant .message-content[data-streaming] :is([data-streamdown^="heading-"], [data-streamdown="table-wrapper"]) { animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
 /* The receipt shares the row with Sources and Copy; its lists open below the line. */
 .message-action-bar > .memory-row { flex: 1 1 auto; min-width: 0; margin-top: 0; }
 .message-action-bar > .memory-row[data-expanded="true"] { flex-basis: 100%; }
@@ -1584,28 +1715,20 @@ div.message-action-bar > .message-actions { margin-top: 0; }
   font-size: var(--gg-text-subtitle);
   font-weight: var(--gg-weight-medium);
 }
+/* "Preparing" beside the title, in the tertiary colour; it fades out as the content fills the frame. */
 .chat-artifact-block-building {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: var(--gg-space-2);
-  color: var(--gg-color-text-secondary);
+  color: var(--gg-color-text-tertiary);
   font-size: var(--gg-text-meta);
-}
-.chat-artifact-block-shimmer {
-  width: 120px;
-  height: 8px;
-  border-radius: var(--gg-radius-full);
-  background: linear-gradient(90deg, var(--gg-color-bg-hover) 0%, var(--gg-color-border-default) 50%, var(--gg-color-bg-hover) 100%);
-  background-size: 200% 100%;
-  animation: chat-artifact-shimmer 1.6s linear infinite;
-}
-@keyframes chat-artifact-shimmer {
-  from { background-position: 100% 0; }
-  to { background-position: -100% 0; }
 }
 .chat-artifact-block-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--gg-space-1); min-width: 0; margin-left: auto; }
 .chat-artifact-block-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+/* A failed copy or save sits just before the actions, outside the bar a narrow card hides. */
+.chat-artifact-block-header > .chat-artifact-block-error { margin-left: auto; }
+.chat-artifact-block-header > .chat-artifact-block-error ~ :is(.chat-artifact-block-actions, .chat-artifact-block-more) { margin-left: 0; }
 /* Short windows keep room for the composer and the answer around the card.
    The plot gives up a header so pinning the thread to the bottom does not slice the title. */
 .chat-artifact-block-body { position: relative; min-width: 0; height: min(240px, calc(40vh - 32px)); min-height: 160px; }
@@ -1642,35 +1765,21 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 }
 /* The card's plot row is shorter than a panel chart's 220 px floor: the chart fits the row, so its date axis stays inside the card. */
 .chat-artifact-block .artifact-chart-shell[data-compact] .chart-financial-canvas { min-height: 0; }
-.chat-artifact-block-skeleton {
-  width: min(180px, 60%);
-  height: 56px;
-  display: flex;
-  align-items: flex-end;
-  gap: var(--gg-space-1);
-}
-.chat-artifact-block-skeleton > span {
-  flex: 1 1 0;
-  border-radius: var(--gg-radius-xs);
-  background: var(--gg-color-border-subtle);
-  animation: chat-artifact-skeleton 1.6s ease-in-out infinite;
-}
-.chat-artifact-block-skeleton > span:nth-child(1) { height: 40%; }
-.chat-artifact-block-skeleton > span:nth-child(2) { height: 65%; animation-delay: 0.1s; }
-.chat-artifact-block-skeleton > span:nth-child(3) { height: 50%; animation-delay: 0.2s; }
-.chat-artifact-block-skeleton > span:nth-child(4) { height: 80%; animation-delay: 0.3s; }
-.chat-artifact-block-skeleton > span:nth-child(5) { height: 60%; animation-delay: 0.4s; }
-.chat-artifact-block-skeleton > span:nth-child(6) { height: 95%; animation-delay: 0.5s; }
-@keyframes chat-artifact-skeleton {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .chat-artifact-block-shimmer { display: none; }
-  .chat-artifact-block-skeleton > span { animation: none; }
-}
-.message-run-state { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+/* Placeholders are ruled paper and stand still: a chart's body shows four hairlines and a baseline. */
+.chat-artifact-block-ruled { position: absolute; inset: var(--gg-space-4); display: grid; grid-template-rows: repeat(4, 1fr); border-bottom: 1px solid var(--gg-color-border-default); }
+.chat-artifact-block-ruled > i { border-top: 1px solid var(--gg-color-border-subtle); }
+/* The drawn chart takes the frame's place with one fade. */
+.chat-artifact-block[data-filled] .chat-artifact-block-body > * { animation: turn-fade-in var(--gg-motion-settle) var(--gg-ease-out) both; }
+.message-run-state { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .message-run-state p { flex: 1 1 240px; margin: 0; }
+/* A stop is the reader's own doing: one quiet line and a button, no border, no box. */
+.message-run-state[data-kind="stopped"] { flex: 0 1 auto; gap: var(--gg-space-2) var(--gg-space-3); margin: 0; padding: 0; border: 0; background: transparent; font-size: var(--gg-text-control); }
+.message-run-state[data-kind="stopped"] p { flex: 0 1 auto; }
+.message-run-state[data-kind="stopped"] button { min-height: var(--gg-size-control-sm); padding: 0 10px; border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-xs); background: transparent; color: var(--gg-color-text-primary); font: inherit; cursor: pointer; }
+.message-run-state[data-kind="stopped"] button:hover { background: var(--gg-color-bg-hover); }
+.message-run-state-kept { flex-basis: 100%; order: 3; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
+.message-run-state p:first-child { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); font-weight: var(--gg-weight-medium); }
+.message-run-state .message-run-hint { color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); }
 .message-run-state button { padding: 5px 10px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); color: var(--gg-color-text-primary); }
 .message-run-state button:hover { background: var(--gg-color-bg-hover); }
 .message-run-state button[data-primary] { border-color: var(--gg-color-action); background: var(--gg-color-action); color: var(--gg-color-action-ink); }
@@ -1757,17 +1866,25 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .chat-dialog > .inline-error { margin: 0 var(--gg-space-6) 18px; }
 .message-sources { border: 0; background: transparent; max-width: none; font-size: var(--gg-text-meta); }
 .message-sources > summary { width: 100%; padding: 10px var(--gg-space-3); color: var(--gg-color-text-secondary); cursor: pointer; }
+.message-action-bar > .message-sources > summary { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); }
+.message-sources-site { color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-regular); }
 .message-sources[open] > summary { border-bottom: 1px solid var(--gg-color-border-subtle); }
 .message-sources > ol { margin: 0; padding: 6px var(--gg-space-3); max-height: var(--gg-size-mini-map); overflow-y: auto; overscroll-behavior: contain; }
 .message-sources[open] { flex: 1 0 100%; }
-/* Run status pill: reserves a row 20 px above the composer while the reader is scrolled up. */
+/* The thread's bottom edge: a zero-height dock the pill and the "more below" fade hang from, so neither takes the thread's height. */
+.conversation-dock { position: relative; flex: 0 0 auto; height: 0; z-index: var(--gg-z-sticky); }
+.conversation-more-below { position: absolute; left: 0; right: 0; bottom: 0; height: var(--gg-space-7); background: linear-gradient(to top, var(--gg-color-bg-app), transparent); opacity: 0; pointer-events: none; transition: opacity var(--gg-motion-normal) var(--gg-ease-out); }
+.conversation-more-below[data-on] { opacity: 1; }
+/* Run status pill: overlays the bottom of the thread, 12 px above the composer, while the end of the reply is out of view. */
 .chat-status-pill {
-  flex: 0 0 auto;
-  z-index: var(--gg-z-sticky);
+  position: absolute;
+  left: 50%;
+  bottom: var(--gg-space-3);
+  transform: translateX(-50%);
   width: max-content;
   max-width: calc(100% - var(--gg-space-8));
   min-height: var(--gg-size-control-md);
-  margin: 0 auto var(--gg-space-5);
+  margin: 0;
   display: flex;
   align-items: center;
   gap: var(--gg-space-2);
@@ -1779,9 +1896,11 @@ div.message-action-bar > .message-actions { margin-top: 0; }
   background: var(--gg-color-bg-raised);
   box-shadow: var(--gg-shadow-md);
   font-size: var(--gg-text-control);
+  white-space: nowrap;
   animation: chat-status-pill-in var(--gg-motion-normal) var(--gg-ease-out);
 }
-.chat-status-pill:not([data-running]) { padding-left: 2px; }
+.chat-status-pill:not(:has(.chat-status-pill-label)) { padding-left: 2px; }
+.chat-status-pill-label[data-tone="you"] { display: inline-flex; align-items: center; gap: 6px; color: var(--gg-color-accent-ink); }
 .chat-status-pill-label {
   min-width: 0;
   max-width: 240px;
@@ -1807,7 +1926,7 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .chat-status-pill-jump:hover { background: var(--gg-color-bg-hover); }
 .chat-status-pill-jump svg { width: 16px; height: 16px; }
 @keyframes chat-status-pill-in {
-  from { opacity: 0; transform: translateY(var(--gg-space-2)); }
+  from { opacity: 0; transform: translate(-50%, var(--gg-shift-enter)); }
 }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @container chat-reading (max-width: 760px) {
@@ -1844,7 +1963,6 @@ div.message-action-bar > .answer-correction { order: 1; }
 /* A proposed routine: the one-tap OK sits under the card, outside its open button. */
 .message-schedule-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin-top: var(--gg-space-2); }
 .message-schedule-actions [role="alert"] { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
-
 
 .answer-correction .message-actions { flex-wrap:wrap; }
 .answer-correction .message-actions button { white-space:normal; height:auto; min-height:var(--gg-size-control-sm); text-align:start; }
@@ -1945,8 +2063,8 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .chat-rail-card[data-card="using"] .chat-rail-row-label { white-space: normal; overflow-wrap: anywhere; }
 .chat-rail-row-kind { flex: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .chat-rail-row small { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
-.chat-rail-row .chat-rail-from-loupist { color: var(--gg-color-accent-ink); font-size: var(--gg-text-caption); }
-.chat-rail-more { justify-self: start; padding: 0; border: 0; background: transparent; color: var(--gg-color-accent-ink); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
+.chat-rail-row .chat-rail-from-loupist { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+.chat-rail-more { justify-self: start; padding: 0; border: 0; background: transparent; font: inherit; font-size: var(--gg-text-meta); cursor: pointer; color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
 .chat-rail-map-link { display: inline-flex; align-items: center; gap: var(--gg-space-1); justify-self: start; min-height: var(--gg-size-control-sm); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .chat-rail-map-link:hover { color: var(--gg-color-text-primary); text-decoration: underline; }
 .chat-rail-map-link svg { width: var(--gg-space-3); height: var(--gg-space-3); }
@@ -1956,11 +2074,11 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .chat-rail-chip:hover { background: var(--gg-color-bg-hover); border-color: var(--gg-color-border-default); }
 .chat-rail-chip .map-swatch { width: 8px; height: 8px; }
 /* "Needs your OK": one row that leads to the approval card in the answer, where the buttons are. */
-.chat-rail-needs { background: var(--gg-color-warning-soft); }
+.chat-rail-needs { background: var(--gg-color-accent-soft); }
 .chat-rail-needs-row { display: flex; align-items: center; gap: var(--gg-space-2); width: 100%; min-height: 44px; padding: var(--gg-space-2) var(--gg-space-4); border: 0; background: transparent; color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer; }
 .chat-rail-needs-row:hover .chat-rail-needs-show { text-decoration: underline; }
-.chat-rail-needs-dot { flex: none; width: 8px; height: 8px; border-radius: var(--gg-radius-full); background: var(--gg-color-warning); }
-.chat-rail-needs-title { flex: none; color: var(--gg-color-warning); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
+.chat-rail-needs-dot { flex: none; width: 8px; height: 8px; border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
+.chat-rail-needs-title { flex: none; color: var(--gg-color-accent-ink); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
 .chat-rail-needs-row .chat-rail-card-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; text-align: left; }
 .chat-rail-needs-show { flex: none; color: var(--gg-color-accent-ink); font-size: var(--gg-text-meta); }
 /* Compact context lives in the header, where it cannot cover an answer or chart. */
@@ -1968,8 +2086,8 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 /* The composer tray (context-rail.md R2): square thumbnails and compact file chips, then the count and Clear all. */
 .composer-attachments { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); width: 100%; padding: 10px var(--gg-space-3) 0; }
 .composer-attachments-meta { display: inline-flex; align-items: center; gap: var(--gg-space-2); margin-left: auto; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
-.composer-attachments-meta button { padding: 0; border: 0; background: transparent; color: var(--gg-color-accent-ink); font: inherit; cursor: pointer; }
-.composer-attachments-meta button:hover { text-decoration: underline; }
+.composer-attachments-meta button { padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
+.composer-attachments-meta button:hover { text-decoration-color: currentColor; }
 .composer-thumb { position: relative; flex: none; width: 56px; height: 56px; margin: 0; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); overflow: visible; }
 .composer-thumb img { width: 100%; height: 100%; border-radius: var(--gg-radius-sm); object-fit: cover; }
 .composer-thumb button, .composer-file-chip button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 4px; border: 0; background: transparent; color: var(--gg-color-text-secondary); cursor: pointer; }
@@ -1995,17 +2113,15 @@ button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration
 .chat-divider[data-kind="new"] { color: var(--gg-color-accent-ink); }
 
 /* Outline of a long answer (X16): a quiet disclosure above the text, headings as links. */
-.answer-outline { margin: 0 0 var(--gg-space-3); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
-.answer-outline > summary { width: fit-content; min-height: var(--gg-size-control-sm); display: flex; align-items: center; gap: var(--gg-space-1); cursor: pointer; color: var(--gg-color-text-secondary); list-style: none; }
-.answer-outline > summary::-webkit-details-marker { display: none; }
-/* A disclosure chevron: points right when folded, down when open. */
-.answer-outline > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--gg-motion-fast) var(--gg-ease-out); }
-.answer-outline[open] > summary::before { transform: rotate(45deg); }
-.answer-outline > summary:hover { color: var(--gg-color-text-primary); }
-.answer-outline ol { list-style: none; margin: var(--gg-space-1) 0 0; padding: 0 0 0 var(--gg-space-3); border-left: 1px solid var(--gg-color-border-subtle); display: grid; gap: 2px; }
+/* Outline (chat design change 18): a quiet trigger at the end of the meta row and a popover list. */
+.answer-outline-trigger { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-height: var(--gg-size-control-sm); margin-left: auto; padding: 0 var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
+.answer-outline-trigger:hover, .answer-outline-trigger[data-state="open"] { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.answer-outline-trigger svg { width: 14px; height: 14px; }
+.answer-outline { width: min(320px, calc(100vw - 32px)); padding: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
+.answer-outline ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .answer-outline li[data-level="3"] { padding-left: var(--gg-space-3); }
-.answer-outline li button { min-height: 28px; padding: 0; border: 0; background: transparent; color: var(--gg-color-text-secondary); font: inherit; text-align: left; cursor: pointer; }
-.answer-outline li button:hover { color: var(--gg-color-text-primary); text-decoration: underline; }
+.answer-outline li button { width: 100%; min-height: 28px; padding: var(--gg-space-1) var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer; }
+.answer-outline li button:hover, .answer-outline li button:focus-visible { background: var(--gg-color-bg-hover); }
 
 /* Sent images (context-rail §2.3): small thumbnails above the user's text that open the lightbox. */
 .sent-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gg-space-1); margin: 0 0 var(--gg-space-1); }
@@ -2039,7 +2155,7 @@ button.sent-image { cursor: zoom-in; }
 
 /* Approval card (D3): one read-only tool waits for the user's OK; it settles into one line. */
 .approval-cards { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 var(--gg-space-3); }
-.approval-card { display: grid; gap: var(--gg-space-2); max-width: 640px; padding: var(--gg-space-4); border: 1px solid var(--gg-color-warning); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.approval-card { display: grid; gap: var(--gg-space-2); max-width: none; padding: var(--gg-space-4); border: 1px solid var(--gg-color-accent); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .approval-card header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gg-space-3); }
 .approval-card header strong { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-medium); }
 .approval-card-clock { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -2060,7 +2176,6 @@ button.sent-image { cursor: zoom-in; }
 
 /* Approval card (D3): the two everyday answers side by side, the lasting one below. */
 .approval-card-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
-.approval-card-actions > .approval-card-always { flex-basis: 100%; justify-content: flex-start; }
 .approval-card:focus { outline: none; }
 .approval-card:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
 /* Under the step that waits (S8, D3): indented with the step's text; a waiting card lifts the list's height cap. */
@@ -2071,7 +2186,7 @@ button.sent-image { cursor: zoom-in; }
 .chat-progress-approvals .approval-card { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 /* Question card (ask_user): the agent asks one thing mid-reply; options, the recommended one marked, and free text. It settles into one line. */
 .question-cards { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 var(--gg-space-3); }
-.question-card { display: grid; gap: var(--gg-space-3); max-width: 640px; padding: var(--gg-space-4); border: 1px solid var(--gg-color-accent); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.question-card { display: grid; gap: var(--gg-space-3); max-width: none; padding: var(--gg-space-4); border: 1px solid var(--gg-color-accent); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .question-card header { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gg-space-3); }
 .question-card header strong { font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-medium); }
 .question-card-clock { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -2143,3 +2258,37 @@ button.sent-image { cursor: zoom-in; }
 .composer-inline-reference-controls li { display:flex; align-items:center; gap:var(--gg-space-2); }
 .composer-inline-reference-controls button { display:inline-flex; flex:none; align-items:center; justify-content:center; width:24px; height:24px; border:0; border-radius:var(--gg-radius-sm); background:transparent; }
 .composer-inline-reference-controls button svg { width:14px; height:14px; }
+
+/* Small glyph buttons keep their look but take a 28 px hit area (design rubric). */
+.composer-chip button, .composer-inline-reference-controls button, .execution-copy-button { position: relative; }
+.composer-chip button::after, .composer-inline-reference-controls button::after, .execution-copy-button::after { content: ""; position: absolute; top: 50%; left: 50%; width: max(100%, var(--gg-size-control-sm)); height: max(100%, var(--gg-size-control-sm)); transform: translate(-50%, -50%); }
+
+/* Watch all n: one press watches what you follow with its class defaults. */
+.watch-all-offer { margin: var(--gg-space-3) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); }
+/* An offer, not "waiting on you": a neutral bordered block with one filled button (chat design change 33). */
+.follow-watch-offer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-3); padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.follow-watch-offer p { flex: 1 1 320px; max-width: 62ch; margin: 0; }
+/* The memory row styles its buttons as links; the offer keeps one filled action button. */
+.memory-row .follow-watch-offer [data-slot="button"] { padding: 0 var(--gg-space-3); border-radius: var(--gg-radius-md); background: var(--gg-color-action); color: var(--gg-color-action-ink); font-weight: var(--gg-weight-medium); text-decoration: none; }
+.memory-row .follow-watch-offer [data-slot="button"]:hover { background: var(--gg-color-action); color: var(--gg-color-action-ink); opacity: .9; text-decoration: none; }
+.follow-watch-offer .inline-error { flex-basis: 100%; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
+.watch-all-offer > p { margin: 0; }
+.watch-all-needs { display: grid; gap: var(--gg-space-1); margin: var(--gg-space-1) 0 0; padding: 0; list-style: none; font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+
+/* The recommended answer is an outlined option with a primary edge, not a filled slab (chat design change 12). */
+.question-card .question-card-option[data-recommended] { border-color: var(--gg-color-text-primary); }
+
+/* 28. Edit stays under the newest question; earlier questions reveal it on hover or focus, in reserved space. */
+.message.user:not([data-latest]) .message-action-bar { opacity: 0; }
+.message.user:not([data-latest]):is(:hover, :focus-within) .message-action-bar { opacity: 1; }
+/* 34. Scheduled work says it uses the AI account, before its buttons. */
+.message-schedule-spending { margin: 0; padding: 0 var(--gg-space-4); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+/* 27. A long Loupist name does not take over the answer's meta row. */
+.message-meta > span:first-child { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 25. Chart card actions match the table card: text-only, folded into "…" at the same width. */
+.chat-artifact-block-more { display: none; flex: none; margin-left: auto; }
+@media (max-width: 720px) {
+  .chat-artifact-block-actions { display: none; }
+  .chat-artifact-block-more { display: block; }
+}

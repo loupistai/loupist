@@ -547,22 +547,30 @@ pub(crate) fn origin_of(
 /// Accepted shared Lens items: record id → (pack name, accepted despite a
 /// scan finding). Accepted items keep their origin after the pack is removed
 /// (Remove may archive them).
-pub(crate) fn shared_lens(
+pub(crate) fn shared_lens_for(
     tx: &Transaction<'_>,
     loupist_id: &str,
+    records: Option<&BTreeSet<String>>,
 ) -> rusqlite::Result<BTreeMap<String, (String, bool)>> {
     ensure(tx)?;
     let mut statement = tx.prepare(
         "SELECT p.lens_record_id, i.name, p.flags FROM pack_items p
          JOIN pack_imports i ON i.import_id = p.import_id
-         WHERE p.loupist_id = ?1 AND p.state = 'accepted' AND p.lens_record_id IS NOT NULL",
+         WHERE p.loupist_id = ?1 AND p.state = 'accepted' AND p.lens_record_id IS NOT NULL
+           AND (?2 IS NULL OR p.lens_record_id IN (SELECT value FROM json_each(?2)))",
     )?;
-    let rows = statement.query_map([loupist_id], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            (row.get::<_, String>(1)?, row.get::<_, String>(2)? != "[]"),
-        ))
-    })?;
+    let rows = statement.query_map(
+        params![
+            loupist_id,
+            records.map(|ids| serde_json::to_string(ids).expect("record ids serialize"))
+        ],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                (row.get::<_, String>(1)?, row.get::<_, String>(2)? != "[]"),
+            ))
+        },
+    )?;
     rows.collect()
 }
 
@@ -576,23 +584,30 @@ pub(crate) struct SharedWorld {
     pub spans: BTreeMap<String, String>,
 }
 
-pub(crate) fn shared_world(
+pub(crate) fn shared_world_for(
     tx: &Transaction<'_>,
     loupist_id: &str,
+    records: Option<&BTreeSet<String>>,
 ) -> rusqlite::Result<SharedWorld> {
     ensure(tx)?;
     let mut statement = tx.prepare(
         "SELECT w.kind, w.subject_id, i.name FROM pack_world_items w
          JOIN pack_imports i ON i.import_id = w.import_id
-         WHERE w.loupist_id = ?1",
+         WHERE w.loupist_id = ?1 AND (?2 IS NULL OR w.subject_id IN (SELECT value FROM json_each(?2)))",
     )?;
-    let rows = statement.query_map([loupist_id], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-        ))
-    })?;
+    let rows = statement.query_map(
+        params![
+            loupist_id,
+            records.map(|ids| serde_json::to_string(ids).expect("record ids serialize"))
+        ],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        },
+    )?;
     let mut world = SharedWorld::default();
     for row in rows {
         let (kind, subject, name) = row?;

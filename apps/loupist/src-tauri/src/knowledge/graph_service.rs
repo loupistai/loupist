@@ -700,7 +700,7 @@ impl Inner {
             .keys()
             .cloned()
             .collect();
-        let stalled = self
+        let mut stalled = self
             .stalled
             .lock()
             .unwrap_or_else(|error| error.into_inner())
@@ -709,8 +709,26 @@ impl Inner {
             .store
             .for_each_readable_database(|_, connection| {
                 let tx = connection.transaction()?;
-                super::graph_jobs::queued_loupist_heads(&tx, &hot_chats)
-                    .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))
+                let (candidates, reclaimed) = (|| {
+                    let reclaimed = super::graph_jobs::recover_expired(&tx, now_ms(), &busy)?;
+                    Ok::<_, KnowledgeError>((
+                        super::graph_jobs::queued_loupist_heads(&tx, &hot_chats)?,
+                        reclaimed,
+                    ))
+                })()
+                .map_err(|e| crate::store::StoreError::Invalid(e.to_string()))?;
+                tx.commit()?;
+                for id in reclaimed {
+                    stalled.remove(&id);
+                    self.stalled
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .remove(&id);
+                    // Recovery controls ran before selection. A newly quarantined
+                    // attempt needs another pass even when no job can be selected.
+                    self.notify.notify_one();
+                }
+                Ok(candidates)
             })
             .map_err(|_| KnowledgeError::Invalid("could not read Loupist jobs"))?
             .into_iter()
@@ -888,7 +906,6 @@ impl Inner {
             let usage = callback_usage.clone();
             let calls = callback_calls.clone();
             let stages = callback_stages.clone();
-            let slots = call_slots.clone();
             async move {
                 let field = |name: &str| {
                     request
@@ -900,12 +917,6 @@ impl Inner {
                 };
                 let kind = field("kind");
                 let paid = kind == "llm";
-                // Local embeddings take no slot; a paid call waits for one.
-                let _slot = if paid {
-                    slots.acquire_owned().await.ok()
-                } else {
-                    None
-                };
                 if paid {
                     usage.lock().unwrap_or_else(|e| e.into_inner()).begin();
                 }
@@ -942,7 +953,7 @@ impl Inner {
                 reply
             }
         };
-        let driven = super::world_extract::drive_job(
+        let driven = super::world_extract::drive_job_with_slots(
             &knowledge,
             &mut settings,
             &job.job_id,
@@ -950,6 +961,7 @@ impl Inner {
             now_ms(),
             &followed,
             &embed_assets(self.resource_dir.as_deref()),
+            Some(call_slots),
             on_inference,
         )
         .await;

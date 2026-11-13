@@ -1,20 +1,20 @@
 {
   "chatView": {
-    "chatThreadIsUnavailable": "Chat thread is unavailable.",
+    "chatThreadIsUnavailable": "This chat is unavailable.",
     "stoppingTheRecoveredResponse": "Stopping the recovered response.",
     "refreshingTheCompletedResponse": "Refreshing the completed response.",
     "loupistIsContinuingAResponseStartedBeforeReload": "Loupist is continuing a response started before reload.",
-    "connectTheQueuedMessageSModelProviderBeforeSending": "Connect the queued message's model provider before sending.",
+    "connectTheQueuedMessageSModelProviderBeforeSending": "Connect an AI account for the queued message's model before sending.",
     "reconnectTheWorkspaceFolderBeforeSendingQueuedMessagesWere": "Reconnect the workspace folder before sending. Queued messages were kept.",
-    "chooseAnAvailableModelInChatOrSettingsChat": "Choose an available model in Chat or Loupist settings → Chat preferences.",
+    "chooseAnAvailableModelInChatOrSettingsChat": "Choose an available model in Chat or Loupist settings → Chat defaults.",
     "couldNotReadConfigurationBeforeSending": "Could not read configuration before sending.",
     "chatWithLoupist": "Chat with Loupist",
     "openWorkspaceFiles": "Open workspace files",
-    "chatPreferencesForThisLoupist": "Chat preferences for this Loupist",
+    "chatPreferencesForThisLoupist": "Chat defaults for this Loupist",
     "stopping": "Stopping",
     "updatingTheAnswer": "Updating the answer",
     "stillWorking": "Still working",
-    "iDLikeToChangeTheWorkingNote": "I'd like to change the working note: ",
+    "iDLikeToChangeTheWorkingNote": "I'd like to change the research note: ",
     "modelSetup": "Model setup",
     "openSettings": "Open Settings",
     "reconnectTheWorkspaceFolderToSendMessages": "Reconnect the workspace folder to send messages",
@@ -23,7 +23,7 @@
     "chartRange": "Selected chart range: {{start}} to {{end}}.",
     "withChartRange": "{{text}}\n\nSelected chart range: {{start}} to {{end}}.",
     "retainedRequestError": "{{error}} The request was kept. Check the conversation before sending it again.",
-    "appendWorkingNoteRequest": "{{prompt}}\n\nI'd like to change the working note: "
+    "appendWorkingNoteRequest": "{{prompt}}\n\nI'd like to change the research note: "
   },
   "answerFeedback": {
     "availableWhenTheReplyFinishes": "Available when the reply finishes",
@@ -38,7 +38,7 @@
     "cancel": "Cancel",
     "teachTheLoupist": "Teach the Loupist",
     "pleaseRevisitThisAnswerUsingMyCorrectionAnswerExcerpt": "Please revisit this answer using my correction.\n\nAnswer excerpt:\n{{value1}}{{value2}}\n\nMy correction:\n{{value3}}",
-    "characterCount": "{{formattedCount}} / 4000 characters · Saved on this device"
+    "characterCount": "{{formattedCount}} / 4000 characters · Saved on this Mac"
   },
   "chatActivityDetailView": {
     "thisActivityIsNotAvailableInThisChat": "This activity is not available in this chat.",
@@ -93,7 +93,8 @@
     "send": "Send",
     "messageLoupist": "Message Loupist",
     "askLoupistToAddContextForCommands": "Ask {{loupistName}}…",
-    "newChat": "New chat",
+    "askYourLoupist": "Ask your Loupist…",
+    "newChat": "New research",
     "model": "Model",
     "attachFiles": "Attach files",
     "manageSkillsAndConnections": "Manage skills and connections",
@@ -102,7 +103,7 @@
     "selectedWork": "Selected work",
     "addedToThisMessage": "Added to this message",
     "pinnedKnowledge": "Pinned knowledge",
-    "connectAModelProvider": "Connect a model provider",
+    "connectAModelProvider": "Connect an AI account",
     "chooseAThinkingLevel": "Choose a thinking level",
     "chooseAModel": "Choose a model",
     "sendNextWaitsForThisReplyGuideThisResponse": "Send next waits for this reply. Guide this response adds instructions now.",
@@ -117,16 +118,19 @@
     "shortcutClose": "close",
     "escapeKey": "esc",
     "versionLabel": "Version {{version}}",
-    "startAFreshConversation": "Start a fresh conversation",
+    "startAFreshConversation": "Start a research session",
     "chooseTheModel": "Choose the model",
     "changeWhatThisMessageRemembers": "Toggle private chat",
     "chooseWhatThisLoupistCanUse": "Choose what this Loupist can use",
     "attachmentName": "attachment",
     "removeAttachment": "Remove {{value1}}",
     "removeContextChip": "Remove {{label}}",
-    "dontRememberThisChat": "Private chat: don't remember this chat",
-    "privateChatOn": "Private chat is on: this chat won't be remembered",
-    "privateNotSavedToMemory": "Private — not saved to memory",
+    "privateChat": "Private chat",
+    "privateMenuDetail": "Doesn't use or add to what your Loupist remembers",
+    "privateChip": "Private · memory off",
+    "privateOff": "Turn off private chat",
+    "connectToAsk": "Connect an AI account to start asking…",
+    "privateStatus": "Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.",
     "informationDisclosure": "AI can be wrong. Not a licensed financial adviser.",
     "moreChips": "+{{formattedCount}} more",
     "attachments": {
@@ -225,12 +229,13 @@
     "rate_limited": "Your AI account was busy.",
     "offline": "Couldn't reach your AI account.",
     "provider_unavailable": "Your AI account's service had a problem.",
-    "context_too_long": "This chat is too long for the model. Start a new chat, or remove large attachments.",
+    "context_too_long": "This chat is too long for the model. Start new research, or remove large attachments.",
     "needs_reconnect": "The sign-in to your AI account stopped working.",
     "plan_limit": "Your ChatGPT plan is at its limit.",
     "plan_not_eligible": "This ChatGPT plan can't be used in other apps.",
     "out_of_credit": "Your AI account is out of credit.",
-    "model_gone": "This model isn't offered anymore."
+    "model_gone": "This model isn't offered anymore.",
+    "failedKept": "The steps and the text so far were kept."
   },
   "chatModelMenu": {
     "modelSettingsForThisMessage": "Model settings for this message",
@@ -323,8 +328,8 @@
     "inspectResult": "Inspect result {{value1}}"
   },
   "chatWorkingContext": {
-    "couldNotLoadTheWorkingNote": "Could not load the working note.",
-    "workingNote": "Working note",
+    "couldNotLoadTheWorkingNote": "Could not load the research note.",
+    "workingNote": "Research note",
     "tryAgain": "Try again",
     "theCurrentResearchNoteForThisConversation": "The current research note for this conversation.",
     "noteEvidence": "Note evidence",
@@ -341,7 +346,7 @@
     "updatedDate": "Updated {{date}}",
     "attributedSource": "Source: {{attribution}}",
     "numberedSource": "Source {{value1}}",
-    "numberedWorld": "World {{value1}}",
+    "numberedWorld": "Map {{value1}}",
     "numberedLens": "Lens {{value1}} · {{value2}}"
   },
   "messageMemoryRow": {
@@ -364,14 +369,14 @@
     "relationshipsOnMap_other": "{{formattedCount}} relationships updated on the map",
     "savedSources_one": "Saved {{formattedCount}} source",
     "savedSources_other": "Saved {{formattedCount}} sources",
-    "savedPrinciples_one": "Saved {{formattedCount}} new rule",
-    "savedPrinciples_other": "Saved {{formattedCount}} new rules",
+    "savedPrinciples_one": "Saved {{formattedCount}} new principle",
+    "savedPrinciples_other": "Saved {{formattedCount}} new principles",
     "savedJournal_one": "Saved {{formattedCount}} journal entry",
     "savedJournal_other": "Saved {{formattedCount}} journal entries",
     "savedNotes_one": "Saved {{formattedCount}} research note",
     "savedNotes_other": "Saved {{formattedCount}} research notes",
-    "savedWorld_one": "Saved {{formattedCount}} World item",
-    "savedWorld_other": "Saved {{formattedCount}} World items",
+    "savedWorld_one": "{{formattedCount}} added to the map",
+    "savedWorld_other": "{{formattedCount}} added to the map",
     "nothingNew": "Nothing new saved",
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
@@ -388,10 +393,12 @@
     "ideas_one": "{{formattedCount}} idea",
     "ideas_other": "{{formattedCount}} ideas",
     "usedPages_one": "Used {{formattedCount}} page",
-    "usedPages_other": "Used {{formattedCount}} pages"
+    "usedPages_other": "Used {{formattedCount}} pages",
+    "usedPrinciples_one": "Used your principle",
+    "usedPrinciples_other": "Used {{formattedCount}} principles"
   },
   "messageSchedules": {
-    "draftFilesFailed": "Could not save draft attachments on this device.",
+    "draftFilesFailed": "Could not save draft attachments on this Mac.",
     "needsTime": "Answer in Bot",
     "handedToBot": "Handed to Bot · {{status}}",
     "scheduledTasks": "Scheduled tasks",
@@ -409,57 +416,41 @@
     "discarded": "Discarded",
     "nextRun": "Next run {{date}}",
     "couldNotChange": "Couldn't change it. Try again.",
-    "proposalHint": "Nothing runs until you turn it on."
+    "proposalHint": "Nothing runs until you turn it on.",
+    "spending": "Scheduled tasks use your AI account each run."
   },
   "worldProcessingStatus": {
-    "sourceSavedCouldNotRefreshWorldStatus": "Source saved · Could not refresh World status",
-    "sourceSavedCheckWorldForProcessingDetails": "Source saved · Check World for processing details",
+    "sourceSavedCouldNotRefreshWorldStatus": "Source saved · Could not refresh the Map status",
+    "sourceSavedCheckWorldForProcessingDetails": "Source saved · Check the Map for details",
     "refreshStatus": "Refresh status",
-    "queued": "World: queued",
-    "running": "World: processing relationships",
-    "completed": "World: relationships updated",
-    "paused": "World: processing paused",
-    "paused_budget": "World: processing paused",
-    "failed_before_mutation": "World: processing failed",
-    "reconcile_required": "World: outcome uncertain — review in World",
-    "reconciled_without_retry": "Source retained · Interrupted World processing was not retried",
-    "cancelled_before_start": "World: processing cancelled",
-    "no_text": "Source saved · No readable text for World processing",
-    "disabled": "Source saved · World processing is off",
-    "not_configured": "Source saved · Set up World processing in Loupist settings",
+    "queued": "Map: queued",
+    "running": "Map: connecting relationships",
+    "completed": "Map: relationships updated",
+    "paused": "Map: building paused",
+    "paused_budget": "Map: building stopped for this source",
+    "failed_before_mutation": "Map: building failed",
+    "reconcile_required": "Map: outcome uncertain — review it in the Map",
+    "reconciled_without_retry": "Source retained · Interrupted Map building was not retried",
+    "cancelled_before_start": "Map: building cancelled",
+    "no_text": "Source saved · No readable text for the Map",
+    "disabled": "Source saved · Map building is off",
+    "not_configured": "Source saved · Set up Map building in Loupist settings",
     "saved": "Source saved"
   },
   "chatStatusPill": {
-    "jumpToLatest": "Jump to latest"
+    "jumpToLatest": "Jump to latest",
+    "failed": "Couldn’t finish"
   },
   "turn": {
     "writing": "Writing",
-    "thinkingItThrough": "Thinking it through",
-    "waitingForNextStep": "Waiting for the next step",
-    "waitingForModel": "Waiting for the model",
-    "stoppedCount": "{{stoppedCount}} stopped",
-    "pausedCount": "{{pausedCount}} paused",
     "research": {
-      "activity": "Research activity",
-      "calculations": "Calculations",
-      "sources": "Source review",
-      "finance": "Financial data",
-      "memory": "Saved research",
-      "outputs": "Research outputs",
       "failedAttempt_one": "{{count}} failed attempt",
-      "failedAttempt_other": "{{count}} failed attempts",
-      "unavailable_one": "{{count}} skipped lookup",
-      "unavailable_other": "{{count}} skipped lookups",
-      "unavailableAsOf_one": "{{count}} lookup skipped for {{date}}",
-      "unavailableAsOf_other": "{{count}} lookups skipped for {{date}}",
-      "declined": "Permission declined",
-      "expired": "Approval request expired"
+      "failedAttempt_other": "{{count}} failed attempts"
     },
-    "readSources_one": "Read {{formattedCount}} source",
-    "readSources_other": "Read {{formattedCount}} sources",
-    "working": "Working",
     "stillWorking": "Still working",
-    "waitingForYou": "Waiting for you"
+    "waitingForYou": "Waiting for you",
+    "starting": "Starting",
+    "thinking": "Thinking"
   },
   "browserWorkspaceView": {
     "goBack": "Go back",
@@ -472,6 +463,7 @@
     "tryAgain": "Try again",
     "openInBrowser": "Open in browser",
     "viewSavedPassage": "View saved passage",
+    "savedPassage": "Saved passage",
     "browseInLoupist": "Browse in Loupist",
     "enterAnHTTPOrHTTPSAddressAboveSearchQueries": "Enter an HTTP or HTTPS address above. Search queries are not sent to a search engine.",
     "browserContent": "Browser content",
@@ -521,7 +513,7 @@
       "source": "Source",
       "savedSource": "Saved source",
       "lens": "Lens",
-      "world": "World",
+      "world": "Map",
       "journal": "Journal",
       "note": "Research note",
       "file": "File"
@@ -614,8 +606,8 @@
   },
   "workspaceKnowledgeReader": {
     "couldNotOpenThisSavedReference": "Could not open this saved reference.",
-    "exploreThisSavedWorldAndItsEvidence": "Explore this saved World and its evidence.",
-    "openWorld": "Open World",
+    "exploreThisSavedWorldAndItsEvidence": "Explore this saved Map and its evidence.",
+    "openWorld": "Open Map",
     "openInLens": "Open in Lens",
     "retryReference": "Retry reference",
     "openingSavedReference": "Opening saved reference…",
@@ -631,7 +623,7 @@
     "chart": "Chart",
     "document": "Document",
     "closeTab": "Close {{title}} tab",
-    "map": "Map",
+    "map": "Chat map",
     "evidence": "Evidence",
     "newContent": "New in {{tab}}",
     "work": "Work",
@@ -722,8 +714,16 @@
     "interactiveAnalyticChart": "Interactive analytic chart",
     "chartCouldNotBeRendered": "Chart could not be rendered"
   },
+  "chartAxis": {
+    "unit": "{{currency}} {{scale}}",
+    "titleWithUnit": "{{label}} ({{unit}})",
+    "unitOnly": "In {{unit}}",
+    "series": "Series",
+    "value": "Value"
+  },
   "financialChart": {
     "chartControls": "Chart controls",
+    "moreControls": "More chart controls",
     "draw": "Draw",
     "stopEditingDrawings": "Stop editing drawings",
     "volumeIndicator": "Volume",
@@ -805,7 +805,7 @@
     "datasetResult": "Dataset result",
     "toolResult": "Tool result",
     "aSavedAnalysisResultThisIsNotAnOriginal": "A saved analysis result. This is not an original source or an independently verified fact.",
-    "worldSearch": "World search",
+    "worldSearch": "Map search",
     "lensSearch": "Lens search",
     "numberedSource": "Source {{number}}: {{title}}",
     "memoryLabel": "Memory: {{memoryTitle}}",
@@ -820,7 +820,7 @@
     "createKind": "Created {{kind}}"
   },
   "memoryPreview": {
-    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "This saved preview is incomplete. Open the related record in World or Lens to read its content.",
+    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "This saved preview is incomplete. Open the related record in the Map or Lens to read its content.",
     "noMatchingSavedRecords": "No matching saved records.",
     "moreMatchesAreAvailableInMemory": "More matches are available in Memory.",
     "noEntitiesOrRelationshipsInThisSavedView": "No entities or relationships in this saved view.",
@@ -830,7 +830,7 @@
   },
   "searchComposerContext": {
     "savedSource": "Saved source",
-    "savedJudgment": "Saved judgment",
+    "savedJudgment": "Journal entry",
     "savedWork": "Saved work",
     "chart": "Chart",
     "document": "Document",
@@ -850,15 +850,15 @@
     "couldNotStartTheResponse": "Could not start the response.",
     "guidanceSentToTheActiveResponse": "Guidance sent to the active response.",
     "couldNotSteerTheActiveResponse": "Could not steer the active response.",
-    "nativeChatDidNotFinishSavingTheStoppedResponse": "Native Chat did not finish saving the stopped response.",
+    "nativeChatDidNotFinishSavingTheStoppedResponse": "The app did not finish saving the stopped response.",
     "couldNotStopTheResponse": "Could not stop the response.",
     "theAttachedFilesFromThatRequestCouldNotBe": "The attached files from that request could not be read.",
     "couldNotTryThatResponseAgain": "Could not try that response again.",
-    "chatThreadIsUnavailable": "Chat thread is unavailable.",
+    "chatThreadIsUnavailable": "This chat is unavailable.",
     "theReplyDidNotStartCheckTheConversationBeforeTryingAgain": "The reply did not start. Check the conversation before trying again."
   },
   "runRegistry": {
-    "savedChatNotRefreshed": "The response finished, but the saved Chat could not be refreshed yet.",
+    "savedChatNotRefreshed": "The response finished, but the saved conversation could not be refreshed yet.",
     "couldNotStopTheRecoveredResponse": "Could not stop the recovered response."
   },
   "workspace": {
@@ -915,17 +915,15 @@
     "couldNotReadOrSendTheAttachedMessageYour": "Could not read or send the attached message. Your draft and files have been kept. Try again, or remove and reattach the files.",
     "uploadFiles": "Upload files",
     "whatWouldYouLikeToKnow": "What would you like to know?",
-    "stop": "Stop",
-    "submit": "Submit",
     "fileSizeLimit": "Files larger than {{value1}} MB were not added."
   },
   "aiSdk": {
     "attachmentDataIsUnavailable": "Attachment data is unavailable.",
-    "loupistAndThreadAreRequiredForANativeChat": "Loupist and thread are required for a native chat run.",
+    "loupistAndThreadAreRequiredForANativeChat": "A Loupist and a chat are required to run a chat in the app.",
     "aMessageOrAttachmentIsRequired": "A message or attachment is required.",
     "thisReplyGotOutOfStepWithTheConversation": "This reply got out of step with the conversation. Check the chat before trying again.",
     "couldNotStartTheResponse": "Could not start the response.",
-    "theScheduledStreamBelongsToAnotherChat": "The scheduled stream belongs to another Chat.",
+    "theScheduledStreamBelongsToAnotherChat": "The scheduled stream belongs to another conversation.",
     "responseStopped": "Response stopped.",
     "stoppedByUser": "Stopped by user"
   },
@@ -945,7 +943,7 @@
     "title": "Connect {{name}}",
     "loading": "Checking {{name}}…",
     "needsSetup": "{{name}} needs its setup before this Loupist can use it.",
-    "keyNote": "Any key goes in the setup dialog and stays on this device; the Loupist never sees it.",
+    "keyNote": "Any key goes in the setup dialog and stays on this Mac; the Loupist never sees it.",
     "setUp": "Set up",
     "offHere": "{{name}} is set up but off for this Loupist.",
     "useHere": "Use in this Loupist",
@@ -956,13 +954,14 @@
   },
   "approvalCard": {
     "label": "Approval for {{tool}}",
-    "title": "Needs your approval",
+    "title": "Needs your OK",
     "waiting": "waiting {{time}}",
     "body": "{{connection}} wants to use “{{tool}}” for {{target}}.",
     "bodyNoTarget": "{{connection}} wants to use “{{tool}}”.",
     "readOnly": "This connection receives the request. The tool can only read data.",
     "allowOnce": "Allow once",
     "always": "Always allow for this connection",
+    "alwaysShort": "Always allow",
     "notNow": "Not now",
     "allowedOnce": "Allowed once · {{tool}}",
     "alwaysAllowed": "Always allowed · {{tool}} ({{connection}})",
@@ -992,8 +991,9 @@
     "view": "View"
   },
   "chatBlock": {
-    "building": "Building…",
+    "building": "Preparing",
     "couldNotBuildChart": "Couldn't build this chart.",
+    "askAgain": "Ask again",
     "updatedSince": "Updated since this answer.",
     "openLatest": "Open latest",
     "unavailable": "This chart is no longer available.",
@@ -1041,7 +1041,7 @@
       "source": "from {{title}}",
       "check": "To check by {{date}}",
       "conflict": "sources disagree",
-      "watching": "watching"
+      "watching": "following"
     },
     "q": {
       "changed": "What changed for {{name}} since {{date}}?",
@@ -1067,6 +1067,42 @@
       "exDividend": "Ex-dividend date",
       "recordDate": "Dividend record date",
       "check": "To check: {{claim}}"
+    },
+    "setup": {
+      "label": "Get set up",
+      "count": "{{done}} of {{total}}",
+      "hide": "Hide",
+      "done": "Done",
+      "needsAccount": "Needs an AI account",
+      "holdings": "Import holdings (CSV)…",
+      "follow": {
+        "label": "Follow a few companies",
+        "insert": "Follow these for me: "
+      },
+      "principle": {
+        "label": "Teach a principle",
+        "insert": "My principle: ",
+        "example": "e.g. check whether capacity costs are temporary before trusting a margin recovery"
+      },
+      "briefing": {
+        "label": "Get a briefing every morning",
+        "insert": "Send me a briefing every weekday at 8:00 AM."
+      }
+    },
+    "focusSubject": {
+      "portfolio": "my portfolio",
+      "semiconductors": "semiconductors",
+      "dividends": "dividend stocks",
+      "technology": "US big tech",
+      "crypto": "crypto",
+      "macro": "macro and rates",
+      "commodities": "commodities",
+      "realAssets": "real assets"
+    },
+    "homeLine": "Briefings, alerts and anything that needs you will arrive in this conversation.",
+    "readTogether": {
+      "label": "Read a filing or article together",
+      "insert": "Read this with me and tell me what matters: "
     }
   },
   "toolProgress": {
@@ -1135,8 +1171,8 @@
       "done": "Remembered for this conversation"
     },
     "note_save": {
-      "running": "Saving a working note",
-      "done": "Saved a working note"
+      "running": "Saving a research note",
+      "done": "Saved a research note"
     },
     "journal_save": {
       "running": "Saving your journal",
@@ -1395,7 +1431,7 @@
     "oilInventoryDown": "{{name}}: U.S. commercial crude stocks fell {{amount}} barrels in the week to {{date}} (EIA).",
     "oilInventory": "{{name}}: new EIA weekly petroleum report (week to {{date}}).",
     "prepare": "Prepare before and after",
-    "from": "From: Watching · Open in Schedule",
+    "from": "From: Watching · Open Following",
     "more": "+{{formattedCount}} more",
     "label": "Alerts from Watching"
   },
@@ -1414,7 +1450,7 @@
     "offlineReads": "Some data couldn't be fetched because a source or the network couldn't be reached. Check your connection, then ask again.",
     "couldNotReach": "Couldn't reach {{provider}}. Check your connection, then try again.",
     "providerUnavailable": "{{provider}} is having trouble right now. Try again in a moment.",
-    "contextTooLong": "This chat is too long for the model. Start a new chat, or remove large attachments.",
+    "contextTooLong": "This chat is too long for the model. Start new research, or remove large attachments.",
     "yourProvider": "your AI account",
     "waitingOffline": "Waiting to send until you're back online.",
     "planLimit": "Your ChatGPT plan is at its limit. Loupist won't retry on its own.",
@@ -1442,8 +1478,8 @@
     },
     "using": {
       "title": "Using",
-      "principles_one": "{{formattedCount}} rule",
-      "principles_other": "{{formattedCount}} rules",
+      "principles_one": "{{formattedCount}} principle",
+      "principles_other": "{{formattedCount}} principles",
       "methods_one": "{{formattedCount}} method",
       "methods_other": "{{formattedCount}} methods",
       "connections_one": "{{formattedCount}} connection",
@@ -1452,7 +1488,7 @@
       "pins_other": "{{formattedCount}} added",
       "kind": {
         "pin": "Added",
-        "principle": "Rule",
+        "principle": "Principle",
         "method": "Method",
         "connection": "Connection"
       }
@@ -1530,20 +1566,19 @@
     "comparison": "Compare companies or assets side by side",
     "data-analysis": "Analyze a dataset and explain what it shows",
     "dividend-income": "Check how safe a dividend looks",
-    "documents": "Write or edit a Word document",
+    "word-documents": "Write or edit a Word document",
     "events-stats": "See how prices moved around past events",
     "filings": "Read and compare company filings",
     "fund-compare": "Compare ETFs or funds side by side",
     "goal-math": "Do the math for a savings goal",
     "journal": "Record a judgment and when to check it",
     "lens": "Teach or correct how your Loupist works",
-    "pdf": "Read, fill in or make a PDF",
+    "pdf": "Read, combine or make a text PDF",
     "portfolio-risk": "Look at concentration and risk in what you hold",
     "presentations": "Make a slide deck",
     "research": "Research a question with sources",
     "rule-test": "Test a rule against history",
     "skill-creator": "Create a new Skill",
-    "skill-installer": "Install a Skill from a link",
     "spreadsheets": "Build or edit a spreadsheet",
     "valuation": "Estimate what a company is worth",
     "visualize": "Draw a chart from data",
@@ -1602,7 +1637,7 @@
     "labelCalculated": "{{value}}, calculated. Show the math",
     "labelSourced": "{{value}}, from {{source}}",
     "inputs": "Inputs",
-    "calculatedHere": "Calculated on this computer",
+    "calculatedHere": "Calculated on this Mac",
     "notLinked": "Not linked to a source",
     "grid": "A {{rows}} × {{cols}} grid, not one value",
     "fromStep": "From a step in this answer",
@@ -1706,7 +1741,7 @@
     "moreColumnsLabel_one": "Scroll to {{formattedCount}} more column",
     "moreColumnsLabel_other": "Scroll to {{formattedCount}} more columns",
     "knownAsOf": "Known as of {{date}}",
-    "building": "Building…",
+    "building": "Preparing",
     "failed": "Couldn't build this table",
     "retry": "Try again",
     "sortDesc": "Sorted high to low",
@@ -1764,6 +1799,10 @@
     "outsideCount_one": "{{formattedCount}} cell is outside what can be calculated",
     "outsideCount_other": "{{formattedCount}} cells are outside what can be calculated",
     "copy": "Copy data"
+  },
+  "readStep": {
+    "running": "Reading {{read}}",
+    "done": "Read {{read}}"
   },
   "asOf": {
     "panelTitle": "Look back to",
@@ -1858,5 +1897,29 @@
     "running": "Reviewing earlier conversation…",
     "done": "Reviewed earlier conversation",
     "incomplete": "Could not finish reviewing earlier conversation"
+  },
+  "watchAll": {
+    "actionOne": "Watch {{name}}",
+    "action_other": "Watch all {{formattedCount}}",
+    "note": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",
+    "done_one": "Watching {{formattedCount}} name. Change it in <0>Following</0>.",
+    "done_other": "Watching {{formattedCount}} names. Change it in <0>Following</0>.",
+    "failed": "Couldn’t turn on watching. Try again."
+  },
+  "ledger": {
+    "steps_one": "{{formattedCount}} step",
+    "steps_other": "{{formattedCount}} steps",
+    "plan": "Plan {{k}} of {{n}} · {{label}}",
+    "worked": "Worked {{duration}}",
+    "stoppedAfter": "Stopped after {{duration}}",
+    "sources_one": "{{formattedCount}} source",
+    "sources_other": "{{formattedCount}} sources",
+    "seconds": "{{s}}s",
+    "minutes": "{{m}}m {{s}}s",
+    "stepSeconds": "{{value}}s",
+    "more": "+{{formattedCount}}"
+  },
+  "citedNote": {
+    "source": "source"
   }
 }

@@ -51,7 +51,9 @@ impl AppToolExecutor {
                         .get_journal(&policy.loupist_id, journal_id)
                     },
                 )
-                .map_err(|error| BrokerError::invalid("journal.earlier.readRef", error.message))?;
+                .map_err(|error| {
+                    BrokerError::invalid("journal.earlier.readRef", command_message(error))
+                })?;
                 if let Some(outcome) = journal
                     .outcome
                     .as_ref()
@@ -137,7 +139,7 @@ impl AppToolExecutor {
                 &policy.loupist_id,
                 id,
             )
-            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+            .map_err(command_error)?;
             if research.working_note.is_some() && previous.chat_id == policy.session_id {
                 return Err(BrokerError::invalid(
                     "previousNoteIds",
@@ -155,9 +157,7 @@ impl AppToolExecutor {
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         if !policy.propose_memory_updates {
-            return Err(BrokerError::Execution(
-                "Save learning is off, so this turn cannot retain a Source".into(),
-            ));
+            return Err(BrokerError::ProposalDisabled);
         }
         let object = exact_object(
             &params,
@@ -393,8 +393,11 @@ impl AppToolExecutor {
         delivery_id: &str,
         review: bool,
     ) -> Result<Value, BrokerError> {
-        if !policy.propose_memory_updates || !policy.use_memory {
+        if !policy.use_memory {
             return Err(BrokerError::MemoryDisabled);
+        }
+        if !policy.propose_memory_updates {
+            return Err(BrokerError::ProposalDisabled);
         }
         if !review
             && (self
@@ -493,7 +496,27 @@ impl AppToolExecutor {
         } else {
             parse_research_journal(&params, now_ms())?
         };
+        // Shape validation alone cannot authorize World links. Use the same
+        // complete-World check as the canonical writer before reserving a save
+        // slot, so an unknown name/id can be repaired in this reply.
+        if !journal.entities.is_empty() {
+            let mut connection = self
+                .state
+                .store
+                .lock_loupist(&policy.loupist_id)
+                .map_err(store_error)?;
+            let tx = connection
+                .transaction()
+                .map_err(|error| knowledge_error(error.into()))?;
+            crate::knowledge::journal::validate_entities(
+                &tx,
+                &policy.loupist_id,
+                &journal.entities,
+            )
+            .map_err(journal_argument_error)?;
+        }
         let research = StagedResearch {
+            thesis_pair: None,
             journal: Some(journal),
             working_note: None,
             observations: String::new(),
@@ -506,20 +529,90 @@ impl AppToolExecutor {
             previous_note_ids: Vec::new(),
         };
         self.validate_note_references(policy, &research).await?;
+        let journal = research.journal.as_ref().expect("journal parsed");
+        let mut result = json!({"status":"staged", "durable":false, "kind":"journal"});
+        let mut reservation = self.capture.journal_delivery.lock().await;
+        let paired = !reservation.is_empty();
+        if paired
+            && (review
+                || reservation.len() != 1
+                || !reservation[0]
+                    .1
+                    .thesis
+                    .as_ref()
+                    .zip(journal.thesis.as_ref())
+                    .is_some_and(|((first, _), (second, _))| {
+                        reservation[0].1.outcome.is_none()
+                            && journal.outcome.is_none()
+                            && first.asset_id == second.asset_id
+                            && first.role != second.role
+                            && (if first.role == crate::knowledge::assets::ThesisRole::Line {
+                                &reservation[0].1
+                            } else {
+                                journal
+                            })
+                            .check
+                            .is_some()
+                    }))
         {
-            let mut reservation = self.capture.journal_delivery.lock().await;
-            if reservation.is_some() {
-                return Err(BrokerError::invalid(
-                    "journal",
-                    "one journal save or review per turn",
-                ));
-            }
-            *reservation = Some(delivery_id.to_owned());
+            return Err(BrokerError::invalid("journal", "one Journal entry per reply, plus one more only when the two are a reason and a line for the same followed asset. This one was not saved; tell the user which part was not recorded."));
         }
+        if let Some((thesis, _)) = &journal.thesis {
+            use crate::knowledge::assets::ThesisRole;
+            match thesis.role {
+                ThesisRole::Reason => {
+                    result["saved_as"] = json!("reason");
+                    result["next"] = json!("Saved as a reason; a reason is never tested against figures. If the user also named a level that would change their mind, save it now as a line: journal_save with thesis role line and a check.");
+                }
+                ThesisRole::Line => {
+                    let check = journal.check.as_ref().expect("validated line check");
+                    let mut next = format!("Saved as a line. Tell the user what will be checked ({} {} {}{}) and that it has no date unless they gave one. Record a reading with thesis_update lineReading whenever a turn reads this figure.", check.metric, check.direction, check.threshold, check.unit.as_deref().unwrap_or(""));
+                    let staged_reason = reservation.iter().any(|(_, entry)| {
+                        entry.thesis.as_ref().is_some_and(|(other, _)| {
+                            other.asset_id == thesis.asset_id && other.role == ThesisRole::Reason
+                        })
+                    });
+                    let has_reason = if staged_reason {
+                        true
+                    } else {
+                        let mut connection = self
+                            .state
+                            .store
+                            .lock_loupist(&policy.loupist_id)
+                            .map_err(store_error)?;
+                        let tx = connection
+                            .transaction()
+                            .map_err(|error| knowledge_error(error.into()))?;
+                        crate::knowledge::journal::list(&tx, &policy.loupist_id)
+                            .map_err(knowledge_error)?
+                            .iter()
+                            .any(|entry| {
+                                !entry.archived
+                                    && entry.thesis.as_ref().is_some_and(|other| {
+                                        other.asset_id == thesis.asset_id
+                                            && other.role == ThesisRole::Reason
+                                    })
+                            })
+                    };
+                    if !has_reason {
+                        next.push_str(" This asset has no saved reason yet and readings are refused until one exists: ask the user why they follow it.");
+                    }
+                    result["saved_as"] = json!("line");
+                    result["next"] = json!(next);
+                }
+            }
+        }
+        reservation.push((delivery_id.to_owned(), journal.clone()));
         self.capture
-            .stage(delivery_id, |pending| pending.research = Some(research))
+            .stage(delivery_id, |pending| {
+                if paired {
+                    pending.thesis_pair = research.journal;
+                } else {
+                    pending.research = Some(research);
+                }
+            })
             .await;
-        Ok(json!({"status":"staged", "durable":false, "kind":"journal"}))
+        Ok(result)
     }
 
     pub(super) async fn stage_research(
@@ -529,9 +622,7 @@ impl AppToolExecutor {
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
         if !policy.propose_memory_updates {
-            return Err(BrokerError::Execution(
-                "Save learning is off, so this turn cannot save research".into(),
-            ));
+            return Err(BrokerError::ProposalDisabled);
         }
         let object = exact_object(
             &params,
@@ -539,6 +630,7 @@ impl AppToolExecutor {
             &["sourceReads", "worldReads", "lensReads", "previousNoteIds"],
         )?;
         let research = StagedResearch {
+            thesis_pair: None,
             source_reads: optional_unique_strings(object.get("sourceReads"), 32, 128).map_err(
                 |_| {
                     BrokerError::invalid(
@@ -604,7 +696,7 @@ impl AppToolExecutor {
                 if error.code == "conflict" {
                     BrokerError::invalid("workingNote.expectedResearchId", error.message)
                 } else {
-                    BrokerError::Execution(error.to_string())
+                    command_error(error)
                 }
             })?;
         }

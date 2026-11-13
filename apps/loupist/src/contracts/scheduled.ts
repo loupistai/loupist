@@ -128,7 +128,8 @@ export type TaskScheduleReceipt = {
 export type SkippedTool = Wire.SkippedTool;
 export type BriefingSettings = { enabled: boolean; schedule: ScheduledCadence; task: ScheduledTask | null };
 /** App-wide: keep the process in the menu bar after the window closes so schedules keep running. */
-export type BriefingResidentSettings = { keepRunning: boolean; notificationPermissionAsked: boolean };
+/** `keepRunningChoice` is the user's explicit menu-bar choice, which the host never overrides; null keeps the automatic default. */
+export type BriefingResidentSettings = { keepRunning: boolean; notificationPermissionAsked: boolean; keepRunningChoice: boolean | null };
 export type BriefingSettingsRequest = Wire.BriefingSettingsRequest;
 export type InboxItem = {
   briefingContext: BriefingContext | null; error: string | null;

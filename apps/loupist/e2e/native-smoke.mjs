@@ -24,6 +24,7 @@ import {
   selectLoupistTemplate,
   waitForOnboardingStep,
   openMainTab,
+  openCustomConnections,
   waitForShell,
 } from "./native-shell.mjs";
 
@@ -182,15 +183,19 @@ try {
     await preferEnglish(browser);
     await removeUntilOnboarding();
     await waitForOnboardingStep(browser, 1, 60_000);
-    await waitForText(await displayed("main[data-onboarding]"), "A research companion that learns what you care about");
+    await waitForText(await displayed("main[data-onboarding]"), "Watch. Remember. Explain.");
     await displayed("[data-onboarding-start]");
     await capture("onboarding-welcome");
   });
 
-  await step("a connected account picks a preset and enters its Bot", async () => {
+  await step("a connected account picks a preset and enters its Loupist", async () => {
     await (await displayed("[data-notice-acknowledgment]")).click();
     await clickButton("Get started");
     await waitForOnboardingStep(browser, 3, 20_000);
+    await selectLoupistTemplate(browser, "My portfolio");
+    assert.equal(await (await displayed("#onboarding-name")).getValue(), "Portfolio Loupist");
+    assert.equal(await browser.$("#onboarding-focus").isExisting(), false);
+    assert.equal(await browser.$("[data-loupist-tone]").isExisting(), false);
     await (await displayed("[data-onboarding-create]")).click();
     await waitForShell(browser, 30_000);
     assert.equal(await selectedLoupistTitle(browser), "Portfolio Loupist");
@@ -209,9 +214,9 @@ try {
     await displayed('[data-testid=loupist-chat-button][data-thread-id="__empty-chat__"][aria-current="page"]');
     const afterFirst = (await browser.$$("[data-testid=loupist-chat-button]")).length;
     await clickControl(browser, newChatLabel);
-    // An unsent topic Chat shows as one draft row under the Thread; a second New chat reuses it.
-    assert.ok(afterFirst <= before + 1, "An unsent Chat shows at most one draft row");
-    assert.equal((await browser.$$("[data-testid=loupist-chat-button]")).length, afterFirst, "A second New chat must reuse the unsent Chat");
+    // An unsent research session shows as one draft row under Bot; a second New research reuses it.
+    assert.ok(afterFirst <= before + 1, "An unsent research session shows at most one draft row");
+    assert.equal((await browser.$$("[data-testid=loupist-chat-button]")).length, afterFirst, "A second New research must reuse the unsent research session");
     await (await displayed("[data-header-loupist-settings]")).click();
     const sheet = await displayed("[data-testid=loupist-settings-page]");
     await waitForText(sheet, "Loupist settings");
@@ -266,12 +271,13 @@ try {
     console.log(JSON.stringify(performanceReport.loupistSwitch));
   });
 
-  await step("Settings Connections", async () => {
+  await step("Settings Data connections", async () => {
     await openSettings("connections");
     const panel = await displayed("#main-panel-settings");
-    await waitForText(panel, "Connections");
-    await waitForText(panel, "Your connections");
-    await displayed("[data-custom-add]");
+    await waitForText(panel, "Data connections");
+    await waitForText(panel, "Available connections");
+    await openCustomConnections(browser);
+    await displayed("[data-custom-connections] [data-custom-add]");
     await displayed('input[aria-label="Search connections"]');
     await waitForText(panel, "Market data platform");
     const unsupported = await browser.execute(() =>
@@ -362,19 +368,10 @@ try {
   if (full) await step("Model, appearance, and update Settings", async () => {
     await openSettings("model");
     const panel = await displayed("#main-panel-settings");
-    const connect = await browser.$$("button");
-    let opened = false;
-    for (const button of connect) {
-      if ((await button.isDisplayed()) && (await button.getText()).trim() === "Connect provider") {
-        await button.click();
-        opened = true;
-        break;
-      }
-    }
-    if (opened) {
-      await displayed('button[aria-label="Choose OpenAI with ChatGPT"]');
-      await browser.keys("Escape");
-    }
+    await clickButton("Add an AI account", panel);
+    const connect = await dialogByTitle(browser, "Add an AI account");
+    await (await connect.$('[data-connect-row="sign-in-openai"]')).waitForDisplayed({ timeout: 10_000 });
+    await browser.keys("Escape");
     await openSettings("appearance");
     const dark = await displayed('button[title="Dark theme"]');
     await dark.click();

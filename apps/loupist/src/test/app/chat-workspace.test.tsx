@@ -54,10 +54,10 @@ describe("Loupist · Chat workspace", () => {
     await user.click(kind);
     const kinds = screen.getAllByRole("menuitemradio");
     expect(kinds).toHaveLength(3);
-    expect(kinds[0]).toHaveAccessibleName("Lens");
-    expect(kinds[1]).toHaveAccessibleName("World");
+    expect(kinds[0]).toHaveAccessibleName("Map");
+    expect(kinds[1]).toHaveAccessibleName("Lens");
     expect(kinds[2]).toHaveAccessibleName("Chat materials");
-    expect(kinds[0]).toHaveAccessibleDescription("Your research principles and methods");
+    expect(kinds[1]).toHaveAccessibleDescription("Your research principles and methods");
     expect(kinds[2]).toHaveAccessibleDescription("This chat's map, evidence and outputs");
     await user.click(screen.getByRole("menuitemradio", { name: "Lens" }));
     const workspace = await screen.findByLabelText("Chat workspace panel");
@@ -67,7 +67,7 @@ describe("Loupist · Chat workspace", () => {
     expect(workspace).toHaveAttribute("data-placement", "bottom");
     expect(screen.getByRole("button", { name: "Split top and bottom" })).toHaveAttribute("aria-pressed", "true");
     await user.click(kind);
-    await user.click(screen.getByRole("menuitemradio", { name: "World" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Map" }));
     expect(workspace).toHaveAttribute("data-panel-kind", "world");
     expect(workspace).toHaveAttribute("data-placement", "bottom");
     expect(composer).toHaveValue("A question I am still writing");
@@ -199,6 +199,11 @@ describe("Loupist · Chat workspace", () => {
     expect(within(workspace).getAllByRole("tab", { name: "example.com" })).toHaveLength(2);
 
     const address = within(workspace).getByRole("textbox", { name: "Web address" });
+    // Enter submits the address; Tab moves on to a visible control, not the screen-reader submit.
+    address.focus();
+    await user.tab();
+    expect(within(workspace).getByRole("button", { name: "Open" })).not.toHaveFocus();
+    expect(document.activeElement).toHaveAccessibleName(/Saved passage|Open in system browser/);
     await user.clear(address);
     await user.type(address, "example.org/next");
     await user.click(within(workspace).getByRole("button", { name: "Open" }));

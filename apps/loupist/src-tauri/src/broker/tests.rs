@@ -62,6 +62,147 @@ fn a_service_approval_shows_the_next_step_its_own_provider_gave() {
 }
 
 #[test]
+fn refusal_messages_name_the_cause_end_in_a_period_and_do_not_repeat_the_next_step() {
+    for (error, message) in [
+        (BrokerError::MethodDenied, "This tool is not available in this run. Use another tool or name the gap."),
+        (BrokerError::MemoryDisabled, "Memory is off for this Chat, so this was not read. Answer without it and say so."),
+        (BrokerError::ProposalDisabled, "Saving is off for this Chat, so this was not saved. Say so; do not promise to remember."),
+        (BrokerError::ConnectionDontSave, "This reply read a connection the user marked Don't save, so nothing from this reply is saved. Say it was not saved and why."),
+        (BrokerError::OutboundPaused, crate::custom_connections::taint::OUTBOUND_REFUSAL),
+        (BrokerError::UntrustedTextPaused, crate::custom_connections::taint::UNTRUSTED_TEXT_REFUSAL),
+    ] {
+        let body = error_body(&error);
+        assert_eq!(body["message"], message);
+        assert!(body["message"].as_str().unwrap().ends_with('.'));
+        assert_eq!(body["next"], "");
+        assert_eq!(body["retryable"], false);
+    }
+    let invalid = error_body(&BrokerError::invalid(
+        "source_id",
+        "not from a web_search in this reply; search again or pass the URL",
+    ));
+    assert_eq!(
+        invalid["message"],
+        "source_id: not from a web_search in this reply; search again or pass the URL."
+    );
+    assert_eq!(invalid["next"], "");
+    let malformed = error_body(&BrokerError::Malformed);
+    assert!(malformed["message"]
+        .as_str()
+        .unwrap()
+        .starts_with("request:"));
+    assert!(malformed["next"]
+        .as_str()
+        .unwrap()
+        .contains("request fields"));
+    let private_error = error_body(&BrokerError::Io(io::Error::other(
+        "Authorization: Bearer private-fixture-key /private/fixture/path",
+    )));
+    let serialized = private_error.to_string();
+    for private in [
+        "Authorization",
+        "private-fixture-key",
+        "/private/fixture/path",
+    ] {
+        assert!(!serialized.contains(private));
+    }
+    assert!(private_error["message"].as_str().unwrap().ends_with('.'));
+    let path = error_body(
+        &BrokerError::UntrustedTextPaused
+            .with_next(crate::custom_connections::taint::HARD_LINK_WRITE_REFUSAL),
+    );
+    assert_eq!(
+        path["message"],
+        "This file has another name on disk and is not touched."
+    );
+    assert_eq!(path["next"], "");
+    let git =
+        error_body(&BrokerError::ProtectedPath.with_next("Git metadata is not read or written."));
+    assert_eq!(git["message"], "Git metadata is not read or written.");
+    assert_eq!(git["next"], "");
+}
+
+#[test]
+fn declined_timed_out_and_unattended_custom_calls_have_distinct_refusals() {
+    for (cause, reason, message) in [
+        (CustomApprovalRefusal::Declined, "declined", "The user declined this tool for now. Do not call it again in this reply; continue without it and say what is missing."),
+        (CustomApprovalRefusal::TimedOut, "timed_out", "Nobody answered the approval card. Do not call it again in this reply."),
+        (CustomApprovalRefusal::Unattended, "blocked_unattended", "This custom tool has no standing approval, so an unattended run cannot use it."),
+    ] {
+        let body = error_body(&BrokerError::CustomApprovalRefused { connection_id: "custom-fixture".into(), tool_name: "read_prices".into(), cause });
+        assert_eq!(body["code"], "needs_approval");
+        assert_eq!(body["reason"], reason);
+        assert_eq!(body["message"], message);
+        assert_eq!(body["next"], "");
+    }
+}
+
+#[test]
+fn every_transaction_budget_names_its_tool_and_actual_limit() {
+    let mut policy = policy();
+    policy.memory_proposal_budget = 2;
+    for (method, limit) in [
+        (ToolMethod::NoteSave, 1),
+        (ToolMethod::SourceSave, MAX_CHAT_TURN_SOURCES),
+        (ToolMethod::PrincipleSave, policy.memory_proposal_budget),
+        (ToolMethod::WorldSchemaUpdate, 1),
+        (ToolMethod::LoupistSetup, 1),
+        (ToolMethod::ConnectionSetup, MAX_CHAT_TURN_CONNECTION_SETUPS),
+        (ToolMethod::AskUser, MAX_CHAT_TURN_QUESTIONS),
+        (ToolMethod::LensFile, MAX_CHAT_TURN_FILINGS),
+        (ToolMethod::ArtifactPublish, MAX_CHAT_TURN_ARTIFACTS as u8),
+        (ToolMethod::ChartPublish, MAX_CHAT_TURN_ARTIFACTS as u8),
+        (ToolMethod::GridPublish, MAX_CHAT_TURN_ARTIFACTS as u8),
+        (ToolMethod::ResearchOpen, 1),
+    ] {
+        let mut cardinality = TransactionCardinality::default();
+        for _ in 0..limit {
+            cardinality.consume(method, &policy).unwrap();
+        }
+        let body = error_body(&cardinality.consume(method, &policy).unwrap_err());
+        assert_eq!(body["code"], "transaction_limit");
+        assert_eq!(body["message"], format!("{} has reached its limit of {limit} per reply. Do not call it again in this reply; other tools still work.", method.tool_name()));
+        assert_eq!(body["next"], "");
+        assert!(cardinality.consume(ToolMethod::WebSearch, &policy).is_ok());
+    }
+}
+
+#[tokio::test]
+async fn dont_save_connection_cause_precedes_the_chats_saving_switch() {
+    struct DontSaveExecutor;
+    #[async_trait]
+    impl ToolExecutor for DontSaveExecutor {
+        fn enforce_turn_policy(&self, _: ToolMethod, _: &Value) -> Result<(), BrokerError> {
+            Err(BrokerError::ConnectionDontSave)
+        }
+        async fn execute(
+            &self,
+            _: &ToolPolicy,
+            _: ToolMethod,
+            _: Value,
+        ) -> Result<Value, BrokerError> {
+            panic!("a blocked save must not execute")
+        }
+    }
+    let request = serde_json::from_value(json!({"protocol":PROTOCOL, "id":"save", "token":"fixture-token", "method":"source.save", "params":{}})).unwrap();
+    let result = execute_request(
+        request,
+        "fixture-token",
+        &policy(),
+        Arc::new(StdMutex::new(TransactionCardinality::default())),
+        Arc::new(DontSaveExecutor),
+        "delivery",
+    )
+    .await;
+    let (_, error) = match result {
+        Err(error) => error,
+        Ok(_) => panic!("a blocked save must be refused"),
+    };
+    assert_eq!(error_body(&error)["code"], "proposal_disabled");
+    assert_eq!(error_body(&error)["reason"], "connection_dont_save");
+}
+
+#[test]
 fn an_offline_read_has_its_own_error_category_and_marks_the_turn_trace() {
     let body = error_body(&BrokerError::Offline("krx.market-data".into()));
     assert_eq!(body["code"], "offline");
@@ -183,57 +324,35 @@ async fn broker_request(socket_path: &PathBuf, token: &str, id: &str, method: &s
 
 #[cfg(unix)]
 #[tokio::test]
-async fn broker_identity_is_idle_between_sequential_instances() {
-    let temporary = tempfile::tempdir().unwrap();
-    let socket_path = temporary.path().join("reusable-broker.sock");
-    let identity = ToolBrokerIdentity::new(socket_path.clone());
-
-    assert!(
-        !socket_path.exists(),
-        "idle identity must not accept clients"
-    );
-    let first = identity
-        .start(policy(), Arc::new(UnusedExecutor))
-        .await
-        .unwrap();
-    assert!(socket_path.exists());
-    assert_eq!(first.token(), identity.token());
-
-    let concurrent = identity.start(policy(), Arc::new(UnusedExecutor)).await;
-    assert!(matches!(
-        concurrent,
-        Err(BrokerError::Io(ref error)) if error.kind() == io::ErrorKind::AddrInUse
-    ));
-
-    first.shutdown().await.unwrap();
-    assert!(
-        !socket_path.exists(),
-        "shutdown must remove the accepting endpoint before releasing identity"
-    );
-
-    let second = identity
-        .start(policy(), Arc::new(UnusedExecutor))
-        .await
-        .unwrap();
-    assert_eq!(second.token(), identity.token());
-    second.shutdown().await.unwrap();
-    assert!(!socket_path.exists());
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn broker_identity_rejects_a_stale_endpoint_without_removing_it() {
+async fn broker_rejects_a_stale_endpoint_without_removing_it() {
     let temporary = tempfile::tempdir().unwrap();
     let socket_path = temporary.path().join("stale-broker.sock");
     std::fs::write(&socket_path, b"not a broker").unwrap();
-    let identity = ToolBrokerIdentity::new(socket_path.clone());
 
-    let result = identity.start(policy(), Arc::new(UnusedExecutor)).await;
+    let result = start_tool_broker(socket_path.clone(), policy(), Arc::new(UnusedExecutor)).await;
     assert!(matches!(
         result,
         Err(BrokerError::Io(ref error)) if error.kind() == io::ErrorKind::AddrInUse
     ));
     assert_eq!(std::fs::read(&socket_path).unwrap(), b"not a broker");
+}
+
+#[tokio::test]
+async fn shutdown_reports_an_accept_loop_failure_after_removing_the_endpoint() {
+    let temporary = tempfile::tempdir().unwrap();
+    let socket_path = temporary.path().join("failed-broker.sock");
+    let handle = ToolBrokerHandle {
+        socket_path: socket_path.clone(),
+        token: new_broker_token(),
+        shutdown: None,
+        task: Some(tokio::spawn(async {
+            Err(BrokerError::Io(io::Error::other("accept failed")))
+        })),
+    };
+    assert!(
+        matches!(handle.shutdown().await, Err(BrokerError::Io(error)) if error.to_string() == "accept failed")
+    );
+    assert!(!socket_path.exists());
 }
 
 #[cfg(unix)]
@@ -263,7 +382,6 @@ async fn sequential_brokers_do_not_share_policy_executor_or_cardinality() {
 
     let temporary = tempfile::tempdir().unwrap();
     let socket_path = temporary.path().join("turn-scoped-broker.sock");
-    let identity = ToolBrokerIdentity::new(socket_path.clone());
     let first_executor = Arc::new(Executor::default());
     let mut first_policy = policy();
     first_policy.loupist_id = "loupist-first".into();
@@ -271,8 +389,7 @@ async fn sequential_brokers_do_not_share_policy_executor_or_cardinality() {
     first_policy.use_memory = true;
     first_policy.propose_memory_updates = true;
     first_policy.memory_proposal_budget = 3;
-    let first = identity
-        .start(first_policy, first_executor.clone())
+    let first = start_tool_broker(socket_path.clone(), first_policy, first_executor.clone())
         .await
         .unwrap();
 
@@ -283,6 +400,7 @@ async fn sequential_brokers_do_not_share_policy_executor_or_cardinality() {
     let first_journal =
         broker_request(&socket_path, first.token(), "first-journal", "source.save").await;
     assert_eq!(first_journal["ok"], true);
+    let first_token = first.token().to_owned();
     first.shutdown().await.unwrap();
 
     let second_executor = Arc::new(Executor::default());
@@ -292,10 +410,10 @@ async fn sequential_brokers_do_not_share_policy_executor_or_cardinality() {
     second_policy.use_memory = false;
     second_policy.propose_memory_updates = true;
     second_policy.memory_proposal_budget = 3;
-    let second = identity
-        .start(second_policy, second_executor.clone())
+    let second = start_tool_broker(socket_path.clone(), second_policy, second_executor.clone())
         .await
         .unwrap();
+    assert_ne!(second.token(), first_token);
 
     let denied_memory = broker_request(
         &socket_path,
@@ -673,7 +791,7 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
     }
     assert!(matches!(
         cardinality.consume(ToolMethod::SourceSave, &policy),
-        Err(BrokerError::BudgetExceeded)
+        Err(BrokerError::BudgetExceeded { .. })
     ));
 
     for _ in 0..MAX_CHAT_TURN_ARTIFACTS {
@@ -683,7 +801,7 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
     }
     assert!(matches!(
         cardinality.consume(ToolMethod::ArtifactPublish, &policy),
-        Err(BrokerError::BudgetExceeded)
+        Err(BrokerError::BudgetExceeded { .. })
     ));
 
     cardinality
@@ -691,7 +809,7 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
         .unwrap();
     assert!(matches!(
         cardinality.consume(ToolMethod::ResearchOpen, &policy),
-        Err(BrokerError::BudgetExceeded)
+        Err(BrokerError::BudgetExceeded { .. })
     ));
     cardinality.rollback(ToolMethod::ResearchOpen);
     cardinality
@@ -703,7 +821,7 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
     }
     assert!(matches!(
         cardinality.consume(ToolMethod::LensFile, &policy),
-        Err(BrokerError::BudgetExceeded)
+        Err(BrokerError::BudgetExceeded { .. })
     ));
     cardinality.rollback(ToolMethod::LensFile);
     cardinality.consume(ToolMethod::LensFile, &policy).unwrap();
@@ -713,7 +831,7 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
     }
     assert!(matches!(
         cardinality.consume(ToolMethod::AskUser, &policy),
-        Err(BrokerError::BudgetExceeded)
+        Err(BrokerError::BudgetExceeded { .. })
     ));
 }
 
@@ -991,5 +1109,169 @@ fn as_of_refusals_keep_their_own_codes_for_the_answers_note() {
         ),
     ] {
         assert_eq!(error_body(&error)["code"], code, "{error}");
+    }
+}
+
+#[test]
+fn a_reply_level_argument_refusal_has_no_parameter_prefix() {
+    let error = BrokerError::invalid("", "The user did not answer, so this change was not made.")
+        .with_next("The user did not answer. Finish the reply and say what needs answering.");
+    let body = error_body(&error);
+    assert_eq!(
+        body["message"],
+        "The user did not answer, so this change was not made."
+    );
+    assert_eq!(body["code"], "malformed_request");
+    assert_eq!(body["retryable"], false);
+    assert!(body["next"].as_str().unwrap().contains("Finish the reply"));
+}
+
+#[test]
+fn argument_controls_are_refused_without_echoing_text_or_bad_keys() {
+    for code in (0_u8..=31).chain([127]) {
+        let text = format!("private-text{}tail", char::from(code));
+        let args = json!({"drawings":[{"label":text}]});
+        if matches!(code, 9 | 10 | 13) {
+            validate_argument_text(&args).unwrap();
+            continue;
+        }
+        let error = validate_argument_text(&args).unwrap_err();
+        assert!(
+            matches!(&error,BrokerError::WithNext { source,.. } if matches!(source.as_ref(),BrokerError::InvalidArguments { field,.. } if field=="drawings[0].label"))
+        );
+        let body = error_body(&error);
+        assert_eq!(
+            body["next"],
+            "Remove control characters and write the text again as plain UTF-8."
+        );
+        assert!(!body.to_string().contains("private-text"));
+        let key = format!("private-key{}tail", char::from(code));
+        let error = validate_argument_text(&json!({"metadata":{key:"value"}})).unwrap_err();
+        assert!(error.to_string().starts_with("metadata:"));
+        assert!(!error_body(&error).to_string().contains("private-key"));
+    }
+    for text in [
+        "한국어",
+        "日本語",
+        "🙂🚀",
+        "e\u{301}",
+        "line 1\nline 2\r\n\tindent",
+        r#"print("\x0c")"#,
+    ] {
+        let args = json!({text:[text,{"nested":text}],"code":text});
+        validate_argument_text(&args).unwrap();
+    }
+    let bad = json!({"metadata":{"dotted.key":["bad\u{6}"]}});
+    let error = validate_argument_text(&bad).unwrap_err();
+    assert!(error
+        .to_string()
+        .starts_with("metadata[\"dotted.key\"][0]:"));
+}
+
+#[tokio::test]
+async fn every_broker_tool_keeps_its_control_free_arguments_unchanged() {
+    struct Echo;
+    #[async_trait]
+    impl ToolExecutor for Echo {
+        async fn execute(
+            &self,
+            _: &ToolPolicy,
+            _: ToolMethod,
+            params: Value,
+        ) -> Result<Value, BrokerError> {
+            Ok(params)
+        }
+    }
+    let cases: Vec<Value> = serde_json::from_str(include_str!("tool-arguments.json")).unwrap();
+    let routes: std::collections::BTreeSet<_> = cases
+        .iter()
+        .map(|case| case["method"].as_str().unwrap())
+        .collect();
+    let catalog: std::collections::BTreeSet<_> = tools::TOOL_CATALOG
+        .tools
+        .iter()
+        .filter_map(|tool| tool.method.as_deref())
+        .collect();
+    assert_eq!(
+        routes, catalog,
+        "one schema-valid sample per catalog broker route"
+    );
+    assert_eq!(routes.len(), cases.len());
+    for case in cases.into_iter().chain([
+        json!({"method":"native.authorize","args":{"name":"read","path":"notes.txt","input":{"path":"notes.txt","limit":10}}}),
+        json!({"method":"mcp.connect","args":{"server_id":"openbb"}}),
+        json!({"method":"mcp.call","args":{"server_id":"openbb","tool_name":"equity_quote","arguments":{"symbol":"AAPL"}}}),
+    ]) {
+        let request=serde_json::from_value(json!({"protocol":PROTOCOL,"id":"control-free","token":"fixture-token","method":case["method"],"params":case["args"]})).unwrap();
+        let mut policy = policy();
+        policy.use_memory = true;
+        policy.propose_memory_updates = true;
+        policy.memory_proposal_budget = MAX_MEMORY_PROPOSALS;
+        let result=execute_request(request,"fixture-token",&policy,Arc::new(StdMutex::new(TransactionCardinality::default())),Arc::new(Echo),"delivery").await
+            .unwrap_or_else(|(_,error)|panic!("{}: {error}",case["method"]));
+        assert_eq!(result.result,case["args"]);
+    }
+}
+
+#[tokio::test]
+async fn invalid_control_text_never_reaches_execution() {
+    struct Never;
+    #[async_trait]
+    impl ToolExecutor for Never {
+        async fn execute(
+            &self,
+            _: &ToolPolicy,
+            _: ToolMethod,
+            _: Value,
+        ) -> Result<Value, BrokerError> {
+            panic!("invalid text executed")
+        }
+    }
+    for (method, params, field) in [
+        (
+            "chart.publish",
+            json!({"drawings":[{"label":"\u{6}1".repeat(40)}]}),
+            "drawings[0].label",
+        ),
+        (
+            "lens.file",
+            json!({"pages":[{"ops":[{"markdown":"bad\u{b}text"}]}]}),
+            "pages[0].ops[0].markdown",
+        ),
+        (
+            "journal.save",
+            json!({"judgment":"bad\u{1b}text"}),
+            "judgment",
+        ),
+        (
+            "schedule.create",
+            json!({"prompt":"bad\u{7f}text"}),
+            "prompt",
+        ),
+        ("python.run", json!({"code":"print(1)\u{c}"}), "code"),
+        (
+            "native.authorize",
+            json!({"name":"write","path":"notes.txt","input":{"path":"notes.txt","content":"bad\u{6}text"}}),
+            "input.content",
+        ),
+    ] {
+        let request=serde_json::from_value(json!({"protocol":PROTOCOL,"id":"invalid-controls","token":"fixture-token","method":method,"params":params})).unwrap();
+        let error = match execute_request(
+            request,
+            "fixture-token",
+            &policy(),
+            Arc::new(StdMutex::new(TransactionCardinality::default())),
+            Arc::new(Never),
+            "delivery",
+        )
+        .await
+        {
+            Err((_, error)) => error,
+            Ok(_) => panic!("bad arguments executed"),
+        };
+        assert!(
+            error.to_string().starts_with(&format!("{field}:")),
+            "{error}"
+        );
     }
 }

@@ -37,7 +37,7 @@ export const ChatModelMenu = memo(function ChatModelMenu({ auto, onResetToAuto, 
   const billingProvider = auto ? connectedProviders.size === 1 ? [...connectedProviders][0] : undefined : selected?.provider;
   const billing = props.providers.find((provider) => provider.id === billingProvider);
   const planLine = onOpenUsage && planLineKind(billing) ? <ProviderPlanLine provider={billing} onOpenUsage={onOpenUsage} /> : undefined;
-  return <ModelSelectionMenu contextLabel={t("chatModelMenu.modelForThisMessage")} {...props} planLine={planLine} auto={{ active: auto, onSelect: onResetToAuto }} renderTrigger={(label) => (
+  return <ModelSelectionMenu contextLabel={t("chatModelMenu.modelForThisMessage")} searchFrom={8} {...props} planLine={planLine} auto={{ active: auto, onSelect: onResetToAuto }} renderTrigger={(label) => (
     <PromptInputButton size="sm" className="composer-model-menu" data-testid="composer-model-menu" aria-label={`${auto || !selected ? t("chatModelMenu.auto") : selected.name} · ${t("chatModelMenu.modelSettingsForThisMessage")}`} aria-description={auto ? t("chatModelMenu.autoDescription") : label}
       disabled={props.disabled || (!props.models.length && !props.onManageModels)} tooltip={auto ? t("chatModelMenu.autoDescription") : label}>
       {auto || !selected ? <span>{t("chatModelMenu.auto")}</span> : <span className="composer-model-chip">{selected.name}</span>}

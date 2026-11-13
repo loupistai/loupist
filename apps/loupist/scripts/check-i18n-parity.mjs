@@ -44,22 +44,24 @@ const allowedTerms = new Map([
   ["Office", "Document product family"],
   ["Word", "Document product name"],
   ["PowerPoint", "Presentation product name"],
+  ["Python", "Programming language the file Skills run in the sandbox"],
 ]);
 
 // Technical literals and subscription names are exceptions only at the exact
 // catalog key where they are required. Keep a reason with every exception.
 const exceptions = new Map([
+  ["settings.general.betaNotice", { terms: ["Apple"], reason: "Company name in the Beta notarization notice" }],
   ["settings.custom.pasteJson", { terms: ["JSON"], reason: "Literal data format the user pastes" }],
   ["settings.custom.commandWarning", { terms: ["name"], reason: "Literal package@version example (name@1.2.3)" }],
   ["app.navigation.agentDefaultsReasoningThinkingRetryTokensContextConfiguration", { terms: ["TOML"], reason: "Search keyword for the configuration file format" }],
   ["onboarding.appDialogs.chooseThisLoupistSOriginalOrCopiedWorkspace", { terms: [".loupist"], reason: "Literal workspace data directory name" }],
-  ["onboarding.wizard.supergrokNote", { terms: ["Premium"], reason: "Official X subscription name" }],
+  ["chat.today.setup.follow", { terms: ["AAPL"], reason: "Ticker symbol in the example the chip types" }],
   ["settings.modelSettingsPanel.customNamePlaceholder", { terms: ["Ollama"], reason: "Product name in an example provider name" }],
   ["settings.skillsSettings.chooseFolderDescription", { terms: ["SKILL.md"], reason: "Required skill filename" }],
   ["settings.skillsSettings.repairSkill", { terms: ["SKILL.md"], reason: "Required skill filename" }],
-  ["settings.bundledSkills.documents.description", { terms: [".docx", ".dotx"], reason: "Literal supported file extensions" }],
-  ["settings.bundledSkills.spreadsheets.description", { terms: [".xlsx", ".xlsm", "data-analysis"], reason: "Literal file extensions and skill identifier" }],
-  ["settings.bundledSkills.presentations.description", { terms: [".pptx", ".potx"], reason: "Literal supported file extensions" }],
+  ["settings.bundledSkills.word-documents.description", { terms: [".docx"], reason: "Literal supported file extension" }],
+  ["settings.bundledSkills.spreadsheets.description", { terms: [".xlsx"], reason: "Literal supported file extension" }],
+  ["settings.bundledSkills.presentations.description", { terms: [".pptx"], reason: "Literal supported file extension" }],
   ["connections.catalog.community_web_researchSummary", { terms: ["HTML"], reason: "Supported document format acronym" }],
   ["chat.browserWorkspaceView.enterAnHTTPOrHTTPSAddressAboveSearchQueries", { terms: ["HTTP", "HTTPS"], reason: "Accepted URL protocols" }],
   ["onboarding.wizard.pasteInvalid", { terms: ["http"], reason: "Literal loopback address the pasted sign-in address starts with" }],
@@ -73,6 +75,8 @@ const exceptions = new Map([
   ["settings.providers.dialectAnthropic", { terms: ["Messages"], reason: "Official name of the Anthropic Messages API" }],
   ["chat.workspaceTabBar.openAnHTTPOrHTTPSAddress", { terms: ["HTTP", "HTTPS"], reason: "Accepted URL protocols" }],
   ["sharing.showInFinder", { terms: ["Finder"], reason: "Name of the macOS file browser" }],
+  ["knowledge.memoryPage.about.addPlaceholder", { terms: ["AAPL"], reason: "Ticker symbol the user types, shown as an example" }],
+  ["knowledge.memoryPage.about.addHint", { terms: ["NVDA"], reason: "Ticker symbol in an example request" }],
   ["chat.chatMessageCard.showInFinder", { terms: ["Finder"], reason: "Name of the macOS file browser" }],
   ["sharing.gist", { terms: ["Gist"], reason: "GitHub product name" }],
   ["sharing.gistNote", { terms: ["Gist"], reason: "GitHub product name" }],

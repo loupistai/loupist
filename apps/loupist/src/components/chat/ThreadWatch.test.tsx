@@ -13,7 +13,7 @@ async function setup() {
   return { bridge, loupist: loupist! };
 }
 
-it("names five events in one message, each with a source, then +n more to Schedule › Watching", async () => {
+it("names five events in one message, each with a source, then +n more and the source line to Following", async () => {
   const { bridge, loupist } = await setup();
   const { open } = renderWithOpen(<ThreadWatch message={previewWatchMessage()} bridge={bridge} loupistId={loupist.id} loupistName="Quality" />);
   const message = screen.getByRole("article", { name: "Alerts from Watching" });
@@ -29,7 +29,10 @@ it("names five events in one message, each with a source, then +n more to Schedu
   await userEvent.click(within(events[0]!).getByRole("button", { name: "What changed · Morrow Components" }));
   expect(open).toHaveBeenCalledWith({ kind: "asset", target: expect.objectContaining({ assetId: previewWatchMessage().watch!.events[0]!.assetId }) });
   await userEvent.click(within(message).getByRole("button", { name: "+1 more" }));
-  expect(open).toHaveBeenLastCalledWith({ kind: "schedule", taskId: "watching" });
+  expect(open).toHaveBeenLastCalledWith({ kind: "following" });
+  open.mockClear();
+  await userEvent.click(within(message).getByRole("button", { name: "From: Watching · Open Following" }));
+  expect(open).toHaveBeenLastCalledWith({ kind: "following" });
 });
 
 it("opens an alert's source through the evidence path, and its page in the system browser on Ctrl-click", async () => {

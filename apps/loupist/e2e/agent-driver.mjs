@@ -413,6 +413,11 @@ async function waitForChatIdle(browser, strict = false) {
       )) {
         if (await visible(assistant)) return false;
       }
+      // The host's completion is not the commit: the turn keeps its live line
+      // until the last received word is revealed (at most 400 ms later).
+      for (const live of await browser.$$("article.message.assistant [data-testid=turn-live]")) {
+        if (await visible(live)) return false;
+      }
       return true;
     },
     {

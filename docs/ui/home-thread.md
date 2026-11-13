@@ -1,6 +1,6 @@
 # Home Thread
 
-The persistent home Thread appears as Bot. Each Loupist has one Bot. Research sessions have separate titles and drafts. The app restores the selected conversation and its unsent draft on restart, including attached files, the exact inline references, the selected work, Skills and the as-of date. Scheduled results, crossed lines, watcher alerts and the morning message are host posts, not model calls.
+The persistent home Thread appears as Bot (봇). Each Loupist has one Bot. Research sessions have separate titles and drafts. The app restores the selected conversation and its unsent draft on restart, including attached files, the exact inline references, the selected work, Skills and the as-of date. Scheduled results, crossed lines, watcher alerts and the morning message are host posts, not model calls.
 
 Each Loupist has one persisted home Thread (`home-{loupist}`), created on workspace load
 with the Loupist's Chat defaults; rename and delete refuse it. Opening a Loupist lands
@@ -8,6 +8,10 @@ there unless a saved chat or an unsent new chat was open. When a scheduled run
 finishes (succeeded or failed) after the Thread exists, Rust posts one host message
 into the Thread with the run's first paragraph and a `delivery` record (run, task,
 cadence, status, run chat), built from the run and task only, never from holdings.
+Host-card deduplication includes hidden edit versions: editing a tail never reposts
+a previously delivered card. A hidden research card stays in its version until that
+version is selected again. Watcher, earnings and link delivery marks commit in the
+same SQLite transaction as their Thread messages.
 Posting takes the chat-mutation lock; while a reply runs in the Thread, delivery
 waits for the next completion or workspace load. The result reads "From: {task} ·
 {cadence} · Open" and Open goes to the run's Chat; showing results marks them read.
@@ -21,7 +25,7 @@ Review thesis and Undo (by move id, while it is the latest move); there is no OS
 notification.
 [Watcher](../knowledge/watchers.md#local-watchers) alerts the morning message did not take post through the same
 path as one host message per check (`watch` record: up to five dated alerts with their
-sources, then "+n more", built from stored alerts only); an alert on screen for a second
+sources, then "+n more", built from stored alerts only; "+n more" and the source line open Following); an alert on screen for a second
 while the window is visible counts as seen. The [results task](../runtime/scheduled-runs.md#results-before-and-after)
 posts one message (`earnings` record) when reported figures first arrive ("{name} reported
 {period} results." with the two most material measures and See before and after) or when
@@ -71,7 +75,17 @@ Journal checks, on the first visit of a Loupist made from the Crypto, Macro & ra
 Commodities template a "Works best with {connection} · Open Connections" line naming the
 recommended connection it lacks (Tiingo, FRED or EIA; enabled and available for the
 Loupist counts as having it),
-and three locally generated questions that fill the composer without sending. A first
+and three locally generated questions that fill the composer without sending. Until all three
+are done or the user hides it (per Loupist, `loupist.setupHidden.v1` in `localStorage`), the
+first message also shows the "Get set up" checklist: Follow something, Teach a principle and
+Get a morning briefing, each ticking off by itself (something followed, a principle saved, the
+briefing on), each open step with a chip that fills the composer without sending, and an
+"Import holdings (CSV)…" link to the holdings sheet. Without an AI account it leads with
+Connect an AI account, its Follow step opens the Following page, and chips that need a model
+are disabled. Once the Thread has a user message the first message gives way, but the
+checklist stays below the conversation while a step is open. Its steps are read again each
+time Bot is shown, so a company followed on Following ticks off on return. The focus question names a preset's subject ("What matters in semiconductors
+this week?"); a Loupist with a free-text focus does not get it. A first
 visit counts what there is to look at instead of naming a day; general questions fill
 the list when the Loupist has little to point at. A Thread with no user-written message yet
 keeps this first-visit message below any host post, such as the preset's vocabulary card. It is
@@ -155,7 +169,7 @@ after third-party text. On the Bot, `bot_memory` replaces
 [working notes](../knowledge/sources-notes.md#working-notes-and-journal), and a
 working note the Bot saved earlier stays in Library.
 
-**Privacy, dates and deletion.** "Don't remember this chat" and Remember new chats
+**Privacy, dates and deletion.** Private chat and Remember new conversations
 cover Bot memory: a private Bot turn neither receives nor changes it and its
 message is never queued, like the rest of saved Memory. Under an
 [as-of date](../analysis/point-in-time.md#point-in-time-answers) the Bot sees its

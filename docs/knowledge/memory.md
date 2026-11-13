@@ -4,16 +4,23 @@ Memory reads and saves are Rust transactions. Delivery counts are not influence 
 
 ## What the Loupist knows
 
-About you is a centered 720px reading column and shares its edges with the header and tabs in the memory pane. Other tabs collapse from a list/reader split based on the pane's width, at 972px. The tabs and search stay whole above an open method, including in the side panel. A narrow tab row scrolls instead of painting past the pane. The page title wraps instead of being cut off. An open method fills the card: its title stays inside the reader, and pause and archive follow the document. Focusing a row or a reader action below the fold scrolls it into the pane. Model-provider cards fill their own 800px settings column.
+The tabs collapse from a list/reader split based on the pane's width, at 972px; below it an open page hides the heading, tabs and search, which return with Back. A narrow tab row scrolls instead of painting past the pane. The page title wraps instead of being cut off. An open method fills the card: its title stays inside the reader, and pause and archive follow the document. Focusing a row or a reader action below the fold scrolls it into the pane. Model-provider cards fill their own 800px settings column.
 
-"What {Loupist} knows" opens from the Loupist's name in the header as a page over the
-current tab, with three tabs. **About you**: followed assets, each opening its
-[asset page](asset-pages.md#asset-pages), with remove and add, holdings as a count and
-date per kind (stocks and funds, crypto) from `holdings_summary` with Update opening
-[Your holdings](../runtime/storage-authority.md#where-data-lives). The shared Loupists
-list is hidden [in this release](sharing.md#this-release).
+Lens opens beside Chat from the sidebar or header. "What {Loupist} knows"
+names its contents, with two tabs, Pages and History. What the user follows, holdings and
+Watching live on the [Following page](follow.md#what-you-follow) (`components/briefings/FollowingPage.tsx`):
+followed assets in one table per class with a Watch-for checkbox per kind, add (a bare
+six-digit code is a KRX listing), remove, a quiet "Adding to the map…" line while
+`knowledge_followed_status` reports queued, running or waiting work (read again every few seconds
+until it settles), a quiet "Couldn't load Watching settings." line with Try again when those
+settings fail to load, holdings as a count and date
+per kind from `holdings_summary` with Import holdings, Watch all through
+`watch_defaults_apply` (also offered on the first follow receipt in chat; both list each kind that
+still needs a data connection, linked to Settings › Data connections), Check now and Pause.
+It is the `following` page from its sidebar row; Schedule's Watching row opens it. The shared
+Loupists list sits under Pages and is hidden [in this release](sharing.md#this-release).
 **Pages**: every active Lens page in one list grouped as Topics (`subject`), Ideas
-(`idea`), Methods (`method`), Your principles (`principle`) and Outlook (`perspective`);
+(`idea`), Methods (`method`), Your principles (`principle`) and Perspective (`perspective`);
 the groups are 주제, 아이디어, 분석 방법, 내 원칙 and 관점 in Korean. Search waits for a
 pause in typing, then runs `knowledge_lens_search` for pages and matches a principle
 on its own words. Paused pages remain in this inspection search so the user can
@@ -28,7 +35,7 @@ names the page is anchored to and its last changes. Pause and Archive stay on th
 A principle keeps its statement, why and example. **History**: from the growth events
 and the Lens log, newest first. "Filed after: {chat}" for a page a chat filed, sections
 you forgot or brought back, principles taught, names added to the Map and changes to what
-the map tracks. The home Thread always reads as the Bot label here and in each page's
+the map tracks. The standing conversation reads as Bot here and in each page's
 "Used in" list, never its stored title.
 
 Each item lists the chats that used it. Rust's
@@ -47,8 +54,8 @@ items with known Loupist authorship: whole pages the Loupist created that hold n
 user or shared section, and Loupist-origin sections retired from pages the user
 keeps (a user retire, so the Loupist cannot refile that key), with the summary
 cleared when the log shows the Loupist wrote it last (counted with the sections). User-created pages,
-shared items, manually saved Sources, Journal, watchlist, holdings and
-[Bot memory](../ui/home-thread.md#bot-memory) stay. Relationships with independent user/shared support and names still
+shared items, manually saved Sources, Journal, what you follow, holdings and
+[Bot memory](../ui/home-thread.md#bot-memory) (tool `bot_memory`) stay. Relationships with independent user/shared support and names still
 used by preserved relationships stay. A Source also stays if it is the sole basis
 of a protected user/shared/unknown-authored relationship. Immutable removed Sources and Lens records
 are hidden, and removed Lens titles are released for reuse. Pending extraction of
@@ -58,14 +65,15 @@ require a fresh preview. Rust records the reset in History.
 
 ## Memory permissions and retrieval
 
-The composer exposes one per-chat switch, Don't remember this chat. Ordinary Chat
-submits both Memory read and save as true; private Chat submits both as false.
-Loupist settings and Chat preferences use a positive Remember new chats switch, on
+The composer’s + menu exposes one per-chat switch, Private chat; an eye-off chip
+marks it while on and can turn it off. Ordinary Chat
+submits both Memory read and save as true; Private chat submits both as false.
+Loupist settings and Chat defaults use a positive Remember new conversations switch, on
 by default. Turning it off stores `chat.use_memory` and `chat.update_memory` as
-false for new Chats and leaves existing Chats unchanged. Private Chat still
-persists its transcript and does not undo native workspace file changes. The switch
-also covers the Bot's [Bot memory](../ui/home-thread.md#bot-memory): a private Bot
-turn neither receives nor changes it. There
+false for new Chats and leaves existing Chats unchanged. Private chat still
+persists its transcript, sends messages to the AI provider and does not undo native
+workspace file changes. The switch also covers [Bot memory](../ui/home-thread.md#bot-memory)
+(tool `bot_memory`): a Private chat turn in Bot neither receives nor changes it. There
 is no read-only composer choice. Rust keeps the two flags separate for scoped
 defaults and scheduled runs.
 
@@ -97,7 +105,7 @@ counts.
 | Journal | Entries created by then; an outcome observed later is removed, so its check reads as pending. Due pointers count from the cutoff day; a later entry read fails with `as_of_later` |
 | Notes | Working and research notes recorded by then, with pointers only to later notes written by then; the current Chat's working note and relevant-note pointers follow the same rule |
 | Chat history and earlier Chats | Messages written by then, or answered under a cutoff no later than this one (`chat_history`, `conversation_memory`); a later message read fails with `as_of_later` |
-| [Bot memory](../ui/home-thread.md#bot-memory) | As it stood then: changes whose reply passes the chat-history rule, with later entries counted as notes. Forgotten entries never return, and no review is offered |
+| [Bot memory](../ui/home-thread.md#bot-memory) (tool `bot_memory`) | As it stood then: changes whose reply passes the chat-history rule, with later entries counted as notes. Forgotten entries never return, and no review is offered |
 | Asset pages | Reasons and lines written by then, rows dated by then ([rules](asset-pages.md#asset-pages)) |
 
 What each filter removes is counted for the answer's note
@@ -124,3 +132,10 @@ text looks like a credential; the refusal is a tool refusal with reason
 ## Code
 
 - Memory writes / World: `src-tauri/src/knowledge/`, `src-tauri/src/commands/knowledge.rs`, `src-tauri/src/commands/memory_updates.rs`
+
+A retained original and a filed subject page are separate receipts: with saving
+on, named or attached originals used for answer facts become Sources, and
+substantive original research about a named subject files its Lens page. A short
+user-taught standing rule is saved once as a principle rather than duplicated as
+a method. Context-delivered principles carry current revision receipts; a final
+`lens:` link records their application without a redundant exact read.

@@ -593,43 +593,7 @@ impl SqliteStore {
         expected: &LoupistProfile,
         updated: &LoupistProfile,
     ) -> StoreResult<()> {
-        if self.folder_catalog {
-            return self.rebind_folder(expected, updated);
-        }
-        updated
-            .validate()
-            .map_err(|error| StoreError::Invalid(error.to_string()))?;
-        if expected.id != updated.id || updated.updated_at_ms <= expected.updated_at_ms {
-            return Err(StoreError::Invalid(
-                "workspace reconnection is invalid".into(),
-            ));
-        }
-        let mut connection = self.lock_loupist(&expected.id)?;
-        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let (device, inode) = root_identity_columns(updated);
-        let changed = map_loupist_profile_write(transaction.execute(
-            "UPDATE loupist_profiles SET workspace_root = ?2, root_device = ?3, root_inode = ?4,
-             updated_at_ms = ?5, data_json = ?6 WHERE id = ?1 AND data_json = ?7",
-            params![
-                updated.id,
-                updated.workspace_root,
-                device,
-                inode,
-                updated.updated_at_ms,
-                to_json(updated)?,
-                to_json(expected)?
-            ],
-        ))?;
-        if changed != 1 {
-            return Err(StoreError::Conflict(
-                "Loupist changed before folder reconnection",
-            ));
-        }
-        // Pi sessions are bound to the old CWD and must be rebuilt from the
-        // canonical transcript after a folder is reconnected.
-        folder::drop_pi_session_caches(&transaction, Some(&updated.id))?;
-        transaction.commit()?;
-        Ok(())
+        self.rebind_folder(expected, updated)
     }
 
     pub fn set_loupist_last_model_profile(

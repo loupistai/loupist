@@ -99,40 +99,7 @@ printf '%s\n' "$PI_VERSION" >"$NEW_RUNTIME/.pi-version"
 printf '%s\n' "$PI_ARCHIVE_SHA256" >"$NEW_RUNTIME/.pi-archive.sha256"
 python3 "$SCRIPT_DIR/stage_workspace_tools.py" --runtime "$NEW_RUNTIME" --target "$TARGET"
 if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
-    ENTITLEMENTS="$TAURI_ROOT/PiEntitlements.plist"
-    if [ ! -f "$ENTITLEMENTS" ]; then
-        echo "Pi signing entitlements are missing: $ENTITLEMENTS" >&2
-        exit 1
-    fi
-    if ! command -v codesign >/dev/null 2>&1; then
-        echo "codesign is required for distribution staging." >&2
-        exit 1
-    fi
-    find "$NEW_RUNTIME" -type f -exec sh -c '
-            identity=$1
-            runtime=$2
-            shift 2
-            for candidate do
-                if [ "$candidate" = "$runtime/loupist-pi" ]; then
-                    continue
-                fi
-                if LC_ALL=C file "$candidate" | grep -q "Mach-O"; then
-                    codesign \
-                        --force \
-                        --options runtime \
-                        --timestamp \
-                        --sign "$identity" \
-                        "$candidate"
-                fi
-            done
-        ' sh "$APPLE_SIGNING_IDENTITY" "$NEW_RUNTIME" {} +
-    codesign \
-        --force \
-        --entitlements "$ENTITLEMENTS" \
-        --options runtime \
-        --timestamp \
-        --sign "$APPLE_SIGNING_IDENTITY" \
-        "$NEW_RUNTIME/loupist-pi"
+    python3 "$SCRIPT_DIR/macos_release_signing.py" sign-runtime --kind pi --runtime "$NEW_RUNTIME"
 fi
 python3 "$SCRIPT_DIR/stage_workspace_tools.py" --runtime "$NEW_RUNTIME" --target "$TARGET" --record-signature
 PI_EXECUTABLE_SHA256=$(LC_ALL=C shasum -a 256 "$NEW_RUNTIME/loupist-pi" | awk '{print $1}')

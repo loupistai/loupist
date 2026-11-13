@@ -101,8 +101,8 @@ pub(crate) fn fixed_request_spacing() -> futures_util::future::BoxFuture<'static
 pub enum FinanceDataError {
     #[error("finance data request is invalid: {0}")]
     InvalidQuery(&'static str),
-    #[error("finance data provider request failed: {0}")]
-    Network(#[from] reqwest::Error),
+    #[error("finance data provider request failed")]
+    Network(#[source] reqwest::Error),
     #[error("finance data provider network request failed: {0}")]
     NetworkSafe(&'static str),
     /// The request never reached the provider: DNS, connect or no route.
@@ -129,12 +129,23 @@ pub enum FinanceDataError {
     NoData(&'static str),
     #[error("finance data provider rejected the request: {0}")]
     Provider(String),
+    #[cfg(feature = "eval-harness")]
+    #[error("{0}")]
+    Replay(String),
     #[error("finance data provider returned an invalid response")]
     InvalidResponse,
     #[error("KIS response contract mismatch for {operation}: {detail}")]
     KisResponseContract { operation: String, detail: String },
     #[error("finance data configuration is invalid: {0}")]
     Configuration(String),
+}
+
+impl From<reqwest::Error> for FinanceDataError {
+    fn from(error: reqwest::Error) -> Self {
+        // Provider URLs can carry credentials in their query. Keep those out
+        // of both model-facing Display text and developer Debug diagnostics.
+        Self::Network(error.without_url())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -363,11 +374,11 @@ impl FinanceDataService {
         };
         #[cfg(feature = "eval-harness")]
         if let Some(response) = crate::eval_harness::replay::lookup(provider, &replay_key) {
-            let response = response.map_err(FinanceDataError::Provider)?;
-            let bytes = response.bytes().map_err(FinanceDataError::Provider)?;
+            let response = response.map_err(FinanceDataError::Replay)?;
+            let bytes = response.bytes().map_err(FinanceDataError::Replay)?;
             if bytes.len() > maximum_bytes {
-                return Err(FinanceDataError::Provider(
-                    "replay response exceeds provider limit".into(),
+                return Err(FinanceDataError::Replay(
+                    "eval_replay_invalid: replay response exceeds provider limit".into(),
                 ));
             }
             return Ok((

@@ -124,6 +124,7 @@ fn grouped(value: &str) -> Option<String> {
 
 /// The first canary a text contains (debug and test builds check every
 /// outbound prompt and tool result with it).
+#[cfg(any(test, debug_assertions))]
 pub fn leaked<'a>(text: &str, canaries: &'a [String]) -> Option<&'a str> {
     canaries
         .iter()

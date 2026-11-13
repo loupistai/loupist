@@ -31,6 +31,11 @@ import { defaultRunOptions } from "../lib/modelSelection";
 import { executionModelLock, initialModelCatalog, listProviderModels, mockProviderStatus } from "./mock/models";
 import { commandError } from "./mock/commandError";
 
+/** The bundled Skills' own files, loaded on demand when a detail opens. */
+const bundledSkillSources = import.meta.glob<string>("../../agent/skills/*/SKILL.md", { query: "?raw", import: "default" });
+/** The SKILL.md body after its front matter, as `skills.rs` returns it. */
+const skillBody = (source: string) => source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").replace(/^\n+/, "");
+
 export class MockLoupistBridge implements Contract.LoupistBridge {
   private noticeVersion = CURRENT_NOTICE_VERSION;
   async noticeSettingsGet() { return { notice_acknowledged_version: this.noticeVersion }; }
@@ -137,6 +142,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   watchSettingsList(request: { loupistId: string }) { return this.watch.watchSettingsList(request); }
   watchSettingSet(request: Parameters<Contract.LoupistBridge["watchSettingSet"]>[0]) { return this.watch.watchSettingSet(request); }
   watchPauseSet(request: { loupistId: string; paused: boolean }) { return this.watch.watchPauseSet(request); }
+  watchDefaultsApply(request: { loupistId: string }) { return this.watch.watchDefaultsApply(request); }
   watchCheckNow(request: { loupistId: string }) { return this.watch.watchCheckNow(request); }
   watchEventsList(request: Parameters<Contract.LoupistBridge["watchEventsList"]>[0]) { return this.watch.watchEventsList(request); }
   watchEventsSeen(request: { loupistId: string; eventIds: string[] }) { return this.watch.watchEventsSeen(request); }
@@ -171,9 +177,10 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   onInboxOpen(_handler: (event: Contract.InboxOpenEvent) => void) { return () => {}; }
   briefingSettingsGet(request: { loupistId: string }) { return this.scheduled.briefingSettingsGet(request); }
   briefingSettingsSet(request: Contract.BriefingSettingsRequest) { return this.scheduled.briefingSettingsSet(request); }
-  private resident: Contract.BriefingResidentSettings = { keepRunning: true, notificationPermissionAsked: false };
+  // The fixture already has a briefing, so the automatic default has turned menu-bar residence on.
+  private resident: Contract.BriefingResidentSettings = { keepRunning: true, notificationPermissionAsked: false, keepRunningChoice: null };
   async briefingResidentSettingsGet() { return { ...this.resident }; }
-  async briefingResidentSettingsSet({ keepRunning }: { keepRunning: boolean }) { this.resident = { ...this.resident, keepRunning }; return { ...this.resident }; }
+  async briefingResidentSettingsSet({ keepRunning }: { keepRunning: boolean }) { this.resident = { ...this.resident, keepRunning, keepRunningChoice: keepRunning }; return { ...this.resident }; }
   inboxList(request: Contract.InboxRequest) { return this.scheduled.inboxList(request); }
   inboxMarkRead(request: { loupistId: string; runIds: string[] }) { return this.scheduled.inboxMarkRead(request); }
   inboxUnreadCounts() { return this.scheduled.inboxUnreadCounts(); }
@@ -456,7 +463,10 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     const entry = (await this.skillsList(request)).skills.find((s) => (s.path ?? s.id) === request.key);
     if (!entry) throw new Error("Skill not found.");
     const stored = entry.path ? this.customSkills.get(entry.path) : undefined;
-    return stored ? { ...structuredClone(stored.document), skill: entry } : { skill: entry, instructions: entry.description, files: ["SKILL.md"] };
+    if (stored) return { ...structuredClone(stored.document), skill: entry };
+    // A bundled Skill reads its real SKILL.md body, as the host does: the description lives only in the front matter.
+    const source = entry.source === "bundled" ? await bundledSkillSources[`../../agent/skills/${entry.id}/SKILL.md`]?.() : undefined;
+    return { skill: entry, instructions: source ? skillBody(source) : entry.description, files: ["SKILL.md"] };
   }
   async skillsCreate(request: Contract.SkillCreateRequest): Promise<Contract.SkillCatalog> {
     const configuration = await this.configRead(request);
@@ -713,20 +723,6 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return loupistChat.loupistSelect(this.state, loupist_id);
   }
 
-  async loupistRecover(
-    request: Contract.LoupistRecoverRequest,
-  ): Promise<Contract.LoupistSummary> {
-    const loupist = this.state.loupists.find(
-      (candidate) => candidate.id === request.loupist_id,
-    );
-    if (!loupist) throw new Error("Loupist not found");
-    if (request.action !== "recover_memory") {
-      throw new Error("Unsupported Loupist recovery action");
-    }
-    loupist.availability = { status: "available" };
-    return structuredClone(loupist);
-  }
-
   async loupistChooseFolder(): Promise<string | null> { return "/Users/research/new-research"; }
   async loupistReconnect(request: Contract.LoupistReconnectRequest) {
     const loupist = this.state.loupists.find((item) => item.id === request.loupist_id);
@@ -958,9 +954,6 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   researchHandoffStart(request: Contract.ResearchHandoffRequest) { return loupistChat.researchHandoffStart(this.state, request); }
   private connections = new Map<string, import("../contracts/knowledge").ConnectionView>();
-  async knowledgeConnections(request: { loupistId: string }) {
-    return [...this.connections.values()].filter((link) => link.connectionId.startsWith(`${request.loupistId}:`));
-  }
   private async connectionSetStatus(request: { loupistId: string; connectionId: string }, status: import("../contracts/knowledge").ConnectionStatus) {
     const found = this.connections.get(request.connectionId);
     if (!found) throw new Error("No such link.");
@@ -1150,6 +1143,10 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   async knowledgeGraphRecover(request: { loupistId: string }) {
     return knowledge.graphProcessingView(await knowledge.knowledgeGraphRecover(this.state, request), await this.modelCatalogGet(), await knowledge.knowledgeGraphJobs(this.state, request));
+  }
+
+  knowledgeGraphRetrySource(request: { loupistId: string; recordId: string }) {
+    return knowledge.knowledgeGraphRetrySource(this.state, request);
   }
 
   async knowledgeGraphPause(request: { loupistId: string; paused: boolean }) {

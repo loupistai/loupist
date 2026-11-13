@@ -5,23 +5,25 @@ import { formatDate, formatNumber } from "@/i18n/format";
 import "@/styles/grid.css";
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon, ChevronDownIcon, EllipsisIcon } from "lucide-react";
 import { Popover } from "radix-ui";
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import type { AssetsGrid, ChatArtifactRef, ChatArtifactView, ChatEvidenceRef, ConflictGrid, GridEmptyCell, GridValueCell } from "../../types";
-import type { GridBlock } from "../../chat/chartBlocks";
+import { sameBlock, type GridBlock } from "../../chat/chartBlocks";
 import { GRID_SCHEMA } from "../../contracts/chat";
 import { citationNumber } from "../../chat/numberChecks";
 import { citationLabel, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
-import { emptyReason, gridCounts, gridCsv, gridMarkdown, gridTsv, isValueCell, nextSort, sortedRows, type GridSort } from "../../chat/grid";
+import { emptyReason, gridCounts, gridCsv, gridMarkdown, gridTsv, gridDecimals, isValueCell, nextSort, shownCheck, sortedRows, type GridSort } from "../../chat/grid";
 import { exportFileName, utf8Bytes } from "../../chat/exportChat";
 import { useAssetNames } from "../assets/assetName";
 import { formatAsOf } from "../../chat/asOf";
 import { useChatExecution } from "./ChatExecutionContext";
 import { NumberChip } from "./NumberChip";
 import { CitationChip } from "./CitationChip";
+import { CitedNote } from "./CitedNote";
 import { useGo, useOpenProps } from "../navigation/Open";
+import { titledExport } from "../../lib/exportTitle";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -34,10 +36,11 @@ const asOfDate = (value: string) => formatAsOf(value);
 const shortDate = (value: string) => formatDate(Date.parse(`${value}T00:00:00Z`), { timeZone: "UTC", year: undefined, month: "short", day: "numeric" });
 
 /** A value: its number chip when the cited evidence is retained, the printed value otherwise. */
-function ValueCell({ cell, asset, evidenceRefs, asOf }: { cell: GridValueCell; asset?: string; evidenceRefs: readonly ChatEvidenceRef[]; asOf?: string }) {
+function ValueCell({ cell, decimals, asset, evidenceRefs, asOf }: { cell: GridValueCell; decimals?: number; asset?: string; evidenceRefs: readonly ChatEvidenceRef[]; asOf?: string }) {
   const evidence = evidenceRefs.find((item) => item.id === cell.evidence_id);
-  if (!evidence) return <span className="gg-num">{cell.value}</span>;
-  return <NumberChip check={cell.check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={asOf} asset={asset}>{cell.value}</NumberChip>;
+  const check = shownCheck(cell, decimals);
+  if (!evidence) return <span className="gg-num">{check.text}</span>;
+  return <NumberChip check={check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={asOf} asset={asset}>{check.text}</NumberChip>;
 }
 
 /** An empty cell says why; with the run's note, hover or focus opens it. */
@@ -53,7 +56,7 @@ function EmptyCell({ cell, spoken }: { cell: GridEmptyCell; spoken: string }) {
       </button>
     </Popover.Trigger>
     <Popover.Portal>
-      <Popover.Content className="grid-card-note" side="top" align="start" sideOffset={4} onOpenAutoFocus={(event) => event.preventDefault()}>{cell.note}</Popover.Content>
+      <Popover.Content className="grid-card-note" side="top" align="start" sideOffset={4} onOpenAutoFocus={(event) => event.preventDefault()}><CitedNote text={cell.note} /></Popover.Content>
     </Popover.Portal>
   </Popover.Root>;
 }
@@ -108,13 +111,17 @@ const PEEK = 0.45;
 
 /**
  * Sizes measure columns so that, when not all fit, the next one peeks in at
- * the right edge, and counts the columns still hidden past that edge.
+ * the right edge, and counts the columns still hidden past that edge. `widest`
+ * is the widest value or period line the columns hold: a column is never
+ * narrower than that (up to 168 px), so a long amount such as
+ * "333,605,938,000,000원" never runs into the next column.
  */
-export function columnFit(viewport: number, first: number, columns: number, scrollLeft = 0) {
+export function columnFit(viewport: number, first: number, columns: number, scrollLeft = 0, widest = 0) {
+  const least = Math.min(MEASURE_MAX, Math.max(MEASURE_MIN, Math.ceil(widest)));
   const room = viewport - first;
-  if (columns <= 0 || room <= 0 || first + columns * MEASURE_MIN <= viewport) return { width: undefined, hidden: 0 };
-  const shown = Math.max(1, Math.floor(room / MEASURE_MIN - PEEK));
-  const width = Math.min(MEASURE_MAX, Math.max(MEASURE_MIN, room / (shown + PEEK)));
+  if (columns <= 0 || room <= 0 || first + columns * least <= viewport) return { width: undefined, hidden: 0 };
+  const shown = Math.max(1, Math.floor(room / least - PEEK));
+  const width = Math.min(MEASURE_MAX, Math.max(least, room / (shown + PEEK)));
   const whole = Math.floor((scrollLeft + room + 1) / width);
   return { width, hidden: Math.max(0, columns - whole) };
 }
@@ -131,7 +138,14 @@ function useScrollEdges(columns: number) {
     const node = ref.current;
     if (!node) return;
     const first = node.querySelector<HTMLElement>(".grid-card-asset-head")?.offsetWidth ?? 0;
-    const next = columnFit(node.clientWidth, first, columns, node.scrollLeft);
+    // A value or period line, with its cell's inline padding: what a column must hold without running over.
+    let widest = 0;
+    for (const line of node.querySelectorAll<HTMLElement>(".grid-card-value > *, .grid-card-period")) {
+      const cell = line.closest<HTMLElement>("td, th");
+      const style = cell ? getComputedStyle(cell) : null;
+      widest = Math.max(widest, line.offsetWidth + (style ? Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight) : 0));
+    }
+    const next = columnFit(node.clientWidth, first, columns, node.scrollLeft, widest);
     setFit((current) => (current.width === next.width && current.hidden === next.hidden ? current : next));
     const start = node.scrollLeft > 1;
     const end = node.scrollWidth - node.clientWidth - node.scrollLeft > 1;
@@ -167,6 +181,8 @@ export type GridCardProps = {
   onExport?: GridExport;
   onAsk?: () => void;
   askDisabled?: boolean;
+  /** The table filled a frame the reader watched being prepared: its rows fade in a moment apart. */
+  filled?: boolean;
 };
 
 /**
@@ -174,7 +190,7 @@ export type GridCardProps = {
  * a number chip Rust checked, empty cells with their reason, sortable columns
  * and exports that keep each cell's source or formula.
  */
-export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabled }: GridCardProps) {
+export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabled, filled = false }: GridCardProps) {
   useTranslation("chat");
   const go = useGo();
   const scope = useChatExecution();
@@ -188,6 +204,8 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
   const names = useAssetNames(scope?.bridge, scope?.loupistId ?? "", Boolean(scope));
   const order = useMemo(() => sortedRows(grid, sort), [grid, sort]);
   const counts = useMemo(() => gridCounts(grid), [grid]);
+  // Values the table rounds show one number of decimals per column, so the column reads evenly.
+  const decimals = useMemo(() => gridDecimals(grid), [grid]);
 
   const copy = () => { void copyText(gridTsv(grid)); };
   const save = async (kind: "csv" | "md") => {
@@ -209,7 +227,7 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
   };
   const sortLabel = (column: number) => sort?.column !== column ? t("grid.sortNone") : sort.direction === "desc" ? t("grid.sortDesc") : t("grid.sortAsc");
 
-  return <section ref={card} className="grid-card" data-layout="assets" aria-label={t("grid.label", { title })}>
+  return <section ref={card} className="grid-card" data-layout="assets" data-filled={filled || undefined} aria-label={t("grid.label", { title })}>
     <header className="grid-card-header">
       <div className="grid-card-heading">
         <h3 className="grid-card-title" title={title}>{title}</h3>
@@ -256,7 +274,7 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
                 const cell = grid.cells[rowIndex]?.[columnIndex];
                 if (!cell) return <td key={column.id} />;
                 return isValueCell(cell)
-                  ? <td key={column.id} className="grid-card-value gg-num" data-status={cell.check.status}><ValueCell cell={cell} asset={row.symbol} evidenceRefs={evidenceRefs} asOf={grid.as_of} /></td>
+                  ? <td key={column.id} className="grid-card-value gg-num" data-status={cell.check.status}><ValueCell cell={cell} decimals={decimals[columnIndex]} asset={row.symbol} evidenceRefs={evidenceRefs} asOf={grid.as_of} /></td>
                   : <td key={column.id} className="grid-card-empty-cell"><EmptyCell cell={cell} spoken={t("grid.emptySpoken", { asset: label, measure: column.label, reason: emptyReason(cell.empty) })} /></td>;
               })}
             </tr>;
@@ -276,7 +294,7 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
         {t("grid.moreColumns", { count: scroll.fit.hidden, formattedCount: formatNumber(scroll.fit.hidden) })}<ArrowRightIcon aria-hidden="true" />
       </button> : null}
     </div>
-    {grid.notes?.length ? <div className="grid-card-notes">{grid.notes.slice(0, 3).map((note, index) => <p key={index}>{note}</p>)}</div> : null}
+    {grid.notes?.length ? <div className="grid-card-notes">{grid.notes.slice(0, 3).map((note, index) => <p key={index}><CitedNote text={note} evidenceRefs={evidenceRefs} /></p>)}</div> : null}
   </section>;
 }
 
@@ -360,59 +378,73 @@ export function ConflictCard({ title, conflict, evidenceRefs }: ConflictCardProp
 
 type ViewState = { status: "loading" } | { status: "ready"; view: ChatArtifactView } | { status: "unavailable" };
 
-/** Reserved height while building: min(rows × 40 + 96, 420); rows are unknown until the table arrives. */
-const BUILDING_ROWS = 4;
+/** Rows reserved while building; the real count is unknown until the table arrives, so the frame may grow when it fills. */
+const BUILDING_ROWS = 3;
 
 /**
  * A grid or conflict card in the answer itself. The block keeps its reserved
  * frame from the moment the Loupist starts building the table until it fills.
  */
-export function ChatGridBlock({ block, onAsk, askDisabled }: {
+export const ChatGridBlock = memo(function ChatGridBlock({ block, onAsk, askDisabled, onAskAgain }: {
+  /** A failed table puts the question that asked for it back in the composer. */
+  onAskAgain?: () => void;
   block: GridBlock;
   onAsk?: (artifact: ChatArtifactRef) => void;
   askDisabled?: boolean;
 }) {
   useTranslation("chat");
   const scope = useChatExecution();
-  const [view, setView] = useState<ViewState>({ status: "loading" });
+  const staged = block.kind === "ready" ? block.staged : undefined;
+  const [read, setView] = useState<ViewState>(() => staged ? { status: "ready", view: staged } : { status: "loading" });
+  // Staged content draws in the render that delivers it: a card that was preparing never shows a Loading frame first.
+  const view: ViewState = staged ? { status: "ready", view: staged } : read;
   const [attempt, setAttempt] = useState(0);
   const artifactId = block.kind === "ready" ? block.artifact.artifact_id : null;
   const revision = block.kind === "ready" ? block.artifact.revision : null;
   useEffect(() => {
     if (!artifactId) return undefined;
+    // Delivered before the commit: drawn as delivered, so the card fills while the answer is written.
+    if (staged) { setView({ status: "ready", view: staged }); return undefined; }
     if (!scope) { setView({ status: "unavailable" }); return undefined; }
     let live = true;
-    setView({ status: "loading" });
+    // A card already drawing this revision keeps it while the stored copy is read, so it never blinks.
+    setView((current) => current.status === "ready" && current.view.artifact.id === artifactId && current.view.revision.revision === revision ? current : { status: "loading" });
     void scope.bridge.chatArtifactRead(scope.loupistId, scope.threadId, artifactId, revision ?? undefined)
       .then((next) => { if (live) setView({ status: "ready", view: next }); })
       .catch(() => { if (live) setView({ status: "unavailable" }); });
     return () => { live = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scope's fields; a new scope object for the same thread must not re-read.
-  }, [artifactId, revision, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
+  }, [artifactId, revision, staged, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
 
   const title = block.kind === "ready" ? (view.status === "ready" ? view.view.artifact.title : block.artifact.title) : block.title;
   const loaded = view.status === "ready" && block.kind === "ready" && !block.updating ? view.view : null;
   const payload = loaded?.revision.payload;
+  const building = block.kind === "building" || (block.kind === "ready" && block.updating);
+  // A table that was preparing while the reader watched fills with a fade, rows a moment apart; one read later is drawn at once.
+  const [wasBuilding, setWasBuilding] = useState(building);
+  if (building && !wasBuilding) setWasBuilding(true);
   if (loaded && payload?.kind === "grid" && payload.schema === GRID_SCHEMA && scope) {
     const evidenceRefs = loaded.evidence_refs ?? [];
     if (payload.grid.layout === "conflict") {
       return <ConflictCard title={title} conflict={payload.grid} evidenceRefs={evidenceRefs} />;
     }
-    return <GridCard title={title} grid={payload.grid} evidenceRefs={evidenceRefs}
-      onExport={(request) => scope.bridge.exportSave(request)}
+    return <GridCard title={title} grid={payload.grid} evidenceRefs={evidenceRefs} filled={wasBuilding}
+      onExport={(request) => scope.bridge.exportSave(titledExport(request))}
       onAsk={onAsk ? () => onAsk(chatArtifactRef(loaded)) : undefined} askDisabled={askDisabled} />;
   }
-  const building = block.kind === "building" || (block.kind === "ready" && block.updating);
   let state: ReactNode;
-  if (building) state = <p role="status">{t("grid.building")}<span className="chat-artifact-block-shimmer" aria-hidden="true" /></p>;
-  else if (block.kind === "failed") state = <p role="alert">{t("grid.failed")}</p>;
+  // Ruled paper at the real row heights, still: the header rule and three rows, one bar per cell.
+  if (building) state = <div className="grid-card-ruled" aria-hidden="true">{Array.from({ length: BUILDING_ROWS + 1 }, (_, row) => <i key={row}><b /><b /><b /><b /></i>)}</div>;
+  else if (block.kind === "failed") state = <div role="alert"><p>{t("grid.failed")}</p>{onAskAgain ? <Button type="button" variant="ghost" size="sm" data-ask-again onClick={onAskAgain}>{t("chatBlock.askAgain")}</Button> : null}</div>;
   else if (view.status === "unavailable" || loaded) {
     state = <div role="alert"><p>{t("grid.unavailable")}</p>{scope ? <Button type="button" variant="outline" size="sm" onClick={() => setAttempt((value) => value + 1)}>{t("grid.retry")}</Button> : null}</div>;
   } else state = <p role="status"><Spinner />{t("grid.loading")}</p>;
   return <section className="grid-card grid-card-reserved" data-state={building ? "building" : block.kind === "failed" ? "failed" : "loading"}
-    aria-label={t("grid.label", { title })} aria-busy={building || undefined}
-    style={{ minHeight: `${Math.min(BUILDING_ROWS * 40 + 96, 420)}px` }}>
-    <header className="grid-card-header"><div className="grid-card-heading"><h3 className="grid-card-title" title={title}>{title}</h3></div></header>
+    aria-label={t("grid.label", { title })} aria-busy={building || undefined}>
+    <header className="grid-card-header"><div className="grid-card-heading">
+      <h3 className="grid-card-title" title={title}>{title}</h3>
+      {building ? <span className="grid-card-preparing" role="status">{t("grid.building")}</span> : null}
+    </div></header>
     <div className="grid-card-state">{state}</div>
   </section>;
-}
+}, (before, after) => sameBlock(before.block, after.block) && before.onAsk === after.onAsk && before.askDisabled === after.askDisabled && before.onAskAgain === after.onAskAgain);

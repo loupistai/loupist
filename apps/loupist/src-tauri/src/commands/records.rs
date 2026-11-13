@@ -390,6 +390,7 @@ pub async fn chat_delete(
         }
         return Err(error);
     }
+    super::workspace_ui::clear_chat_drafts(&state, &expected.loupist_id, &expected.id)?;
     Ok(())
 }
 

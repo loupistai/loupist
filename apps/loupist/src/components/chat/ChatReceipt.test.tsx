@@ -38,6 +38,15 @@ it("lists what the answer learned, put on the map and used in a fixed order, eac
   expect(handlers.onToggleLearned).toHaveBeenCalledTimes(2);
 });
 
+it("leads with the principles the answer used and opens them with the used list", async () => {
+  const principle = { recordId: "p", title: "Cash before profit" };
+  const handlers = renderReceipt({ usedPrinciples: [principle], usedPages: [{ ...principle, kind: "principle" }], saved: [{ kind: "Source", items: [saved("Source", "s")] }] });
+  const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
+  expect(receipt).toHaveTextContent(/^·Used your principle·Saved 1 source$/);
+  await userEvent.setup().click(within(receipt).getByRole("button", { name: "Used your principle" }));
+  expect(handlers.onToggleUsed).toHaveBeenCalled();
+});
+
 it("says nothing new was saved only when the turn could save", () => {
   const { rerender } = render(<ChatReceipt receipt={empty} showNothingNew listId="list" listExpanded={false} usedListId="used" usedExpanded={false} onToggleUsed={vi.fn()} onSaved={vi.fn()} {...panels} />);
   expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Nothing new saved");

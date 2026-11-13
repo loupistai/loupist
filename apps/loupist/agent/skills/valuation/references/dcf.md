@@ -60,6 +60,6 @@ growth than the reference compare the price with the past; they are not a
 forecast.
 
 For a reusable model, separate inputs from derived calculations and retain
-provenance beside the inputs. A requested spreadsheet needs live formulas and
-an available recalculation engine; a local script can provide a rerunnable model
-without imposing a workbook, color scheme, fixed grid size, or approval gate.
+provenance beside the inputs. A requested spreadsheet carries live formulas; nothing
+here recalculates them, so check the base case in Python and say the formulas
+calculate when the file opens.

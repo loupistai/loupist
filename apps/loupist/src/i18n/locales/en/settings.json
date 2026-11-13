@@ -1,13 +1,31 @@
 {
+  "general": {
+    "label": "General",
+    "description": "When Loupist runs, and what leaves this Mac.",
+    "keywords": "general menu bar background running privacy notice about telemetry keychain",
+    "keepRunning": "Keep running in the menu bar",
+    "keepRunningDescription": "Scheduled tasks and Watching run only while Loupist is open or in the menu bar.",
+    "keepRunningAutomatic": "On because a briefing or Watching is active. You can turn it off here.",
+    "loadFailed": "Couldn't load this setting.",
+    "saveFailed": "Couldn't change this setting. Try again.",
+    "betaNotice": "Beta. This build is signed by Loupist and is not notarized by Apple.",
+    "aboutTitle": "About & privacy",
+    "privacyTitle": "What leaves this Mac",
+    "privacyStays": "Stays on this Mac: chats, sources, Map, Lens, Journal and holdings, in each Loupist's folder. No Loupist account, no sync.",
+    "privacyProvider": "Goes to your AI provider: your messages, and the sources and saved notes an answer or background reading uses.",
+    "privacyDataSources": "Goes to data sources: names and tickers you follow or ask about, and wallet addresses you add. Holdings quantities and values never leave this Mac.",
+    "privacyWeb": "Goes to the web: pages your Loupist opens and searches it runs. A connection you add yourself gets what its tools ask for.",
+    "privacyMakers": "Loupist's makers receive nothing: no analytics or telemetry. The app checks GitHub for a signed update about once a day, sooner after a failed check.",
+    "privacyKeys": "Keys and sign-ins: data-connection keys in the macOS Keychain; AI sign-ins and keys in Loupist's private app folder on this Mac.",
+    "applicationTitle": "Application"
+  },
   "appearance": {
-    "title": "Appearance",
-    "description": "Customize the interface appearance and language.",
     "theme": {
       "label": "Theme",
       "system": "System",
       "light": "Light",
       "dark": "Dark",
-      "systemDescription": "Follow your device’s appearance",
+      "systemDescription": "Follow this Mac’s appearance",
       "optionLabel": "{{theme}} theme"
     },
     "language": {
@@ -18,10 +36,11 @@
     }
   },
   "settingsView": {
-    "savedAutomaticallyForAllLoupistsOnThisDevice": "Saved automatically for all Loupists on this device.",
-    "reload": "Reload"
+    "savedAutomaticallyForAllLoupistsOnThisDevice": "Saved automatically for all Loupists on this Mac."
   },
   "agentSettings": {
+    "performanceGroup": "Response speed",
+    "performanceDescription": "Fast asks your AI provider for its priority tier. It may cost more on API keys.",
     "diagnosticLine": "Problem in your preferences file (line {{line}}) — {{message}}",
     "diagnostic": "Problem in your preferences file — {{message}}",
     "unavailableThinking": "{{level}} (unavailable)",
@@ -48,12 +67,10 @@
     "savedAppliesToNewResponses": "Saved · Applies to new responses",
     "selectionsSaveAutomaticallyChangesApplyToNewResponses": "Selections save automatically. Changes apply to new responses.",
     "reload": "Reload",
-    "chatDefaults": "Chat defaults",
-    "startEachChatYourWayYouCanChange": "Start each Chat your way. You can change these choices in the Chat composer.",
     "defaultModel": "Default model",
-    "theModelToUseWhenStartingAChat": "The model to use when starting a Chat.",
+    "theModelToUseWhenStartingAChat": "The model to use when starting a conversation.",
     "useGlobalDefaultModel": "Use global default model",
-    "automaticLastUsedModel": "Automatic · last used model",
+    "automaticRecommendedModel": "Auto · recommended model",
     "unavailableModel": "Unavailable model",
     "reasoningLevel": "Reasoning level",
     "howMuchTimeTheModelSpendsThinkingBefore": "How much time the model spends thinking before it responds.",
@@ -82,7 +99,7 @@
     "recentTokensToKeep": "Recent tokens to keep",
     "keepThisMuchRecentConversationBeforeSummarizingOlder": "Keep this much recent conversation before summarizing older messages.",
     "requestRecovery": "Request recovery",
-    "retryAutomaticallyWhenAProviderHasATemporary": "Retry automatically when a provider has a temporary problem.",
+    "retryAutomaticallyWhenAProviderHasATemporary": "Retry automatically when your AI provider has a temporary problem.",
     "retryFailedRequests": "Retry failed requests",
     "maximumRetries": "Maximum retries",
     "numberOfAttemptsAfterTheFirstFailure": "Number of attempts after the first failure (0–10).",
@@ -95,7 +112,7 @@
     "preferencesFile": "Preferences file",
     "openTheFolderOrReloadExternalChanges": "Open the folder or reload external changes",
     "openPreferencesFile": "Open preferences file",
-    "privateChatDefaultDescription": "New chats use saved memory and remember what you learn. Chat history is always saved."
+    "privateChatDefaultDescription": "New conversations use saved memory and remember what you learn. Chat history is always saved."
   },
   "modelSettingsPanel": {
     "loadModelsErrorTitle": "Could not load {{provider}} models",
@@ -110,7 +127,7 @@
     "couldNotRemoveLabel": "Could not remove {{label}}.",
     "reloadModels": "Reload models",
     "modelsUnavailable": "Models unavailable",
-    "modelProviders": "Model providers",
+    "modelProviders": "AI accounts",
     "providerUpdated": "Provider updated",
     "providerUpdateFailed": "Provider update failed",
     "connectedProviders": "Connected providers",
@@ -128,7 +145,7 @@
     "noMatchingModels": "No matching models.",
     "bringYourPreferredAI": "Bring your preferred AI",
     "signInWithAnExistingAccountOrAdd": "Sign in with an existing account or add an API key to start chatting.",
-    "loadingModelProviders": "Loading model providers…",
+    "loadingModelProviders": "Loading AI accounts…",
     "cancel": "Cancel",
     "disconnectProvider": "Disconnect provider?",
     "savedCredentialsForLabelWillBeRemovedIts": "Saved credentials for {{label}} will be removed. Its models will no longer be available in Chat.",
@@ -149,6 +166,9 @@
     "customRemoveBody": "Its address, saved key and models are removed from Loupist. The server itself is not changed."
   },
   "skillsSettings": {
+    "caption": "Extra abilities for analysis and charts",
+    "advancedSkills": "Advanced",
+    "advancedSkillsDescription": "Tools for writing and installing your own Skills.",
     "appDefaults": "{{name}} follows app defaults.",
     "globalDefaults": "{{name}} follows global defaults.",
     "disabledNotice": "{{name}} disabled. Changes apply to the next turn.",
@@ -160,8 +180,8 @@
     "personalDestination": "Destination: All Loupists · Personal",
     "loupistDestination": "Destination: {{name}}",
     "deleteTitle": "Delete {{name}}?",
-    "deletePersonalDescription": "Remove this skill and its included files from your personal skills. Chats and Memory are kept.",
-    "deleteLoupistDescription": "Remove this skill and its included files from this Loupist. Chats and Memory are kept.",
+    "deletePersonalDescription": "Remove this skill and its included files from your personal skills. Conversations and Memory are kept.",
+    "deleteLoupistDescription": "Remove this skill and its included files from this Loupist. Conversations and Memory are kept.",
     "repairSkill": "{{error}} Open the folder to repair SKILL.md or delete this skill.",
     "originAlways": "{{origin}} · Always available",
     "originShadowed": "{{origin}} · Another skill takes precedence",
@@ -267,23 +287,23 @@
   "worldSettings": {
     "loupist": "Loupist",
     "readiness": {
-      "recoveryRequired": "World processing was interrupted. Recover the last confirmed World to continue. The interrupted source will not be processed again automatically.",
-      "recovering": "Restoring the last confirmed World. This does not use a model or retry interrupted processing.",
-      "runtimeUnavailable": "World processing is unavailable. Update or reinstall the app to restore it.",
-      "awaitingProvider": "Waiting for a supported model provider. A recommended World model will be selected when one is connected.",
-      "chooseModel": "Choose a World processing model.",
-      "modelUnavailable": "The selected model is unavailable for World processing.",
-      "connectProvider": "Connect the selected provider in Settings.",
-      "isolationUnsupported": "This provider does not support isolated, non-retrying World processing.",
+      "recoveryRequired": "Map building was interrupted. Recover the last confirmed map to continue. The interrupted source will not be processed again automatically.",
+      "recovering": "Restoring the last confirmed map. This does not use a model or retry interrupted processing.",
+      "runtimeUnavailable": "Map building is unavailable. Update or reinstall the app to restore it.",
+      "awaitingProvider": "Waiting for a supported AI account. A recommended map-building model will be selected when one is connected.",
+      "chooseModel": "Choose a Map building model.",
+      "modelUnavailable": "The selected model is unavailable for Map building.",
+      "connectProvider": "Connect the selected AI account in Settings.",
+      "isolationUnsupported": "This provider does not support isolated, non-retrying Map building.",
       "runtimeMissing": "The model runtime is unavailable.",
       "chooseConnectedModel": "Choose an available connected model.",
-      "notConnected": "Connect the model provider in Settings.",
-      "accountWaiting": "This account is waiting until a request goes through. See Settings › Models & providers."
+      "notConnected": "Connect its AI account in Settings.",
+      "accountWaiting": "This account is waiting until a request goes through. See Settings › AI accounts."
     }
   },
   "useAppUpdate": {
     "couldNotReadUpdateStatus": "Could not read update status.",
-    "couldNotCheckForUpdates": "Could not check for updates.",
+    "couldNotCheckForUpdates": "Couldn't check for updates. Check your connection and try again.",
     "couldNotInstallTheUpdate": "Could not install the update."
   },
   "agentCapabilityList": {
@@ -303,15 +323,14 @@
     "couldNotUpdateThisLoupistSConnections": "Could not update this Loupist's connections.",
     "connections": "Connections",
     "settingsForName": "Settings for {{name}}",
-    "chatPreferences": "Chat preferences",
+    "chatPreferences": "Chat defaults",
     "localWorkspace": "Your workspace folder",
-    "rememberNewChats": "Remember new chats",
+    "rememberNewChats": "Remember new conversations",
     "workspaceCaption": "Where this Loupist's files live on your Mac.",
     "connected": "Connected",
     "needsAttention": "Needs attention",
     "workspaceFolder": "Workspace folder",
     "opening": "Opening…",
-    "showInFileManager": "Show in file manager",
     "reconnectFolder": "Reconnect folder",
     "skillsConnections": "Skills & connections",
     "changesSaveAutomaticallyForThisLoupist": "Changes save automatically for this Loupist.",
@@ -325,7 +344,7 @@
     "retry": "Retry",
     "skills": "Skills",
     "manageSkills": "Manage skills",
-    "optionalResearchAndDocumentWorkflowsEnabledByDefault": "Optional research and document workflows, enabled by default. World, Lens, Journal, and visualization are always available.",
+    "optionalResearchAndDocumentWorkflowsEnabledByDefault": "Optional research and document workflows, enabled by default. Map, Lens, Journal, and visualization are always available.",
     "loadingSkills": "Loading skills…",
     "noMatchingSkills": "No matching skills.",
     "noSkillsAvailable": "No skills available.",
@@ -334,14 +353,14 @@
     "noMatchingConnections": "No matching connections.",
     "connectAServiceToGiveThisLoupistMore": "Connect a service to give this Loupist more data sources.",
     "removeFromThisApp": "Remove from this app",
-    "yourWorkspaceFolderChatsAndMemoryStayOn": "Your workspace folder, Chats, and Memory stay on disk. You can open the folder as a Loupist again.",
-    "reconnectOrRecoverThisLoupistBeforeRemovingIt": "Reconnect or recover this Loupist before removing it.",
+    "yourWorkspaceFolderChatsAndMemoryStayOn": "Your workspace folder, conversations, and Memory stay on disk. You can open the folder as a Loupist again.",
+    "reconnectThisLoupistBeforeRemovingIt": "Reconnect this Loupist before removing it.",
     "removeLoupist": "Remove Loupist",
     "selectALoupistToEditIt": "Select a Loupist to edit it.",
     "removeNameFromThisApp": "Remove “{{name}}” from this app.",
     "removeThisLoupistFromTheApp": "Remove this Loupist from the app.",
     "yourResearchStaysInItsFolder": "Your research stays in its folder",
-    "chatsMemoryAndLocalFilesAreKeptOpen": "Chats, Memory, and local files are kept. Open this folder to access them again.",
+    "chatsMemoryAndLocalFilesAreKeptOpen": "Conversations, Memory, and local files are kept. Open this folder to access them again.",
     "cancel": "Cancel",
     "removing": "Removing…",
     "removeLoupistTitle": "Remove Loupist?"
@@ -356,7 +375,7 @@
     "noMatchingModels": "No matching models",
     "noConnectedModels": "No connected models",
     "notConnected": "Not connected",
-    "manageModelsProviders": "Manage models & providers",
+    "manageModelsProviders": "Manage AI accounts",
     "selection": "{{model}} · {{thinking}}",
     "selectionWithOptions": "{{model}} · {{thinking}} · {{options}}",
     "thinkingForModel": "Thinking <0>{{model}}</0>"
@@ -376,16 +395,12 @@
     "standard": "Standard",
     "fast": "Fast",
     "standardDescription": "Use the provider's standard service tier.",
-    "fastDescription": "Request the provider's priority service tier."
+    "fastDescription": "Request the provider's priority service tier. It may cost more on API keys."
   },
   "bundledSkills": {
     "skill-creator": {
       "name": "Skill Creator",
       "description": "Create or improve a reusable workflow with instructions, references, scripts, or templates."
-    },
-    "skill-installer": {
-      "name": "Skill Installer",
-      "description": "Find, inspect, and add skills from GitHub, ZIP packages, or local folders."
     },
     "dividend-income": {
       "name": "Dividend income",
@@ -437,27 +452,27 @@
     },
     "pdf": {
       "name": "PDF",
-      "description": "Read, extract, edit, assemble, fill, or generate PDF files, including scanned pages and financial tables. Use when PDF structure, OCR, forms, or page layout matter."
+      "description": "Extract text from PDF files, combine pages or generate text PDFs with Python in the offline sandbox. There is no OCR for scanned pages and no rendering, and generated PDFs use Latin-only fonts."
     },
-    "documents": {
+    "word-documents": {
       "name": "Word documents",
-      "description": "Create, inspect, or edit Word documents and templates (.docx/.dotx), including tables, styles, headers, citations, and revisions. Use for Word-file deliverables; plain chat prose needs no document workflow."
+      "description": "Read, create or edit .docx Word files with Python in the offline sandbox. It cannot render pages or convert to PDF, so the layout is not checked visually."
     },
     "spreadsheets": {
       "name": "Spreadsheets",
-      "description": "Read, build, or edit spreadsheet files such as .xlsx and .xlsm, including formulas, financial models, formatting, and charts. Use when workbook behavior matters; ordinary CSV analysis can use data-analysis."
+      "description": "Read or write .xlsx workbooks and CSV files with Python in the offline sandbox, including stored formulas and basic formatting. Formulas are not recalculated and sheets are not rendered."
     },
     "presentations": {
       "name": "Presentations",
-      "description": "Read, create, or edit PowerPoint decks and templates (.pptx/.potx), including financial charts, tables, speaker notes, and slide layouts. Use for a deck deliverable or an existing presentation."
+      "description": "Read, create or edit .pptx slides with Python in the offline sandbox, using editable text, tables and shapes. Slides are not rendered, so the layout is not checked visually, and chart labels use Latin-only fonts."
     },
     "world": {
-      "name": "World",
-      "description": "Use when investigating what this Loupist already knows about entities, events, and their relationships, or when organizing source-grounded knowledge in World."
+      "name": "Map",
+      "description": "Use when investigating what this Loupist already knows about entities, events, and their relationships, or when organizing source-grounded knowledge in the Map."
     },
     "lens": {
       "name": "Lens",
-      "description": "Use when the user teaches or corrects a reusable method, rule, convention, or preference, or when inspecting this Loupist's perspective and methods. Skip a one-off."
+      "description": "Use when the user teaches or corrects a reusable method, principle, convention, or preference, or when inspecting this Loupist's perspective and methods. Skip a one-off."
     },
     "journal": {
       "name": "Journal",
@@ -472,13 +487,15 @@
     "memory": "Memory",
     "advanced": "Advanced",
     "import": "Import Loupist",
-    "openSettings": "Open Loupist settings",
-    "keywords": "Loupists profile tone instructions chat model memory learning skills connections World folders import remove",
-    "description": "Profile, chat, learning, skills and connections for each Loupist."
+    "keywords": "Loupists profile tone instructions chat model memory learning skills connections Map folders import remove",
+    "description": "Profile, chat, learning, skills and connections for each Loupist.",
+    "settings": "Settings",
+    "settingsFor": "Settings: {{name}}",
+    "moreFor": "More for {{name}}",
+    "removeEllipsis": "Remove…"
   },
   "custom": {
-    "title": "Your connections",
-    "addButton": "+ Add a connection",
+    "addButton": "Add a connection",
     "empty": "Connect your own data sources, like a company’s investor data server or a research tool. Only read-only tools can be used.",
     "loupist": "Loupist",
     "chooseLoupist": "Choose a Loupist to review tool access.",
@@ -550,14 +567,16 @@
       "not_read_only": "Not read-only. Hidden from your Loupist.",
       "financial_action": "Looks like a trading or payment action. Blocked."
     },
-    "urlPlaceholder": "{{scheme}}…"
+    "urlPlaceholder": "{{scheme}}…",
+    "disclosure": "Add your own connection (advanced)",
+    "chooseEach": "Choose for each tool to finish."
   },
   "runDiagnostics": {
     "title": "Diagnostics",
     "runLogs": "Run logs",
     "reveal": "Reveal in Finder",
     "copy": "Copy last error details",
-    "description": "Local execution details only. Global defaults shows app sign-ins; select a Loupist above for its runs.",
+    "description": "Run details kept on this Mac. This page shows app sign-ins; a Loupist's runs are in its own settings.",
     "copied": "Last error details copied.",
     "noError": "No failed runs recorded.",
     "failed": "Could not access run logs. Try again.",
@@ -570,9 +589,9 @@
     "action": "Action",
     "keys": "Keys",
     "actions": {
-      "newChat": "New chat",
+      "newChat": "New research",
       "palette": "Command palette",
-      "tabs": "Chat · World · Lens · Scheduled tasks",
+      "tabs": "Bot · Map · Lens · Schedule",
       "panel": "Show or hide the panel",
       "settings": "Settings",
       "send": "Send",
@@ -585,7 +604,7 @@
   },
   "providers": {
     "getKey": "Get a key from {{provider}}",
-    "keyStays": "Your key stays on this device. Requests go straight to {{provider}}.",
+    "keyStays": "Your key stays on this Mac. Requests go straight to {{provider}}.",
     "replacesChatgpt": "This replaces your ChatGPT sign-in on this Mac. You can switch back any time.",
     "keyRejected": "{{provider}} didn't accept this key. Check it and try again.",
     "localSearching": "Looking for model apps on this Mac…",
@@ -620,7 +639,7 @@
     "needsReconnect": "Needs reconnect",
     "disconnected": "Disconnected",
     "viaSignIn": "Signed in with {{provider}} · since {{date}}",
-    "viaKey": "API key saved on this device",
+    "viaKey": "API key saved on this Mac",
     "viaLocal": "Running on this Mac · {{address}}",
     "viaEnvironment": "Key from this Mac's settings (development)",
     "viaCustom": "Custom endpoint · {{address}}",
@@ -633,11 +652,9 @@
     "noticeNoCredit": "This account is out of credit.",
     "lastLimit": "Last reached its limit {{date}}",
     "reconnectBody": "Your sign-in stopped working. Reconnect to keep going; your chats and map are safe.",
-    "chatUses": "Chat uses: {{model}}",
-    "chatUsesAuto": "Chat uses: Auto",
     "models": "Models ({{formattedCount}})",
     "inMenu": "In menu",
-    "more": "More providers ({{formattedCount}})",
+    "more": "Other AI accounts ({{formattedCount}})",
     "connect": "Connect",
     "reconnect": "Reconnect",
     "disconnect": "Disconnect",
@@ -648,9 +665,13 @@
     "apiKeyOptional": "API key (optional)",
     "showKey": "Show",
     "hideKey": "Hide",
-    "addProvider": "Add a provider",
+    "addProvider": "Add an AI account",
     "connectedRecommended": "Recommended",
     "usedBy_one": "{{formattedCount}} schedule still uses this account.",
-    "usedBy_other": "{{formattedCount}} schedules still use this account."
+    "usedBy_other": "{{formattedCount}} schedules still use this account.",
+    "chatDefault": "Chat default: {{model}}",
+    "changeKey": "Change key…",
+    "reconnectEllipsis": "Reconnect…",
+    "moreActions": "More actions for {{label}}"
   }
 }

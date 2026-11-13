@@ -36,6 +36,7 @@ export function hostContextOpenNoFollowForPlatform(platform = process.platform) 
 const HOST_CONTEXT_OPEN_NOFOLLOW = hostContextOpenNoFollowForPlatform();
 // Shared, host-verified product contracts. Pi still owns native workspace schemas.
 const TOOL_CATALOG = JSON.parse(readFileSync(new URL("./tool-catalog.json", import.meta.url), "utf8"));
+const COMPONENT_SPECS = new Map(TOOL_CATALOG.components.map((component) => [component.id, component]));
 const TOOL_SPECS = new Map(TOOL_CATALOG.tools.map((tool) => [tool.name, tool]));
 const CATALOG_ORDER = new Map(TOOL_CATALOG.tools.map((tool, index) => [tool.name, index]));
 
@@ -58,7 +59,18 @@ const BUNDLED_RUNTIME_NOTE = " Loading activates common price, fundamentals, div
 /** One fixed sentence, so the index stays cache-stable however many connections are off. */
 const OTHER_SOURCES_NOTE = "Other data sources (for example FRED, SEC EDGAR, OpenDART, KRX) can be added: call connection_setup and the user finishes setup in a card.";
 
+// Host-owned display names of bundled connections this Loupist has not enabled, so
+// the model can name the right one instead of guessing.
+function otherSourcesNote(unavailable) {
+  const names = [...new Set((unavailable ?? [])
+    .map((item) => String(item?.name ?? "").replace(/\s+/gu, " ").trim().slice(0, 60))
+    .filter(Boolean))].slice(0, 24);
+  if (names.length === 0) return OTHER_SOURCES_NOTE;
+  return `Not enabled for this Loupist: ${names.join(", ")}. When one of them would answer the question, name it and call connection_setup with that name; the user finishes setup in a card and it works from their next message.`;
+}
+
 function formatCapabilityLine(component) {
+  if (component.id === "web-research") return `- \`${component.id}\` — ${component.name}: loaded.`;
   const description = String(component.description ?? "").replace(/\s+/gu, " ").trim();
   const tools = (component.tool_names ?? []).filter(Boolean);
   const toolNote = tools.length > 0 ? ` Tools: ${tools.join(", ")}.` : "";
@@ -72,23 +84,27 @@ export function formatRuntimeIndex(runtime) {
     `memory_access_enabled: ${runtime.memory_access_enabled === true}`,
     `memory_update_enabled: ${runtime.memory_update_enabled === true}`,
     "",
-    "# Capabilities",
-    "Load an id with capability_load before calling its tools. @mentioned connections are already loaded.",
+    "# Data connections",
+    "Load a data connection or on-demand tool pack by id with capability_load before the first use of its tools in this Chat. An item marked loaded, and any connection the user @mentioned, needs no load. Every other tool in your tool list is already active.",
   ];
   const components = [...(runtime.components ?? [])].sort((left, right) =>
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
   const connections = components.filter((component) => component.connection);
-  const builtin = components.filter((component) => !component.connection);
-  lines.push("Connections:");
   if (connections.length === 0) {
-    lines.push("No connections are enabled for this turn.");
+    lines.push("No data connection is enabled for this turn.");
   } else {
     for (const component of connections) lines.push(formatCapabilityLine(component));
   }
-  if ((runtime.core_tool_names ?? []).includes("connection_setup")) lines.push(OTHER_SOURCES_NOTE);
-  if (builtin.length > 0) {
-    lines.push("Built-in:");
-    for (const component of builtin) lines.push(formatCapabilityLine(component));
+  if ((runtime.core_tool_names ?? []).includes("connection_setup")) lines.push(otherSourcesNote(runtime.unavailable_connections));
+  const onDemand = components.filter((component) => !component.connection && COMPONENT_SPECS.get(component.id)?.preload === false);
+  if (onDemand.length > 0) {
+    lines.push("", "# On-demand tool packs");
+    for (const component of onDemand) {
+      const loaded = component.loaded === true ? " (loaded)" : "";
+      const publicationOffered = component.tool_names.some((name) => name === "chart_publish" || name === "grid_publish");
+      const hint = component.id === "charts" && !publicationOffered ? "" : ` ${COMPONENT_SPECS.get(component.id).description}`;
+      lines.push(`- \`${component.id}\`${loaded}: ${component.tool_names.join(", ")}.${hint}`);
+    }
   }
   return lines.join("\n");
 }
@@ -213,7 +229,7 @@ function loadHostContext() {
       throw new Error("Loupist explicit Skill names are invalid");
     }
     return {
-      promptText: formatRuntimeIndex(runtime),
+      runtime,
       allowedTools,
       initialTools: new Set(runtime.core_tool_names),
       components,
@@ -362,6 +378,7 @@ function register(pi, name, label, description, parameters, method) {
     label,
     description,
     parameters,
+    ...(name === "ask_user" ? { executionMode: "sequential" } : {}),
     ...(name === "note_save" ? {
       prepareArguments: (input) => prepareSiblingArguments(input, "workingNote", ["sourceReads", "worldReads", "lensReads", "previousNoteIds"]),
     } : name === "lens_file" ? {
@@ -658,6 +675,7 @@ function registerLoupistExtension(originalPi) {
       };
     }
     for (const name of component.tool_names) activeTools.add(name);
+    component.loaded = true;
     publishActiveTools();
     return {
       id: component.id,
@@ -686,7 +704,10 @@ function registerLoupistExtension(originalPi) {
       }
     }
     ensureWorkspaceResourcesUnchanged();
-    applyWorkspacePrompt(event, hostContext.workspace, hostContext.promptText);
+    for (const component of hostContext.components.values()) {
+      if (component.kind === "tool") component.loaded = component.tool_names.every((name) => activeTools.has(name));
+    }
+    applyWorkspacePrompt(event, hostContext.workspace, formatRuntimeIndex(hostContext.runtime));
   });
   originalPi.on("before_provider_request", (event, ctx) => {
     emitE2eDiagnostic("before_provider_request");

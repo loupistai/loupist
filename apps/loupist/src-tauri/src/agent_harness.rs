@@ -7,6 +7,8 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub(crate) mod native_policy;
+#[cfg(test)]
+mod runtime_formats;
 mod skill_mentions;
 pub(crate) mod workspace;
 pub use skill_mentions::explicit_skill_names;
@@ -30,7 +32,7 @@ pub const WHY_IT_MOVED_SKILL_ID: &str = "why-it-moved";
 pub const GOAL_MATH_SKILL_ID: &str = "goal-math";
 
 pub const PDF_SKILL_ID: &str = "pdf";
-pub const DOCUMENTS_SKILL_ID: &str = "documents";
+pub const DOCUMENTS_SKILL_ID: &str = "word-documents";
 pub const SPREADSHEETS_SKILL_ID: &str = "spreadsheets";
 pub const PRESENTATIONS_SKILL_ID: &str = "presentations";
 
@@ -118,17 +120,6 @@ const SELECTABLE_SKILLS: &[BundledSkill] = &[
         support_files: &[(
             "skills/skill-creator/LICENSE.txt",
             include_bytes!("../../agent/skills/skill-creator/LICENSE.txt"),
-        )],
-    },
-    BundledSkill {
-        id: "skill-installer",
-        name: "Skill Installer",
-        default_enabled: false,
-        relative_path: "skills/skill-installer/SKILL.md",
-        content: include_bytes!("../../agent/skills/skill-installer/SKILL.md"),
-        support_files: &[(
-            "skills/skill-installer/LICENSE.txt",
-            include_bytes!("../../agent/skills/skill-installer/LICENSE.txt"),
         )],
     },
     // Everyday questions come first so `/` lists them before the specialist workflows.
@@ -276,21 +267,15 @@ const SELECTABLE_SKILLS: &[BundledSkill] = &[
         default_enabled: true,
         relative_path: "skills/pdf/SKILL.md",
         content: include_bytes!("../../agent/skills/pdf/SKILL.md"),
-        support_files: &[(
-            "skills/pdf/references/pdf-workflow.md",
-            include_bytes!("../../agent/skills/pdf/references/pdf-workflow.md"),
-        )],
+        support_files: &[],
     },
     BundledSkill {
         id: DOCUMENTS_SKILL_ID,
         name: "Word documents",
         default_enabled: true,
-        relative_path: "skills/documents/SKILL.md",
-        content: include_bytes!("../../agent/skills/documents/SKILL.md"),
-        support_files: &[(
-            "skills/documents/references/docx-workflow.md",
-            include_bytes!("../../agent/skills/documents/references/docx-workflow.md"),
-        )],
+        relative_path: "skills/word-documents/SKILL.md",
+        content: include_bytes!("../../agent/skills/word-documents/SKILL.md"),
+        support_files: &[],
     },
     BundledSkill {
         id: SPREADSHEETS_SKILL_ID,
@@ -298,10 +283,7 @@ const SELECTABLE_SKILLS: &[BundledSkill] = &[
         default_enabled: true,
         relative_path: "skills/spreadsheets/SKILL.md",
         content: include_bytes!("../../agent/skills/spreadsheets/SKILL.md"),
-        support_files: &[(
-            "skills/spreadsheets/references/workbook-workflow.md",
-            include_bytes!("../../agent/skills/spreadsheets/references/workbook-workflow.md"),
-        )],
+        support_files: &[],
     },
     BundledSkill {
         id: PRESENTATIONS_SKILL_ID,
@@ -309,10 +291,7 @@ const SELECTABLE_SKILLS: &[BundledSkill] = &[
         default_enabled: true,
         relative_path: "skills/presentations/SKILL.md",
         content: include_bytes!("../../agent/skills/presentations/SKILL.md"),
-        support_files: &[(
-            "skills/presentations/references/deck-workflow.md",
-            include_bytes!("../../agent/skills/presentations/references/deck-workflow.md"),
-        )],
+        support_files: &[],
     },
 ];
 
@@ -398,9 +377,8 @@ pub struct AgentHarnessSnapshot {
     pub digest: String,
 }
 
-/// The exact Pi surface for one Chat run. Core tools start active. Bundled
-/// component tools are registered with Pi but remain inactive until the agent
-/// discovers and loads that component through the capability tools. Rust derives
+/// The exact Pi surface for one Chat run. Core and ordinary built-in tools start
+/// active; on-demand packs and unmentioned connections need capability_load. Rust derives
 /// both sets from this Chat run and the Loupist's sealed authority snapshot.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -452,6 +430,18 @@ pub struct AgentRuntimeComponent {
     pub entry_ids: Vec<String>,
 }
 
+impl AgentRuntimeComponent {
+    pub(crate) fn preloads(&self) -> bool {
+        (self.connection.is_none()
+            && crate::broker::tools::TOOL_CATALOG
+                .components
+                .iter()
+                .find(|entry| entry.id == self.id)
+                .is_none_or(|entry| entry.preload))
+            || self.id == "web-research"
+    }
+}
+
 const MAX_PURPOSE_CHARS: usize = 160;
 
 /// A component's purpose, cut at the last sentence end that fits, else the
@@ -494,6 +484,9 @@ impl AgentRuntimeProfile {
         let capabilities = normalize_capability_ids(capability_ids)?;
         let allowed = |tool: &&crate::broker::tools::AgentToolSpec| {
             tool.permission.allows(use_memory, propose_memory_updates)
+                && crate::broker::ToolMethod::from_tool_name(&tool.name)
+                    .and_then(crate::finance_data::serving_vendor)
+                    .is_none_or(|vendor| capabilities.iter().any(|id| id == vendor.source_id))
         };
         let core_tools = TOOL_CATALOG
             .tools
@@ -1016,16 +1009,13 @@ impl AgentHostContext {
     }
 }
 
-/// Map composer `@entry_id` mentions onto runtime component ids that the agent
-/// extension can preload. Unknown or disabled ids are ignored.
+/// Ordinary built-ins and enabled web research start active. Composer
+/// mentions additionally preload enabled data connections; unknown ids are ignored.
 pub fn preload_component_ids_for_mentions(
     mentioned_entry_ids: &[String],
     capability_ids: &[String],
     profile: &AgentRuntimeProfile,
 ) -> Result<Vec<String>, AgentHarnessError> {
-    if mentioned_entry_ids.is_empty() {
-        return Ok(Vec::new());
-    }
     let enabled = capability_ids
         .iter()
         .cloned()
@@ -1036,7 +1026,12 @@ pub fn preload_component_ids_for_mentions(
         .iter()
         .map(|entry| (entry.id.as_str(), entry))
         .collect::<std::collections::BTreeMap<_, _>>();
-    let mut preload = std::collections::BTreeSet::new();
+    let mut preload = profile
+        .components
+        .iter()
+        .filter(|component| component.preloads())
+        .map(|component| component.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
     for entry_id in mentioned_entry_ids {
         if !enabled.contains(entry_id) {
             continue;
@@ -1292,7 +1287,7 @@ pub(crate) fn loupist_instructions(instructions: &str) -> String {
     instructions.trim().chars().take(4_000).collect()
 }
 
-pub(crate) const FOLLOWED_COMPANIES_HINT: &str = "These are companies the user holds (holding: true) or watches (watching: true); a company can be both. Use them to make answers relevant; never infer position sizes or give personalized buy, sell, or hold advice.";
+pub(crate) const FOLLOWED_COMPANIES_HINT: &str = "These are companies the user holds (holding: true) or watches (watching: true); a company can be both. Use them to make answers relevant. Position sizes, cost and value are not available to you: never infer or ask for them.";
 
 /// Only the identity projection can enter this function: financial position
 /// fields cannot accidentally be serialized. One row per identity carries both
@@ -1329,7 +1324,7 @@ pub(crate) fn followed_companies(mut context: crate::store::user_context::MapCon
     json!({"hint": FOLLOWED_COMPANIES_HINT, "symbols": rows})
 }
 
-pub(crate) const FOLLOWED_INTERESTS_HINT: &str = "These are companies the user watches. This answer looks back to an earlier date, so what the user holds today is left out. Use them only to make answers relevant; never give personalized buy, sell, or hold advice.";
+pub(crate) const FOLLOWED_INTERESTS_HINT: &str = "These are companies the user watches. This answer looks back to an earlier date, so what the user holds today is left out. Use them only to make answers relevant.";
 
 /// Under an as-of date the user's interests stay but holdings never reach the
 /// model (finance-point-in-time.md §3.2): watched companies only, by symbol,
@@ -1629,6 +1624,31 @@ mod tests {
 
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn followed_hints_keep_position_privacy_without_banning_research_judgment() {
+        let live = followed_companies(Default::default());
+        assert_eq!(live["hint"], "These are companies the user holds (holding: true) or watches (watching: true); a company can be both. Use them to make answers relevant. Position sizes, cost and value are not available to you: never infer or ask for them.");
+        let historical = followed_interests(Default::default());
+        assert_eq!(historical["hint"], "These are companies the user watches. This answer looks back to an earlier date, so what the user holds today is left out. Use them only to make answers relevant.");
+    }
+
+    #[test]
+    fn word_skill_name_does_not_overlap_markdown_capability() {
+        let runtime = AgentRuntimeProfile::new("chat", false, false, &[]).unwrap();
+        let component_ids = runtime
+            .components
+            .iter()
+            .map(|component| component.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        // Some app procedures intentionally share a tool-pack name; Word authoring
+        // must not resolve to Markdown publishing's `documents` capability.
+        assert!(component_ids.contains("documents"));
+        assert_eq!(DOCUMENTS_SKILL_ID, "word-documents");
+        assert!(!component_ids.contains(DOCUMENTS_SKILL_ID));
+        assert!(bundled_skill(DOCUMENTS_SKILL_ID).is_ok());
+        assert!(bundled_skill("documents").is_err());
+    }
 
     #[test]
     fn scheduled_runtime_has_no_native_or_schedule_management_tools() {
@@ -2107,7 +2127,11 @@ mod tests {
         let snapshot = AgentHarnessSnapshot {
             schema: HARNESS_SCHEMA.to_owned(),
             mode: "chat".into(),
-            skill_ids: vec!["finance-research".into(), "investment-postmortem".into()],
+            skill_ids: vec![
+                "finance-research".into(),
+                "investment-postmortem".into(),
+                "skill-installer".into(),
+            ],
             capability_ids: vec!["community.web-research".into()],
             digest: "a".repeat(64),
         };
@@ -2121,9 +2145,8 @@ mod tests {
 
     #[test]
     fn skill_authoring_is_opt_in_and_method_skills_are_not_selectable() {
-        for authoring in ["skill-creator", "skill-installer"] {
-            assert!(!skill_default_enabled(authoring));
-        }
+        assert!(!skill_default_enabled("skill-creator"));
+        assert!(bundled_skill("skill-installer").is_err());
         assert!(skill_default_enabled(RESEARCH_SKILL_ID));
         let always_on = always_on_skill_ids();
         assert!(!always_on.is_empty());
@@ -2152,11 +2175,79 @@ mod tests {
             &profile,
         )
         .unwrap();
-        assert_eq!(preload, ["openbb", "opendart"]);
+        assert!(preload.contains(&"openbb".into()) && preload.contains(&"opendart".into()));
+        assert!(profile
+            .components
+            .iter()
+            .filter(|component| component.preloads())
+            .all(|component| preload.contains(&component.id)));
         let mentioned = mentioned_connections(&["fred.macro".into(), "missing".into()], &profile);
         assert_eq!(mentioned.len(), 1);
         assert_eq!(mentioned[0].capability_id, "openbb");
         assert_eq!(mentioned[0].provider_ids, ["fred"]);
+    }
+
+    #[test]
+    fn every_surface_preloads_ordinary_builtins_but_unattended_tools_stay_allowlisted() {
+        let profile =
+            AgentRuntimeProfile::new("chat", true, true, &["community.web-research".into()])
+                .unwrap();
+        let scheduled = profile.clone().with_schedule_management(false);
+        for profile in [profile, scheduled] {
+            let preload = preload_component_ids_for_mentions(&[], &[], &profile).unwrap();
+            assert!(profile
+                .components
+                .iter()
+                .filter(|c| c.preloads())
+                .all(|c| preload.contains(&c.id)));
+            assert!(!preload.contains(&"charts".into()));
+            assert!(!preload.contains(&"schedules".into()));
+            for tool in profile
+                .core_tool_names
+                .iter()
+                .chain(profile.components.iter().flat_map(|c| c.tool_names.iter()))
+            {
+                if !profile.core_tool_names.iter().any(|name| name == "read") {
+                    assert!(crate::briefings::policy::allowed_name(tool), "{tool}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn on_demand_catalog_packs_remain_listed_and_loadable_without_preloading() {
+        use crate::broker::tools::{ComponentSpec, TOOL_CATALOG};
+        let ordinary: ComponentSpec = serde_json::from_value(json!({
+            "id":"future-pack", "name":"Future pack", "description":"Ordinary research."
+        }))
+        .unwrap();
+        assert!(ordinary.preload);
+        assert!(serde_json::from_value::<ComponentSpec>(json!({
+            "id":"future-pack", "name":"Future pack", "description":"Invalid flag.", "preload":"false"
+        })).is_err());
+        let on_demand: Vec<_> = TOOL_CATALOG
+            .components
+            .iter()
+            .filter(|entry| !entry.preload)
+            .map(|entry| entry.id.as_str())
+            .collect();
+        assert_eq!(on_demand, ["charts", "schedules"]);
+        for (reads, saves) in [(false, false), (true, false), (true, true)] {
+            let profile = AgentRuntimeProfile::new("chat", reads, saves, &[]).unwrap();
+            let preload = preload_component_ids_for_mentions(&[], &[], &profile).unwrap();
+            assert!(profile.core_tool_names.contains(&"capability_load".into()));
+            for id in &on_demand {
+                let component = profile.components.iter().find(|c| c.id == *id).unwrap();
+                assert!(!component.tool_names.is_empty());
+                assert!(!preload.contains(&component.id));
+                assert!(component.description.starts_with("Load "));
+            }
+            for id in ["calculations", "datasets", "documents", "file-capture"] {
+                assert!(preload.contains(&id.into()), "{id}");
+            }
+            assert_eq!(preload.contains(&"memory-save".into()), saves);
+            assert!(!preload.contains(&"web-research".into()));
+        }
     }
 
     #[test]

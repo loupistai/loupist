@@ -77,7 +77,11 @@ function marginCheck(company: Company, measure: "operating" | "net", text: strin
   };
 }
 
-type Variant = "card" | "empty" | "wide" | "differs" | "asof";
+type Variant = "card" | "empty" | "wide" | "differs" | "asof" | "rounded";
+/** Revenue as a model writes it with a long decimal tail, rounded by the table; the last one written with two decimals. */
+const ROUNDED = () => ko()
+  ? [["₩47.214321조", 47.214321e12], ["₩43.600123조", 43.600123e12], ["₩12.30조", 12.3e12]] as const
+  : [["$394.3281bn", 394.3281e9], ["$43.6004bn", 43.6004e9], ["$12.30bn", 12.3e9]] as const;
 const AS_OF = "2026-04-01";
 
 function gridFixture(variant: Variant): { title: string; grid: AssetsGrid; evidence: ChatEvidenceRef[] } {
@@ -85,7 +89,8 @@ function gridFixture(variant: Variant): { title: string; grid: AssetsGrid; evide
   const cells: GridCell[][] = COMPANIES.map((company, row) => {
     evidence.push(statements(company), calcEvidence(company, "operating"), calcEvidence(company, "net"));
     const index = (column: number) => row * 8 + column;
-    const revenue = amount(company.revenue);
+    const revenue = variant === "rounded" ? ROUNDED()[row]![0] : amount(company.revenue);
+    const revenueValue = variant === "rounded" ? ROUNDED()[row]![1] : company.revenue;
     const operating = `${((company.income / company.revenue) * 100).toFixed(2)}%`;
     const net = `${((company.net / company.revenue) * 100).toFixed(2)}%`;
     const shown = variant === "differs" && company.id === "hanbit" ? "11.30%" : operating;
@@ -99,7 +104,7 @@ function gridFixture(variant: Variant): { title: string; grid: AssetsGrid; evide
       ? empty("not_reported", ko() ? "별도 재무제표만 있어 순부채를 계산하지 않았어요." : "Separate statements only; no consolidated net debt.")
       : value(multipleText, debtCheck, multiple);
     const base: GridCell[] = [
-      value(revenue, dataCheck(company, revenue, "revenue", company.revenue, 0, index(0)), company.revenue),
+      value(revenue, { ...dataCheck(company, revenue, "revenue", revenueValue, 0, index(0)), ...(variant === "rounded" ? { status: "matched" as const } : {}) }, revenueValue),
       value(shown, marginCheck(company, "operating", shown, index(1), shown !== operating), (company.income / company.revenue) * 100),
       variant === "empty" && company.id === "hanbit"
         ? empty("unavailable", ko() ? "한빛화학의 순이익을 가져오지 못했어요." : "Hanbit Chem's net income could not be read.")
@@ -134,7 +139,8 @@ function gridFixture(variant: Variant): { title: string; grid: AssetsGrid; evide
     grid: {
       layout: "assets",
       subtitle: ko() ? "별도 표시가 없으면 연결 기준 · 각 회사 통화" : "Consolidated unless noted · values in each company's own currency",
-      notes: [ko() ? "이슬물류는 별도 재무제표만 공시해요." : "Iseul Logistics files separate statements only."],
+      // Models name a note's source by its citation target; the card draws it as a citation.
+      notes: [ko() ? "이슬물류는 별도 재무제표만 공시해요 (#evidence-ev_iseul_statements)." : "Iseul Logistics files separate statements only (#evidence-ev_iseul_statements)."],
       rows: COMPANIES.map((company) => ({ symbol: company.symbol, market: "KRX", label: company.name(), asset_id: `ast_${company.id.padEnd(16, "0").slice(0, 16)}` })),
       columns,
       cells,
@@ -198,6 +204,12 @@ const view = (id: string, title: string, grid: GridDocument, evidence: ChatEvide
   evidence_refs: evidence,
   chart_dataset: null,
 });
+
+/** The three-company margins table as a live reply publishes it: its artifact view and the evidence its steps read. */
+export function liveGridArtifact(): { id: string; title: string; view: ChatArtifactView; evidence: ChatEvidenceRef[] } {
+  const { title, grid, evidence } = gridFixture("card");
+  return { id: GRID_ID, title, view: view(GRID_ID, title, grid, evidence), evidence };
+}
 
 function answer(id: string, title: string, content: string, asOf?: string): ChatMessage {
   const at = Date.parse(RETRIEVED);
@@ -300,6 +312,7 @@ export function gridScenarios({ base, select, until, click, selectPanel, hasLayo
       const cell = await until(() => card.querySelector<HTMLButtonElement>('button.grid-card-empty[data-empty="unavailable"]'), "The empty cell did not render");
       cell.focus();
     }),
+    gridScenario("chat-grid-rounded", "Amounts the table rounds keep one number of decimals per column", '.grid-card[data-layout="assets"] .number-chip', "rounded"),
     gridScenario("chat-grid-wide-scroll", "Eight measures scroll inside the card", ".grid-card-table thead th:nth-child(9)", "wide"),
     gridScenario("chat-grid-differs", "A cell that differs from its calculation is marked", '.number-chip-popover .number-chip-status[data-status="differs"]', "differs", async (root) => {
       await cardLoaded(root);

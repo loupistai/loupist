@@ -13,6 +13,7 @@ import { Input } from "../ui/input";
 import { NativeSelect } from "../ui/native-select";
 import { Spinner } from "../ui/spinner";
 import { detectNetwork, looksLikeSecret } from "./walletAddress";
+import { useOpen, useOpenDismissing } from "../navigation/Open";
 import "@/styles/holdings.css";
 
 const MAX_WALLETS = 10;
@@ -51,6 +52,9 @@ export function HoldingsSheet({ bridge, open, onOpenChange, onImported }: {
   /** "Add a wallet address" opened from a refused file, not only from its own row. */
   const [adding, setAdding] = useState(false);
   const online = useOnline();
+  // Settings opens over the app, so the sheet closes first. Outside an opener (a lone test or preview) there is no link.
+  const canOpen = useOpen() !== null;
+  const openDismissing = useOpenDismissing(useCallback(() => onOpenChange(false), [onOpenChange]));
   const bodyRef = useRef<HTMLDivElement>(null);
   // A step that replaces the sheet's body starts on its first action, never on the whole dialog.
   useEffect(() => {
@@ -123,7 +127,9 @@ export function HoldingsSheet({ bridge, open, onOpenChange, onImported }: {
                 <h3 id="holdings-stocks" className="holdings-section-label">{t("holdings.stocks")}</h3>
                 <SourceRow name={t("holdings.file")} status={status("csv")} action={<Button variant="outline" size="sm" disabled={busy} onClick={() => void importStocks()}>{t("holdings.importFile")}</Button>} />
                 <SourceRow name={t("holdings.kis")} status={status("kis")} helper={kisReady ? undefined : t("holdings.kisHelper")}
-                  action={<Button variant="outline" size="sm" disabled={busy || !kisReady} onClick={() => void importKis()}>{t("holdings.import")}</Button>} />
+                  action={kisReady ? <Button variant="outline" size="sm" disabled={busy} onClick={() => void importKis()}>{t("holdings.import")}</Button>
+                    // Not connected yet: the next step is Settings › Data connections, not a dead Import.
+                    : canOpen ? <Button variant="outline" size="sm" data-holdings-kis-connect onClick={() => void openDismissing({ kind: "settings", section: "connections" }).catch(() => undefined)}>{t("holdings.connect")}</Button> : null} />
               </section>
               <section className="holdings-section" aria-labelledby="holdings-crypto">
                 <h3 id="holdings-crypto" className="holdings-section-label">{t("holdings.crypto")}</h3>
@@ -139,7 +145,8 @@ export function HoldingsSheet({ bridge, open, onOpenChange, onImported }: {
             </>}
         {error ? <p className="holdings-error" role="alert">{error}</p> : null}
       </DialogBody>
-      {body.kind === "sources" ? <DialogFooter><Button onClick={() => onOpenChange(false)}>{t("holdings.done")}</Button></DialogFooter> : null}
+      {/* One filled button at a time: while the wallet form offers Add and read, Done steps back to outline. */}
+      {body.kind === "sources" ? <DialogFooter><Button variant={adding ? "outline" : "default"} onClick={() => onOpenChange(false)}>{t("holdings.done")}</Button></DialogFooter> : null}
     </DialogContent>
   </Dialog>;
 }
@@ -289,8 +296,9 @@ function CryptoPreview({ bridge, preview, file, busy, onPreview, onError, onCanc
     <p className="holdings-error" role="alert">{t("holdings.preview.tradesOnly")}</p>
     <div className="holdings-actions">
       {cancel}
-      <Button variant="outline" disabled={busy} onClick={onChooseAnother}>{t("holdings.preview.chooseAnother")}</Button>
-      <Button disabled={busy} data-holdings-add-wallet onClick={onAddWallet}>{t("holdings.addWallet")}</Button>
+      {/* The recovery for the file just chosen leads; a wallet address is the other way in. */}
+      <Button variant="outline" disabled={busy} data-holdings-add-wallet onClick={onAddWallet}>{t("holdings.addWallet")}</Button>
+      <Button disabled={busy} onClick={onChooseAnother}>{t("holdings.preview.chooseAnother")}</Button>
     </div>
   </div>;
   if (preview.mappingHeaders) {

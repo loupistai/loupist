@@ -2,12 +2,16 @@ import { StrictMode, useState, type ComponentProps } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
+import { AGENT_SKILLS, FIXED_AGENT_SKILLS } from "@/lib/agentSkills";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatComposer } from "./ChatComposer";
 
-function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = true, onSearchContext, chips }: {
+function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), onAbort = vi.fn(), isRunning = true, onSearchContext, chips, modelCount = 1, skills = [{ id: "research", name: "Research", description: "Research a topic" }] }: {
+  modelCount?: number;
+  skills?: ComponentProps<typeof ChatComposer>["skills"];
   onFollowUp?: ComponentProps<typeof ChatComposer>["onFollowUp"];
   onSend?: ComponentProps<typeof ChatComposer>["onSend"];
+  onAbort?: () => void;
   isRunning?: boolean;
   onSearchContext?: ComponentProps<typeof ChatComposer>["onSearchContext"];
   chips?: ComponentProps<typeof ChatComposer>["chips"];
@@ -17,11 +21,11 @@ function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = t
   return <TooltipProvider><ChatComposer
     prompt={prompt} onPromptChange={setPrompt}
     privateChat={privateChat} isRunning={isRunning} error={null} streamAnnouncement=""
-    models={[{ id: "model", provider: "test", model: "model", name: "Model", input: ["text", "image"], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" }]} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelAuto onModelResetToAuto={() => {}}
-    skills={[{ id: "research", name: "Research", description: "Research a topic" }]}
+    models={Array.from({ length: modelCount }, (_, index) => ({ id: index ? `model-${index}` : "model", provider: "test", model: "model", name: index ? `Model ${index}` : "Model", input: ["text", "image"] as ("text" | "image")[], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" as const }))} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelAuto onModelResetToAuto={() => {}}
+    skills={skills}
     plugins={[]}
     onPrivateChatChange={setPrivateChat} onModelSelectionChange={vi.fn()}
-    onSend={onSend} onFollowUp={onFollowUp} onAbort={vi.fn()}
+    onSend={onSend} onFollowUp={onFollowUp} onAbort={onAbort}
     onSearchContext={onSearchContext}
     chips={chips}
   /></TooltipProvider>;
@@ -29,6 +33,24 @@ function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = t
 
 describe("ChatComposer input", () => {
   afterEach(async () => { await i18n.changeLanguage("en"); });
+
+  it("stops the reply in progress on Esc, as its tooltip says, and not when idle or closing a menu", async () => {
+    const user = userEvent.setup();
+    const onAbort = vi.fn();
+    const view = render(<RunningComposer onAbort={onAbort} />);
+    const input = screen.getByRole("textbox", { name: "Message Loupist" });
+    await user.click(input);
+    await user.keyboard("/");
+    await user.keyboard("{Escape}");
+    expect(onAbort).not.toHaveBeenCalled();
+    await user.clear(input);
+    await user.keyboard("{Escape}");
+    expect(onAbort).toHaveBeenCalledOnce();
+    expect(input).toHaveFocus();
+    view.rerender(<RunningComposer onAbort={onAbort} isRunning={false} />);
+    await user.keyboard("{Escape}");
+    expect(onAbort).toHaveBeenCalledOnce();
+  });
 
   it("folds many Skill modes in the production composer and expands them on request", () => {
     const chips = ["a", "b", "c", "d", "e"].map(id => ({ key: `skill:${id}`, kind: "skill" as const, id, label: `Skill ${id}` }));
@@ -47,7 +69,8 @@ describe("ChatComposer input", () => {
 
   it("keeps focus in the model search when clicking its portaled input", async () => {
     const user = userEvent.setup();
-    render(<RunningComposer isRunning={false} />);
+    // The composer shows search from eight models.
+    render(<RunningComposer isRunning={false} modelCount={8} />);
     await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
     const search = screen.getByRole("searchbox", { name: "Search models" });
     await user.click(search);
@@ -135,14 +158,20 @@ describe("ChatComposer input", () => {
     expect(textarea).toHaveAttribute("placeholder", "Loupist에게 질문…");
   });
 
-  it("toggles private chat from the keyboard and keeps the AI notice visible", async () => {
+  it("turns private chat on from the + menu, shows its chip and keeps the AI notice visible", async () => {
     const user = userEvent.setup();
     render(<RunningComposer isRunning={false} />);
-    const toggle = screen.getByRole("button", { name: "Private chat: don't remember this chat" });
-    toggle.focus();
-    await user.keyboard(" ");
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("Private — not saved to memory")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Private chat" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Add to this message" }));
+    await user.click(await screen.findByRole("menuitemcheckbox", { name: /Private chat/ }));
+    const off = await screen.findByRole("button", { name: "Turn off private chat" });
+    expect(screen.getByText("Private · memory off")).toBeVisible();
+    // Focus goes back to the message, so the "+" tooltip does not reopen over the chip.
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveFocus());
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(screen.getByText("Private · memory off").parentElement).toHaveAccessibleDescription("Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.");
+    await user.click(off);
+    expect(screen.queryByText("Private · memory off")).toBeNull();
     expect(screen.getByText("AI can be wrong. Not a licensed financial adviser.")).toBeVisible();
   });
 
@@ -185,6 +214,19 @@ describe("ChatComposer input", () => {
     expect(onFollowUp).toHaveBeenCalledOnce();
   });
 
+  it("lists bundled Skills by their Korean names in the / menu and adds the Skill by id", async () => {
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    const user = userEvent.setup();
+    const map = [...AGENT_SKILLS, ...FIXED_AGENT_SKILLS].find(skill => skill.id === "world")!;
+    render(<RunningComposer isRunning={false} skills={[{ id: map.id, name: map.name, description: map.description }]} />);
+    const textarea = screen.getByRole("textbox");
+    await user.type(textarea, "/지도");
+    const option = screen.getByRole("option", { name: /지도/ });
+    expect(option).not.toHaveTextContent(/\bMap\b/);
+    await user.keyboard("{Enter}");
+    expect(screen.getByText("지도")).toBeVisible();
+  });
+
   it("dismisses shortcuts without bubbling Escape and ignores IME Enter", async () => {
     const user = userEvent.setup();
     const onFollowUp = vi.fn();
@@ -200,6 +242,28 @@ describe("ChatComposer input", () => {
     fireEvent.keyDown(textarea, { key: "Enter", keyCode: 229, isComposing: true });
     expect(onFollowUp).not.toHaveBeenCalled();
     window.removeEventListener("keydown", escaped);
+  });
+
+  it("turns Send into Stop and back in the same tile, keeping focus in the textarea", async () => {
+    const user = userEvent.setup();
+    const view = render(<RunningComposer isRunning={false} />);
+    const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
+    await user.type(textarea, "Margins");
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toHaveClass("composer-tile");
+    expect(send).toHaveAttribute("data-state", "send");
+    view.rerender(<RunningComposer isRunning />);
+    const stop = screen.getByRole("button", { name: "Stop response" });
+    // One button whose icons cross-fade: no remount, so its box and place never change.
+    expect(stop).toBe(send);
+    expect(stop).toHaveAttribute("data-state", "stop");
+    expect(stop).toHaveAttribute("type", "button");
+    expect(stop.querySelectorAll(".composer-tile-icon")).toHaveLength(2);
+    await user.click(stop);
+    expect(textarea).toHaveFocus();
+    view.rerender(<RunningComposer isRunning={false} />);
+    expect(screen.getByRole("button", { name: "Send" })).toBe(send);
+    expect(send).toHaveAttribute("type", "submit");
   });
 
   it("shows only stop until there is text, then queues on Enter and guides on the modifier", async () => {

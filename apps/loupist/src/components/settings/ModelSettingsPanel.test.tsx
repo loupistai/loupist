@@ -55,7 +55,7 @@ it("keeps a discovery failure with its provider and permits retry without lockin
   props.onLoadModels = vi.fn().mockRejectedValueOnce(new Error("xAI discovery timed out.")).mockReturnValueOnce(retry.promise);
   render(<ModelSettingsPanel {...props} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("Could not load xAI models");
-  expect(screen.getByRole("button", { name: "Reconnect ChatGPT" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "More actions for ChatGPT" })).toBeEnabled();
   await user.click(screen.getByRole("button", { name: "Reload models for xAI" }));
   expect(props.onLoadModels).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("alert")).toBeNull();
@@ -76,8 +76,8 @@ it("adds a provider through the shared connect sheet and reports the connection"
   const user = userEvent.setup();
   const props = panelProps();
   render(<ModelSettingsPanel {...props} />);
-  await user.click(screen.getByRole("button", { name: "Add a provider" }));
-  const dialog = await screen.findByRole("dialog", { name: "Add a provider" });
+  await user.click(screen.getByRole("button", { name: "Add an AI account" }));
+  const dialog = await screen.findByRole("dialog", { name: "Add an AI account" });
   // The picker lists the same ways as onboarding; no logos or monograms.
   expect(dialog.querySelector(".settings-provider-monogram")).toBeNull();
   await user.click(within(dialog).getByRole("button", { name: /^xAI/u }));
@@ -116,11 +116,13 @@ it("edits and removes a custom endpoint from its card", async () => {
   render(<ModelSettingsPanel {...props} />);
   const card = screen.getByRole("article", { name: "My Ollama" });
   expect(card).toHaveTextContent("Running on this Mac · localhost:11434");
-  await user.click(within(card).getByRole("button", { name: "Reconnect My Ollama" }));
+  await user.click(within(card).getByRole("button", { name: "More actions for My Ollama" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Reconnect…" }));
   expect(await screen.findByRole("dialog", { name: "Edit custom provider" })).toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await user.click(within(card).getByRole("button", { name: "Remove My Ollama" }));
+  await user.click(within(card).getByRole("button", { name: "More actions for My Ollama" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Remove My Ollama" }));
   const confirm = await screen.findByRole("dialog", { name: "Remove My Ollama?" });
   await user.click(within(confirm).getByRole("button", { name: "Remove" }));
   await waitFor(() => expect(props.onRemoveCustomProvider).toHaveBeenCalledWith("custom-my-ollama"));

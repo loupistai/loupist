@@ -1,18 +1,7 @@
 // Generated from Rust by ts-rs; do not edit. Regenerate with:
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
-import type { TimePoint } from "../knowledge/model";
 import type { UnreadyReason } from "../providers/inference";
-
-export type ExtractionBudget = {
-  modelProfile: string,
-  thinkingLevel: string,
-  runOptions: { [key in string]: string },
-  embeddingProfile: string,
-  maxLlmCalls: number,
-  maxEmbeddingCalls: number,
-  timeoutMs: number,
-};
 
 export type GraphJobView = {
   jobId: string,
@@ -22,7 +11,6 @@ export type GraphJobView = {
   status: string,
   payloadDigest: string,
   createdAtMs: number,
-  document: JobDocument,
   hostMayRedrive: boolean,
 };
 
@@ -50,51 +38,6 @@ export type GraphReadiness = {
   authKind: string | null,
 };
 
-export type JobDocument = {
-  version: number,
-  episodeKind: string,
-  generationId: string,
-  episodeKey: string,
-  /** Prior chunk of the same source span. Empty for a single-episode span. */
-  previousEpisodeKey: string | null,
-  name: string,
-  body: string,
-  sourceBinding: StoredSourceBinding | null,
-  /** Chat and message that retained this Source. Absent for Map adds, imports, and recovery. */
-  originChatId?: string,
-  originMessageId?: string,
-  artifactUtf8: string | null,
-  logicalDigest: string | null,
-  publicationTime: TimePoint | null,
-  effectiveTime: TimePoint | null,
-  referenceTime: string,
-  /** Provenance shown to extraction. */
-  sourceLabel: string,
-  extraction: ExtractionBudget,
-  dedupKey: string,
-  mutationSent: boolean,
-  inferenceAttempted: boolean,
-  usageUncertain: boolean,
-  leaseExpiresAtMs: number | null,
-  sealedRevisionId: string | null,
-  attemptId: string | null,
-  /**
-   * Paid attempts that ended without publishing anything. The first runs
-   * again; the second quarantines the generation.
-   */
-  interruptedAttempts: number,
-  /**
-   * Paid attempts the host cut short (quit, crash, power loss, sleep). These
-   * run again up to [`HOST_INTERRUPTION_RETRIES`] times before the rule above.
-   */
-  hostInterruptions?: number,
-  /**
-   * Attempts that ended before any paid call went out. They cost nothing and
-   * run again up to [`UNSENT_RETRIES`] times.
-   */
-  unsentAttempts?: number,
-};
-
 /**
  * The sentence under the World processing status, by code: the interface
  * renders it in its own language.
@@ -108,17 +51,5 @@ export type ReadinessNote =
   | "model_unavailable"
   | "connect_provider"
   | UnreadyReason;
-
-export type StoredSourceBinding = {
-  sourceId: string,
-  captureId: string,
-  representationId: string,
-  spanId: string,
-  payloadDigest: string,
-  bindingRole: string,
-  attribution: string,
-  sourceRecordId: string,
-  sourceRevisionId: string,
-};
 
 export type WorldAnchor = { name: string, aliases: Array<string>, identifiers: Array<string> };

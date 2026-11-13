@@ -10,15 +10,15 @@ describe("Loupist shell navigation", () => {
     await openApp();
     await user.click(await mainTab(/Map/));
     await user.click(await mainTab(/Settings/));
-    expect(screen.queryByRole("button", { name: /^New chat/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^New research/ })).toBeNull();
     const search = screen.getByRole("searchbox", { name: "Search settings" });
     await user.type(search, "retry");
     const sections = screen.getByRole("navigation", { name: "Settings sections" });
-    expect(within(sections).queryByRole("button", { name: "Models & providers" })).toBeNull();
+    expect(within(sections).queryByRole("button", { name: "AI accounts" })).toBeNull();
     await user.click(within(sections).getByRole("button", { name: "Chat defaults" }));
     expect(await screen.findByRole("heading", { name: "Chat defaults", level: 1 })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Clear settings search" }));
-    expect(within(sections).getByRole("button", { name: "Connections" })).toBeVisible();
+    expect(within(sections).getByRole("button", { name: "Data connections" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Loupists" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByLabelText("Chat workspace panel")).toHaveAttribute("data-panel-kind", "world");
@@ -89,6 +89,16 @@ describe("Loupist shell navigation", () => {
     expect(await screen.findByRole("textbox", { name:"Message Loupist" })).toBeEnabled();
   });
 
+  it("opens Home with ⌘1 from a topic Chat", async () => {
+    const user = userEvent.setup();
+    await openApp();
+    await user.click(screen.getByRole("button", { name: "Capital allocation checklist" }));
+    await screen.findByRole("heading", { name: "Capital allocation checklist" });
+    fireEvent.keyDown(window, { key: "1", metaKey: true });
+    await waitFor(() => expect(document.querySelector('[data-testid="loupist-chat-row"][data-home] [data-testid="loupist-chat-button"]')).toHaveAttribute("aria-current", "page"));
+    expect(screen.getByRole("button", { name: "Capital allocation checklist" })).not.toHaveAttribute("aria-current");
+  });
+
   it("opens a name found on another Loupist's Map in that Loupist", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -107,6 +117,15 @@ describe("Loupist shell navigation", () => {
     await waitFor(() => expect(selectedLoupistButton()).toHaveTextContent("Contrarian Value"));
     expect(await screen.findByLabelText("Chat workspace panel")).toHaveAttribute("data-panel-kind", "world");
     expect(await screen.findByRole("heading", { level: 2, name: "Pemberton Rail" })).toBeVisible();
+  });
+
+  it("opens the holdings import from the command palette", async () => {
+    const user = userEvent.setup();
+    await openApp();
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    await user.type(await screen.findByRole("combobox", { name: "Command palette" }), "import holdings");
+    fireEvent.click(await screen.findByRole("option", { name: /Import holdings/ }));
+    expect(await screen.findByRole("dialog", { name: /holdings/i })).toBeVisible();
   });
 
   it("opens a principle found in another Loupist on that Loupist's Memory page", async () => {

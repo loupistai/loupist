@@ -2,6 +2,7 @@ import { createLabelFrame } from "./labelFrame";
 import { conflictMark, LIVE_GLOW_REACH, nodeRings, placeLabels, showMetricLabel } from "./labels";
 import { entityLabel } from "../../knowledge/mapItems";
 import { relationName } from "./relations";
+import { LOCAL_VIEW_MIN_NODES } from "./localView";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import ForceGraph, { type ForceGraphMethods } from "react-force-graph-2d";
 import type { KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
@@ -20,7 +21,7 @@ function readColors() {
   for (const name of ["bg", "company", "product", "technology", "industry", "person", "market", "event", "metric", "other", "method", "perspective", "principle", "subject", "idea", "holding-ring", "edge", "edge-active", "edge-disputed", "label", "label-halo", "new-glow"]) colors[name] = style.getPropertyValue(`--gg-color-map-${name}`).trim() || "transparent";
   for (const [key, token] of [["focus", "focus"], ["principle-mark", "bg-raised"], ["dim-label", "text-tertiary"]]) colors[key] = style.getPropertyValue(`--gg-color-${token}`).trim() || "transparent";
   colors.journal = style.getPropertyValue("--gg-color-text-primary").trim() || "transparent";
-  colors.warning = style.getPropertyValue("--gg-color-warning").trim() || "transparent";
+  colors.warning = style.getPropertyValue("--gg-color-map-edge-disputed").trim() || "transparent";
   colors.accent = style.getPropertyValue("--gg-color-accent").trim() || "transparent";
   const spring = (style.getPropertyValue("--gg-ease-spring").match(/-?\d*\.?\d+/g) ?? [".34", "1.4", ".64", "1"]).map(Number);
   const pulseMs = parseFloat(style.getPropertyValue("--gg-motion-map-enter")) || 600;
@@ -67,13 +68,12 @@ const cameras = new Map<string, { x: number; y: number; scale: number }>();
 /** Screen radius stays at most 1.5× the unscaled node radius, except that a handful
  *  of names may draw larger so a small map does not sit as a speck in its canvas. */
 const MAX_FIT_ZOOM = 1.5;
-const fitZoomCap = (count: number) => count <= 12 ? 3 : count <= 40 ? 2.2 : MAX_FIT_ZOOM;
+// A young map fills the canvas: up to 60 names may zoom in further than a large one.
+const fitZoomCap = (count: number) => count <= 12 ? 3 : count <= 60 ? 2.6 : MAX_FIT_ZOOM;
 /** Up to this many names, a fit never zooms out so far that a dot is under 6 px across. */
 const MIN_DOT_FIT_COUNT = 150;
 const minFitZoom = (shown: readonly PositionedNode[]) => shown.length > MIN_DOT_FIT_COUNT ? .3 : Math.max(.3, 3 / Math.min(...shown.map(nodeRadius)));
 /** Below this canvas size the legend floats over the map instead of shrinking the fit. */
-const ROOMY_WIDTH = 900;
-const ROOMY_HEIGHT = 600;
 /** Labelled before the rest: the best-connected names. */
 const TOP_HUBS = 10;
 /** Room kept around a fitted drawing: 48 px, less in a short strip such as the onboarding mini map. */
@@ -96,7 +96,7 @@ function freeBox(size: { width: number; height: number }, insets: Insets) {
   ].filter(box => box.w > 48 && box.h > 48);
   return candidates.sort((a, b) => b.w * b.h - a.w * a.h)[0] ?? { x, y, w, h };
 }
-export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId, controls, onSelect, onClear, stats, dataArrivedAt, overlayId, overlayIds, highlightIds, replayAt, compact, learnedIds, learningGlowIds, emphasisEdgeId, reserveLegend = false, reserveHint = false, reserveOverlay = false }: {
+export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId, controls, onSelect, onClear, stats, dataArrivedAt, overlayId, overlayIds, highlightIds, replayAt, compact, learnedIds, learningGlowIds, emphasisEdgeId, reserveLegend = false, reserveOverlay = false }: {
   /** A relationship the inspector points at (chip hover): its line is drawn wider. */
   emphasisEdgeId?: string;
   learnedIds?: ReadonlySet<string>; learningGlowIds?: ReadonlySet<string>;
@@ -109,7 +109,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
   /** The name a focal view is centred on; it is named first. */
   focalId?: string;
   onSelect: (node: KnowledgeMapNode) => void; onClear: () => void; stats: string;
-  reserveLegend?: boolean; reserveHint?: boolean; reserveOverlay?: boolean;
+  reserveLegend?: boolean; reserveOverlay?: boolean;
 }) {
   const { t, i18n } = useTranslation("knowledge");
   const host = useRef<HTMLDivElement>(null);
@@ -292,26 +292,23 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
       parent?.style.setProperty("--map-covered-left", `${left}px`);
       parent?.style.setProperty("--map-covered-right", `${right}px`);
       parent?.style.setProperty("--map-covered-bottom", `${sheetBottom}px`);
-      const hint = reserveHint ? root.querySelector(".map-first-hint")?.getBoundingClientRect() : undefined;
-      const hintBottom = hint ? Math.max(0, hint.bottom - bounds.top) : 0;
       const caption = (element.closest(".map-view") ?? root).querySelector("[data-map-caption]")?.getBoundingClientRect();
       const captionTop = caption && caption.height > 0 ? Math.max(0, caption.bottom - bounds.top) : 0;
-      const top = Math.round(Math.max(cover(stack), cover(stats), cover(lensPill), hintBottom, captionTop));
+      const top = Math.round(Math.max(cover(stack), cover(stats), cover(lensPill), captionTop));
       let besideStats = 0;
       for (const child of root.querySelector(".map-status-stack")?.children ?? []) {
         if (child.classList.contains("map-stats")) continue;
         besideStats = Math.max(besideStats, cover(child.getBoundingClientRect()));
       }
-      const topWithoutStats = Math.round(Math.max(besideStats, cover(lensPill), hintBottom, captionTop));
+      const topWithoutStats = Math.round(Math.max(besideStats, cover(lensPill), captionTop));
       // A bottom sheet is the context at compact width, and a strip shorter than one node cannot hold the pill.
       const bottomSheet = Boolean(sheet && !sidePanel);
       const hidePill = bottomSheet || (bounds.height - top - sheetBottom < MIN_SELECTION_STRIP && cover(stats) > 0);
       (element.closest(".map-view") ?? body ?? root).toggleAttribute("data-hide-map-stats", hidePill);
       const cameraTop = hidePill ? topWithoutStats : top;
       parent?.style.setProperty("--map-covered-top", `${cameraTop}px`);
-      // A small canvas lets the legend float over the map: reserving its band would shrink the drawing to a speck.
-      const roomy = bounds.width >= ROOMY_WIDTH && bounds.height >= ROOMY_HEIGHT;
-      const legend = reserveLegend && roomy ? parent?.querySelector("details.map-legend")?.getBoundingClientRect() : undefined;
+      // The key strip is one or two short lines at every size: its band is always reserved so no node sits under it.
+      const legend = reserveLegend ? parent?.querySelector("details.map-legend")?.getBoundingClientRect() : undefined;
       const legendBand = legend && legend.height > 0 ? Math.round(Math.max(0, Math.min(bounds.height, bounds.bottom - legend.top))) : 0;
       const bottom = Math.max(sheetBottom, legendBand);
       parent?.style.setProperty("--map-overlay-bottom", `${bottom}px`);
@@ -326,7 +323,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
         return box.r > 0 && box.b > 0 && box.l < bounds.width && box.t < bounds.height ? box : null;
       };
       const seen = new Set<Element>();
-      const obstacles = [...root.querySelectorAll(".map-stats, .map-overlay-pill, .map-first-hint, details.map-legend, .learning-toast"), ...document.querySelectorAll(".learning-toast"), ...(sheet ? [inspector!] : [])].flatMap(panel => {
+      const obstacles = [...root.querySelectorAll(".map-stats, .map-overlay-pill, details.map-legend, .learning-toast"), ...document.querySelectorAll(".learning-toast"), ...(sheet ? [inspector!] : [])].flatMap(panel => {
         if (seen.has(panel) || (hidePill && panel.classList.contains("map-stats"))) return [];
         seen.add(panel);
         const box = obstacleOf(panel.getBoundingClientRect());
@@ -353,7 +350,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
     toastWatch.observe(document.body, { childList: true, subtree: true });
     observe();
     return () => { observer.disconnect(); mutations.disconnect(); toastWatch.disconnect(); (element.closest(".map-view") ?? body ?? root).removeAttribute("data-hide-map-stats"); };
-  }, [reserveLegend, reserveHint, reserveOverlay]);
+  }, [reserveLegend, reserveOverlay]);
   const panFrame = useRef(0);
   useEffect(() => () => cancelAnimationFrame(panFrame.current), []);
   const duration = () => reduced ? 0 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gg-motion-normal")) || 180;
@@ -646,7 +643,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
           // With a drawn selection, dimmed nodes stay unnamed so the labels describe only what is in focus.
           if (placedSelection && !emphasized && !selectedNeighbors.has(node.id) && !linkedIds.has(node.id)) return false;
           // A small drawing names every node: the mini map up to 8, a focal view or young map up to 30.
-          const fewNodes = visible.length <= (compact ? 8 : 30);
+          const fewNodes = visible.length <= (compact ? 8 : LOCAL_VIEW_MIN_NODES);
           if (!exportLabels && !(emphasized || pinned || anchored || fewNodes || scale >= 1.6 || hubs.has(node.id) || selectedNeighbors.has(node.id) || linkedIds.has(node.id))) return false;
           const screen = api.current?.graph2ScreenCoords(node.x, node.y);
           return screen && screen.x >= 0 && screen.x <= size.width && screen.y >= 0 && screen.y <= size.height;

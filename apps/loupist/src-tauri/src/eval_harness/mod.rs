@@ -1,9 +1,9 @@
 //! Opt-in headless evaluations; production turn authority remains in Rust Chat.
 pub(crate) mod artifacts;
 mod batch;
-pub mod briefing;
 #[cfg(test)]
 mod citations;
+pub(crate) mod clock;
 pub mod concurrent;
 #[cfg(test)]
 mod dart_replay_tests;
@@ -15,6 +15,8 @@ mod followed;
 mod growth;
 #[cfg(test)]
 mod holdings_tests;
+#[cfg(all(test, target_os = "macos", target_arch = "aarch64", debug_assertions))]
+mod judgment_commit_tests;
 pub(crate) mod replay;
 #[cfg(all(test, target_os = "macos", target_arch = "aarch64", debug_assertions))]
 mod replay_scenarios;
@@ -92,6 +94,10 @@ impl Budget {
 }
 #[derive(Deserialize, Serialize)]
 struct Scenario {
+    #[serde(default)]
+    pub clock: Option<String>,
+    #[serde(default)]
+    pub language: Option<String>,
     pub id: String,
     pub title: String,
     #[serde(default)]
@@ -215,12 +221,14 @@ struct WatchSeed {
     display_name: Option<String>,
 }
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct LensSeedSection {
     pub key: String,
     pub heading: String,
     pub markdown: String,
 }
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct LensSeed {
     pub title: String,
     #[serde(default)]
@@ -933,6 +941,13 @@ async fn run_turn(
     sink.eval_pi_event = Some(Arc::new(move |event| {
         callback.lock().unwrap().observe(event)
     }));
+    let native_reads = captured.clone();
+    sink.eval_native_read = Some(Arc::new(move |call_id, authorization| {
+        native_reads
+            .lock()
+            .unwrap()
+            .native_read_authorized(call_id, authorization);
+    }));
     let run_id = format!("eval-{}", uuid::Uuid::new_v4());
     let started = chrono::Utc::now().to_rfc3339();
     let clock = Instant::now();
@@ -1009,6 +1024,18 @@ async fn run_turn(
         result["status"] = json!("failed");
         result["error"] = trace::bounded_json(&json!(error));
     }
+    if message.is_some_and(|message| message.status == crate::domain::ChatMessageStatus::Error) {
+        let profile = state
+            .store
+            .get_loupist(&chat.loupist_id)?
+            .ok_or("eval Loupist missing")?;
+        if let Ok(Some(failure)) = crate::runs::log::memory_commit_failure(
+            &Path::new(&profile.workspace_root).join(".loupist"),
+            &run_id,
+        ) {
+            result["memory_commit_failure"] = serde_json::to_value(failure)?;
+        }
+    }
     // Observe canonical state independently of tool output or the assistant’s claim.
     result["lens"] = trace::lens_state(state, chat, message.map(|m| m.id.as_str()))?;
     result["scheduled_tasks"] = json!(state.store.scheduled_tasks_list(&chat.loupist_id)?.iter().map(|task| {
@@ -1021,6 +1048,7 @@ async fn run_turn(
     }).collect::<Vec<_>>());
     result["started_at"] = json!(started);
     result["duration_ms"] = json!(clock.elapsed().as_millis() as u64);
+    result["replay_fallbacks"] = json!(replay::take_fallbacks());
     Ok(result)
 }
 /// Atomically replace a complete JSONL snapshot after each record. An interruption
@@ -1132,6 +1160,9 @@ pub async fn run(options: Options) -> Result<()> {
     'scenarios: for (scenario, inputs) in inputs {
         let mut harness = harness.clone();
         harness["scenario_input_sha256"] = json!(inputs.sha256);
+        harness["clock"] = json!(scenario.clock);
+        harness["language"] = json!(scenario.language);
+        let _clock = clock::install(scenario.clock.as_deref())?;
         for trial in 0..options.trials {
             if options.resume
                 && batch::complete(
@@ -1171,7 +1202,24 @@ pub async fn run(options: Options) -> Result<()> {
             // Only this disposable app profile is changed; paid eval attempts never retry.
             fs::write(
                 state.artifacts.app_data_dir.join("config.toml"),
-                frozen.config_toml(),
+                if let Some(language) = scenario.language.as_deref().or_else(|| {
+                    if scenario.tags.iter().any(|tag| tag == "en") {
+                        Some("en")
+                    } else if scenario.tags.iter().any(|tag| tag == "ko") {
+                        Some("ko")
+                    } else {
+                        None
+                    }
+                }) {
+                    if !matches!(language, "en" | "ko") {
+                        return Err("scenario language must be en or ko".into());
+                    }
+                    let mut config = frozen.config_toml().parse::<toml_edit::Document>()?;
+                    config["appearance"]["language"] = toml_edit::value(language);
+                    config.to_string()
+                } else {
+                    frozen.config_toml()
+                },
             )?;
             state.eval_pi_agent_dir = Some(options.pi_agent_dir.clone());
             Arc::make_mut(&mut state.artifacts).pi = Some(pi.clone());

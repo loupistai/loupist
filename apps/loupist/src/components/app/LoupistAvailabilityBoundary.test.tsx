@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { LoupistAvailabilityBoundary } from "./LoupistAvailabilityBoundary";
 
 function renderBoundary(status: "newer_version" | "workspace_unavailable") {
-  const handlers = { onRecover: vi.fn(), onReconnect: vi.fn(), onRemove: vi.fn() };
+  const handlers = { onReconnect: vi.fn(), onRemove: vi.fn() };
   render(
     <LoupistAvailabilityBoundary
       availability={{ status }}

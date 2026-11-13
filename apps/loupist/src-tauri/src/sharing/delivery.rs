@@ -14,7 +14,7 @@
 //! wrapped but pauses nothing, so a Loupist made from a pack stays usable. If
 //! the shared lookup fails, every Memory delivery is treated as shared and
 //! flagged: wrapped, and the tier raised.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
@@ -93,11 +93,19 @@ pub(crate) struct Shared {
 
 impl Shared {
     pub(crate) fn load(state: &AppState, loupist_id: &str) -> Self {
+        Self::load_records(state, loupist_id, None)
+    }
+
+    fn load_records(
+        state: &AppState,
+        loupist_id: &str,
+        records: Option<&BTreeSet<String>>,
+    ) -> Self {
         let known = (|| {
             let mut connection = state.store.lock_loupist(loupist_id).ok()?;
             let tx = connection.transaction().ok()?;
-            let lens = super::store::shared_lens(&tx, loupist_id).ok()?;
-            let world = super::store::shared_world(&tx, loupist_id).ok()?;
+            let lens = super::store::shared_lens_for(&tx, loupist_id, records).ok()?;
+            let world = super::store::shared_world_for(&tx, loupist_id, records).ok()?;
             tx.commit().ok()?;
             Some(Known { lens, world })
         })();
@@ -321,6 +329,42 @@ fn wrap_inline(text: &mut String, owner: &Owner, delivery: &mut Delivery) {
     delivery.pauses |= owner.pauses;
 }
 
+/// Limit provenance reads to the objects in this delivery, including nested
+/// World views serialized as JSON text. A single result can contain many packs.
+fn delivery_records(value: &Value, records: &mut BTreeSet<String>) {
+    match value {
+        Value::Array(values) => values
+            .iter()
+            .for_each(|value| delivery_records(value, records)),
+        Value::Object(map) => {
+            for key in [
+                "recordId",
+                "id",
+                "adapter_id",
+                "objectId",
+                "spanId",
+                "span_id",
+            ] {
+                if let Some(id) = map.get(key).and_then(Value::as_str) {
+                    records.insert(id.into());
+                }
+            }
+            if map.get("scope").and_then(Value::as_str) == Some("world") {
+                if let Some(view) = map
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                {
+                    delivery_records(&view, records);
+                }
+            }
+            map.values()
+                .for_each(|value| delivery_records(value, records));
+        }
+        _ => {}
+    }
+}
+
 /// The model-facing copy of a Memory tool result: shared text wrapped, and the
 /// untrusted-text tier raised before the result is returned when it pauses.
 pub(crate) fn deliver(
@@ -329,7 +373,9 @@ pub(crate) fn deliver(
     delivered: &mut Value,
     taint: &TurnTaint,
 ) {
-    if Shared::load(state, loupist_id).mark_delivery(delivered) {
+    let mut records = BTreeSet::new();
+    delivery_records(delivered, &mut records);
+    if Shared::load_records(state, loupist_id, Some(&records)).mark_delivery(delivered) {
         taint.mark_untrusted_text();
     }
 }
@@ -353,6 +399,72 @@ mod tests {
             updated_at_ms: 1,
             archived: false,
         }
+    }
+
+    #[test]
+    fn provenance_loading_queries_only_the_delivered_objects() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temp.path().join("app"));
+        {
+            let mut connection = state.store.lock_loupist("loupist-a").unwrap();
+            let tx = connection.transaction().unwrap();
+            super::super::store::ensure(&tx).unwrap();
+            tx.execute("INSERT INTO pack_imports (import_id, loupist_id, pack_id, name, version, license, mode, added_at_ms) VALUES ('imp_fixture', 'loupist-a', 'pack', 'Pack', 1, 'CC-BY-4.0', 'merge', 1)", []).unwrap();
+            for record in ["rec_delivered", "rec_unrelated"] {
+                super::super::store::insert_item(
+                    &tx,
+                    "loupist-a",
+                    &super::super::store::ItemRow {
+                        import_id: "imp_fixture".into(),
+                        key: record.into(),
+                        kind: "method".into(),
+                        title: record.into(),
+                        body_json: "{}".into(),
+                        body_hash: "hash".into(),
+                        flags: "[]".into(),
+                        state: "accepted".into(),
+                        lens_record_id: Some(record.into()),
+                        update_json: None,
+                    },
+                )
+                .unwrap();
+                super::super::store::insert_world_ref(
+                    &tx,
+                    "loupist-a",
+                    "imp_fixture",
+                    "node",
+                    record,
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        let selected = BTreeSet::from(["rec_delivered".into()]);
+        let shared = Shared::load_records(&state, "loupist-a", Some(&selected));
+        assert_eq!(shared.lens("rec_delivered"), Some("Pack"));
+        assert_eq!(shared.lens("rec_unrelated"), None);
+        assert_eq!(shared.known.as_ref().unwrap().world.subjects.len(), 1);
+        let all = Shared::load(&state, "loupist-a");
+        assert_eq!(all.lens("rec_unrelated"), Some("Pack"));
+    }
+
+    #[test]
+    fn provenance_selection_includes_nested_world_views_but_not_plain_text() {
+        let value = serde_json::json!([
+            {"recordId":"lens-delivered", "text":"unrelated-record-name"},
+            {"scope":"world", "text":serde_json::json!({"nodes":[{"id":"node-delivered"}], "sources":[{"span_id":"span-delivered"}]}).to_string()},
+            {"title":"not-an-id", "summary":"also-not-an-id"}
+        ]);
+        let mut records = BTreeSet::new();
+        delivery_records(&value, &mut records);
+        assert_eq!(
+            records,
+            BTreeSet::from([
+                "lens-delivered".into(),
+                "node-delivered".into(),
+                "span-delivered".into()
+            ])
+        );
     }
 
     #[test]

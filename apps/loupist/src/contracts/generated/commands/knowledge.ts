@@ -27,13 +27,13 @@ export type KnowledgeCatalogRequest = { loupistId: string };
 
 export type KnowledgeConnectionRequest = { loupistId: string, connectionId: string };
 
-export type KnowledgeConnectionsRequest = { loupistId: string };
-
 export type KnowledgeGraphJobRequest = { loupistId: string, jobId: string };
 
 export type KnowledgeGraphLoupistRequest = { loupistId: string };
 
 export type KnowledgeGraphPauseRequest = { loupistId: string, paused: boolean };
+
+export type KnowledgeGraphRetrySourceRequest = { loupistId: string, recordId: string };
 
 export type KnowledgeGraphSettingsRequest = { loupistId: string, settings: GraphPublicSettings };
 

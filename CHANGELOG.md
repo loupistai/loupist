@@ -2,22 +2,19 @@
 
 ## Unreleased
 
-- Make Lens a shared wiki for the user and the Loupist: Chat links open Lens, search is shared, drafts persist, conflicts merge or become proposals, and methods can be renamed, archived, compared, and viewed as a link graph.
-- Limit the first supported release to macOS 13+ on Apple Silicon; retain Windows implementation and manual compatibility checks outside release gates.
-- Upgrade 0.0.1 data in place after a private backup instead of refusing it, keep Keychain secrets reachable when an older development catalog is set aside, and refuse data a newer Loupist saved with a clear message.
-- Fix Chats that could no longer be saved after a Loupist folder was reconnected or imported; the upgrade repairs affected Chats.
-- Keep dataset export, dataset import and workspace capture to ordinary research files: they no longer reach the Loupist's private folder, git metadata or instruction files, and a fetched web page is never saved as the user's own material because of its site name.
-- Replace the early Wiki model with Source, World, Lens, working notes, and a private Journal for each Loupist, with canonical writes in Rust.
-- Add local workspaces for Pi's native file tools; keep app-owned Memory and Chat session data separate.
-- Run custom Python analysis in a pinned WASI worker with no shell, network, process spawn or host environment.
-- Replace the composer's three Memory modes with one Private chat switch that disables Memory reads and saves together.
-- Add Scheduled Chat runs, inline execution progress, and side readers for files, sources, Memory, and published results.
-- Keep isolated finance and compute services available alongside local tools for repeatable analysis.
-
-## 0.0.1 - 2026-08-25
-
-- Launch Loupist as a single local-first desktop product for macOS Apple Silicon and Windows x64.
-- Add Wiki and Lens Skills that organize durable facts and set an original Decision against what actually happened.
-- Remove host plugins, Packs, compatibility paths, and independent Core distribution.
-- Add signed GitHub Releases and consent-based in-app updates.
-- License the project under AGPL-3.0-only.
+- Introduce Loupist, a local-first financial research desktop app for macOS 13 or newer on Apple Silicon. Windows, Intel Macs and Linux are not supported in this release.
+- Connect an AI account with a supported provider API key or sign-in; no Loupist account or cloud sync is required.
+- Read filings, market data and economic series through read-only Data connections, including OpenBB, OpenDART, KRX and Korea Investment.
+- Keep each Loupist’s research sessions, retained Sources, Map, Lens, research notes and Journal in its own local folder, which can be copied and reopened.
+- Find Bot, Following, Map, Lens and Schedule in the sidebar; Following brings followed assets, holdings import, Watch-for choices and recent alerts together.
+- Follow assets without starting automatic checks; Watch all turns on class defaults, and Watching offers Pause/Resume and Check now without AI usage.
+- Teach principles and develop reusable methods in Lens, with editable pages, dated revision comparisons and evidence; open Sources, Journal and Notes separately in the Library.
+- Look around before connecting an AI account, go Back during setup, and choose a template and name, then change avatar and tone later in settings; Bot keeps a three-step checklist for following, teaching a principle and turning on a briefing.
+- Run numerical analysis in a pinned offline Python worker with no shell, network, process spawning or host environment; read and edit research files in the selected folder and open results beside Chat.
+- Open Private chat from the composer’s + menu to skip Memory reads and saves together; chat history is still saved and messages still go to the AI provider.
+- Run scheduled research and briefings while the app is open or in the menu bar; inspect runs, pause or resume tasks, Run now, and delete custom tasks from Schedule.
+- Retry recurring briefings at their next occurrence before pausing after three consecutive failures; a successful run clears the streak, and missing AI credentials pause immediately.
+- Read bundled Skills and their references again without allowing changes to them; built-in tools need no loading step, while Data connections keep their grants.
+- Update the local SQLite database engine with its security fix, refuse sharing when a required saved-credential scan fails, and save AI API keys through private process input instead of a process environment.
+- Beta. Deliver a Mac installer signed with Loupist's own certificate and not notarized by Apple, so the first launch needs a one-time approval in System Settings; updates are signed with the Loupist updater key, install only with consent, and are refused unless the package names the version in its feed. Compatible database upgrades make a private backup and leave unsupported formats unchanged.
+- License the app under AGPL-3.0-only; Loupist never trades, offers no trading execution, and is not a licensed adviser.

@@ -3,25 +3,20 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { ChatThread, LoupistSummary, ModelCatalog } from "../../types";
+import type { ChatThread, ModelCatalog } from "../../types";
 import { chooseLoupist, mainTab, newChatButton, openApp, selectedLoupistButton } from "../renderApp";
-
-const recovering = (loupist: LoupistSummary): LoupistSummary => ({
-  ...loupist,
-  availability: { status: "recovery_required", reason: "interrupted_memory_update", action: "recover_memory" },
-});
 
 const openModelSettings = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(await mainTab(/Settings/));
-  await user.click(screen.getByRole("button", { name: "Models & providers" }));
+  await user.click(screen.getByRole("button", { name: "AI accounts" }));
 };
 
-/** Settings › Models & providers › Add a provider, then one of its ways to connect. */
+/** Settings › AI accounts › Add an AI account, then one of its ways to connect. */
 const openProviderPicker = async (user: ReturnType<typeof userEvent.setup>, row: RegExp) => {
   await openModelSettings(user);
   await screen.findByRole("article", { name: "ChatGPT" });
-  await user.click(screen.getByRole("button", { name: "Add a provider" }));
-  const dialog = await screen.findByRole("dialog", { name: "Add a provider" });
+  await user.click(screen.getByRole("button", { name: "Add an AI account" }));
+  const dialog = await screen.findByRole("dialog", { name: "Add an AI account" });
   await user.click(within(dialog).getByRole("button", { name: row }));
   return dialog;
 };
@@ -51,7 +46,7 @@ describe("Loupist · Shell and Loupist", () => {
     expect(screen.queryByRole("button", { name: "How should we read the margin decline?" })).toBeNull();
     await user.click(await mainTab(/Chat/));
     await user.click(newChatButton());
-    expect(await screen.findByRole("heading", { name: "New chat" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Untitled research session" })).toBeVisible();
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -67,10 +62,10 @@ describe("Loupist · Shell and Loupist", () => {
     await user.click(screen.getByRole("button", { name: "Options for How should we read the margin decline?" }));
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
     fireEvent.keyDown(window, { key: "n", metaKey: true });
-    expect(screen.getByRole("dialog", { name: "Delete Chat?" })).toBeVisible();
+    expect(screen.getByRole("dialog", { name: "Delete research session?" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.keyDown(window, { key: "n", metaKey: true });
-    expect(await screen.findByRole("heading", { name: "New chat" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Untitled research session" })).toBeVisible();
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -93,7 +88,7 @@ describe("Loupist · Shell and Loupist", () => {
     const remove = vi.spyOn(bridge, "chatDelete");
     await chooseLoupist(user, "Contrarian Value");
     await user.click(newChatButton());
-    await screen.findByRole("heading", { name: "New chat" });
+    await screen.findByRole("heading", { name: "Untitled research session" });
     expect(create).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole("textbox", { name: "Message Loupist" }), { target: { value: "Downside follow-up" } });
     await user.click(screen.getByRole("button", { name: "Send" }));
@@ -117,7 +112,7 @@ describe("Loupist · Shell and Loupist", () => {
     const rename = vi.spyOn(bridge, "chatRename").mockRejectedValueOnce(new Error("Session is busy. Try again."));
     await user.click(screen.getByRole("button", { name: "Options for How should we read the margin decline?" }));
     await user.click(screen.getByRole("menuitem", { name: "Rename" }));
-    const dialog = screen.getByRole("dialog", { name: "Rename Chat" });
+    const dialog = screen.getByRole("dialog", { name: "Rename research session" });
     const name = within(dialog).getByRole("textbox", { name: "Name" });
     await user.clear(name);
     await user.type(name, "분기 검토");
@@ -127,7 +122,7 @@ describe("Loupist · Shell and Loupist", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("Session is busy. Try again.");
     expect(name).toHaveValue("분기 검토");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Rename Chat" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Rename research session" })).not.toBeInTheDocument());
     expect(screen.getByRole("button", { name: "분기 검토" })).toBeVisible();
   });
 
@@ -138,7 +133,7 @@ describe("Loupist · Shell and Loupist", () => {
     const openDelete = async () => {
       await user.click(screen.getByRole("button", { name: "Options for How should we read the margin decline?" }));
       await user.click(screen.getByRole("menuitem", { name: "Delete" }));
-      return screen.getByRole("dialog", { name: "Delete Chat?" });
+      return screen.getByRole("dialog", { name: "Delete research session?" });
     };
     const dialog = await openDelete();
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
@@ -172,7 +167,7 @@ describe("Loupist · Shell and Loupist", () => {
     const createLoupist = vi.spyOn(bridge, "loupistCreate");
     await user.click(headerAction("New Loupist"));
     await user.click(await screen.findByRole("button", { name: "Create Loupist" }));
-    await waitFor(() => expect(createLoupist).toHaveBeenCalledWith({ name: "Portfolio Loupist", focus: "Companies I hold and watch", avatar: "loupist-01", template: "portfolio", tone: "balanced" }));
+    await waitFor(() => expect(createLoupist).toHaveBeenCalledWith({ name: "Portfolio Loupist", focus: "Companies I hold and follow", avatar: "loupist-01", template: "portfolio", tone: "balanced" }));
     expect(selectedLoupistButton()).toHaveTextContent("Portfolio Loupist");
     expect(screen.getByRole("button", {name:"Bot",current:"page"})).toBeVisible();
   });
@@ -204,40 +199,6 @@ describe("Loupist · Shell and Loupist", () => {
     await waitFor(() => expect(selectedLoupistButton()).toHaveTextContent("Contrarian Value"));
   });
 
-  it("recovers an interrupted Memory update while keeping Loupist creation available", async () => {
-    const user = userEvent.setup();
-    const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    const [firstLoupist] = await bridge.loupistList();
-    vi.spyOn(bridge, "loupistList").mockResolvedValueOnce([recovering(firstLoupist)]);
-    const recover = vi.spyOn(bridge, "loupistRecover");
-    const skills = vi.spyOn(bridge, "agentSkillCatalog");
-    render(<App bridge={bridge} />);
-    expect(await screen.findByRole("heading", { name: "Memory needs recovery" })).toBeVisible();
-    expect(headerAction("New Loupist")).toBeVisible();
-    await user.keyboard("{Escape}");
-    expect(skills).not.toHaveBeenCalledWith(firstLoupist.id);
-    await user.click(screen.getByRole("button", { name: "Recover memory" }));
-    await waitFor(() => expect(recover).toHaveBeenCalledWith({ loupist_id: firstLoupist.id, action: "recover_memory" }));
-    expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
-  });
-
-  it("does not select a recovered Loupist after the user moves to another Loupist", async () => {
-    const user = userEvent.setup();
-    const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    const listed = await bridge.loupistList();
-    const loupist = recovering(listed[0]);
-    vi.spyOn(bridge, "loupistList").mockResolvedValueOnce([loupist, ...listed.slice(1)]);
-    let finishRecovery: ((loupist: LoupistSummary) => void) | undefined;
-    vi.spyOn(bridge, "loupistRecover").mockImplementation(() => new Promise((resolve) => { finishRecovery = resolve; }));
-    render(<App bridge={bridge} />);
-    await screen.findByRole("heading", { name: "Bot" });
-    await chooseLoupist(user, loupist.name);
-    await user.click(await screen.findByRole("button", { name: "Recover memory" }));
-    await chooseLoupist(user, "Cycle Reader");
-    await act(async () => { finishRecovery?.({ ...loupist, availability: { status: "available" } }); });
-    await waitFor(() => expect(selectedLoupistButton()).toHaveTextContent("Cycle Reader"));
-  });
-
   it("persists Light, Dark and System appearance preferences", async () => {
     const user = userEvent.setup();
     const listeners = new Set<(event: MediaQueryListEvent) => void>();
@@ -267,7 +228,7 @@ describe("Loupist · Shell and Loupist", () => {
       expect(await theme()).toBe("light");
       prefersDark = true;
       await act(async () => listeners.forEach((listener) => listener({ matches: true } as MediaQueryListEvent)));
-      await user.click(screen.getByRole("button", { name: /System Follow your device’s appearance/ }));
+      await user.click(screen.getByRole("button", { name: /System Follow this Mac’s appearance/ }));
       expect(document.documentElement).toHaveAttribute("data-theme", "dark");
       expect(await theme()).toBe("system");
     } finally {
@@ -288,9 +249,10 @@ describe("Loupist · Model providers", () => {
     render(<App bridge={bridge} />);
     expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
     expect(selectedLoupistButton()).toHaveTextContent("Quality Compounder");
-    await user.click(screen.getByRole("button", { name: "Connect an AI account" }));
-    await user.click(await screen.findByRole("button", { name: "Add a provider" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add a provider" });
+    // Home's first-visit checklist and the composer both offer it; the checklist comes first.
+    await user.click(screen.getAllByRole("button", { name: "Connect an AI account" })[0]!);
+    await user.click(await screen.findByRole("button", { name: "Add an AI account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add an AI account" });
     await user.click(within(dialog).getByRole("button", { name: /Continue with ChatGPT/u }));
     await user.click(await mainTab(/Chat/));
     expect(screen.getByRole("heading", { name: "Bot" })).toBeVisible();
@@ -311,7 +273,7 @@ describe("Loupist · Model providers", () => {
     expect(spy).toHaveBeenCalledExactlyOnceWith({ provider: "anthropic", api_key: "write-only-secret" });
     await act(async () => finish?.());
     const card = await screen.findByRole("article", { name: "Anthropic" });
-    expect(card).toHaveTextContent("API key saved on this device");
+    expect(card).toHaveTextContent("API key saved on this Mac");
     await user.click(within(card).getByRole("button", { name: /Models \(1\)/u }));
     expect(await within(card).findByRole("switch", { name: "Show Claude Sonnet 4.5 in Chat" })).toBeChecked();
     expect(screen.queryByDisplayValue("write-only-secret")).toBeNull();
@@ -365,10 +327,11 @@ describe("Loupist · Model providers", () => {
     await openModelSettings(user);
     const connected = await screen.findByRole("list", { name: "Connected providers" });
     expect(within(connected).getByRole("heading", { name: "ChatGPT" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Disconnect ChatGPT" }));
+    await user.click(screen.getByRole("button", { name: "More actions for ChatGPT" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Disconnect ChatGPT" }));
     await user.click(within(await screen.findByRole("dialog", { name: "Disconnect ChatGPT?" })).getByRole("button", { name: "Disconnect" }));
     await waitFor(() => expect(disconnect).toHaveBeenCalledWith("openai"));
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Disconnect ChatGPT" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "More actions for ChatGPT" })).not.toBeInTheDocument());
   });
 
   it("hides unchecked models and blocks Chat when no visible model remains", async () => {

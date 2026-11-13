@@ -1,6 +1,14 @@
 import { render, waitFor } from "@testing-library/react";
 import { MessageResponse } from "./message-response";
 
+it("draws a Mermaid fence as a ruled frame instead of code while diagrams are held", async () => {
+  const text = "Before.\n\n```mermaid\ngraph TD\n  A-->B\n```\n\nAfter.";
+  const held = render(<MessageResponse mode="static" holdDiagrams>{text}</MessageResponse>);
+  await waitFor(() => expect(held.container.querySelector(".message-diagram-pending")).not.toBeNull());
+  expect(held.container).not.toHaveTextContent("A-->B");
+  expect(held.container).toHaveTextContent("After.");
+});
+
 it("renders a plugin in place when it arrives and warm for the next answer", async () => {
   const text = "The intro paragraph.\n\n$$x^2$$";
   const first = render(<MessageResponse mode="static">{text}</MessageResponse>);

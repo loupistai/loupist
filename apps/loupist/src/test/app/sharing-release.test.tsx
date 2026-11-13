@@ -54,8 +54,6 @@ it("keeps World and Lens pack sharing out of the user app", async () => {
   await user.click(await mainTab(/Lens/));
   const lens = await screen.findByRole("region", { name: /What .* knows/ });
   expectNoPackSharing(lens);
-  await user.click(within(lens).getByRole("tab", { name: /About you/ }));
-  expectNoPackSharing(lens);
   await user.click(within(lens).getByRole("tab", { name: /Pages/ }));
 
   await user.click(await within(lens).findByRole("button", { name: /Compare independent accounts/ }));
@@ -73,10 +71,9 @@ it("keeps World and Lens pack sharing out of the user app", async () => {
 
   await user.click(await mainTab(/Map/));
   const map = await screen.findByRole("region", { name: "Map" });
-  const mapShare = within(map).getByRole("button", { name: "Share" });
-  expect(mapShare).toHaveAttribute("data-map-export");
-  await user.click(mapShare);
-  expect(await screen.findByRole("button", { name: "Image (PNG)" })).toBeVisible();
+  // Export lives in More and saves a file; it never opens a share sheet.
+  await user.click(within(map).getByRole("button", { name: "More actions" }));
+  expect(await screen.findByRole("menuitem", { name: "Export image (PNG)" })).toHaveAttribute("data-map-export");
   expect(document.querySelector("[data-share-sheet]")).toBeNull();
   await user.keyboard("{Escape}");
 
@@ -101,7 +98,7 @@ it("keeps World and Lens pack sharing out of the user app", async () => {
   const rows = document.querySelector(".settings-loupists");
   if (!rows) throw new Error("missing Loupist rows");
   expect(within(rows as HTMLElement).getByRole("button", { name: "Import Loupist" })).toBeVisible();
-  expect(within(rows as HTMLElement).getAllByRole("button", { name: "Open Loupist settings" }).length).toBeGreaterThan(0);
+  expect(within(rows as HTMLElement).getAllByRole("button", { name: /^Settings: / }).length).toBeGreaterThan(0);
   expectNoPackSharing(rows);
   const sections = screen.getByRole("navigation", { name: "Settings sections" });
   expect(within(sections).queryByRole("button", { name: /Gallery|Share/ })).toBeNull();

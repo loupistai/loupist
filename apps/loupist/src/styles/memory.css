@@ -137,6 +137,12 @@
 .source-processing-status p[role="status"] { display: flex; align-items: center; gap: 6px; margin-top: var(--gg-space-1); }
 .source-processing-status[data-attention="true"] p[role="status"] { color: var(--gg-color-warning); }
 .source-processing-status button { flex: none; }
+/* A neutral action under a stopped Source: not amber, which is for "needs you" and "learned this". */
+.source-retry { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gg-space-1) var(--gg-space-2); margin-top: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.source-retry button { margin-left: calc(-1 * var(--gg-space-2)); color: var(--gg-color-text-primary); }
+.source-retry .knowledge-hint { margin: 0; }
+.source-retry p[role="alert"] { flex-basis: 100%; margin: 0; color: var(--gg-color-text-secondary); }
+li > .source-retry { margin-top: 0; padding: 0 var(--gg-space-3) var(--gg-space-3) calc(var(--gg-space-3) + var(--gg-space-2)); }
 .source-reader .knowledge-source-details { border-top: 1px solid var(--gg-color-border-subtle); padding: 14px 0; font-size: var(--gg-text-control); }
 .source-reader .knowledge-source-details[open] > summary { margin-bottom: 14px; }
 .source-reader .knowledge-source-details p { margin-top: 10px; color: var(--gg-color-text-secondary); }

@@ -61,7 +61,7 @@ export const knowledgeScenarios: PreviewScenario[] = [
     enter: async root => {
       await navigate(root, "map");
       await clickMapAction("[data-map-library]", root);
-      await click('[role="tab"][id$="-trigger-note"]', root);
+      await click('[role="tab"][id$="-trigger-journal"]', root);
       await until(() => root.querySelectorAll(".journal-library-row").length === 3, "Journal entries did not load");
       if (id === "journal-new-entry") {
         await click(".journal-library-section .source-library-heading button", root);

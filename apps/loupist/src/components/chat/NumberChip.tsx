@@ -286,7 +286,7 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
       <Popover.Content ref={content} id={popoverId} role="dialog" aria-modal={false} aria-labelledby={titleId}
         className="number-chip-popover" data-kind={check.kind} data-overflow={overflowing || undefined} side="top" align="start" sideOffset={6}
         // Stay under the titlebar and above the composer. A short window scrolls the body; the actions stay pinned.
-        collisionPadding={{ top: 112, right: 8, bottom: composerClearance(chip.current), left: 8 }}
+        collisionPadding={popoverCollisionPadding(chip.current)}
         onOpenAutoFocus={(event) => event.preventDefault()} onCloseAutoFocus={(event) => event.preventDefault()}
         // Shift+Tab back to the number keeps the popover open; it is the popover's own trigger.
         onFocusOutside={(event) => { if (event.target === chip.current) event.preventDefault(); }}
@@ -334,6 +334,13 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
 }
 
 /** Pixels to keep clear above the bottom edge so the popover does not cover the composer. */
+/** Below 640 px of window height the composer leaves too little room, so the popover may cover it. */
+const SHORT_WINDOW_HEIGHT = 640;
+export function popoverCollisionPadding(chip: HTMLElement | null) {
+  if (window.innerHeight < SHORT_WINDOW_HEIGHT) return { top: 56, right: 8, bottom: 8, left: 8 };
+  return { top: 112, right: 8, bottom: composerClearance(chip), left: 8 };
+}
+
 function composerClearance(chip: HTMLElement | null): number {
   const shell = chip?.closest(".chat-workspace")?.querySelector(".composer-shell");
   if (!(shell instanceof HTMLElement)) return 8;

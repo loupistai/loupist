@@ -226,15 +226,18 @@ async fn custom_connection_broker_records_refusals_blocks_injection_and_captures
         &authority.capability_ids,
     )
     .unwrap();
-    assert_eq!(
-        crate::agent_harness::preload_component_ids_for_mentions(
-            std::slice::from_ref(&connection.id),
-            &authority.capability_ids,
-            &runtime
-        )
-        .unwrap(),
-        vec![connection.id.clone()]
-    );
+    let preload = crate::agent_harness::preload_component_ids_for_mentions(
+        std::slice::from_ref(&connection.id),
+        &authority.capability_ids,
+        &runtime,
+    )
+    .unwrap();
+    assert!(preload.contains(&connection.id));
+    assert!(runtime
+        .components
+        .iter()
+        .filter(|component| component.preloads())
+        .all(|component| preload.contains(&component.id)));
     for dont_save in [true, false] {
         manager
             .lock()
@@ -355,5 +358,89 @@ async fn custom_connection_broker_records_refusals_blocks_injection_and_captures
             );
         }
         broker.shutdown().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn empty_custom_reads_stay_unlisted_but_still_pause_outbound_calls() {
+    let server = Server::start(move |_, request| {
+        let body = request.json();
+        match body["method"].as_str().unwrap() {
+            "initialize" => Response::json(json!({"jsonrpc":"2.0","id":body["id"],"result":{"protocolVersion":crate::mcp::MCP_PROTOCOL_VERSION,"serverInfo":{"name":"fixture"},"capabilities":{"tools":{}}}})),
+            "notifications/initialized" => Response::status(202),
+            "tools/list" => Response::json(json!({"jsonrpc":"2.0","id":body["id"],"result":{"tools":[{"name":"read_company","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}}]}})),
+            "tools/call" => Response::json(json!({"jsonrpc":"2.0","id":body["id"],"result":body["params"]["arguments"]["reply"]})),
+            _ => Response::status(400),
+        }
+    }).await;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let manager = service::for_state(&state).unwrap();
+    let connection = {
+        let mut service = manager.lock().await;
+        let pending = service
+            .add_pending(ParsedConnection {
+                name: "Empty reads".into(),
+                transport: TransportConfig::Http {
+                    url: format!("{}/mcp", server.url),
+                },
+                secrets: Default::default(),
+            })
+            .unwrap();
+        service.confirm(&pending.id).await.unwrap();
+        let connection = service.set_enabled(&pending.id, "loupist-a", true).unwrap();
+        service
+            .approve(
+                "loupist-a",
+                &connection.id,
+                "read_company",
+                &connection.tools[0].definition_hash,
+                ApprovalChoice::Always,
+            )
+            .await
+            .unwrap();
+        connection
+    };
+    for (reply, empty) in [
+        (json!({"content":[{"type":"text","text":" "}]}), true),
+        (json!({"content":[],"structuredContent":{}}), true),
+        (json!({"content":[],"structuredContent":{"data":[]}}), true),
+        (
+            json!({"content":[],"structuredContent":{"results":[]}}),
+            true,
+        ),
+        (
+            json!({"content":[],"structuredContent":{"results":[{}]}}),
+            true,
+        ),
+        (
+            json!({"content":[{"type":"text","text":"Revenue grew."}]}),
+            false,
+        ),
+        (
+            json!({"content":[],"structuredContent":{"results":[{"price":0}]}}),
+            false,
+        ),
+    ] {
+        let capture = Arc::new(ToolCapture::default());
+        let executor = executor_for(&state, capture.clone());
+        let delivery = new_id("custom-empty");
+        let result = executor.mcp_call(&policy(true, true), json!({"server_id":connection.id,"tool_name":"read_company","arguments":{"reply":reply}}), &delivery).await.unwrap();
+        capture.commit_delivery(&delivery).await;
+        assert_eq!(
+            result["result"].get("citation_url").is_none(),
+            empty,
+            "{result}"
+        );
+        assert_eq!(capture.evidence_refs.lock().await.is_empty(), empty);
+        assert!(result["result"]["result_ref"].is_string());
+        assert!(capture
+            .turn_taint
+            .enforce(ToolMethod::McpCall, &json!({"server_id":connection.id}))
+            .is_err());
+        assert_eq!(result["result"]["origin"]["connectionId"], connection.id);
+        if empty {
+            assert_eq!(result["result"]["row_count"], 0);
+        }
     }
 }

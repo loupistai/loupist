@@ -12,7 +12,7 @@ Paths below are relative to `apps/loupist/` unless noted. Open the leaf for the 
 
 Trace UI through the bridge before adding a command. `src/bridge/tauriBridge.ts`, `src/contracts/`, `src-tauri/src/lib.rs`, `src-tauri/src/commands/`
 
-- [Sidebar](ui/sidebar.md), [Schedule](ui/schedule.md), [Home Thread](ui/home-thread.md), [Workspace panel](ui/workspace-panel.md)
+- [Sidebar](ui/sidebar.md), [Schedule](ui/schedule.md), [Bot](ui/home-thread.md), [Workspace panel](ui/workspace-panel.md)
 - [Chat composer](ui/chat-composer.md), [Evidence and the browser](ui/evidence-browser.md), [Answer failures](ui/chat-answer.md)
 - [Map and Lens](ui/map-lens.md), [Memory](knowledge/memory.md), [Asset pages](knowledge/asset-pages.md)
 - [Chat turns](runtime/chat-turns.md), [Model providers](runtime/providers.md), [Storage and authority](runtime/storage-authority.md)

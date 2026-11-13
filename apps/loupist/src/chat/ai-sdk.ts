@@ -5,6 +5,7 @@ import type {
   ChatAttachment,
   ChatEvidenceRef,
   ChatArtifactRef,
+  ChatArtifactView,
   ChatMessage,
   ChatKnowledgePin,
   ChatPerformance,
@@ -35,7 +36,7 @@ const HOST_POST_FIELDS = Object.keys(HOST_POST_KEYS) as (keyof HostPostRecords)[
 // a Rust variant is missing here. An event of any other type is ignored, not fatal.
 const STREAM_EVENT_TYPES: Record<ChatStreamEvent["type"], true> = {
   started: true, memory: true, schedule: true, evidence: true, delta: true, generation_finished: true, title: true,
-  progress: true, progress_patch: true, phase: true, memory_update: true, artifact: true, completed: true,
+  progress: true, progress_patch: true, phase: true, memory_update: true, artifact_staged: true, artifact: true, completed: true,
   aborted: true, error: true,
 };
 
@@ -90,6 +91,7 @@ export type LoupistChatData = {
   memory: MemoryRef[];
   memory_update: MemoryUpdateResult;
   artifact: ChatArtifactRef;
+  staged_artifact: ChatArtifactView;
   evidence: ChatEvidenceRef;
   schedule: import("../types").ScheduleReceipt;
   run: { run_id: string };
@@ -219,12 +221,26 @@ const dataUrlPayload = (file: FileUIPart) => {
  * without it a refresh remounts the answer and replays its reveal.
  */
 export function fromStoreKeepingAnswers(current: readonly LoupistUIMessage[], stored: readonly ChatMessage[]): LoupistUIMessage[] {
-  const answerKeys = new Map(current.flatMap((message) =>
-    message.metadata?.answer_key ? [[message.metadata.native_message_id ?? message.id, message.metadata.answer_key]] : []));
-  return stored.map((message) => {
+  const storedIds = new Set(stored.map((message) => message.id));
+  // A message sent or streamed here has a client id until the saved Chat names it; it keeps
+  // that id (its view's key) when the saved message in its place is the same one.
+  const clientId = (message: ChatMessage, index: number) => {
+    const shown = current[index];
+    if (!shown || shown.metadata?.native_message_id || storedIds.has(shown.id) || shown.role !== message.role) return undefined;
+    if (message.role === "user" && fromLoupistUIMessage(shown).content !== message.content) return undefined;
+    return shown.id;
+  };
+  const answerKeys = new Map(current.flatMap((message, index) => {
+    const key = message.metadata?.answer_key;
+    if (!key) return [];
+    const native = message.metadata?.native_message_id ?? (stored[index] && clientId(stored[index], index) ? stored[index].id : message.id);
+    return [[native, key]];
+  }));
+  return stored.map((message, index) => {
     const ui = toLoupistUIMessage(message);
     const answerKey = answerKeys.get(message.id);
-    return answerKey ? { ...ui, metadata: { ...ui.metadata, answer_key: answerKey } } : ui;
+    const keptId = clientId(message, index);
+    return { ...ui, ...(keptId ? { id: keptId } : {}), ...(answerKey ? { metadata: { ...ui.metadata, answer_key: answerKey } } : {}) };
   });
 }
 
@@ -293,6 +309,11 @@ export const toLoupistUIMessage = (message: ChatMessage): LoupistUIMessage => {
         id: `${artifact.artifact_id}:${artifact.revision}`,
         data: artifact,
       })) ?? []),
+      ...(message.staged_artifacts?.map((view) => ({
+        type: "data-staged_artifact" as const,
+        id: `${view.artifact.id}:${view.revision.revision}`,
+        data: view,
+      })) ?? []),
       ...(message.progress
         ? ([
             { type: "data-progress", id: "progress", data: message.progress },
@@ -306,6 +327,7 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
   const status = message.metadata?.status ?? "complete";
   const text: string[] = [];
   const artifactRefs: ChatArtifactRef[] = [];
+  const stagedArtifacts: ChatArtifactView[] = [];
   const attachmentParts: ChatAttachment[] = [];
   const fileAttachments: ChatAttachment[] = [];
   const scheduleReceipts: LoupistChatData["schedule"][] = [];
@@ -320,6 +342,7 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
       case "data-memory_update": memoryUpdate ??= part.data; break;
       case "data-progress": progress ??= part.data; break;
       case "data-artifact": artifactRefs.push(part.data); break;
+      case "data-staged_artifact": stagedArtifacts.push(part.data); break;
       case "data-attachment": attachmentParts.push(part.data); break;
       case "data-schedule": scheduleReceipts.push(part.data); break;
       case "data-evidence": evidenceRefs.push(part.data); break;
@@ -384,6 +407,7 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
           ? fileAttachments
           : undefined,
     artifact_refs: artifactRefs.length ? artifactRefs : undefined,
+    ...(stagedArtifacts.length ? { staged_artifacts: stagedArtifacts } : {}),
   };
 };
 
@@ -662,6 +686,15 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
           }
           if (event.type === "memory_update") {
             enqueue({ type: "data-memory_update", data: event.result });
+            return;
+          }
+          if (event.type === "artifact_staged") {
+            // Shown in its card at once; saved, and listed in Work, only with the `artifact` reference at commit.
+            enqueue({
+              type: "data-staged_artifact",
+              id: `${event.view.artifact.id}:${event.view.revision.revision}`,
+              data: event.view,
+            });
             return;
           }
           if (event.type === "artifact") {

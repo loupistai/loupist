@@ -42,7 +42,7 @@ async function waitingCard() {
 it("signs in with ChatGPT through the openai provider and reports the connected name", async () => {
   const { bridge, user, onConnected, onCatalogChange } = await setup();
   const connect = vi.spyOn(bridge, "providerConnect");
-  expect(screen.getByText("Uses your ChatGPT plan's usage. Loupist doesn't charge you.")).toBeVisible();
+  expect(screen.getByText("Uses the plan you already pay for. Loupist doesn't charge you.")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Continue with ChatGPT" }));
   await waitFor(() => expect(onConnected).toHaveBeenCalledWith("ChatGPT"));
   expect(connect).toHaveBeenCalledWith("openai", expect.any(Function));
@@ -99,7 +99,7 @@ it("shows SuperGrok's device code without a paste route", async () => {
   const openAgain = vi.spyOn(bridge, "providerConnectOpenBrowser");
   const writeText = vi.fn(async () => {});
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
-  expect(screen.getByText("Uses your SuperGrok or X Premium+ plan. Loupist doesn't charge you.")).toBeVisible();
+  expect(screen.getByText("Uses the plan you already pay for. Loupist doesn't charge you.")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Continue with SuperGrok" }));
   const card = await waitingCard();
   expect(card).toHaveTextContent("Enter this code on the xAI page");
@@ -175,7 +175,7 @@ it("lists every other way and opens key, local and custom rows in the connect sh
   expect(within(other).queryByRole("button", { name: /SuperGrok/ })).toBeNull();
   // Anthropic does not permit third-party apps to offer Claude sign-in, so Claude is only a key row.
   expect(screen.queryByRole("button", { name: /Sign in with Claude/ })).toBeNull();
-  expect(screen.getByText("Your key stays on this device. Requests go straight to the provider.")).toBeVisible();
+  expect(screen.getByText("Your key stays on this Mac. Requests go straight to the provider.")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Google Gemini" }));
   const sheet = await screen.findByRole("dialog");
   expect(within(sheet).getByRole("heading", { name: "Google Gemini" })).toBeVisible();

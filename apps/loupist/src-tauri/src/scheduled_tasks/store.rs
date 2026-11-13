@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{Mutex, OnceLock},
 };
 
@@ -247,7 +247,7 @@ impl SqliteStore {
         task.next_run_at_ms = Some(next_run_at_ms);
         task.validate()?;
         transaction.execute(
-            "UPDATE scheduled_tasks SET next_run_at_ms=?3, data_json=?4 WHERE id=?1 AND loupist_id=?2 AND status='active'",
+            "UPDATE scheduled_tasks SET next_run_at_ms=?3, data_json=json_set(?4,'$.failure_streak_started_at_ms',coalesce(json_extract(data_json,'$.failure_streak_started_at_ms'),0),'$.failure_streak_started_revision',coalesce(json_extract(data_json,'$.failure_streak_started_revision'),0)) WHERE id=?1 AND loupist_id=?2 AND status='active'",
             params![id, loupist_id, next_run_at_ms, serde_json::to_string(&task)?],
         )?;
         transaction.commit()?;
@@ -287,9 +287,19 @@ impl SqliteStore {
         if rows.len() > MAX_TASKS_PER_LOUPIST {
             return Err(invalid("too many saved scheduled tasks"));
         }
+        let rows = rows
+            .into_iter()
+            .map(|task| (task, None))
+            .collect::<Vec<_>>();
+        let references = BatchReferences::load(&connection, &rows)?;
         Ok(rows
             .into_iter()
-            .filter_map(|row| readable(decode_task(&connection, row)))
+            .filter_map(|(row, _)| {
+                readable(decode_task_with_references(
+                    ReadReferences::Batched(&references),
+                    row,
+                ))
+            })
             .collect())
     }
 
@@ -329,13 +339,22 @@ impl SqliteStore {
         if rows.len() > MAX_TASKS_PER_LOUPIST {
             return Err(invalid("too many saved scheduled tasks"));
         }
+        let references = BatchReferences::load(&connection, &rows)?;
         Ok(rows
             .into_iter()
             .filter_map(|(task, latest_run)| {
-                let task = readable(decode_task(&connection, task))?;
+                let task = readable(decode_task_with_references(
+                    ReadReferences::Batched(&references),
+                    task,
+                ))?;
                 // An unreadable latest run leaves its task listed without one.
                 let latest_run = latest_run
-                    .and_then(|row| readable(decode_run(&connection, row)))
+                    .and_then(|row| {
+                        readable(decode_run_with_references(
+                            ReadReferences::Batched(&references),
+                            row,
+                        ))
+                    })
                     .filter(|run| {
                         let own = run.task_id == task.id && run.loupist_id == task.loupist_id;
                         if !own {
@@ -354,6 +373,18 @@ impl SqliteStore {
         let connection = self.lock_loupist(loupist_id)?;
         require_loupist(&connection, loupist_id)?;
         load_task(&connection, loupist_id, id)
+    }
+
+    /// Earliest supported occurrence, excluding tasks that already own a run.
+    pub(crate) fn scheduled_tasks_next_due(&self) -> StoreResult<Option<i64>> {
+        let runnable = serde_json::to_string(&TaskKind::KNOWN)?;
+        let pages = self.for_each_readable_database(|_, connection| {
+            Ok(connection.query_row(
+                "SELECT MIN(next_run_at_ms) FROM scheduled_tasks AS task WHERE status='active' AND json_extract(data_json,'$.kind') IN (SELECT value FROM json_each(?1)) AND NOT EXISTS (SELECT 1 FROM scheduled_task_runs AS run WHERE run.task_id=task.id AND run.status='running')",
+                [&runnable], |row| row.get::<_, Option<i64>>(0),
+            )?)
+        })?;
+        Ok(pages.into_iter().flatten().min())
     }
 
     #[cfg(test)]
@@ -379,7 +410,7 @@ impl SqliteStore {
         let pages = self.for_each_readable_database(|_, connection| {
             let mut statement = connection.prepare(&format!("SELECT {TASK_COLUMNS} FROM scheduled_tasks WHERE status='active' AND next_run_at_ms<=?1 AND loupist_id IN (SELECT value FROM json_each(?3)) AND json_extract(data_json,'$.kind') IN (SELECT value FROM json_each(?4)) ORDER BY next_run_at_ms,id LIMIT ?2"))?;
             let rows = statement.query_map(params![now, limit.min(MAX_TASKS_PER_LOUPIST) as i64, eligible, runnable], raw_task)?.collect::<Result<Vec<_>, _>>()?;
-            // Skipped silently: this scan runs every second, and the task list
+            // Skipped silently: this scan runs on each scheduler wake, and the task list
             // logs the same row when it is shown.
             Ok(rows
                 .into_iter()
@@ -514,7 +545,7 @@ impl SqliteStore {
             proposed_in_message_id: None,
         };
         task.validate()?;
-        transaction.execute("INSERT INTO scheduled_tasks(id,loupist_id,revision,status,next_run_at_ms,target_thread_id,updated_at_ms,data_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+        transaction.execute("INSERT INTO scheduled_tasks(id,loupist_id,revision,status,next_run_at_ms,target_thread_id,updated_at_ms,data_json) VALUES(?1,?2,?3,?4,?5,?6,?7,json_set(?8,'$.failure_streak_started_at_ms',?7,'$.failure_streak_started_revision',?3))",
             params![task.id,task.loupist_id,task.revision as i64,task.status.as_str(),task.next_run_at_ms,target_thread(&task),task.updated_at_ms,serde_json::to_string(&task)?])?;
         transaction.commit()?;
         Ok(task)
@@ -555,6 +586,7 @@ impl SqliteStore {
         task.last_error = None;
         touch(&mut task, now)?;
         update_task(&transaction, &task, expected_revision)?;
+        reset_failure_streak(&transaction, &task, now)?;
         transaction.commit()?;
         Ok(task)
     }
@@ -593,6 +625,9 @@ impl SqliteStore {
         task.proposed_in_message_id = None;
         touch(&mut task, now)?;
         update_task(&transaction, &task, expected_revision)?;
+        if status == TaskStatus::Active {
+            reset_failure_streak(&transaction, &task, now)?;
+        }
         transaction.commit()?;
         Ok(task)
     }
@@ -847,7 +882,7 @@ impl SqliteStore {
                     &run.loupist_id,
                     &run.run_id,
                     RunStatus::Interrupted,
-                    Some("Interrupted before completion.".into()),
+                    Some("Interrupted unexpectedly before completion.".into()),
                     now,
                 )?);
             }
@@ -908,19 +943,38 @@ fn finish_run(
     if run.task_revision.checked_add(1) == Some(task.revision) {
         let expected = task.revision;
         task.last_error = run.error.clone();
-        // A failed capture keeps the automatic earnings task on: its card
-        // keeps the last good state and offers Try again.
         if status != RunStatus::Succeeded
+            && task.status == TaskStatus::Active
             && !matches!(task.schedule, Schedule::Once { .. })
-            && task.kind != TaskKind::Earnings
         {
-            task.status = TaskStatus::Paused;
-            task.next_run_at_ms = None;
+            // The revision disambiguates old and new runs at the same millisecond.
+            // Deliberate Stops and graceful shutdowns neither count nor reset it.
+            let failures = connection.prepare(
+                "SELECT run.status FROM scheduled_task_runs AS run JOIN scheduled_tasks AS task ON task.id=run.task_id WHERE run.task_id=?1 AND run.status<>'running' AND run.started_at_ms>=coalesce(json_extract(task.data_json,'$.failure_streak_started_at_ms'),0) AND run.task_revision>=coalesce(json_extract(task.data_json,'$.failure_streak_started_revision'),0) AND NOT (run.status='interrupted' AND coalesce(json_extract(run.data_json,'$.error'),'') IN (?2,?3,?4)) ORDER BY run.rowid DESC LIMIT 3",
+            )?.query_map(params![task.id, super::USER_STOPPED, super::APP_QUIT, super::LEGACY_INTERRUPTED], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter().take_while(|status| status != "succeeded").count();
+            if failures >= 3 || run.error.as_deref().is_some_and(requires_setup) {
+                task.status = TaskStatus::Paused;
+                task.next_run_at_ms = None;
+            } else {
+                task.next_run_at_ms = next_run_after(&task.schedule, now)?;
+            }
         }
         touch(&mut task, now)?;
         update_task(connection, &task, expected)?;
     }
     Ok(run)
+}
+
+fn requires_setup(error: &str) -> bool {
+    matches!(
+        error,
+        crate::pi::provider_failure::NEEDS_RECONNECT
+            | crate::pi::provider_failure::MODEL_GONE
+            | "the selected Pi model is hidden from Chat"
+            | "Connect an AI account in Settings › Models & providers before chatting."
+    )
 }
 
 fn require_loupist(connection: &Connection, loupist_id: &str) -> StoreResult<()> {
@@ -1035,10 +1089,18 @@ fn new_id(prefix: &str) -> String {
 
 fn update_task(connection: &Connection, task: &Task, expected_revision: u64) -> StoreResult<()> {
     task.validate()?;
-    let changed=connection.execute("UPDATE scheduled_tasks SET revision=?3,status=?4,next_run_at_ms=?5,target_thread_id=?6,updated_at_ms=?7,data_json=?8 WHERE id=?1 AND loupist_id=?2 AND revision=?9",params![task.id,task.loupist_id,task.revision as i64,task.status.as_str(),task.next_run_at_ms,target_thread(task),task.updated_at_ms,serde_json::to_string(task)?,expected_revision as i64])?;
+    let changed=connection.execute("UPDATE scheduled_tasks SET revision=?3,status=?4,next_run_at_ms=?5,target_thread_id=?6,updated_at_ms=?7,data_json=json_set(?8,'$.failure_streak_started_at_ms',coalesce(json_extract(data_json,'$.failure_streak_started_at_ms'),0),'$.failure_streak_started_revision',coalesce(json_extract(data_json,'$.failure_streak_started_revision'),0)) WHERE id=?1 AND loupist_id=?2 AND revision=?9",params![task.id,task.loupist_id,task.revision as i64,task.status.as_str(),task.next_run_at_ms,target_thread(task),task.updated_at_ms,serde_json::to_string(task)?,expected_revision as i64])?;
     if changed != 1 {
         return Err(StoreError::Conflict("scheduled task compare-and-swap"));
     }
+    Ok(())
+}
+
+fn reset_failure_streak(connection: &Connection, task: &Task, now: i64) -> StoreResult<()> {
+    connection.execute(
+        "UPDATE scheduled_tasks SET data_json=json_set(data_json,'$.failure_streak_started_at_ms',?3,'$.failure_streak_started_revision',?4) WHERE id=?1 AND loupist_id=?2",
+        params![task.id, task.loupist_id, now, task.revision as i64],
+    )?;
     Ok(())
 }
 
@@ -1074,7 +1136,104 @@ fn raw_run_at(row: &rusqlite::Row<'_>, offset: usize) -> rusqlite::Result<RawRun
     ))
 }
 
+// A list validates every referenced owner with two bounded batch queries,
+// rather than reading the profile and Chat table again for each returned row.
+struct BatchReferences {
+    loupists: HashSet<String>,
+    chats: HashMap<String, String>,
+}
+
+impl BatchReferences {
+    fn load(connection: &Connection, rows: &[(RawTask, Option<RawRun>)]) -> StoreResult<Self> {
+        let mut loupists = HashSet::new();
+        let mut chats = HashSet::new();
+        for (task, run) in rows {
+            loupists.insert(task.1.clone());
+            if task.7.len() <= MAX_TASK_JSON_BYTES {
+                if let Ok(task) = serde_json::from_str::<Task>(&task.7) {
+                    if let TaskTarget::ExistingChat { thread_id } = task.target {
+                        chats.insert(thread_id);
+                    }
+                    chats.extend(task.session_thread_id);
+                }
+            }
+            if let Some(run) = run {
+                loupists.insert(run.2.clone());
+                chats.extend(run.4.clone());
+            }
+        }
+        let mut statement = connection.prepare(
+            "SELECT id FROM loupist_profiles WHERE id IN (SELECT value FROM json_each(?1))",
+        )?;
+        let loupists = statement
+            .query_map([serde_json::to_string(&loupists)?], |row| row.get(0))?
+            .collect::<Result<HashSet<String>, _>>()?;
+        let mut statement = connection.prepare(
+            "SELECT id,loupist_id FROM chat_sessions WHERE id IN (SELECT value FROM json_each(?1))",
+        )?;
+        let chats = statement
+            .query_map([serde_json::to_string(&chats)?], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
+            .collect::<Result<HashMap<String, String>, _>>()?;
+        Ok(Self { loupists, chats })
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ReadReferences<'a> {
+    Database(&'a Connection),
+    Batched(&'a BatchReferences),
+}
+
+impl ReadReferences<'_> {
+    fn require_loupist(self, loupist_id: &str) -> StoreResult<()> {
+        match self {
+            Self::Database(connection) => require_loupist(connection, loupist_id),
+            Self::Batched(references) => {
+                identifier(loupist_id)?;
+                if references.loupists.contains(loupist_id) {
+                    Ok(())
+                } else {
+                    Err(rusqlite::Error::QueryReturnedNoRows.into())
+                }
+            }
+        }
+    }
+
+    fn require_target(
+        self,
+        loupist_id: &str,
+        target: &TaskTarget,
+        allow_missing: bool,
+    ) -> StoreResult<()> {
+        match self {
+            Self::Database(connection) => {
+                require_target(connection, loupist_id, target, allow_missing)
+            }
+            Self::Batched(references) => {
+                if let TaskTarget::ExistingChat { thread_id } = target {
+                    match references.chats.get(thread_id) {
+                        Some(owner) if owner == loupist_id => {}
+                        None if allow_missing => {}
+                        _ => {
+                            return Err(StoreError::Conflict(
+                                "scheduled target Chat is missing or belongs to another Loupist",
+                            ))
+                        }
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 fn decode_task(connection: &Connection, row: RawTask) -> StoreResult<Task> {
+    decode_task_with_references(ReadReferences::Database(connection), row)
+}
+
+fn decode_task_with_references(references: ReadReferences<'_>, row: RawTask) -> StoreResult<Task> {
     let (id, loupist_id, revision, status, next, target, updated, json) = row;
     if json.len() > MAX_TASK_JSON_BYTES {
         return Err(invalid("stored scheduled task exceeds its limit"));
@@ -1091,16 +1250,14 @@ fn decode_task(connection: &Connection, row: RawTask) -> StoreResult<Task> {
     {
         return Err(invalid("scheduled task projections do not match"));
     }
-    require_loupist(connection, &task.loupist_id)?;
-    require_target(
-        connection,
+    references.require_loupist(&task.loupist_id)?;
+    references.require_target(
         &task.loupist_id,
         &task.target,
         task.status != TaskStatus::Active,
     )?;
     if let Some(thread_id) = &task.session_thread_id {
-        require_target(
-            connection,
+        references.require_target(
             &task.loupist_id,
             &TaskTarget::ExistingChat {
                 thread_id: thread_id.clone(),
@@ -1112,6 +1269,10 @@ fn decode_task(connection: &Connection, row: RawTask) -> StoreResult<Task> {
 }
 
 fn decode_run(connection: &Connection, row: RawRun) -> StoreResult<Run> {
+    decode_run_with_references(ReadReferences::Database(connection), row)
+}
+
+fn decode_run_with_references(references: ReadReferences<'_>, row: RawRun) -> StoreResult<Run> {
     let (
         id,
         task_id,
@@ -1153,10 +1314,9 @@ fn decode_run(connection: &Connection, row: RawRun) -> StoreResult<Run> {
             "scheduled run projections or snapshot do not match",
         ));
     }
-    require_loupist(connection, &run.loupist_id)?;
+    references.require_loupist(&run.loupist_id)?;
     if let Some(thread_id) = &run.thread_id {
-        require_target(
-            connection,
+        references.require_target(
             &run.loupist_id,
             &TaskTarget::ExistingChat {
                 thread_id: thread_id.clone(),
@@ -1273,9 +1433,9 @@ pub(crate) fn forget_chat_in(
         task.last_error = Some(
             if task.target == TaskTarget::Dedicated {
                 task.session_thread_id = None;
-                "This task’s Chat was deleted. Resume to start a new dedicated Chat."
+                "This task’s research session was deleted. Resume to start a new one for it."
             } else {
-                "The target Chat was deleted. Choose another Chat before resuming."
+                "The target research session was deleted. Choose another before resuming."
             }
             .into(),
         );
@@ -1286,7 +1446,7 @@ pub(crate) fn forget_chat_in(
     // Canonical history keeps its occurrence even when the user removes a Chat.
     // Loupist/Chat deletion admission normally prevents an in-flight deletion; the
     // durable fallback is interruption rather than a dangling running record.
-    connection.execute("UPDATE scheduled_task_runs SET status=CASE WHEN status='running' THEN 'interrupted' ELSE status END, finished_at_ms=CASE WHEN status='running' THEN started_at_ms ELSE finished_at_ms END, data_json=json_set(data_json,'$.thread_id',NULL,'$.status',CASE WHEN status='running' THEN 'interrupted' ELSE status END,'$.finished_at_ms',CASE WHEN status='running' THEN started_at_ms ELSE finished_at_ms END,'$.error',CASE WHEN status='running' THEN 'The Chat was deleted.' ELSE json_extract(data_json,'$.error') END),thread_id=NULL WHERE loupist_id=?1 AND thread_id=?2",params![loupist_id,thread_id])?;
+    connection.execute("UPDATE scheduled_task_runs SET status=CASE WHEN status='running' THEN 'interrupted' ELSE status END, finished_at_ms=CASE WHEN status='running' THEN started_at_ms ELSE finished_at_ms END, data_json=json_set(data_json,'$.thread_id',NULL,'$.status',CASE WHEN status='running' THEN 'interrupted' ELSE status END,'$.finished_at_ms',CASE WHEN status='running' THEN started_at_ms ELSE finished_at_ms END,'$.error',CASE WHEN status='running' THEN 'The research session was deleted.' ELSE json_extract(data_json,'$.error') END),thread_id=NULL WHERE loupist_id=?1 AND thread_id=?2",params![loupist_id,thread_id])?;
     Ok(())
 }
 

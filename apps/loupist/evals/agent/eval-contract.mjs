@@ -3,13 +3,13 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 
 export const TRACE_SCHEMA = 'loupist-agent-trace/1';
 export const SUITE_SCHEMA = 'loupist-agent-suite/1';
-export const TRACE_ASSERTS = new Set(['tool_called', 'tool_not_called', 'tool_called_before', 'max_tool_calls', 'max_tool_errors', 'no_repeated_failed_call', 'capability_loaded', 'scheduled_tasks', 'tool_args_not_matching', 'calculate_inputs_cited', 'as_of_left_out', 'as_of_refused', 'grid_cells_linked', 'sensitivity_card', 'plan_progress']);
+export const TRACE_ASSERTS = new Set(['tool_called', 'tool_not_called', 'tool_called_before', 'max_tool_calls', 'max_tool_errors', 'no_repeated_failed_call', 'capability_loaded', 'scheduled_tasks', 'tool_args_not_matching', 'calculate_inputs_cited', 'as_of_left_out', 'as_of_refused', 'grid_cells_linked', 'sensitivity_card', 'plan_progress', 'skill_read']);
 export const LENS_ASSERTS = new Set(['lens_pages', 'lens_unchanged', 'lens_read', 'lens_not_read']);
 export const MEMORY_ASSERTS = new Set(['committed', 'not_committed', ...LENS_ASSERTS]);
 const LENS_KINDS = new Set(['principle', 'perspective', 'method', 'subject', 'idea']);
 const BASIS_KINDS = new Set(['span', 'claim', 'said', 'page']);
-export const MEMORY_KINDS = new Set(['source', 'note', 'lens', 'lens_proposal', 'principle', 'journal']);
-export const ANSWER_ASSERTS = new Set(['metrics', 'contains_any', 'not_contains', 'answer_not_matching', 'prediction', 'cites_result', 'numbers_linked', 'calculation_chip']);
+export const MEMORY_KINDS = new Set(['source', 'note', 'lens', 'principle', 'journal']);
+export const ANSWER_ASSERTS = new Set(['metrics', 'contains_any', 'not_contains', 'answer_not_matching', 'prediction', 'cites_result', 'numbers_linked', 'calculation_chip', 'no_false_save_claim']);
 /** Saved Memory an as-of answer left out, as Rust counts it in `as_of_report.left_out`. */
 export const AS_OF_LEFT_OUT_KINDS = new Set(['facts', 'sources', 'notes', 'methods']);
 const NUMBER_CHECK_STATUSES = new Set(['matched', 'rounded', 'not_found', 'differs']);
@@ -31,14 +31,15 @@ export function calculationChipAssertion(assertion) {
   return assertion;
 }
 
-/** `cites_result` names one tool and optional nearby strings (the material value as written). */
+/** `cites_result` names one tool or a list and optional nearby strings (the material value as written). */
 export function citationAssertion(assertion) {
-  if (typeof assertion.tool !== 'string' || !assertion.tool) throw new Error('cites_result requires a tool');
+  const tools = Array.isArray(assertion.tool) ? assertion.tool : [assertion.tool];
+  if (!tools.length || tools.some((tool) => typeof tool !== 'string' || !tool)) throw new Error('cites_result requires a tool or a list of tools');
   const near = assertion.near ?? [];
   if (!Array.isArray(near) || near.some((value) => typeof value !== 'string' || !value || value.length > 80)) {
     throw new Error('cites_result near must be nonempty strings of at most 80 characters');
   }
-  return { tool: assertion.tool, near };
+  return { tools, near };
 }
 
 /** `numbers_linked` may name printed numbers that must have a matched or rounded check. */
@@ -75,7 +76,35 @@ export function toolCalledAssertion(assertion) {
   if (args !== undefined && (!isRecord(args) || Object.keys(args).length === 0)) {
     throw new Error('tool_called args must be a nonempty object of expected argument fields');
   }
-  return { tool: assertion.tool, args: args ?? null };
+  if (assertion.successful !== undefined && typeof assertion.successful !== 'boolean') throw new Error('tool_called successful must be a boolean');
+  return { tool: assertion.tool, args: args ?? null, successful: assertion.successful === true };
+}
+
+/** A successful native read of the named Skill's entrypoint. */
+export function skillReadAssertion(assertion) {
+  if (typeof assertion.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(assertion.id)) throw new Error('skill_read requires a bounded skill id');
+  return { id: assertion.id };
+}
+
+export function toolOrderAssertion(assertion) {
+  const { tools, id } = assertion;
+  if (!Array.isArray(tools) || tools.length < 2 || tools.some(tool => typeof tool !== 'string' || !tool)) throw new Error('tool_called_before requires at least two tools');
+  if (tools[0] === 'capability_load') {
+    if (typeof id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(id)) throw new Error('tool_called_before capability_load requires a pack id');
+  } else if (id !== undefined) throw new Error('tool_called_before id requires capability_load first');
+  return { tools, id };
+}
+
+const NEGATIVE_ASSERTS = new Set(['tool_not_called', 'tool_args_not_matching', 'max_tool_calls', 'max_tool_errors',
+  'no_repeated_failed_call', 'not_committed', 'lens_unchanged', 'lens_not_read', 'not_contains',
+  'answer_not_matching', 'no_false_save_claim']);
+
+/** Negative evidence cannot turn a silent completed turn into a passing answer. */
+export function isNegativeAssertion(assertion) {
+  const pageMinimum = assertion.count ?? assertion.min ?? (assertion.max === undefined ? 1 : 0);
+  return NEGATIVE_ASSERTS.has(assertion.assert)
+    || assertion.assert === 'lens_pages' && (pageMinimum === 0 || assertion.unchanged === true)
+    || assertion.assert === 'scheduled_tasks' && assertion.count === 0;
 }
 
 /** Whether `actual` carries every field of `expected`; arrays match item by item. */
@@ -126,7 +155,7 @@ export function calculateInputsAssertion(assertion) {
   return { inputs, operation: assertion.operation ?? null };
 }
 
-/** Reasons a grid cell may stay empty (finance-grid-answers.md §3.2). */
+/** Reasons a grid cell may stay empty (docs/analysis/grids.md). */
 export const GRID_EMPTY_REASONS = new Set(['not_reported', 'not_applicable', 'unavailable', 'not_checked']);
 const GRID_LAYOUTS = new Set(['assets', 'conflict']);
 
@@ -355,10 +384,19 @@ export function validateSuite(suite) {
           if (assertion.assert === 'tool_called') toolCalledAssertion(assertion);
           if (assertion.assert === 'sensitivity_card') sensitivityCardAssertion(assertion);
           if (assertion.assert === 'plan_progress') planProgressAssertion(assertion);
+          if (assertion.assert === 'skill_read') skillReadAssertion(assertion);
+          if (assertion.assert === 'tool_called_before') toolOrderAssertion(assertion);
         }
         for (const assertion of turn.expect?.memory ?? []) {
           if (assertion.count !== undefined && (!Number.isSafeInteger(assertion.count) || assertion.count < 0)) throw new Error('Memory count must be a non-negative integer');
           if (LENS_ASSERTS.has(assertion.assert)) lensAssertion(assertion);
+          else {
+            const kinds = Array.isArray(assertion.kind) ? assertion.kind : [assertion.kind];
+            if (!MEMORY_ASSERTS.has(assertion.assert)) throw new Error(`Unknown memory assertion ${assertion.assert}`);
+            if (kinds.length === 0 || kinds.some((kind) => !MEMORY_KINDS.has(kind))) {
+              throw new Error(`Unknown memory kind ${assertion.kind}`);
+            }
+          }
         }
         const criteria = new Set();
         for (const rubric of turn.expect?.rubric ?? []) {

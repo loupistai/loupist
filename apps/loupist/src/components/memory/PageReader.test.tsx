@@ -18,7 +18,7 @@ it("reads sections in order, each with its basis chip, and marks a contested one
   expect(within(page).getAllByRole("heading", { level: 3 }).slice(0, 4).map(heading => heading.textContent)).toEqual(["Overview", "Facts you told me", "Where it is heading", "Risks"]);
   const section = (key: string) => page.querySelector<HTMLElement>(`[data-section-key="${key}"]`)!;
   expect(within(section("overview")).getByRole("button", { name: "Claim" })).toBeVisible();
-  await user.click(within(section("overview")).getByRole("button", { name: "Source" }));
+  await user.click(within(section("overview")).getByRole("button", { name: /^Source · / }));
   expect(handlers.onOpen).toHaveBeenCalledWith(expect.objectContaining({ loupistId, surface: "source", recordId: "source-pack", selection: expect.objectContaining({ kind: "source", spanId: "span-status-codes" }) }));
   expect(within(section("facts")).getByText("You said")).toBeVisible();
   expect(within(section("views")).getByText("Loupist’s view")).toBeVisible();

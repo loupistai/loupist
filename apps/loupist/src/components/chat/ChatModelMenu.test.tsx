@@ -20,6 +20,8 @@ it("keeps reasoning under Advanced, recovers an empty thinking selection, and re
   const provider = { ...chatgpt(), id: "openai-codex" };
   render(<TooltipProvider><ChatModelMenu models={[model]} providers={[provider]} selection={{ model_profile_id: model.id, thinking_level: "", run_options: {} }} onSelectionChange={onSelectionChange} auto={false} onResetToAuto={vi.fn()} /></TooltipProvider>);
   await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
+  // One model fits at a glance, so the picker has no search field.
+  expect(screen.queryByRole("searchbox")).toBeNull();
   expect(screen.queryByRole("menuitemradio", { name: "Max" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
   await user.click(screen.getByRole("menuitemradio", { name: "Max" }));

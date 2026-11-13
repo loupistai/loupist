@@ -444,7 +444,7 @@ pub(crate) fn validate_entities(
         {
             return Err(field(
                 "journal_entity",
-                "journal.entities must name entities in this Loupist's World",
+                "journal.entities must use current World node ids; omit an entity when no World node matches",
             ));
         }
     }

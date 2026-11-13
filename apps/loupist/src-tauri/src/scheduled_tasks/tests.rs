@@ -272,7 +272,7 @@ fn task_list_includes_only_the_latest_run_and_breaks_same_time_ties() {
         .find(|item| item.task.id == task.id)
         .unwrap();
     assert_eq!(item.latest_run, Some(failed));
-    assert_eq!(item.task.status, TaskStatus::Paused);
+    assert_eq!(item.task.status, TaskStatus::Active);
     assert_eq!(
         store.scheduled_tasks_list_with_latest("loupist-b").unwrap()[0].latest_run,
         None
@@ -528,7 +528,7 @@ fn manual_runs_preserve_recurrence_and_once_requires_no_automatic_replay() {
 }
 
 #[test]
-fn restart_marks_unfinished_runs_interrupted_and_pauses_repeating_tasks() {
+fn restart_records_interruption_and_schedules_the_next_occurrence() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("store.sqlite3");
     let store = SqliteStore::open(&path).unwrap();
@@ -554,17 +554,20 @@ fn restart_marks_unfinished_runs_interrupted_and_pauses_repeating_tasks() {
         .scheduled_task_get("loupist-a", &task.id)
         .unwrap()
         .unwrap();
-    assert_eq!(saved.status, TaskStatus::Paused);
+    assert_eq!(saved.status, TaskStatus::Active);
     assert!(saved.last_error.unwrap().contains("Interrupted"));
-    assert!(store
-        .scheduled_tasks_due_for_loupists(999_999, 100, &["loupist-a".into()])
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        store
+            .scheduled_tasks_due_for_loupists(999_999, 100, &["loupist-a".into()])
+            .unwrap()
+            .len(),
+        1
+    );
     assert_eq!(store.list_chats_for_loupist("loupist-a").unwrap().len(), 1);
 }
 
 #[test]
-fn failed_runs_pause_automatic_work_and_duplicate_completion_is_idempotent() {
+fn prelaunch_setup_failure_pauses_and_duplicate_completion_is_idempotent() {
     let store = fixture();
     let task = store
         .scheduled_task_create("loupist-a", draft(), 1)
@@ -578,7 +581,7 @@ fn failed_runs_pause_automatic_work_and_duplicate_completion_is_idempotent() {
             "loupist-a",
             &run.run_id,
             RunStatus::Failed,
-            Some("Sign in to the provider before resuming."),
+            Some("the selected Pi model is hidden from Chat"),
             300_002,
         )
         .unwrap();

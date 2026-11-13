@@ -71,7 +71,7 @@ impl AppToolExecutor {
             .state
             .store
             .get_chat(&policy.session_id)
-            .map_err(|error| BrokerError::Execution(error.to_string()))?
+            .map_err(store_error)?
             .ok_or_else(|| BrokerError::Execution("Chat is unavailable".into()))?;
         if let Some(cutoff) =
             crate::commands::knowledge::as_of::Cutoff::parse(policy.as_of.as_deref())

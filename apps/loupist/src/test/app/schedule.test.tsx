@@ -51,7 +51,7 @@ it("opens a run from the task history, shows its sections, and marks it read aft
   expect(screen.getByText("Companies: NVDA")).toBeVisible();
 });
 
-it("lists tasks, cadence and run history without manual scheduling controls", async () => {
+it("lists tasks, cadence and run history without row menus or inline editing", async () => {
   const { bridge, user } = await fixture();
   await openApp(bridge);
   await user.click(await mainTab(/Schedule/));

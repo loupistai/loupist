@@ -247,7 +247,7 @@ pub fn parse_json(json: &str) -> Result<Vec<ParsedConnection>, ConnectionError> 
                 _ => return Err(ConnectionError::Configuration),
             };
             // Never place env/header secrets in persisted or returned command/URL text.
-            if crate::mcp::contains_protected_value(
+            if super::credentials::contains_protected_value(
                 &serde_json::to_value(&transport).map_err(|_| ConnectionError::Configuration)?,
                 &secrets.protected_values(),
             ) {

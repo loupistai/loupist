@@ -23,6 +23,7 @@ pub(crate) struct Scripted {
     pub calls: Vec<(String, String, Value)>,
     /// Loupists without the grant a read needs.
     pub ungranted: BTreeSet<String>,
+    pub(crate) ensured: BTreeSet<String>,
     /// Connections every Loupist holds (`fmp.market-data`…).
     pub capabilities: BTreeSet<String>,
     /// Every source fails to answer.
@@ -77,12 +78,13 @@ fn symbol_of(arguments: &Value) -> Option<&str> {
 }
 
 impl HostReader for Scripted {
-    fn ensure(&mut self, _state: &AppState, _loupist_id: &str) -> bool {
+    fn ensure(&mut self, _state: &AppState, loupist_id: &str) -> bool {
+        self.ensured.insert(loupist_id.to_owned());
         true
     }
 
     fn granted(&self, loupist_id: &str, _read: &plan::PlannedRead) -> bool {
-        !self.ungranted.contains(loupist_id)
+        self.ensured.contains(loupist_id) && !self.ungranted.contains(loupist_id)
     }
 
     fn has(&self, _loupist_id: &str, capability: &str) -> bool {

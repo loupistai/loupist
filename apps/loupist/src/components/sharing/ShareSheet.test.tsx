@@ -20,7 +20,7 @@ it("keeps every output disabled until a blocking finding is left out, and offers
   const account = within(findings).getByText(/looks like an account or card number/).closest("li")!;
   const personal = within(findings).getByText(/contains an email, phone number or your name/).closest("li")!;
   // The finding names the record's kind and title, never the matched value.
-  expect(account).toHaveTextContent("Rule “Trim when a position passes 12% of the account” contains what looks like an account or card number.");
+  expect(account).toHaveTextContent("Principle “Trim when a position passes 12% of the account” contains what looks like an account or card number.");
   expect(personal).toHaveTextContent("Method “Owner earnings” contains");
   expect(within(account).queryByRole("button", { name: "It's fine" })).toBeNull();
   expect(within(personal).getByRole("button", { name: "It's fine" })).toBeVisible();
@@ -39,7 +39,7 @@ it("keeps every output disabled until a blocking finding is left out, and offers
   const save = within(dialog).getByRole("button", { name: "Save as folder" });
   expect(save).toBeEnabled();
 
-  await user.click(within(dialog).getByRole("switch", { name: "Rules" }));
+  await user.click(within(dialog).getByRole("switch", { name: "Principles" }));
   await user.selectOptions(within(dialog).getByRole("combobox", { name: "License" }), "CC0-1.0");
   await user.type(within(dialog).getByRole("textbox", { name: "Name to show (optional)" }), "Kim J.");
   await user.click(save);

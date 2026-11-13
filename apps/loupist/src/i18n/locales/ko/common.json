@@ -4,6 +4,12 @@
   "dialog": {
     "close": "닫기"
   },
+  "exportDialog": {
+    "png": "이미지 저장",
+    "video": "동영상 저장",
+    "md": "마크다운 저장",
+    "csv": "CSV 저장"
+  },
   "sheet": {
     "close": "닫기"
   },

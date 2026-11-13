@@ -58,17 +58,28 @@ composer: a count, one short row each, and Edit, reorder, Remove, and Send now i
 row's menu. The list can fold. It keeps queue order and the queued payload. Up to three
 next-step chips after the latest answer come from the conflicts and names it
 found and fill the composer without sending. Leaving a view or switching Loupist does not cancel an admitted
-Chat. The composer has one private-chat switch, described under
+Chat. Private chat is a checkbox in the composer's + menu; while it is on, a "Private · memory off" chip with an off button sits above the composer. Without an AI account, Connect an AI account takes the send slot and the placeholder says so. Private chat is described under
 [Memory permissions](../knowledge/memory.md#memory-permissions-and-retrieval).
-Focusing a control below the fold scrolls it into the conversation. When the reader scrolls away from the bottom, the live status or Jump to latest control
-occupies its own row between the scroll viewport and composer. It shares the
-conversation’s scroll state, so jumping re-pins the reply while the control stays clear
-of answer text and actions. A short conversation that becomes scrollable when the
-window narrows stays pinned to its newest answer. The viewport follows the
-reply in the same commit that grew it, through tool updates and table rows, even
-when the browser temporarily moves the scroll position up. An
-upward scroll, even in single-pixel increments, keeps the reader's position
-once they leave the bottom.
+Focusing a control below the fold scrolls it into the conversation. A sent question
+glides to the top of the thread and the reply writes beneath it; the page moves by
+itself only when a block arrives, never while one grows
+([reading while it streams](chat-answer.md#reading-while-it-streams)). While the end of
+the reply is below the fold, the live status and Jump to latest float over the bottom of
+the thread, 12 px above the composer, without taking a row; Jump to latest follows the
+reply until the reader scrolls up. A settled chat opens at its newest answer and stays
+there while late content (images, tables, the morning message) arrives.
+
+Send and Stop are one 28 px tile at the composer's trailing edge (`ComposerTile`): the
+same button stays mounted from idle to running and back, so its box never changes, and
+its two icons cross-fade in place (opacity and a 0.8 scale, 120 ms; a swap under reduced
+motion) while its fill eases to the action colour. With nothing typed, Send is a quiet
+tile whose arrow uses the tertiary text colour, at least 3:1 against the tile in both
+themes; while a reply runs, Stop is a filled square. Stop ("Stop response", Esc in its tooltip; Esc in the composer stops the reply unless a
+menu is open) dims to
+55% after a press and ignores presses until the host confirms. Focus stays in the
+textarea through send, stop and commit, including the first message of a new research
+session: the saved Chat it creates keeps the draft's composer and thread instead of
+mounting new ones.
 After a reply saves a Source, a running World job, or a queued job whose processing is ready, shows “Reviewing sources…” in the Learned row, including when it is folded. A queued job blocked by a disconnected provider, paused processing or another readiness condition shows the useful status or action, such as “Reconnect your AI account” or “Source review is paused”, without a spinner. If readiness cannot be read, it says “Waiting to review sources”. Polling continues so reconnecting or resuming processing updates the row. In a narrow chat the
 compact context card shows the same status above the transcript, with approval requests alongside it. As
 jobs finish, their additions become available in the row. When all work settles,
@@ -109,8 +120,9 @@ a new site after third-party text is refused the same way
 
 An [`ask_user`](../agent/turn-tools.md#turn-tools) call waits on a question card the same
 way: Rust records it on `ChatProgress.questions` (at most four per reply), under the step
-that asked, and the card offers one button per option (the recommended one primary, tagged
-Recommended, with its description under each label), an "Or answer in your own words"
+that asked, and the card offers one outlined button per option (the recommended one with a primary edge, tagged
+Recommended, with its description under each label; it takes focus, so Enter chooses it, only when the card
+arrives after the reply stopped streaming and nothing editable has focus; while the reply streams, focus stays put), an "Or answer in your own words"
 field up to 500 characters and the waiting clock. Answers go through
 `chat_question_answer {loupist_id, request_id, choice | text}` (exactly one; Rust checks the
 Loupist, the option index and the length). The settled line reads "You answered: …" or,
@@ -131,7 +143,10 @@ rates. No key passes through Chat, and the connection works from the next messag
 Preview scenarios `chat-connection-setup-needs-setup` and `chat-connection-setup-ready`
 show it. A chat with both Memory flags off shows a
 private mark; the chat title in the sub-header renames in place; a Loupist row shows a
-draft dot while unsent text exists.
+draft dot while unsent text exists. After a Chat is successfully deleted, Rust
+removes its unsent prompt, context and attachment drafts from the app profile; a
+failed deletion keeps them. A draft write
+that arrives after deletion cannot recreate them. Drafts for other Chats stay.
 
 Selected workspace files, connections, quoted text, knowledge and work are inserted inline at the current cursor or selection. The editor uses a native textarea with a synchronized highlight layer; reference styling has the same text metrics, so wrapping, scrolling, selection and IME remain native. The draft retains bounded UTF-16 ranges alongside its existing typed pins, selected artifact and chip metadata. Typing before a reference shifts its range; editing inside it detaches the structured reference and leaves ordinary text. Backspace immediately after a reference, or Delete immediately before one, removes that occurrence atomically. Repeated references keep distinct offsets and serialize at each position; their shared typed context stays until the last occurrence is removed. The named removal action removes every occurrence of that context. Named removal controls are available to screen readers and reveal themselves when reached with Tab. Inserting or removing one reference preserves the surrounding question and other references. External draft restoration waits for the textarea to adopt the saved text before anchoring its references.
 
@@ -168,4 +183,4 @@ preference/catalog foundation and its coverage are described in
 
 ## Code
 
-- Chat progress / feedback: `src-tauri/src/chat/progress.rs`, `src/chat/progressLabels.ts`, `src/chat/chartBlocks.ts`, `src/chat/turnView.ts`, `src/components/chat/ActivityRow.tsx`, `src/components/chat/TurnFooter.tsx`, `src/components/chat/AnswerFeedback.tsx`, `src-tauri/src/commands/records.rs`
+- Chat progress / feedback: `src-tauri/src/chat/progress.rs`, `src/chat/progressLabels.ts`, `src/chat/chartBlocks.ts`, `src/chat/turnView.ts`, `src/components/chat/TurnLedger.tsx`, `src/components/chat/TurnFooter.tsx`, `src/components/chat/AnswerFeedback.tsx`, `src-tauri/src/commands/records.rs`

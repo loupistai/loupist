@@ -2,9 +2,10 @@
 
 /* Ways to connect: grouped ghost rows, no logos. */
 .connect-ways { display: grid; min-width: 0; }
-.connect-group-label { margin: var(--gg-space-4) 0 var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); text-transform: uppercase; letter-spacing: .06em; }
+.connect-group-label { margin: var(--gg-space-4) 0 var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); }
 .connect-ways > .connect-group-label:first-child { margin-top: 0; }
-:lang(ko) .connect-group-label { letter-spacing: 0; text-transform: none; }
+/* Onboarding zeroes paragraph margins (.onboarding-step p); a later group still opens with space above it. */
+.connect-ways > .connect-group-label:not(:first-child) { margin-top: var(--gg-space-4); }
 .connect-row { display: flex; align-items: center; gap: var(--gg-space-3); width: 100%; min-height: 44px; padding: 0 var(--gg-space-3); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); text-align: left; cursor: pointer; transition: background-color var(--gg-motion-instant) var(--gg-ease-out); }
 .connect-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
 .connect-row:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
@@ -40,8 +41,9 @@
 .signin-body { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 .signin-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
 .signin-link,
-.connect-link { display: inline-flex; align-items: center; gap: var(--gg-space-1); justify-self: start; min-height: var(--gg-size-control-sm); padding: 0; border: 0; background: none; color: var(--gg-color-accent-ink); font: inherit; font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-.signin-link:hover, .connect-link:hover { color: var(--gg-color-accent-hover); }
+.connect-link { display: inline-flex; align-items: center; gap: var(--gg-space-1); justify-self: start; min-height: var(--gg-size-control-sm); padding: 0; border: 0; background: none; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; cursor: pointer; }
+/* Neutral like every other text link: amber is kept for "needs you" and "learned this". */
+.signin-link:hover, .connect-link:hover { text-decoration-color: currentColor; }
 .signin-link:focus-visible, .connect-link:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; border-radius: var(--gg-radius-xs); }
 .connect-link svg { width: 16px; height: 16px; }
 .signin-paste { display: grid; gap: var(--gg-space-2); animation: connect-reveal var(--gg-motion-normal) var(--gg-ease-out); }

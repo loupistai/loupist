@@ -250,7 +250,7 @@ export function answerCheckScenarios({ base, select, until, click, clickMapActio
   const openJournal = async (root: HTMLElement, journalId: string) => {
     await navigate(root, "map");
     await clickMapAction("[data-map-library]", root);
-    await click('[role="tab"][id$="-trigger-note"]', root);
+    await click('[role="tab"][id$="-trigger-journal"]', root);
     await until(() => root.querySelectorAll(".journal-library-row").length === 2, "Journal entries did not load");
     await click(`[data-research-id="${journalId}"]`, root);
     const panel = await until(() => select(".journal-then-now"), "Then · Now did not appear");

@@ -34,7 +34,7 @@ it("says when a card is no longer waiting", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "chatApprovalDecide").mockRejectedValue(new Error("This approval is no longer waiting"));
   render(<ApprovalCards approvals={[waiting("c1")]} refusals={[]} bridge={bridge} loupistId="loupist-one" />);
-  await user.click(screen.getByRole("button", { name: "Always allow for this connection" }));
+  await user.click(screen.getByRole("button", { name: "Always allow" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("This approval is no longer waiting.");
 });
 

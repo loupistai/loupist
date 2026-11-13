@@ -15,6 +15,7 @@ fn asking_executor(
     let state = seeded_state(temporary);
     let mut capture = ToolCapture {
         surface: Some(ChatSurface::Bot),
+        bound_chat_id: Some("chat-a".into()),
         question_sink: Some(Arc::new(move |call_id, question| {
             let _ = cards_tx.send((call_id, question));
         })),
@@ -133,19 +134,14 @@ async fn a_typed_answer_never_leaves_in_a_url_after_third_party_text() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn the_wait_running_out_continues_with_the_recommended_option() {
+async fn the_wait_running_out_recommends_research_without_authorizing_changes() {
     let temporary = tempfile::tempdir().unwrap();
     let (executor, mut cards) = asking_executor(&temporary, None);
     let result = ask(&executor, fork()).await.unwrap();
     assert_eq!(result["answered"], false);
     assert_eq!(result["assumed"], "Last 4 quarters");
     let next = result["next"].as_str().unwrap();
-    assert!(
-        next.contains("did not answer")
-            && next.contains("Last 4 quarters")
-            && next.contains("which one you used"),
-        "{next}"
-    );
+    assert_eq!(next, "The user did not answer. For a research or presentation choice, use the recommended option and say which one you used. Do not delete, stop, edit or pause a schedule; disable a watch or briefing; retire a Lens section; unfollow an asset or replace the research focus; or update, resolve or forget Bot memory. Finish the reply and say what you need answered before making any of those changes. Other research, saves and work products may continue.");
     let (_, waiting) = cards.recv().await.unwrap();
     assert_eq!(waiting.state, QuestionState::Waiting);
     let (_, settled) = cards.recv().await.unwrap();
@@ -176,7 +172,7 @@ async fn stopping_the_run_ends_the_wait_without_an_error_and_assumes_nothing_wit
     assert!(result["next"]
         .as_str()
         .unwrap()
-        .contains("most reasonable assumption"));
+        .contains("Finish the reply and say what you need answered"));
     let (_, settled) = cards.recv().await.unwrap();
     assert_eq!(settled.state, QuestionState::Expired);
 }
@@ -193,6 +189,11 @@ async fn a_run_without_cards_reports_no_answer_instead_of_waiting() {
     let result = ask(&executor, fork()).await.unwrap();
     assert_eq!(result["answered"], false);
     assert_eq!(result["assumed"], "Last 4 quarters");
+    assert!(executor
+        .capture
+        .turn_taint
+        .enforce(ToolMethod::ScheduleDelete, &json!({}))
+        .is_err());
 }
 
 #[tokio::test]
@@ -290,4 +291,167 @@ async fn a_malformed_question_is_refused_naming_the_field_and_shows_no_card() {
         cards.try_recv().is_err(),
         "a refused question shows no card"
     );
+}
+
+fn deletion_question() -> Value {
+    json!({"question":"Which daily review should be deleted?","options":[{"label":"North"},{"label":"South"},{"label":"Both"}],"recommended":2})
+}
+
+fn saved_schedule(executor: &AppToolExecutor, title: &str) -> crate::scheduled_tasks::types::Task {
+    use crate::scheduled_tasks::types::{Schedule, TaskDraft, TaskStatus, TaskTarget};
+    executor
+        .state
+        .store
+        .scheduled_task_create(
+            "loupist-a",
+            TaskDraft {
+                title: title.into(),
+                prompt: "Read the local note".into(),
+                schedule: Schedule::Daily {
+                    hour: 8,
+                    minute: 0,
+                    timezone: "Asia/Seoul".into(),
+                },
+                target: TaskTarget::Dedicated,
+                model_profile_id: "fixture".into(),
+                thinking_level: "medium".into(),
+                run_options: Default::default(),
+                use_memory: false,
+                update_memory: false,
+                status: TaskStatus::Active,
+            },
+            1,
+        )
+        .unwrap()
+}
+
+#[tokio::test]
+async fn an_unanswered_question_preserves_both_schedules_and_blocks_the_rest_of_the_reply() {
+    let temporary = tempfile::tempdir().unwrap();
+    let (executor, mut cards) = asking_executor(&temporary, None);
+    let north = saved_schedule(&executor, "North daily review");
+    let south = saved_schedule(&executor, "South daily review");
+    let pending = spawn_ask(&executor, deletion_question());
+    let (_, waiting) = cards.recv().await.unwrap();
+    // A second call in the same tool batch must not delete while the card waits.
+    let error = executor
+        .execute(
+            &policy(false, false),
+            ToolMethod::ScheduleDelete,
+            json!({"task_id":north.id,"expected_revision":north.revision}),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, BrokerError::WithNext { source, .. }
+        if matches!(*source, BrokerError::InvalidArguments { ref field, .. } if field.is_empty())));
+    assert!(executor
+        .state
+        .store
+        .scheduled_task_get("loupist-a", &north.id)
+        .unwrap()
+        .is_some());
+    questions::forget(&waiting.request_id); // Same immediate no-answer path used by evals.
+    let unanswered = pending.await.unwrap().unwrap();
+    assert_eq!(unanswered["answered"], false);
+    assert_eq!(unanswered["assumed"], "Both");
+    let _settled = cards.recv().await.unwrap();
+    for (method, params) in [
+        (
+            ToolMethod::ScheduleDelete,
+            json!({"task_id":north.id,"expected_revision":north.revision}),
+        ),
+        (
+            ToolMethod::ScheduleSetStatus,
+            json!({"task_id":north.id,"expected_revision":north.revision,"status":"paused"}),
+        ),
+        (
+            ToolMethod::ScheduleStop,
+            json!({"task_id":north.id,"run_id":"not-started"}),
+        ),
+    ] {
+        let error = executor
+            .execute(&policy(false, false), method, params)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, BrokerError::WithNext { source, next }
+            if matches!(*source,BrokerError::InvalidArguments { ref field,.. } if field.is_empty()) && next.contains("Finish the reply")));
+    }
+    let read = executor
+        .execute(
+            &policy(false, false),
+            ToolMethod::ScheduleRead,
+            json!({"task_id":north.id}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(read["status"], "active");
+    let listed = executor
+        .execute(&policy(false, false), ToolMethod::ScheduleList, json!({}))
+        .await
+        .unwrap();
+    assert_eq!(listed["total"], 2);
+    assert_eq!(
+        executor
+            .state
+            .store
+            .scheduled_task_get("loupist-a", &north.id)
+            .unwrap()
+            .unwrap()
+            .revision,
+        north.revision
+    );
+    assert!(executor
+        .state
+        .store
+        .scheduled_task_get("loupist-a", &south.id)
+        .unwrap()
+        .is_some());
+    // A later answered card does not authorize the earlier unanswered choice.
+    let pending = spawn_ask(&executor, deletion_question());
+    let (_, waiting) = cards.recv().await.unwrap();
+    questions::answer("loupist-a", &waiting.request_id, QuestionAnswer::Choice(0)).unwrap();
+    assert_eq!(pending.await.unwrap().unwrap()["answered"], true);
+    assert!(executor
+        .execute(
+            &policy(false, false),
+            ToolMethod::ScheduleDelete,
+            json!({"task_id":north.id,"expected_revision":north.revision})
+        )
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn an_answered_question_allows_deleting_only_the_selected_schedule() {
+    let temporary = tempfile::tempdir().unwrap();
+    let (executor, mut cards) = asking_executor(&temporary, None);
+    let north = saved_schedule(&executor, "North daily review");
+    let south = saved_schedule(&executor, "South daily review");
+    let pending = spawn_ask(&executor, deletion_question());
+    let (_, waiting) = cards.recv().await.unwrap();
+    questions::answer("loupist-a", &waiting.request_id, QuestionAnswer::Choice(0)).unwrap();
+    assert_eq!(
+        pending.await.unwrap().unwrap(),
+        json!({"answered":true,"choice":"North"})
+    );
+    executor
+        .execute(
+            &policy(false, false),
+            ToolMethod::ScheduleDelete,
+            json!({"task_id":north.id,"expected_revision":north.revision}),
+        )
+        .await
+        .unwrap();
+    assert!(executor
+        .state
+        .store
+        .scheduled_task_get("loupist-a", &north.id)
+        .unwrap()
+        .is_none());
+    assert!(executor
+        .state
+        .store
+        .scheduled_task_get("loupist-a", &south.id)
+        .unwrap()
+        .is_some());
 }

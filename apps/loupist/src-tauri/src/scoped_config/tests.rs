@@ -390,32 +390,16 @@ fn skill_preferences_inherit_individually_and_reset_without_pinning_other_skills
 fn skill_authoring_is_off_by_default_and_an_explicit_enable_wins_until_reset() {
     let global = directory();
     let project = directory();
-    let authoring = |config: &ResolvedConfig| {
-        let enabled = config.enabled_skill_ids();
-        ["skill-creator", "skill-installer"].map(|id| enabled.iter().any(|seen| seen == id))
-    };
-    assert_eq!(
-        authoring(&resolve(global.path(), Some(project.path())).unwrap()),
-        [false, false]
-    );
-    // The eval harness writes Pi settings and no skill table.
-    write(
-        global.path(),
-        "[pi.retry]\nenabled = false\nmax_retries = 0\n",
-    );
-    let eval = resolve(global.path(), Some(project.path())).unwrap();
-    assert_eq!(authoring(&eval), [false, false]);
-    assert!(eval.enabled_skill_ids().contains(&"documents".into()));
-
-    write(
-        global.path(),
-        "[skills.skill-creator]\nenabled=true\n[skills.skill-installer]\nenabled=false\n",
-    );
-    write(project.path(), "[skills.skill-installer]\nenabled=true\n");
-    assert_eq!(
-        authoring(&resolve(global.path(), Some(project.path())).unwrap()),
-        [true, true]
-    );
+    let enabled =
+        |config: &ResolvedConfig| config.enabled_skill_ids().contains(&"skill-creator".into());
+    assert!(!enabled(
+        &resolve(global.path(), Some(project.path())).unwrap()
+    ));
+    write(global.path(), "[skills.skill-creator]\nenabled=false\n");
+    write(project.path(), "[skills.skill-creator]\nenabled=true\n");
+    assert!(enabled(
+        &resolve(global.path(), Some(project.path())).unwrap()
+    ));
     let reset = update(
         global.path(),
         Some(project.path()),
@@ -423,12 +407,16 @@ fn skill_authoring_is_off_by_default_and_an_explicit_enable_wins_until_reset() {
         ConfigDocument::default(),
         vec![vec![
             "skills".into(),
-            "skill-installer".into(),
+            "skill-creator".into(),
             "enabled".into(),
         ]],
     );
-    assert_eq!(reset.sources["skills.skill-installer.enabled"], "global");
-    assert_eq!(authoring(&reset.effective), [true, false]);
+    assert_eq!(reset.sources["skills.skill-creator.enabled"], "global");
+    assert!(!enabled(&reset.effective));
+    assert!(!reset
+        .effective
+        .enabled_skill_ids()
+        .contains(&"skill-installer".into()));
 }
 
 #[test]
@@ -610,4 +598,101 @@ fn appearance_language_is_global_only_validated_and_unsets_to_system() {
     let result = read_scope(global.path(), None, ConfigScope::Global).unwrap();
     assert_eq!(result.effective.appearance.language, "system");
     assert!(!result.diagnostics.is_empty());
+}
+
+#[test]
+fn cached_configuration_refreshes_on_external_write_replacement_and_removal() {
+    let root = directory();
+    let path = root.path().join(FILE_NAME);
+    write(root.path(), "[chat]\nuse_memory = false\n");
+    let at = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(100);
+    File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(at))
+        .unwrap();
+    assert!(!resolve(root.path(), None).unwrap().chat.use_memory);
+    assert!(!resolve(root.path(), None).unwrap().chat.use_memory);
+    write(root.path(), "[chat]\nuse_memory = true\n");
+    File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(at + std::time::Duration::from_secs(1)))
+        .unwrap();
+    assert!(resolve(root.path(), None).unwrap().chat.use_memory);
+    // Same mtime and byte count, different inode: do not reuse the old parse.
+    let replacement = root.path().join("replacement");
+    std::fs::write(&replacement, "[chat]\nuse_memory = false\n").unwrap();
+    File::options()
+        .write(true)
+        .open(&replacement)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(at))
+        .unwrap();
+    std::fs::rename(replacement, &path).unwrap();
+    assert!(!resolve(root.path(), None).unwrap().chat.use_memory);
+    std::fs::remove_file(&path).unwrap();
+    assert!(resolve(root.path(), None).unwrap().chat.use_memory);
+}
+
+#[test]
+fn cached_configuration_keeps_global_and_project_validation_separate() {
+    let root = directory();
+    write(root.path(), "[appearance]\ntheme = 'dark'\n");
+    assert!(load(root.path(), &ConfigScope::Global)
+        .diagnostics
+        .is_empty());
+    assert!(!load(root.path(), &scope()).diagnostics.is_empty());
+    #[cfg(unix)]
+    {
+        let path = root.path().join(FILE_NAME);
+        std::fs::remove_file(&path).unwrap();
+        let other = directory();
+        write(other.path(), "[appearance]\ntheme = 'light'\n");
+        std::os::unix::fs::symlink(other.path().join(FILE_NAME), &path).unwrap();
+        assert!(!load(root.path(), &ConfigScope::Global)
+            .diagnostics
+            .is_empty());
+    }
+}
+
+#[test]
+fn cache_rejects_same_size_same_mtime_replacement() {
+    let root = directory();
+    let path = root.path().join(FILE_NAME);
+    let timestamp = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(100);
+    write(root.path(), "[chat]\nthinking_level = 'low'\n");
+    File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(timestamp))
+        .unwrap();
+    assert_eq!(
+        resolve(root.path(), None)
+            .unwrap()
+            .chat
+            .thinking_level
+            .as_deref(),
+        Some("low")
+    );
+    let replacement = root.path().join("replacement");
+    std::fs::write(&replacement, "[chat]\nthinking_level = 'off'\n").unwrap();
+    File::options()
+        .write(true)
+        .open(&replacement)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(timestamp))
+        .unwrap();
+    std::fs::rename(replacement, path).unwrap();
+    assert_eq!(
+        resolve(root.path(), None)
+            .unwrap()
+            .chat
+            .thinking_level
+            .as_deref(),
+        Some("off")
+    );
 }

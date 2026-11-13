@@ -63,7 +63,8 @@
         },
         "end_de": {
           "at_least": "20261030"
-        }
+        },
+        "pblntf_ty": "optional"
       }
     },
     {
@@ -79,12 +80,9 @@
         }
       },
       "query_match": {
-        "bgn_de": {
-          "at_most": "20261030"
-        },
-        "end_de": {
-          "at_least": "20261030"
-        }
+        "bgn_de": "ignore",
+        "end_de": "ignore",
+        "pblntf_ty": "optional"
       }
     },
     {
@@ -100,12 +98,9 @@
         }
       },
       "query_match": {
-        "bgn_de": {
-          "at_most": "20261030"
-        },
-        "end_de": {
-          "at_least": "20261030"
-        }
+        "bgn_de": "ignore",
+        "end_de": "ignore",
+        "pblntf_ty": "optional"
       }
     },
     {
@@ -121,12 +116,9 @@
         }
       },
       "query_match": {
-        "bgn_de": {
-          "at_most": "20261030"
-        },
-        "end_de": {
-          "at_least": "20261030"
-        }
+        "bgn_de": "ignore",
+        "end_de": "ignore",
+        "pblntf_ty": "optional"
       }
     },
     {
@@ -165,7 +157,10 @@
         },
         "end_de": {
           "at_least": "20261030"
-        }
+        },
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
       }
     },
     {
@@ -204,7 +199,10 @@
         },
         "end_de": {
           "at_least": "20261030"
-        }
+        },
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
       }
     },
     {
@@ -221,12 +219,11 @@
       },
       "query_match": {
         "page_count": "ignore",
-        "bgn_de": {
-          "at_most": "20261030"
-        },
-        "end_de": {
-          "at_least": "20261030"
-        }
+        "bgn_de": "ignore",
+        "end_de": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
       }
     },
     {
@@ -238,6 +235,72 @@
         "status": 200,
         "content_type": "application/zip",
         "body_base64": "UEsDBBQAAAAIAAAAIVz/kE5OGAMAAIsFAAASAAAAMjAyNjEwMzA5OTAzMDgueG1snVTrS9tQFP9XDoKgEGtiUafUynyBbD6YlbGPWuNWqI20VbZvtYujs4V1YGdXk5IyX5UKUaO04P6h3JP/YecmabX6bR9K23Puefwe94YmP2/FYVdOpmJKYqJHCog9ICeiykYs8XGiZzUyN/CqZzIcmlmaXl2YXYw8/hpYfL0wG8Y/D1g5xGzDKV2xW8u+NVDV+tBQnd9liuK1at8XmKk5v77bNyYapf7QYHeH0NTSzIdwaGV2OjK/tDgghUOR+cjb/+vsVYaWw7aZwa97qJeB3aqsYbGzBjPL7IeKNxagoQWdSgEobjdNdrmPeR1Qt3i/+wwP0zw8o1i2wS4v4OlM8CaCNxKr+yyfY/mTAK/nu1YKPKOXUX+AIXFohO2rIIl4fAhBkWKB0OCyux+Nqlto6ViqUUYQxc4Hj4vUrVq0mzmsmSzfcFFc1tHYGwesWFje87LU/1mdAJjXUD3x89KLvv5056fGp9PG1SJqFyAGxF4B2HmB6HiMDrlRD3Y754Iac0FJHJQ4zEEBy9aJii7MT9L+VI9GrgxhHhOkNlSP3aMisEOTUQuPYadkALcASfMoEunifLujMASFobERYVQM8j993kFOZ464KmRYS4WRgCT29nf631zZdw3qZJsqX3L02ZIkvKOaj+jETsZuFfA80wGR1wiBUyoz/W9759MmdGEj2cgbJNadhkbG/+vnRoTgKMcNfR5Mlm9Ry656rvcoX72t1kGLW01vuvMKNFzjX9zf1SLZuy2R1y9r4dHVOPgXQL3G6qmTa3BJa6ZTqnPzS065CdLwC/P4NXmDS50zuspeeKlznI5kTe7LSh2e93wiPTs/odG0O6ejVR73ZebU1zSffYmo5/p0rjfqdOHuVfICMU4qAJYO2MEhp9S+tlDjtR2/1P2r6M+ci0XT9KStxWHqi6zEt3aSMViRt2JRJbGxE00ryXF48+49Xb71BGwnY7traRkoRy9hOrYel2GdzqUEP8QfR34qKrtFrnsFSMopOQ2bcUVJumFXXAF2tiGteP4DZRNSn9booLfW4JNnbtB7+DrPYfgfUEsBAhQDFAAAAAgAAAAhXP+QTk4YAwAAiwUAABIAAAAAAAAAAAAAAKQBAAAAADIwMjYxMDMwOTkwMzA4LnhtbFBLBQYAAAAAAQABAEAAAABIAwAAAAA="
+      }
+    }
+  ],
+  "otherwise": [
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/bdwtIsDecsn.json?",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/cvbdIsDecsn.json?",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/exbdIsDecsn.json?",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/list.json?",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/piicDecsn.json?",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/document.xml?",
+      "response": {
+        "status": 200,
+        "content_type": "application/xml",
+        "text": "<result><status>013</status><message>조회된 데이타가 없습니다.</message></result>"
       }
     }
   ]

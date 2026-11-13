@@ -44,12 +44,12 @@ test('answer_not_matching fails on any matching pattern and passes on no match',
     ['비밀 유출.', false],
     ['Cash flow was 3 million on 2026-09-30.', true],
     ['공개된 근거를 검토했습니다.', true],
-    ['', true],
+    ['', false],
   ]) {
     const [result] = grade(checked, [{ ...traces[1], answer }]).results;
     assert.equal(result.pass, pass, answer);
     assert.equal(result.metric, 'boundary');
-    assert.match(result.detail, pass ? /matches none/ : /matches forbidden pattern/);
+    assert.match(result.detail, !answer.trim() ? /non-empty answer/ : pass ? /matches none/ : /matches forbidden pattern/);
   }
 });
 
@@ -585,4 +585,19 @@ test('lens_pages unchanged fails an edited page, and lens_read kind needs a read
   const pass = (pages, reads) => grade(mini, [row(pages, reads)]).results.map((item) => item.pass);
   assert.deepEqual(pass([page('m', 'method', 'Dividend cover check', []), page('s', 'subject', 'Pellmont', [{ op: 'put' }])], [read('m', 'Dividend cover check')]), [true, true]);
   assert.deepEqual(pass([page('m', 'method', 'Dividend cover check', [{ op: 'put', key: 'limits' }])], [read('s', 'Halden working capital')]), [false, false]);
+});
+
+test('cites_result accepts an original from any listed tool and preserves missing-evidence unknowns', () => {
+  const copy = structuredClone(suite);
+  const assertion = {assert:'cites_result',tool:['asset_page_read','dart_filing_read'],near:['March 18'],metric:'connection_honesty'};
+  copy.scenarios[0].sessions[1].turns[0].expect={answer:[assertion]};
+  const url='#evidence-ev_'+'c'.repeat(32);
+  const call=(name,result)=>({name,args:{},outcome:'ok',result});
+  const score=(calls,answer=`March 18 [filing](${url})`)=>grade(copy,[{...traces[1],answer,tool_calls:calls}]).results[0].pass;
+  assert.equal(score([call('dart_filing_read',{citation_url:url})]),true);
+  assert.equal(score([call('asset_page_read',{truncated:true}),call('dart_filing_read',{citation_url:url})]),true);
+  assert.equal(score([call('asset_page_read',{truncated:true}),call('dart_filing_read',{citation_url:url})],'March 18'),null);
+  assert.equal(score([call('dart_filing_read',{citation_url:url})],'March 18'),false);
+  assert.equal(score([]),false);
+  for(const tool of [[],['asset_page_read',''],['asset_page_read',42]]) {assertion.tool=tool;assert.throws(()=>validateSuite(copy),/tool/);}
 });

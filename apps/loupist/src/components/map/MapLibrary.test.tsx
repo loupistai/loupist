@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { initialKnowledgeNavigation, openKnowledgeLocation, patchKnowledgeLocation } from "../../knowledge/location";
 import { MemoryWorkspace } from "../knowledge/MemoryWorkspace";
+import { MapLibrary } from "./MapLibrary";
+import { requestLibrary } from "./libraryState";
 vi.mock('./MapCanvas', () => ({ default: ({ selectedId, overlayIds }: { selectedId?: string; overlayIds?: Set<string> }) => <div data-testid="map-canvas" data-selected={selectedId} data-overlay={[...(overlayIds ?? [])].join(',')} /> }));
 async function setup() {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -26,10 +28,9 @@ async function setup() {
 }
 it('opens a compact Source library and reads an exact source in the map inspector', async () => {
   const { user, read } = await setup();
-  await user.click(screen.getByRole('button', { name: 'More actions' }));
-  await user.click(screen.getByRole('menuitemcheckbox', { name: 'Library' }));
+  await user.click(screen.getByRole('button', { name: 'Library' }));
   const library = screen.getByRole('complementary', { name: 'Library' });
-  expect(within(library).getByRole('button', { name: '+ Add source' })).toBeVisible();
+  expect(within(library).getByRole('button', { name: 'Add source' })).toBeVisible();
   await user.click(within(library).getByRole('button', { name: /RFC 9110 HTTP semantics/ }));
   const inspector = await screen.findByRole('complementary', { name: 'Document inspector' });
   expect(await within(inspector).findByRole('article', { name: 'Source reader' })).toBeVisible();
@@ -55,11 +56,40 @@ it('applies only application neighbors, reports an unused Lens and exits with Es
 });
 it('restores the Library tab and query after the map is remounted', async () => {
   const { user, remount } = await setup();
-  await user.click(screen.getByRole('button', { name: 'More actions' }));
-  await user.click(screen.getByRole('menuitemcheckbox', { name: 'Library' }));
+  await user.click(screen.getByRole('button', { name: 'Library' }));
   await user.type(screen.getByRole('textbox', { name: 'Search sources' }), 'RFC');
   remount();
   expect(await screen.findByRole('textbox', { name: 'Search sources' })).toHaveValue('RFC');
   await user.click(screen.getByRole('button', { name: 'More actions' }));
-  expect(screen.getByRole('menuitemcheckbox', { name: 'Library' })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole("button", { name: "Library" })).toHaveAttribute("aria-expanded", "true");
+});
+it('keeps a compact Library scroll made just before it closes', async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const loupist = (await bridge.loupistList())[0];
+  const catalog = await bridge.knowledgeCatalog({ loupistId: loupist.id });
+  const props = { bridge, catalog, location: { loupistId: loupist.id, surface: 'source' as const }, onOpen: vi.fn(), onAsk: vi.fn(), onChanged: vi.fn(), onClose: vi.fn() };
+  const first = render(<MapLibrary {...props} />);
+  const list = first.container.querySelector<HTMLElement>('.source-library')!;
+  list.scrollTop = 240;
+  fireEvent.scroll(list);
+  // Opening a row closes the compact Library well inside the 150 ms the save waits for.
+  first.unmount();
+  const second = render(<MapLibrary {...props} />);
+  expect(second.container.querySelector<HTMLElement>('.source-library')!.scrollTop).toBe(240);
+});
+it('opens the Journal form for a New Journal entry request even while the reader still shows a research note', async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const loupist = (await bridge.loupistList())[0];
+  const catalog = await bridge.knowledgeCatalog({ loupistId: loupist.id });
+  const reader = { loupistId: loupist.id, surface: 'note' as const, recordId: 'research-1', selection: { kind: 'research' as const, recordId: 'research-1' } };
+  const props = { bridge, catalog, location: reader, onOpen: vi.fn(), onAsk: vi.fn(), onChanged: vi.fn(), onClose: vi.fn() };
+  // Without a request the retained note keeps Notes.
+  const first = render(<MapLibrary {...props} />);
+  expect(screen.getByRole('tab', { name: 'Notes' })).toHaveAttribute('aria-selected', 'true');
+  first.unmount();
+  // The palette asks while the Library (or the whole Map) is closed.
+  requestLibrary(bridge, loupist.id, 'journal', { journalNew: true });
+  render(<MapLibrary {...props} />);
+  expect(screen.getByRole('tab', { name: 'Journal' })).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByRole('form', { name: 'New entry' })).toBeVisible();
 });

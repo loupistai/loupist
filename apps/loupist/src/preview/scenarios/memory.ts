@@ -40,8 +40,8 @@ export const principleScenarios: PreviewScenario[] = [
 export const memoryScenarios: PreviewScenario[] = [
   // W15.15–W15.17: "What {Loupist} knows", the inline correction under an answer, and the once-per-chat decline.
   ...(["memory-page", "memory-page-empty", "memory-paused", "memory-reset-dialog"] as const).map((id): PreviewScenario => ({
-    ...base(id, id === "memory-page" ? "What the Loupist knows, with a principle open" : id === "memory-paused" ? "Learning is paused" : "A new Loupist knows only what you follow",
-      () => select(id === "memory-reset-dialog" ? ".memory-reset-dialog" : id === "memory-page" ? ".memory-reader:not(.is-empty)" : id === "memory-paused" ? ".memory-page-paused" : ".memory-about"), async root => {
+    ...base(id, id === "memory-page" ? "What the Loupist knows, with a principle open" : id === "memory-paused" ? "Learning is paused" : "A new Loupist has no pages yet",
+      () => select(id === "memory-reset-dialog" ? ".memory-reset-dialog" : id === "memory-page" ? ".memory-reader:not(.is-empty)" : id === "memory-paused" ? ".memory-page-paused" : ".memory-empty"), async root => {
         await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
         if (id === "memory-reset-dialog") {
           await openLoupistSettings();
@@ -50,7 +50,7 @@ export const memoryScenarios: PreviewScenario[] = [
         } else {
           await selectPanel("lens");
           if (id === "memory-page") await click(".memory-page-list .memory-row");
-          if (id === "memory-page-empty") await click('.memory-page-tabs [role="tab"]:first-child');
+          if (id === "memory-page-empty") await until(() => select(".memory-empty"), "Empty Lens did not load");
         }
       }),
     setup: async (bridge) => {

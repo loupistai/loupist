@@ -40,6 +40,12 @@
                     "kind": "source",
                     "min": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
                   }
                 ]
               },
@@ -93,6 +99,12 @@
                     "kind": "source",
                     "min": 1,
                     "metric": "save_recall"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "min": 1,
+                    "metric": "save_precision"
                   }
                 ]
               }

@@ -188,6 +188,8 @@ struct Script {
     calls: Vec<String>,
     /// Extracted spellings the model resolves to an existing node's name.
     same_as: HashMap<String, String>,
+    /// Required evidence and policy text on a scripted relation extraction.
+    required_edge_text: Vec<String>,
 }
 
 impl Script {
@@ -219,6 +221,12 @@ impl Script {
             .unwrap_or("")
             .to_string();
         self.calls.push(title.clone());
+        if title == "ExtractedEdges" {
+            let messages = request["messages"].to_string();
+            for text in &self.required_edge_text {
+                assert!(messages.contains(text), "missing extraction text: {text}");
+            }
+        }
         if let Some(disposition) = self.fail.get(&title) {
             return InferenceReply {
                 disposition: disposition.clone(),
@@ -311,6 +319,116 @@ fn relation(source: &str, target: &str, kind: &str, fact: &str) -> Value {
 
 const SUPPLY: &str = "Acme Corp supplies lithium cells to Beta Motors.";
 const PARTNER: &str = "Acme Corp partners with Gamma Labs on solid-state cells.";
+
+#[test]
+fn source_metric_labels_survive_publication_with_english_renderings() {
+    let mut fixture = Fixture::new();
+    let observations = [
+        ("operating profit", "Acme Corp reported Q2 FY2026 operating profit of USD 11 million."),
+        ("operating income", "Acme Corp reported Q2 FY2026 operating income of USD 10 million."),
+        ("EBIT", "Acme Corp reported Q2 FY2026 EBIT of USD 9 million."),
+        ("adjusted operating profit", "Acme Corp reported Q2 FY2026 adjusted operating profit of USD 8 million."),
+        ("영업이익", "Acme Corp reported Q2 FY2026 영업이익 (operating profit) of KRW 13 billion."),
+        ("조정 영업이익", "Acme Corp reported Q2 FY2026 조정 영업이익 (adjusted operating profit) of KRW 14 billion."),
+        ("매출 비중", "Acme Corp reported Beta Motors' Q2 FY2026 매출 비중 (share of revenue) of 37%."),
+    ];
+    let source = "Acme Corp reported Q2 FY2026 operating profit USD 11 million, operating income USD 10 million, EBIT USD 9 million, and adjusted operating profit USD 8 million. Acme Corp의 2026 회계연도 2분기 영업이익은 130억 원, 조정 영업이익은 140억 원이며 Beta Motors의 매출 비중은 37%였다.";
+    let mut script = Script {
+        required_edge_text: vec![
+            "Keep a measurement's metric name exactly as written in the Source".into(),
+            "original wording and language".into(),
+            "English rendering beside it".into(),
+            "Never substitute a synonym, different accounting term or acronym".into(),
+            source.into(),
+        ],
+        ..Script::default()
+    };
+    script.reply("ExtractedEntities", entities(&["Acme Corp"]));
+    script.reply(
+        "ExtractedEdges",
+        json!({"edges": observations.iter().map(|(_, fact)| {
+        relation("Acme Corp", "Acme Corp", "REPORTS", fact)
+    }).collect::<Vec<_>>()}),
+    );
+    script.reply("CoreAttributeBatch", json!({"entities": []}));
+    let script = Arc::new(Mutex::new(script));
+    let job = fixture.queue("Bilingual metric labels", source);
+    assert_eq!(
+        drive(&mut fixture, &job, &script, "fixture").status,
+        graph_jobs::JOB_COMPLETED
+    );
+    let body = fixture.body();
+    assert_eq!(body.claims.len(), observations.len());
+    for (label, fact) in observations {
+        let published = body
+            .claims
+            .iter()
+            .find(|claim| claim.proposition == fact)
+            .unwrap();
+        assert!(published.proposition.contains(label));
+        assert_eq!(
+            published.endpoints[0].node_id,
+            published.endpoints[1].node_id
+        );
+        assert_eq!(published.evidence.len(), 1);
+    }
+}
+
+#[test]
+fn subject_measurement_claim_survives_publication_reingestion_and_reopen() {
+    let mut fixture = Fixture::new();
+    let script = Arc::new(Mutex::new(Script::default()));
+    let fact = "Acme Corp reported Q4 FY2026 GAAP net income USD 42,960 million.";
+    for _ in 0..2 {
+        {
+            let mut script = script.lock().unwrap();
+            // A mistaken value node in extraction cannot reach the Map.
+            script.reply("ExtractedEntities", json!({"extracted_entities": [
+                {"name": "Acme Corp", "entity_type_id": 1},
+                {"name": "Acme Corp Q4 FY2026 GAAP net income USD 42,960 million", "entity_type_id": 8}
+            ]}));
+            script.reply(
+                "ExtractedEdges",
+                json!({"edges": [relation("Acme Corp", "Acme Corp", "REPORTS", fact)]}),
+            );
+            script.reply("CoreAttributeBatch", json!({"entities": []}));
+        }
+        let job = fixture.queue("Reported earnings", fact);
+        assert_eq!(
+            drive(&mut fixture, &job, &script, "fixture").status,
+            graph_jobs::JOB_COMPLETED
+        );
+        let body = fixture.body();
+        assert_eq!(body.nodes.len(), 1);
+        assert_eq!(body.claims.len(), 1);
+        assert_eq!(body.claims[0].proposition, fact);
+        assert_eq!(
+            body.claims[0].endpoints[0].node_id,
+            body.claims[0].endpoints[1].node_id
+        );
+        assert_eq!(fixture.index_rows(), (1, 1, 1));
+    }
+    assert_eq!(fixture.body().claims[0].evidence.len(), 2);
+    let revision = fixture.head();
+    let database = fixture._directory.path().join("knowledge.sqlite");
+    drop(fixture.store);
+    let reopened = KnowledgeStore::open(database).unwrap();
+    let result = world_extract::query_world(
+        &reopened,
+        LOUPIST,
+        &fixture.world,
+        &revision,
+        "Acme Corp net income Q4 FY2026",
+        &assets(),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(result.to_string().contains("42,960 million"));
+    let stored: WorldSnapshotBody =
+        serde_json::from_value(reopened.get_revision(LOUPIST, &revision).unwrap().payload).unwrap();
+    assert_eq!(stored.nodes.len(), 1);
+    assert_eq!(stored.claims.len(), 1);
+}
 
 /// The first two Sources: a new World, then a repeated fact and a new partner.
 fn two_sources(fixture: &mut Fixture) -> (GraphJobView, GraphJobView, Arc<Mutex<Script>>) {
@@ -927,6 +1045,30 @@ fn an_exhausted_frozen_budget_does_not_repeat_paid_calls_or_quarantine_other_sou
         drive(&mut fixture, &next, &script, "fixture").status,
         graph_jobs::JOB_COMPLETED
     );
+    // A fresh allowance is available only through the explicit Source action.
+    let source = job
+        .document
+        .source_binding
+        .as_ref()
+        .unwrap()
+        .source_record_id
+        .clone();
+    let retried = fixture
+        .store
+        .transact(|write| {
+            graph_jobs::retry_source_processing(write.tx, &fixture.settings, LOUPIST, &source)
+        })
+        .unwrap();
+    {
+        let mut script = script.lock().unwrap();
+        script.reply("ExtractedEntities", entities(&["Acme Corp", "Beta Motors"]));
+        script.reply("ExtractedEdges", json!({"edges": []}));
+        script.reply("CoreAttributeBatch", json!({"entities": []}));
+    }
+    assert_eq!(
+        drive(&mut fixture, &retried, &script, "fixture").status,
+        graph_jobs::JOB_COMPLETED
+    );
 }
 
 #[test]
@@ -986,4 +1128,43 @@ fn publication_uses_the_completion_time_after_inference() {
         "publication must follow the delayed call"
     );
     assert_eq!(growth_at, revision_at);
+}
+
+#[test]
+fn a_driver_error_settles_the_claim_instead_of_leaving_the_world_running() {
+    let mut fixture = Fixture::new();
+    fixture.settings.max_llm_calls = 2;
+    let job = fixture.queue("Underfunded note", SUPPLY);
+    fixture
+        .store
+        .transact(|write| {
+            write.tx.execute_batch(
+            "CREATE TRIGGER refuse_budget_pause BEFORE UPDATE OF status ON knowledge_graph_outbox
+             WHEN OLD.status = 'running' AND NEW.status = 'paused_budget'
+             BEGIN SELECT RAISE(FAIL, 'test storage failure'); END;",
+        )?;
+            Ok(())
+        })
+        .unwrap();
+    let script = Arc::new(Mutex::new(Script::default()));
+    {
+        let mut script = script.lock().unwrap();
+        script.reply("ExtractedEntities", entities(&["Acme Corp", "Beta Motors"]));
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [
+                relation("Acme Corp", "Beta Motors", "SUPPLIES", SUPPLY)
+            ]}),
+        );
+    }
+    let settled = drive(&mut fixture, &job, &script, "fixture");
+    assert_eq!(settled.status, graph_jobs::JOB_QUEUED);
+    assert!(settled.document.attempt_id.is_none());
+    assert!(settled.document.lease_expires_at_ms.is_none());
+    assert_eq!(settled.document.extraction.max_llm_calls, 0);
+    assert_eq!(settled.document.interrupted_attempts, 1);
+    assert_eq!(
+        fixture.store.graph_job(LOUPIST, &job.job_id).unwrap(),
+        settled
+    );
 }

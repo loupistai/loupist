@@ -9,16 +9,17 @@ const times = (count: number, make: () => KnowledgeMapNode) => Array.from({ leng
 it("lists only the marks in the drawn view, most drawn colour first, then Lens, watchlist, holdings and disagreeing sources", () => {
   const view = render(<MapLegend open nodes={[node("entity", "Product"), node("entity", "Product"), node("entity", "Organization"), node("lens_method")]} onOpenChange={() => {}} />);
   const items = within(screen.getByRole("group")).getAllByRole("listitem").map((item) => item.textContent);
-  expect(items).toEqual(["Product", "Company"]);
+  // A plain line is always explained.
+  expect(items).toEqual(["Product", "Company", "Line: a stated relationship"]);
   // The legend names only the rings that are drawn: the dashed watchlist ring, the solid holdings ring, or both.
   view.rerender(<MapLegend open nodes={[node("entity", "Organization", { watched: true })]} onOpenChange={() => {}} />);
-  expect(screen.getByText("On your watchlist")).toBeVisible();
+  expect(screen.getByText("You follow")).toBeVisible();
   expect(screen.queryByText("In your holdings")).toBeNull();
   expect(screen.queryByText(/Lens:/)).toBeNull();
   expect(screen.queryByText("Sources disagree")).toBeNull();
   // The conflict line and dot on the canvas are explained only when a drawn relationship carries them.
   view.rerender(<MapLegend open conflicts nodes={[node("entity", "Organization", { watched: true }), node("entity", "Organization", { held: true })]} onOpenChange={() => {}} />);
-  expect(screen.getByText("Dashed ring: watchlist · solid ring: holdings")).toBeVisible();
+  expect(screen.getByText("Dashed ring: you follow · Solid ring: you hold")).toBeVisible();
   expect(screen.getByText("Sources disagree").closest("li")?.querySelector(".is-conflict-line")).not.toBeNull();
   // Highlighted names are explained while a Lens is applied, without a Lens-shape row.
   view.rerender(<MapLegend open lensLines nodes={[node("entity", "Organization"), node("lens_method")]} onOpenChange={() => {}} />);
@@ -27,7 +28,7 @@ it("lists only the marks in the drawn view, most drawn colour first, then Lens, 
   expect(screen.queryByText(/Solid line/)).toBeNull();
 });
 
-it("never shows more than six rows and explains drawn colours before folding marks into More", () => {
+it("never shows more than eight rows, keeps Other last and explains lines and drawn colours before folding marks into More", () => {
   const nodes = [
     ...times(5, () => node("entity", "Place")),
     ...times(2, () => node("entity", "Organization")), node("entity", "Organization", { watched: true }),
@@ -37,11 +38,11 @@ it("never shows more than six rows and explains drawn colours before folding mar
   const { rows, more } = legendRows(nodes);
   expect(rows.length + (more.length ? 1 : 0)).toBeLessThanOrEqual(LEGEND_MAX_ROWS);
   // The drawn kinds come first, most drawn first; the least drawn colours and the other marks fold away.
-  expect(rows.map((row) => row.id)).toEqual(["other", "company", "product", "person", "event"]);
-  expect(more.map((row) => row.id)).toEqual(["market", "journal", "personal"]);
+  expect(rows.map((row) => row.id)).toEqual(["company", "product", "person", "event", "market", "journal", "line"]);
+  expect(more.map((row) => row.id)).toEqual(["other", "personal"]);
   // Disagreeing sources are explained whenever they are drawn, even when the card is full.
   const disputed = legendRows(nodes, true, true);
-  expect(disputed.rows.map((row) => row.id)).toEqual(["other", "company", "product", "person", "conflict"]);
+  expect(disputed.rows.map((row) => row.id)).toEqual(["company", "product", "person", "event", "market", "line", "conflict"]);
   expect(disputed.rows.length + 1).toBeLessThanOrEqual(LEGEND_MAX_ROWS);
   render(<MapLegend open nodes={nodes} onOpenChange={() => {}} />);
   expect(screen.getByText("More…")).toBeInTheDocument();
@@ -50,6 +51,6 @@ it("never shows more than six rows and explains drawn colours before folding mar
 
 it("keeps a small view whole", () => {
   const { rows, more } = legendRows([node("entity", "Organization"), node("entity", "Person"), node("lens_perspective")]);
-  expect(rows.map((row) => row.id)).toEqual(["company", "person"]);
+  expect(rows.map((row) => row.id)).toEqual(["company", "person", "line"]);
   expect(more).toEqual([]);
 });

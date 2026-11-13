@@ -71,7 +71,7 @@ fn e2e_provider_failures_emit_only_fixed_categories_and_details() {
     for (message, category, detail) in [
         (
             "No API key for provider: private-token-never-emit",
-            "missing_auth",
+            "auth_rejected",
             "unclassified",
         ),
         (
@@ -115,6 +115,20 @@ fn e2e_provider_failures_emit_only_fixed_categories_and_details() {
             "{message}"
         );
         assert!(!diagnostic.to_string().contains(private_marker));
+    }
+    for ordinary in [
+        "Read the credential setup instructions",
+        "Cannot find module /local/runtime.mjs",
+        "Cannot read properties of undefined",
+        "The model comparison is complete",
+        "retry-after: 20",
+        "HTTP 200 OK",
+    ] {
+        assert_eq!(
+            e2e_provider_failure_category(ordinary),
+            "unknown",
+            "{ordinary}"
+        );
     }
     let oversized = format!("{}invalid token", "x".repeat(8192));
     assert_eq!(e2e_provider_failure_category(&oversized), "unknown");
@@ -325,7 +339,14 @@ fn launch_is_offline_and_exposes_only_explicit_extension_tools() {
         .iter()
         .position(|arg| arg == "--system-prompt")
         .expect("system prompt flag");
-    assert_eq!(args[system_prompt_index + 1], LOUPIST_SYSTEM_PROMPT);
+    assert_eq!(
+        args[system_prompt_index + 1],
+        LOUPIST_SYSTEM_PROMPT
+            .replace("<!-- safety:locked -->", "")
+            .replace("<!-- /safety:locked -->", "")
+    );
+    assert!(!args[system_prompt_index + 1].contains("safety:locked"));
+    assert!(args[system_prompt_index + 1].contains("The current user defines the task."));
     assert_ne!(args[system_prompt_index + 1], "SYSTEM.md");
     let thinking_index = args
         .iter()
@@ -354,16 +375,23 @@ fn support_launch_starts_on_the_manifest_bootstrap_with_only_a_placeholder_key()
         result_file: "result.json".into(),
         request_file: None,
         provider_credential: None,
-        mutation_api_key: None,
+        mutation_api_key: Some("mutation-key-private-fixture".into()),
     };
     let args = config.rpc_arguments();
     let value = |flag: &str| args[args.iter().position(|arg| arg == flag).unwrap() + 1].clone();
     // `agent/provider-manifest.test.mjs` checks this model in the pinned Pi catalog.
     assert_eq!(
         (value("--provider"), value("--model")),
-        ("google".to_owned(), "gemini-2.5-flash".to_owned())
+        ("google".to_owned(), "gemini-3.5-flash-lite".to_owned())
     );
     let env = config.environment();
+    assert!(!env
+        .values()
+        .any(|value| value.contains("mutation-key-private-fixture")));
+    assert!(!env.contains_key("LOUPIST_PROVIDER_API_KEY"));
+    assert!(!args
+        .iter()
+        .any(|arg| arg.contains("mutation-key-private-fixture")));
     assert_eq!(
         env.get("GEMINI_API_KEY").map(String::as_str),
         Some(SUPPORT_BOOTSTRAP_KEY)

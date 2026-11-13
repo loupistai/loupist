@@ -36,6 +36,9 @@ with the cited evidence of the message that published it, so its
 branch change. The lazily created `chat_artifact_revisions` table keeps bounded
 snapshots in the same database, without changing its schema version; deletion of
 an artifact cascades to its history. Publication, restore and pruning are atomic.
+A delivered `chart_publish` or `grid_publish` call also streams its staged content
+(`artifact_staged`) so the card fills at once; that event writes nothing, and only the
+reply's commit stores the artifact and sends its `artifact` reference.
 [Artifact history](../analysis/charts.md#visualizations) describes retention and revision reads. [Item surfaces](../analysis/surfaces.md#where-each-item-appears) owns that UI mapping.
 
 ### Local workspace execution
@@ -46,7 +49,12 @@ folder. Rust refuses file calls outside admitted roots: the folder, this run's
 scratch and this Chat's attachments. `run_python` is the code execution tool.
 It stays allowed after third-party text and in unattended runs, without a card
 ([Native tool permissions](permissions.md)).
-File changes are immediate and survive a failed or cancelled reply. Python may
+Workspace reads and folder selection report a bounded, actionable error rather
+than raw filesystem diagnostics. File changes are immediate and survive a failed
+or cancelled reply. Local-tool activity
+records are published immediately; their latest file snapshots are synced together
+at the turn boundary, including cancellation and recorder drop. Approval and
+question waits remove their registry entries when their response future is dropped. Python may
 write only host-granted workspace subfolders, `outputs/` and this run's scratch.
 
 `workspace-tools` holds pinned, digest-verified `rg` for offline content search
@@ -85,8 +93,8 @@ Rust independently gates Memory reads and writes. Search, Skill selection and
 renderer inspection do not grant exact-read or write authority. Broker delivery
 uses acknowledgment and a commit barrier; an indeterminate barrier aborts the turn.
 One successful host transaction publishes the completed Chat and authorized Memory
-changes, graph jobs and artifacts. A Bot reply's [Bot memory](../ui/home-thread.md#bot-memory)
-changes and review queue ride in the same Chat compare-and-swap. It also records acknowledged Lens delivery receipts
+changes, graph jobs and artifacts. In Bot, changes to [Bot memory](../ui/home-thread.md#bot-memory)
+(tool `bot_memory`) and its review queue ride in the same Chat compare-and-swap. It also records acknowledged Lens delivery receipts
 and usage, including principles actually attached to bounded context when the turn
 saves no new Memory. The host records each receipt's kind and revision; model text
 cannot set it. A conflicting Lens update becomes a proposal. Failed or cancelled
@@ -124,7 +132,9 @@ Message validation allows them only on answers and checks their bounds.
 A settled turn with acknowledged Memory writes but no answer text can receive a
 host-composed receipt summary. Unfinished tools, provider/process failures and
 storage errors do not qualify. Host diagnostics are bounded/redacted and exclude
-raw credential-bearing payloads.
+raw credential-bearing payloads. A failed commit keeps a content-free
+[phase and reason category](../dev/diagnostics.md#diagnostics) in the local run log
+and eval trace; the host never copies the raw storage error into that category.
 
 Pi's `agent_settled` remains the completion barrier; a visible final text chunk
 alone cannot commit Chat or Memory, bypass Stop, or discard acknowledged steering.

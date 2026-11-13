@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 // Citation links open a delayed HoverCard; skipping hover keeps its timer from firing after teardown.
-import type { ChatMessage, ChatPerformance, KnowledgeReference, MemoryRef } from "../../types";
+import type { ChatArtifactView, ChatMessage, ChatPerformance, KnowledgeReference, MemoryRef } from "../../types";
 import { evidenceFixture } from "../../test/evidenceFixtures";
 import { TooltipProvider } from "../ui/tooltip";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -77,16 +77,17 @@ it.each([false, true])("keeps one stable research summary from first call to set
   const message = (status: "streaming" | "complete", items: NonNullable<ChatMessage["progress"]>["items"]) =>
     answer({ content: status === "complete" ? "Done." : "", status, phase: "tool", progress: { startedAtMs: 1, plan, items, finishedAtMs: null } });
   const { view, ...props } = renderAnswer(message("streaming", [first]));
-  // One row: the running step while it runs, the plan's stage once the run settles.
-  const digest = screen.getByRole("button", { name: /^Reading file/ });
+  // One ledger line: the plan position while it runs, the receipt once the run settles; the live line names the step.
+  const digest = screen.getByRole("button", { name: "Plan 1 of 1 · Compare quarters" });
   expect(digest).toHaveAttribute("aria-expanded", "false");
-  expect(screen.queryByText("q1.csv")).toBeNull();
+  expect(screen.getByLabelText("Response status")).toHaveTextContent("Reading file");
+  expect(within(digest.closest<HTMLElement>("section")!).queryByText("q1.csv")).toBeNull();
   if (expanded) await user().click(digest);
   const both = [{ ...first, status: "succeeded" as const }, second];
   view.rerender(<TooltipProvider><ChatMessageCard {...props} message={message("streaming", both)} /></TooltipProvider>);
-  expect(screen.getByRole("button", { name: /^Reading file/ })).toBe(digest);
+  expect(screen.getByRole("button", { name: "Plan 1 of 1 · Compare quarters" })).toBe(digest);
   view.rerender(<TooltipProvider><ChatMessageCard {...props} message={message("complete", both.map(item => ({ ...item, status: "succeeded" })))} /></TooltipProvider>);
-  expect(screen.getByRole("button", { name: /Compare quarters/ })).toBe(digest);
+  expect(screen.getByRole("button", { name: /2 steps/ })).toBe(digest);
   expect(digest).toHaveAttribute("aria-expanded", String(expanded));
   if (!expanded) {
     expect(screen.queryByText("q2.csv")).toBeNull();
@@ -113,7 +114,7 @@ it("foregrounds the source of a settled multi-stage answer and opens it without 
   } }), { bridge });
   const digest = within(screen.getByLabelText("Work progress"));
   const toggle = digest.getByRole("button");
-  expect(toggle).toHaveAccessibleName(/1 source.*investor.apple.com/i);
+  expect(toggle).toHaveAccessibleName("Worked 1s · 2 steps · 1 source");
   expect(screen.getByText("Operating cash flow increased.")).toBeVisible();
   expect(digest.queryByText("Reconcile the change")).toBeNull();
   expect(digest.queryByText("private-analysis.sh")).toBeNull();
@@ -133,8 +134,10 @@ it("lists distinct exact Memory reads in progress without changing the saved rec
   ];
   const before = structuredClone(refs);
   const { message, open } = renderAnswer(answer({ memory_refs: refs }));
-  await user().click(within(screen.getByLabelText("Work progress")).getByRole("button"));
-  await user().click(screen.getByText("Consulted 2 saved notes"));
+  // Notes read with no step of their own: the ledger's line says so, and its timeline lists them.
+  const toggle = within(screen.getByLabelText("Work progress")).getByRole("button", { name: "Consulted 2 saved notes" });
+  await user().click(toggle);
+  await user().click(screen.getAllByText("Consulted 2 saved notes").find((element) => !toggle.contains(element))!);
   const used = screen.getByLabelText("Used in this answer");
   expect(within(used).getAllByRole("listitem")).toHaveLength(2);
   expect(within(used).queryByText("Search hit")).toBeNull();
@@ -320,9 +323,26 @@ it("cites external grounding once, opens it, and routes saved reads to Memory", 
   expect(opened(props.open, "evidence")).toEqual([expect.objectContaining({ evidence: expect.objectContaining({ id: connection.id }) })]);
   await user().click(screen.getByRole("button", { name: "world read · Memory: Annual report" }));
   expect(destinations(props.open).at(-1)).toEqual({ kind: "memory", location: expect.objectContaining({ surface: "source", recordId: "source-record" }), title: "Annual report" });
-  await user().click(screen.getByRole("button", { name: "Result: World search" }));
+  await user().click(screen.getByRole("button", { name: "world search · Result: Map search" }));
   expect(opened(props.open, "evidence")).toHaveLength(1);
   expect(within(screen.getByLabelText("Work progress")).getByLabelText("Tool result")).toHaveTextContent(search.excerpt);
+});
+
+it("keeps a numbered citation on the line of the word before it, but leaves code as written", async () => {
+  const filing = evidenceFixture({ id: `ev_${"6".repeat(32)}`, title: "Annual filing" });
+  const cite = `[1](#evidence-${filing.id})`;
+  renderAnswer(answer({
+    content: `Margins rose ${cite}.\n\nRun \`total   ${cite}\` here.\n\n\`\`\`text\nrow  ${cite}\n\`\`\`\n\n    indented   ${cite}\n`,
+    evidence_refs: [filing],
+  }));
+  const paragraph = (await screen.findByText(/^Margins rose/u)).closest("p")!;
+  expect(paragraph.textContent).toMatch(/^Margins rose /u);
+  const code = [...document.querySelectorAll(".message-content code")].map((node) => node.textContent);
+  expect(code).toEqual(expect.arrayContaining([`total   ${cite}`]));
+  const blocks = [...document.querySelectorAll(".message-content pre")].map((node) => node.textContent ?? "");
+  expect(blocks.some((text) => text.includes(`row  ${cite}`))).toBe(true);
+  expect(blocks.some((text) => text.includes(`indented   ${cite}`))).toBe(true);
+  expect(document.querySelector(".message-content")!.textContent).not.toMatch(/ \[1\]/u);
 });
 
 it("opens a quote basket from the source list and the citation without the raw reader", async () => {
@@ -454,7 +474,7 @@ it("says what a stopped reply kept: finished steps and the text so far", () => {
   expect(screen.getByText("Stopped before the answer finished.")).toBeVisible();
 });
 
-it("keeps a waiting approval actionable while folded and leaves its settled receipt with the step", async () => {
+it("places a waiting approval in the turn after the step that asked, and keeps its settled line there", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const approval = (state: "waiting" | "allowed_once") => ({
     requestId: "req-1", itemId: "step-filings", connectionId: "custom-morrow", connectionName: "Morrow research tools",
@@ -467,19 +487,22 @@ it("keeps a waiting approval actionable while folded and leaves its settled rece
   const running = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, items: items("running"), approvals: [approval("waiting")], finishedAtMs: null } });
   const { view } = renderAnswer(running, { bridge });
   const card = screen.getByRole("region", { name: "Approval for Read company filings" });
-  expect(card.closest(".chat-progress")).toHaveAttribute("data-expanded", "false");
+  // The card is a block of the turn, not inside the folded ledger; amber waits in the live line.
+  expect(card.closest(".chat-progress")).toBeNull();
+  const ledger = screen.getByLabelText("Work progress");
+  expect(ledger.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByLabelText("Response status")).toHaveTextContent("Waiting for you");
   expect(screen.getAllByRole("button", { name: "Allow once" })).toHaveLength(1);
 
-  // Decisions that need no further input move into the retained activity.
+  // A decision settles into one line at the same place.
   const done = answer({ progress: { startedAtMs: 0, finishedAtMs: 5_000, items: items("succeeded"), approvals: [approval("allowed_once")] } });
   view.rerender(<TooltipProvider><ChatMessageCard message={done} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" bridge={bridge} onReadAttachment={vi.fn()} /></TooltipProvider>);
-  expect(screen.queryByText("Allowed once · Read company filings")).toBeNull();
-  await user().click(within(screen.getByLabelText("Work progress")).getByRole("button"));
+  const line = screen.getByText("Allowed once · Read company filings");
   expect(screen.getAllByText("Allowed once · Read company filings")).toHaveLength(1);
-  expect(screen.getByText("Allowed once · Read company filings").closest('[data-progress-status="succeeded"]')).not.toBeNull();
+  expect(screen.getByLabelText("Work progress").compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
-it("keeps a waiting question actionable while folded and leaves its settled line with the step", async () => {
+it("places a waiting question where it was asked and settles it into one line at the same place", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const answerQuestion = vi.spyOn(bridge, "chatQuestionAnswer").mockResolvedValue();
   const question = (state: "waiting" | "answered") => ({
@@ -493,15 +516,17 @@ it("keeps a waiting question actionable while folded and leaves its settled line
   const running = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, items: items("running"), questions: [question("waiting")], finishedAtMs: null } });
   const { view } = renderAnswer(running, { bridge });
   const card = screen.getByRole("region", { name: "Question: Compare on which period?" });
-  expect(card.closest(".chat-progress")).toHaveAttribute("data-expanded", "false");
+  expect(card.closest(".chat-progress")).toBeNull();
+  // The question tool is not a step: no ledger for a turn that only asked.
+  expect(screen.queryByLabelText("Work progress")).toBeNull();
   await user().click(within(card).getByRole("button", { name: /^Last 3 years/ }));
   expect(answerQuestion).toHaveBeenCalledWith({ loupist_id: "loupist-a", request_id: "q-1", choice: 1 });
 
   const done = answer({ progress: { startedAtMs: 0, finishedAtMs: 5_000, items: items("succeeded"), questions: [question("answered")] } });
   view.rerender(<TooltipProvider><ChatMessageCard message={done} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" bridge={bridge} onReadAttachment={vi.fn()} /></TooltipProvider>);
-  expect(screen.queryByText("You answered: Last 3 years")).toBeNull();
-  await user().click(within(screen.getByLabelText("Work progress")).getByRole("button"));
+  const line = screen.getByText("You answered: Last 3 years");
   expect(screen.getAllByText("You answered: Last 3 years")).toHaveLength(1);
+  expect(line.compareDocumentPosition(screen.getByText("Answer.")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it("keeps inline references in the question and shows saved tool and date selections below it", () => {
@@ -522,4 +547,124 @@ it("opens a cited document read as saved work instead of expanding the old JSON 
   await user().click(screen.getByRole("button", { name: /Final analysis/ }));
   expect(opened(open, "artifact-link")).toEqual([{ kind: "artifact-link", artifactId }]);
   expect(screen.queryByText("old body")).toBeNull();
+});
+
+describe("the in-progress reply", () => {
+  const chartStep = (status: "running" | "succeeded") => ({ id: "chart-step", kind: "tool" as const, toolName: "chart_publish", category: "artifact" as const, operation: "publish" as const, action: "Made a chart", running: "Making a chart", target: "Margins", status, startedAtMs: 1, finishedAtMs: null, href: null });
+  const draftText = "Margin fell while revenue grew.";
+
+  it("keeps a card published before the answer above it, live and settled", () => {
+    const live = answer({ status: "streaming", phase: "writing", content: "", draft: { id: "c9", answerLength: 0, settled: false }, progress: { startedAtMs: 0, finishedAtMs: null, items: [chartStep("running"), { id: "c9", kind: "commentary", text: draftText }] } });
+    const { view, ...props } = renderAnswer(live);
+    const article = view.container.querySelector("article")!;
+    const order = () => [...article.querySelectorAll(":scope > [data-turn-item]")].map((block) => block.getAttribute("data-turn-item"));
+    expect(order()).toEqual(["tools", "card", "prose"]);
+    expect(screen.getByRole("region", { name: "Chart: Margins" })).toHaveAttribute("aria-busy", "true");
+    view.rerender(<TooltipProvider><ChatMessageCard {...props} message={answer({ content: draftText, answer_key: "c9", artifact_refs: [{ artifact_id: "chart-1", revision: 1, kind: "chart", title: "Margins", digest: "a".repeat(64) }], progress: { startedAtMs: 0, finishedAtMs: 9, items: [chartStep("succeeded")] } })} /></TooltipProvider>);
+    expect(order()).toEqual(["tools", "card", "prose"]);
+  });
+
+  it("holds a sensitivity card's paragraph behind its frame while streaming, and fills that frame at commit", async () => {
+    const { previewSensitivityGrid } = await import("../../preview/korea");
+    const grid = evidenceFixture({ id: "ev_grid01", title: "Reverse DCF grid", kind: "derived", tool_name: "calculate", calc_operation: "reverse_dcf", url: undefined });
+    const content = "The price assumes growth.\n\n[Solsup Foods](#evidence-ev_grid01)\n\nThe middle case needs 7.3%.";
+    const live = answer({ status: "streaming", phase: "writing", content: "", evidence_refs: [grid], draft: { id: "c9", answerLength: 0, settled: false }, progress: { startedAtMs: 0, finishedAtMs: null, items: [{ id: "c9", kind: "commentary", text: content }] } });
+    const { view, ...props } = renderAnswer(live);
+    const article = view.container.querySelector("article")!;
+    const slot = article.querySelector(".sensitivity-slot")!;
+    expect(slot.querySelector(".sensitivity-pending")).not.toBeNull();
+    expect(article).not.toHaveTextContent("Solsup Foods");
+    const before = slot.previousElementSibling;
+    const settled = answer({ content, answer_key: "c9", evidence_refs: [grid], sensitivity_cards: [{ ...previewSensitivityGrid("none"), link_index: 0, evidence_id: "ev_grid01", subject: "Solsup Foods" }] });
+    view.rerender(<TooltipProvider><ChatMessageCard {...props} message={settled} /></TooltipProvider>);
+    await waitFor(() => expect(slot.querySelector(".sensitivity-card")).not.toBeNull());
+    // The same frame, in the same place, after the same paragraph element: nothing read moved or was replaced.
+    expect(article.querySelector(".sensitivity-slot")).toBe(slot);
+    expect(slot).toHaveAttribute("data-held");
+    expect(slot.previousElementSibling).toBe(before);
+    expect(slot.querySelector(".sensitivity-pending")).toBeNull();
+  });
+
+  it("fades a card still preparing out where it stood when the reply stops, then removes it", async () => {
+    vi.useFakeTimers();
+    try {
+      const live = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, finishedAtMs: null, items: [chartStep("running")] } });
+      const { view, ...props } = renderAnswer(live);
+      const article = view.container.querySelector("article")!;
+      const card = () => article.querySelector(':scope > [data-turn-item="card"]');
+      expect(card()).not.toHaveAttribute("data-leaving");
+      const stopped = { ...chartStep("running"), status: "stopped" as const, finishedAtMs: 5 };
+      view.rerender(<TooltipProvider><ChatMessageCard {...props} message={answer({ status: "aborted", content: "", progress: { startedAtMs: 0, finishedAtMs: 5, items: [stopped] } })} /></TooltipProvider>);
+      expect(card()).toHaveAttribute("data-leaving");
+      expect(card()).toHaveAttribute("aria-hidden", "true");
+      expect(screen.queryByRole("region", { name: "Chart: Margins" })).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(130); });
+      expect(card()).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("fades a filled card out in place when the reply stops, holding the turn's height so the page stays still", async () => {
+    vi.useFakeTimers();
+    try {
+      const staged: ChatArtifactView = {
+        artifact: { id: "chart-1", chat_session_id: "chat-a", kind: "chart", title: "Margins", current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+        revision: { artifact_id: "chart-1", revision: 1, digest: "a".repeat(64), source_message_id: "answer", created_at_ms: 0,
+          payload: { kind: "chart", schema: "loupist-chart/1", chart: {} as never } },
+        chart_dataset: null,
+      };
+      const filled = answer({ status: "streaming", content: "", staged_artifacts: [staged], progress: { startedAtMs: 0, finishedAtMs: null, items: [chartStep("succeeded")] } });
+      const turnOf = (message: ChatMessage, props: Omit<ReturnType<typeof renderAnswer>, "view" | "open">) =>
+        <TooltipProvider><section className="turn" data-turn-reserve=""><ChatMessageCard {...props} message={message} /></section></TooltipProvider>;
+      const running = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, finishedAtMs: null, items: [chartStep("running")] } });
+      const { view, ...props } = renderAnswer(running);
+      view.rerender(turnOf(running, props));
+      view.rerender(turnOf(filled, props));
+      const turn = view.container.querySelector<HTMLElement>(".turn")!;
+      vi.spyOn(turn, "getBoundingClientRect").mockReturnValue({ height: 840.2 } as DOMRect);
+      const article = turn.querySelector("article")!;
+      const card = () => article.querySelector(':scope > [data-turn-item="card"]');
+      const shown = card()!.querySelector("section.chat-artifact-block");
+      expect(shown).toHaveAttribute("data-state", "ready");
+      view.rerender(turnOf(answer({ status: "aborted", content: "", staged_artifacts: [staged], progress: { startedAtMs: 0, finishedAtMs: 5, items: [chartStep("succeeded")] } }), props));
+      // The card the reader saw stays drawn, the same element, and fades where it stood.
+      expect(card()).toHaveAttribute("data-leaving");
+      expect(card()).toHaveAttribute("aria-hidden", "true");
+      expect(card()!.querySelector("section.chat-artifact-block")).toBe(shown);
+      expect(turn.style.getPropertyValue("--turn-hold")).toBe("841px");
+      await act(async () => { await vi.advanceTimersByTimeAsync(130); });
+      expect(card()).toBeNull();
+      // Gone, the card leaves its room: the turn keeps the height it had, so nothing below or above moves.
+      expect(turn.style.getPropertyValue("--turn-hold")).toBe("841px");
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("reads Writing until the answer's last words are shown, at most 400 ms after the host finished", async () => {
+    vi.useFakeTimers();
+    try {
+      const long = `Margin fell. ${"More words follow here. ".repeat(20)}`;
+      const streaming = (text: string) => answer({ status: "streaming", phase: "writing", content: "", draft: { id: "c9", answerLength: 0, settled: false }, progress: { startedAtMs: 0, finishedAtMs: null, items: [{ id: "c9", kind: "commentary", text }] } });
+      const { view, ...props } = renderAnswer(streaming("Margin"));
+      view.rerender(<TooltipProvider><ChatMessageCard {...props} message={streaming(long)} /></TooltipProvider>);
+      view.rerender(<TooltipProvider><ChatMessageCard {...props} message={answer({ content: long, answer_key: "c9" })} /></TooltipProvider>);
+      expect(screen.getByLabelText("Response status")).toHaveTextContent("Writing");
+      expect(screen.queryByRole("button", { name: "Copy answer" })).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(450); });
+      expect(screen.queryByLabelText("Response status")).toBeNull();
+      expect(screen.getByRole("button", { name: "Copy answer" })).toBeVisible();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("says a stop in one quiet line with Try again, and keeps a failure's text with a hint", () => {
+    const steps = [{ id: "s", kind: "tool" as const, toolName: "web_search", category: "web" as const, operation: "search" as const, action: "Searched the web", status: "succeeded" as const, startedAtMs: 0, finishedAtMs: 1, target: null, href: null }];
+    renderAnswer(answer({ status: "aborted", content: "", progress: { startedAtMs: 0, finishedAtMs: 12_000, items: steps } }), { onRetry: vi.fn() });
+    const stopped = screen.getByRole("status");
+    expect(stopped).toHaveAttribute("data-kind", "stopped");
+    expect(stopped).toHaveTextContent("Stopped · kept 1 step");
+    expect(within(stopped).getByRole("button", { name: "Try again" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Stopped after 12s · 1 step" })).toBeVisible();
+    cleanup();
+    renderAnswer(answer({ status: "error", failure_kind: "other", content: "Margin fell while", progress: { startedAtMs: 0, finishedAtMs: 12_000, items: steps } }), { onRetry: vi.fn() });
+    expect(screen.getByRole("alert")).toHaveTextContent("The steps and the text so far were kept.");
+    expect(screen.getByText("Margin fell while")).toBeVisible();
+  });
 });

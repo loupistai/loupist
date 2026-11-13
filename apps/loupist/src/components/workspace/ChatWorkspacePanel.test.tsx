@@ -133,7 +133,7 @@ describe("ChatWorkspacePanel Work tab", () => {
     render(<ChatWorkspacePanel {...props} buildingWork={[{ key: "building:step", title: "Margin vs utilization" }]} />);
     const list = await screen.findByRole("list", { name: "Charts and documents" });
     expect(list).toHaveTextContent("Margin vs utilization");
-    expect(list).toHaveTextContent("Building…");
+    expect(list).toHaveTextContent("Preparing");
     expect(screen.getByRole("button", { name: /Supplier map/ })).toHaveTextContent("Chart · Version 2");
     expect(screen.getByRole("button", { name: /Supplier map/ })).toHaveTextContent("Earlier chat");
     await user.click(screen.getByRole("button", { name: /Supplier map/ }));
