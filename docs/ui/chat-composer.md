@@ -60,15 +60,19 @@ next-step chips after the latest answer come from the conflicts and names it
 found and fill the composer without sending. Leaving a view or switching Loupist does not cancel an admitted
 Chat. Private chat is a checkbox in the composer's + menu; while it is on, a "Private · memory off" chip with an off button sits above the composer. Without an AI account, Connect an AI account takes the send slot and the placeholder says so. Private chat is described under
 [Memory permissions](../knowledge/memory.md#memory-permissions-and-retrieval).
-Focusing a control below the fold scrolls it into the conversation. When the reader scrolls away from the bottom, the live status or Jump to latest control
-occupies its own row between the scroll viewport and composer. It shares the
-conversation’s scroll state, so jumping re-pins the reply while the control stays clear
-of answer text and actions. A short conversation that becomes scrollable when the
-window narrows stays pinned to its newest answer. The viewport follows the
-reply in the same commit that grew it, through tool updates and table rows, even
-when the browser temporarily moves the scroll position up. An
-upward scroll, even in single-pixel increments, keeps the reader's position
-once they leave the bottom.
+Focusing a control below the fold scrolls it into the conversation. A sent question
+glides to the top of the thread and the reply writes beneath it; the page moves by
+itself only when a block arrives, never while one grows
+([reading while it streams](chat-answer.md#reading-while-it-streams)). While the end of
+the reply is below the fold, the live status and Jump to latest float over the bottom of
+the thread, 12 px above the composer, without taking a row; Jump to latest follows the
+reply until the reader scrolls up. A settled chat opens at its newest answer and stays
+there while late content (images, tables, the morning message) arrives.
+
+Send and Stop share one 28 px tile at the composer's trailing edge; each icon arrives in
+place with a 120 ms fade and scale. Stop ("Stop response", Esc in its tooltip) dims to
+55% after a press and ignores presses until the host confirms. Focus stays in the
+textarea through send, stop and commit.
 After a reply saves a Source, a running World job, or a queued job whose processing is ready, shows “Reviewing sources…” in the Learned row, including when it is folded. A queued job blocked by a disconnected provider, paused processing or another readiness condition shows the useful status or action, such as “Reconnect your AI account” or “Source review is paused”, without a spinner. If readiness cannot be read, it says “Waiting to review sources”. Polling continues so reconnecting or resuming processing updates the row. In a narrow chat the
 compact context card shows the same status above the transcript, with approval requests alongside it. As
 jobs finish, their additions become available in the row. When all work settles,
@@ -172,4 +176,4 @@ preference/catalog foundation and its coverage are described in
 
 ## Code
 
-- Chat progress / feedback: `src-tauri/src/chat/progress.rs`, `src/chat/progressLabels.ts`, `src/chat/chartBlocks.ts`, `src/chat/turnView.ts`, `src/components/chat/ActivityRow.tsx`, `src/components/chat/TurnFooter.tsx`, `src/components/chat/AnswerFeedback.tsx`, `src-tauri/src/commands/records.rs`
+- Chat progress / feedback: `src-tauri/src/chat/progress.rs`, `src/chat/progressLabels.ts`, `src/chat/chartBlocks.ts`, `src/chat/turnView.ts`, `src/components/chat/TurnLedger.tsx`, `src/components/chat/TurnFooter.tsx`, `src/components/chat/AnswerFeedback.tsx`, `src-tauri/src/commands/records.rs`

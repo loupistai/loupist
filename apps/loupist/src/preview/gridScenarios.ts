@@ -199,6 +199,12 @@ const view = (id: string, title: string, grid: GridDocument, evidence: ChatEvide
   chart_dataset: null,
 });
 
+/** The three-company margins table as a live reply publishes it: its artifact view and the evidence its steps read. */
+export function liveGridArtifact(): { id: string; title: string; view: ChatArtifactView; evidence: ChatEvidenceRef[] } {
+  const { title, grid, evidence } = gridFixture("card");
+  return { id: GRID_ID, title, view: view(GRID_ID, title, grid, evidence), evidence };
+}
+
 function answer(id: string, title: string, content: string, asOf?: string): ChatMessage {
   const at = Date.parse(RETRIEVED);
   return {

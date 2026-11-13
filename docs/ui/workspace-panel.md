@@ -12,7 +12,7 @@ ownership checks. A stored file that is too large, malformed, of an older shape 
 fails validation reads as absent, so the next save replaces it; I/O failures still
 surface as errors and never overwrite a good layout. The panel has one Work tab that
 lists the Loupist's charts, tables and documents across its chats (Rust `loupist_artifact_list`,
-newest first, with chat titles), with "Building…" rows for charts still streaming;
+newest first, with chat titles), with "Preparing" rows for charts still streaming;
 an item opens inside the tab under a status row with its title, a "Version n ▾" menu of the revisions Rust keeps (`artifact_versions`, newest first with dates) and the shown revision's date, and reads from its own chat. Choosing an earlier version reads it by `revision_id` read-only; "Restore this version" asks once, then `artifact_restore` appends it as the newest revision and the panel follows it, while answers keep the revisions they showed. Charts dock at the bottom
 and reading content at the side by default; using Dock records the choice per kind
 (`dock_by_kind`), and the dock changes only when a different kind comes on screen. "Always dock here" in the panel menu stores the current placement for every kind (checked while every kind docks there); turning it off clears the choices back to the defaults. A closed panel stays closed when background work finishes; document arrivals are retained in Work, while charts and tables render inline. Closing it marks that chat `dismissed` in the Rust-validated workspace UI state until the user opens it again. Content that arrives while

@@ -69,6 +69,10 @@
 .message-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 0; background: var(--gg-color-bg-app); scroll-padding-top: var(--gg-space-4); scroll-padding-bottom: var(--gg-space-2); }
 .conversation-content { width: min(100%, calc(var(--gg-size-chat-column) + 2 * var(--chat-gutter, var(--gg-space-5)))); min-height: 100%; margin-inline: auto; gap: var(--gg-space-7); padding: var(--gg-size-control-sm) var(--chat-gutter, var(--gg-space-5)) var(--gg-size-control-lg); }
 .message-scroll article { min-width: 0; max-width: 100%; }
+/* A turn is a question and everything up to the next one. The one being read keeps a viewport of room below its question,
+   so the question can sit at the top while a short reply writes beneath it. */
+.turn { display: flex; flex-direction: column; gap: var(--gg-space-7); min-width: 0; }
+.turn[data-turn-reserve] { min-height: calc(var(--turn-viewport, 100vh) - var(--gg-space-4) + var(--turn-lead, 0px)); }
 .message { margin: 0; }
 .message.user { width: fit-content; max-width: min(82%, 660px); margin-left: auto; padding: 0; }
 .message.user .message-meta { display: none; }
@@ -81,16 +85,12 @@
 .message.assistant .message-content { width: 100%; max-width: 100%; min-width: 0; white-space: normal; font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); }
 /* Reading measure: prose stops near 72 characters while tables, code and charts keep the full column. */
 .message.assistant .message-content :is(p, ul, ol, blockquote, [data-streamdown^="heading-"]) { max-width: var(--gg-size-prose-measure); }
-/* A turn reads down the column: narration, one activity row per run of steps, then the answer. */
-.message.assistant > .is-assistant + .chat-progress,
-.message.assistant > .is-assistant + .is-assistant,
-.message.assistant > .chat-progress + .is-assistant { margin-top: var(--gg-space-3); }
-/* Narration is the answer's own text, one step back. */
+/* A turn reads down the column in the order it happened: notes, one ledger, cards, questions, then the answer. */
+.message.assistant > [data-turn-item] + [data-turn-item] { margin-top: var(--gg-space-3); }
+.turn-block > :is(.chat-artifact-block, .grid-card) { margin-top: 0; }
+/* A note is the answer's own text, one step back; it eases there in place when a tool call follows. */
+.message.assistant .message-content { transition: color var(--gg-motion-settle) var(--gg-ease-out); }
 .message-content.message-narration { color: var(--gg-color-text-secondary); }
-.chat-progress-toggle[data-research-summary] { flex-wrap: nowrap; }
-.chat-progress-toggle[data-research-summary] .chat-progress-heading { white-space: normal; overflow-wrap: anywhere; }
-.chat-progress-toggle[data-research-summary] .chat-progress-chevron { width: var(--gg-space-3); height: var(--gg-space-3); flex-basis: var(--gg-space-3); }
-.chat-work-count { font-variant-numeric: tabular-nums; color: var(--gg-color-text-tertiary); }
 .chat-work-sources { display: grid; gap: var(--gg-space-1); list-style: none; margin: 0; padding: 0; }
 .chat-work-sources button { text-align: start; font: inherit; color: var(--gg-color-accent); overflow-wrap: anywhere; }
 /* The empty Chat's landing: the Loupist's morning message, written like an answer. No cards, no section labels. */
@@ -478,7 +478,7 @@ svg foreignObject .katex:has(> math) {
 
 .chat-progress {
   width: 100%;
-  margin: 0 0 var(--gg-space-3);
+  margin: 0;
   border: 0;
   background: transparent;
   color: var(--gg-color-text-secondary);
@@ -493,7 +493,8 @@ svg foreignObject .katex:has(> math) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 6px 2px 2px;
+  margin-left: -2px;
+  padding: 2px var(--gg-space-2) 2px 2px;
   border: 0;
   border-radius: var(--gg-radius-xs);
   color: var(--gg-color-text-secondary);
@@ -510,60 +511,12 @@ svg foreignObject .katex:has(> math) {
   background: var(--gg-color-bg-hover);
 }
 
-.chat-progress-toggle > svg:first-child {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 15px;
-}
-
 .chat-progress-heading {
   min-width: 0;
   overflow: hidden;
-  color: var(--gg-color-text-secondary);
+  color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.chat-progress[data-tone="problem"] .chat-work-issues {
-  color: var(--gg-color-negative);
-}
-
-/* The live row header is the list icon in primary ink; amber stays on the turn status and the status pill. */
-.chat-progress-toggle > svg[data-live] { color: var(--gg-color-text-primary); }
-
-.chat-progress-chevron {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 14px;
-  color: var(--gg-color-text-secondary);
-  transform: rotate(-90deg);
-  transition: transform var(--gg-motion-fast) var(--gg-ease-out);
-}
-
-.chat-progress-chevron.open {
-  transform: rotate(0deg);
-}
-
-.chat-progress-live,
-.chat-status-pill-dot {
-  width: var(--gg-space-2);
-  height: var(--gg-space-2);
-  flex: 0 0 var(--gg-space-2);
-  border-radius: var(--gg-radius-full);
-  background: var(--gg-color-accent);
-}
-
-/* Actual reasoning and the stalled-run heartbeat have motion; elapsed time alone is not reasoning. */
-@media (prefers-reduced-motion: no-preference) {
-  .chat-progress-live[data-heartbeat],
-  .chat-status-pill-dot[data-heartbeat] {
-    animation: chat-run-heartbeat var(--gg-motion-heartbeat) var(--gg-ease-in-out) infinite;
-  }
-}
-
-@keyframes chat-run-heartbeat {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
 }
 
 .chat-progress-items {
@@ -1065,6 +1018,14 @@ button.chat-progress-names:hover { text-decoration: underline; }
   background: var(--gg-color-action);
 }
 
+/* Send and Stop share one tile at the trailing edge: each arrives in place with a short fade and scale. */
+.composer-submit > svg, .composer-stop-action > svg { animation: composer-tile-in var(--gg-motion-fast) var(--gg-ease-out) both; }
+@keyframes composer-tile-in { from { opacity: 0; transform: scale(0.8); } }
+.composer-run-actions > :not(.composer-stop-action) { animation: turn-fade-in var(--gg-motion-fast) var(--gg-ease-out) both; }
+/* After a press the tile dims and ignores presses until the host confirms the stop. */
+.composer-stop-action { transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
+.composer-stopping .composer-stop-action { opacity: 0.55; pointer-events: none; }
+
 /* Once Send next is the primary control, Stop stays a square outline beside it. */
 .composer-run-actions:has(.composer-queue-action) .composer-stop-action {
   color: var(--gg-color-text-primary);
@@ -1511,9 +1472,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 
 .workspace-chat-title { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 0; width: min(100%, calc(var(--gg-size-chat-column) + 2 * var(--chat-gutter, var(--gg-space-5)))); padding-inline: var(--chat-gutter, var(--gg-space-5)); box-sizing: border-box; }
 
-.chat-progress-row.failed .chat-progress-status { color: var(--gg-color-negative); }
-/* A step paused by a security rule is not a failure: its glyph stays quiet (B92). */
-.chat-progress-row.failed .chat-progress-status[data-paused] { color: var(--gg-color-text-secondary); }
 .chat-progress-inspect { display: inline-flex; align-items: center; gap: 6px; text-align: left; text-decoration: none; }
 .chat-progress-inspect:hover { text-decoration: underline; }
 .chat-progress-inspect svg { width: var(--gg-space-3); height: var(--gg-space-3); flex: none; }
@@ -1540,14 +1498,19 @@ button.chat-progress-names:hover { text-decoration: underline; }
   .chat-progress-heading { flex: 1; }
   .chat-execution-detail { padding: 10px; }
 }
+/* The in-progress reply's motion (DIRECTION 9.2): opacity and transform only, as keyframes on mount. */
+@keyframes turn-fade-in { from { opacity: 0; } }
+@keyframes turn-fade-out { to { opacity: 0; } }
+@keyframes turn-rise-in { from { opacity: 0; transform: translateY(var(--gg-shift-enter)); } }
+@keyframes turn-tick-in { from { opacity: 0; transform: translateY(var(--gg-shift-tick)); } }
+@keyframes turn-tick-out { to { opacity: 0; transform: translateY(calc(-1 * var(--gg-shift-tick))); } }
+@keyframes turn-sheen { 0% { background-position: 100% 0; } 58%, 100% { background-position: 0% 0; } }
+/* Reduced motion: every entrance appears, the replaced line swaps, and the label stands still in the primary colour. */
 @media (prefers-reduced-motion: reduce) {
-  .chat-progress-chevron { transition: none; }
-  .chat-status-pill { animation: none; }
-  .chat-status-pill-dot,
-  .chat-progress-live {
-    animation: none;
-    opacity: 1;
-  }
+  .turn-ledger-chevron { transition: none; }
+  .turn-live[data-sheen] .turn-live-label { animation: none; background: none; color: var(--gg-color-text-primary); }
+  .turn-tick-out { display: none; }
+  :is(.turn-live, .turn-ledger-chips)[data-leaving] { display: none; }
 }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @container chat-reading (max-width: 760px) {
@@ -1559,22 +1522,101 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gg-space-2); margin-top: 10px; font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
 div.message-action-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); margin-top: 10px; }
 div.message-action-bar > .message-actions { margin-top: 0; }
-/* The slot where a turn completes reserves one control height; the status line and the action row sit centered in it. */
-.turn-footer { display: grid; align-items: center; min-height: var(--gg-size-control-sm); margin-top: var(--gg-space-2); }
+/* The slot where a turn completes keeps one control's height from the first frame: the live line, then the action row in the same place. */
+.turn-footer { display: grid; align-items: center; min-height: var(--gg-size-control-sm); margin-top: var(--gg-space-3); }
+.turn-footer > :is(.turn-live, div.message-action-bar) { grid-area: 1 / 1; min-width: 0; }
+.turn-footer > .chat-guiding { grid-area: 2 / 1; }
 .turn-footer > div.message-action-bar { margin-top: 0; }
-.turn-status { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
-.turn-status-clock::before { content: "·"; margin-inline-end: var(--gg-space-2); }
-@media (prefers-reduced-motion: no-preference) {
-  .turn-status-label {
-    background: linear-gradient(90deg, var(--gg-color-text-secondary) 0 35%, var(--gg-color-text-primary) 50%, var(--gg-color-text-secondary) 65% 100%);
-    background-size: 200% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: turn-status-shimmer var(--gg-motion-shimmer) linear infinite;
-  }
+.turn-footer[data-state="settled"] > .turn-live { pointer-events: none; animation: turn-fade-out var(--gg-motion-fast) var(--gg-ease-in) both; }
+/* At commit the actions arrive one after another, after the live line has left. */
+.message-action-bar[data-arriving] > * { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; animation-delay: calc(var(--gg-motion-instant) + var(--gg-motion-stagger) * var(--turn-stagger, 0)); }
+.message-action-bar[data-arriving] > :nth-child(2) { --turn-stagger: 1; }
+.message-action-bar[data-arriving] > :nth-child(3) { --turn-stagger: 2; }
+.message-action-bar[data-arriving] > :nth-child(4) { --turn-stagger: 3; }
+.message-action-bar[data-arriving] > :nth-child(n + 5) { --turn-stagger: 4; }
+
+/* The live line: the turn's one present-tense status, always its last line. Left-packed, one line, never wraps. */
+.turn-live { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 0; margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); white-space: nowrap; }
+.turn-live-glyph { flex: none; display: grid; place-items: center; width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); }
+.turn-live-glyph > svg { width: 14px; height: 14px; }
+.turn-live-dot { display: inline-block; flex: none; width: var(--gg-space-2); height: var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
+.turn-live-text { min-width: 0; }
+.turn-live-text > * { display: flex; align-items: baseline; gap: var(--gg-space-2); min-width: 0; }
+.turn-live-label { flex: none; font-weight: var(--gg-weight-medium); color: var(--gg-color-text-secondary); }
+.turn-live-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--gg-color-text-tertiary); }
+.turn-live[data-tone="you"] .turn-live-label { color: var(--gg-color-accent-ink); }
+.turn-live-more { flex: none; height: 18px; padding: 0 6px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-full); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: 16px; font-variant-numeric: tabular-nums; }
+.turn-live-clock { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; }
+.turn-live-clock::before { content: "·"; margin-inline-end: var(--gg-space-2); }
+/* The one loop in a turn: a sheen passes over the label, then rests (1.4 s sweep, 1 s rest). Its lowest point is the resting colour. */
+.turn-live[data-sheen] .turn-live-label {
+  background: linear-gradient(100deg, var(--gg-color-text-secondary) 0 38%, var(--gg-color-text-primary) 50%, var(--gg-color-text-secondary) 62% 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: turn-sheen var(--gg-motion-sheen) linear infinite;
 }
-@keyframes turn-status-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+/* The optimistic shell fades in under the question, a moment after it. */
+.message.assistant[data-entering] { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) var(--gg-motion-fast) both; }
+.message.user[data-entering] { animation: turn-rise-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+
+/* A line of text replaced in place: the old one leaves upward as the new one rises in. */
+.turn-tick { display: inline-grid; min-width: 0; }
+.turn-tick > * { grid-area: 1 / 1; min-width: 0; }
+.turn-tick-in[data-replaced] { animation: turn-tick-in var(--gg-motion-normal) var(--gg-ease-out) 60ms both; }
+.turn-tick-out { pointer-events: none; animation: turn-tick-out var(--gg-motion-fast) var(--gg-ease-in) both; }
+
+/* The ledger: one line per turn. What was gathered while it ran; a receipt once it settles; the disclosure for every step. */
+.turn-ledger-toggle { color: var(--gg-color-text-secondary); }
+.turn-ledger-chevron { flex: none; width: var(--gg-space-3); height: var(--gg-space-3); transition: transform var(--gg-motion-fast) var(--gg-ease-out); }
+.turn-ledger-toggle[aria-expanded="true"] .turn-ledger-chevron { transform: rotate(90deg); }
+.turn-ledger-text { flex: 0 1 auto; font-variant-numeric: tabular-nums; }
+/* A failed attempt that was retried is a fact, not an alarm: never red. */
+.turn-ledger-failed { color: var(--gg-color-text-secondary); }
+.turn-ledger-chips { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-width: 0; overflow: hidden; }
+.turn-ledger-chips[data-leaving] { animation: turn-fade-out var(--gg-motion-fast) var(--gg-ease-in) both; }
+.turn-ledger-chip { flex: none; display: inline-flex; align-items: center; gap: var(--gg-space-1); height: 20px; max-width: 150px; padding: 0 6px 0 var(--gg-space-1); border-radius: var(--gg-radius-xs); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: 20px; }
+.turn-ledger-toggle:hover .turn-ledger-chip { background: var(--gg-color-bg-selected); }
+.turn-ledger-chip > svg, .turn-ledger-chip .source-favicon { flex: none; width: 12px; height: 12px; color: var(--gg-color-text-tertiary); }
+.turn-ledger-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.turn-ledger-chip-count { color: var(--gg-color-text-tertiary); font-variant-numeric: tabular-nums; }
+.turn-ledger-more { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-variant-numeric: tabular-nums; }
+/* The first five chips show and the rest are counted; three in a turn narrower than 560 px. Chips never reorder or scroll. */
+.turn-ledger-chip:nth-child(n + 6) { display: none; }
+.turn-ledger-more[data-k="3"] { display: none; }
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@container turn (max-width: 560px) {
+  .turn-ledger-chip:nth-child(n + 4) { display: none; }
+  .turn-ledger-more[data-k="3"] { display: inline; }
+  .turn-ledger-more[data-k="5"] { display: none; }
+}
+.message.assistant { container: turn / inline-size; }
+/* A running row is in the primary colour; a failed or stopped step says so in words, not in red. */
+.chat-progress-duration { color: var(--gg-color-text-tertiary); font-variant-numeric: tabular-nums; }
+.chat-progress-status { gap: var(--gg-space-1); }
+.chat-progress-items[data-opening] > *, .chat-progress-items[data-opening] .chat-progress-entry { animation: turn-fade-in var(--gg-motion-fast) var(--gg-ease-out) both; }
+.chat-progress-items:not([data-opening]) .chat-progress-entry[data-enter] { animation: turn-rise-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+.chat-progress-note { align-items: start; }
+.chat-progress-note-text { margin: 0; color: var(--gg-color-text-secondary); overflow-wrap: anywhere; }
+
+/* Blocks that arrive while the reader watches: the ledger fades in, chips, cards and questions rise in. */
+.turn-ledger[data-enter] { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+.turn-ledger-chip[data-enter], .turn-block[data-enter] { animation: turn-rise-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+.message-meta-late { display: inline-flex; align-items: center; }
+.message-meta-late[data-enter] { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; }
+
+/* A Markdown table being written: ruled paper of a fixed height, replaced by the whole table. */
+.message-table-pending { display: grid; grid-template-rows: 28px repeat(2, 36px); height: calc(28px + 2 * 36px); margin: 1em 0 0; border-bottom: 1px solid var(--gg-color-border-subtle); animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
+.message-table-pending > i { display: flex; align-items: center; gap: var(--gg-space-6); border-bottom: 1px solid var(--gg-color-border-subtle); }
+.message-table-pending > i:first-child { border-bottom-color: var(--gg-color-border-default); }
+.message-table-pending > i:last-child { border-bottom: 0; }
+.message-table-pending > i::before, .message-table-pending > i::after { content: ""; height: var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-border-default); }
+.message-table-pending > i::before { width: 24%; }
+.message-table-pending > i::after { width: 38%; }
+.message-table-pending > i:first-child::before, .message-table-pending > i:first-child::after { background: var(--gg-color-border-subtle); }
+/* Headings and tables arrive whole, with one fade. */
+.message.assistant .message-content[data-streaming] :is([data-streamdown^="heading-"], [data-streamdown="table-wrapper"]) { animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
 /* The receipt shares the row with Sources and Copy; its lists open below the line. */
 .message-action-bar > .memory-row { flex: 1 1 auto; min-width: 0; margin-top: 0; }
 .message-action-bar > .memory-row[data-expanded="true"] { flex-basis: 100%; }
@@ -1628,25 +1670,14 @@ div.message-action-bar > .message-actions { margin-top: 0; }
   font-size: var(--gg-text-subtitle);
   font-weight: var(--gg-weight-medium);
 }
+/* "Preparing" beside the title, in the tertiary colour; it fades out as the content fills the frame. */
 .chat-artifact-block-building {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: var(--gg-space-2);
-  color: var(--gg-color-text-secondary);
+  color: var(--gg-color-text-tertiary);
   font-size: var(--gg-text-meta);
-}
-.chat-artifact-block-shimmer {
-  width: 120px;
-  height: 8px;
-  border-radius: var(--gg-radius-full);
-  background: linear-gradient(90deg, var(--gg-color-bg-hover) 0%, var(--gg-color-border-default) 50%, var(--gg-color-bg-hover) 100%);
-  background-size: 200% 100%;
-  animation: chat-artifact-shimmer 1.6s linear infinite;
-}
-@keyframes chat-artifact-shimmer {
-  from { background-position: 100% 0; }
-  to { background-position: -100% 0; }
 }
 .chat-artifact-block-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--gg-space-1); min-width: 0; margin-left: auto; }
 .chat-artifact-block-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
@@ -1689,35 +1720,19 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 }
 /* The card's plot row is shorter than a panel chart's 220 px floor: the chart fits the row, so its date axis stays inside the card. */
 .chat-artifact-block .artifact-chart-shell[data-compact] .chart-financial-canvas { min-height: 0; }
-.chat-artifact-block-skeleton {
-  width: min(180px, 60%);
-  height: 56px;
-  display: flex;
-  align-items: flex-end;
-  gap: var(--gg-space-1);
-}
-.chat-artifact-block-skeleton > span {
-  flex: 1 1 0;
-  border-radius: var(--gg-radius-xs);
-  background: var(--gg-color-border-subtle);
-  animation: chat-artifact-skeleton 1.6s ease-in-out infinite;
-}
-.chat-artifact-block-skeleton > span:nth-child(1) { height: 40%; }
-.chat-artifact-block-skeleton > span:nth-child(2) { height: 65%; animation-delay: 0.1s; }
-.chat-artifact-block-skeleton > span:nth-child(3) { height: 50%; animation-delay: 0.2s; }
-.chat-artifact-block-skeleton > span:nth-child(4) { height: 80%; animation-delay: 0.3s; }
-.chat-artifact-block-skeleton > span:nth-child(5) { height: 60%; animation-delay: 0.4s; }
-.chat-artifact-block-skeleton > span:nth-child(6) { height: 95%; animation-delay: 0.5s; }
-@keyframes chat-artifact-skeleton {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .chat-artifact-block-shimmer { display: none; }
-  .chat-artifact-block-skeleton > span { animation: none; }
-}
+/* Placeholders are ruled paper and stand still: a chart's body shows four hairlines and a baseline. */
+.chat-artifact-block-ruled { position: absolute; inset: var(--gg-space-4); display: grid; grid-template-rows: repeat(4, 1fr); border-bottom: 1px solid var(--gg-color-border-default); }
+.chat-artifact-block-ruled > i { border-top: 1px solid var(--gg-color-border-subtle); }
+/* The drawn chart takes the frame's place with one fade. */
+.chat-artifact-block[data-filled] .chat-artifact-block-body > * { animation: turn-fade-in var(--gg-motion-settle) var(--gg-ease-out) both; }
 .message-run-state { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .message-run-state p { flex: 1 1 240px; margin: 0; }
+/* A stop is the reader's own doing: one quiet line and a button, no border, no box. */
+.message-run-state[data-kind="stopped"] { flex: 0 1 auto; gap: var(--gg-space-2) var(--gg-space-3); margin: 0; padding: 0; border: 0; background: transparent; font-size: var(--gg-text-control); }
+.message-run-state[data-kind="stopped"] p { flex: 0 1 auto; }
+.message-run-state[data-kind="stopped"] button { min-height: var(--gg-size-control-sm); padding: 0 10px; border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-xs); background: transparent; color: var(--gg-color-text-primary); font: inherit; cursor: pointer; }
+.message-run-state[data-kind="stopped"] button:hover { background: var(--gg-color-bg-hover); }
+.message-run-state-kept { flex-basis: 100%; order: 3; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
 .message-run-state p:first-child { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); font-weight: var(--gg-weight-medium); }
 .message-run-state .message-run-hint { color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); }
 .message-run-state button { padding: 5px 10px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); color: var(--gg-color-text-primary); }
@@ -1811,14 +1826,20 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .message-sources[open] > summary { border-bottom: 1px solid var(--gg-color-border-subtle); }
 .message-sources > ol { margin: 0; padding: 6px var(--gg-space-3); max-height: var(--gg-size-mini-map); overflow-y: auto; overscroll-behavior: contain; }
 .message-sources[open] { flex: 1 0 100%; }
-/* Run status pill: reserves a row 20 px above the composer while the reader is scrolled up. */
+/* The thread's bottom edge: a zero-height dock the pill and the "more below" fade hang from, so neither takes the thread's height. */
+.conversation-dock { position: relative; flex: 0 0 auto; height: 0; z-index: var(--gg-z-sticky); }
+.conversation-more-below { position: absolute; left: 0; right: 0; bottom: 0; height: var(--gg-space-7); background: linear-gradient(to top, var(--gg-color-bg-app), transparent); opacity: 0; pointer-events: none; transition: opacity var(--gg-motion-normal) var(--gg-ease-out); }
+.conversation-more-below[data-on] { opacity: 1; }
+/* Run status pill: overlays the bottom of the thread, 12 px above the composer, while the end of the reply is out of view. */
 .chat-status-pill {
-  flex: 0 0 auto;
-  z-index: var(--gg-z-sticky);
+  position: absolute;
+  left: 50%;
+  bottom: var(--gg-space-3);
+  transform: translateX(-50%);
   width: max-content;
   max-width: calc(100% - var(--gg-space-8));
   min-height: var(--gg-size-control-md);
-  margin: 0 auto var(--gg-space-5);
+  margin: 0;
   display: flex;
   align-items: center;
   gap: var(--gg-space-2);
@@ -1830,9 +1851,11 @@ div.message-action-bar > .message-actions { margin-top: 0; }
   background: var(--gg-color-bg-raised);
   box-shadow: var(--gg-shadow-md);
   font-size: var(--gg-text-control);
+  white-space: nowrap;
   animation: chat-status-pill-in var(--gg-motion-normal) var(--gg-ease-out);
 }
-.chat-status-pill:not([data-running]) { padding-left: 2px; }
+.chat-status-pill:not(:has(.chat-status-pill-label)) { padding-left: 2px; }
+.chat-status-pill-label[data-tone="you"] { display: inline-flex; align-items: center; gap: 6px; color: var(--gg-color-accent-ink); }
 .chat-status-pill-label {
   min-width: 0;
   max-width: 240px;
@@ -1858,7 +1881,7 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .chat-status-pill-jump:hover { background: var(--gg-color-bg-hover); }
 .chat-status-pill-jump svg { width: 16px; height: 16px; }
 @keyframes chat-status-pill-in {
-  from { opacity: 0; transform: translateY(var(--gg-space-2)); }
+  from { opacity: 0; transform: translate(-50%, var(--gg-shift-enter)); }
 }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @container chat-reading (max-width: 760px) {
@@ -2217,8 +2240,6 @@ button.sent-image { cursor: zoom-in; }
 .message-schedule-spending { margin: 0; padding: 0 var(--gg-space-4); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 /* 27. A long Loupist name does not take over the answer's meta row. */
 .message-meta > span:first-child { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 19. A thin caret instead of Streamdown's block while an answer streams. */
-.message.assistant .message-content [class*="streamdown-caret"] > *:last-child:not([data-sd-caret-hidden])::after { content: ""; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -0.15em; border-radius: 1px; background: var(--gg-color-text-tertiary); }
 
 /* 25. Chart card actions match the table card: text-only, folded into "…" at the same width. */
 .chat-artifact-block-more { display: none; flex: none; margin-left: auto; }

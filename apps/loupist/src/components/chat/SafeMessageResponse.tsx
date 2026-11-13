@@ -69,12 +69,21 @@ class MessageRenderBoundary extends Component<
 type Props = {
   text: string;
   isAnimating: boolean;
-  /** Draw a caret after the last block; only while animating. */
-  caret?: boolean;
+  /** Fade each revealed word in (the reveal governor's units); only while animating. */
+  fade?: boolean;
   numberChecks?: import("../../types").NumberCheck[];
   workspacePath?: string;
   workspaceBasePath?: string;
 };
+
+/**
+ * Each released word fades in over 220 ms, words released together 20 ms
+ * apart (DIRECTION 8.3). Opacity only. Streamdown wraps words in spans only
+ * while animating and removes them when the stream ends.
+ */
+const WORD_FADE = { animation: "fadeIn", sep: "word", duration: 220, easing: "cubic-bezier(0.2, 0, 0, 1)", stagger: 20, maxBacklogMs: 240 } as const;
+/** While text streams, tables show no copy, download or fullscreen controls above a table being read. */
+const STREAMING_CONTROLS = { table: false, code: false, mermaid: false } as const;
 
 function useDeferredMermaidPlugin(
   text: string,
@@ -108,7 +117,7 @@ function useDeferredMermaidPlugin(
   return requiresMermaid ? plugin : undefined;
 }
 
-export function SafeMessageResponse({ text, isAnimating, caret = false, numberChecks, workspacePath, workspaceBasePath }: Props) {
+export function SafeMessageResponse({ text, isAnimating, fade = false, numberChecks, workspacePath, workspaceBasePath }: Props) {
   // A cold instance must keep its Lazy type after the module becomes warm.
   // Switching to the resolved function remounts citations, losing focus and a
   // press already in progress when unrelated chat state next renders.
@@ -121,7 +130,8 @@ export function SafeMessageResponse({ text, isAnimating, caret = false, numberCh
       <Suspense fallback={fallback}>
         <MessageResponse
           isAnimating={isAnimating}
-          caret={caret && isAnimating ? "block" : undefined}
+          animated={fade && isAnimating ? WORD_FADE : false}
+          controls={isAnimating ? STREAMING_CONTROLS : undefined}
           mermaidPlugin={mermaidPlugin}
           numberChecks={numberChecks}
           workspacePath={workspacePath}

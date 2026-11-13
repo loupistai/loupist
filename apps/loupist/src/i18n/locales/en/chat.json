@@ -234,7 +234,8 @@
     "plan_limit": "Your ChatGPT plan is at its limit.",
     "plan_not_eligible": "This ChatGPT plan can't be used in other apps.",
     "out_of_credit": "Your AI account is out of credit.",
-    "model_gone": "This model isn't offered anymore."
+    "model_gone": "This model isn't offered anymore.",
+    "failedKept": "The steps and the text so far were kept."
   },
   "chatModelMenu": {
     "modelSettingsForThisMessage": "Model settings for this message",
@@ -437,36 +438,19 @@
     "saved": "Source saved"
   },
   "chatStatusPill": {
-    "jumpToLatest": "Jump to latest"
+    "jumpToLatest": "Jump to latest",
+    "failed": "Couldn’t finish"
   },
   "turn": {
     "writing": "Writing",
-    "thinkingItThrough": "Thinking it through",
-    "waitingForNextStep": "Waiting for the next step",
-    "waitingForModel": "Waiting for the model",
-    "stoppedCount": "{{stoppedCount}} stopped",
-    "pausedCount": "{{pausedCount}} paused",
     "research": {
-      "activity": "Research activity",
-      "calculations": "Calculations",
-      "sources": "Source review",
-      "finance": "Financial data",
-      "memory": "Saved research",
-      "outputs": "Research outputs",
       "failedAttempt_one": "{{count}} failed attempt",
-      "failedAttempt_other": "{{count}} failed attempts",
-      "unavailable_one": "{{count}} skipped lookup",
-      "unavailable_other": "{{count}} skipped lookups",
-      "unavailableAsOf_one": "{{count}} lookup skipped for {{date}}",
-      "unavailableAsOf_other": "{{count}} lookups skipped for {{date}}",
-      "declined": "Permission declined",
-      "expired": "Approval request expired"
+      "failedAttempt_other": "{{count}} failed attempts"
     },
-    "readSources_one": "Read {{formattedCount}} source",
-    "readSources_other": "Read {{formattedCount}} sources",
-    "working": "Working",
     "stillWorking": "Still working",
-    "waitingForYou": "Waiting for you"
+    "waitingForYou": "Waiting for you",
+    "starting": "Starting",
+    "thinking": "Thinking"
   },
   "browserWorkspaceView": {
     "goBack": "Go back",
@@ -1002,7 +986,7 @@
     "view": "View"
   },
   "chatBlock": {
-    "building": "Building…",
+    "building": "Preparing",
     "couldNotBuildChart": "Couldn't build this chart.",
     "askAgain": "Ask again",
     "updatedSince": "Updated since this answer.",
@@ -1752,7 +1736,7 @@
     "moreColumnsLabel_one": "Scroll to {{formattedCount}} more column",
     "moreColumnsLabel_other": "Scroll to {{formattedCount}} more columns",
     "knownAsOf": "Known as of {{date}}",
-    "building": "Building…",
+    "building": "Preparing",
     "failed": "Couldn't build this table",
     "retry": "Try again",
     "sortDesc": "Sorted high to low",
@@ -1912,5 +1896,18 @@
     "done_one": "Watching {{formattedCount}} name. Change it in <0>Following</0>.",
     "done_other": "Watching {{formattedCount}} names. Change it in <0>Following</0>.",
     "failed": "Couldn’t turn on watching. Try again."
+  },
+  "ledger": {
+    "steps_one": "{{formattedCount}} step",
+    "steps_other": "{{formattedCount}} steps",
+    "plan": "Plan {{k}} of {{n}} · {{label}}",
+    "worked": "Worked {{duration}}",
+    "stoppedAfter": "Stopped after {{duration}}",
+    "sources_one": "{{formattedCount}} source",
+    "sources_other": "{{formattedCount}} sources",
+    "seconds": "{{s}}s",
+    "minutes": "{{m}}m {{s}}s",
+    "stepSeconds": "{{value}}s",
+    "more": "+{{formattedCount}}"
   }
 }

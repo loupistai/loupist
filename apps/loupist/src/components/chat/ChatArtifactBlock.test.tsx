@@ -45,12 +45,14 @@ function withScope(children: ReactNode, read = vi.fn().mockResolvedValue(view), 
   return <ChatExecutionProvider value={{ bridge, loupistId: "loupist", threadId: "chat", surface: "session", theme: "light", active: true }}>{children}</ChatExecutionProvider>;
 }
 
-it("reserves the card with its title while the chart is being built, without actions", () => {
-  render(withScope(<ChatArtifactBlock block={{ kind: "building", key: "b", title: "Operating margin" }} onAsk={vi.fn()} />));
+it("reserves the card with its title and Preparing while the chart is being built, on still ruled paper, without actions", () => {
+  const { container } = render(withScope(<ChatArtifactBlock block={{ kind: "building", key: "b", title: "Operating margin", stepId: "step" }} onAsk={vi.fn()} />));
   const card = screen.getByRole("region", { name: "Chart: Operating margin" });
   expect(card).toHaveAttribute("aria-busy", "true");
   expect(card).toHaveAttribute("data-state", "building");
-  expect(screen.getByRole("status")).toHaveTextContent("Building…");
+  expect(screen.getByRole("status")).toHaveTextContent("Preparing");
+  expect(container.querySelector(".chat-artifact-block-ruled")).toHaveAttribute("aria-hidden", "true");
+  expect(container.querySelector("[class*='skeleton'], [class*='shimmer']")).toBeNull();
   expect(screen.queryByRole("button")).toBeNull();
 });
 
@@ -142,7 +144,7 @@ it("shows a failed Copy data outside the action bar a narrow card hides", async 
 
 it("says when a chart could not be built and offers the question again", () => {
   const onAskAgain = vi.fn();
-  render(withScope(<ChatArtifactBlock block={{ kind: "failed", key: "f", title: "Operating margin" }} onAskAgain={onAskAgain} />));
+  render(withScope(<ChatArtifactBlock block={{ kind: "failed", key: "f", title: "Operating margin", stepId: "step" }} onAskAgain={onAskAgain} />));
   expect(screen.getByRole("alert")).toHaveTextContent("Couldn't build this chart.");
   fireEvent.click(screen.getByRole("button", { name: "Ask again" }));
   expect(onAskAgain).toHaveBeenCalledOnce();

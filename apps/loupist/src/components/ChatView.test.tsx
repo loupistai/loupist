@@ -127,7 +127,8 @@ it("does not rerender an unchanged earlier answer while typing or streaming anot
   const before = earlierRenders();
   await userEvent.setup().type(composer(), "follow up");
   view.rerender(<TooltipProvider><ChatView {...props} threads={[{ ...props.threads[0]!, messages: [messages[0]!, { ...messages[1]!, content: "Current answer with another token" }] }]} /></TooltipProvider>);
-  expect(screen.getByText("Current answer with another token")).toBeVisible();
+  // The reveal governor shows the new words a moment later, at an even pace.
+  expect(await screen.findByText("Current answer with another token")).toBeVisible();
   expect(earlierRenders()).toBe(before);
 });
 

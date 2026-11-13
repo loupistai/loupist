@@ -2,10 +2,11 @@ import type { ChatArtifactKind, ChatArtifactRef, ChatMessage, ChatProgressItem }
 
 type ToolItem = Extract<ChatProgressItem, { kind: "tool" | "system" }>;
 
+/** `stepId` is the publish step the card belongs to, so the card stands where that step started. */
 export type ChartBlock =
-  | { kind: "ready"; key: string; artifact: ChatArtifactRef; updating: boolean }
-  | { kind: "building"; key: string; title: string }
-  | { kind: "failed"; key: string; title: string };
+  | { kind: "ready"; key: string; artifact: ChatArtifactRef; updating: boolean; stepId?: string }
+  | { kind: "building"; key: string; title: string; stepId: string }
+  | { kind: "failed"; key: string; title: string; stepId: string };
 
 /** A grid's reserved, filled or failed block takes the same states as a chart's. */
 export type GridBlock = ChartBlock;
@@ -36,17 +37,20 @@ function artifactBlocks(message: ChatMessage, kind: ChatArtifactKind, tool: stri
   const updatingTitles = new Set<string>();
   const pending: ChartBlock[] = [];
   const publishes = isPublish(tool);
+  // The first step that published each title owns its card; a later step under the same title updates it.
+  const stepOfTitle = new Map<string, string>();
   for (const item of message.progress?.items ?? []) {
     if (!publishes(item)) continue;
     const title = titleOf(item);
     const published = title !== "" && readyTitles.has(title);
+    if (published && !stepOfTitle.has(title)) stepOfTitle.set(title, item.id);
     if (item.status === "running") {
       if (published) updatingTitles.add(title);
-      else pending.push({ kind: "building", key: `building:${item.id}`, title });
+      else pending.push({ kind: "building", key: `building:${item.id}`, title, stepId: item.id });
     } else if (item.status === "succeeded" && streaming && !published) {
-      pending.push({ kind: "building", key: `building:${item.id}`, title });
+      pending.push({ kind: "building", key: `building:${item.id}`, title, stepId: item.id });
     } else if (item.status === "failed" && !published) {
-      pending.push({ kind: "failed", key: `failed:${item.id}`, title });
+      pending.push({ kind: "failed", key: `failed:${item.id}`, title, stepId: item.id });
     }
   }
   return [
@@ -55,6 +59,7 @@ function artifactBlocks(message: ChatMessage, kind: ChatArtifactKind, tool: stri
       key: `${prefix}:${artifact.artifact_id}`,
       artifact,
       updating: updatingTitles.has(artifact.title.trim()),
+      stepId: stepOfTitle.get(artifact.title.trim()),
     })),
     ...pending,
   ];

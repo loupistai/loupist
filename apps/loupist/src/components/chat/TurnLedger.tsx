@@ -3,86 +3,38 @@ import { useOpenProps } from "../navigation/Open";
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { BookOpenIcon, CheckIcon, CirclePauseIcon, CircleSlashIcon, TriangleAlertIcon, CalculatorIcon, ChartLineIcon, ChevronDownIcon, CircleStopIcon, ClipboardCheckIcon, DatabaseIcon, FilePlusIcon, FileTextIcon, FolderIcon, GlobeIcon, ListTreeIcon, PencilIcon, PlayIcon, PuzzleIcon, RefreshCwIcon, SearchIcon, TerminalSquareIcon, UploadIcon, WrenchIcon, type LucideIcon } from "lucide-react";
-import type {
-  ChatApproval,
-  ChatEvidenceRef,
-  ChatPlan,
-  ChatProgressCategory,
-  ChatProgressItem,
-  ChatProgressOperation,
-  ChatProgressStatus,
-  ChatQuestion,
-} from "../../types";
+import { CalculatorIcon, ChartLineIcon, CheckIcon, ChevronRightIcon, CirclePauseIcon, CircleSlashIcon, CircleStopIcon, DatabaseIcon, TextIcon, TriangleAlertIcon } from "lucide-react";
+import type { ChatEvidenceRef, ChatPlan, ChatProgressItem } from "../../types";
 import { ChatActivityDetailView } from "./ChatActivityDetailView";
 import { ChatExecutionProvider, useChatExecution } from "./ChatExecutionContext";
 import { ChatToolResult } from "./ChatToolResult";
+import { SourceFavicon } from "./SourceFavicon";
+import { TurnGlyph, Ticker, useArrived } from "./turnMotion";
 import { useConversationScroll } from "../ai-elements/conversation";
 import { useChatMap } from "../workspace/ChatMapContext";
 import { formatAsOf } from "../../chat/asOf";
 import { evidenceTitle } from "../../chat/evidence";
 import { readNoun } from "../../chat/progressLabels";
-import { pausedByRule, planSections, refusedByRule, type TurnSegment } from "../../chat/turnView";
-import { actionLabel, clockLabel, isActionItem as isAction, scrubIdentifiers, withoutIdentifiers } from "../../chat/runStatus";
+import { pausedByRule, planSections, refusedByRule, stepGlyph, type LedgerChip, type TurnSegment } from "../../chat/turnView";
+import { actionLabel, isActionItem as isAction, visibleTarget, withoutIdentifiers } from "../../chat/runStatus";
 
 const t = i18n.getFixedT(null, "chat");
 
 /** The answer's as-of date: a step its source refused under it reads as skipped, never failed. */
 const RowAsOf = createContext<string | undefined>(undefined);
 
+/** How long chips take to leave at commit (`--gg-motion-fast`). */
+const CHIPS_LEAVE_MS = 120;
+
 type Props = {
-  segment: Extract<TurnSegment, { kind: "activity" }>;
+  segment: Extract<TurnSegment, { kind: "ledger" }>;
   revealedResult?: { id: string; request: number } | null;
   focusItemId?: string | null;
   /** The answer's as-of date (`YYYY-MM-DD`). */
   asOf?: string;
-  /**
-   * Draws approval cards (composer spec D3). Each sits under the step that waits
-   * for it; with the steps folded, or without a known step, they follow the row.
-   */
-  renderApprovals?: (approvals: ChatApproval[]) => ReactNode;
-  /** Draws question cards (`ask_user`) where approval cards go. */
-  renderQuestions?: (questions: ChatQuestion[]) => ReactNode;
 };
 
 type ActionItem = Extract<ChatProgressItem, { kind: "tool" | "system" }>;
-
-const operationIcons: Record<ChatProgressOperation, LucideIcon> = {
-  search: SearchIcon,
-  read: BookOpenIcon,
-  write: FilePlusIcon,
-  edit: PencilIcon,
-  list: ListTreeIcon,
-  calculate: CalculatorIcon,
-  publish: UploadIcon,
-  execute: PlayIcon,
-  submit: ClipboardCheckIcon,
-  retry: RefreshCwIcon,
-  compact: RefreshCwIcon,
-  generic: WrenchIcon,
-};
-
-const categoryIcons: Record<ChatProgressCategory, LucideIcon> = {
-  web: GlobeIcon,
-  memory: DatabaseIcon,
-  capability: PuzzleIcon,
-  finance: ChartLineIcon,
-  files: FolderIcon,
-  artifact: FileTextIcon,
-  compute: TerminalSquareIcon,
-  system: RefreshCwIcon,
-};
-
-const isInternalIdentifier = (value: string) =>
-  /private[-_]tool[-_]id/i.test(value) || /^web:[0-9a-f]{6,}$/i.test(value.trim());
-
-const visibleTarget = (target: string | null) => {
-  const trimmed = target?.trim();
-  if (!trimmed || isInternalIdentifier(trimmed)) return undefined;
-  const cleaned = scrubIdentifiers(trimmed);
-  if (!cleaned || isInternalIdentifier(cleaned)) return undefined;
-  return cleaned;
-};
 
 /** A step's page: it opens in the panel browser, or the system browser on Cmd-click. */
 function StepLink({ href, target }: { href: string; target: string }) {
@@ -96,6 +48,14 @@ function WorkSource({ source }: { source: ChatEvidenceRef }) {
   return link.available ? <button type="button" {...link.props}>{evidenceTitle(source)}</button> : <>{evidenceTitle(source)}</>;
 }
 
+/** "2.7s" for a step that took a second or more. */
+const stepDuration = (item: ActionItem) => {
+  if (!item.startedAtMs || item.finishedAtMs == null) return null;
+  const milliseconds = item.finishedAtMs - item.startedAtMs;
+  if (milliseconds < 1_000) return null;
+  return t("ledger.stepSeconds", { value: formatNumber(milliseconds / 1_000, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
+};
+
 const ActionRow = memo(function ActionRow({
   item,
   evidence,
@@ -104,11 +64,8 @@ const ActionRow = memo(function ActionRow({
   onToggleResult,
   rowExpanded,
   focusItemId,
-  approvals,
 }: {
   item: ActionItem;
-  /** Approval cards for this step, drawn under it. */
-  approvals?: ReactNode;
   evidence: ChatEvidenceRef[];
   revealedResult?: { id: string; request: number } | null;
   expandedResults: Set<string>;
@@ -120,19 +77,16 @@ const ActionRow = memo(function ActionRow({
   const execution = useChatExecution();
   const conversation = useConversationScroll();
   const asOf = useContext(RowAsOf);
+  const arrived = useArrived();
   const row = useRef<HTMLDivElement>(null);
   const detailsId = useId();
   const [open, setOpen] = useState(false);
   const [flash, setFlash] = useState(false);
   const skipped = item.status === "skipped";
   const action = skipped && asOf ? t("asOf.stepRefused", { tool: refusedRead(item) }) : actionLabel(item);
-  const Icon = item.kind === "tool" && item.source ? categoryIcons[item.category] : operationIcons[item.operation];
   const target = visibleTarget(item.target);
-  const failed = item.status === "failed";
   const paused = pausedByRule(item);
-  const glyph = paused
-    ? <span className="chat-progress-status" data-paused=""><CirclePauseIcon role="img" aria-label={t("chatProgressTimeline.paused.status")} /></span>
-    : statusGlyph(item.status);
+  const duration = item.status === "succeeded" ? stepDuration(item) : null;
   const canOpen = Boolean((item.detailId && execution) || evidence.length || (skipped && asOf));
   const revealedHere = Boolean(revealedResult && evidence.some((result) => result.id === revealedResult.id));
   useEffect(() => {
@@ -165,8 +119,9 @@ const ActionRow = memo(function ActionRow({
   return (
     <div
       ref={row}
-      className={`chat-progress-entry chat-progress-row ${item.status}${failed ? " failed" : ""}`} data-testid="chat-progress-row"
+      className={`chat-progress-entry chat-progress-row ${item.status}`} data-testid="chat-progress-row"
       data-flash={flash || undefined}
+      data-enter={arrived || undefined}
       data-progress-category={item.category}
       data-progress-operation={item.operation}
       data-progress-status={item.status}
@@ -174,7 +129,7 @@ const ActionRow = memo(function ActionRow({
       {/* A skipped (refused) step leads with the skipped status glyph, not its read glyph. */}
       {skipped
         ? <span className="chat-progress-node" data-status="skipped"><CircleSlashIcon role="img" aria-label={t("asOf.stepStatus")} /></span>
-        : <span className="chat-progress-node"><Icon aria-hidden="true" /></span>}
+        : <span className="chat-progress-node" aria-hidden="true"><TurnGlyph glyph={stepGlyph(item)} /></span>}
       <div className="chat-progress-copy">
         {canOpen ? (
           <button
@@ -195,7 +150,11 @@ const ActionRow = memo(function ActionRow({
         ) : target ? (
           <span className="chat-progress-target" data-testid="chat-progress-target" title={target}>{target}</span>
         ) : null}
-        {glyph}
+        {paused ? <span className="chat-progress-status" data-paused=""><CirclePauseIcon aria-hidden="true" />{t("chatProgressTimeline.paused.status")}</span>
+          : item.status === "failed" ? <span className="chat-progress-status"><TriangleAlertIcon aria-hidden="true" />{t("chatProgressTimeline.failed")}</span>
+          : item.status === "stopped" ? <span className="chat-progress-status"><CircleStopIcon aria-hidden="true" />{t("chatProgressTimeline.stopped")}</span>
+          : null}
+        {duration ? <span className="chat-progress-duration">{duration}</span> : null}
         <StepNames item={item} />
       </div>
       {/* A security rule, not a failure: said calmly in the step, with no way around it. */}
@@ -210,10 +169,18 @@ const ActionRow = memo(function ActionRow({
       {open && skipped && asOf ? <p id={detailsId} className="chat-progress-skipped-detail">{t("asOf.stepRefusedDetail", { date: formatAsOf(asOf) })}</p> : null}
       {open && item.detailId && execution ? <div id={detailsId} className="chat-execution-detail"><ChatActivityDetailView {...execution} detailId={item.detailId} outputRevision={item.kind === "tool" ? item.outputRevision : undefined} /></div> : null}
       {open ? evidence.map((result) => <ChatToolResult key={result.id} evidence={result} expanded={expandedResults.has(result.id)} focusRequest={rowExpanded && revealedResult?.id === result.id ? revealedResult.request : undefined} onToggle={() => onToggleResult(result.id)} />) : null}
-      {approvals ? <div className="chat-progress-approvals">{approvals}</div> : null}
     </div>
   );
 });
+
+/** A note the turn wrote between steps, in its chronological place. */
+function NoteRow({ text }: { text: string }) {
+  const arrived = useArrived();
+  return <div className="chat-progress-entry chat-progress-note" data-enter={arrived || undefined}>
+    <span className="chat-progress-node" aria-hidden="true"><TextIcon /></span>
+    <p className="chat-progress-note-text">{text}</p>
+  </div>;
+}
 
 /** World names this step read (host-attributed); a click shows them on the chat map. */
 function StepNames({ item }: { item: ActionItem }) {
@@ -257,13 +224,6 @@ function PlanList({ plan, nested, renderSteps }: {
   );
 }
 
-const statusGlyph = (status: ChatProgressStatus): ReactNode => {
-  // Success is the norm and needs no mark; a failed or stopped step says so beside its target.
-  if (status === "failed") return <span className="chat-progress-status"><TriangleAlertIcon aria-label={t("chatProgressTimeline.failed")} /></span>;
-  if (status === "stopped") return <span className="chat-progress-status"><CircleStopIcon aria-label={t("chatProgressTimeline.stopped")} /></span>;
-  return null;
-};
-
 /** What the pause turned off for this step, in the user's words. */
 const pausedWhat = (item: ActionItem): "instructions" | "site" | "schedule" | "connection" | "other" => {
   const tool = item.kind === "tool" ? item.toolName ?? "" : "";
@@ -280,42 +240,68 @@ const refusedRead = (item: ActionItem) => {
   return `${read.charAt(0).toLocaleUpperCase(i18n.language)}${read.slice(1)}`;
 };
 
+const CHIP_ICONS = { data: ChartLineIcon, memory: DatabaseIcon, calculation: CalculatorIcon } as const;
+
+/** One piece of gathered evidence. Not a button: the whole line is the ledger's toggle. */
+function Chip({ chip }: { chip: LedgerChip }) {
+  const arrived = useArrived();
+  const Icon = chip.kind === "source" ? null : CHIP_ICONS[chip.kind];
+  return <span className="turn-ledger-chip" data-kind={chip.kind} data-enter={arrived || undefined}>
+    {chip.evidence ? <SourceFavicon evidence={chip.evidence} /> : Icon ? <Icon aria-hidden="true" /> : null}
+    <span className="turn-ledger-chip-label">{chip.label}</span>
+    {chip.count > 1 ? <span className="turn-ledger-chip-count">{formatNumber(chip.count)}</span> : null}
+  </span>;
+}
+
+/** Chips are shown while the reply runs and fade out at commit; a turn read later has none. */
+function useChips(chips: LedgerChip[], settled: boolean) {
+  const [gone, setGone] = useState(settled);
+  useEffect(() => {
+    if (!settled || gone) return;
+    const timer = window.setTimeout(() => setGone(true), CHIPS_LEAVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [settled, gone]);
+  return { chips: gone ? [] : chips, leaving: settled && !gone };
+}
+
 /**
- * One line per run of steps: the running step while one runs, a summary of
- * what was read and worked afterwards, at the same height. The details hold
- * the sources, consulted notes, plan and every step.
+ * One line per turn: the steps counted and what was read gathered as chips
+ * while the reply runs, a one-line receipt once it settles, at the same
+ * height. It is the disclosure for every step: the timeline holds the sources,
+ * consulted notes, plan, steps and notes. It never opens by itself.
  */
-export function ActivityRow({ segment, revealedResult, focusItemId, asOf, renderApprovals, renderQuestions }: Props) {
+export function TurnLedger({ segment, revealedResult, focusItemId, asOf }: Props) {
   useTranslation("chat");
-  const { row, tone, progress, evidence, sources, memoryReads, autoExpand } = segment;
+  const { ledger, progress, evidence, sources, memoryReads, live } = segment;
   const execution = useChatExecution();
   const conversation = useConversationScroll();
-  const live = row.kind === "live";
+  const arrived = useArrived();
   const detailsId = useId();
   const actions = useMemo(() => progress.items.filter(isAction), [progress.items]);
-  const [userChoice, setUserChoice] = useState<boolean | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [opening, setOpening] = useState(false);
   const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set());
-  const approvals = progress.approvals ?? [];
-  const pendingApprovals = approvals.filter((approval) => approval.state === "waiting");
-  const questions = progress.questions ?? [];
-  const pendingQuestions = questions.filter((question) => question.state === "waiting");
-  const waiting = pendingApprovals.length > 0 || pendingQuestions.length > 0;
-  const expanded = userChoice ?? autoExpand;
+  const { chips, leaving } = useChips(ledger.chips, ledger.settled);
 
   useEffect(() => {
     if (!revealedResult) return;
-    setUserChoice(true);
+    setExpanded(true);
     setExpandedResults((current) => new Set([...current, revealedResult.id]));
   }, [revealedResult]);
   useEffect(() => {
     if (!focusItemId) return;
     const step = progress.items.find((item) => item.id === focusItemId);
     if (!step || step.kind === "commentary") return;
-    setUserChoice(true);
+    setExpanded(true);
     const ids = step.kind === "tool" ? step.resultIds ?? [] : [];
     if (ids.length === 0) return;
     setExpandedResults((current) => ids.every((id) => current.has(id)) ? current : new Set([...current, ...ids]));
   }, [focusItemId, progress.items]);
+  useEffect(() => {
+    if (!opening) return;
+    const timer = window.setTimeout(() => setOpening(false), 400);
+    return () => window.clearTimeout(timer);
+  }, [opening]);
 
   const sections = useMemo(() => planSections(progress.plan, progress.items), [progress.plan, progress.items]);
   const evidenceById = useMemo(() => new Map(evidence.map((item) => [item.id, item])), [evidence]);
@@ -332,48 +318,37 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
       return next;
     });
   }, [conversation]);
-  // Approvals sit with the step that asked; one whose step is unknown follows the steps.
-  const stepIds = new Set(actions.map((item) => item.id));
-  const unplaced = approvals.filter((approval) => !approval.itemId || !stepIds.has(approval.itemId));
-  const unplacedQuestions = questions.filter((question) => !question.itemId || !stepIds.has(question.itemId));
-  const cards = (forApprovals: ChatApproval[], forQuestions: ChatQuestion[]) => {
-    const approvalCards = renderApprovals && forApprovals.length ? renderApprovals(forApprovals) : null;
-    const questionCards = renderQuestions && forQuestions.length ? renderQuestions(forQuestions) : null;
-    return approvalCards || questionCards ? <>{approvalCards}{questionCards}</> : undefined;
-  };
-  const unplacedCards = cards(unplaced, unplacedQuestions);
-  const approvalsFor = (item: ActionItem) =>
-    cards(approvals.filter((approval) => approval.itemId === item.id), questions.filter((question) => question.itemId === item.id));
-  const renderEntry = (entry: ChatProgressItem) => entry.kind === "commentary" ? null : (
-    <ActionRow key={entry.id} item={entry} evidence={evidenceByStep.get(entry.id) ?? NO_EVIDENCE} revealedResult={revealedResult} expandedResults={expandedResults}
-      onToggleResult={onToggleResult} rowExpanded={expanded} focusItemId={focusItemId} approvals={approvalsFor(entry)} />
-  );
+  const renderEntry = (entry: ChatProgressItem) => entry.kind === "commentary"
+    ? <NoteRow key={entry.id} text={withoutIdentifiers(entry.text)} />
+    : <ActionRow key={entry.id} item={entry} evidence={evidenceByStep.get(entry.id) ?? NO_EVIDENCE} revealedResult={revealedResult} expandedResults={expandedResults}
+      onToggleResult={onToggleResult} rowExpanded={expanded} focusItemId={focusItemId} />;
+  const chipsMore = (k: number) => chips.length > k ? <span className="turn-ledger-more" data-k={k}>{t("ledger.more", { formattedCount: formatNumber(chips.length - k) })}</span> : null;
 
   return (
-    <section className="chat-progress" data-testid="chat-progress" aria-label={t("chatProgressTimeline.workProgress")} aria-busy={live && !waiting} data-turn-item="tools" data-tone={tone} data-expanded={expanded}>
+    <section className="chat-progress turn-ledger" data-testid="chat-progress" aria-label={t("chatProgressTimeline.workProgress")} aria-busy={live || undefined}
+      data-turn-item="tools" data-live={live || undefined} data-expanded={expanded} data-enter={arrived || undefined}>
       <button
         type="button"
         data-research-summary=""
-        className="chat-progress-toggle" data-testid="chat-progress-toggle"
+        className="chat-progress-toggle turn-ledger-toggle" data-testid="chat-progress-toggle"
         aria-expanded={expanded}
         aria-controls={expanded ? detailsId : undefined}
-        onClick={() => { conversation?.holdScrollPosition(); setUserChoice(!expanded); }}
+        onClick={() => { conversation?.holdScrollPosition(); setExpanded(!expanded); setOpening(!expanded); }}
       >
-        <ListTreeIcon aria-hidden="true" data-live={live || undefined} data-heartbeat={live && row.stalled ? "" : undefined} />
-        <span className="chat-progress-heading" data-testid="chat-progress-heading">
-          {row.kind === "live" ? row.label : <>
-            {row.label}
-            {row.issues ? <span className="chat-work-count"> · <span className="chat-work-issues">{row.issues}</span></span> : null}
-            {/* Under a second a duration would read "0:00"; the summary stands alone. */}
-            {row.durationMs !== undefined && row.durationMs >= 1000 ? <span className="chat-work-count"> · <span className="chat-progress-elapsed">{clockLabel(row.durationMs)}</span></span> : null}
-          </>}
+        <ChevronRightIcon className="turn-ledger-chevron" aria-hidden="true" />
+        <span className="chat-progress-heading turn-ledger-text" data-testid="chat-progress-heading">
+          <Ticker id={ledger.settled ? `settled:${ledger.text}` : `live:${ledger.text}`}>
+            {ledger.text}{ledger.failed ? <span className="turn-ledger-failed"> · {ledger.failed}</span> : null}
+          </Ticker>
         </span>
-        <ChevronDownIcon className={`chat-progress-chevron ${expanded ? "open" : ""}`} aria-hidden="true" />
+        {chips.length ? <span className="turn-ledger-chips" data-leaving={leaving || undefined} aria-hidden="true">
+          {chips.map((chip) => <Chip key={chip.key} chip={chip} />)}
+          {chipsMore(5)}{chipsMore(3)}
+        </span> : null}
       </button>
-      {!expanded && waiting ? <div className="chat-progress-approvals" data-folded="">{cards(pendingApprovals, pendingQuestions)}</div> : null}
       {expanded ? (
         <ChatExecutionProvider value={detailScope}><RowAsOf.Provider value={asOf}>
-          <div id={detailsId} className="chat-progress-items" data-waiting={waiting || undefined}>
+          <div id={detailsId} className="chat-progress-items" data-opening={opening || undefined}>
             {sources.length ? <ul className="chat-work-sources" aria-label={t("chatReceipt.sourcesRead")}>
               {sources.map((source) => <li key={source.id}><WorkSource source={source} /></li>)}
             </ul> : null}
@@ -383,7 +358,6 @@ export function ActivityRow({ segment, revealedResult, focusItemId, asOf, render
             {progress.plan ? <PlanList plan={progress.plan} nested={sections.nested} renderSteps={(items) => items.map(renderEntry)} /> : null}
             {sections.rest.map(renderEntry)}
             {unlinked.map((result) => <ChatToolResult key={result.id} evidence={result} expanded={expandedResults.has(result.id)} focusRequest={revealedResult?.id === result.id ? revealedResult.request : undefined} onToggle={() => onToggleResult(result.id)} />)}
-            {unplacedCards ? <div className="chat-progress-approvals">{unplacedCards}</div> : null}
           </div>
         </RowAsOf.Provider></ChatExecutionProvider>
       ) : null}

@@ -2,26 +2,29 @@ import i18n from "@/i18n";
 import { formatNumber } from "@/i18n/format";
 import { useState } from "react";
 import type {
+  ChatApproval,
   ChatEvidenceRef,
   ChatFailureKind,
   ChatMessage,
   ChatPlan,
   ChatProgress,
   ChatProgressItem,
+  ChatQuestion,
   MemoryRef,
   NumberCheck,
 } from "../types";
-import { formatAsOf } from "./asOf";
-import { citationSources, evidenceTitle } from "./evidence";
+import { citationSources, sourceIdentityLabel } from "./evidence";
 import { exactMemoryReads, isInlineWorkEvidence } from "./memoryActivity";
 import { readNoun } from "./progressLabels";
-import { actionLabel, isActionItem, scrubIdentifiers, withoutIdentifiers } from "./runStatus";
-import { displayHost } from "../lib/displayHost";
+import { actionLabel, isActionItem, visibleTarget, withoutIdentifiers } from "./runStatus";
 
 const t = i18n.getFixedT(null, "chat");
 
 /** A run with no new progress for this long reads as "Still working" instead of a frozen label. */
-const HEARTBEAT_AFTER_MS = 15_000;
+export const STALL_AFTER_MS = 15_000;
+
+/** A note under this many characters, in one paragraph, gives its place to the next text (DIRECTION 4.1). */
+const SHORT_NOTE_CHARS = 280;
 
 /** Seconds before the automatic retry after the first and second busy answer when the provider gave no hint; the third asks to try later. */
 export const BUSY_RETRY_SECONDS = [20, 40] as const;
@@ -37,57 +40,84 @@ export type TurnInput = {
   stopping: boolean;
   /** Busy answers in a row in this Chat, counting this one, and whether this one can be retried. */
   retry: { attempt: number; offered: boolean };
+  /**
+   * The host finished, but the answer's last words are still being revealed:
+   * the turn reads as running (Writing) until they are, at most 400 ms.
+   */
+  holding?: boolean;
 };
 
-/** Exactly one state applies; every label derives from it. */
+/** Exactly one state applies; the live line and the footer derive from it. */
 export type TurnState =
-  | { kind: "starting" }
-  /** `step` is the running step's own words, or the phase while no step runs. */
-  | { kind: "working"; step: string; stepRunning: boolean; stalled: boolean }
+  | { kind: "running" }
   /** An approval or a question waits for the user. */
   | { kind: "awaiting_approval" }
-  | { kind: "writing" }
   | { kind: "stopping" }
   | { kind: "complete" }
   | { kind: "stopped"; kept: "steps_and_text" | "steps_and_draft" | "steps" | "text" | "draft" | "nothing" }
   /** A busy answer counting down to its own retry (`retryPending`) has not failed yet. */
   | { kind: "failed"; failure: ChatFailureKind; retryPending: boolean };
 
-/** Narration is a preamble: the answer's metrics in the secondary color. */
-export type ProseTone = "answer" | "narration";
+/** The answer, or a note: text a tool call followed. */
+export type ProseTone = "answer" | "note";
 
-/** What colors the row: the running step, a settled summary, or a run or step that went wrong. */
-export type ActivityTone = "live" | "settled" | "problem";
+/** The glyph before the live label and before a step in the timeline (DIRECTION 6.3). */
+export type StepGlyph = "chart" | "table" | "search" | "calculate" | "finance" | "memory" | "web" | "files" | "artifact" | "capability" | "compute" | "system";
+export type LiveGlyph = StepGlyph | "phase" | "writing" | "stopping" | "waiting";
 
-/** One line with a fixed height; the step list lives inside its details. */
-type ActivityRowView =
-  | { kind: "live"; label: string; stalled: boolean }
-  | { kind: "summary"; label: string; issues: string | null; durationMs?: number };
+/** The one present-tense line of a running turn. */
+export type LiveLine = {
+  /** Changes when the label or target changes; "+N" and the clock are not part of it. */
+  key: string;
+  glyph: LiveGlyph;
+  label: string;
+  target: string | null;
+  /** Other steps running beside the one named. */
+  more: number;
+  sheen: boolean;
+  /** `step` holds its label for a moment after the step ends, so a quick next step never reads "Thinking". */
+  kind: "starting" | "thinking" | "still" | "step" | "writing" | "waiting" | "stopping";
+};
+
+/** What the answer can cite: a site read, a data series, saved notes, calculations. */
+export type LedgerChip = { key: string; kind: "source" | "data" | "memory" | "calculation"; label: string; count: number; evidence?: ChatEvidenceRef };
+
+export type LedgerView = {
+  /** The step count (or the plan position) while running; the receipt once settled. */
+  text: string;
+  /** " · 1 failed attempt", in both states; never an alarm. */
+  failed: string | null;
+  settled: boolean;
+  chips: LedgerChip[];
+};
 
 export type TurnSegment =
-  | { kind: "prose"; key: string; text: string; tone: ProseTone; streaming: boolean; checks?: NumberCheck[] }
+  | { kind: "prose"; key: string; text: string; tone: ProseTone; streaming: boolean; checks?: NumberCheck[]; short?: boolean }
   | {
-      kind: "activity";
+      kind: "ledger";
       key: string;
-      row: ActivityRowView;
-      tone: ActivityTone;
+      ledger: LedgerView;
+      /** Every counted step and note of the turn, in order; the plan and approvals for the timeline. */
       progress: ChatProgress;
       /** Calculations and queries whose result opens inline under the step. */
       evidence: ChatEvidenceRef[];
-      /** Distinct citation subjects this group of steps read. */
+      /** Distinct citation subjects the turn's steps read. */
       sources: ChatEvidenceRef[];
       memoryReads: MemoryRef[];
-      /** A failed or stopped step opens the details; the reader can still close them. */
-      autoExpand: boolean;
-    };
+      live: boolean;
+    }
+  /** A chart or table card, where its publish step started. `chartBlocks`/`gridBlocks` decide its state. */
+  | { kind: "card"; key: string; itemId: string; tool: "chart_publish" | "grid_publish" }
+  | { kind: "question"; key: string; question: ChatQuestion }
+  | { kind: "approval"; key: string; approval: ChatApproval };
 
 /** How a settled turn ended, when not well. A busy answer carries the seconds until it retries itself. */
 export type RunState =
   | { kind: "stopped"; label: string }
-  | { kind: "failed"; failure: ChatFailureKind; retryInSeconds?: number };
+  | { kind: "failed"; failure: ChatFailureKind; retryInSeconds?: number; kept: boolean };
 
 export type TurnFooter =
-  | { kind: "status"; label: string; sinceMs: number; stalled: boolean }
+  | { kind: "live"; line: LiveLine; sinceMs: number }
   | {
       kind: "settled";
       /** Distinct citation subjects of the whole answer, numbered in this order. */
@@ -101,7 +131,7 @@ export type TurnFooter =
 export type TurnStatus = { state: TurnState; footer: TurnFooter };
 export type TurnView = TurnStatus & { segments: TurnSegment[]; announce: string };
 
-type Group = Extract<TurnSegment, { kind: "activity" }>;
+type Ledger = Extract<TurnSegment, { kind: "ledger" }>;
 
 /** What a stopped reply kept (S4): finished steps and any text so far. */
 export function visibleMessageContent(message: ChatMessage): string {
@@ -120,15 +150,11 @@ const isFailurePlaceholder = (message: ChatMessage) =>
 
 const startedAt = (message: ChatMessage) => message.progress?.startedAtMs ?? Date.parse(message.created_at);
 
-const phaseLabel = (phase: ChatMessage["phase"]) => {
-  if (phase === "writing") return t("turn.writing");
-  if (phase === "thinking") return t("turn.thinkingItThrough");
-  if (phase === "tool") return t("turn.waitingForNextStep");
-  return t("turn.waitingForModel");
-};
-
-const lastRunning = (items: readonly ChatProgressItem[]) =>
-  [...items].reverse().find((item): item is ActionItem => isActionItem(item) && item.status === "running");
+/** The plan and the question line stand for these steps; they are not counted and have no row. */
+const HIDDEN_TOOLS = new Set(["plan_update", "ask_user"]);
+const isCounted = (item: ChatProgressItem): item is ActionItem =>
+  isActionItem(item) && !(item.kind === "tool" && item.toolName && HIDDEN_TOOLS.has(item.toolName));
+const isCardTool = (tool: string | undefined): tool is "chart_publish" | "grid_publish" => tool === "chart_publish" || tool === "grid_publish";
 
 /** Changes whenever the host reports a step, phase, plan or approval change. */
 function activityKey(message: ChatMessage | undefined): string {
@@ -190,74 +216,82 @@ export const planSections = (plan: ChatPlan | undefined, items: ChatProgressItem
   return { nested, rest };
 };
 
-/** Use host categories for the subject. Never infer what a shell command did from its text. */
-function researchSubject(actions: ActionItem[], results: ChatEvidenceRef[], memoryReads: MemoryRef[]) {
-  const labels = new Set<string>();
+/** One rule for the live line, the chips and the timeline (DIRECTION 6.3). */
+export function stepGlyph(item: ActionItem): StepGlyph {
+  const tool = item.kind === "tool" ? item.toolName : undefined;
+  if (tool === "chart_publish") return "chart";
+  if (tool === "grid_publish") return "table";
+  if (item.operation === "search") return "search";
+  if (item.operation === "calculate" || tool === "run_python") return "calculate";
+  return item.category;
+}
+
+/** "34s", "1m 12s" (KO "34초", "1분 12초"). */
+export function receiptDuration(milliseconds: number): string {
+  const total = Math.max(1, Math.round(milliseconds / 1_000));
+  if (total < 60) return t("ledger.seconds", { s: formatNumber(total) });
+  return t("ledger.minutes", { m: formatNumber(Math.floor(total / 60)), s: formatNumber(total % 60) });
+}
+
+const capitalized = (value: string) => value.charAt(0).toLocaleUpperCase(i18n.language) + value.slice(1);
+
+/**
+ * What the answer can cite, in the order it arrived: each distinct site a step
+ * read, data series, saved notes and calculations. A step whose result is a
+ * citation source gets the source chip only. Repeats count beside the label.
+ */
+function ledgerChips(actions: ActionItem[], evidenceById: Map<string, ChatEvidenceRef>): LedgerChip[] {
+  const chips = new Map<string, LedgerChip>();
+  const add = (chip: Omit<LedgerChip, "count">) => {
+    const existing = chips.get(chip.label);
+    if (existing) existing.count += 1;
+    else chips.set(chip.label, { ...chip, count: 1 });
+  };
   for (const item of actions) {
-    if (item.kind !== "tool") continue;
-    if (item.operation === "calculate") labels.add(t("turn.research.calculations"));
-    else if (item.category === "finance") {
-      const leaf = item.toolName?.split("__").at(-1);
-      if (leaf && i18n.exists(`chat:asOf.reads.${leaf}`)) {
-        const noun = readNoun(leaf);
-        labels.add(noun.charAt(0).toLocaleUpperCase(i18n.language) + noun.slice(1));
-      } else labels.add(t("turn.research.finance"));
-    } else if (item.category === "web") labels.add(t("turn.research.sources"));
-    else if (item.category === "memory") labels.add(t("turn.research.memory"));
-    else if (item.category === "artifact") labels.add(t("turn.research.outputs"));
-    if (labels.size === 2) break;
+    if (item.status !== "succeeded" || item.kind !== "tool") continue;
+    const sources = citationSources((item.resultIds ?? []).flatMap((id) => evidenceById.get(id) ?? []));
+    if (sources.length) {
+      for (const source of sources) {
+        // Saved notes read through a citation are the notes, never a product name.
+        if (source.tool_name.startsWith("world")) add({ key: `memory:${item.id}`, kind: "memory", label: capitalized(readNoun("world_read")) });
+        else add({ key: `source:${source.id}`, kind: "source", label: sourceIdentityLabel(source), evidence: source });
+      }
+      continue;
+    }
+    const tool = item.toolName ?? "";
+    if (item.operation === "calculate" || tool === "run_python") add({ key: `calculation:${item.id}`, kind: "calculation", label: capitalized(readNoun("calculate")) });
+    else if (item.category === "memory" && item.operation === "read") add({ key: `memory:${item.id}`, kind: "memory", label: capitalized(readNoun(tool)) });
+    else if (item.category === "finance" && item.operation === "read") add({ key: `data:${item.id}`, kind: "data", label: capitalized(readNoun(tool)) });
   }
-  if (!labels.size && memoryReads.length) labels.add(t("turn.research.memory"));
-  if (!labels.size && results.some((result) => result.tool_name === "calculate")) labels.add(t("turn.research.calculations"));
-  return [...labels].join(" · ") || t("turn.research.activity");
+  return [...chips.values()];
 }
 
-/** Keep a common verified domain beside the count. Mixed or unknown origins have no shared label. */
-function sourcePreview(sources: ChatEvidenceRef[]) {
-  const first = sources[0];
-  if (!first) return "";
-  const domains = new Set(sources.map((source) => displayHost(source.url)));
-  const [domain] = domains;
-  if (domains.size === 1 && domain) return domain;
-  if (sources.length !== 1 || first.kind !== "original" || /[:/\\]/u.test(first.title)) return "";
-  return scrubIdentifiers(evidenceTitle(first)).slice(0, 80);
-}
-
-function issueLabel(actions: ActionItem[], progress: ChatProgress, asOf: string | undefined) {
-  // A step paused by the untrusted-text rule is not a failure; it is counted apart.
-  const paused = actions.filter(pausedByRule).length;
-  const failed = actions.filter((item) => item.status === "failed").length - paused;
-  const stopped = actions.filter((item) => item.status === "stopped").length;
-  const skipped = actions.filter((item) => item.status === "skipped").length;
-  const approvals = progress.approvals ?? [];
-  return [
-    failed > 0 ? t("turn.research.failedAttempt", { count: failed }) : "",
-    stopped > 0 ? t("turn.stoppedCount", { stoppedCount: stopped }) : "",
-    paused > 0 ? t("turn.pausedCount", { pausedCount: paused }) : "",
-    skipped > 0 ? asOf
-      ? t("turn.research.unavailableAsOf", { count: skipped, date: formatAsOf(asOf) })
-      : t("turn.research.unavailable", { count: skipped }) : "",
-    approvals.some((item) => item.state === "declined") ? t("turn.research.declined") : "",
-    approvals.some((item) => item.state === "expired") ? t("turn.research.expired") : "",
-  ].filter(Boolean).join(" · ") || null;
-}
-
-function summaryLabel(group: Group, running: boolean) {
-  const { progress, sources, evidence, memoryReads } = group;
-  const actions = progress.items.filter(isActionItem);
-  const sections = planSections(progress.plan, progress.items);
-  // A multi-stage plan stays inside the details. Its current stage is useful
-  // during the run; afterwards a single attributed stage can still name its
-  // own group, but the last stage cannot describe a whole turn.
-  const stage = running
-    ? progress.plan?.items.find((item) => item.status === "active")?.label
-    : sections.nested.size === 1 && !sections.rest.length
-      ? progress.plan?.items.find((item) => sections.nested.has(item.id))?.label
-      : undefined;
-  const planSubject = stage && scrubIdentifiers(stage);
-  const sourceCount = sources.length ? t("turn.readSources", { count: sources.length, formattedCount: formatNumber(sources.length) }) : "";
-  const subject = (running ? planSubject || sourceCount : sourceCount || planSubject) || researchSubject(actions, evidence, memoryReads);
-  return [subject, subject !== sourceCount && sourceCount, sourcePreview(sources)].filter(Boolean).join(" · ");
+function ledgerView(ledger: Ledger, state: TurnState, running: boolean, durationMs: number | undefined, evidenceRefs: readonly ChatEvidenceRef[]): LedgerView {
+  const actions = ledger.progress.items.filter(isCounted);
+  const failedCount = actions.filter((item) => item.status === "failed" && !pausedByRule(item)).length;
+  const failed = failedCount > 0 ? t("turn.research.failedAttempt", { count: failedCount }) : null;
+  const evidenceById = new Map(evidenceRefs.map((item) => [item.id, item]));
+  const chips = ledgerChips(actions, evidenceById);
+  const steps = (count: number) => count > 0 ? t("ledger.steps", { count, formattedCount: formatNumber(count) }) : "";
+  if (running) {
+    const plan = ledger.progress.plan;
+    const active = plan?.items.findIndex((item) => item.status === "active") ?? -1;
+    const done = plan ? plan.items.map((item) => item.status).lastIndexOf("done") : -1;
+    const at = active >= 0 ? active : done;
+    const text = plan && at >= 0
+      ? t("ledger.plan", { k: formatNumber(at + 1), n: formatNumber(plan.items.length), label: withoutIdentifiers(plan.items[at]!.label) || plan.items[at]!.label })
+      : steps(actions.length) || t("chatProgressTimeline.consultedNotes", { count: ledger.memoryReads.length, formattedCount: formatNumber(ledger.memoryReads.length) });
+    return { text, failed, settled: false, chips };
+  }
+  const stopped = state.kind === "stopped";
+  const counted = stopped ? actions.filter((item) => item.status === "succeeded").length : actions.length;
+  const lead = durationMs === undefined ? "" : stopped
+    ? t("ledger.stoppedAfter", { duration: receiptDuration(durationMs) })
+    : t("ledger.worked", { duration: receiptDuration(durationMs) });
+  const sources = ledger.sources.length ? t("ledger.sources", { count: ledger.sources.length, formattedCount: formatNumber(ledger.sources.length) }) : "";
+  const text = [lead, steps(counted), sources].filter(Boolean).join(" · ")
+    || t("chatProgressTimeline.consultedNotes", { count: ledger.memoryReads.length, formattedCount: formatNumber(ledger.memoryReads.length) });
+  return { text, failed, settled: true, chips };
 }
 
 function keptByStop(message: ChatMessage, content: string): Extract<TurnState, { kind: "stopped" }>["kept"] {
@@ -286,59 +320,65 @@ function stoppedLabel(kept: Extract<TurnState, { kind: "stopped" }>["kept"], ite
   }
 }
 
-function deriveState({ message, now, lastActivityAt, stopping, retry }: TurnInput, content: string): TurnState {
+function deriveState({ message, stopping, retry, holding }: TurnInput, content: string): TurnState {
   const progress = message.progress;
-  const items = progress?.items ?? [];
   if (message.status === "error") {
     const retryPending = message.failure_kind === "rate_limited" && retry.offered && retry.attempt <= BUSY_RETRY_SECONDS.length;
     return { kind: "failed", failure: message.failure_kind ?? "other", retryPending };
   }
   if (message.status === "aborted") return { kind: "stopped", kept: keptByStop(message, content) };
-  if (message.status !== "streaming") return { kind: "complete" };
+  if (message.status !== "streaming" && !holding) return { kind: "complete" };
   if (stopping) return { kind: "stopping" };
   if ((progress?.approvals ?? []).some((approval) => approval.state === "waiting")
     || (progress?.questions ?? []).some((question) => question.state === "waiting")) return { kind: "awaiting_approval" };
-  const running = lastRunning(items);
-  if (running || message.phase === "tool" || message.phase === "thinking" || (message.phase !== "writing" && items.length)) {
-    return { kind: "working", step: running ? actionLabel(running) : phaseLabel(message.phase), stepRunning: Boolean(running), stalled: now - lastActivityAt >= HEARTBEAT_AFTER_MS };
-  }
-  if (message.phase === "writing") return { kind: "writing" };
-  return { kind: "starting" };
+  return { kind: "running" };
 }
 
-const footerLabel = (state: TurnState): string => {
-  switch (state.kind) {
-    case "starting": return t("turn.waitingForModel");
-    case "working": return state.stalled ? t("turn.stillWorking") : state.stepRunning ? t("turn.working") : state.step;
-    case "awaiting_approval": return t("turn.waitingForYou");
-    case "writing": return t("turn.writing");
-    case "stopping": return t("chatView.stopping");
-    default: return "";
+/** The live line's state table (DIRECTION 4.3); the first match wins. Dwell and the 800 ms hold are the line's own. */
+function liveLine(state: TurnState, { message, now, lastActivityAt, holding }: TurnInput, content: string): LiveLine {
+  const line = (kind: LiveLine["kind"], glyph: LiveGlyph, label: string, extra: Partial<LiveLine> = {}): LiveLine => {
+    const target = extra.target ?? null;
+    return { kind, glyph, label, target, more: extra.more ?? 0, sheen: extra.sheen ?? true, key: `${label}|${target ?? ""}` };
+  };
+  if (state.kind === "stopping") return line("stopping", "stopping", t("chatView.stopping"), { sheen: false });
+  if (state.kind === "awaiting_approval") return line("waiting", "waiting", t("turn.waitingForYou"), { sheen: false });
+  const stalled = now - lastActivityAt >= STALL_AFTER_MS;
+  const items = message.progress?.items ?? [];
+  const running = holding ? [] : items.filter((item): item is ActionItem => isCounted(item) && item.status === "running");
+  const newest = running.at(-1);
+  if (newest) {
+    const target = stalled ? t("turn.stillWorking") : visibleTarget(newest.target) ?? null;
+    return line("step", stepGlyph(newest), actionLabel(newest), { target, more: running.length - 1 });
   }
-};
+  if (holding || message.phase === "writing") return line("writing", "writing", t("turn.writing"));
+  if (stalled) return line("still", "phase", t("turn.stillWorking"));
+  if (!message.phase && !items.length && !content) return line("starting", "phase", t("turn.starting"));
+  return line("thinking", "phase", t("turn.thinking"));
+}
 
-function runState(state: TurnState, { message, retry }: TurnInput): RunState | null {
+function runState(state: TurnState, { message, retry }: TurnInput, content: string): RunState | null {
   if (state.kind === "stopped") return { kind: "stopped", label: stoppedLabel(state.kept, message.progress?.items ?? []) };
   if (state.kind !== "failed") return null;
   const retryInSeconds = state.retryPending ? message.retry_after_seconds ?? BUSY_RETRY_SECONDS[retry.attempt - 1] ?? BUSY_RETRY_SECONDS[0] : undefined;
-  return { kind: "failed", failure: state.failure, retryInSeconds };
+  const kept = (message.progress?.items ?? []).some((item) => isCounted(item) && item.status === "succeeded")
+    || Boolean(content.trim() && !isFailurePlaceholder(message));
+  return { kind: "failed", failure: state.failure, retryInSeconds, kept };
 }
 
 function status(input: TurnInput) {
   const { message } = input;
   const content = visibleMessageContent(message);
   const state = deriveState(input, content);
-  const stalled = state.kind === "working" && state.stalled;
   const footer: TurnFooter = state.kind === "complete" || state.kind === "stopped" || state.kind === "failed"
     ? {
         kind: "settled",
         sources: citationSources(message.evidence_refs ?? []),
         copyText: content && !isFailurePlaceholder(message) ? content : null,
         feedback: state.kind === "complete",
-        runState: runState(state, input),
+        runState: runState(state, input, content),
       }
-    : { kind: "status", label: footerLabel(state), sinceMs: startedAt(message), stalled };
-  return { state, footer, content, stalled };
+    : { kind: "live", line: liveLine(state, input, content), sinceMs: startedAt(message) };
+  return { state, footer, content };
 }
 
 /** The state and footer alone, for a reader that redraws every second (the status pill). */
@@ -347,113 +387,122 @@ export function deriveTurnStatus(input: TurnInput): TurnStatus {
   return { state, footer };
 }
 
+/** A note is short when it is one paragraph under 280 characters: no blank line, heading, list, quote, table or fence. */
+export const isShortNote = (text: string) => {
+  const trimmed = text.trim();
+  return trimmed.length < SHORT_NOTE_CHARS && !/\n\s*\n/u.test(trimmed) && !/(?:^|\n)\s*(?:#|[-*+>]\s|\d+[.)]\s|\||```|~~~)/u.test(trimmed);
+};
+
 /**
- * Everything an assistant turn shows, in reading order: narration and answer
- * prose keyed by the commentary that wrote them, one activity row per run of
- * steps, and a footer slot that keeps its height from the first frame to the
- * settled answer.
+ * Everything an assistant turn shows, in the order it happened: notes, one
+ * ledger for every step of the turn (where the first step happened), cards
+ * where their publish step started, questions and approvals where they were
+ * asked, the answer, and a footer slot that keeps its height from the live
+ * line to the settled action row. New things are appended; nothing is
+ * inserted above what is on screen, except that a short note gives its place
+ * to the text that follows it.
  */
 export function deriveTurnView(input: TurnInput): TurnView {
   const { message } = input;
-  const { state, footer, content, stalled } = status(input);
+  const { state, footer, content } = status(input);
   const progress = message.progress;
   const startedAtMs = startedAt(message);
   const items = progress?.items ?? [];
   const streaming = message.status === "streaming";
+  const running = footer.kind === "live";
   const evidenceRefs = message.evidence_refs ?? [];
   const lastItem = items.at(-1);
   // The draft is the answer while the host writes it, under the key the answer
   // keeps. Once its settled text has grown the answer, the live copy, which may
   // still be listed for one update, is not drawn again. A draft that closed
   // unsettled (a tool call followed, or the final text came another way) and
-  // any older commentary stay narration, wherever a removal leaves them.
+  // any older commentary stay notes, wherever a removal leaves them.
   const { draft, answer_key: answerKey } = message;
   const settledCopy = (item: ChatProgressItem) => item.id === draft?.id && draft.settled && content.length > draft.answerLength;
   const liveDraft = streaming && message.phase === "writing" && lastItem?.kind === "commentary" && lastItem.id === draft?.id && !settledCopy(lastItem)
     ? lastItem : undefined;
 
   const segments: TurnSegment[] = [];
-  const groups: Group[] = [];
-  const owners = new Map<string, Group>();
-  const resultOwners = new Map<string, Group>();
-  // A row created after the steps were read (a plan or Memory reads with no
-  // step of their own) goes before the live answer, where it stays once the
-  // answer settles.
-  const group = (key: string): Group => {
-    const next: Group = {
-      kind: "activity",
-      key,
-      row: { kind: "summary", label: "", issues: null },
-      tone: "settled",
-      progress: { startedAtMs, finishedAtMs: progress?.finishedAtMs ?? null, items: [] },
-      evidence: [], sources: [], memoryReads: [], autoExpand: false,
-    };
-    groups.push(next);
-    const answerAt = segments.findIndex((segment) => segment.kind === "prose" && segment.tone === "answer");
-    segments.splice(answerAt < 0 ? segments.length : answerAt, 0, next);
-    return next;
+  const pushProse = (segment: Extract<TurnSegment, { kind: "prose" }>) => {
+    const last = segments.at(-1);
+    // Only where the ledger's timeline keeps it: a turn with no steps keeps its note on the page.
+    if (last?.kind === "prose" && last.tone === "note" && last.short && segments.some((segment) => segment.kind === "ledger")) segments.pop();
+    segments.push(segment);
   };
-  let open: Group | undefined;
+  // Notes and counted steps, in the order they happened: the ledger's timeline.
+  const timeline: ChatProgressItem[] = [];
+  let ledger: Ledger | undefined;
+  const placeLedger = (at = segments.length) => {
+    if (ledger) return ledger;
+    ledger = {
+      kind: "ledger",
+      key: "activity",
+      ledger: { text: "", failed: null, settled: false, chips: [] },
+      progress: { startedAtMs, finishedAtMs: progress?.finishedAtMs ?? null, items: timeline },
+      evidence: [], sources: [], memoryReads: [], live: running,
+    };
+    segments.splice(at, 0, ledger);
+    return ledger;
+  };
+  const questions = progress?.questions ?? [];
+  const approvals = progress?.approvals ?? [];
+  const placed = new Set<string>();
+  const placeAsks = (itemId: string) => {
+    for (const question of questions) if (question.itemId === itemId && !placed.has(question.requestId)) {
+      placed.add(question.requestId);
+      segments.push({ kind: "question", key: `question:${question.requestId}`, question });
+    }
+    for (const approval of approvals) if (approval.itemId === itemId && !placed.has(approval.requestId)) {
+      placed.add(approval.requestId);
+      segments.push({ kind: "approval", key: `approval:${approval.requestId}`, approval });
+    }
+  };
   for (const item of items) {
     if (item.kind === "commentary") {
-      open = undefined;
       const text = withoutIdentifiers(item.text);
       if (item === liveDraft) {
-        segments.push({ kind: "prose", key: answerKey ?? item.id, text: content ? `${content}\n\n${text}` : text, tone: "answer", streaming: true });
+        pushProse({ kind: "prose", key: answerKey ?? item.id, text: content ? `${content}\n\n${text}` : text, tone: "answer", streaming: true });
       } else if (!settledCopy(item) && text.trim()) {
-        segments.push({ kind: "prose", key: item.id, text, tone: "narration", streaming: false });
+        // Every note is listed in the timeline, whether it stays on the page or gives its place.
+        timeline.push(item);
+        pushProse({ kind: "prose", key: item.id, text, tone: "note", streaming: false, short: isShortNote(text) });
       }
       continue;
     }
-    if (!open) {
-      open = group(groups.length ? `step-${item.id}` : "activity");
-    }
-    open.progress.items.push(item);
-    owners.set(item.id, open);
-    if (item.kind === "tool") for (const id of item.resultIds ?? []) resultOwners.set(id, open);
+    const step: ActionItem = item;
+    if (isCounted(step)) {
+      placeLedger();
+      timeline.push(step);
+      if (step.kind === "tool" && isCardTool(step.toolName)) segments.push({ kind: "card", key: `card:${step.id}`, itemId: step.id, tool: step.toolName });
+    } else if (item.kind === "tool" && item.toolName === "plan_update" && progress?.plan) placeLedger();
+    placeAsks(item.id);
   }
-  const first = () => groups[0] ?? group("activity");
   const memoryReads = exactMemoryReads(message.memory_refs).map(({ ref }) => ref);
-  if (progress?.plan || memoryReads.length) {
-    const head = first();
-    head.progress.plan = progress?.plan;
-    head.memoryReads = memoryReads;
+  // Results a citation reveals in the work trace need a ledger even when no step names them.
+  const workResults = evidenceRefs.some((result) => isInlineWorkEvidence(result, message.memory_refs));
+  if (progress?.plan || memoryReads.length || workResults) {
+    // A plan or Memory reads with no step of their own go before the live answer, where they stay once it settles.
+    const answerAt = segments.findIndex((segment) => segment.kind === "prose" && segment.tone === "answer");
+    const placedLedger = placeLedger(answerAt < 0 ? segments.length : answerAt);
+    placedLedger.progress.plan = progress?.plan;
+    placedLedger.memoryReads = memoryReads;
   }
-  for (const result of evidenceRefs) {
-    if (isInlineWorkEvidence(result, message.memory_refs)) (resultOwners.get(result.id) ?? first()).evidence.push(result);
-  }
-  for (const approval of progress?.approvals ?? []) {
-    const owner = (approval.itemId && owners.get(approval.itemId)) || first();
-    (owner.progress.approvals ??= []).push(approval);
-  }
-  for (const question of progress?.questions ?? []) {
-    const owner = (question.itemId && owners.get(question.itemId)) || first();
-    (owner.progress.questions ??= []).push(question);
-  }
-  for (const source of evidenceRefs) resultOwners.get(source.id)?.sources.push(source);
-  for (const entry of groups) {
-    entry.sources = citationSources(entry.sources);
-    const actions = entry.progress.items.filter(isActionItem);
-    const running = streaming ? lastRunning(actions) : undefined;
-    entry.row = running
-      ? { kind: "live", label: actionLabel(running), stalled }
-      : {
-          kind: "summary",
-          label: summaryLabel(entry, streaming),
-          issues: issueLabel(actions, entry.progress, message.as_of),
-          durationMs: !streaming && progress?.finishedAtMs != null ? progress.finishedAtMs - startedAtMs : undefined,
-        };
-    const failed = actions.some((item) => item.status === "failed" && !pausedByRule(item));
-    entry.autoExpand = failed || actions.some((item) => item.status === "stopped");
-    entry.tone = state.kind === "failed" || failed ? "problem" : running ? "live" : "settled";
+  // A question or approval no step names is appended where it was asked: the end of the turn so far.
+  for (const question of questions) if (!placed.has(question.requestId)) segments.push({ kind: "question", key: `question:${question.requestId}`, question });
+  for (const approval of approvals) if (!placed.has(approval.requestId)) segments.push({ kind: "approval", key: `approval:${approval.requestId}`, approval });
+  if (ledger) {
+    const linked = new Set(ledger.progress.items.flatMap((item) => item.kind === "tool" ? item.resultIds ?? [] : []));
+    ledger.sources = citationSources(evidenceRefs.filter((source) => linked.has(source.id)));
+    ledger.evidence = evidenceRefs.filter((result) => isInlineWorkEvidence(result, message.memory_refs));
+    const durationMs = progress?.finishedAtMs != null ? progress.finishedAtMs - startedAtMs : message.performance?.totalMs;
+    ledger.ledger = ledgerView(ledger, state, running, durationMs, evidenceRefs);
   }
   if (!liveDraft && content && !isFailurePlaceholder(message)) {
-    segments.push({ kind: "prose", key: answerKey ?? "answer", text: content, tone: "answer", streaming, checks: message.number_checks });
+    pushProse({ kind: "prose", key: answerKey ?? "answer", text: content, tone: "answer", streaming, checks: message.number_checks });
   }
 
-  const lastRow = [...groups].reverse().find((entry) => entry.row.kind === "summary")?.row;
-  const announce = footer.kind === "status"
-    ? state.kind === "working" && state.stepRunning ? `${footer.label} · ${state.step}` : footer.label
-    : lastRow?.kind === "summary" ? [lastRow.label, lastRow.issues].filter(Boolean).join(" · ") : "";
+  const announce = footer.kind === "live"
+    ? [footer.line.label, footer.line.target].filter(Boolean).join(" · ")
+    : ledger ? [ledger.ledger.text, ledger.ledger.failed].filter(Boolean).join(" · ") : "";
   return { state, segments, footer, announce };
 }

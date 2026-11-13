@@ -93,6 +93,10 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain 
   const loaded = current && block.kind === "ready" && current.revision.revision === block.artifact.revision ? current : null;
   const dataset = loaded?.chart_dataset;
   const isExpanded = expanded && wide;
+  // A card that was preparing while the reader watched fills with a fade; one read later is drawn at once.
+  const [wasBuilding, setWasBuilding] = useState(building);
+  if (building && !wasBuilding) setWasBuilding(true);
+  const filled = wasBuilding && !building;
 
   const copyData = async () => {
     if (!dataset) return;
@@ -101,11 +105,8 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain 
 
   let body: ReactNode = null;
   if (block.kind === "building") {
-    // The first draw: the card already has its final size, so the status sits where the chart will appear.
-    body = <div className="chat-artifact-block-state" role="status">
-      <span className="chat-artifact-block-skeleton" aria-hidden="true"><span /><span /><span /><span /><span /><span /></span>
-      <p>{t("chatBlock.building")}</p>
-    </div>;
+    // The first draw: the card already has its final size; still, ruled paper stands where the chart will appear.
+    body = <div className="chat-artifact-block-ruled" aria-hidden="true"><i /><i /><i /><i /></div>;
   } else if (block.kind === "failed") {
     body = <div className="chat-artifact-block-state" role="alert">
       <p>{t("chatBlock.couldNotBuildChart")}</p>
@@ -139,17 +140,15 @@ export function ChatArtifactBlock({ block, onAsk, askDisabled, asOf, onAskAgain 
       className="chat-artifact-block"
       data-state={revisedLater ? "revised" : block.kind === "ready" ? "ready" : block.kind}
       data-expanded={isExpanded || undefined}
+      data-filled={filled || undefined}
       aria-label={t("chatBlock.chartLabel", { title: title || t("chatBlock.untitled") })}
       aria-busy={building || undefined}
     >
       <header className="chat-artifact-block-header">
         <span className="chat-artifact-block-title" title={title}>{title || t("chatBlock.untitled")}</span>
         {asOf ? <span className="chat-artifact-block-asof">{t("asOf.chip", { date: formatAsOf(asOf) })}</span> : null}
-        {block.kind === "ready" && block.updating ? (
-          <span className="chat-artifact-block-building" role="status">
-            {t("chatBlock.building")}
-            <span className="chat-artifact-block-shimmer" aria-hidden="true" />
-          </span>
+        {building ? (
+          <span className="chat-artifact-block-building" role="status">{t("chatBlock.building")}</span>
         ) : loaded ? (
           <>{/* Outside the bar and the menu, which take turns being hidden by width. */}
           {copyError ? <span className="chat-artifact-block-error" role="alert">{t("chatBlock.couldNotCopy")}</span>
