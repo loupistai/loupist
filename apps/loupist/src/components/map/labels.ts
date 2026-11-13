@@ -89,7 +89,7 @@ const overlaps = (a: LabelBox, b: LabelBox) => a.x < b.x + b.w && a.x + a.w > b.
 /** Below, above, right, then left. Each slot starts outside the node's own rings.
  *  A selection, its neighbours, and — when nothing is selected — held, watched, and
  *  learned-link labels also try shifted and diagonal gaps. */
-function labelSlots(node: PositionedNode, scale: number, priority: LabelPriority, textWidth: number): LabelBox[] {
+function labelSlots(node: PositionedNode, scale: number, priority: LabelPriority, textWidth: number, inward = 0): LabelBox[] {
   const w = textWidth + 4 / scale, h = 16 / scale, offset = labelOffset(node, scale, priority), x = node.x - w / 2;
   const below = { x, y: node.y + offset, w, h };
   const above = { x, y: node.y - offset - h, w, h };
@@ -97,6 +97,15 @@ function labelSlots(node: PositionedNode, scale: number, priority: LabelPriority
   const left = { x: node.x - offset - w, y: node.y - h / 2, w, h };
   const cardinals = [below, above, right, left];
   const rank = labelPriority(node, priority);
+  if (node.kind === "journal") {
+    // A Journal entry has no relationships, so the layout leaves its ring at the edge of the drawing,
+    // where a centred name crosses the pane edge. It also tries names that grow toward the drawing:
+    // starting under or over the ring, then beside it at a diagonal.
+    const r = nodeRadius(node), toward = inward < 0 ? -1 : 1;
+    const startX = toward > 0 ? node.x - r : node.x + r - w;
+    const sideX = toward > 0 ? node.x + offset : node.x - offset - w;
+    return [...cardinals, { ...below, x: startX }, { ...above, x: startX }, { x: sideX, y: node.y + offset, w, h }, { x: sideX, y: node.y - offset - h, w, h }];
+  }
   if (rank < 3) return cardinals;
   const shift = Math.max(w * 0.6, offset);
   const near = [
@@ -239,9 +248,11 @@ export function placeLabels(candidates: PositionedNode[], nodes: PositionedNode[
     return (edgesByNode.get(node.id) ?? [])
       .filter(edge => inFocus(edge.otherId) && !recededMetric(edge.otherId) && edge.length <= reach);
   };
+  // The drawing's horizontal centre: a Journal ring's name grows toward it.
+  const centreX = nodes.length ? nodes.reduce((sum, item) => sum + item.x, 0) / nodes.length : 0;
   const openSlot = (node: PositionedNode, text: string, rank: number) => {
     const own = ownEdges(node);
-    const slots = labelSlots(node, scale, priority, measure(text));
+    const slots = labelSlots(node, scale, priority, measure(text), centreX - node.x);
     const free = (candidate: LabelBox) => fits(candidate) && !placed.some(({ box: prior }) => overlaps(candidate, prior)) && !nodes.some(other => hitsNode(candidate, other, scale, geometryFor)) && ownsBox(candidate, node, nodes, scale, geometryFor);
     const clear = slots.find(candidate => !own.some(({ a, b }) => crossesBox(candidate, a, b)) && free(candidate));
     // A hub's spokes leave no slot clear of its own edges. Its name may lie across one,
@@ -264,7 +275,8 @@ export function placeLabels(candidates: PositionedNode[], nodes: PositionedNode[
     const rank = labelPriority(node, priority);
     const full = labelText(node, measure, scale, labelCapPx, language);
     const texts = [full];
-    if (rank >= 5) for (const screenPx of [110, 84, 64]) {
+    // A Journal ring is never a hub, so when its full name has no room it may shorten instead (the hover title keeps it whole).
+    if (rank >= 5 || node.kind === "journal") for (const screenPx of [110, 84, 64]) {
       const shorter = fitLabel(full, screenPx / Math.max(scale, 0.001), measure);
       if (shorter !== full && shorter !== "…" && !texts.includes(shorter)) texts.push(shorter);
     }
