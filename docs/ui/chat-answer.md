@@ -58,7 +58,8 @@ card still preparing when the reply stops fades out in place (120 ms; at once un
 reduced motion) and is then removed;
 an answer that says "the chart below" can be wrong until the prompt says otherwise. A
 question or approval is a block where it was asked, and settles into its one line in
-the same place. The card, the status pill and the ledger read the view alone; the pill
+the same place; answering a question holds the turn at its height (`--turn-hold`) while
+the reply runs, so the shorter line never shrinks the scroll range and the page stays put. The card, the status pill and the ledger read the view alone; the pill
 derives the cheaper `deriveTurnStatus`.
 
 The footer slot keeps one control's height from the first frame. While the reply runs it
