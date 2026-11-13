@@ -1,7 +1,11 @@
 #!/usr/bin/env node
-// Measure a streamed reply over time in the design preview: what the reader sees
-// before the first word, how text arrives, whether the thread shifts, and whether
-// a reader who scrolls up keeps their place. Writes summary.json and a filmstrip.
+// Measure a streamed reply over time in the design preview (docs/ui/chat-answer.md#streaming):
+// how text arrives, whether anything the reader has seen moves, what the live line says,
+// what the page does by itself, what animates, and what changes at commit.
+// Writes summary.json, frames.json and a filmstrip (one capture every --frames ms).
+//
+//   node scripts/probe-streaming.mjs [--scenario chat-live-research] [--size 1280x820]
+//     [--theme light] [--locale en] [--frames 400] [--reduced-motion] [--scroll-test] [--out dir]
 import { createServer } from "vite";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,40 +17,98 @@ import { openChrome } from "./visual-diff.mjs";
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const option = (name, fallback) => { const index = args.indexOf(`--${name}`); return index >= 0 ? args[index + 1] : fallback; };
-const out = resolve(option("out", join(appRoot, "output/design/probe", new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15))));
+const scenario = option("scenario", "chat-live-research");
+const out = resolve(option("out", join(appRoot, "output/design/probe", `${scenario}-${new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15)}`)));
 const [width, height] = option("size", "1280x820").split("x").map(Number);
 const theme = option("theme", "light");
+const locale = option("locale", "en");
+const every = Number(option("frames", "400"));
 const reducedMotion = args.includes("--reduced-motion");
+const scrollTest = args.includes("--scroll-test");
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
+// Samples the latest assistant turn every animation frame. The live reply is the last
+// `article.message.assistant[data-message-id]` in the thread, never Home's checklist or morning message.
 const instrument = `(() => {
-  const probe = window.__probe = { frames: [], shifts: [], longTasks: [], mutations: [] };
+  const probe = window.__probe = { frames: [], shifts: [], longTasks: [], moves: [], scrolls: [], animations: { max: 0, properties: {}, names: {} }, commit: null, lines: null };
   new PerformanceObserver((list) => { for (const entry of list.getEntries()) if (!entry.hadRecentInput) probe.shifts.push({ t: entry.startTime, value: entry.value, nodes: entry.sources.map((source) => source.node?.className?.toString?.().slice(0, 60) ?? source.node?.nodeName ?? "") }); }).observe({ type: "layout-shift", buffered: true });
   new PerformanceObserver((list) => { for (const entry of list.getEntries()) probe.longTasks.push({ t: entry.startTime, duration: entry.duration }); }).observe({ type: "longtask", buffered: true });
-  let mutations = 0;
-  const watch = () => document.body ? new MutationObserver((records) => { mutations += records.length; }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true }) : requestAnimationFrame(watch);
-  watch();
   let previous = "";
+  let tops = new Map();
+  let lastScroll = null;
+  let wasStreaming = false;
+  let footerTop = null;
+  let frame = 0;
+  const latest = () => [...document.querySelectorAll(".message-scroll article.message.assistant[data-message-id]")].at(-1) ?? null;
+  const lineRects = (assistant) => {
+    const paragraph = [...assistant.querySelectorAll('[data-turn-item="prose"] .message-content[data-tone="answer"] p')][0];
+    if (!paragraph) return null;
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    const rows = new Map();
+    for (const rect of range.getClientRects()) { if (!rect.width) continue; const key = Math.round(rect.top); rows.set(key, (rows.get(key) ?? 0) + rect.width); }
+    return [...rows.values()].slice(0, 3).map((value) => Math.round(value));
+  };
   const sample = () => {
+    frame += 1;
     const scroller = document.querySelector(".message-scroll");
-    const messages = [...document.querySelectorAll(".message")];
-    const last = messages.at(-1);
-    const assistant = last?.classList.contains("assistant") ? last : null;
-    const prose = assistant ? [...assistant.querySelectorAll(".message-content")].map((node) => node.textContent ?? "").join("") : "";
-    const status = assistant?.querySelector(".chat-progress-heading, .chat-progress-live, [data-run-status]")?.textContent?.trim().slice(0, 80) ?? "";
-    const frame = {
+    const assistant = latest();
+    const now = Math.round(performance.now());
+    const streaming = Boolean(assistant?.classList.contains("streaming"));
+    const prose = assistant ? [...assistant.querySelectorAll('[data-turn-item="prose"] .message-content')].map((node) => node.textContent ?? "").join("") : "";
+    const live = assistant?.querySelector(".turn-live:not([data-leaving]) .turn-tick-in .turn-live-label")?.textContent?.trim() ?? "";
+    const target = assistant?.querySelector(".turn-live:not([data-leaving]) .turn-tick-in .turn-live-target")?.textContent?.trim() ?? "";
+    const ledger = assistant?.querySelector(".turn-ledger-text .turn-tick-in")?.textContent?.trim() ?? "";
+    if (assistant) {
+      // Append-only: from its first appearance no block moves down, unless something above it grew (a card filling, a disclosure the reader opened).
+      const base = assistant.getBoundingClientRect().top;
+      const blocks = [...assistant.querySelectorAll(":scope > [data-turn-item], :scope > .turn-footer")];
+      const next = new Map();
+      blocks.forEach((block, index) => {
+        const key = (block.dataset.turnItem ?? "footer") + ":" + index;
+        const top = Math.round(block.getBoundingClientRect().top - base);
+        const before = tops.get(key);
+        if (before !== undefined && top > before + 1) probe.moves.push({ t: now, block: key, by: top - before, streaming });
+        next.set(key, top);
+      });
+      tops = next;
+      const footer = assistant.querySelector(".turn-footer");
+      if (wasStreaming && !streaming && footer) {
+        const after = Math.round(footer.getBoundingClientRect().top - base);
+        probe.commit = { t: now, footerBefore: footerTop, footerAfter: after, linesBefore: probe.lines, linesAfter: lineRects(assistant), scrollBefore: lastScroll };
+        setTimeout(() => { probe.commit.scrollAfter500 = Math.round(document.querySelector(".message-scroll")?.scrollTop ?? 0); }, 500);
+      }
+      if (streaming && footer) footerTop = Math.round(footer.getBoundingClientRect().top - base);
+      if (streaming && frame % 6 === 0) probe.lines = lineRects(assistant);
+      wasStreaming = streaming;
+    }
+    const scrollTop = scroller ? Math.round(scroller.scrollTop) : null;
+    if (lastScroll !== null && scrollTop !== lastScroll) probe.scrolls.push({ t: now, from: lastScroll, to: scrollTop, streaming });
+    lastScroll = scrollTop;
+    if (frame % 3 === 0) {
+      const running = document.getAnimations().filter((animation) => animation.playState === "running");
+      probe.animations.max = Math.max(probe.animations.max, running.length);
+      for (const animation of running) {
+        const name = animation.animationName ?? animation.transitionProperty ?? "script";
+        probe.animations.names[name] = (probe.animations.names[name] ?? 0) + 1;
+        for (const keyframe of animation.effect?.getKeyframes?.() ?? []) for (const property of Object.keys(keyframe)) {
+          if (["offset", "easing", "composite", "computedOffset"].includes(property)) continue;
+          probe.animations.properties[property] = (probe.animations.properties[property] ?? 0) + 1;
+        }
+      }
+    }
+    const state = {
       gap: scroller ? Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight) : null,
-      scrollTop: scroller ? Math.round(scroller.scrollTop) : null,
+      scrollTop,
       assistant: Boolean(assistant),
-      streaming: Boolean(assistant?.classList.contains("streaming")),
+      streaming,
       text: prose.length,
-      height: assistant ? Math.round(assistant.getBoundingClientRect().height) : 0,
-      status,
-      visible: assistant ? Math.round(assistant.getBoundingClientRect().height) > 4 && (assistant.textContent ?? "").trim().length > 0 : false,
+      live, target, ledger,
       pill: Boolean(document.querySelector(".chat-status-pill")),
+      liveLines: assistant ? assistant.querySelectorAll(".turn-live:not([data-leaving])").length : 0,
     };
-    const key = JSON.stringify(frame);
-    if (key !== previous) { previous = key; probe.frames.push({ t: Math.round(performance.now()), mutations, ...frame }); }
+    const key = JSON.stringify(state);
+    if (key !== previous) { previous = key; probe.frames.push({ t: now, ...state }); }
     requestAnimationFrame(sample);
   };
   requestAnimationFrame(sample);
@@ -58,51 +120,43 @@ function percentile(values, p) {
   return Math.round(sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]);
 }
 
-function summarize(probe, scrolledAt) {
+function summarize(probe) {
   const frames = probe.frames;
-  // The scenario submits as it opens: the run starts when the newest message is the user's question.
-  const submitted = frames.findIndex((frame) => frame.gap !== null && !frame.assistant && frames.some((earlier) => earlier.t < frame.t && earlier.assistant));
-  const start = frames[submitted]?.t ?? 0;
-  const after = (frame) => frame.t >= start;
-  const firstAssistant = frames.find((frame) => after(frame) && frame.assistant);
-  const firstVisible = frames.find((frame) => after(frame) && frame.visible);
-  const firstText = frames.find((frame) => after(frame) && frame.text > 0);
-  const streamingFrames = frames.filter((frame) => after(frame) && frame.streaming);
+  const start = frames.find((frame) => frame.assistant)?.t ?? frames[0]?.t ?? 0;
   const done = frames.find((frame, index) => index > 0 && frame.assistant && !frame.streaming && frames[index - 1].streaming);
   const textFrames = frames.filter((frame, index) => index > 0 && frame.text !== frames[index - 1].text && frame.streaming);
   const gaps = textFrames.slice(1).map((frame, index) => frame.t - textFrames[index].t);
-  const shrinks = frames.filter((frame, index) => index > 0 && after(frame) && frames[index - 1].t >= start && frame.assistant && frames[index - 1].assistant && frame.height < frames[index - 1].height - 2)
-    .map((frame) => ({ t: frame.t - start, by: frames[frames.indexOf(frame) - 1].height - frame.height, text: frame.text }));
-  const textDrops = frames.filter((frame, index) => index > 0 && frames[index - 1].t >= start && frames[index - 1].assistant && frame.text < frames[index - 1].text && frames[index - 1].text > 0)
+  const adds = textFrames.map((frame) => frame.text - frames[frames.indexOf(frame) - 1].text);
+  const textDrops = frames.filter((frame, index) => index > 0 && frames[index - 1].assistant && frame.assistant && frame.text < frames[index - 1].text && frames[index - 1].text > 0)
     .map((frame) => ({ t: frame.t - start, from: frames[frames.indexOf(frame) - 1].text, to: frame.text }));
-  const statuses = [...new Set(frames.filter(after).map((frame) => frame.status).filter(Boolean))];
-  const window = (frame) => frame.t >= start && (!done || frame.t <= done.t + 600);
-  const unpinned = frames.filter((frame) => window(frame) && frame.streaming && frame.gap > 24 && (scrolledAt === undefined || frame.t < scrolledAt));
-  const mutationsDuringStream = streamingFrames.length ? streamingFrames.at(-1).mutations - streamingFrames[0].mutations : 0;
+  const labels = [];
+  for (const frame of frames) if (frame.live && labels.at(-1)?.label !== frame.live) labels.push({ t: frame.t - start, label: frame.live, target: frame.target });
   return {
-    msToAssistantShell: firstAssistant ? firstAssistant.t - start : null,
-    msToFirstVisibleFeedback: firstVisible ? firstVisible.t - start : null,
-    msToFirstAnswerText: firstText ? firstText.t - start : null,
+    msToAssistantShell: frames.find((frame) => frame.assistant) ? 0 : null,
     msToSettled: done ? done.t - start : null,
-    statusLabelsSeen: statuses,
+    liveLabels: labels,
+    ledgerTexts: [...new Set(frames.map((frame) => frame.ledger).filter(Boolean))],
+    maxLiveLinesAtOnce: Math.max(0, ...frames.map((frame) => frame.liveLines)),
     textUpdates: textFrames.length,
     textUpdateGapMs: { p50: percentile(gaps, 0.5), p95: percentile(gaps, 0.95), max: gaps.length ? Math.max(...gaps) : null },
-    heightShrinks: shrinks,
+    textUpdateChars: { p95: percentile(adds, 0.95), max: adds.length ? Math.max(...adds) : null, over40: adds.filter((value) => value > 40).length },
     textDrops,
+    // The live line is always the turn's last line and follows the text it is under; every other block must stay put.
+    blocksMovedDown: probe.moves.filter((move) => !move.block.startsWith("footer")).map((move) => ({ ...move, t: move.t - start })),
+    pageScrolls: probe.scrolls.map((scroll) => ({ ...scroll, t: scroll.t - start })),
+    commit: probe.commit && { ...probe.commit, t: probe.commit.t - start },
     layoutShiftTotal: Number(probe.shifts.filter((shift) => shift.t >= start).reduce((sum, shift) => sum + shift.value, 0).toFixed(4)),
     layoutShifts: probe.shifts.filter((shift) => shift.t >= start).map((shift) => ({ ...shift, t: Math.round(shift.t - start), value: Number(shift.value.toFixed(4)) })),
-    longTaskMs: Math.round(probe.longTasks.filter((task) => task.t >= start).reduce((sum, task) => sum + task.duration, 0)),
-    domMutationsWhileStreaming: mutationsDuringStream,
-    framesNotPinnedWhileStreaming: unpinned.length,
-    maxGapWhilePinned: unpinned.length ? Math.max(...unpinned.map((frame) => frame.gap)) : 0,
+    longTasks: probe.longTasks.filter((task) => task.t >= start).map((task) => ({ t: Math.round(task.t - start), duration: Math.round(task.duration) })),
+    animations: probe.animations,
   };
 }
 
-async function run(browser, origin, label, { scrollTest }) {
+async function run(browser, origin) {
   const { page, evaluate } = browser;
   await page("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
-  await page("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: reducedMotion ? "reduce" : "no-preference" }] });
-  await page("Page.navigate", { url: `${origin}/preview.html?scenario=chat-live-research&theme=${theme}` });
+  await page("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: reducedMotion ? "reduce" : "no-preference" }, { name: "prefers-color-scheme", value: theme }] });
+  await page("Page.navigate", { url: `${origin}/preview.html?scenario=${scenario}&theme=${theme}&locale=${locale}` });
   for (let tries = 0; tries < 200; tries += 1) {
     const ready = await evaluate("document.documentElement.dataset.previewReady ?? null").catch(() => null);
     if (ready === "true") break;
@@ -112,46 +166,45 @@ async function run(browser, origin, label, { scrollTest }) {
   const metrics = async () => Object.fromEntries((await page("Performance.getMetrics")).metrics.map(({ name, value }) => [name, value]));
   await page("Performance.enable", { timeDomain: "threadTicks" });
   const before = await metrics();
-  const frames = join(out, label);
+  const frames = join(out, "frames");
   await mkdir(frames, { recursive: true });
   const shots = [];
   const began = Date.now();
-  let scrolledAt;
-  let scrollCheck;
-  let jumped = false;
-  while (Date.now() - began < 16_000) {
-    const state = await evaluate(`(() => { const f = window.__probe.frames.at(-1); return f ? { streaming: f.streaming, text: f.text, assistant: f.assistant, t: f.t } : null; })()`);
+  let scrolled = null;
+  let answered = false;
+  while (Date.now() - began < 45_000) {
+    const state = await evaluate(`(() => { const f = window.__probe.frames.at(-1); return f ? { streaming: f.streaming, text: f.text, assistant: f.assistant } : null; })()`);
     const elapsed = Date.now() - began;
-    if (shots.length * 400 <= elapsed) {
+    if (shots.length * every <= elapsed) {
       const { data } = await page("Page.captureScreenshot", { format: "png" });
-      const name = `${String(shots.length).padStart(2, "0")}-${elapsed}ms.png`;
+      const name = `${String(shots.length).padStart(3, "0")}-${elapsed}ms.png`;
       await writeFile(join(frames, name), Buffer.from(data, "base64"));
       shots.push(name);
     }
-    if (scrollTest && state?.text > 200 && scrolledAt === undefined) {
-      scrolledAt = state.t;
-      await page("Input.dispatchMouseEvent", { type: "mouseWheel", x: width * 0.6, y: height * 0.45, deltaX: 0, deltaY: -420 });
+    // A question waits for the reader: answer it with the recommended option after a beat.
+    if (!answered && elapsed > 1_000) {
+      answered = await evaluate(`(() => { const card = document.querySelector(".question-card"); if (!card || !window.__askedAt) { if (card) window.__askedAt = performance.now(); return false; } if (performance.now() - window.__askedAt < 2500) return false; card.querySelector("[data-recommended]")?.click(); return true; })()`);
+    }
+    if (scrollTest && state?.text > 200 && !scrolled) {
+      await page("Input.dispatchMouseEvent", { type: "mouseWheel", x: width * 0.6, y: height * 0.45, deltaX: 0, deltaY: -240 });
+      await sleep(400);
+      scrolled = await evaluate(`(() => { const s = document.querySelector(".message-scroll"); return { at: Math.round(s.scrollTop), pill: Boolean(document.querySelector(".chat-status-pill")) }; })()`);
+      await sleep(1_200);
+      scrolled.after = await evaluate(`Math.round(document.querySelector(".message-scroll").scrollTop)`);
+      scrolled.jump = await evaluate(`(() => { const b = document.querySelector(".chat-status-pill-jump"); b?.click(); return Boolean(b); })()`);
       await sleep(700);
-      scrollCheck = await evaluate(`(() => { const s = document.querySelector(".message-scroll"); return { gap: Math.round(s.scrollHeight - s.scrollTop - s.clientHeight), jump: Boolean(document.querySelector(".chat-status-pill")) }; })()`);
+      scrolled.gapAfterJump = await evaluate(`(() => { const s = document.querySelector(".message-scroll"); const f = [...document.querySelectorAll(".turn-footer")].at(-1); return Math.round(f.getBoundingClientRect().bottom - s.getBoundingClientRect().bottom); })()`);
     }
-    if (scrollTest && scrollCheck && !jumped && Date.now() - began > 0 && state?.streaming) {
-      const later = await evaluate(`(() => { const s = document.querySelector(".message-scroll"); return Math.round(s.scrollHeight - s.scrollTop - s.clientHeight); })()`);
-      scrollCheck.gapAfterMoreText = later;
-      jumped = await evaluate(`(() => { const b = document.querySelector(".chat-status-pill-jump"); b?.click(); return Boolean(b); })()`);
-      await sleep(900);
-      scrollCheck.gapAfterJump = await evaluate(`(() => { const s = document.querySelector(".message-scroll"); return Math.round(s.scrollHeight - s.scrollTop - s.clientHeight); })()`);
-    }
-    if (state && state.assistant && !state.streaming && state.text > 0) { await sleep(800); break; }
-    await sleep(60);
+    if (state && state.assistant && !state.streaming && (state.text > 0 || elapsed > 8_000) && elapsed > 3_000) { await sleep(900); break; }
+    await sleep(Math.min(60, every / 2));
   }
   const after = await metrics();
   const cpu = Object.fromEntries(["ScriptDuration", "LayoutDuration", "RecalcStyleDuration", "TaskDuration"].map((name) => [name, Math.round((after[name] - before[name]) * 1000)]));
   const { data } = await page("Page.captureScreenshot", { format: "png" });
   await writeFile(join(frames, "final.png"), Buffer.from(data, "base64"));
   const probe = await evaluate("window.__probe");
-  const summary = { ...summarize(probe, scrollTest ? scrolledAt : undefined), cpuMs: cpu, ...(scrollTest ? { scroll: { ...scrollCheck, jumpButtonFound: jumped } } : {}) };
-  await writeFile(join(frames, "frames.json"), JSON.stringify(probe.frames));
-  return { summary, shots };
+  await writeFile(join(out, "frames.json"), JSON.stringify(probe.frames));
+  return { ...summarize(probe), cpuMs: cpu, ...(scrollTest ? { scroll: scrolled } : {}), shots: shots.length };
 }
 
 let server, browser, cacheDir;
@@ -166,9 +219,8 @@ try {
   await browser.page("Page.addScriptToEvaluateOnNewDocument", { source: instrument });
   await browser.page("Network.enable");
   await browser.page("Network.setBlockedURLs", { urls: ["https://*", "http://*.example/*"] });
-  const pinned = await run(browser, origin, "pinned", { scrollTest: false });
-  const scrolled = await run(browser, origin, "scrolled-up", { scrollTest: true });
-  const result = { size: `${width}x${height}`, theme, reducedMotion, pinned: pinned.summary, scrolledUp: scrolled.summary };
+  const summary = await run(browser, origin);
+  const result = { scenario, size: `${width}x${height}`, theme, locale, reducedMotion, ...summary };
   await writeFile(join(out, "summary.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
   console.log(`Probe: ${out}`);
