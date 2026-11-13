@@ -24,6 +24,9 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: "./src/test/setup.ts",
+    // No test relies on SWR; see src/test/swr.ts. Inlining `@ai-sdk/react` lets the alias reach its import.
+    alias: { swr: fileURLToPath(new URL("./src/test/swr.ts", import.meta.url)) },
+    server: { deps: { inline: ["@ai-sdk/react"] } },
     css: true,
     // Leaves room for the widened testing-library async window under load.
     testTimeout: 60_000,
