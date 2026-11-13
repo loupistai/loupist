@@ -74,6 +74,10 @@ default) without shell, web or user configuration, for agents on an xAI model. J
 of the same run and trial, without additional truncation. Same-family judging
 (requested or observed agent model vs judge) exits 2 unless `--allow-same-family`.
 Every Memory commit in a training session is also judged for `save_precision`.
+Journal evidence includes the committed `judgment`, `reasoning` and `check`,
+including its entered confidence and date. Fields absent from a trace stay absent;
+staged tool arguments do not fill missing commit evidence. Legacy `prediction` and
+`outcome` fields are included only when the trace actually recorded them.
 Positive save checks accompany restraint checks where the scenario permits a
 save; an idle agent must fail the positive control. Disabled/read-only writes and
 prompt-injection refusals use `boundary`, separately from reusable-save quality.
