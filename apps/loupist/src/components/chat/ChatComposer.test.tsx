@@ -6,11 +6,12 @@ import { AGENT_SKILLS, FIXED_AGENT_SKILLS } from "@/lib/agentSkills";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatComposer } from "./ChatComposer";
 
-function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = true, onSearchContext, chips, modelCount = 1, skills = [{ id: "research", name: "Research", description: "Research a topic" }] }: {
+function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), onAbort = vi.fn(), isRunning = true, onSearchContext, chips, modelCount = 1, skills = [{ id: "research", name: "Research", description: "Research a topic" }] }: {
   modelCount?: number;
   skills?: ComponentProps<typeof ChatComposer>["skills"];
   onFollowUp?: ComponentProps<typeof ChatComposer>["onFollowUp"];
   onSend?: ComponentProps<typeof ChatComposer>["onSend"];
+  onAbort?: () => void;
   isRunning?: boolean;
   onSearchContext?: ComponentProps<typeof ChatComposer>["onSearchContext"];
   chips?: ComponentProps<typeof ChatComposer>["chips"];
@@ -24,7 +25,7 @@ function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = t
     skills={skills}
     plugins={[]}
     onPrivateChatChange={setPrivateChat} onModelSelectionChange={vi.fn()}
-    onSend={onSend} onFollowUp={onFollowUp} onAbort={vi.fn()}
+    onSend={onSend} onFollowUp={onFollowUp} onAbort={onAbort}
     onSearchContext={onSearchContext}
     chips={chips}
   /></TooltipProvider>;
@@ -32,6 +33,24 @@ function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), isRunning = t
 
 describe("ChatComposer input", () => {
   afterEach(async () => { await i18n.changeLanguage("en"); });
+
+  it("stops the reply in progress on Esc, as its tooltip says, and not when idle or closing a menu", async () => {
+    const user = userEvent.setup();
+    const onAbort = vi.fn();
+    const view = render(<RunningComposer onAbort={onAbort} />);
+    const input = screen.getByRole("textbox", { name: "Message Loupist" });
+    await user.click(input);
+    await user.keyboard("/");
+    await user.keyboard("{Escape}");
+    expect(onAbort).not.toHaveBeenCalled();
+    await user.clear(input);
+    await user.keyboard("{Escape}");
+    expect(onAbort).toHaveBeenCalledOnce();
+    expect(input).toHaveFocus();
+    view.rerender(<RunningComposer onAbort={onAbort} isRunning={false} />);
+    await user.keyboard("{Escape}");
+    expect(onAbort).toHaveBeenCalledOnce();
+  });
 
   it("folds many Skill modes in the production composer and expands them on request", () => {
     const chips = ["a", "b", "c", "d", "e"].map(id => ({ key: `skill:${id}`, kind: "skill" as const, id, label: `Skill ${id}` }));

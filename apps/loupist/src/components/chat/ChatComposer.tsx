@@ -944,6 +944,12 @@ export function ChatComposer({
         }
       }
     }
+    // Esc stops the reply in progress (the Stop tile's shortcut); an open menu took it above.
+    if (isRunning && event.key === "Escape" && !isStopping) {
+      event.preventDefault();
+      onAbort();
+      return;
+    }
     // Enter queues. ⌘Enter / Ctrl+Enter guides the reply in progress. Shift+Enter stays a new line.
     if (isRunning && event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();

@@ -74,7 +74,8 @@ same button stays mounted from idle to running and back, so its box never change
 its two icons cross-fade in place (opacity and a 0.8 scale, 120 ms; a swap under reduced
 motion) while its fill eases to the action colour. With nothing typed, Send is a quiet
 tile whose arrow uses the tertiary text colour, at least 3:1 against the tile in both
-themes; while a reply runs, Stop is a filled square. Stop ("Stop response", Esc in its tooltip) dims to
+themes; while a reply runs, Stop is a filled square. Stop ("Stop response", Esc in its tooltip; Esc in the composer stops the reply unless a
+menu is open) dims to
 55% after a press and ignores presses until the host confirms. Focus stays in the
 textarea through send, stop and commit, including the first message of a new research
 session: the saved Chat it creates keeps the draft's composer and thread instead of
