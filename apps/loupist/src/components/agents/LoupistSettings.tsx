@@ -407,14 +407,14 @@ export function LoupistSettings({
               </Disclosure>
             </Disclosure> : null}
             <Disclosure title={i18n.t("settings:loupistSettings.localWorkspace")} data-loupist-section="workspace">
-            <section className="agent-workspace-card" aria-labelledby="agent-workspace-heading">
-              <header className="agent-section-heading"><div><h2 id="agent-workspace-heading">{i18n.t("settings:loupistSettings.localWorkspace")}</h2><p className="agent-config-description">{i18n.t("settings:loupistSettings.workspaceCaption")}</p></div><span className="agent-workspace-state">{available ? i18n.t("settings:loupistSettings.connected") : i18n.t("settings:loupistSettings.needsAttention")}</span></header>
+            {/* The disclosure's title names this block; no second heading or rule inside it. */}
+            <div className="agent-workspace-card">
+              <div className="agent-section-heading"><p className="agent-config-description">{i18n.t("settings:loupistSettings.workspaceCaption")}</p><span className="agent-workspace-state">{available ? i18n.t("settings:loupistSettings.connected") : i18n.t("settings:loupistSettings.needsAttention")}</span></div>
               <p className="workspace-path agent-workspace-path" aria-label={i18n.t("settings:loupistSettings.workspaceFolder")}>{selectedAgent.workspace_path}</p>
               {available ? <>
-                <div className="agent-workspace-actions"><Button variant="outline" size="sm" disabled={openingFolder} onClick={() => void revealWorkspace()}><FolderOpenIcon />{openingFolder ? i18n.t("settings:loupistSettings.opening") : i18n.t("settings:loupistSettings.showInFileManager")}</Button>{onReconnect ? <Button variant="ghost" size="sm" disabled={mutationBusy} onClick={onReconnect}>{i18n.t("settings:loupistSettings.reconnectFolder")}</Button> : null}</div>
+                <div className="agent-workspace-actions"><Button variant="outline" size="sm" disabled={openingFolder} onClick={() => void revealWorkspace()}><FolderOpenIcon />{openingFolder ? i18n.t("settings:loupistSettings.opening") : i18n.t("settings:runDiagnostics.reveal")}</Button>{onReconnect ? <Button variant="ghost" size="sm" disabled={mutationBusy} onClick={onReconnect}>{i18n.t("settings:loupistSettings.reconnectFolder")}</Button> : null}</div>
               </> : null}
-            </section>
-
+            </div>
             </Disclosure>
             <section className="agent-removal-card" aria-labelledby="agent-removal-heading"><div><h2 id="agent-removal-heading">{i18n.t("settings:loupistSettings.removeFromThisApp")}</h2><p>{i18n.t("settings:loupistSettings.yourWorkspaceFolderChatsAndMemoryStayOn")}</p>{!removable ? <p>{i18n.t("settings:loupistSettings.reconnectThisLoupistBeforeRemovingIt")}</p> : null}</div><Button type="button" size="sm" variant="outline" disabled={mutationBusy || !removable} onClick={() => setDeleteOpen(true)}><Trash2Icon /> {i18n.t("settings:loupistSettings.removeLoupist")}</Button></section>
           </div>

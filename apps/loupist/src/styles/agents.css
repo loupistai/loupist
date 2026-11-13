@@ -14,7 +14,9 @@
 .loupist-settings-body [data-loupist-section] { scroll-margin-top: var(--gg-space-5); }
 .loupist-learning-switch small { display: block; }
 .agent-profile-card, .agent-workspace-card, .agent-section, .agent-removal-card { min-width: 0; background: transparent; }
-.agent-workspace-card { padding: var(--gg-space-5) 0; border-block: 1px solid var(--gg-color-border-subtle); }
+.agent-workspace-card { padding: 0 0 var(--gg-space-5); }
+.agent-workspace-card > .agent-section-heading { align-items: center; }
+.agent-workspace-card > .agent-section-heading p { margin: 0; }
 .agent-section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--gg-space-4); }
 .agent-section-heading h2 { display: flex; gap: var(--gg-space-2); align-items: center; margin: 0; font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); }
 .agent-section-heading h2 > svg { width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); }

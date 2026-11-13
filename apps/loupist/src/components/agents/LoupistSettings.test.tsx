@@ -64,8 +64,11 @@ it("searches the selected Loupist’s capabilities and reveals that Loupist’s 
   await user.type(screen.getByRole("searchbox", { name: "Search skills and connections" }), "cash flows");
   expect(screen.queryByRole("switch", { name: "Filing comparison: enabled" })).toBeNull();
   expect(screen.getByRole("switch", { name: "Valuation: disabled" })).not.toBeChecked();
-  await user.click(document.querySelector('[data-loupist-section="workspace"] > summary')!);
-  await user.click(screen.getByRole("button", { name: "Show in file manager" }));
+  const workspace = document.querySelector<HTMLElement>('[data-loupist-section="workspace"]')!;
+  await user.click(workspace.querySelector("summary")!);
+  // The disclosure's title is the block's only heading.
+  expect(within(workspace).queryByRole("heading")).toBeNull();
+  await user.click(within(workspace).getByRole("button", { name: "Reveal in Finder" }));
   await waitFor(() => expect(reveal).toHaveBeenCalledExactlyOnceWith({ loupist_id: selectedAgent.id }));
   expect(screen.getByLabelText("Workspace folder")).toHaveTextContent(selectedAgent.workspace_path);
 });
