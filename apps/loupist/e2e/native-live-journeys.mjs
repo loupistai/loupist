@@ -225,12 +225,12 @@ async function newChat() {
 async function sendPrompt(text, attachment) {
   await openDestination(browser, "chat");
   const previousAnswerIds = new Set();
-  for (const article of await browser.$$("article.message.assistant")) {
+  for (const article of await browser.$$("article.message.assistant[data-message-id]")) {
     previousAnswerIds.add(await article.getAttribute("data-message-id"));
   }
   const newAnswers = async () => {
     const result = [];
-    for (const article of await browser.$$("article.message.assistant")) {
+    for (const article of await browser.$$("article.message.assistant[data-message-id]")) {
       if (!previousAnswerIds.has(await article.getAttribute("data-message-id"))) result.push(article);
     }
     return result;
@@ -299,7 +299,7 @@ async function sendPrompt(text, attachment) {
 }
 
 async function answerText() {
-  const articles = await browser.$$("article.message.assistant");
+  const articles = await browser.$$("article.message.assistant[data-message-id]");
   const last = articles.at(-1);
   if (!last) return "";
   return (await last.getText()).replace(/\s+/g, " ").trim();
@@ -981,7 +981,7 @@ try {
           if (await button.isDisplayed().catch(() => false)) stop = button;
         }
         if (!stop) return false;
-        const latest = (await browser.$$("article.message.assistant")).at(-1);
+        const latest = (await browser.$$("article.message.assistant[data-message-id]")).at(-1);
         if (!latest) return false;
         const toggle = await latest.$("button[data-testid=chat-progress-toggle]");
         if (await toggle.isExisting() && (await toggle.getAttribute("aria-expanded")) !== "true" && await toggle.isDisplayed().catch(() => false)) {
@@ -994,7 +994,7 @@ try {
       // writeback, so wait out the write, then stop during the sleep.
       const runningSince = Date.now();
       await browser.waitUntil(async () => {
-        const latest = (await browser.$$("article.message.assistant")).at(-1);
+        const latest = (await browser.$$("article.message.assistant[data-message-id]")).at(-1);
         const text = latest ? await latest.getText() : "";
         if (/\bRan Python\b/u.test(text)) {
           throw new Error("Python finished before Stop, so the pre-cancel write was not isolated");
@@ -1017,7 +1017,7 @@ try {
         }
         return true;
       }, { timeout: 120_000, interval: 250, timeoutMsg: "The Python run did not stop" });
-      const stopped = (await browser.$$("article.message.assistant")).at(-1);
+      const stopped = (await browser.$$("article.message.assistant[data-message-id]")).at(-1);
       assert.match(await stopped?.getAttribute("class") ?? "", /\baborted\b/u, "The turn did not stop");
       assert.doesNotMatch(await answerText(), /still-running/u);
       const rows = (await collectWorkProgress(browser, { latestOnly: true })).flatMap((section) => section.rows);
