@@ -14,14 +14,16 @@ import { sameBlock, type GridBlock } from "../../chat/chartBlocks";
 import { GRID_SCHEMA } from "../../contracts/chat";
 import { citationNumber } from "../../chat/numberChecks";
 import { citationLabel, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
-import { emptyReason, gridCounts, gridCsv, gridMarkdown, gridTsv, isValueCell, nextSort, sortedRows, type GridSort } from "../../chat/grid";
+import { emptyReason, gridCounts, gridCsv, gridMarkdown, gridTsv, isValueCell, nextSort, shownCheck, sortedRows, type GridSort } from "../../chat/grid";
 import { exportFileName, utf8Bytes } from "../../chat/exportChat";
 import { useAssetNames } from "../assets/assetName";
 import { formatAsOf } from "../../chat/asOf";
 import { useChatExecution } from "./ChatExecutionContext";
 import { NumberChip } from "./NumberChip";
 import { CitationChip } from "./CitationChip";
+import { CitedNote } from "./CitedNote";
 import { useGo, useOpenProps } from "../navigation/Open";
+import { titledExport } from "../../lib/exportTitle";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -36,8 +38,9 @@ const shortDate = (value: string) => formatDate(Date.parse(`${value}T00:00:00Z`)
 /** A value: its number chip when the cited evidence is retained, the printed value otherwise. */
 function ValueCell({ cell, asset, evidenceRefs, asOf }: { cell: GridValueCell; asset?: string; evidenceRefs: readonly ChatEvidenceRef[]; asOf?: string }) {
   const evidence = evidenceRefs.find((item) => item.id === cell.evidence_id);
-  if (!evidence) return <span className="gg-num">{cell.value}</span>;
-  return <NumberChip check={cell.check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={asOf} asset={asset}>{cell.value}</NumberChip>;
+  const check = shownCheck(cell);
+  if (!evidence) return <span className="gg-num">{check.text}</span>;
+  return <NumberChip check={check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={asOf} asset={asset}>{check.text}</NumberChip>;
 }
 
 /** An empty cell says why; with the run's note, hover or focus opens it. */
@@ -53,7 +56,7 @@ function EmptyCell({ cell, spoken }: { cell: GridEmptyCell; spoken: string }) {
       </button>
     </Popover.Trigger>
     <Popover.Portal>
-      <Popover.Content className="grid-card-note" side="top" align="start" sideOffset={4} onOpenAutoFocus={(event) => event.preventDefault()}>{cell.note}</Popover.Content>
+      <Popover.Content className="grid-card-note" side="top" align="start" sideOffset={4} onOpenAutoFocus={(event) => event.preventDefault()}><CitedNote text={cell.note} /></Popover.Content>
     </Popover.Portal>
   </Popover.Root>;
 }
@@ -278,7 +281,7 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
         {t("grid.moreColumns", { count: scroll.fit.hidden, formattedCount: formatNumber(scroll.fit.hidden) })}<ArrowRightIcon aria-hidden="true" />
       </button> : null}
     </div>
-    {grid.notes?.length ? <div className="grid-card-notes">{grid.notes.slice(0, 3).map((note, index) => <p key={index}>{note}</p>)}</div> : null}
+    {grid.notes?.length ? <div className="grid-card-notes">{grid.notes.slice(0, 3).map((note, index) => <p key={index}><CitedNote text={note} evidenceRefs={evidenceRefs} /></p>)}</div> : null}
   </section>;
 }
 
@@ -378,21 +381,25 @@ export const ChatGridBlock = memo(function ChatGridBlock({ block, onAsk, askDisa
 }) {
   useTranslation("chat");
   const scope = useChatExecution();
-  const [view, setView] = useState<ViewState>({ status: "loading" });
+  const staged = block.kind === "ready" ? block.staged : undefined;
+  const [view, setView] = useState<ViewState>(() => staged ? { status: "ready", view: staged } : { status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const artifactId = block.kind === "ready" ? block.artifact.artifact_id : null;
   const revision = block.kind === "ready" ? block.artifact.revision : null;
   useEffect(() => {
     if (!artifactId) return undefined;
+    // Delivered before the commit: drawn as delivered, so the card fills while the answer is written.
+    if (staged) { setView({ status: "ready", view: staged }); return undefined; }
     if (!scope) { setView({ status: "unavailable" }); return undefined; }
     let live = true;
-    setView({ status: "loading" });
+    // A card already drawing this revision keeps it while the stored copy is read, so it never blinks.
+    setView((current) => current.status === "ready" && current.view.artifact.id === artifactId && current.view.revision.revision === revision ? current : { status: "loading" });
     void scope.bridge.chatArtifactRead(scope.loupistId, scope.threadId, artifactId, revision ?? undefined)
       .then((next) => { if (live) setView({ status: "ready", view: next }); })
       .catch(() => { if (live) setView({ status: "unavailable" }); });
     return () => { live = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scope's fields; a new scope object for the same thread must not re-read.
-  }, [artifactId, revision, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
+  }, [artifactId, revision, staged, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
 
   const title = block.kind === "ready" ? (view.status === "ready" ? view.view.artifact.title : block.artifact.title) : block.title;
   const loaded = view.status === "ready" && block.kind === "ready" && !block.updating ? view.view : null;
@@ -407,7 +414,7 @@ export const ChatGridBlock = memo(function ChatGridBlock({ block, onAsk, askDisa
       return <ConflictCard title={title} conflict={payload.grid} evidenceRefs={evidenceRefs} />;
     }
     return <GridCard title={title} grid={payload.grid} evidenceRefs={evidenceRefs} filled={wasBuilding}
-      onExport={(request) => scope.bridge.exportSave(request)}
+      onExport={(request) => scope.bridge.exportSave(titledExport(request))}
       onAsk={onAsk ? () => onAsk(chatArtifactRef(loaded)) : undefined} askDisabled={askDisabled} />;
   }
   let state: ReactNode;

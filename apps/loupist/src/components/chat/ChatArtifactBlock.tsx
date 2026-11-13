@@ -16,6 +16,7 @@ import { ChartBoundary } from "../artifacts/ChartBoundary";
 import { ChartSnapshotContext, type ChartSnapshotSlot } from "../charts/chartSnapshot";
 import { useSaveChartPng } from "../charts/SaveChartPng";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { titledExport } from "../../lib/exportTitle";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -61,7 +62,8 @@ export const ChatArtifactBlock = memo(function ChatArtifactBlock({ block, onAsk,
   const scope = useChatExecution();
   const wide = useWideWindow();
   const [expanded, setExpanded] = useState(false);
-  const [view, setView] = useState<ViewState>({ status: "loading" });
+  const staged = block.kind === "ready" ? block.staged : undefined;
+  const [view, setView] = useState<ViewState>(() => staged ? { status: "ready", view: staged } : { status: "loading" });
   const [attempt, setAttempt] = useState(0);
   // The drawn chart leaves its snapshot here for "Save as PNG…".
   const [snapshot] = useState<ChartSnapshotSlot>(() => ({ current: null }));
@@ -73,19 +75,22 @@ export const ChatArtifactBlock = memo(function ChatArtifactBlock({ block, onAsk,
 
   useEffect(() => {
     if (!artifactId) return undefined;
+    // Delivered before the commit: drawn as delivered, so the card fills while the answer is written.
+    if (staged) { setView({ status: "ready", view: staged }); return undefined; }
     if (!scope) { setView({ status: "unavailable" }); return undefined; }
     let live = true;
-    setView({ status: "loading" });
+    // A card already drawing this revision keeps it while the stored copy is read, so it never blinks.
+    setView((current) => current.status === "ready" && current.view.artifact.id === artifactId && current.view.revision.revision === revision ? current : { status: "loading" });
     void scope.bridge.chatArtifactRead(scope.loupistId, scope.threadId, artifactId, revision ?? undefined)
       .then((next) => { if (live) setView({ status: "ready", view: next }); })
       .catch(() => { if (live) setView({ status: "unavailable" }); });
     return () => { live = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scope's fields; a new scope object for the same thread must not re-read.
-  }, [artifactId, revision, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
+  }, [artifactId, revision, staged, scope?.bridge, scope?.loupistId, scope?.threadId, attempt]);
 
   const title = block.kind === "ready" ? (view.status === "ready" ? view.view.artifact.title : block.artifact.title) : block.title;
   // The card owns the save, so a failure stays visible after the "…" menu closes.
-  const png = useSaveChartPng(snapshot, title, (request) => scope ? scope.bridge.exportSave(request) : Promise.reject(new Error("no chat scope")));
+  const png = useSaveChartPng(snapshot, title, (request) => scope ? scope.bridge.exportSave(titledExport(request)) : Promise.reject(new Error("no chat scope")));
   const building = block.kind === "building" || (block.kind === "ready" && block.updating);
   const current = view.status === "ready" && block.kind === "ready" ? view.view : null;
   // The answer recorded the revision it published; a newer stored one belongs to a later answer.

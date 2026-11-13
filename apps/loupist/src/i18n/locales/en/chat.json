@@ -1911,5 +1911,8 @@
     "minutes": "{{m}}m {{s}}s",
     "stepSeconds": "{{value}}s",
     "more": "+{{formattedCount}}"
+  },
+  "citedNote": {
+    "source": "source"
   }
 }

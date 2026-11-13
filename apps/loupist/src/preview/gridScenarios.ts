@@ -134,7 +134,8 @@ function gridFixture(variant: Variant): { title: string; grid: AssetsGrid; evide
     grid: {
       layout: "assets",
       subtitle: ko() ? "별도 표시가 없으면 연결 기준 · 각 회사 통화" : "Consolidated unless noted · values in each company's own currency",
-      notes: [ko() ? "이슬물류는 별도 재무제표만 공시해요." : "Iseul Logistics files separate statements only."],
+      // Models name a note's source by its citation target; the card draws it as a citation.
+      notes: [ko() ? "이슬물류는 별도 재무제표만 공시해요 (#evidence-ev_iseul_statements)." : "Iseul Logistics files separate statements only (#evidence-ev_iseul_statements)."],
       rows: COMPANIES.map((company) => ({ symbol: company.symbol, market: "KRX", label: company.name(), asset_id: `ast_${company.id.padEnd(16, "0").slice(0, 16)}` })),
       columns,
       cells,

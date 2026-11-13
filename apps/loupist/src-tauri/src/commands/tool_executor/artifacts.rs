@@ -910,6 +910,39 @@ impl AppToolExecutor {
     }
 }
 
+impl ToolCapture {
+    /// Shows each delivered chart or table to the renderer before the reply
+    /// commits, as the stored snapshot will read (a grid's cited evidence
+    /// from this turn). Nothing is written: the reply still saves or drops it.
+    pub(super) async fn show_staged_artifacts(&self, commits: &[ArtifactCommit]) {
+        let Some(sink) = &self.artifact_sink else {
+            return;
+        };
+        for commit in commits {
+            let evidence_refs = match &commit.revision.payload {
+                ChatArtifactPayload::Grid { grid, .. } => {
+                    let cited = grid.evidence_ids();
+                    self.evidence_refs
+                        .lock()
+                        .await
+                        .iter()
+                        .filter(|evidence| cited.contains(&evidence.id))
+                        .cloned()
+                        .collect()
+                }
+                ChatArtifactPayload::Chart { .. } => Vec::new(),
+                ChatArtifactPayload::Markdown { .. } => continue,
+            };
+            sink(crate::commands::types::ChatArtifactViewDto {
+                artifact: commit.artifact.clone(),
+                revision: commit.revision.clone(),
+                chart_dataset: commit.datasets.first().cloned(),
+                evidence_refs,
+            });
+        }
+    }
+}
+
 const CHART_RESHAPE_HINT: &str = "If the selected result is not chart-shaped, export the dataset, transform it with run_python, then use dataset_import and publish from its dataset_ref.";
 
 fn chart_dataset_error(error: crate::chat::artifacts::ChatArtifactError) -> BrokerError {

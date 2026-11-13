@@ -72,7 +72,9 @@
 /* A turn is a question and everything up to the next one. The one being read keeps a viewport of room below its question,
    so the question can sit at the top while a short reply writes beneath it. */
 .turn { display: flex; flex-direction: column; gap: var(--gg-space-7); min-width: 0; }
-.turn[data-turn-reserve] { min-height: calc(var(--turn-viewport, 100vh) - var(--gg-space-4) + var(--turn-lead, 0px)); }
+/* An answered question collapses to one line; the turn keeps the height it had then (`--turn-hold`) while the
+   reply runs, so the scroll range never shrinks under the reader and the page does not jump. */
+.turn[data-turn-reserve] { min-height: max(calc(var(--turn-viewport, 100vh) - var(--gg-space-4) + var(--turn-lead, 0px)), var(--turn-hold, 0px)); }
 .message { margin: 0; }
 .message.user { width: fit-content; max-width: min(82%, 660px); margin-left: auto; padding: 0; }
 .message.user .message-meta { display: none; }

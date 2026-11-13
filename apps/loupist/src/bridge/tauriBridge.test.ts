@@ -44,7 +44,7 @@ it("preserves native cancellation and missing results", async () => {
   const bridge = createLoupistBridge();
   vi.mocked(invoke).mockResolvedValue(null);
   expect(await bridge.pickFile({ title: "Holdings", filters: [{ name: "CSV", extensions: ["csv"] }] })).toBeNull();
-  expect(await bridge.exportSave({ suggestedName: "map.png", bytes: [1], kind: "png" })).toBeNull();
+  expect(await bridge.exportSave({ suggestedName: "map.png", bytes: [1], kind: "png", title: "Save image" })).toBeNull();
   expect(await bridge.siteFavicon("https://example.com")).toBeNull();
   expect(invoke).toHaveBeenLastCalledWith("site_favicon", { url: "https://example.com" });
 });

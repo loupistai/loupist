@@ -30,6 +30,10 @@ wrap below the plot as the panel changes width, keeping room for the data;
 display labels do not change series identity or stored values.
 Financial charts can attach a selected date range to a follow-up question. Theme changes restyle the open chart while retaining local drawings and zoom.
 Position, entry, stop and target overlays name their source or analytical basis.
+A chart's caption, like a table's notes, may name its sources by `#evidence-…`
+target: the card draws each as a citation (its number in the answer, or the source's
+name), an unresolved one reads "source", and table exports write the source's name,
+never the raw id.
 The agent preserves user-supplied values; when asked to choose levels, it labels
 them as an analytical proposal with its evidence and assumptions, never an order
 or the user's own Journal judgment.

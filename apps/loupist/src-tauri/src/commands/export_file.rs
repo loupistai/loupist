@@ -46,6 +46,32 @@ pub struct ExportRequest {
     suggested_name: String,
     bytes: Vec<u8>,
     kind: ExportKind,
+    /// The Save dialog's title in the interface language, as the renderer
+    /// words it (like `pick_file`'s).
+    title: String,
+}
+/// The longest dialog title accepted; a longer one is shortened, not refused.
+const MAX_TITLE_CHARS: usize = 80;
+/// The Save dialog's title: the renderer's words on one line, bounded, or
+/// "Save" when it sent none.
+fn dialog_title(title: &str) -> String {
+    let line: String = title
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if line.is_empty() {
+        return "Save".to_owned();
+    }
+    line.chars().take(MAX_TITLE_CHARS).collect()
 }
 fn validate_size(size: usize, kind: ExportKind) -> Result<(), CommandError> {
     if size == 0 || size > kind.max_bytes() {
@@ -165,7 +191,7 @@ pub async fn export_save(
 ) -> Result<Option<String>, CommandError> {
     validate_size(request.bytes.len(), request.kind)?;
     let Some(file) = rfd::AsyncFileDialog::new()
-        .set_title("Save export")
+        .set_title(dialog_title(&request.title))
         .set_file_name(suggested_name(&request.suggested_name, request.kind))
         .add_filter(
             request.kind.extension().to_uppercase(),
@@ -217,6 +243,16 @@ mod tests {
         assert_eq!(suggested_name("../map.exe", ExportKind::Png), "map.png");
         assert_eq!(suggested_name("../notes.exe", ExportKind::Md), "notes.md");
         assert_eq!(suggested_name("", ExportKind::Csv), "data.csv");
+    }
+    #[test]
+    fn the_save_dialog_is_titled_in_the_renderers_words_on_one_bounded_line() {
+        assert_eq!(dialog_title("이미지 저장"), "이미지 저장");
+        assert_eq!(dialog_title("  Save\nimage\t "), "Save image");
+        assert_eq!(dialog_title(" \u{7} "), "Save");
+        assert_eq!(
+            dialog_title(&"표".repeat(200)).chars().count(),
+            MAX_TITLE_CHARS
+        );
     }
     #[cfg(unix)]
     #[test]

@@ -23,7 +23,10 @@
 .loupist-chat-button[data-panel-open] .loupist-home-icon { color: var(--gg-color-text-primary); }
 /* Only the title stretches; the draft dot, status dot and private mark keep their own size at the row's end. */
 .loupist-chat-button > .loupist-chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-running { width: calc(var(--gg-space-2) + var(--gg-space-1) / 2); height: calc(var(--gg-space-2) + var(--gg-space-1) / 2); }
+/* A running reply: a still ring, open at one quarter like the header's run indicator. Never animated:
+   while a reply runs, its live line's sheen is the one thing that loops. */
+.thread-running { flex: none; box-sizing: border-box; width: calc(var(--gg-space-2) + var(--gg-space-1) / 2); height: calc(var(--gg-space-2) + var(--gg-space-1) / 2); border: 2px solid var(--gg-color-accent); border-inline-start-color: transparent; border-radius: var(--gg-radius-full); }
+@media (forced-colors: active) { .thread-running { border-color: Highlight; border-inline-start-color: transparent; } }
 .loupist-chat-menu { position: absolute; right: 0; top: 0; opacity: 0; }
 .loupist-chat-row:hover .loupist-chat-menu, .loupist-chat-row:focus-within .loupist-chat-menu { opacity: 1; }
 .navigation-footer { flex-shrink: 0; border-top: 1px solid var(--gg-color-border-subtle); padding: var(--gg-space-2); }

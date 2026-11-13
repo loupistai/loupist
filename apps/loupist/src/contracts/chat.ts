@@ -414,6 +414,12 @@ export type ChatMessage = HostPostRecords & {
   answer_key?: string;
   attachments?: ChatAttachment[];
   artifact_refs?: ChatArtifactRef[];
+  /**
+   * Charts and tables this streaming reply published, as the host delivered
+   * them before the commit, so their cards fill in place. Shown only while
+   * the reply streams or once it completes; not stored with the Chat message.
+   */
+  staged_artifacts?: ChatArtifactView[];
   performance?: ChatPerformance;
 };
 
@@ -560,6 +566,8 @@ export type ChatStreamEvent =
       run_id: string;
       result: MemoryUpdateResult;
     }
+  /** A chart or table delivered before the reply commits; `artifact` follows only if it does. */
+  | { type: "artifact_staged"; run_id: string; view: ChatArtifactView }
   | {
       type: "artifact";
       run_id: string;

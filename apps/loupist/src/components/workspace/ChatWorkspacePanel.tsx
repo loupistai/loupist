@@ -62,6 +62,7 @@ import { WorkspaceKnowledgeReader } from "./WorkspaceKnowledgeReader";
 import { ChatMiniMap } from "./ChatMiniMap";
 import { useChatMap } from "./ChatMapContext";
 import { WorkspaceTabBar } from "./WorkspaceTabBar";
+import { titledExport } from "../../lib/exportTitle";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -574,7 +575,7 @@ function ScopedChatWorkspacePanel({
             {shownRevision !== null ? <Button type="button" variant="ghost" size="sm" onClick={() => showRevision(null)}>{t("workVersions.backToCurrent")}</Button> : null}
           </div>
         ) : view ? (
-          <ArtifactContent view={view} theme={theme} workspacePath={workspacePath} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(request)} toolbarTarget={statusSlot} />
+          <ArtifactContent view={view} theme={theme} workspacePath={workspacePath} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(titledExport(request))} toolbarTarget={statusSlot} />
         ) : null}
       </> : <WorkspaceWorkList bridge={bridge} loupistId={loupistId} refreshKey={workRefreshKey} building={buildingWork}
         onOpen={async (item) => {

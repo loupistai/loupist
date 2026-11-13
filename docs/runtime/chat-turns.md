@@ -36,6 +36,9 @@ with the cited evidence of the message that published it, so its
 branch change. The lazily created `chat_artifact_revisions` table keeps bounded
 snapshots in the same database, without changing its schema version; deletion of
 an artifact cascades to its history. Publication, restore and pruning are atomic.
+A delivered `chart_publish` or `grid_publish` call also streams its staged content
+(`artifact_staged`) so the card fills at once; that event writes nothing, and only the
+reply's commit stores the artifact and sends its `artifact` reference.
 [Artifact history](../analysis/charts.md#visualizations) describes retention and revision reads. [Item surfaces](../analysis/surfaces.md#where-each-item-appears) owns that UI mapping.
 
 ### Local workspace execution

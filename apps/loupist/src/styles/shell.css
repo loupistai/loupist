@@ -309,10 +309,7 @@ html[data-desktop-platform="macos"] .app-shell {
   border-radius: 50%;
   pointer-events: none;
 }
-@media (prefers-reduced-motion: no-preference) {
-  .loupist-run-indicator { animation: loupist-working 1.8s linear infinite; }
-}
-@keyframes loupist-working { to { transform: rotate(1turn); } }
+/* Still, never spinning: while a reply runs, its live line's sheen is the one thing that loops. */
 @media (forced-colors: active) {
   .loupist-run-indicator { border-color: Highlight transparent transparent Highlight; }
 }

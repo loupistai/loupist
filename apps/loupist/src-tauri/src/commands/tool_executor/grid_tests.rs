@@ -285,6 +285,61 @@ async fn malformed_grids_are_refused_with_the_field_to_fix() {
 }
 
 #[tokio::test]
+async fn a_delivered_grid_is_shown_before_the_reply_saves_it_and_a_discarded_one_never_is() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut executor = executor(&temporary, "assistant-grid-shown");
+    let shown = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut capture = ToolCapture::for_chat("assistant-grid-shown".into());
+    let sink = shown.clone();
+    capture.artifact_sink = Some(Arc::new(move |view| sink.lock().unwrap().push(view)));
+    executor.capture = Arc::new(capture);
+    let solsup = statements(&executor, "Solsup Foods", "452300000000", "38100000000").await;
+    statements(&executor, "Iseul Logistics", "128400000000", "7600000000").await;
+    let params = grid(
+        rows(2),
+        json!([{"id": "revenue", "label": "Revenue", "unit": "amount"}]),
+        json!([[{"value": "₩452.3bn", "citation_url": solsup}], [{"empty": "unavailable"}]]),
+    );
+    // Staged but not delivered: nothing is shown; discarded: still nothing.
+    let delivery = new_id("discarded");
+    executor
+        .execute_for_delivery(
+            &policy(),
+            ToolMethod::GridPublish,
+            params.clone(),
+            &delivery,
+        )
+        .await
+        .unwrap();
+    assert!(shown.lock().unwrap().is_empty());
+    executor.discard_delivery(&policy(), &delivery).await;
+    assert!(shown.lock().unwrap().is_empty());
+
+    executor
+        .execute(&policy(), ToolMethod::GridPublish, params)
+        .await
+        .unwrap();
+    let views = shown.lock().unwrap().clone();
+    let commit = executor.capture.artifacts.lock().await[0].clone();
+    assert_eq!(views.len(), 1);
+    assert_eq!(views[0].artifact, commit.artifact);
+    assert_eq!(views[0].revision, commit.revision);
+    // Only the evidence the grid cites travels with it, as the stored snapshot keeps it.
+    assert_eq!(views[0].evidence_refs.len(), 1);
+    let ChatArtifactPayload::Grid { grid, .. } = &commit.revision.payload else {
+        panic!("a grid was published");
+    };
+    assert!(grid.evidence_ids().contains(&views[0].evidence_refs[0].id));
+    // Shown is not saved: the store has no such artifact until the reply commits.
+    assert!(executor
+        .state
+        .store
+        .get_chat_artifact(&commit.artifact.id)
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
 async fn a_grid_is_saved_only_with_a_completed_turn_and_revising_keeps_its_id() {
     let temporary = tempfile::tempdir().unwrap();
     let executor = executor(&temporary, "assistant-grid-1");

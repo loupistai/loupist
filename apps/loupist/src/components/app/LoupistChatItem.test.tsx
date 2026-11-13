@@ -16,3 +16,17 @@ it("marks unsent drafts and private chats in the sidebar", () => {
   expect(screen.getByRole("img", { name: "Unsent draft" })).toBeInTheDocument();
   expect(screen.getAllByRole("img", { name: "Private chat" })).toHaveLength(1);
 });
+
+it("marks a running chat with a still ring that keeps its spoken name, never a spinner", () => {
+  const thread: ChatThread = {
+    id: "chat-1", loupist_id: "loupist", title: "Hanul Q3 deep dive",
+    updated_at: "2026-10-31T00:00:00Z", use_memory: true, update_memory: true, messages: [],
+  };
+  const { container } = render(<TooltipProvider><SidebarProvider><ul>
+    <LoupistChatItem thread={thread} active={false} running onSelect={vi.fn()} onRename={vi.fn()} onDelete={vi.fn()} />
+  </ul></SidebarProvider></TooltipProvider>);
+  const mark = screen.getByRole("status", { name: "Hanul Q3 deep dive is running" });
+  expect(mark).toHaveClass("thread-running");
+  expect(mark.tagName).toBe("SPAN");
+  expect(container.querySelector(".animate-spin, [data-slot='spinner']")).toBeNull();
+});

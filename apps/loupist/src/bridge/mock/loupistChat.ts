@@ -791,6 +791,10 @@ const streamChat = async (
       created_at,
     );
     if (artifact) {
+      // As the host does: a chart is delivered as its call succeeds, its reference only at commit.
+      if (artifact.kind !== "markdown") {
+        observer({ type: "artifact_staged", run_id, view: clone(await chatArtifactRead(state, request.loupist_id, request.thread_id, artifact.artifact_id, artifact.revision)) });
+      }
       observer({ type: "artifact", run_id, artifact: clone(artifact) });
     }
 

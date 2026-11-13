@@ -4,7 +4,6 @@ import { useId } from "react";
 import { tabShortcut } from "../../app/shortcuts";
 import { MoreHorizontalIcon, DownloadIcon, EyeOffIcon, HouseIcon, PencilIcon, PrinterIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -54,7 +53,8 @@ export function LoupistChatItem({ iconOnly = false, thread, active, running, fin
         {iconOnly ? null : thread.home ? <><span className="loupist-chat-title" data-testid="loupist-chat-title">{title}</span><span id={homeDescId} hidden>{homeDescriptor}</span><kbd className="loupist-place-key" aria-hidden="true">{tabShortcut(1)}</kbd></>
           : <span className="loupist-chat-title" data-testid="loupist-chat-title">{title}</span>}
         {draft ? <span className="loupist-draft-dot" role="img" aria-label={i18n.t("app:loupistChatItem.unsentDraft")} title={i18n.t("app:loupistChatItem.unsentDraft")} /> : null}
-        {running ? <Spinner className="thread-running" aria-label={i18n.t("app:loupistChatItem.isRunning", { title: chatTitle(thread) })} />
+        {/* A still mark: while a reply runs, its live line's sheen is the one thing that loops. */}
+        {running ? <span className="thread-running" role="status" aria-label={i18n.t("app:loupistChatItem.isRunning", { title: chatTitle(thread) })} />
           : finished ? <span className="loupist-status-dot" data-state="finished" role="img" aria-label={i18n.t("app:attention.finishedHidden")} />
             : privateChat ? <span className="loupist-private-mark" role="img" aria-label={i18n.t("app:loupistChatItem.privateChat")} title={i18n.t("app:loupistChatItem.privateChat")}><EyeOffIcon aria-hidden="true" /></span> : null}
       </SidebarMenuButton>

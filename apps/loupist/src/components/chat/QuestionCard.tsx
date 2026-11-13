@@ -18,9 +18,30 @@ const editingElsewhere = () => {
   return active instanceof HTMLElement && (active.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName));
 };
 
+/**
+ * Answering collapses the card to one line. The turn keeps the height it has
+ * now while the reply runs (`--turn-hold`, chat.css), so the scroll range never
+ * shrinks under the reader: the line settles in place and the reply continues
+ * below it. Returns the release, for an answer that did not go through.
+ */
+export function holdTurnHeight(node: HTMLElement | null): () => void {
+  const turn = node?.closest<HTMLElement>(".turn");
+  if (!turn) return () => {};
+  const height = Math.ceil(turn.getBoundingClientRect().height);
+  turn.style.setProperty("--turn-hold", `${height}px`);
+  // A glide may have grown the turn with an inline minimum (conversation.tsx `reserve`), which outranks chat.css.
+  const inline = turn.style.minHeight;
+  if (inline && Number.parseFloat(inline) < height) turn.style.minHeight = `${height}px`;
+  return () => {
+    turn.style.removeProperty("--turn-hold");
+    if (inline) turn.style.minHeight = inline;
+  };
+}
+
 function WaitingQuestion({ question, onAnswer, focusOnArrive }: { question: ChatQuestion; onAnswer: (answer: Answer) => Promise<void>; focusOnArrive: boolean }) {
   const nowMs = useNow(true);
   const recommendedRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLElement>(null);
   // The recommended answer takes focus only when the card arrives after the reply stopped streaming,
   // so Enter chooses it; while text is still streaming, focus stays where the reader left it.
   useEffect(() => {
@@ -34,16 +55,18 @@ function WaitingQuestion({ question, onAnswer, focusOnArrive }: { question: Chat
   const answer = async (value: Answer) => {
     setBusy(true);
     setFailed(false);
+    const release = holdTurnHeight(cardRef.current);
     try {
       await onAnswer(value);
     } catch {
+      release();
       setFailed(true);
       setBusy(false);
     }
   };
   const own = text.trim();
   // The rail's "Needs your OK" row scrolls here and moves focus to the card, never to a button.
-  return <section className="question-card" data-request-id={question.requestId} tabIndex={-1}
+  return <section ref={cardRef} className="question-card" data-request-id={question.requestId} tabIndex={-1}
     aria-label={t("questionCard.label", { question: question.question })}>
     <header>
       <strong>{t("questionCard.title")}</strong>

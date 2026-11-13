@@ -72,6 +72,21 @@ it("fills the same card in place with the compact chart, copy and ask", async ()
   expect(onAsk).toHaveBeenCalledWith({ artifact_id: "chart-1", revision: 2, kind: "chart", title: "Operating margin", digest: "b".repeat(64) });
 });
 
+it("draws a chart the host delivered before the commit at once, and keeps it when the stored copy is read after the commit", async () => {
+  const read = vi.fn().mockResolvedValue(view);
+  const { rerender } = render(withScope(<ChatArtifactBlock block={{ kind: "building", key: "chart:chart-1", title: "Operating margin", stepId: "step" }} />, read));
+  rerender(withScope(<ChatArtifactBlock block={{ kind: "ready", key: "chart:chart-1", artifact: ref, updating: false, staged: view }} />, read));
+  expect(await screen.findByText("compact-chart")).toBeVisible();
+  // Nothing is stored before the commit, so the card never asks the store.
+  expect(read).not.toHaveBeenCalled();
+  // A refresh from the store drops the staged copy: the drawn chart stays while the stored one is read.
+  rerender(withScope(<ChatArtifactBlock block={{ kind: "ready", key: "chart:chart-1", artifact: ref, updating: false }} />, read));
+  expect(screen.getByText("compact-chart")).toBeVisible();
+  expect(screen.queryByText("Loading…")).toBeNull();
+  expect(read).toHaveBeenCalledWith("loupist", "chat", "chart-1", 2);
+  expect(await screen.findByText("compact-chart")).toBeVisible();
+});
+
 it("copies prices a provider stored as 32-bit floats with their real digits, not the widening noise", async () => {
   const widened = { ...dataset, rows: [["Q2", Math.fround(225.3)], ["Q3", 1234.5678], ["Q4", 394_328_000_000]] };
   const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
@@ -105,7 +120,7 @@ describe("Save as PNG… (X9)", () => {
     render(withScope(<ChatArtifactBlock block={{ kind: "ready", key: "r", artifact: ref, updating: false }} />, undefined, exportSave));
     await screen.findByText("compact-chart");
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save as PNG…" })); });
-    expect(exportSave).toHaveBeenCalledExactlyOnceWith({ suggestedName: "Operating margin.png", kind: "png", bytes: PNG_SIGNATURE });
+    expect(exportSave).toHaveBeenCalledExactlyOnceWith({ suggestedName: "Operating margin.png", kind: "png", bytes: PNG_SIGNATURE, title: "Save image" });
     // The file is the chart at twice its size, with a footer band under it.
     expect(drawn).toHaveLength(1);
     expect(drawn[0]!.width).toBe(640);

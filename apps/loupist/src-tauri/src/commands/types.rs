@@ -590,6 +590,14 @@ pub enum ChatStreamEvent {
         run_id: String,
         evidence: Box<crate::domain::ChatEvidenceRef>,
     },
+    /// A chart or table this reply published, sent once its publish call is
+    /// delivered so the card fills in place while the answer is written. It
+    /// is not saved: the `Artifact` reference follows only if the reply
+    /// commits, and a stopped or failed reply drops it.
+    ArtifactStaged {
+        run_id: String,
+        view: Box<ChatArtifactViewDto>,
+    },
     Artifact {
         run_id: String,
         artifact: ChatArtifactRef,

@@ -78,6 +78,7 @@ import { chatMarkdown, exportFileName, utf8Bytes } from "./chat/exportChat";
 import { printChat } from "./components/print/printDocuments";
 import { errorMessage } from "./lib/errors";
 import { CommandPalette, type PaletteAction, type PaletteGroup } from "./components/app/CommandPalette";
+import { titledExport } from "./lib/exportTitle";
 import { usePersistedChatDraft } from "./app/usePersistedChatDraft";
 import { useChatDrafts } from "./app/useChatDrafts";
 import { useFileDropGuard } from "./app/useFileDropGuard";
@@ -628,7 +629,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       void printChat(thread, loupistName).catch((cause) => threadActions.setMutationError(errorMessage(cause, i18n.t("app:app.couldNotPrint"))));
       return;
     }
-    void bridge.exportSave({ suggestedName: `${exportFileName(thread.title)}.md`, kind: "md", bytes: utf8Bytes(chatMarkdown(thread, loupistName)) })
+    void bridge.exportSave(titledExport({ suggestedName: `${exportFileName(thread.title)}.md`, kind: "md" as const, bytes: utf8Bytes(chatMarkdown(thread, loupistName)) }))
       .catch((cause) => threadActions.setMutationError(errorMessage(cause, i18n.t("app:app.couldNotExport"))));
   };
   const activeExportThread = threads.find((thread) => thread.id === activeThreadId && thread.messages.length > 0);
