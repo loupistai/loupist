@@ -54,6 +54,11 @@ export type WatchSettings = {
   watched: WatchAsset[];
   /** Followed assets with every kind off ("Also followed, not watched here"). */
   notWatched: WatchAsset[];
+  /**
+   * Listed assets with no saved choice here: the ones "Watch all" gives class defaults.
+   * An asset the user switched fully off is in `notWatched` but not here.
+   */
+  undecidedAssetIds: string[];
 };
 
 /**

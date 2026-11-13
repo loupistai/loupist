@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { LoupistSummary } from "../../types";
@@ -74,6 +74,23 @@ it("watches every followed asset with the class defaults in one step", async () 
   await waitFor(() => expect(screen.queryByRole("button", { name: /^Watch all/ })).toBeNull());
   const watching = screen.getByRole("article", { name: "Watching" });
   expect(within(watching).getAllByRole("table").length).toBeGreaterThan(0);
+});
+
+it("offers Watch all only for assets with no decision yet, not one switched fully off", async () => {
+  const asset = (symbol: string, name: string) => ({ assetId: `asset-${symbol}`, symbol, market: "NASDAQ", name, revision: 2, kinds: [{ kind: "filings" as const, enabled: false }, { kind: "results" as const, enabled: false }] });
+  const { bridge, loupist } = await fixture(async bridge => {
+    for (const [symbol, displayName] of [["AAPL", "Apple"], ["MSFT", "Microsoft"], ["NVDA", "Nvidia"]]) await bridge.watchlistAdd({ symbol: symbol!, market: "NASDAQ", displayName });
+    const [loupist] = await bridge.loupistList();
+    // Apple was switched fully off; Microsoft and Nvidia have no decision.
+    bridge.watch.install(loupist!.id, { notWatched: [asset("AAPL", "Apple"), asset("MSFT", "Microsoft"), asset("NVDA", "Nvidia")], undecidedAssetIds: ["asset-MSFT", "asset-NVDA"] });
+  });
+  expect(await screen.findByRole("button", { name: "Watch all 2" })).toBeVisible();
+  cleanup();
+  bridge.watch.install(loupist.id, { notWatched: [asset("AAPL", "Apple")], undecidedAssetIds: [] });
+  render(<FollowingPage bridge={bridge} loupist={loupist} />);
+  expect(await screen.findByRole("checkbox", { name: "Filings, Apple" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: /^Watch/ })).toBeNull();
+  expect(screen.queryByText(/No AI usage\. Only names are sent to data sources\./)).toBeNull();
 });
 
 it("says when Watching settings could not load and loads them again on retry", async () => {

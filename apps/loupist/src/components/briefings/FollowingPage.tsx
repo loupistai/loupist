@@ -128,8 +128,9 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
     });
   };
   // "Watch all": consent and the class defaults for every followed asset with no decision yet.
-  const undecided = settings ? settings.notWatched.length : 0;
-  const offerWatchAll = Boolean(settings) && (settings!.consentOff || undecided > 0);
+  // An asset the user switched fully off is decided, so it is neither counted nor offered.
+  const undecided = settings?.undecidedAssetIds.length ?? 0;
+  const offerWatchAll = undecided > 0;
   const watchAll = async () => {
     setApplying(true); setError(null);
     try { const result = await bridge.watchDefaultsApply({ loupistId }); setNeeds(result.needsConnections); await reloadWatch(); }
@@ -173,7 +174,7 @@ export function FollowingPage({ bridge, loupist, onBack, onOpenConnections }: Fo
 
     {offerWatchAll && watchlist?.length ? <div className="settings-row following-watch-all" data-watch-all>
       <p className="settings-row-description">{t("following.watchAllDetail")}</p>
-      <Button variant={settings?.paused ? "outline" : "default"} disabled={applying} onClick={() => void watchAll()}>{applying ? <Spinner /> : null}{t("following.watchAll", { n: formatNumber(undecided || watchlist.length) })}</Button>
+      <Button variant={settings?.paused ? "outline" : "default"} disabled={applying} onClick={() => void watchAll()}>{applying ? <Spinner /> : null}{t("following.watchAll", { n: formatNumber(undecided) })}</Button>
     </div> : null}
 
     {needs.length ? <ul className="following-needs" data-watch-needs>{needs.map(item => <li key={`${item.kind}:${item.connection.id}`}>

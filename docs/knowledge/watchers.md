@@ -66,6 +66,9 @@ no saved choice. Existing per-asset choices stay intact, and a repeated call cha
 nothing. It returns `watchedAssets` and `needsConnections` grouped by kind and
 connection with their `assetIds`; it changes no Chat privacy or as-of state. Other
 watch kinds keep their choices. Creating a new briefing leaves watch consent unchanged.
+`watch_settings_list` names those assets with no saved choice in `undecidedAssetIds`
+(an asset switched fully off is decided), and Following and the first follow receipt
+offer Watch all only for them, hiding it when there are none.
 [Watch kinds](watchers.md#watchers) map to routes: filings (holders, and every
 Korean kind except flows; OpenDART, or SEC filings through OpenBB), insider trades
 (`sec`, `fmp` or `intrinio` only), the earnings calendar (`nasdaq`, `fmp` or `tmx`; one

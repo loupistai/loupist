@@ -1871,3 +1871,50 @@ fn defaults_command_applies_class_defaults_only_for_the_matching_template() {
         );
     }
 }
+
+#[test]
+fn settings_list_only_undecided_assets_for_watch_all() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    seed_profile(
+        state.store.as_ref(),
+        &profile("loupist-a", &temporary.path().join("workspace"), 1),
+    );
+    for (symbol, market) in [("MORR", "NASDAQ"), ("KEEP", "NYSE"), ("NEXT", "NYSE")] {
+        follow(&state, symbol, market, symbol);
+    }
+    followed_pages(&state, "loupist-a").unwrap();
+    // The user switched KEEP fully off: a decision, though nothing is watched.
+    with_assets(&state, "loupist-a", true, |tx| {
+        watch::set_kind(
+            tx,
+            "loupist-a",
+            &page_id("KEEP", "NYSE"),
+            WatchKind::Filings,
+            false,
+            1,
+            2,
+        )
+    })
+    .unwrap();
+    let before = settings_view(&state, &Runtime::default(), "loupist-a").unwrap();
+    assert_eq!(before.not_watched.len(), 3);
+    assert_eq!(
+        before.undecided_asset_ids,
+        [page_id("MORR", "NASDAQ"), page_id("NEXT", "NYSE")]
+    );
+    assert_eq!(
+        apply_defaults_with_consent(&state, "loupist-a")
+            .unwrap()
+            .watched_assets,
+        2
+    );
+    let after = settings_view(&state, &Runtime::default(), "loupist-a").unwrap();
+    assert!(after.undecided_asset_ids.is_empty());
+    assert_eq!(after.not_watched.len(), 1);
+    assert_eq!(after.not_watched[0].asset_id, page_id("KEEP", "NYSE"));
+    // A new follow is undecided until the user or Watch all chooses.
+    follow(&state, "LATE", "NASDAQ", "LATE");
+    let later = settings_view(&state, &Runtime::default(), "loupist-a").unwrap();
+    assert_eq!(later.undecided_asset_ids, [page_id("LATE", "NASDAQ")]);
+}
