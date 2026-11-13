@@ -2,7 +2,7 @@ import { render, waitFor } from "@testing-library/react";
 import type { ChartDataset, ChartDocument } from "../../types";
 
 const { embed } = vi.hoisted(() => ({ embed: vi.fn().mockResolvedValue({ finalize: vi.fn() }) }));
-vi.mock("vega-embed", () => ({ default: embed }));
+vi.mock("vega-embed", () => ({ default: embed, vega: { expressionFunction: vi.fn() } }));
 
 import AnalyticChart from "./AnalyticChart";
 

@@ -714,6 +714,13 @@
     "interactiveAnalyticChart": "Interactive analytic chart",
     "chartCouldNotBeRendered": "Chart could not be rendered"
   },
+  "chartAxis": {
+    "unit": "{{currency}} {{scale}}",
+    "titleWithUnit": "{{label}} ({{unit}})",
+    "unitOnly": "In {{unit}}",
+    "series": "Series",
+    "value": "Value"
+  },
   "financialChart": {
     "chartControls": "Chart controls",
     "moreControls": "More chart controls",

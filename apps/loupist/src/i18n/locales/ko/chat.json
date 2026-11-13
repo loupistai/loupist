@@ -678,6 +678,13 @@
     "interactiveAnalyticChart": "대화형 분석 차트",
     "chartCouldNotBeRendered": "차트를 표시하지 못했어요"
   },
+  "chartAxis": {
+    "unit": "{{scale}} {{currency}}",
+    "titleWithUnit": "{{label}} ({{unit}})",
+    "unitOnly": "단위: {{unit}}",
+    "series": "계열",
+    "value": "값"
+  },
   "financialChart": {
     "chartControls": "차트 도구",
     "moreControls": "차트 도구 더 보기",
