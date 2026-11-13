@@ -228,7 +228,7 @@ describe("Loupist · Shell and Loupist", () => {
       expect(await theme()).toBe("light");
       prefersDark = true;
       await act(async () => listeners.forEach((listener) => listener({ matches: true } as MediaQueryListEvent)));
-      await user.click(screen.getByRole("button", { name: /System Follow your device’s appearance/ }));
+      await user.click(screen.getByRole("button", { name: /System Follow this Mac’s appearance/ }));
       expect(document.documentElement).toHaveAttribute("data-theme", "dark");
       expect(await theme()).toBe("system");
     } finally {
@@ -273,7 +273,7 @@ describe("Loupist · Model providers", () => {
     expect(spy).toHaveBeenCalledExactlyOnceWith({ provider: "anthropic", api_key: "write-only-secret" });
     await act(async () => finish?.());
     const card = await screen.findByRole("article", { name: "Anthropic" });
-    expect(card).toHaveTextContent("API key saved on this device");
+    expect(card).toHaveTextContent("API key saved on this Mac");
     await user.click(within(card).getByRole("button", { name: /Models \(1\)/u }));
     expect(await within(card).findByRole("switch", { name: "Show Claude Sonnet 4.5 in Chat" })).toBeChecked();
     expect(screen.queryByDisplayValue("write-only-secret")).toBeNull();

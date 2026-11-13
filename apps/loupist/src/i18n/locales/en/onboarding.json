@@ -143,7 +143,7 @@
     "local": "Use a model on this Mac",
     "localNote": "Free and private. Needs Ollama, LM Studio or llama.cpp.",
     "custom": "Custom endpoint",
-    "keyStays": "Your key stays on this device. Requests go straight to the provider.",
+    "keyStays": "Your key stays on this Mac. Requests go straight to the provider.",
     "waitingBodyOther": "This page moves on by itself when you're done.",
     "starters": "Click to follow:",
     "followStarter": "Follow {{name}}",

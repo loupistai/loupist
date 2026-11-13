@@ -39,7 +39,7 @@
     "cancel": "취소",
     "teachTheLoupist": "루피스트에게 알려주기",
     "pleaseRevisitThisAnswerUsingMyCorrectionAnswerExcerpt": "제가 수정한 내용을 바탕으로 답변을 다시 검토해 주세요.\n\n답변 발췌:\n{{value1}}{{value2}}\n\n수정할 내용:\n{{value3}}",
-    "characterCount": "{{formattedCount}} / 4000자 · 이 기기에 저장돼요"
+    "characterCount": "{{formattedCount}} / 4000자 · 이 Mac에 저장돼요"
   },
   "chatActivityDetailView": {
     "thisActivityIsNotAvailableInThisChat": "이 대화에서 해당 활동을 볼 수 없어요.",
@@ -372,7 +372,7 @@
     "usedPrinciples_other": "내 원칙 {{formattedCount}}개 사용"
   },
   "messageSchedules": {
-    "draftFilesFailed": "첨부파일을 이 기기에 임시 저장하지 못했어요.",
+    "draftFilesFailed": "첨부파일을 이 Mac에 임시 저장하지 못했어요.",
     "needsTime": "홈에서 답하기",
     "handedToBot": "홈으로 보냄 · {{status}}",
     "scheduledTasks": "예약 작업",
@@ -901,7 +901,7 @@
     "title": "{{name}} 연결",
     "loading": "{{name}} 상태를 확인하고 있어요…",
     "needsSetup": "{{name}} 연결을 쓰려면 먼저 설정이 필요해요.",
-    "keyNote": "키는 설정 창에 입력하고 이 기기에만 저장돼요. 루피스트는 키를 보지 않아요.",
+    "keyNote": "키는 설정 창에 입력하고 이 Mac에만 저장돼요. 루피스트는 키를 보지 않아요.",
     "setUp": "설정하기",
     "offHere": "{{name}} 연결은 설정돼 있지만 이 루피스트에서는 꺼져 있어요.",
     "useHere": "이 루피스트에서 사용",
@@ -1579,7 +1579,7 @@
     "labelCalculated": "{{value}}, 계산값. 계산 보기",
     "labelSourced": "{{value}}, 출처: {{source}}",
     "inputs": "입력값",
-    "calculatedHere": "이 컴퓨터에서 계산함",
+    "calculatedHere": "이 Mac에서 계산함",
     "notLinked": "출처와 연결되지 않음",
     "grid": "{{rows}} × {{cols}} 표 (하나의 값이 아님)",
     "fromStep": "이 답변의 작업 단계에서",

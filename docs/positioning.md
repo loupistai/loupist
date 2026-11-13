@@ -60,6 +60,7 @@ uses the same meanings.
 | Schedule / 예약; briefing / 브리핑 | Timed work; a briefing reports what changed for followed assets and can share a reasoned view. |
 | Memory / 기억; Private chat / 비공개 대화 | Everything it keeps; Private chat skips Memory use and saves, but still saves the chat and sends it to the AI provider. |
 | AI account / AI 계정; Data connection / 데이터 연결 | Model sign-in or key; a source of data. |
+| this Mac / 이 Mac | The user's machine, wherever copy says what stays local; never "this device" or "this computer". |
 
 The welcome screen also says the app reads sources, builds a map of what the
 user follows, and leaves the choice with the user.

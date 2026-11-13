@@ -183,7 +183,7 @@ pub fn remove(agent_dir: &Path, id: &str) -> Result<(), CommandError> {
 pub(crate) fn validate_base_url(value: &str) -> Result<String, CommandError> {
     let invalid = || {
         CommandError::invalid(
-            "Enter an https:// address, or an http:// address on this computer (localhost).",
+            "Enter an https:// address, or an http:// address on this Mac (localhost).",
         )
     };
     if value.is_empty() || value.len() > MAX_URL_BYTES {

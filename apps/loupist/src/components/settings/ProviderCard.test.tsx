@@ -47,7 +47,7 @@ it("shows a ChatGPT sign-in as Connected with its date, the plan line and Chat's
 it("names the key, the local server and an Anthropic key by credential", async () => {
   const user = userEvent.setup();
   const key = renderCard({ option: option("google", { status: status({ credential_kind: "api_key" }) }), chatModel: undefined });
-  expect(key.card).toHaveTextContent("API key saved on this device");
+  expect(key.card).toHaveTextContent("API key saved on this Mac");
   expect(key.card).not.toHaveTextContent("Chat default");
   await user.click(within(key.card).getByRole("button", { name: "More actions for Google Gemini" }));
   await user.click(await screen.findByRole("menuitem", { name: "Change key…" }));
@@ -61,7 +61,7 @@ it("names the key, the local server and an Anthropic key by credential", async (
 
   const claude = renderCard({ option: option("anthropic", { status: status({ credential_kind: "api_key" }) }) });
   expect(within(claude.card).getByRole("heading", { name: "Anthropic" })).toBeVisible();
-  expect(claude.card).toHaveTextContent("API key saved on this device");
+  expect(claude.card).toHaveTextContent("API key saved on this Mac");
   expect(claude.card).not.toHaveTextContent(/extra usage|Signed in with/);
   await user.click(within(claude.card).getByRole("button", { name: "More actions for Anthropic" }));
   await user.click(await screen.findByRole("menuitem", { name: "Change key…" }));

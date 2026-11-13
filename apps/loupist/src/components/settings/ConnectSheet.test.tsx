@@ -22,7 +22,7 @@ it("warns that an OpenAI key replaces the ChatGPT sign-in and saves the key once
   const configure = vi.spyOn(bridge, "providerConfigure");
   const consolePage = vi.spyOn(bridge, "providerOpenConsole");
   expect(within(sheet).getByText("This replaces your ChatGPT sign-in on this Mac. You can switch back any time.")).toBeVisible();
-  expect(within(sheet).getByText("Your key stays on this device. Requests go straight to OpenAI.")).toBeVisible();
+  expect(within(sheet).getByText("Your key stays on this Mac. Requests go straight to OpenAI.")).toBeVisible();
   await user.click(within(sheet).getByRole("button", { name: "Get a key from OpenAI" }));
   expect(consolePage).toHaveBeenCalledWith({ provider: "openai" });
   const field = within(sheet).getByLabelText("API key");

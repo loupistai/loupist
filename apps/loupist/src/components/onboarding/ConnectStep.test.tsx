@@ -175,7 +175,7 @@ it("lists every other way and opens key, local and custom rows in the connect sh
   expect(within(other).queryByRole("button", { name: /SuperGrok/ })).toBeNull();
   // Anthropic does not permit third-party apps to offer Claude sign-in, so Claude is only a key row.
   expect(screen.queryByRole("button", { name: /Sign in with Claude/ })).toBeNull();
-  expect(screen.getByText("Your key stays on this device. Requests go straight to the provider.")).toBeVisible();
+  expect(screen.getByText("Your key stays on this Mac. Requests go straight to the provider.")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Google Gemini" }));
   const sheet = await screen.findByRole("dialog");
   expect(within(sheet).getByRole("heading", { name: "Google Gemini" })).toBeVisible();

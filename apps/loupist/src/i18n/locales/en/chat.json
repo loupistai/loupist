@@ -38,7 +38,7 @@
     "cancel": "Cancel",
     "teachTheLoupist": "Teach the Loupist",
     "pleaseRevisitThisAnswerUsingMyCorrectionAnswerExcerpt": "Please revisit this answer using my correction.\n\nAnswer excerpt:\n{{value1}}{{value2}}\n\nMy correction:\n{{value3}}",
-    "characterCount": "{{formattedCount}} / 4000 characters · Saved on this device"
+    "characterCount": "{{formattedCount}} / 4000 characters · Saved on this Mac"
   },
   "chatActivityDetailView": {
     "thisActivityIsNotAvailableInThisChat": "This activity is not available in this chat.",
@@ -398,7 +398,7 @@
     "usedPrinciples_other": "Used {{formattedCount}} principles"
   },
   "messageSchedules": {
-    "draftFilesFailed": "Could not save draft attachments on this device.",
+    "draftFilesFailed": "Could not save draft attachments on this Mac.",
     "needsTime": "Answer in Home",
     "handedToBot": "Sent to Home · {{status}}",
     "scheduledTasks": "Scheduled tasks",
@@ -938,7 +938,7 @@
     "title": "Connect {{name}}",
     "loading": "Checking {{name}}…",
     "needsSetup": "{{name}} needs its setup before this Loupist can use it.",
-    "keyNote": "Any key goes in the setup dialog and stays on this device; the Loupist never sees it.",
+    "keyNote": "Any key goes in the setup dialog and stays on this Mac; the Loupist never sees it.",
     "setUp": "Set up",
     "offHere": "{{name}} is set up but off for this Loupist.",
     "useHere": "Use in this Loupist",
@@ -1632,7 +1632,7 @@
     "labelCalculated": "{{value}}, calculated. Show the math",
     "labelSourced": "{{value}}, from {{source}}",
     "inputs": "Inputs",
-    "calculatedHere": "Calculated on this computer",
+    "calculatedHere": "Calculated on this Mac",
     "notLinked": "Not linked to a source",
     "grid": "A {{rows}} × {{cols}} grid, not one value",
     "fromStep": "From a step in this answer",
