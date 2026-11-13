@@ -257,6 +257,8 @@ export async function runNativeLayoutRegression(browser, {
           if (scenario.startsWith("chat-status-pill")) {
             await browser.execute(() => {
               const scroll = document.querySelector(".message-scroll");
+              // Upward reader input ends following (left on by the previous state's Jump to latest); a bare scrollTop does not.
+              scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, bubbles: true }));
               scroll.scrollTop = 0;
               scroll.dispatchEvent(new Event("scroll"));
             });
