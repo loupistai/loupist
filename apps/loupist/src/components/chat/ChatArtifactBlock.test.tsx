@@ -72,6 +72,15 @@ it("fills the same card in place with the compact chart, copy and ask", async ()
   expect(onAsk).toHaveBeenCalledWith({ artifact_id: "chart-1", revision: 2, kind: "chart", title: "Operating margin", digest: "b".repeat(64) });
 });
 
+it("copies prices a provider stored as 32-bit floats with their real digits, not the widening noise", async () => {
+  const widened = { ...dataset, rows: [["Q2", Math.fround(225.3)], ["Q3", 1234.5678], ["Q4", 394_328_000_000]] };
+  const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+  render(withScope(<ChatArtifactBlock block={{ kind: "ready", key: "r", artifact: ref, updating: false }} onAsk={vi.fn()} />, vi.fn().mockResolvedValue({ ...view, chart_dataset: widened })));
+  expect(await screen.findByText("compact-chart")).toBeVisible();
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Copy data" })); });
+  expect(writeText).toHaveBeenCalledWith("Quarter\tMargin\nQ2\t225.3\nQ3\t1234.5678\nQ4\t394328000000");
+});
+
 it("disables Ask while a reply is running and explains a missing chart with a retry", async () => {
   const read = vi.fn().mockRejectedValueOnce(new Error("gone")).mockResolvedValue(view);
   render(withScope(<ChatArtifactBlock block={{ kind: "ready", key: "r", artifact: ref, updating: false }} onAsk={vi.fn()} askDisabled />, read));

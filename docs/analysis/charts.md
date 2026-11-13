@@ -23,7 +23,7 @@ tools, and any unverified boundary is reported.
 | Change assumptions | Rerun a saved local script with explicit inputs and parameters, then import a new result revision |
 | A custom chart, report or shareable export | Native workspace Python or JavaScript with saved inputs, code and output files |
 
-App charts render inline in the answer as cards (Expand, Copy data, Ask); drawing tools and range selection stay in the panel's chart view, reachable from saved work. The panel's chart fits the default bottom dock without scrolling: study panes take a quarter of its height, a short chart shows its legend on hover, and price-axis labels the last-price tag would cover are dropped.
+App charts render inline in the answer as cards (Expand, Copy data, Ask). Copy data, the data view's rows and Save as CSV write each number with the digits it has: a fraction a provider stored as a 32-bit float prints as its shortest 32-bit decimal (225.3, not 225.3000030517578); integers and other values print exactly as stored. Drawing tools and range selection stay in the panel's chart view, reachable from saved work. The panel's chart fits the default bottom dock without scrolling: study panes take a quarter of its height, a short chart shows its legend on hover, and price-axis labels the last-price tag would cover are dropped.
 Analytic axes and legends use the dataset's readable column labels. Numeric tick
 precision follows the scale so distinct small values do not all display as zero. Legends
 wrap below the plot as the panel changes width, keeping room for the data;
