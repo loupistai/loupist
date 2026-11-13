@@ -401,7 +401,7 @@
     "running": "지도: 관계 연결 중",
     "completed": "지도: 관계 업데이트 완료",
     "paused": "지도: 구성 일시정지",
-    "paused_budget": "지도: 구성 일시정지",
+    "paused_budget": "지도: 이 자료의 지도 구성 멈춤",
     "failed_before_mutation": "지도: 구성 실패",
     "reconcile_required": "지도: 결과 불확실 — 지도에서 확인해 주세요",
     "reconciled_without_retry": "자료 유지됨 · 중단된 지도 구성은 재시도하지 않았어요",

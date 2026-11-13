@@ -889,9 +889,10 @@ export const knowledgeGraphJob = async (
   request: { loupistId: string; jobId: string },
 ) => {
   await shortPause(state);
-  const job = ensure(state, request.loupistId).jobs.find((item) => item.jobId === request.jobId);
+  const store = ensure(state, request.loupistId);
+  const job = store.jobs.find((item) => item.jobId === request.jobId);
   if (!job) throw new Error("Job not found.");
-  return clone(job);
+  return clone({ ...job, status: job.status === "paused_budget" && store.settings.paused ? "paused" : job.status });
 };
 
 export const graphProcessingView = (settings: GraphProcessingSettings, catalog: ModelCatalog, jobs: GraphJobView[] = []): GraphProcessingView => {
@@ -926,6 +927,18 @@ export const knowledgeGraphSettingsSet = async (
   await shortPause(state);
   ensure(state, request.loupistId).settings = clone(request.settings);
   return clone(request.settings);
+};
+
+export const knowledgeGraphRetrySource = async (state: MockBridgeState, request: { loupistId: string; recordId: string }) => {
+  await shortPause(state);
+  const store = ensure(state, request.loupistId);
+  const source = store.sources.find((source) => source.recordId === request.recordId);
+  if (!source) throw new Error("Source not found.");
+  const job = store.jobs.find((job) => job.jobId === source.processing?.jobId);
+  if (store.settings.paused || !store.settings.enrichmentEnabled || !store.settings.helperModelProfileId || store.settings.maxLlmCalls < 2 || !job || job.status !== "paused_budget") throw new Error("Source has no stopped span to retry.");
+  job.status = "queued";
+  source.processing = { ...source.processing!, status: "queued" };
+  return clone(job);
 };
 
 export const knowledgeGraphPause = async (

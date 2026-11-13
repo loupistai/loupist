@@ -427,7 +427,7 @@
     "running": "Map: connecting relationships",
     "completed": "Map: relationships updated",
     "paused": "Map: building paused",
-    "paused_budget": "Map: building paused",
+    "paused_budget": "Map: building stopped for this source",
     "failed_before_mutation": "Map: building failed",
     "reconcile_required": "Map: outcome uncertain — review it in the Map",
     "reconciled_without_retry": "Source retained · Interrupted Map building was not retried",

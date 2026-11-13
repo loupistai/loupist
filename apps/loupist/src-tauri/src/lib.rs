@@ -407,6 +407,7 @@ pub fn run() {
             commands::knowledge::followed::knowledge_followed_status,
             commands::knowledge::knowledge_graph_recover,
             commands::knowledge::knowledge_graph_pause,
+            commands::knowledge::knowledge_graph_retry_source,
             commands::knowledge::knowledge_graph_settings_get,
             commands::knowledge::knowledge_graph_settings_set,
             commands::power::world_keep_awake_get,

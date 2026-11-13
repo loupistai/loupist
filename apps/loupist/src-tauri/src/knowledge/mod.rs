@@ -83,9 +83,10 @@ pub(crate) use graph_jobs::recover_interrupted as recover_interrupted_jobs;
 #[cfg(any(test, feature = "eval-harness"))]
 pub use graph_jobs::SealedWorldIndex;
 pub use graph_jobs::{
-    get_job, list_jobs, load_settings, pause_processing, recover_world, recovery_status,
-    resume_processing, store_settings, GraphJobView, GraphProcessingSettings, GraphProcessingView,
-    GraphPublicSettings, GraphReadiness, ReadinessNote,
+    get_job, get_processing_job, list_jobs, load_settings, pause_processing, recover_world,
+    recovery_status, resume_processing, retry_source_processing, store_settings, GraphJobView,
+    GraphProcessingSettings, GraphProcessingView, GraphPublicSettings, GraphReadiness,
+    ReadinessNote,
 };
 pub use graph_service::GraphSupervisor;
 pub use model::*;
@@ -1091,16 +1092,7 @@ impl KnowledgeWrite<'_> {
     ) -> KnowledgeResult<SourceProcessing> {
         let record = self.owned_record(loupist_id, record_id)?;
         if let Some(job) = graph_jobs::latest_source_job(self.tx, loupist_id, record_id)? {
-            // A parked job reads as paused only while the user has paused Map
-            // building; with building on it is this Source's own stop (its
-            // frozen allowance ran out), which keeps the job's status.
-            let status = if job.status == graph_jobs::JOB_PAUSED
-                && graph_jobs::load_settings(self.tx, loupist_id)?.paused
-            {
-                "paused".into()
-            } else {
-                job.status
-            };
+            let status = graph_jobs::processing_status(self.tx, loupist_id, &job.status)?;
             return Ok(SourceProcessing {
                 job_id: Some(job.job_id),
                 error: (job.document.usage_uncertain).then(|| {

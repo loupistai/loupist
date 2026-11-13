@@ -1137,6 +1137,10 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return knowledge.graphProcessingView(await knowledge.knowledgeGraphRecover(this.state, request), await this.modelCatalogGet(), await knowledge.knowledgeGraphJobs(this.state, request));
   }
 
+  knowledgeGraphRetrySource(request: { loupistId: string; recordId: string }) {
+    return knowledge.knowledgeGraphRetrySource(this.state, request);
+  }
+
   async knowledgeGraphPause(request: { loupistId: string; paused: boolean }) {
     return knowledge.graphProcessingView(await knowledge.knowledgeGraphPause(this.state, request), await this.modelCatalogGet(), await knowledge.knowledgeGraphJobs(this.state, request));
   }

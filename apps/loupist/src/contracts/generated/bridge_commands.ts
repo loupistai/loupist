@@ -15,7 +15,7 @@ import type { PickFileRequest } from "./commands/dialog";
 import type { EarningsEventsListRequest, EarningsPrepareRequest, EarningsSnapshotGetRequest } from "./commands/earnings";
 import type { ExportRequest } from "./commands/export_file";
 import type { ResearchHandoffReceipt, ResearchHandoffRequest } from "./commands/handoff";
-import type { JournalSourceReadDto, KnowledgeCatalogDto, KnowledgeCatalogRequest, KnowledgeConnectionRequest, KnowledgeGraphJobRequest, KnowledgeGraphLoupistRequest, KnowledgeGraphPauseRequest, KnowledgeGraphSettingsRequest, KnowledgeJournalReadRequest, KnowledgeJournalSourceReadRequest, KnowledgeLensPagesForNodeRequest, KnowledgeLensReadRequest, KnowledgeLensSearchRequest, KnowledgeResearchPageDto, KnowledgeResearchSearchRequest, KnowledgeSourceReadRequest, KnowledgeSourceRetainRequest, LensSearchHitDto, MemoryLearnedRequest, MemoryOpUndoRequest, MemorySectionForgetRequest, SourceDetailDto, WorldQueryDto } from "./commands/knowledge";
+import type { JournalSourceReadDto, KnowledgeCatalogDto, KnowledgeCatalogRequest, KnowledgeConnectionRequest, KnowledgeGraphJobRequest, KnowledgeGraphLoupistRequest, KnowledgeGraphPauseRequest, KnowledgeGraphRetrySourceRequest, KnowledgeGraphSettingsRequest, KnowledgeJournalReadRequest, KnowledgeJournalSourceReadRequest, KnowledgeLensPagesForNodeRequest, KnowledgeLensReadRequest, KnowledgeLensSearchRequest, KnowledgeResearchPageDto, KnowledgeResearchSearchRequest, KnowledgeSourceReadRequest, KnowledgeSourceRetainRequest, LensSearchHitDto, MemoryLearnedRequest, MemoryOpUndoRequest, MemorySectionForgetRequest, SourceDetailDto, WorldQueryDto } from "./commands/knowledge";
 import type { FollowedStatusRequest } from "./commands/knowledge/followed";
 import type { JournalArchiveRequest, JournalCreateRequest, JournalListRequest, JournalUpdateRequest } from "./commands/knowledge/journal";
 import type { LensArchiveRequest } from "./commands/knowledge/lens_archive";
@@ -134,6 +134,10 @@ export type BridgeCommands = {
   knowledge_connection_open: { request: KnowledgeConnectionRequest, response: ConnectionView },
   knowledge_graph_job: { request: KnowledgeGraphJobRequest, response: GraphJobView },
   knowledge_graph_pause: { request: KnowledgeGraphPauseRequest, response: GraphProcessingView },
+  knowledge_graph_retry_source: {
+    request: KnowledgeGraphRetrySourceRequest,
+    response: GraphJobView,
+  },
   knowledge_graph_recover: { request: KnowledgeGraphLoupistRequest, response: GraphProcessingView },
   knowledge_graph_settings_get: {
     request: KnowledgeGraphLoupistRequest,

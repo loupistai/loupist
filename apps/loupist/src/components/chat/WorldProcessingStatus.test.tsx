@@ -70,3 +70,19 @@ describe("committed World status in research updates", () => {
     expect(changed).not.toHaveBeenCalled();
   });
 });
+
+it("reads parked jobs once and distinguishes a Source stop from the user's pause", async () => {
+  const read = vi.fn().mockResolvedValue(job("paused_budget"));
+  render(<WorldProcessingStatus jobId="job-1" initialStatus="paused_budget" readJob={read} />);
+  await act(async () => {});
+  expect(screen.getByRole("status")).toHaveTextContent("Map: building stopped for this source");
+  expect(read).toHaveBeenCalledOnce();
+  read.mockResolvedValue(job("paused"));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+  await act(async () => {});
+  expect(screen.getByRole("status")).toHaveTextContent("Map: building paused");
+  read.mockResolvedValue(job("paused_budget"));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
+  await act(async () => {});
+  expect(screen.getByRole("status")).toHaveTextContent("Map: building stopped for this source");
+});

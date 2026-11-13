@@ -87,10 +87,22 @@ its predecessor's unused calls; splitting a Source cannot increase its total.
 Previously saved positive per-chunk allowances stay as saved, since an old
 completed receipt does not say how many of its calls were unused.
 An episode that exhausts its allowance pauses its unfunded tail without repeating
-paid calls or quarantining other Sources; resume does not replay its paid attempt.
-Its Library row then reads "Map building stopped for this source"; a row reads "Map
+paid calls or quarantining other Sources; resume does not replay its paid attempt
+or requeue its blocked followers.
+The explicit `knowledge_graph_retry_source` bridge action can retry one stopped
+span of the Source's current revision with a fresh allowance from current settings.
+It requeues only that span's unfunded tail, sharing the new allowance; it refuses
+active, uncertain, quarantined, stale-revision or user-paused work. Duplicate clicks
+while queued cannot refill it. If this attempt exhausts its allowance again it
+stops again; only another explicit Source retry can fund it. Resuming Map building,
+settings changes and restarts never refill a spent allowance. The Source reader
+needs a dedicated retry action wired to this bridge call; its existing settings
+button continues to manage global processing.
+Its Library row and Chat status then read "Map building stopped for this source"; a row reads "Map
 building paused" only while the user has paused Map building (`source_processing`
-reports such a job as `paused`, an exhausted one keeps `paused_budget`).
+and `knowledge_graph_job` report such a job as `paused`, an exhausted one keeps
+`paused_budget`). Chat reads parked jobs once on opening and offers Refresh status
+without scheduling work.
 Revision and growth-event timestamps reflect extraction completion.
 
 An attempt that publishes nothing ends one of three ways (`finish_unpublished` in

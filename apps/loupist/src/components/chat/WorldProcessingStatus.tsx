@@ -19,6 +19,7 @@ const labels = (): Record<string, string> => ({
   not_configured: t("worldProcessingStatus.not_configured"),
   saved: t("worldProcessingStatus.saved"),
 });
+const parked = (status: string) => status === "paused" || status === "paused_budget";
 const pending = (status: string) => status === "queued" || status === "running";
 
 /** Reads a committed job only; polling never schedules or retries extraction. */
@@ -40,7 +41,7 @@ export function WorldProcessingStatus({ active = true, jobId, initialStatus, rea
     if (!active) return;
     setStatus(initialStatus ?? "saved");
     setFailed(false);
-    if (!jobId || !canRead || (!pending(initialStatus ?? "") && initialStatus !== "reconcile_required")) return;
+    if (!jobId || !canRead || (!pending(initialStatus ?? "") && !parked(initialStatus ?? "") && initialStatus !== "reconcile_required")) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = async () => {
@@ -61,6 +62,6 @@ export function WorldProcessingStatus({ active = true, jobId, initialStatus, rea
   if (!initialStatus && !jobId) return null;
   return <small role="status">
     {failed ? t("worldProcessingStatus.sourceSavedCouldNotRefreshWorldStatus") : labels()[status] ?? t("worldProcessingStatus.sourceSavedCheckWorldForProcessingDetails")}
-    {failed || (status === "reconcile_required" && jobId && readJob) ? <button type="button" onClick={() => setRetry((value) => value + 1)}>{t("worldProcessingStatus.refreshStatus")}</button> : null}
+    {failed || ((status === "reconcile_required" || parked(status)) && jobId && readJob) ? <button type="button" onClick={() => setRetry((value) => value + 1)}>{t("worldProcessingStatus.refreshStatus")}</button> : null}
   </small>;
 }

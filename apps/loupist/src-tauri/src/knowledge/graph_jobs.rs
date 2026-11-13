@@ -1238,6 +1238,31 @@ pub fn get_job(
     Ok(job)
 }
 
+/// Display the same user-pause distinction in Chat and the Source reader.
+pub(super) fn processing_status(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    status: &str,
+) -> KnowledgeResult<String> {
+    Ok(
+        if status == JOB_PAUSED && load_settings(tx, loupist_id)?.paused {
+            "paused".into()
+        } else {
+            status.into()
+        },
+    )
+}
+
+pub fn get_processing_job(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    job_id: &str,
+) -> KnowledgeResult<GraphJobView> {
+    let mut job = get_job(tx, loupist_id, job_id)?;
+    job.status = processing_status(tx, loupist_id, &job.status)?;
+    Ok(job)
+}
+
 /// The next runnable job of each Loupist. Sources a Chat in `hot_chats` saved
 /// come before an older backlog; otherwise jobs run in the order they were
 /// queued. Either way a chunk still waits for the chunk before it.
@@ -1437,10 +1462,52 @@ pub fn resume_processing(
 ) -> KnowledgeResult<u32> {
     validate_loupist_id(loupist_id)?;
     let mut changed = 0;
-    for job in list_jobs_with_status(tx, loupist_id, JOB_PAUSED)? {
+    let jobs = list_jobs_with_status(tx, loupist_id, JOB_PAUSED)?;
+    let mut blocked = jobs
+        .iter()
+        .filter(|job| {
+            let document = &job.document;
+            document.mutation_sent
+                || document.inference_attempted
+                || document.usage_uncertain
+                || document.attempt_id.is_some()
+                || document.lease_expires_at_ms.is_some()
+                || (document.episode_kind == EPISODE_SPAN
+                    && document.previous_episode_key.is_none()
+                    && (document.extraction.max_llm_calls < 2
+                        || document.extraction.max_embedding_calls == 0))
+        })
+        .map(|job| job.job_id.clone())
+        .collect::<BTreeSet<_>>();
+    // A follower cannot run while its spent predecessor stays parked. Keep
+    // the whole stopped tail visible as stopped until the explicit retry.
+    loop {
+        let blocked_keys = jobs
+            .iter()
+            .filter(|job| blocked.contains(&job.job_id))
+            .map(|job| job.document.episode_key.as_str())
+            .collect::<BTreeSet<_>>();
+        let descendants = jobs
+            .iter()
+            .filter(|job| {
+                job.document
+                    .previous_episode_key
+                    .as_ref()
+                    .is_some_and(|key| blocked_keys.contains(key.as_str()))
+            })
+            .map(|job| job.job_id.clone())
+            .collect::<BTreeSet<_>>();
+        let before = blocked.len();
+        blocked.extend(descendants);
+        if blocked.len() == before {
+            break;
+        }
+    }
+    for job in jobs {
         let document = &job.document;
         // Resume an untouched queue entry, never a previous paid or uncertain attempt.
-        if document.mutation_sent
+        if blocked.contains(&job.job_id)
+            || document.mutation_sent
             || document.inference_attempted
             || document.usage_uncertain
             || document.attempt_id.is_some()
@@ -1461,6 +1528,120 @@ pub fn resume_processing(
     }
     settings.paused = false;
     Ok(changed)
+}
+
+/// Explicit Source action only: fund one stopped span again. Resume and the
+/// scheduler never call this, so each fresh allowance requires another action.
+pub fn retry_source_processing(
+    tx: &Transaction<'_>,
+    settings: &GraphProcessingSettings,
+    loupist_id: &str,
+    record_id: &str,
+) -> KnowledgeResult<GraphJobView> {
+    validate_loupist_id(loupist_id)?;
+    let source = super::authority::require_record(tx, loupist_id, record_id)?;
+    if source.kind != super::RecordKind::Source {
+        return Err(KnowledgeError::Invalid("retry requires a Source"));
+    }
+    let jobs = list_jobs(tx, loupist_id)?
+        .into_iter()
+        .filter(|job| {
+            job.document.source_binding.as_ref().is_some_and(|binding| {
+                binding.source_record_id == record_id
+                    && Some(&binding.source_revision_id) == source.head_revision_id.as_ref()
+            })
+        })
+        .collect::<Vec<_>>();
+    // Never refill while this Source is active or needs reconciliation.
+    if jobs.iter().any(|job| {
+        matches!(job.status.as_str(), JOB_RUNNING | JOB_RECONCILE)
+            || (job.status == JOB_QUEUED
+                && (job.document.extraction.max_llm_calls >= 2
+                    || job.document.previous_episode_key.is_none()))
+    }) {
+        return Err(KnowledgeError::Invalid(
+            "Source processing is active or uncertain",
+        ));
+    }
+    let mut head = jobs
+        .iter()
+        .find(|job| {
+            job.status == JOB_PAUSED
+                && job.document.episode_kind == EPISODE_SPAN
+                && job
+                    .document
+                    .previous_episode_key
+                    .as_ref()
+                    .is_none_or(|key| {
+                        jobs.iter().any(|previous| {
+                            previous.document.episode_key == *key
+                                && previous.status == JOB_COMPLETED
+                        })
+                    })
+        })
+        .cloned()
+        .ok_or(KnowledgeError::Invalid(
+            "Source has no stopped span to retry",
+        ))?;
+    if !ready_to_run(settings, &head)
+        || settings
+            .quarantined_generations
+            .contains(&head.document.generation_id)
+        || generation_needs_reconcile(
+            tx,
+            loupist_id,
+            &head.world_record_id,
+            &head.document.generation_id,
+        )?
+        || settings.max_llm_calls < 2
+        || settings.max_embedding_calls == 0
+    {
+        return Err(KnowledgeError::Invalid(
+            "enable Map building with a sufficient allowance before retrying",
+        ));
+    }
+    if head.document.extraction.max_llm_calls >= 2
+        && head.document.extraction.max_embedding_calls > 0
+    {
+        return Err(KnowledgeError::Invalid("Source allowance has not run out"));
+    }
+    let mut tail = vec![head.clone()];
+    while let Some(next) = jobs.iter().find(|job| {
+        job.document.previous_episode_key.as_ref()
+            == Some(&tail.last().unwrap().document.episode_key)
+    }) {
+        if tail.iter().any(|job| job.job_id == next.job_id) {
+            return Err(KnowledgeError::Invalid("Source episode chain is invalid"));
+        }
+        tail.push(next.clone());
+    }
+    // A dispatched/uncertain follower is never silently reset with the head.
+    if tail.iter().any(|job| {
+        !matches!(job.status.as_str(), JOB_PAUSED | JOB_QUEUED)
+            || job.document.mutation_sent
+            || job.document.usage_uncertain
+            || job.document.attempt_id.is_some()
+            || job.document.lease_expires_at_ms.is_some()
+            || (job.job_id != head.job_id && job.document.inference_attempted)
+    }) {
+        return Err(KnowledgeError::Invalid(
+            "Source attempt cannot safely be retried",
+        ));
+    }
+    for (index, job) in tail.iter().enumerate() {
+        let mut document = job.document.clone();
+        document.extraction = budget(settings);
+        if index > 0 {
+            document.extraction.max_llm_calls = 0;
+        }
+        document.inference_attempted = false;
+        document.interrupted_attempts = 0;
+        document.host_interruptions = 0;
+        document.unsent_attempts = 0;
+        write_status(tx, &job.job_id, &job.status, JOB_QUEUED, &document)?;
+    }
+    head = load_job(tx, &head.job_id)?;
+    Ok(head)
 }
 
 /// Called once after acquiring the app-data lock and reclaiming orphaned processes.
