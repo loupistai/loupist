@@ -115,7 +115,7 @@ test("native find uses only the host manifest and preserves glob, limits and can
 
 test("native grep works offline without system rg", (t) => {
   const { temporary, workspace, privateRuntime } = workspaceFixture(t);
-  const bundledTools = resolve(import.meta.dirname, "../src-tauri/resources/pi-runtime/workspace-tools");
+  const bundledTools = join(process.env.LOUPIST_EVAL_PI_RUNTIME ?? resolve(import.meta.dirname, "../src-tauri/resources/pi-runtime"), "workspace-tools");
   assert(existsSync(join(bundledTools, process.platform === "win32" ? "rg.exe" : "rg")), "stage the pinned workspace tools before running the grep integration test");
   writeFileSync(join(workspace, "notes.txt"), "alpha\nneedle here\nomega\n");
   const source = `
