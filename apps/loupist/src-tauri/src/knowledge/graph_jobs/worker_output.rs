@@ -144,14 +144,36 @@ fn bound_aliases(aliases: &mut Vec<String>) {
 }
 
 /// The worker's snapshot as bounded nodes, claims and topic annotations.
-pub(super) fn project_worker_artifact(artifact_utf8: &str) -> KnowledgeResult<WorkerProjection> {
+pub(super) fn project_worker_artifact(
+    artifact_utf8: &str,
+    previous_nodes: &[GraphNode],
+) -> KnowledgeResult<WorkerProjection> {
     let snapshot: Value = serde_json::from_str(artifact_utf8)?;
+    let previous_ids: std::collections::HashSet<_> =
+        previous_nodes.iter().map(|node| node.id.as_str()).collect();
     let mut nodes = Vec::new();
+    let mut non_entities = std::collections::HashSet::new();
     for node in snapshot
         .get("nodes")
         .and_then(Value::as_array)
         .ok_or(KnowledgeError::Invalid("snapshot nodes are invalid"))?
     {
+        // Check before clipping: a long sentence must not become an admitted
+        // name just because its measurement or predicate was clipped away.
+        let existing = node["adapter_id"]
+            .as_str()
+            .is_some_and(|id| previous_ids.contains(id));
+        if !existing
+            && !crate::knowledge::entity_name::admits_entity_name(
+                node["name"].as_str().unwrap_or(""),
+                node["kind"].as_str().unwrap_or(""),
+            )
+        {
+            if let Some(id) = node["adapter_id"].as_str() {
+                non_entities.insert(id.to_string());
+            }
+            continue;
+        }
         let mut node = node.clone();
         if let Some(object) = node.as_object_mut() {
             for (key, limit) in [("name", 200), ("description", 4_000)] {
@@ -179,7 +201,19 @@ pub(super) fn project_worker_artifact(artifact_utf8: &str) -> KnowledgeResult<Wo
         let mut claim = claim.clone();
         sanitize_worker_claim(&mut claim);
         match adapt_worker_claim(&claim) {
-            Ok(adapted) => {
+            Ok(mut adapted) => {
+                // An old-style response may put a reported value behind a new
+                // value node. Keep that REPORTS claim on its admitted subject.
+                // Other relationships are not reinterpreted.
+                if adapted.relation == "REPORTS"
+                    && adapted.endpoints.len() == 2
+                    && adapted.endpoints[0].role == "source"
+                    && adapted.endpoints[1].role == "target"
+                    && node_ids.contains(adapted.endpoints[0].node_id.as_str())
+                    && non_entities.contains(&adapted.endpoints[1].node_id)
+                {
+                    adapted.endpoints[1].node_id = adapted.endpoints[0].node_id.clone();
+                }
                 if adapted
                     .endpoints
                     .iter()

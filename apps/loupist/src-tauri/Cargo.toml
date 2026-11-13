@@ -61,6 +61,8 @@ open = "5.4"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 pdf_oxide = { version = "0.3.77", default-features = false, features = ["legacy-crypto"] }
 reqwest = { version = "0.12", default-features = false, features = ["brotli", "deflate", "gzip", "json", "rustls-tls-native-roots", "stream"] }
+# Already in the tree through tokenizers; bounded entity-name admission patterns.
+regex = "1"
 rusqlite = { version = "0.41.1", features = ["backup", "bundled"] }
 rfd = "0.17"
 scraper = "0.24"

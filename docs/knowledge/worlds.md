@@ -37,7 +37,7 @@ Each episode runs after the one before it, whose text is its extraction context;
 that episode completed or can no longer finish, the next one runs.
 Every World extracts with one shared core vocabulary, listed once in
 `knowledge/world_extract/ontology.rs`: the entity types Organization, Person, Asset,
-Product, Place, Policy, Event, Metric, Technology and Segment, and seventeen relation
+Product, Place, Policy, Event, Technology and Segment, and seventeen relation
 types (SUPPLIES, COMPETES_WITH, PARTNERS_WITH, SUBSIDIARY_OF, ACQUIRED, INVESTED_IN,
 LEADS, OFFERS, USES, REPORTS, LOCATED_IN, AFFECTS, PART_OF, REQUIRES, OPERATES_IN,
 ISSUES, OWNS) with allowed endpoint types. `world_schema.rs` reads its reserved
@@ -51,6 +51,28 @@ rates_fx, real_asset, prediction, private), rendered from the enum, and its
 estate and private deals are Assets of class `real_asset` and `private`. An entity
 that fits no type stays `Entity`, and a relationship that fits no type keeps a
 specific open name, so the vocabulary guides extraction without closing it.
+`Metric` stays reserved for existing Maps, which remain readable, but new measured
+values are claims about their subject. `REPORTS` uses the same subject in both
+endpoint roles, with the exact value, unit, period, basis and status in its text.
+Extraction and publication reject new nodes named as quantities, measurements,
+figures with units or sentences, including under custom kinds. Numeric product
+names, tickers, security maturities, fiscal entities and named events remain valid.
+A `REPORTS` claim from an admitted subject to a newly rejected value node keeps
+its full text and uses the subject in both roles. Other relationships are not
+rewritten, and existing measurement nodes and their claims stay as stored.
+Named or uniquely qualified dated occurrences remain Event entities alongside
+their participants and quantitative claims. Their identifying names use actors,
+action and date or period; reported amounts stay in claims.
+A qualified occurrence title can contain a verb or a monetary qualifier without
+becoming a measurement. Admission requires an actual occurrence term and a named
+participant or subject beyond generic action, date and unit words; a contract's
+value or amount remains a measurement. Institutions keep their Organization role
+separate from what they issue or oversee, and quantitative claims keep their
+specific metric names and stated counterparty roles beside the value.
+Measurement claims keep each metric's exact Source wording, language and qualifiers.
+English claims retain a non-English metric label with its English rendering beside
+it. A synonym, accounting term or acronym cannot replace the stated label:
+operating profit, operating income, EBIT and adjusted operating profit stay distinct.
 
 ### Queue and interruptions
 
@@ -215,15 +237,28 @@ resolver finds to be an existing node ("Acme Corporation" for "Acme Corp") also
 stays an alias of that node, unless a name or alias already folds to it, within
 the 16-alias cap, so a Lens anchor filed under that spelling resolves exactly. One attribute call per
 episode fills every typed entity's fields. World stores names, summaries, relation
-names and facts in English whatever the Source language; the original text stays in
+names and fact prose in English, retaining original-language metric labels beside
+their English rendering; the original text stays in
 the retained Source and its evidence spans. Research focus, preferred relationship
 names and anchor entities add emphasis on top of the core schema. Editing this guidance retains saved anchor identifiers as identifiers. Publication time,
 observation period and validity remain distinct. Extraction preserves quantitative
 units and basis, directed roles and conflicting attributed reports; source content
 is data, not extraction instructions. Temporal bounds require explicit effective
-instants; date-only precision is retained in the fact text. Invalidation needs
+instants; date-only precision is retained in the fact text. A replacement needs
 ordered start instants on both claims, so a date-only correction can be retained
-without structurally ending the earlier claim.
+without structurally ending the earlier claim. An explicit termination can instead
+close an earlier claim at its end instant without restating a start instant. The
+resolver must select the same assertion as explicitly ended or replaced, and the
+earlier claim must start before that boundary; different relation labels or
+endpoints do not by themselves establish a replacement. Denials, rumours,
+allegations and unrelated later facts do not establish an ending.
+End-bounded resolution supplies the relation, participant identities and stored
+validity beside the fact text, distinguishing an open relationship described in
+the past tense from a historical event. A different explicit end cannot disappear
+through verbatim or model-selected deduplication; ending an older claim still
+requires the resolver to select it and the time guards to pass. Other resolutions
+keep their existing fact-only requests. Restating an earlier start with an explicit
+end closes the old interval at the end, preserving the stated start.
 
 ### Discovery after publication
 

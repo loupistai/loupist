@@ -1,0 +1,512 @@
+[
+ {
+  "name": "NVIDIA Q4 FY2026 GAAP net income USD 42,960 million",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "NVIDIA Q4 FY2026 net income 42960",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "USD 42,960 million",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "42,960 million",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "42,960",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "2026-11-13",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "NVIDIA reported record revenue",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": false
+ },
+ {
+  "name": "Acme has been profitable",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": false
+ },
+ {
+  "name": "Acme market share 41%",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Acme annual production 40,000 tonnes",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "삼성전자 2026년 3분기 순이익 10조원",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "한빛배터리 매출액 1,234억 원",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "한빛 점유율 41%",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "4만 톤",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "87억원",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "삼성전자는 이익을 발표했다",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": false
+ },
+ {
+  "name": "한빛배터리 매출이 증가했다",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": false
+ },
+ {
+  "name": "Cedar\nCompany",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": false
+ },
+ {
+  "name": "1234",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "-5%",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "USD/KRW 1,382",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "NVIDIA revenue USD 100 billion (forecast)",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "NVIDIA revenue USD 90 billion (disputed)",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Net income USD 42 million",
+  "kind": "Product",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "HBM4 capacity 10 GWh",
+  "kind": "Product",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "모델 3 생산량 40,000대",
+  "kind": "Product",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Acme revenue 42 million in 2026",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "한빛 2026년 매출액 1,234억원",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Acme Q4 2026 revenue USD 42 million",
+  "kind": "FiscalObservation",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Net income",
+  "kind": "Metric",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "CPI",
+  "kind": "Metric",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Q4 FY2026",
+  "kind": "Metric",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "HBM4",
+  "kind": "Product",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Model 3",
+  "kind": "Product",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "GPT-4.1",
+  "kind": "Product",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "iPhone 17 Pro",
+  "kind": "Product",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "3nm process",
+  "kind": "Product",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "모델 3",
+  "kind": "Product",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "갤럭시 S26",
+  "kind": "Product",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "HBM4 메모리",
+  "kind": "Product",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "GLP-1",
+  "kind": "Product",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "3M",
+  "kind": "Organization",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "21Shares",
+  "kind": "Organization",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "005930",
+  "kind": "Organization",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "삼성전자",
+  "kind": "Organization",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "삼성전자 (005930)",
+  "kind": "Organization",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "NVIDIA (NVDA)",
+  "kind": "Organization",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Seven & i Holdings",
+  "kind": "Organization",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "2030 notes",
+  "kind": "Asset",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "5% notes due 2030",
+  "kind": "Asset",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "US 10-year Treasury",
+  "kind": "Asset",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "USD/KRW",
+  "kind": "Asset",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "005930",
+  "kind": "Asset",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "S&P 500",
+  "kind": "Asset",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Tessera 200",
+  "kind": "Asset",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "2030년 만기 채권",
+  "kind": "Asset",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Q3 2026 earnings call",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Acme Q4 FY2026 earnings release",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Cedar chief executive appointment on July 7, 2026",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "2026년 3분기 실적발표회",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "시더 대표이사 선임 2026년 7월 7일",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Fiscal Year 2026",
+  "kind": "FiscalPeriod",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "FY2026",
+  "kind": "FiscalPeriod",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "2026 회계연도",
+  "kind": "FiscalPeriod",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "CPI",
+  "kind": "EconomicSeries",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Consumer Price Index",
+  "kind": "EconomicSeries",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "소비자물가지수",
+  "kind": "EconomicSeries",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "100대",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "42,960백만 원",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "100 shares",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "300 patients",
+  "kind": "Entity",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Cedar and Elm agreement signed on September 14, 2026",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "시더와 엘름의 계약 체결 (2026년 9월 14일)",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Revenue Procedure 2026-1",
+  "kind": "Policy",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "2026 회계연도 예산법",
+  "kind": "Policy",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Cedar and Elm signed a three-year supply agreement (reported on 14 September 2026)",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "Acme acquisition of Beta for USD 12.4 million in 2026",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "시더와 엘름의 2026년 공급계약 4,800억원",
+  "kind": "Event",
+  "entity": true,
+  "measurement": false
+ },
+ {
+  "name": "KRW 480 billion supply contract",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "2026년 4,800억원 공급계약",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Acme contract value USD 42 million in 2026",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "시더 2026년 계약금액 4,800억원",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Acme Q4 FY2026 net income USD 42 million",
+  "kind": "Event",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Cedar acquisition of Elm USD 42 million in 2026",
+  "kind": "Metric",
+  "entity": false,
+  "measurement": true
+ },
+ {
+  "name": "Cedar acquisition of Elm USD 42 million in 2026",
+  "kind": "Product",
+  "entity": false,
+  "measurement": true
+ }
+]

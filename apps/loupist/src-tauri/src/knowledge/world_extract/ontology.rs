@@ -40,7 +40,7 @@ impl Schema {
     }
 }
 
-const ORGANIZATION: &str = "A named company, fund manager, bank, exchange, regulator, government body, central bank,\nindustry body or other institution.\n\nA listed company is an Organization even when the source refers to it by its shares or\nticker; record the ticker as an attribute instead of creating a separate share entity.\nNot an Organization: a product or brand (Product); an index, fund share, bond, commodity or\ncurrency (Asset); a country or city (Place); a law or program (Policy).";
+const ORGANIZATION: &str = "A named company, fund manager, bank, exchange, regulator, government body, central bank,\nindustry body or other institution.\n\nA listed company is an Organization even when the source refers to it by its shares or\nticker; record the ticker as an attribute instead of creating a separate share entity.\nNot an Organization: a product or brand (Product); an index, fund share, bond, commodity or\ncurrency (Asset); a country or city (Place); a law or program (Policy).\n\nClassify an institution by its stated role, not by what it issues or oversees. The institution itself remains an Organization; its publications, products and rules are separate entities.";
 const PERSON: &str = "A named individual: an executive, director, founder, investor, official, analyst or\nother person.\n\nNot a Person: a job title without a name, or a group of people (Organization).";
 const ASSET: &str = "A tradable, benchmark or held instrument other than one company's ordinary shares: a market\nindex, ETF or fund share, bond, commodity, currency or currency pair, cryptocurrency,\ninterest-rate benchmark, prediction-market contract, property or other real asset, or a\nprivate deal or stake.\n\nNot an Asset: the issuing or managing company (Organization), or a company's ordinary\nshares (record the ticker on the Organization).";
 const PRODUCT: &str = "A named product, service, component or material that an organization makes or sells.\n\nA specific technical term can identify a Product without a brand or model number. Use the\nsource's domain and qualifiers to distinguish its meaning. Retain only products explicitly\ninvolved in a source claim; do not invent a taxonomy or extract vague marketing qualities.\nNot a Product: the company that makes it (Organization); a science, technique, process or\nstandard that more than one organization can use (Technology); an industry or value-chain\nstage (Segment).";
@@ -48,8 +48,12 @@ const PLACE: &str = "A country, region, state, city or named facility such as a 
 const TECHNOLOGY: &str = "A science, technique, process, material or standard that more than one organization can\nuse, such as EUV lithography, hybrid bonding, GLP-1 agonism or proof-of-stake.\n\nNot a Technology: a specific product built with it (Product), or the company that\ndevelops it (Organization).";
 const SEGMENT: &str = "An industry, market segment or value-chain stage, such as advanced packaging, Seoul office\nleasing or L2 sequencing.\n\nNot a Segment: a single company (Organization), or a specific product (Product).";
 const POLICY: &str = "A standing law, regulation, tariff, sanction, export control, subsidy or tax program, or\na central bank's policy setting.\n\nThe enactment, change, ruling or announcement of a policy on a date is an Event; the rule\nitself is the Policy.";
-const EVENT: &str = "A dated or datable occurrence: an acquisition or other deal, earnings release, guidance\nchange, product launch, lawsuit or ruling, accident or outage, rating action, executive\nchange, or policy announcement.\n\nName it with the actor, the action and the date or period the source gives. Preserve\nwhether it is completed, announced, expected, rumored, alleged or denied. Not an Event: a\nreported number (Metric).";
-const METRIC: &str = "A source-reported quantitative observation about one subject: a financial result,\noperating figure, market share, price, forecast, estimate, guidance or target.\n\nA reported amount is a Metric even when it describes only one organization. Name it with\nthe subject, the metric, the value with its unit or currency, the period and the reporting\nbasis the source gives, such as \"Aster Harbor Systems Q2 2026 operating profit GBP 12.4m\n(corrected)\". Preserve forecast, correction, hypothetical or disputed status. Do not\ncalculate missing values.";
+const EVENT: &str = "A dated or datable occurrence: an acquisition or other deal, earnings release, guidance\nchange, product launch, lawsuit or ruling, accident or outage, rating action, executive\nchange, or policy announcement.\n\nName it with the actor, the action and the date or period the source gives. Preserve\nwhether it is completed, announced, expected, rumored, alleged or denied. Not an Event: a\nreported number; keep it as a claim on its subject.\n\nA named or uniquely qualified dated occurrence remains an Event when the source reports its value. Name it by actors, action and date or period; keep amounts and measured values in claims, not in its identifying name.";
+const METRIC: &str = concat!(
+    "Legacy measurement-node type retained for existing Maps. Never extract new Metric nodes.",
+    " A reported amount, value, unit, period or sentence is a claim about its subject, not an",
+    " entity. Preserve the full observation in a REPORTS claim on the subject.",
+);
 
 /// Field description for an extension type's `original_name`.
 pub(crate) const ORIGINAL_NAME: &str = "The name exactly as written in a non-English source. Null when the source writes the name in English.";
@@ -135,7 +139,7 @@ pub(crate) fn core_edge_types() -> Vec<EdgeType> {
         ("LEADS", "The person is an executive, director, founder or head of the organization. Keep the role and dates in the fact."),
         ("OFFERS", "The organization makes, sells or provides the product or service."),
         ("USES", "The source relies on the target product, technology, material or process as an input."),
-        ("REPORTS", "The source entity is the subject of the target measurement: it reported, guided or was estimated at that value. Keep who stated the value in the fact."),
+        ("REPORTS", "A quantitative observation about the source entity: a reported value, guidance or estimate. Use that same subject as the target; preserve the value, unit, period, basis, status and attribution in the fact, without a measurement node."),
         ("LOCATED_IN", "The source is headquartered in, operates in or takes place in the target place. State which in the fact."),
         ("PART_OF", "The source is a component, stage or member of the target: a part of a product, a step of a process, a technology inside a larger one, a segment inside an industry."),
         ("REQUIRES", "The source product, technology or segment needs the target as an input or prerequisite. State what kind of dependency in the fact."),
@@ -189,7 +193,7 @@ fn core_edge_map() -> Vec<((String, String), Vec<String>)> {
         pair("Person", "Organization", &["INVESTED_IN", "LEADS"]),
         pair("Organization", "Asset", &["INVESTED_IN", "ISSUES", "OWNS"]),
         pair("Person", "Asset", &["INVESTED_IN", "OWNS"]),
-        pair("Entity", "Metric", &["REPORTS"]),
+        pair("Entity", "Entity", &["REPORTS"]),
         pair("Entity", "Place", &["LOCATED_IN"]),
         pair("Policy", "Entity", &["AFFECTS"]),
         pair("Event", "Entity", &["AFFECTS"]),
@@ -275,11 +279,11 @@ pub(crate) const WORLD_FACT_POLICY: &str = concat!(
     "in a source claim are valid relationship endpoints, even without a brand or ",
     "model number. Extract them and their stated relationships rather than leaving ",
     "those facts only in a company's summary. Use source-supported domain qualifiers. ",
-    "Write in English; keep a name's non-English spelling only in original_name. This overrides ",
+    "Write English prose; keep an entity name's non-English spelling in original_name. This overrides ",
     "a generic exclusion of common ",
     "nouns or concepts; it does not permit vague qualities or unstated relationships. ",
     "Retain every explicitly named participant in an extracted claim, including ",
-    "customers, suppliers and other counterparties. A product or measurement node ",
+    "customers, suppliers and other counterparties. A product node ",
     "does not replace the named organization on either side of the relationship. ",
     "When a source says an organization buys a product from a named supplier, keep ",
     "the buyer, product and supplier as distinct entities and preserve the stated ",
@@ -291,6 +295,11 @@ pub(crate) const WORLD_FACT_POLICY: &str = concat!(
     "that two people or organizations are different must prevent merging them. ",
     "Keep measurement values, signs, units, currencies, reporting periods and reporting ",
     "bases together. Converting a value's notation to English must keep its exact magnitude. ",
+    "Keep a measurement's metric name exactly as written in the Source, including its ",
+    "original wording and language. In an English claim, retain a non-English metric label ",
+    "and put its English rendering beside it. Never substitute a synonym, different ",
+    "accounting term or acronym for the Source's label. Operating profit, operating income, ",
+    "EBIT and adjusted operating profit are distinct labels; preserve each stated qualifier. ",
     "A reporting period describes what was measured; its start and end ",
     "do not establish when a reported fact became true or ceased to be true. ",
     "valid_at is the start of the asserted fact's validity, not an as-of or observation ",
@@ -307,7 +316,20 @@ pub(crate) const WORLD_FACT_POLICY: &str = concat!(
     "retracted or replaced by a dated change. Different attributed reports can coexist. ",
     "A disputed report, forecast, allegation or denial is not proof that another ",
     "report or the underlying relationship has ended. A denial alone cannot invalidate ",
-    "an unresolved allegation, and an allegation alone cannot invalidate a contract."
+    "an unresolved allegation, and an allegation alone cannot invalidate a contract.",
+    " A fact stating that a relationship ended explicitly supersedes the earlier ongoing ",
+    "assertion, even though the original appointment, agreement or other historical event ",
+    "still happened. Select that earlier assertion in contradicted_facts; the host will close",
+    " its validity at the explicit end instant. Do not require the termination to restate the",
+    " original start. A new holder, endpoint or relation label is not by itself proof of ",
+    "replacement; compare the actual assertion and its qualifiers.",
+    " Quantities, dated measurements, figures with units and sentences are not entities, ",
+    "regardless of the proposed type or custom schema. Never extract a new Metric node. Keep ",
+    "each quantitative observation as a REPORTS claim on its measured subject, with that same",
+    " subject in both endpoint roles. This overrides the generic distinct-entity requirement;",
+    " never invent an endpoint to retain a value. Preserve exact numbers, units, periods, ",
+    "basis and status in the fact. Numbers in a product, security, ticker, fiscal entity or ",
+    "named event do not make that entity a measurement.",
 );
 
 const EXTRACTION_INSTRUCTIONS: &str = concat!(
@@ -320,11 +342,18 @@ const EXTRACTION_INSTRUCTIONS: &str = concat!(
     "unclassified when none fits. Use a listed fact type when the relationship ",
     "matches its description and entity types; otherwise name the relationship ",
     "specifically in English. Retain quantitative observations, amounts and dates ",
-    "as well as relationships between people and organizations. Extract a Metric ",
-    "entity to connect a reported value to its subject and an Event entity for a ",
-    "dated occurrence. A Metric's name and relationship text must preserve the ",
-    "metric, value, unit or currency, reporting period and reporting basis supplied ",
-    "by the source. Do not omit a fact merely ",
+    "as well as relationships between people and organizations. Keep a quantitative ",
+    "observation as a REPORTS claim on the subject it measures: use the subject's exact name ",
+    "as both source_entity_name and target_entity_name. Do not invent a second entity for a ",
+    "quantity, dated measurement, figure with a unit or sentence. Preserve the metric, exact ",
+    "value, unit or currency, reporting period, basis and status in the claim text. Keep the ",
+    "Source's exact metric wording and language, with an English rendering beside a non-English ",
+    "label, and each stated counterparty role in the same claim as its value. ",
+    "Named ",
+    "products and securities may contain numbers. Extract a named or uniquely qualified ",
+    "dated occurrence as an Event, alongside its participants and quantitative claims. ",
+    "Use actors, action and the source's date or period in the event name, keeping amounts ",
+    "and measured values in claims instead. Do not omit a fact merely ",
     "because it describes one organization rather than two named people. Do not ",
     "calculate missing values. Include explicit identifying codes in entity names; ",
     "different codes identify different entities even when their display names ",

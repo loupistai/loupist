@@ -1039,7 +1039,8 @@ fn sealed_evidence_without_jobs_is_not_reextracted_but_unused_capture_is_queued(
         b"Another capture has not been extracted.",
     );
     let (world_id, world_revision) = world(&store, loupist);
-    let (nodes, claims, annotations) = project_worker_artifact(&world_artifact(&[&used])).unwrap();
+    let (nodes, claims, annotations) =
+        project_worker_artifact(&world_artifact(&[&used]), &[]).unwrap();
     let source_revision = store
         .transact(|write| super::super::revision::load_revision(write.tx, &latest))
         .unwrap();

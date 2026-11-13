@@ -222,6 +222,40 @@ Product, Place and Policy. An original is retained when a name, alias or
 `original_name` matches the oracle original after also removing one corporate suffix
 (`주식회사`, `(주)`, `Co., Ltd.`, `Inc.`, `Corp.`, `LLC`).
 
+`measurement_node_share` counts measurement-like names across every node kind,
+including custom kinds, and legacy `Metric` nodes, divided by all nodes. It reports
+zero for a known empty snapshot and null for a missing snapshot; pooled values use
+node counts. The detector recognizes English and Korean quantities, units and
+dated measurements while preserving numbered products, tickers, securities and
+named events. Qualified actual occurrences remain events when a title contains
+a monetary qualifier or verb; a contract-value measurement does not gain that
+exception. `entity-name-corpus-v1.json` is a deterministic classifier fixture,
+not a model-visible Source or a changed ontology corpus. The adoption check requires
+zero measurement nodes, alongside numeric fidelity so dropping figures cannot pass.
+
+Quantitative extraction keeps a metric's exact Source wording, language and
+qualifiers in its claim, with an English rendering beside a non-English label.
+Accounting terms and acronyms are not interchangeable labels. Scripted publication
+coverage checks both the extraction instruction and preservation of the returned
+English/Korean labels; real-model numeric fidelity still requires a fresh run after
+this model-visible policy changes.
+
+On **2026-11-13**, `non_english_fact_share` changed from “contains any Hangul”
+to a deterministic script heuristic for the sentence's prose. After NFKC
+normalization, it ignores short original-language labels and name aliases in
+parentheses, quotes or slash pairs in an English frame. This includes a label
+before its parenthesized English rendering. An English frame has at least two
+Latin words outside the annotation; ignored spans contain only non-Latin letters,
+spaces, hyphens or middle dots, at most 64 letters and six words. Sentence
+punctuation and common Korean clause endings prevent prose from being ignored as
+a label. A fact counts as non-English when at least 25% of the remaining letters
+are non-Latin; digits, punctuation and whitespace do not dilute that proportion.
+This keeps mostly or half-Korean prose flagged while allowing English sentences
+to retain Source metric labels and company aliases. It is a script heuristic,
+not a general language-identification model. The adoption limit of 5% is unchanged.
+This approved grading-only revision requires a **retrospective regrade of both
+baseline and candidate** with the same grader; all other predicates stay unchanged.
+
 ```sh
 node apps/loupist/evals/world/ontology-grade.mjs \
   --suite apps/loupist/evals/world/ontology-corpus-v1.json \
@@ -248,7 +282,9 @@ attempt, as in the ontology grader.
 
 Version 1 is retained as a date-only probe. The evidence policy forbids inventing
 an exact midnight instant from a calendar date, while the inherited Graphiti
-invalidation rule requires start instants on both claims. Version 2 makes those
+replacement rule requires start instants on both claims. An explicit termination
+can close a selected earlier assertion at its end instant without inventing a
+new start; the earlier start must precede that end. Version 2 makes those
 instants explicit, and removes unrelated prior-role history from the CEO Source
 so every old-pair claim concerns the leadership being replaced. Its oracle keeps
 the same checks and acceptance criteria; comparisons require matching v2 corpus

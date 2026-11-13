@@ -51,6 +51,7 @@ mod schema;
 mod search_embeddings;
 mod search_index;
 pub use search_index::{PreparedSearch, SearchOptions, SEARCH_LIMIT, SEARCH_WINDOW_LIMIT};
+mod entity_name;
 mod schema_writer;
 pub(crate) mod shared_pack;
 mod source;

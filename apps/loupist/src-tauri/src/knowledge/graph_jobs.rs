@@ -2771,7 +2771,7 @@ pub fn publish_and_complete(
     }
     let current = super::revision::load_revision(write.tx, &job.world_revision_id)?;
     let previous: WorldSnapshotBody = serde_json::from_str(&current.payload_json)?;
-    let (nodes, claims, mut annotations) = project_worker_artifact(artifact_utf8)?;
+    let (nodes, claims, mut annotations) = project_worker_artifact(artifact_utf8, &previous.nodes)?;
     carry_forward_annotations(&previous, &mut annotations);
     let mut spans = evidence_spans(&claims, &annotations);
     if let Some(binding) = &job.document.source_binding {
