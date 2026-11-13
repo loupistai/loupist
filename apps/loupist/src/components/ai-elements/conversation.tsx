@@ -211,8 +211,9 @@ export const Conversation = ({
     const element = scrollRef.current;
     if (!element || !following.current) return;
     const remaining = element.scrollHeight - element.clientHeight - element.scrollTop;
-    if (remaining <= 0.5) { measure(); return; }
-    element.scrollTop += reducedMotion() ? remaining : Math.max(0.5, remaining * FOLLOW_SHARE);
+    if (remaining < 1) { measure(); return; }
+    // WKWebView keeps scrollTop in whole pixels and drops a smaller step, which would stall a few pixels short.
+    element.scrollTop = Math.ceil(element.scrollTop + (reducedMotion() ? remaining : Math.max(1, remaining * FOLLOW_SHARE)));
     lastTop.current = element.scrollTop;
     markScrolled(element);
     follow.current = requestAnimationFrame(followFrame);

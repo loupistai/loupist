@@ -88,7 +88,8 @@ turn: prose gets the lower 60% of the viewport, a card or question is shown whol
 room for the live line. Growth never scrolls, commit never scrolls, and opening the
 ledger or a disclosure never scrolls. "Jump to latest", End, or scrolling to the very end
 while the reply runs follows the end of the turn (18% of the remaining distance per
-frame) until any upward input. A chat opened with a reply in flight puts its latest
+frame, at least one whole pixel, since WKWebView drops smaller scroll steps) until any
+upward input. A chat opened with a reply in flight puts its latest
 question at the top and does not make room; a settled chat opens at its end. The pill
 (`ChatStatusPill`) overlays the bottom of the thread, 12 px above the composer, only
 while the end of the turn is more than 12 px below the fold and the reader is not

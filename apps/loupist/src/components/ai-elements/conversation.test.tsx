@@ -48,7 +48,7 @@ function Blocks({ onReady }: { onReady: (append: (kind: "prose" | "card") => voi
   return null;
 }
 
-function thread({ running = false }: { running?: boolean } = {}) {
+function thread({ running = false, wholePixels = false }: { running?: boolean; wholePixels?: boolean } = {}) {
   const actions = { append: (_kind: "prose" | "card") => {}, hold: () => {}, jump: () => {} };
   const content = (prompt: string, live = running, extra?: ReactNode) => <Conversation aria-label="Conversation" scrollResetKey={prompt} running={live} footer={<ChatStatusPill />}>
     <ConversationContent>
@@ -65,7 +65,8 @@ function thread({ running = false }: { running?: boolean } = {}) {
     Object.defineProperties(element, {
       scrollHeight: { configurable: true, get: () => height },
       clientHeight: { configurable: true, get: () => viewport },
-      scrollTop: { configurable: true, get: () => top, set: (value) => { top = Math.max(0, Math.min(value, height - viewport)); } },
+      scrollTop: { configurable: true, get: () => top, // WKWebView keeps scrollTop in whole pixels: a smaller step is dropped.
+      set: (value) => { top = Math.max(0, Math.min(wholePixels ? Math.floor(value) : value, height - viewport)); } },
       getBoundingClientRect: { configurable: true, value: () => ({ top: 0, bottom: viewport, height: viewport, left: 0, right: 600, width: 600 }) },
     });
   };
@@ -138,6 +139,20 @@ describe("anchored reading", () => {
       t.grow(2800);
       act(() => { vi.advanceTimersByTime(50); });
       expect(t.element.scrollTop).toBe(2200);
+    } finally { t.restore(); }
+  });
+
+  it("reaches the end while following when the scroller keeps whole pixels, as WKWebView does", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }));
+    const t = thread({ wholePixels: true });
+    try {
+      t.sendPrompt();
+      act(() => { vi.advanceTimersByTime(400); });
+      t.grow(2400);
+      fireEvent.scroll(t.element);
+      fireEvent.click(jump()!);
+      act(() => { vi.advanceTimersByTime(3_000); });
+      expect(t.element.scrollTop).toBe(2000);
     } finally { t.restore(); }
   });
 
