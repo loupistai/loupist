@@ -908,8 +908,6 @@
     "couldNotReadOrSendTheAttachedMessageYour": "Could not read or send the attached message. Your draft and files have been kept. Try again, or remove and reattach the files.",
     "uploadFiles": "Upload files",
     "whatWouldYouLikeToKnow": "What would you like to know?",
-    "stop": "Stop",
-    "submit": "Submit",
     "fileSizeLimit": "Files larger than {{value1}} MB were not added."
   },
   "aiSdk": {

@@ -871,8 +871,6 @@
     "couldNotReadOrSendTheAttachedMessageYour": "첨부된 메시지를 읽거나 보내지 못했어요. 초안과 파일은 유지되어 있어요. 다시 시도하거나 파일을 제거한 뒤 다시 첨부해 주세요.",
     "uploadFiles": "파일 업로드",
     "whatWouldYouLikeToKnow": "무엇이 궁금한가요?",
-    "stop": "중지",
-    "submit": "제출",
     "fileSizeLimit": "{{value1}}MB보다 큰 파일은 추가하지 않았어요."
   },
   "aiSdk": {

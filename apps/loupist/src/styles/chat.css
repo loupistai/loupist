@@ -946,8 +946,6 @@ button.chat-progress-names:hover { text-decoration: underline; }
 .composer-footer {
   flex-wrap: wrap;
 }
-/* When the tools wrap, the send control stays at the trailing edge of its row. */
-.composer-submit { margin-left: auto; }
 
 .composer-run-actions {
   display: inline-flex;
@@ -1018,12 +1016,28 @@ button.chat-progress-names:hover { text-decoration: underline; }
   background: var(--gg-color-action);
 }
 
-/* Send and Stop share one tile at the trailing edge: each arrives in place with a short fade and scale. */
-.composer-submit > svg, .composer-stop-action > svg { animation: composer-tile-in var(--gg-motion-fast) var(--gg-ease-out) both; }
-@keyframes composer-tile-in { from { opacity: 0; transform: scale(0.8); } }
-.composer-run-actions > :not(.composer-stop-action) { animation: turn-fade-in var(--gg-motion-fast) var(--gg-ease-out) both; }
+/* Send and Stop are one 28 px tile at the trailing edge: the same button, its two icons cross-fading in place. */
+.composer-tile {
+  position: relative;
+  width: var(--gg-size-control-sm);
+  height: var(--gg-size-control-sm);
+  padding: 0;
+  transition: background-color var(--gg-motion-fast) var(--gg-ease-out), color var(--gg-motion-fast) var(--gg-ease-out), opacity var(--gg-motion-fast) var(--gg-ease-out), box-shadow var(--gg-motion-fast) var(--gg-ease-out);
+}
+.composer-tile-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transition: opacity var(--gg-motion-fast) var(--gg-ease-out), transform var(--gg-motion-fast) var(--gg-ease-out);
+}
+.composer-tile-icon > svg { width: 14px; height: 14px; }
+.composer-tile-icon[data-icon="stop"] > svg { fill: currentColor; }
+.composer-tile[data-state="send"] > [data-icon="stop"],
+.composer-tile[data-state="stop"] > [data-icon="send"] { opacity: 0; transform: scale(0.8); }
+.composer-run-actions > :not(.composer-tile) { animation: turn-fade-in var(--gg-motion-fast) var(--gg-ease-out) both; }
 /* After a press the tile dims and ignores presses until the host confirms the stop. */
-.composer-stop-action { transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
 .composer-stopping .composer-stop-action { opacity: 0.55; pointer-events: none; }
 
 /* Once Send next is the primary control, Stop stays a square outline beside it. */

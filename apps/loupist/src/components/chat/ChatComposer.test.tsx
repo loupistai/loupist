@@ -225,6 +225,28 @@ describe("ChatComposer input", () => {
     window.removeEventListener("keydown", escaped);
   });
 
+  it("turns Send into Stop and back in the same tile, keeping focus in the textarea", async () => {
+    const user = userEvent.setup();
+    const view = render(<RunningComposer isRunning={false} />);
+    const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
+    await user.type(textarea, "Margins");
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toHaveClass("composer-tile");
+    expect(send).toHaveAttribute("data-state", "send");
+    view.rerender(<RunningComposer isRunning />);
+    const stop = screen.getByRole("button", { name: "Stop response" });
+    // One button whose icons cross-fade: no remount, so its box and place never change.
+    expect(stop).toBe(send);
+    expect(stop).toHaveAttribute("data-state", "stop");
+    expect(stop).toHaveAttribute("type", "button");
+    expect(stop.querySelectorAll(".composer-tile-icon")).toHaveLength(2);
+    await user.click(stop);
+    expect(textarea).toHaveFocus();
+    view.rerender(<RunningComposer isRunning={false} />);
+    expect(screen.getByRole("button", { name: "Send" })).toBe(send);
+    expect(send).toHaveAttribute("type", "submit");
+  });
+
   it("shows only stop until there is text, then queues on Enter and guides on the modifier", async () => {
     const user = userEvent.setup();
     const onFollowUp = vi.fn();
