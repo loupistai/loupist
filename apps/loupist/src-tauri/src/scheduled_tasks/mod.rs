@@ -653,7 +653,7 @@ impl ScheduledSupervisor {
         let events = current.replay.events().ok_or_else(|| {
             CommandError::new(
                 "scheduled_stream_limit",
-                "This long run can be read from its Chat after completion",
+                "This long run can be read from its research session after completion",
             )
         })?;
         // Replay and subscription occur under the same mutex as live delivery.

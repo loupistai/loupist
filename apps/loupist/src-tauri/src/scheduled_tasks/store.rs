@@ -1433,9 +1433,9 @@ pub(crate) fn forget_chat_in(
         task.last_error = Some(
             if task.target == TaskTarget::Dedicated {
                 task.session_thread_id = None;
-                "This task’s Chat was deleted. Resume to start a new dedicated Chat."
+                "This task’s research session was deleted. Resume to start a new one for it."
             } else {
-                "The target Chat was deleted. Choose another Chat before resuming."
+                "The target research session was deleted. Choose another before resuming."
             }
             .into(),
         );
@@ -1446,7 +1446,7 @@ pub(crate) fn forget_chat_in(
     // Canonical history keeps its occurrence even when the user removes a Chat.
     // Loupist/Chat deletion admission normally prevents an in-flight deletion; the
     // durable fallback is interruption rather than a dangling running record.
-    connection.execute("UPDATE scheduled_task_runs SET status=CASE WHEN status='running' THEN 'interrupted' ELSE status END, finished_at_ms=CASE WHEN status='running' THEN started_at_ms ELSE finished_at_ms END, data_json=json_set(data_json,'$.thread_id',NULL,'$.status',CASE WHEN status='running' THEN 'interrupted' ELSE status END,'$.finished_at_ms',CASE WHEN status='running' THEN started_at_ms ELSE finished_at_ms END,'$.error',CASE WHEN status='running' THEN 'The Chat was deleted.' ELSE json_extract(data_json,'$.error') END),thread_id=NULL WHERE loupist_id=?1 AND thread_id=?2",params![loupist_id,thread_id])?;
+    connection.execute("UPDATE scheduled_task_runs SET status=CASE WHEN status='running' THEN 'interrupted' ELSE status END, finished_at_ms=CASE WHEN status='running' THEN started_at_ms ELSE finished_at_ms END, data_json=json_set(data_json,'$.thread_id',NULL,'$.status',CASE WHEN status='running' THEN 'interrupted' ELSE status END,'$.finished_at_ms',CASE WHEN status='running' THEN started_at_ms ELSE finished_at_ms END,'$.error',CASE WHEN status='running' THEN 'The research session was deleted.' ELSE json_extract(data_json,'$.error') END),thread_id=NULL WHERE loupist_id=?1 AND thread_id=?2",params![loupist_id,thread_id])?;
     Ok(())
 }
 
