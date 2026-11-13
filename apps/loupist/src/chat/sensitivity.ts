@@ -6,7 +6,7 @@
  */
 import i18n from "@/i18n";
 import { formatAmount, formatDate, formatNumber, formatShareCount } from "@/i18n/format";
-import type { NumberCheck, SensitivityCard, SensitivityGrid } from "../contracts/chat";
+import type { ChatEvidenceRef, NumberCheck, SensitivityCard, SensitivityGrid } from "../contracts/chat";
 import { humanize, plainLabel } from "./numberText";
 
 const t = i18n.getFixedT(null, "chat");
@@ -31,17 +31,40 @@ const tidy = (text: string) => text.replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, "\n\n").
 export function sensitivityParagraphs(content: string, listed: readonly SensitivityCard[] = [], checks?: NumberCheck[]): { text: string; numberChecks: NumberCheck[] | undefined; cards: SensitivityCard[]; segments: SensitivitySegment[] } {
   const whole = { text: content, numberChecks: checks, cards: [], segments: [{ text: content, numberChecks: checks }] };
   if (!listed.length) return whole;
+  const split = splitAtLinkParagraphs(content, (linkIndex, evidenceId) => listed.find(item => item.link_index === linkIndex && item.evidence_id === evidenceId), checks);
+  return split.cards.length ? split : { ...whole, cards: [] };
+}
+
+/** Results a lone link paragraph becomes a card for, once Rust confirms it as the reply settles. */
+const GRID_OPERATIONS = new Set(["reverse_dcf", "dcf_grid"]);
+
+/**
+ * While the answer streams, the paragraphs Rust will make cards: a lone link
+ * to a `reverse_dcf` or `dcf_grid` result. The split is the one
+ * `sensitivityParagraphs` makes when the reply settles, so each piece of text
+ * keeps its place and the held paragraph's frame becomes its card (`held` is
+ * the result's evidence id). A paragraph still being written that is only that
+ * link so far is held too; if more text follows on it, it is text again.
+ */
+export function heldSensitivityParagraphs(content: string, evidence: readonly ChatEvidenceRef[] = []): { text: string; held?: string }[] {
+  const grids = new Set(evidence.flatMap((item) => item.calc_operation && GRID_OPERATIONS.has(item.calc_operation) ? [item.id] : []));
+  if (!grids.size) return [{ text: content }];
+  const split = splitAtLinkParagraphs(content, (_linkIndex, evidenceId) => grids.has(evidenceId) ? evidenceId : undefined, undefined);
+  return split.cards.length ? split.segments.map((segment) => ({ text: segment.text, held: segment.card })) : [{ text: content }];
+}
+
+function splitAtLinkParagraphs<T>(content: string, match: (linkIndex: number, evidenceId: string) => T | undefined, checks: NumberCheck[] | undefined) {
   const parts = content.split(/(\n[ \t]*\n)/);
   const removed: number[] = [];
-  const cards: SensitivityCard[] = [];
+  const cards: T[] = [];
   const kept: string[] = [];
   /** Segments by the original link indices they span: [start, end). */
-  const spans: { parts: string[]; start: number; end: number; card?: SensitivityCard }[] = [{ parts: [], start: 0, end: 0 }];
+  const spans: { parts: string[]; start: number; end: number; card?: T }[] = [{ parts: [], start: 0, end: 0 }];
   let linkIndex = 0;
   for (const part of parts) {
     const only = ONLY_LINK.exec(part);
-    const card = only ? listed.find(item => item.link_index === linkIndex && item.evidence_id === only[1]) : undefined;
-    if (card) {
+    const card = only ? match(linkIndex, only[1]!) : undefined;
+    if (card !== undefined) {
       removed.push(linkIndex);
       spans.at(-1)!.card = card;
       linkIndex += 1;
@@ -54,7 +77,6 @@ export function sensitivityParagraphs(content: string, listed: readonly Sensitiv
     spans.at(-1)!.end = linkIndex;
     kept.push(part);
   }
-  if (!cards.length) return { ...whole, cards };
   const text = tidy(kept.join(""));
   const numberChecks = checks?.filter(check => !removed.includes(check.link_index))
     .map(check => ({ ...check, link_index: check.link_index - removed.filter(index => index < check.link_index).length }));
@@ -62,7 +84,7 @@ export function sensitivityParagraphs(content: string, listed: readonly Sensitiv
     text: tidy(span.parts.join("")),
     numberChecks: checks?.filter(check => check.link_index >= span.start && check.link_index < span.end).map(check => ({ ...check, link_index: check.link_index - span.start })),
     card: span.card,
-  })).filter(segment => segment.text || segment.card);
+  })).filter(segment => segment.text || segment.card !== undefined);
   return { text, numberChecks, cards, segments };
 }
 

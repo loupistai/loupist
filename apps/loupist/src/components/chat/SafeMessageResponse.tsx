@@ -85,12 +85,14 @@ const WORD_FADE = { animation: "fadeIn", sep: "word", duration: 220, easing: "cu
 /** While text streams, tables show no copy, download or fullscreen controls above a table being read. */
 const STREAMING_CONTROLS = { table: false, code: false, mermaid: false } as const;
 
+/** The Mermaid renderer once a settled answer needs it, and whether its load has finished (loaded or failed). */
 function useDeferredMermaidPlugin(
   text: string,
   isAnimating: boolean,
-): DiagramPlugin | undefined {
+): { plugin: DiagramPlugin | undefined; requiresMermaid: boolean; failed: boolean } {
   const requiresMermaid = !isAnimating && hasCompleteMermaidFence(text);
   const [plugin, setPlugin] = useState<DiagramPlugin>();
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -106,7 +108,7 @@ function useDeferredMermaidPlugin(
         if (!disposed) setPlugin(loaded);
       },
       () => {
-        if (!disposed) setPlugin(undefined);
+        if (!disposed) { setPlugin(undefined); setFailed(true); }
       },
     );
     return () => {
@@ -114,7 +116,7 @@ function useDeferredMermaidPlugin(
     };
   }, [requiresMermaid]);
 
-  return requiresMermaid ? plugin : undefined;
+  return { plugin: requiresMermaid ? plugin : undefined, requiresMermaid, failed };
 }
 
 export function SafeMessageResponse({ text, isAnimating, fade = false, numberChecks, workspacePath, workspaceBasePath }: Props) {
@@ -123,7 +125,9 @@ export function SafeMessageResponse({ text, isAnimating, fade = false, numberChe
   // press already in progress when unrelated chat state next renders.
   const MessageResponse = useRef(readyRenderer ?? LazyMessageResponse).current;
   const fallback = <p className="message-response-fallback">{plainResponseText(text)}</p>;
-  const mermaidPlugin = useDeferredMermaidPlugin(text, isAnimating);
+  const mermaid = useDeferredMermaidPlugin(text, isAnimating);
+  // A diagram holds its frame while the reply streams and until its renderer arrives; if that fails, the code shows.
+  const holdDiagrams = isAnimating || (mermaid.requiresMermaid && !mermaid.plugin && !mermaid.failed);
 
   return (
     <MessageRenderBoundary fallback={fallback}>
@@ -132,7 +136,8 @@ export function SafeMessageResponse({ text, isAnimating, fade = false, numberChe
           isAnimating={isAnimating}
           animated={fade && isAnimating ? WORD_FADE : false}
           controls={isAnimating ? STREAMING_CONTROLS : undefined}
-          mermaidPlugin={mermaidPlugin}
+          mermaidPlugin={mermaid.plugin}
+          holdDiagrams={holdDiagrams}
           numberChecks={numberChecks}
           workspacePath={workspacePath}
           workspaceBasePath={workspaceBasePath}

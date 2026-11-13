@@ -126,7 +126,15 @@ Under reduced motion it reveals whole sentences or blocks at most four times a s
 `stableMarkdown` holds a heading until its line ends and a table whole until a line that
 is not a row follows it (a 100 px ruled placeholder stands in meanwhile, so rows never
 arrive one by one and columns never re-flow), plus an open link or evidence link, an
-open `$$` run and a marker that just opened. The rendered text therefore only grows;
+open `$$` run and a marker that just opened. A paragraph that is only a link to a
+`reverse_dcf` or `dcf_grid` result (the one Rust makes a sensitivity card at the end) is
+held behind a ruled frame of the card's reserved height (408 px) from the moment its
+link closes, split exactly as the settled answer splits around its cards
+(`heldSensitivityParagraphs`); at commit the card fills that frame, keeping at least its
+height, so no text the reader saw moves or is replaced. If more text follows on that
+paragraph it is text again. A Mermaid fence is a 240 px ruled frame while the reply
+streams and until the diagram renderer has loaded; the diagram block keeps at least that
+height, and if the renderer fails the code shows. The rendered text therefore only grows;
 `streamingMarkdown.test.tsx` replays the live scenario one character at a time to hold
 that. Each released word fades in over 220 ms through Streamdown's `animated` option
 (opacity only, 20 ms apart, the spans removed when the stream ends;

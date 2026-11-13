@@ -45,7 +45,7 @@ import { useGo } from "../navigation/Open";
 import { MessageSchedules } from "./MessageSchedules";
 import { EarningsChatCard } from "./EarningsChatCard";
 import { earningsCards } from "../../chat/earningsLinks";
-import { sensitivityParagraphs, type SensitivitySegment } from "../../chat/sensitivity";
+import { heldSensitivityParagraphs, sensitivityParagraphs, type SensitivitySegment } from "../../chat/sensitivity";
 import { SensitivityCard } from "./SensitivityCard";
 import { ChatArtifactBlock } from "./ChatArtifactBlock";
 import { chartBlocks, gridBlocks, type ChartBlock } from "../../chat/chartBlocks";
@@ -353,10 +353,11 @@ function ChatMessageCardComponent({
     ? t("chatMessageCard.responseTime", { value1: responseDuration(message.performance.totalMs) })
     : undefined;
   const tokenLines = responseTokenLines(message.performance);
-  const prose = (segment: { key: string; text: string; streaming: boolean; tone: "answer" | "note"; short?: boolean; checks?: ChatMessage["number_checks"] }) =>
+  // `drains`: this piece's last word releases the commit; an answer split around a held card drains at its last piece.
+  const prose = (segment: { key: string; text: string; streaming: boolean; tone: "answer" | "note"; short?: boolean; checks?: ChatMessage["number_checks"] }, drains = true) =>
     <ProseSegment key={segment.key} text={segment.text} streaming={segment.streaming} tone={segment.tone} short={segment.short} checks={segment.checks}
       // A note a tool call followed shows what it received at once, so the ledger under it never moves.
-      halted={halted || segment.tone === "note"} paused={stopping} onDrained={segment.tone === "answer" ? releaseCommit : undefined} workspacePath={workspacePath} />;
+      halted={halted || segment.tone === "note"} paused={stopping} onDrained={segment.tone === "answer" && drains ? releaseCommit : undefined} workspacePath={workspacePath} />;
   const cardBlocks = (tool: "chart_publish" | "grid_publish") => tool === "chart_publish" ? charts : grids;
   const placedSteps = new Set(view.segments.flatMap((segment) => segment.kind === "card" ? [segment.itemId] : []));
   const renderBlock = (tool: "chart_publish" | "grid_publish", block: ChartBlock, key: string) => tool === "chart_publish"
@@ -397,12 +398,24 @@ function ChatMessageCardComponent({
           if (piece.text) transcript.push(prose({ key: index ? `${segment.key}:${index}` : segment.key, text: piece.text, streaming: false, tone: "answer", checks: piece.numberChecks }));
           if (piece.card) {
             const card = piece.card;
-            transcript.push(<SensitivityCard key={`grid-${card.evidence_id}-${index}`} grid={card} subject={card.subject}
+            transcript.push(<SensitivitySlot key={`grid-${card.evidence_id}-${index}`}><SensitivityCard grid={card} subject={card.subject}
               evidence={evidenceRefs.find(item => item.id === card.evidence_id)} evidenceRefs={evidenceRefs} asOf={message.as_of}
-              onChangeRates={onFillComposer} />);
+              onChangeRates={onFillComposer} /></SensitivitySlot>);
           }
         });
         continue;
+      }
+      // While it is written, a paragraph Rust will make a sensitivity card is held behind the card's frame, split
+      // exactly as the settled answer is, so the card fills that frame at commit and no text moves or is replaced.
+      if (segment.tone === "answer" && !settledAnswer) {
+        const pieces = heldSensitivityParagraphs(segment.text, evidenceRefs);
+        if (pieces.length > 1 || pieces[0]?.held) {
+          pieces.forEach((piece, index) => {
+            if (piece.text) transcript.push(prose({ key: index ? `${segment.key}:${index}` : segment.key, text: piece.text, streaming: segment.streaming, tone: "answer" }, index === pieces.length - 1));
+            if (piece.held) transcript.push(<SensitivitySlot key={`grid-${piece.held}-${index}`} />);
+          });
+          continue;
+        }
       }
       transcript.push(prose(segment));
     }
@@ -537,6 +550,18 @@ function ChatMessageCardComponent({
 function TurnBlock({ kind, children }: { kind: "card" | "ask"; children: ReactNode }) {
   const arrived = useArrived();
   return <div className="turn-block" data-turn-item={kind} data-enter={arrived || undefined}>{children}</div>;
+}
+
+/**
+ * Where a sensitivity card stands. While the reply streams it is a ruled frame
+ * of the card's reserved height; at commit the card fills it, keeping at least
+ * that height, so nothing below moves. A card read later has no frame to keep.
+ */
+function SensitivitySlot({ children }: { children?: ReactNode }) {
+  const [held] = useState(!children);
+  return <div className="sensitivity-slot" data-turn-item="card" data-held={held || undefined}>
+    {children ?? <div className="sensitivity-pending" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div>}
+  </div>;
 }
 
 /** A card's exit (`--gg-motion-fast`): a card still preparing when the reply stops fades out where it stood. */

@@ -1631,6 +1631,18 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .message-table-pending > i::before { width: 24%; }
 .message-table-pending > i::after { width: 38%; }
 .message-table-pending > i:first-child::before, .message-table-pending > i:first-child::after { background: var(--gg-color-border-subtle); }
+/* A Mermaid diagram holds a 240 px ruled frame while the reply streams; the diagram renders into it at commit. */
+.message-diagram-pending { display: grid; grid-template-rows: repeat(4, 1fr); height: 240px; margin-block: 1rem; padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
+.message-diagram-pending > i { border-bottom: 1px solid var(--gg-color-border-subtle); }
+.message-diagram-pending > i:last-child { border-bottom: 0; }
+.message-content [data-streamdown="mermaid-block"] { min-height: 240px; }
+/* A sensitivity card holds a ruled frame of its reserved height while the reply streams; the card fills it at commit. */
+.sensitivity-slot { --sensitivity-reserve: 408px; }
+.sensitivity-pending { display: grid; grid-template-rows: 36px repeat(5, 1fr); box-sizing: border-box; height: var(--sensitivity-reserve); margin-block: var(--gg-space-3); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
+.sensitivity-pending > i { border-bottom: 1px solid var(--gg-color-border-subtle); }
+.sensitivity-pending > i:first-child { border-bottom-color: var(--gg-color-border-default); }
+.sensitivity-pending > i:last-child { border-bottom: 0; }
+.sensitivity-slot[data-held] > .sensitivity-card { box-sizing: border-box; min-height: var(--sensitivity-reserve); }
 /* Headings and tables arrive whole, with one fade. */
 .message.assistant .message-content[data-streaming] :is([data-streamdown^="heading-"], [data-streamdown="table-wrapper"]) { animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
 /* The receipt shares the row with Sources and Copy; its lists open below the line. */
