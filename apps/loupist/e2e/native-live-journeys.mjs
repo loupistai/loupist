@@ -293,6 +293,11 @@ async function sendPrompt(text, attachment) {
     for (const article of await browser.$$("article.message.assistant.streaming")) {
       if (await article.isDisplayed().catch(() => false)) return false;
     }
+    // The host's completion is not the commit: the live line stays until the
+    // last received word is revealed (at most 400 ms later), then the text is whole.
+    for (const live of await browser.$$("article.message.assistant [data-testid=turn-live]")) {
+      if (await live.isDisplayed().catch(() => false)) return false;
+    }
     return (await newAnswers()).length > 0;
   }, { timeout: 480_000, interval: 250, timeoutMsg: "The answer did not finish" });
   return { firstTokenMs, totalMs: Date.now() - started };
