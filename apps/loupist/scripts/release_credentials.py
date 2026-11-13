@@ -153,13 +153,17 @@ def import_certificate(root: Path, profile: dict, *, dry_run: bool) -> dict[str,
     run("security", "set-keychain-settings", "-lut", "21600", keychain)
     run("security", "unlock-keychain", "-p", password, keychain)
     try:
+        # Tauri and all app/helper/DMG signing use codesign. Never make the
+        # imported key extractable or add every application to its import ACL.
         run(
             "security",
             "import",
             certificate,
             "-P",
             os.environ["LOUPIST_CERTIFICATE_PASSWORD"],
-            "-A",
+            "-x",
+            "-T",
+            "/usr/bin/codesign",
             "-t",
             "cert",
             "-f",
@@ -262,12 +266,18 @@ def load_ephemeral(root: Path) -> dict[str, str]:
 
 def build(root: Path, *, dry_run: bool) -> None:
     names = ("TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD")
-    values = load_ephemeral(root) if dry_run else os.environ
-    environment = dict(os.environ)
-    for name in names:
-        if not values.get(name):
-            raise ValueError(f"missing updater build credential: {name}")
-        environment[name] = values[name]
+    try:
+        values = load_ephemeral(root) if dry_run else os.environ
+        environment = dict(os.environ)
+        for name in names:
+            if not values.get(name):
+                raise ValueError(f"missing updater build credential: {name}")
+            environment[name] = values[name]
+    finally:
+        # The child receives only its step-scoped environment. No later step
+        # needs the private handoff, even when validation or the build fails.
+        if dry_run:
+            ephemeral_file(root).unlink(missing_ok=True)
     # Keep real and disposable material scoped to this Tauri invocation.
     run(
         "npm",

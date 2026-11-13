@@ -40,10 +40,9 @@ fn run() -> Result<(), String> {
         .and_then(Path::parent)
         .ok_or("app Contents directory is missing")?
         .join("Resources");
-    let temporary = tempfile::Builder::new()
-        .prefix("loupist-helper-preflight-")
-        .tempdir()
-        .map_err(|error| error.to_string())?;
+    let temporary =
+        crate::fs::artifact_trust::private_temporary_directory("loupist-helper-preflight-")
+            .map_err(|error| error.to_string())?;
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()

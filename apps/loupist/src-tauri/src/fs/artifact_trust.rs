@@ -42,6 +42,15 @@ pub struct VerifiedExecutable {
     _parent_directories: Vec<File>,
 }
 
+/// Creates temporary storage with no group or other access, even under a permissive umask.
+#[cfg(target_os = "macos")]
+pub(crate) fn private_temporary_directory(prefix: &str) -> io::Result<tempfile::TempDir> {
+    tempfile::Builder::new()
+        .prefix(prefix)
+        .permissions(std::fs::Permissions::from_mode(0o700))
+        .tempdir()
+}
+
 /// Creates or hardens one app-owned directory. On Unix the final component is
 /// opened without following symlinks and held at mode 0700. The app data root
 /// and every direct child pass through this boundary before any state is used.
@@ -460,9 +469,7 @@ fn macos_signing_identity(path: &Path) -> Result<MacosSigningIdentity, ArtifactT
     // Read the actual embedded leaf, never the designated requirement text or
     // a compiled-in certificate pin. The private directory prevents path swaps;
     // no keychain, trust setting or certificate from the user's profile is used.
-    let temporary = tempfile::Builder::new()
-        .prefix("loupist-signature-")
-        .tempdir()?;
+    let temporary = private_temporary_directory("loupist-signature-")?;
     let prefix = temporary.path().join("certificate");
     let mut extract = std::ffi::OsString::from("--extract-certificates=");
     extract.push(&prefix);
@@ -514,6 +521,16 @@ mod macos_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn temporary_directories_are_created_owner_only() {
+        let temporary = private_temporary_directory("loupist-private-test-").unwrap();
+        assert_eq!(
+            temporary.path().metadata().unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
 
     #[test]
     fn macos_signer_identity_negative_corpus() {

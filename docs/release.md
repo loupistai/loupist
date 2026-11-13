@@ -106,6 +106,9 @@ the profile to `developer-id` (certificate fields may be null for an unpinned
 Developer ID leaf), configure its six secrets, remove the Beta About line and
 update install instructions in that same release. Qualify the new path through
 RCs: its notarization and sidecar signing have not yet been exercised on a runner.
+When Developer ID is first used, require `anchor apple generic` together with Team
+ID equality in the runtime helper check; Team ID equality alone does not establish
+an Apple signer because a self-signed certificate can carry a team identifier.
 The identity change can ask once for access to each saved Data/custom connection
 secret and GitHub sharing token. Choosing Always Allow settles it. AI sign-ins
 are files and are unaffected. The ad-hoc release fallback was removed because it

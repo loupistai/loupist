@@ -3,6 +3,7 @@
 
 import contextlib
 import io
+import json
 import os
 from pathlib import Path
 import re
@@ -71,8 +72,13 @@ class ReviewTests(unittest.TestCase):
                 self.assertEqual(handoff.stat().st_mode & 0o777, 0o600)
                 self.assertNotIn("private-fixture", (root / "github-env").read_text())
                 self.assertFalse((handoff.parent / "certificate.p12").exists())
+                handoff.chmod(0o644)
+                with self.assertRaises(ValueError):
+                    credentials.load_ephemeral(root)
+                handoff.chmod(0o600)
                 with patch.object(credentials, "run") as build:
                     credentials.build(root, dry_run=True)
+                self.assertFalse(handoff.exists())
                 environment = build.call_args.kwargs["env"]
                 self.assertEqual(
                     environment["TAURI_SIGNING_PRIVATE_KEY"],
@@ -81,9 +87,97 @@ class ReviewTests(unittest.TestCase):
                 self.assertNotIn("LOUPIST_CERTIFICATE", environment)
                 self.assertNotIn("LOUPIST_CERTIFICATE_PASSWORD", environment)
                 self.assertNotIn("TAURI_SIGNING_PRIVATE_KEY", os.environ)
-                handoff.chmod(0o644)
-                with self.assertRaises(ValueError):
-                    credentials.load_ephemeral(root)
+
+    def test_import_removes_certificate_fields_before_staging(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = credentials.ephemeral_file(root)
+            path.parent.mkdir(mode=0o700)
+            values = {
+                "LOUPIST_CERTIFICATE": "certificate-fixture",
+                "LOUPIST_CERTIFICATE_PASSWORD": "certificate-password",
+                "TAURI_SIGNING_PRIVATE_KEY": "updater-fixture",
+                "TAURI_SIGNING_PRIVATE_KEY_PASSWORD": "updater-password",
+            }
+            path.write_text(json.dumps(values))
+            path.chmod(0o600)
+
+            def importing(*args, **kwargs):
+                self.assertEqual(
+                    os.environ["LOUPIST_CERTIFICATE"], values["LOUPIST_CERTIFICATE"]
+                )
+                self.assertEqual(
+                    os.environ["LOUPIST_CERTIFICATE_PASSWORD"],
+                    values["LOUPIST_CERTIFICATE_PASSWORD"],
+                )
+                retained = credentials.load_ephemeral(root)
+                self.assertNotIn("LOUPIST_CERTIFICATE", retained)
+                self.assertNotIn("LOUPIST_CERTIFICATE_PASSWORD", retained)
+                self.assertEqual(
+                    retained["TAURI_SIGNING_PRIVATE_KEY"],
+                    values["TAURI_SIGNING_PRIVATE_KEY"],
+                )
+                return {"APPLE_SIGNING_IDENTITY": "A" * 40}
+
+            with (
+                patch.dict(
+                    os.environ,
+                    {"RUNNER_TEMP": str(root), "GITHUB_ENV": str(root / "github-env")},
+                    clear=True,
+                ),
+                patch("sys.argv", ["release_credentials.py", "import", "--dry-run"]),
+                patch.object(
+                    credentials, "import_certificate", side_effect=importing
+                ) as imported,
+            ):
+                credentials.main()
+            imported.assert_called_once()
+            self.assertEqual(
+                set(json.loads(path.read_text())),
+                {"TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD"},
+            )
+
+    def test_build_consumes_handoff_before_launch_even_on_failure(self):
+        for failing in (False, True):
+            with (
+                self.subTest(failing=failing),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                root = Path(directory)
+                handoff = credentials.ephemeral_file(root)
+                handoff.parent.mkdir(mode=0o700)
+                handoff.write_text(
+                    json.dumps(
+                        {
+                            "TAURI_SIGNING_PRIVATE_KEY": "private-fixture",
+                            "TAURI_SIGNING_PRIVATE_KEY_PASSWORD": "password",
+                        }
+                    )
+                )
+                handoff.chmod(0o600)
+
+                def launch(*args, **kwargs):
+                    self.assertFalse(handoff.exists())
+                    self.assertEqual(
+                        kwargs["env"]["TAURI_SIGNING_PRIVATE_KEY"], "private-fixture"
+                    )
+                    if failing:
+                        raise RuntimeError("simulated build failure")
+
+                with (
+                    patch.dict(
+                        os.environ,
+                        {"LOUPIST_TAURI_RELEASE_CONFIG": "config"},
+                        clear=True,
+                    ),
+                    patch.object(credentials, "run", side_effect=launch),
+                ):
+                    if failing:
+                        with self.assertRaises(RuntimeError):
+                            credentials.build(root, dry_run=True)
+                    else:
+                        credentials.build(root, dry_run=True)
+                self.assertFalse(handoff.exists())
 
     def test_rc_failed_job_rerun_rechecks_sequence_before_publication(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
@@ -162,8 +256,10 @@ class ReviewTests(unittest.TestCase):
         retentions = re.findall(r"retention-days: (.+)", workflow)
         self.assertEqual(len(retentions), 3)
         self.assertTrue(all("'true' && 1 || 14" in value for value in retentions))
+        self.assertIn("macos_release_signing.py compare-reports", workflow)
         self.assertIn(
-            "cmp -s signing-report.json mounted-signing-report.json", workflow
+            "--expected signing-report.json --actual mounted-signing-report.json",
+            workflow,
         )
         checker = (SCRIPTS / "check-macos-app-bundle.sh").read_text()
         self.assertIn('"$MACOS_DIR/loupist" --check-bundled-helpers', checker)
@@ -181,6 +277,21 @@ class ReviewTests(unittest.TestCase):
         self.assertLess(
             source.index("bundle_self_test::requested"),
             source.index("tauri::generate_context!"),
+        )
+        module = (ROOT / "apps/loupist/src-tauri/src/lib.rs").read_text()
+        self.assertIn('#[cfg(target_os = "macos")]\nmod bundle_self_test;', module)
+        self.assertIn(
+            '#[cfg(target_os = "macos")]\n    if let Some(result) = bundle_self_test::requested',
+            source,
+        )
+        trust = (ROOT / "apps/loupist/src-tauri/src/fs/artifact_trust.rs").read_text()
+        preflight = (
+            ROOT / "apps/loupist/src-tauri/src/bundle_self_test.rs"
+        ).read_text()
+        self.assertIn(".permissions(std::fs::Permissions::from_mode(0o700))", trust)
+        self.assertIn('private_temporary_directory("loupist-signature-")', trust)
+        self.assertIn(
+            'private_temporary_directory("loupist-helper-preflight-")', preflight
         )
         for name in (
             "Build and sign unnotarized Loupist",

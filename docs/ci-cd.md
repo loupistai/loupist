@@ -224,8 +224,11 @@ Assembly has a read-only token and no environment: it verifies updater signature
 against the embedded public key in the separate signing report. Private signing
 material is never exported to `GITHUB_ENV`: real keys are scoped to certificate
 import or Tauri build steps, and disposable keys cross steps only in a private
-0600 file removed during cleanup. The p12 import file is deleted immediately after
-import. Publication is
+0600 file. Import removes its certificate fields, and the build consumes and
+removes the remaining updater handoff before invoking Tauri. The p12 import file
+is deleted immediately after import. Imported private keys are non-extractable
+(`security import -x`); their import ACL names only `/usr/bin/codesign`, and the
+signing partition list is set explicitly. Publication is
 skipped in dry runs; otherwise a second `release` approval gates the write token,
 verification against the configured updater public key, attestations and release
 creation. The signing report is an artifact because GitHub can suppress secret-like

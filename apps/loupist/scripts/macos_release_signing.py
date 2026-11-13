@@ -247,6 +247,35 @@ def verify_bundle(
     return record
 
 
+def report_differences(expected: object, actual: object, prefix: str = "") -> list[str]:
+    if isinstance(expected, dict) and isinstance(actual, dict):
+        changes = []
+        for key in sorted(expected.keys() | actual.keys()):
+            field = f"{prefix}.{key}" if prefix else key
+            if key not in expected or key not in actual:
+                changes.append(field)
+            else:
+                changes.extend(report_differences(expected[key], actual[key], field))
+        return changes
+    return (
+        [prefix or "<root>"]
+        if type(expected) is not type(actual) or expected != actual
+        else []
+    )
+
+
+def compare_reports(expected: Path, actual: Path) -> None:
+    changes = report_differences(
+        json.loads(expected.read_text()), json.loads(actual.read_text())
+    )
+    if changes:
+        raise ValueError(
+            "Built and mounted signing reports differ in these fields:\n- "
+            + "\n- ".join(changes)
+        )
+    print("Built and mounted signing reports match.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -263,6 +292,9 @@ def main() -> None:
     bundle.add_argument("--metadata", type=Path)
     bundle.add_argument("--release-config", type=Path)
     bundle.add_argument("--report", type=Path)
+    compare = sub.add_parser("compare-reports")
+    compare.add_argument("--expected", type=Path, required=True)
+    compare.add_argument("--actual", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "sign-runtime":
         sign_runtime(
@@ -278,6 +310,8 @@ def main() -> None:
             signing_mode(),
             os.environ.get("APPLE_SIGNING_IDENTITY"),
         )
+    elif args.command == "compare-reports":
+        compare_reports(args.expected, args.actual)
     else:
         profile = load_profile(args.profile) if args.profile else load_profile()
         if args.metadata:

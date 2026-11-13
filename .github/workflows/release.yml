@@ -468,7 +468,8 @@ jobs:
           python3 apps/loupist/scripts/macos_release_signing.py verify-bundle \
             --app "$MOUNTED_APP" --dmg "$DMG" \
             --release-config "$LOUPIST_TAURI_RELEASE_CONFIG" --report mounted-signing-report.json
-          cmp -s signing-report.json mounted-signing-report.json
+          python3 apps/loupist/scripts/macos_release_signing.py compare-reports \
+            --expected signing-report.json --actual mounted-signing-report.json
           rm mounted-signing-report.json
           apps/loupist/scripts/check-macos-app-bundle.sh \
             "$MOUNTED_APP" \

@@ -8,7 +8,7 @@ mod app;
 mod bridge_contract;
 mod briefings;
 mod broker;
-#[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
+#[cfg(target_os = "macos")]
 mod bundle_self_test;
 mod calculations;
 mod chat;
@@ -131,7 +131,7 @@ fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
 pub fn run() {
     // Run before Tauri construction, single-instance registration or app-data
     // recovery: preflight must never open the production profile or a window.
-    #[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
+    #[cfg(target_os = "macos")]
     if let Some(result) = bundle_self_test::requested(std::env::args_os()) {
         if let Err(error) = &result {
             eprintln!("Release helper preflight failed: {error}");

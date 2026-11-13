@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import base64
 import hashlib
+import json
 import os
 import plistlib
 import subprocess
@@ -19,6 +20,55 @@ def result(stdout="", stderr="", code=0):
 
 
 class SigningTests(unittest.TestCase):
+    def test_report_comparison_identifies_changed_missing_and_typed_fields(self):
+        expected = {
+            "macos_signing": {
+                "mode": "self-signed",
+                "notarized": False,
+                "certificate_sha256": "A" * 64,
+            },
+            "updater_public_key": "public",
+        }
+        actual = {
+            "macos_signing": {
+                "mode": "developer-id",
+                "notarized": 0,
+                "team_id": "TEAM",
+            },
+            "updater_public_key": "public",
+        }
+        fields = [
+            "macos_signing.certificate_sha256",
+            "macos_signing.mode",
+            "macos_signing.notarized",
+            "macos_signing.team_id",
+        ]
+        self.assertEqual(signing.report_differences(expected, actual), fields)
+        with tempfile.TemporaryDirectory() as directory:
+            original, mounted = [
+                Path(directory) / name for name in ("built.json", "mounted.json")
+            ]
+            original.write_text(json.dumps(expected))
+            mounted.write_text(json.dumps(actual))
+            command = [
+                os.sys.executable,
+                str(Path(signing.__file__)),
+                "compare-reports",
+                "--expected",
+                str(original),
+                "--actual",
+                str(mounted),
+            ]
+            mismatched = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(mismatched.returncode, 0)
+            self.assertIn("Built and mounted signing reports differ", mismatched.stderr)
+            for field in fields:
+                self.assertIn("- " + field, mismatched.stderr)
+            mounted.write_text(json.dumps(expected, indent=2, sort_keys=True))
+            matched = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(matched.returncode, 0, matched.stderr)
+            self.assertIn("reports match", matched.stdout)
+
     def test_sidecar_arguments_and_main_last(self):
         for mode in ("developer-id", "self-signed"):
             identity = "A" * 40
@@ -173,6 +223,10 @@ class SigningTests(unittest.TestCase):
 
         def run(*args, **kwargs):
             if "import" in args:
+                self.assertIn("-x", args)
+                self.assertNotIn("-A", args)
+                self.assertEqual(args[args.index("-T") + 1], "/usr/bin/codesign")
+                self.assertEqual(args.count("-T"), 1)
                 certificate = Path(args[2])
                 self.assertEqual(certificate.stat().st_mode & 0o777, 0o600)
             if "find-identity" in args:
