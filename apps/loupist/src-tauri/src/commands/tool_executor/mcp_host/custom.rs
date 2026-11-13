@@ -265,7 +265,18 @@ impl AppToolExecutor {
                 None,
             )
             .await?;
-        attach_result_ref(&mut result, &result_ref);
+        if result.get("isError").and_then(Value::as_bool) != Some(true) && returned_no_rows(&result)
+        {
+            self.capture
+                .stage(delivery_id, |pending| {
+                    pending.unlisted_results.insert(result_ref.clone());
+                })
+                .await;
+            describe_empty_read(&mut result);
+            result["result_ref"] = json!(result_ref);
+        } else {
+            attach_result_ref(&mut result, &result_ref);
+        }
         Ok(json!({"result":result}))
     }
 }

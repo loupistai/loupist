@@ -93,3 +93,12 @@ in the turn and that other sources may still be reachable; Chat then shows an
 [offline-read notice](../ui/chat-answer.md#answer-failures).
 
 Independent native reads are separate tool calls. The host runs at most two of them at once and spaces calls to the same provider, including the extra requests inside one call (KRX range dates, KIS continuation pages, the DART fiscal year-end lookup). MCP control and each server's calls retain their existing serialization.
+
+A successful MCP read with no rows is an `ok` result with `row_count: 0` and a
+hint to change the request or try another enabled provider. Blank HTTP 204 replies
+from the bundled market data worker need no provider receipt; every nonblank
+reply still needs its matching canonical receipt. Empty arrays and rows containing
+only null, blank text or empty containers supply no evidence (zero and false do).
+These bundled and custom reads keep their host `result_ref` for composition, but
+have no citation and do not appear in the answer's Sources. Custom reads still
+raise the untrusted-text tier and pause outbound calls, including when empty.
