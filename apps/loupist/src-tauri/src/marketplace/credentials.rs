@@ -9,8 +9,8 @@ use tauri::State;
 use crate::{
     app::{AppState, CommandError},
     mcp::{
-        contains_protected_value, filter_tool_providers, validate_result_provider, McpError,
-        McpLaunchConfig, McpSession,
+        contains_protected_value, filter_tool_providers, validate_result_provider, McpCallResult,
+        McpError, McpLaunchConfig, McpSession,
     },
     runs::maintenance::MaintenanceActivityKind,
     runs::scratch::RunScratch,
@@ -32,10 +32,91 @@ use super::{
 const MCP_CREDENTIAL_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 const MCP_CREDENTIAL_SHUTDOWN_GRACE: Duration = Duration::from_secs(1);
 
+/// Why a bundled connection's key was not verified. Only an answer with data
+/// from the provider verifies a key; everything else is reported as rejected
+/// (the provider refused it) or unavailable (Loupist could not tell).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum McpCredentialProbeError {
+    /// The provider refused the key.
     Rejected,
+    /// The provider refused the key because it is not in the format it issues.
+    RejectedFormat,
+    /// The provider could not be reached, or the probe could not run.
     Unavailable,
+    /// The provider answered without any data, which proves nothing about the
+    /// key: some OpenBB providers turn a refusal into an empty result.
+    NoData,
+}
+
+impl McpCredentialProbeError {
+    fn outcome(self) -> crate::finance_credentials::VerificationOutcome {
+        use crate::finance_credentials::VerificationOutcome;
+        match self {
+            Self::Rejected | Self::RejectedFormat => VerificationOutcome::Rejected,
+            Self::Unavailable | Self::NoData => VerificationOutcome::TemporarilyUnavailable,
+        }
+    }
+
+    /// Fixed, key-free text. The renderer words these by code in both languages.
+    fn command_error(self) -> CommandError {
+        match self {
+            Self::Rejected => CommandError::new(
+                "credential_rejected",
+                "The provider rejected this key. Check that you copied the whole key.",
+            ),
+            Self::RejectedFormat => CommandError::new(
+                "credential_format_rejected",
+                "The provider rejected this key because it is not in the format the provider issues.",
+            ),
+            Self::Unavailable => CommandError::new(
+                "provider_unavailable",
+                "Loupist could not check this key with the provider. It is saved but not verified.",
+            ),
+            Self::NoData => CommandError::new(
+                "provider_unavailable",
+                "The provider answered without data, so Loupist could not confirm this key. It is saved but not verified.",
+            ),
+        }
+    }
+}
+
+/// Reads a probe's answer. An error the helper classified as offline is
+/// "could not check"; a classified key refusal keeps its reason; any other
+/// tool error is a refusal. A success counts only when it carries records.
+fn classify_probe_response(response: &McpCallResult) -> Result<(), McpCredentialProbeError> {
+    if response.is_error {
+        let marker = response
+            .structured_content
+            .as_ref()
+            .and_then(|value| value.get("loupist_error"));
+        let kind = marker
+            .and_then(|marker| marker.get("kind"))
+            .and_then(Value::as_str);
+        let reason = marker
+            .and_then(|marker| marker.get("reason"))
+            .and_then(Value::as_str);
+        return Err(match (kind, reason) {
+            (Some("offline"), _) => McpCredentialProbeError::Unavailable,
+            (Some("credential_rejected"), Some("key_format")) => {
+                McpCredentialProbeError::RejectedFormat
+            }
+            _ => McpCredentialProbeError::Rejected,
+        });
+    }
+    let has_records = response
+        .structured_content
+        .as_ref()
+        .and_then(|value| value.get("results"))
+        .is_some_and(|results| match results {
+            Value::Array(records) => !records.is_empty(),
+            Value::Object(record) => !record.is_empty(),
+            _ => false,
+        });
+    if has_records {
+        Ok(())
+    } else {
+        Err(McpCredentialProbeError::NoData)
+    }
 }
 
 pub(super) fn credential_statuses(
@@ -508,16 +589,16 @@ async fn verify_bundled_mcp_credential(
         if contains_protected_value(&encoded, &sensitive_values) {
             return Err(McpCredentialProbeError::Unavailable);
         }
-        if response.is_error {
-            return Err(McpCredentialProbeError::Rejected);
+        if !response.is_error {
+            validate_result_provider(
+                &response,
+                &provider_receipt_pointer,
+                requested_provider,
+                &enabled_provider_ids,
+            )
+            .map_err(|_| McpCredentialProbeError::Unavailable)?;
         }
-        validate_result_provider(
-            &response,
-            &provider_receipt_pointer,
-            requested_provider,
-            &enabled_provider_ids,
-        )
-        .map_err(|_| McpCredentialProbeError::Unavailable)
+        classify_probe_response(&response)
     }
     .await;
     let shutdown = session.shutdown(MCP_CREDENTIAL_SHUTDOWN_GRACE).await;
@@ -595,12 +676,7 @@ pub async fn marketplace_credential_verify(
         drop(candidate);
         let outcome = match result {
             Ok(()) => crate::finance_credentials::VerificationOutcome::Verified,
-            Err(McpCredentialProbeError::Rejected) => {
-                crate::finance_credentials::VerificationOutcome::Rejected
-            }
-            Err(McpCredentialProbeError::Unavailable) => {
-                crate::finance_credentials::VerificationOutcome::TemporarilyUnavailable
-            }
+            Err(error) => error.outcome(),
         };
         let _lifecycle_guard = connector_lifecycle_lock()?;
         reconcile_connector_configs_locked(&state, &_lifecycle_guard)?;
@@ -630,14 +706,7 @@ pub async fn marketplace_credential_verify(
                 }
                 credential_statuses(&state, entry)
             }
-            Err(McpCredentialProbeError::Rejected) => Err(CommandError::new(
-                "credential_rejected",
-                "The provider rejected these credentials.",
-            )),
-            Err(McpCredentialProbeError::Unavailable) => Err(CommandError::new(
-                "provider_unavailable",
-                "The provider could not verify these credentials right now.",
-            )),
+            Err(error) => Err(error.command_error()),
         };
     }
     let result = state
@@ -751,4 +820,139 @@ pub(super) fn disable_bindings_and_delete_credentials_locked(
     }
     crate::finance_credentials::delete(&state.credential_environment, entry_id)
         .map_err(|error| CommandError::internal(error.to_string()))
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+    use crate::finance_credentials::VerificationOutcome;
+
+    fn answer(is_error: bool, structured: Option<Value>, text: &str) -> McpCallResult {
+        McpCallResult {
+            content: vec![json!({"type": "text", "text": text})],
+            structured_content: structured,
+            is_error,
+            metadata: None,
+        }
+    }
+
+    fn outcome(response: &McpCallResult) -> VerificationOutcome {
+        match classify_probe_response(response) {
+            Ok(()) => VerificationOutcome::Verified,
+            Err(error) => error.outcome(),
+        }
+    }
+
+    #[test]
+    fn only_an_answer_with_records_verifies_a_key() {
+        let accepted = answer(
+            false,
+            Some(json!({"provider": "fred", "results": [{"date": "1947-01-01", "GDP": 243.164}]})),
+            "",
+        );
+        assert_eq!(classify_probe_response(&accepted), Ok(()));
+        assert_eq!(outcome(&accepted), VerificationOutcome::Verified);
+
+        // OpenBB FRED turned FRED's HTTP 400 for a rejected key into this.
+        for empty in [
+            json!({"provider": "fred", "results": []}),
+            json!({"provider": "fred", "results": {}}),
+            json!({"provider": "fred", "results": null}),
+            json!({"provider": "fred"}),
+            json!({"provider": "fred", "results": "GDP"}),
+            Value::Null,
+        ] {
+            let response = answer(false, Some(empty.clone()), "");
+            assert_eq!(
+                classify_probe_response(&response),
+                Err(McpCredentialProbeError::NoData),
+                "{empty}"
+            );
+            assert_eq!(
+                outcome(&response),
+                VerificationOutcome::TemporarilyUnavailable
+            );
+        }
+        assert_eq!(
+            classify_probe_response(&answer(false, None, "{\"results\": [1]}")),
+            Err(McpCredentialProbeError::NoData)
+        );
+    }
+
+    #[test]
+    fn provider_refusals_are_rejected_with_their_reason() {
+        let format = answer(
+            true,
+            Some(json!({"loupist_error": {"kind": "credential_rejected", "reason": "key_format"}})),
+            "The data provider rejected the configured key.",
+        );
+        assert_eq!(
+            classify_probe_response(&format),
+            Err(McpCredentialProbeError::RejectedFormat)
+        );
+        let not_accepted = answer(
+            true,
+            Some(
+                json!({"loupist_error": {"kind": "credential_rejected", "reason": "key_not_accepted"}}),
+            ),
+            "The data provider rejected the configured key.",
+        );
+        assert_eq!(
+            classify_probe_response(&not_accepted),
+            Err(McpCredentialProbeError::Rejected)
+        );
+        // Providers whose OpenBB fetcher raises on HTTP 400, 401 or 403 reach
+        // Loupist as an unclassified tool error.
+        for status in [400, 401, 403, 502] {
+            let refused = answer(true, None, &format!("Error calling tool (HTTP {status})"));
+            assert_eq!(
+                classify_probe_response(&refused),
+                Err(McpCredentialProbeError::Rejected)
+            );
+            assert_eq!(outcome(&refused), VerificationOutcome::Rejected);
+        }
+        let unknown_reason = answer(
+            true,
+            Some(json!({"loupist_error": {"kind": "credential_rejected", "reason": "other"}})),
+            "",
+        );
+        assert_eq!(
+            classify_probe_response(&unknown_reason),
+            Err(McpCredentialProbeError::Rejected)
+        );
+    }
+
+    #[test]
+    fn a_network_failure_is_could_not_check_not_rejected() {
+        let offline = answer(
+            true,
+            Some(json!({"loupist_error": {"kind": "offline"}})),
+            "The data provider could not be reached.",
+        );
+        assert_eq!(
+            classify_probe_response(&offline),
+            Err(McpCredentialProbeError::Unavailable)
+        );
+        assert_eq!(
+            outcome(&offline),
+            VerificationOutcome::TemporarilyUnavailable
+        );
+    }
+
+    #[test]
+    fn verification_errors_have_fixed_codes_and_key_free_text() {
+        for (error, code) in [
+            (McpCredentialProbeError::Rejected, "credential_rejected"),
+            (
+                McpCredentialProbeError::RejectedFormat,
+                "credential_format_rejected",
+            ),
+            (McpCredentialProbeError::Unavailable, "provider_unavailable"),
+            (McpCredentialProbeError::NoData, "provider_unavailable"),
+        ] {
+            let command = error.command_error();
+            assert_eq!(command.code, code);
+            assert!(!command.message.is_empty());
+        }
+    }
 }

@@ -49,6 +49,30 @@ const VERIFICATION_LABELS: Record<
   get temporarily_unavailable() { return i18n.t("connections:marketplaceSetupDialog.verificationUnavailable"); },
 };
 
+/** A provider's own safe diagnostic, such as "KIS error · EGW00123: …", is kept after the plain words. */
+const PROVIDER_DIAGNOSTIC = /^[A-Z][A-Za-z]* error · /u;
+
+/** Words a failed key check by what the host established: rejected (and why), or not checked. */
+function verificationFailure(cause: unknown, name: string): SetupMessage {
+  const code = commandErrorCode(cause);
+  const message = errorMessage(cause, "");
+  const diagnostic = PROVIDER_DIAGNOSTIC.test(message) ? ` ${message}` : "";
+  if (code === "credential_format_rejected") {
+    return { tone: "error", title: i18n.t("connections:marketplaceSetupDialog.keyRejectedTitle"), detail: i18n.t("connections:marketplaceSetupDialog.keyFormatRejected", { name }) };
+  }
+  if (code === "credential_rejected") {
+    return { tone: "error", title: i18n.t("connections:marketplaceSetupDialog.keyRejectedTitle"), detail: `${i18n.t("connections:marketplaceSetupDialog.keyNotAccepted", { name })}${diagnostic}` };
+  }
+  if (code === "provider_unavailable") {
+    return { tone: "error", title: i18n.t("connections:marketplaceSetupDialog.keyNotCheckedTitle"), detail: `${i18n.t("connections:marketplaceSetupDialog.keySavedNotVerified", { name })}${diagnostic}` };
+  }
+  return {
+    tone: "error",
+    title: i18n.t("connections:marketplaceSetupDialog.verificationFailed"),
+    detail: message || i18n.t("connections:marketplaceSetupDialog.couldNotConfigure", { name }),
+  };
+}
+
 function selectOptionLabel(option: string) {
   const labels: Record<string, string> = {
     real: i18n.t("connections:marketplaceSetupDialog.live"),
@@ -265,9 +289,9 @@ export function MarketplaceSetupDialog({
         notifyConfigurationChanged();
       }
       if (selectedEntryIdRef.current !== operationEntryId || operationRef.current !== operation) return;
-      setSetupMessage({
+      setSetupMessage(phase === "verify" ? verificationFailure(cause, connectionText(entry.name)) : {
         tone: "error",
-        title: phase === "verify" ? i18n.t("connections:marketplaceSetupDialog.verificationFailed") : phase === "save" ? i18n.t("connections:marketplaceSetupDialog.couldNotSaveCredentials") : i18n.t("connections:marketplaceSetupDialog.couldNotSaveSetup"),
+        title: phase === "save" ? i18n.t("connections:marketplaceSetupDialog.couldNotSaveCredentials") : i18n.t("connections:marketplaceSetupDialog.couldNotSaveSetup"),
         detail: errorMessage(cause, i18n.t("connections:marketplaceSetupDialog.couldNotConfigure", { name: connectionText(entry.name) })),
       });
       await refreshSnapshot(operationEntryId, operation);

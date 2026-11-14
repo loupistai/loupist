@@ -21,6 +21,7 @@ export type CommandErrorCode =
   | "conflict"
   | "conflicting_dependency_revision"
   | "connection_unavailable"
+  | "credential_format_rejected"
   | "credential_rejected"
   | "credential_store_unavailable"
   | "cursor_stale"

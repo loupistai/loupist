@@ -24,7 +24,11 @@ from loupist_openbb.manifest import (
     resolve_providerless_tool_policy,
 )
 from loupist_openbb.network import apply_network_policy
-from loupist_openbb.failures import call_tool_with_failures, classify_rest_failures
+from loupist_openbb.failures import (
+    CredentialRejectedError,
+    call_tool_with_failures,
+    classify_rest_failures,
+)
 
 _DISABLED_COMPONENTS = {
     "install_skill",
@@ -225,6 +229,38 @@ def apply_sec_contact_email(contact_email: str | None) -> None:
             setattr(module, "make_request", sec_aware_sync_request)
 
 
+def apply_fred_error_guard() -> None:
+    """Turn a FRED error body into a failure instead of an empty result.
+
+    OpenBB FRED 1.x reads every response body without checking its status, so
+    a rejected key (HTTP 400 ``{"error_code": 400, "error_message": "...
+    api_key ..."}``) became a successful empty series and passed Loupist's key
+    check. FRED names the ``api_key`` variable in every key error; the format
+    error also says the key must be 32 characters. Only a fixed reason code
+    leaves this process, never FRED's text.
+    """
+
+    from openbb_core.app.model.abstract.error import OpenBBError
+    from openbb_fred.utils import rate_limiter
+
+    previous = rate_limiter._check_payload_rate_limit
+    original = getattr(previous, "__loupist_fred_original__", previous)
+
+    @wraps(original)
+    def check_payload(payload: Any) -> None:
+        original(payload)
+        if not isinstance(payload, dict) or payload.get("error_code") is None:
+            return
+        message = str(payload.get("error_message") or "")
+        if "api_key" in message:
+            reason = "key_format" if "32 character" in message else "key_not_accepted"
+            raise CredentialRejectedError(reason)
+        raise OpenBBError("FRED returned an error for this request.")
+
+    setattr(check_payload, "__loupist_fred_original__", original)
+    rate_limiter._check_payload_rate_limit = check_payload
+
+
 def _is_sec_url(url: object) -> bool:
     """Return whether a request target belongs to the SEC HTTPS origin."""
 
@@ -350,6 +386,8 @@ def create_server(bootstrap: Bootstrap) -> Any:
     apply_credentials(credentials)
     credentials.clear()
     apply_sec_contact_email(provider_config.get("sec_contact_email"))
+    if "fred" in bootstrap.settings.enabled_provider_ids:
+        apply_fred_error_guard()
     security = manifest.get("security", {})
     read_only_post_routes = tuple(security.get("read_only_post_routes", []))
     api_prefix = SystemService().system_settings.api_settings.prefix or ""

@@ -3,8 +3,10 @@
 Loupist is a local-first financial research desktop app for macOS 13 or newer on Apple Silicon. It never trades.
 
 **Download:** Loupist-macOS-arm64.dmg (below).
-**First launch:** this Beta is not notarized by Apple. macOS blocks the first launch; allow it once in
-System Settings → Privacy & Security → Open Anyway (macOS 13 and 14: Control-click → Open).
+**First launch:** this Beta is not notarized by Apple. macOS blocks the first launch: close the warning
+with OK (macOS 13 and 14) or Done (macOS 15 and later; not Move to Trash), then allow it once in
+System Settings → Privacy & Security → Open Anyway. The warning's "This software needs to be updated"
+is macOS's wording for any app that is not notarized; it does not mean the download is old.
 Full steps: https://github.com/loupistai/loupist/blob/main/installation.md
 
 ## What's in it
