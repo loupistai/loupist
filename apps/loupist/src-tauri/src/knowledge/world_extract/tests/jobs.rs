@@ -951,7 +951,9 @@ fn independent_calls_of_one_episode_are_in_flight_together() {
                             let now = state.0.clone();
                             state.1.push(now);
                         }
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        // Long enough that a loaded CI runner still starts the
+                        // sibling call while this one is in flight (100 ms was not).
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                         observed.lock().unwrap().0.retain(|flying| *flying != title);
                     }
                     reply
