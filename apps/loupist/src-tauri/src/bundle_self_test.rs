@@ -31,15 +31,12 @@ pub(crate) fn requested(
 }
 
 fn run() -> Result<(), String> {
-    let executable = std::env::current_exe()
+    // The same resolution as the app: the canonical executable, then its bundle.
+    let executable =
+        crate::fs::artifact_trust::app_executable().map_err(|error| error.to_string())?;
+    let resources = crate::fs::artifact_trust::bundle_resources(&executable)
         .map_err(|error| error.to_string())?
-        .canonicalize()
-        .map_err(|error| error.to_string())?;
-    let resources = executable
-        .parent()
-        .and_then(Path::parent)
-        .ok_or("app Contents directory is missing")?
-        .join("Resources");
+        .ok_or("app Contents directory is missing")?;
     let temporary =
         crate::fs::artifact_trust::private_temporary_directory("loupist-helper-preflight-")
             .map_err(|error| error.to_string())?;

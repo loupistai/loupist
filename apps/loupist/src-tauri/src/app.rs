@@ -347,7 +347,7 @@ impl AppState {
             .get_model_catalog()
             .map_err(|error| CommandError::internal(error.to_string()))?
             .unwrap_or_default();
-        let resource_dir = app.path().resource_dir().ok();
+        let resource_dir = app_resource_dir(app);
         #[cfg(debug_assertions)]
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
@@ -1001,6 +1001,22 @@ fn resolve_pi_artifacts(
         run_options: std::collections::BTreeMap::new(),
         provider_credential: None,
     })
+}
+
+/// The bundled resources. In a macOS app bundle they come from the app's own
+/// executable after resolving symlinks (`artifact_trust::app_executable`), the
+/// same path the helper signature check uses: Tauri's `resource_dir` refuses an
+/// app opened through a symlinked folder such as `/tmp`, which left every helper
+/// missing. Elsewhere (development, Linux, Windows) Tauri's answer stands.
+fn app_resource_dir(app: &AppHandle) -> Option<PathBuf> {
+    if cfg!(target_os = "macos") {
+        let bundled = crate::fs::artifact_trust::app_executable()
+            .and_then(|executable| crate::fs::artifact_trust::bundle_resources(&executable));
+        if let Ok(Some(resources)) = bundled {
+            return Some(resources);
+        }
+    }
+    app.path().resource_dir().ok()
 }
 
 fn resolve_file(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {

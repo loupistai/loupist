@@ -529,7 +529,7 @@ pub(crate) fn runtime_dir() -> Option<PathBuf> {
             return Some(staged);
         }
     }
-    let exe = std::env::current_exe().ok()?;
+    let exe = crate::fs::artifact_trust::app_executable().ok()?;
     let parent = exe.parent()?;
     [
         parent.join("python-runtime"),
