@@ -19,7 +19,9 @@ A Korean particle after a value is written with both forms — `{{name}}이(가)
 post-processor (`koreanParticles.ts`) picks one by the final sound of the text
 before it: Hangul by its final consonant (ㄹ takes 로), digits by their Korean
 reading, Latin names by a loanword rule; an unknown sound keeps the pair. Reword
-instead when a string reads better without a particle.
+instead when a string reads better without a particle. `scripts/check-ui-copy.mjs`
+rejects a single bare particle after a value (`{{name}}을`) and a wrong one after
+the app's name (루피스트가, 루피스트를).
 
 `useLanguage` shares the global appearance configuration reader with Theme.
 Rust validates and persists `appearance.language = "system" | "en" | "ko"`.

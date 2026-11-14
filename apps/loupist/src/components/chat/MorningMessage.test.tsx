@@ -144,7 +144,7 @@ describe("Morning message", () => {
     await userEvent.click(within(line).getByRole("button", { name: "Open Connections" }));
     expect(open).toHaveBeenCalledExactlyOnceWith({ kind: "settings", section: "connections" });
     await act(async () => { await i18n.changeLanguage("ko"); });
-    expect(await screen.findByText(/EIA와 함께 쓰면 더 좋아요/)).toHaveTextContent("EIA와 함께 쓰면 더 좋아요 · 연결 열기");
+    expect(await screen.findByText(/^함께 쓰면 더 좋은 연결: EIA/)).toHaveTextContent("함께 쓰면 더 좋은 연결: EIA · 연결 열기");
     first.unmount();
     await act(async () => { await i18n.changeLanguage("en"); });
     // Connected, or a template without recommendations, says nothing.
