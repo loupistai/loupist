@@ -192,4 +192,27 @@ describe("Loupist · Connections", () => {
     expect(alert).toHaveTextContent("KIS error · EGW00123: The app key and secret do not match.");
     expect(alert).not.toHaveTextContent("test-app-secret");
   });
+
+  it("says a rejected key was rejected and why, and an unchecked key was saved but not verified", async () => {
+    const user = userEvent.setup();
+    const bridge = await openApp();
+    const verify = vi.spyOn(bridge, "marketplaceCredentialVerify")
+      .mockRejectedValueOnce({ code: "credential_format_rejected", message: "The provider rejected this key because it is not in the format the provider issues." })
+      .mockRejectedValueOnce({ code: "provider_unavailable", message: "Loupist could not check this key with the provider. It is saved but not verified." });
+    const dialog = await openSetup(user, "FRED");
+    await user.type(within(dialog).getByLabelText("FRED API key"), "loupist-rc-test-key-0001");
+    await user.click(within(dialog).getByRole("button", { name: "Save & verify" }));
+    let alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("Key rejected");
+    expect(alert).toHaveTextContent("FRED rejected this key because it is not in the format FRED issues.");
+    expect(alert).not.toHaveTextContent("loupist-rc-test-key-0001");
+    expect(within(dialog).queryByText("Verification successful")).toBeNull();
+
+    await user.type(within(dialog).getByLabelText("FRED API key"), "abcdefabcdefabcdefabcdefabcdef12");
+    await user.click(within(dialog).getByRole("button", { name: "Save & verify" }));
+    await waitFor(() => expect(verify).toHaveBeenCalledTimes(2));
+    alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("Could not check the key");
+    expect(alert).toHaveTextContent("The key is saved on this Mac but not verified.");
+  });
 });
