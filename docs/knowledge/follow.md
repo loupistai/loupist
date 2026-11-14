@@ -27,7 +27,10 @@ row of the Watching table with a menu (Open asset page, Stop following, which ca
 them when Watching settings fail to load, keep a row with the same menu above the
 add field. A bare six-digit page input means KRX. In Chat, [`loupist_setup`](../agent/turn-tools.md#turn-tools) uses
 the same `follow` and `watchlist_remove` functions; an unspecified market stays
-unknown, and an asset followed under any market is not added twice. Its receipt
+unknown, and an asset followed under any market is not added twice. The UI shows
+an unknown market's ticker alone (`tickerLabel`), never the stored `UNKNOWN`; the
+market is part of the asset's identity (`asset_id` hashes `SYMBOL:MARKET`), so it
+is not filled in later. Its receipt
 lists additions and removals. Following starts no automatic checks on a new
 install. Watch all (`watch_defaults_apply`) gives consent and applies class
 defaults only where no decision exists, preserving choices and reporting missing

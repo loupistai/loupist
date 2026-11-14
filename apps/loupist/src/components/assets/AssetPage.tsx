@@ -23,6 +23,7 @@ import type { WatchKind, WatchKindState } from "../../contracts/watch";
 import "@/styles/asset-page.css";
 import "@/styles/earnings.css";
 import { commandErrorCode } from "@/lib/errors";
+import { shownMarket, tickerLabel } from "@/lib/market";
 
 const t = i18n.getFixedT(null, "assets");
 const tDynamic = t as unknown as (key: string, options?: Record<string, unknown>) => string;
@@ -365,10 +366,10 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
   const crypto = page ? marketFor(page.market) === "CRYPTO" : false;
   // The class menu names the kind once: a market that only restates it (Crypto, PRIVATE, REAL) is left out.
   const restatesClass = page ? (crypto && page.class === "crypto") || (page.market.toUpperCase() === "PRIVATE" && page.class === "private") || (page.market.toUpperCase() === "REAL" && page.class === "real_asset") : false;
-  const market = crypto ? t("class.crypto") : page?.market;
+  const market = crypto ? t("class.crypto") : shownMarket(page?.market);
   const savedAt = page?.refreshedAtMs ?? page?.createdAtMs;
   const name = page ? names({ name: page.name, assetId: page.assetId, symbol: page.symbol, market: page.market, entityId: page.entityId }) : target.name ?? target.symbol ?? "";
-  const questionSubject = page ? `${name} (${page.symbol} · ${page.market})` : "";
+  const questionSubject = page ? `${name} (${tickerLabel(page.symbol, page.market)})` : "";
   // Nothing to check automatically: sources only (private, real, prediction) or offline.
   const checkBlocked = !online ? t("offlineTooltip") : page?.checks.sourcesOnly ? t("page.nothingToCheck") : undefined;
 
@@ -378,7 +379,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
       <h1 id={titleId}>{name}</h1>
       {page ? <p className="asset-page-meta">
         <span className="gg-num">{page.symbol}</span>
-        {restatesClass ? null : <><span aria-hidden="true">·</span><span>{market}</span></>}
+        {restatesClass || !market ? null : <><span aria-hidden="true">·</span><span>{market}</span></>}
         <span aria-hidden="true">·</span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
