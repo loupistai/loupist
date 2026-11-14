@@ -284,8 +284,8 @@
     "installAndRestart": "Install and restart",
     "finishActiveWorkBeforeUpdating": "Finish active work before updating",
     "blockers": {
-      "chat": "Chat in progress",
-      "chatChange": "Changing a chat",
+      "chat": "A reply in progress",
+      "chatChange": "Changing a research session",
       "memoryWrite": "Saving Memory",
       "memoryChange": "Changing Memory",
       "loupistChange": "Changing a Loupist",

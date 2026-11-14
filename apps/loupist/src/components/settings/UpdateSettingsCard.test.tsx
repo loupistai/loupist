@@ -105,9 +105,9 @@ for (const language of ["en", "ko"] as const) {
     it("localizes update blockers by kind, including unknown activities", () => {
       const kinds = ["chat", "chat_mutation", "memory_write", "memory_mutation", "loupist_mutation", "loupist_deletion", "marketplace_configuration", "marketplace_credential", "provider_inference", "provider_support", "graph", "update", "future_kind"];
       const expected = language === "ko" ? [
-        "대화 진행 중", "대화 변경 중", "메모리 저장 중", "메모리 변경 중", "루피스트 변경 중", "루피스트 삭제 중", "마켓플레이스 설정 변경 중", "마켓플레이스 인증 정보 변경 중", "백그라운드 모델 작업 중", "모델 연결 확인 중", "지도 처리 중", "업데이트 설치 중", "작업 진행 중",
+        "응답 작성 중", "리서치 세션 변경 중", "메모리 저장 중", "메모리 변경 중", "루피스트 변경 중", "루피스트 삭제 중", "마켓플레이스 설정 변경 중", "마켓플레이스 인증 정보 변경 중", "백그라운드 모델 작업 중", "모델 연결 확인 중", "지도 처리 중", "업데이트 설치 중", "작업 진행 중",
       ] : [
-        "Chat in progress", "Changing a chat", "Saving Memory", "Changing Memory", "Changing a Loupist", "Deleting a Loupist", "Changing Marketplace settings", "Changing Marketplace credentials", "Background model work", "Checking a model connection", "Processing the map", "Installing an update", "Work in progress",
+        "A reply in progress", "Changing a research session", "Saving Memory", "Changing Memory", "Changing a Loupist", "Deleting a Loupist", "Changing Marketplace settings", "Changing Marketplace credentials", "Background model work", "Checking a model connection", "Processing the map", "Installing an update", "Work in progress",
       ];
       render(<UpdateSettingsCard status={{ ...idle, blockers: kinds.map((kind) => ({ kind, id: kind, label: `raw host label: ${kind}` })) }} phase="idle" error={null} onCheck={vi.fn()} onInstall={vi.fn()} />);
       expect(screen.getAllByRole("listitem").map(item => item.textContent)).toEqual(expected);

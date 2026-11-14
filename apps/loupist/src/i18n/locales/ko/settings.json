@@ -285,8 +285,8 @@
     "installAndRestart": "설치 후 다시 시작",
     "finishActiveWorkBeforeUpdating": "업데이트 전에 진행 중인 작업을 마쳐 주세요",
     "blockers": {
-      "chat": "대화 진행 중",
-      "chatChange": "대화 변경 중",
+      "chat": "응답 작성 중",
+      "chatChange": "리서치 세션 변경 중",
       "memoryWrite": "메모리 저장 중",
       "memoryChange": "메모리 변경 중",
       "loupistChange": "루피스트 변경 중",

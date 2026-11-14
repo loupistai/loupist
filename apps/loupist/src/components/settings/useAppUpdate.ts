@@ -43,6 +43,9 @@ function statusErrorKey(message: string): UpdateErrorKey {
   }
 }
 
+// A localization key, not text: the card translates it when it renders.
+const STATUS_READ_FAILED: UpdateErrorKey = "couldNotReadUpdateStatus";
+
 function actionErrorKey(cause: unknown, fallback: UpdateErrorKey): UpdateErrorKey {
   switch (commandErrorCode(cause)) {
     case "update_busy": return "updateBusy";
@@ -83,7 +86,7 @@ export function useAppUpdate(bridge: LoupistBridge) {
       if (!next.error && !preserveActionError) setActionError(null);
     } catch {
       if (!mounted.current || epoch !== requestEpoch.current) return;
-      setStatusError("couldNotReadUpdateStatus");
+      setStatusError(STATUS_READ_FAILED);
     } finally {
       polling.current = false;
     }
