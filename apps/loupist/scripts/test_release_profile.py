@@ -116,10 +116,10 @@ class ReleaseProfileTests(unittest.TestCase):
         self.assertIn("Not notarized", beta)
         self.assertNotIn("{{", beta)
         self.assertIn("release candidate for testing", beta)
-        self.assertNotIn("<product acceptance", beta)
-        self.assertNotIn("<the complete unperformed_checks", beta)
+        self.assertNotIn("[product acceptance", beta)
+        self.assertNotIn("[the complete unperformed_checks", beta)
         stable = render("0.1.0", profile)
-        self.assertIn("<the complete unperformed_checks", stable)
+        self.assertIn("[the complete unperformed_checks", stable)
         for mode in ("developer-id",):
             changed = copy.deepcopy(profile)
             changed["macos_signing"]["mode"] = mode
