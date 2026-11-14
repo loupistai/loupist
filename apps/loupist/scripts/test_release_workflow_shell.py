@@ -43,6 +43,27 @@ class ReleaseWorkflowShellTests(unittest.TestCase):
                 text = (WORKFLOWS / name).read_text()
                 self.assertEqual(unguarded_empty_array_expansions(text), [])
 
+    def test_publication_does_not_depend_on_the_implicit_success_check(self):
+        # Without a status function GitHub adds success(), which also counts
+        # ancestor jobs; every tag run has a skipped job inside the full CI, so
+        # the publish job would be skipped after a green build and assembly.
+        text = (WORKFLOWS / "release.yml").read_text()
+        publish = text.split("\n  publish:\n", 1)[1].split("\n    runs-on:", 1)[0]
+        condition = next(
+            line.strip()
+            for line in publish.splitlines()
+            if line.strip().startswith("if:")
+        )
+        self.assertIn("!cancelled()", condition)
+        self.assertIn("needs.validate.result == 'success'", condition)
+        self.assertIn("needs.assemble.result == 'success'", condition)
+        self.assertIn("needs.validate.outputs.dry_run != 'true'", condition)
+        qualification = (WORKFLOWS / "release-qualification.yml").read_text()
+        block = qualification.split("      unperformed_checks:\n", 1)[1].split(
+            "type:", 1
+        )[0]
+        self.assertIn("required: true", block)
+
     def test_the_detector_sees_the_failing_form_and_accepts_the_guarded_one(self):
         failing = 'args=()\nif x; then args+=(--dry-run); fi\ntool build "${args[@]}"\n'
         self.assertEqual(

@@ -42,7 +42,7 @@ on:
           - not-performed
       unperformed_checks:
         description: One plain-text line describing checks not performed and substitute evidence
-        required: false
+        required: true
         type: string
 
 permissions:

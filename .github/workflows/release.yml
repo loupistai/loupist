@@ -640,7 +640,11 @@ jobs:
     timeout-minutes: 30
     name: Publish verified candidate
     needs: [validate, assemble]
-    if: needs.validate.outputs.dry_run != 'true'
+    # An explicit status check: without one GitHub adds success(), which also
+    # counts ancestors, and every tag run has a skipped job inside the full CI
+    # (the Linux native suite), so publication would be skipped after a green
+    # build and assembly.
+    if: ${{ !cancelled() && needs.validate.result == 'success' && needs.assemble.result == 'success' && needs.validate.outputs.dry_run != 'true' }}
     runs-on: ubuntu-latest
     environment: release
     permissions:

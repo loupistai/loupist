@@ -50,8 +50,8 @@ def render(version: str, profile: dict, root: Path = ROOT) -> str:
             if "-rc." in version
             else "## What was and was not checked before this release\n\n"
             "Before promotion, replace these placeholders with the qualification evidence.\n"
-            "- Checked: <product acceptance and update evidence for this exact file set>\n"
-            "- Not checked: <the complete unperformed_checks line from the receipt>"
+            "- Checked: [product acceptance and update evidence for this exact file set]\n"
+            "- Not checked: [the complete unperformed_checks line from the receipt]"
         ),
         "version": version,
         "channel_suffix": " (Beta)" if profile["channel"] == "beta" else "",
