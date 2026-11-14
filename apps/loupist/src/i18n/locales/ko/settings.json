@@ -261,7 +261,7 @@
     "availableVersionNotice": "루피스트 {{version}} 업데이트가 있어요",
     "released": "출시일 <0>{{date}}</0>",
     "checkingForUpdates": "업데이트 확인 중…",
-    "waitingForYourApproval": "승인 대기 중…",
+    "waitingForYourApproval": "방금 열린 확인 창에서 선택해 주세요.",
     "downloadingAndVerifyingTheUpdate": "업데이트 다운로드 및 확인 중…",
     "installingTheVerifiedUpdate": "확인된 업데이트 설치 중…",
     "updateInstalledRestartingLoupist": "업데이트를 설치했어요. 루피스트 다시 시작 중…",
@@ -305,7 +305,11 @@
   "useAppUpdate": {
     "couldNotReadUpdateStatus": "업데이트 상태를 읽지 못했어요. 다시 시도해 주세요.",
     "couldNotCheckForUpdates": "업데이트를 확인하지 못했어요. 연결 상태를 확인해 주세요.",
-    "couldNotInstallTheUpdate": "업데이트를 설치하지 못했어요. 다시 시도해 주세요."
+    "couldNotInstallTheUpdate": "업데이트를 설치하지 못했어요. 다시 시도해 주세요.",
+    "confirmTitle": "루피스트 업데이트 설치",
+    "confirmMessage": "루피스트를 업데이트할까요? 현재 버전 {{current}}, 새 버전 {{version}}. 진행 중인 작업을 확인했어요. 서명된 업데이트를 내려받아 설치한 뒤 바로 다시 시작해요.",
+    "confirmInstall": "설치 후 다시 시작",
+    "confirmCancel": "나중에"
   },
   "agentCapabilityList": {
     "enabledLabel": "{{name}}: 켜짐",

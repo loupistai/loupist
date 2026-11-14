@@ -260,7 +260,7 @@
     "availableVersionNotice": "Loupist {{version}} is available",
     "released": "Released <0>{{date}}</0>",
     "checkingForUpdates": "Checking for updates…",
-    "waitingForYourApproval": "Waiting for your approval…",
+    "waitingForYourApproval": "Confirm in the dialog that just opened.",
     "downloadingAndVerifyingTheUpdate": "Downloading and verifying the update…",
     "installingTheVerifiedUpdate": "Installing the verified update…",
     "updateInstalledRestartingLoupist": "Update installed. Restarting Loupist…",
@@ -304,7 +304,11 @@
   "useAppUpdate": {
     "couldNotReadUpdateStatus": "Could not read update status.",
     "couldNotCheckForUpdates": "Couldn't check for updates. Check your connection and try again.",
-    "couldNotInstallTheUpdate": "Could not install the update."
+    "couldNotInstallTheUpdate": "Could not install the update.",
+    "confirmTitle": "Install Loupist update",
+    "confirmMessage": "Update Loupist from {{current}} to {{version}}? Active work has been checked. Loupist will download the signed update, install it and restart right away.",
+    "confirmInstall": "Install and restart",
+    "confirmCancel": "Not now"
   },
   "agentCapabilityList": {
     "enabledLabel": "{{name}}: enabled",
