@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-11-15
 
 - Introduce Loupist, a local-first financial research desktop app for macOS 13 or newer on Apple Silicon. Windows, Intel Macs and Linux are not supported in this release.
 - Connect an AI account with a supported provider API key or sign-in; no Loupist account or cloud sync is required.
