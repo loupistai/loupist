@@ -58,7 +58,6 @@ const PROVIDER_PREFERENCE: &[&str] = &[
     "cftc",
     "finra",
     "nasdaq",
-    "tmx",
     "cboe",
     "famafrench",
     "deribit",
@@ -70,9 +69,16 @@ const PROVIDER_PREFERENCE: &[&str] = &[
 pub(super) fn best_effort_failure_next(enabled_provider_ids: &BTreeSet<String>) -> String {
     let official = PROVIDER_PREFERENCE
         .iter()
-        .filter(|provider| enabled_provider_ids.contains(**provider))
-        .take(4)
         .copied()
+        .chain(["tmx"])
+        .filter(|provider| enabled_provider_ids.contains(*provider))
+        .take(4)
+        .map(|provider| {
+            listing_limit(provider).map_or_else(
+                || provider.to_owned(),
+                |limit| format!("{provider} {limit}"),
+            )
+        })
         .collect::<Vec<_>>();
     let alternative = if official.is_empty() {
         "Use another official provider listed for the tool if one is enabled".to_owned()
@@ -213,26 +219,64 @@ fn key_arguments(parameters: &Value) -> Vec<String> {
     arguments
 }
 
+/// These limits belong in the note and recovery itself, where a model sees
+/// them while choosing a provider, rather than in unrelated prompt guidance.
+fn listing_limit(provider: &str) -> Option<&'static str> {
+    match provider {
+        "tmx" => Some("for Toronto-listed symbols only"),
+        "cboe" | "nasdaq" => Some("for US-listed symbols only"),
+        _ => None,
+    }
+}
+
 fn provider_note(providers: &[String]) -> Option<String> {
     if providers.is_empty() {
         return None;
     }
-    let (best_effort, official): (Vec<_>, Vec<_>) = providers
+    let best_effort: Vec<_> = providers
         .iter()
         .map(String::as_str)
-        .partition(|provider| is_best_effort(provider));
-    Some(match (official.is_empty(), best_effort.is_empty()) {
-        (false, true) => format!("Providers: {}.", official.join(", ")),
-        (false, false) => format!(
-            "Providers: {} preferred; {} best effort (scraped website data that can break or be blocked).",
-            official.join(", "),
-            best_effort.join(", ")
-        ),
-        (true, _) => format!(
-            "Providers: {} best effort only (scraped website data that can break or be blocked); name the provider when citing.",
-            best_effort.join(", ")
-        ),
-    })
+        .filter(|provider| is_best_effort(provider))
+        .collect();
+    let general: Vec<_> = providers
+        .iter()
+        .map(String::as_str)
+        .filter(|provider| !is_best_effort(provider) && listing_limit(provider).is_none())
+        .collect();
+    let mut notes = Vec::new();
+    if !general.is_empty() {
+        notes.push(format!(
+            "{}{}",
+            general.join(", "),
+            if best_effort.is_empty() {
+                ""
+            } else {
+                " preferred"
+            }
+        ));
+    }
+    for provider in ["cboe", "nasdaq", "tmx"] {
+        if providers.iter().any(|item| item == provider) {
+            notes.push(format!(
+                "{provider} {}",
+                listing_limit(provider).expect("limited provider")
+            ));
+        }
+    }
+    if !best_effort.is_empty() {
+        let only = notes.is_empty();
+        notes.push(format!(
+            "{} best effort{} (scraped website data that can break or be blocked){}",
+            best_effort.join(", "),
+            if only { " only" } else { "" },
+            if only {
+                "; name the provider when citing"
+            } else {
+                ""
+            }
+        ));
+    }
+    Some(format!("Providers: {}.", notes.join("; ")))
 }
 
 /// JSON Schema keywords the model needs. Every other key on a property is
@@ -624,6 +668,22 @@ mod tests {
     }
 
     #[test]
+    fn provider_notes_limit_exchange_sources_in_place_and_in_recovery() {
+        assert_eq!(provider_note(&["tmx".into(), "cboe".into(), "yfinance".into()]).unwrap(),
+            "Providers: cboe for US-listed symbols only; tmx for Toronto-listed symbols only; yfinance best effort (scraped website data that can break or be blocked).");
+        assert!(provider_note(&["nasdaq".into()])
+            .unwrap()
+            .contains("nasdaq for US-listed symbols only"));
+        let next = best_effort_failure_next(&enabled(&["yfinance", "tmx", "cboe", "nasdaq"]));
+        assert!(
+            next.contains("tmx for Toronto-listed symbols only"),
+            "{next}"
+        );
+        assert!(next.contains("cboe for US-listed symbols only"), "{next}");
+        assert!(next.contains("nasdaq for US-listed symbols only"), "{next}");
+    }
+
+    #[test]
     fn cards_rank_official_providers_first_and_replace_upstream_text() {
         let schema = json!({
             "type": "object",
@@ -650,7 +710,7 @@ mod tests {
         );
         assert_eq!(
             card["parameters"]["properties"]["provider"]["enum"],
-            json!(["tmx", "cboe", "yfinance"])
+            json!(["cboe", "tmx", "yfinance"])
         );
         let description = card["description"].as_str().unwrap();
         assert!(!description.contains("Query Parameters"));
@@ -901,7 +961,11 @@ mod tests {
     #[test]
     fn a_scraped_failure_recommends_only_enabled_official_providers() {
         let next = best_effort_failure_next(&enabled(&["yfinance", "nasdaq", "tmx"]));
-        assert!(next.contains("nasdaq, tmx"), "{next}");
+        assert!(next.contains("nasdaq for US-listed symbols only"), "{next}");
+        assert!(
+            next.contains("tmx for Toronto-listed symbols only"),
+            "{next}"
+        );
         assert!(!next.contains("sec"), "{next}");
         let none = best_effort_failure_next(&enabled(&["yfinance"]));
         assert!(none.contains("if one is enabled"), "{none}");

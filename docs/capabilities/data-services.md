@@ -44,7 +44,16 @@ turns on for every Loupist when the user adds the first wallet address, and a la
 opt-out stays. KIS, KRX and OpenDART appear in the optional Korea group and start disabled, with setup
 only when the user opens their connection details. Rust
 filters read-only tools/provider choices to the Loupist's active bindings and rejects
-response-provider mismatches. KIS account reads require an account profile;
+response-provider mismatches. Host reads for asset pages, watch checks and earnings
+share market-aware provider selection (`commands/tool_executor/assets.rs`): TMX is
+an automatic candidate only for Canadian markets or a recognised Canadian symbol
+suffix; Cboe and Nasdaq equity routes only for US listings. Unknown markets exclude
+these market-limited providers. Explicitly named providers remain pinned. An
+unpinned read tries up to three enabled, tool-accepted candidates after failures or
+empty rows, including within a caller's allowed list; a single-provider list never
+falls back. The result names the provider that served it. Each attempt keeps the
+ordinary retention and identical-request `max_age` rules.
+KIS account reads require an account profile;
 its exposed inventory contains no order operations, every account operation carries a
 reviewed `holding_fields` list whose values Rust hides from every model-facing copy
 ([holdings redaction](../architecture.md#trust)), and `kis_read` follows
@@ -94,7 +103,8 @@ on the cheapest available model (Haiku 5.5 first, at low effort) with
 The host writes each OpenBB tool card
 (`apps/loupist/src-tauri/src/commands/tool_executor/mcp_host/openbb.rs`). The
 description says what the route returns, key arguments, granted providers with
-official sources first, the cutoff note for dated routes and the host-handled
+official sources first, the listing-market limits in the provider note itself,
+the cutoff note for dated routes and the host-handled
 `max_age`. The parameter schema is pruned to the run's enabled providers. A
 property is dropped only when its title names providers, every description
 sentence carries a `(provider: …)` marker, none of those providers is enabled and
@@ -113,7 +123,8 @@ data", and the capability index lists no provider ids. Scraped providers
 (yfinance, finviz, seeking_alpha, stockgrid, multpl, wsj) are labeled best
 effort. Their failures come from individual requests (layout changes, consent
 walls, blocking), so there is no active health probe: the first failure of one
-in a turn returns a hint naming only official providers enabled for the run.
+in a turn returns a hint naming only official providers enabled for the run, with
+the same listing-market limits. TMX is never described as generally preferred.
 
 Sequential turns with matching Loupist/authority can reuse a warm OpenBB process.
 The host resets its tools to the control surface before reuse; concurrent turns

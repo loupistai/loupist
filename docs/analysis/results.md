@@ -37,7 +37,9 @@ retry time survive restart; after the sixth failure the event stops retrying. A 
 earnings event starts a new budget. After: 30 minutes after the
 release is seen, reported revenue, operating income, net income and EPS from a statement
 read once a provider has the quarter (`fmp`, `intrinio`, `polygon`, `tiingo`, `tmx` or
-`sec`; Korea `dart_financials`), retried hourly up to six times; the same runs with stage
+`sec`; Korea `dart_financials`), subject to the shared
+[host-read market rules and bounded provider fallback](../capabilities/data-services.md#agent-facing-data-services),
+retried hourly up to six times; the same runs with stage
 `final` after the quarterly or annual report. Korean preliminary figures, company
 guidance, a broker's estimate and the call's tone come from a reply instead.
 
@@ -100,6 +102,10 @@ multiple filings; the first matching audit filing also stays attached within and
 across passes, and attaching a release preserves current audit and capture flags.
 At a glance's "Next earnings" falls back to the next event, a legal deadline marked
 `dueBy`; the morning message's "Coming up" strip lists such a deadline as "Results due (filing deadline)".
+The asset page's earlier-results list includes only events with a release, a final
+filing or a reported status. An unfiled calendar date or statutory deadline stays
+out of that history, even after its date passes; upcoming events remain available
+to the current card and At a glance.
 
 ## Code
 

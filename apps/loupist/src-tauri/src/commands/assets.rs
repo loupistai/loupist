@@ -198,6 +198,7 @@ pub fn asset_delta(
     let loupist = request.loupist_id.clone();
     with_assets(&state, &loupist, false, |tx| {
         assets::deltas(tx, &loupist, request.asset_id.as_deref(), request.since_ms)
+            .map(unique_delta_sources)
     })
 }
 
@@ -532,7 +533,7 @@ pub(in crate::commands) async fn refresh_with(
             }
         }
         let outcome = tokio::select! {
-            outcome = executor.host_read(&policy, read, max_age) => outcome,
+            outcome = executor.host_read(&policy, &page, read, max_age) => outcome,
             _ = until_stopped(&mut stop) => return Ok(0),
         };
         match outcome {
@@ -582,6 +583,7 @@ pub(in crate::commands) async fn refresh_with(
     if page.class == AssetClass::Equity && assets::class::is_korean_market(&page.market) {
         let korea = KoreaReads {
             executor,
+            page: &page,
             capabilities,
             openbb: &openbb,
             policy: &policy,
@@ -641,6 +643,7 @@ const CAPITAL_KINDS: [&str; 4] = [
 /// filings just read, and Korea Investment's investor flows once a day.
 struct KoreaReads<'a> {
     executor: &'a AppToolExecutor,
+    page: &'a assets::PageRecord,
     capabilities: &'a BTreeSet<String>,
     openbb: &'a BTreeSet<String>,
     policy: &'a ToolPolicy,
@@ -663,7 +666,7 @@ impl KoreaReads<'_> {
         stop: &mut RefreshStop,
     ) -> Option<Option<(Value, Option<String>)>> {
         tokio::select! {
-            outcome = self.executor.host_read(self.policy, read, self.max_age) => Some(outcome.ok()),
+            outcome = self.executor.host_read(self.policy, self.page, read, self.max_age) => Some(outcome.ok()),
             _ = until_stopped(stop) => None,
         }
     }
@@ -894,6 +897,28 @@ pub(crate) fn followed(context: &ViewContext) -> Vec<AssetIdentity> {
         .collect()
 }
 
+/// Display each source once per change row. Keep the latest endpoint's link;
+/// all observations and their precise row evidence remain in the store.
+fn unique_delta_sources(mut deltas: Vec<AssetDelta>) -> Vec<AssetDelta> {
+    for row in deltas.iter_mut().flat_map(|delta| &mut delta.rows) {
+        let mut seen = BTreeSet::new();
+        row.evidence.reverse();
+        row.evidence.retain(|evidence| {
+            seen.insert((
+                evidence.tool.clone(),
+                evidence.provider.clone(),
+                evidence.title.clone(),
+                evidence.url.clone(),
+                evidence.citation_url.clone(),
+                evidence.record_id.clone(),
+                evidence.world_id.clone(),
+            ))
+        });
+        row.evidence.reverse();
+    }
+    deltas
+}
+
 /// The briefing context: up to three rows per followed asset with a delta.
 pub(crate) fn briefing_assets(
     state: &AppState,
@@ -901,7 +926,7 @@ pub(crate) fn briefing_assets(
     since_ms: i64,
 ) -> Result<(Vec<AssetDelta>, Value), CommandError> {
     let mut deltas = with_assets(state, loupist_id, false, |tx| {
-        assets::deltas(tx, loupist_id, None, since_ms)
+        assets::deltas(tx, loupist_id, None, since_ms).map(unique_delta_sources)
     })?;
     deltas.retain(|delta| delta.rows.iter().any(|row| row.material));
     deltas.truncate(BRIEFING_MAX_ASSETS);
@@ -1075,6 +1100,57 @@ pub(crate) fn commit_turn(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_results_list_each_source_once_without_changing_retained_evidence() {
+        use crate::commands::tests::{profile, seed_profile};
+        use crate::knowledge::assets::AssetEvidence;
+        use tauri::Manager;
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        seed_profile(
+            state.store.as_ref(),
+            &profile("loupist-a", &temporary.path().join("workspace"), 1),
+        );
+        let today = chrono::Local::now().date_naive();
+        let last_close = today - chrono::Duration::days(1);
+        let start = today - chrono::Duration::days(30);
+        let page = with_assets(&state, "loupist-a", true, |tx| {
+            let page = assets::ensure_page(tx, "loupist-a", &AssetIdentity { symbol: "NVDA".into(), market: "NASDAQ".into(), name: "Nvidia".into() }, None, 1)?;
+            let payload = json!({"structuredContent": {"results": [{"date": start.to_string(), "close": 100}, {"date": last_close.to_string(), "close": 110}]}});
+            let found = observe::extract(&observe::ToolRead { tool: "equity_price_historical", provider: Some("cboe"), payload: &payload, dataset: None, retrieved_at: None, citation_url: Some("https://example.com/prices".into()), today, session_day: today }, "NVDA");
+            assets::record_observations(tx, "loupist-a", &page.asset_id, found.into_iter().map(|mut item| {
+                item.evidence = AssetEvidence { url: Some("https://example.com/prices".into()), ..item.evidence }; item
+            }).collect(), ObservationOrigin::Refresh, None, now_ms())?;
+            Ok(page)
+        }).unwrap();
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        app.manage(state.clone());
+        let since_ms = start
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        let deltas = asset_delta(
+            app.state(),
+            AssetDeltaRequest {
+                loupist_id: "loupist-a".into(),
+                asset_id: Some(page.asset_id.clone()),
+                since_ms,
+            },
+        )
+        .unwrap();
+        assert_eq!(deltas[0].rows[0].evidence.len(), 1);
+        let (_, prompt) = briefing_assets(&state, "loupist-a", since_ms).unwrap();
+        assert_eq!(prompt[0]["rows"][0]["sources"].as_array().unwrap().len(), 1);
+        let stored = with_assets(&state, "loupist-a", false, |tx| {
+            assets::observations(tx, "loupist-a", &page.asset_id)
+        })
+        .unwrap();
+        assert_eq!(stored.len(), 2, "both price endpoints remain stored");
+    }
 
     /// The requests the renderer sends (its tests check them against the same
     /// file) are accepted by these commands, whose requests deny unknown fields.

@@ -45,6 +45,56 @@ pub(in crate::commands) enum HostReadError {
     Failed(BrokerError),
 }
 
+/// All host callers share this selection, including restricted statement and
+/// calendar lists. An explicit provider is never silently replaced.
+fn host_candidates(
+    page: &assets::PageRecord,
+    read: &PlannedRead,
+    available: &[String],
+    allowed: Option<&[&str]>,
+) -> Vec<String> {
+    let enabled = |provider: &str| {
+        available.iter().any(|item| item == provider)
+            && allowed.is_none_or(|allowed| allowed.contains(&provider))
+    };
+    if let Some(requested) = read.arguments.get("provider").and_then(Value::as_str) {
+        return if enabled(requested) {
+            vec![requested.to_owned()]
+        } else {
+            Vec::new()
+        };
+    }
+    let market = assets::class::listing_market(&page.symbol, &page.market);
+    let compatible = |provider: &str| {
+        use assets::class::ListingMarket;
+        match provider {
+            "tmx" => market == Some(ListingMarket::Canada),
+            "cboe" | "nasdaq"
+                if read.tool.starts_with("equity_") || read.tool.starts_with("etf_") =>
+            {
+                market == Some(ListingMarket::Us)
+            }
+            _ => true,
+        }
+    };
+    let preferred = allowed.unwrap_or(PREFERRED_PROVIDERS);
+    let mut candidates = Vec::new();
+    for provider in preferred.iter().copied().chain(
+        available
+            .iter()
+            .map(String::as_str)
+            .filter(|_| allowed.is_none()),
+    ) {
+        if enabled(provider)
+            && compatible(provider)
+            && !candidates.iter().any(|item| item == provider)
+        {
+            candidates.push(provider.to_owned());
+        }
+    }
+    candidates
+}
+
 impl AppToolExecutor {
     /// An executor for host reads outside a turn: no model, the Loupist's grants.
     pub(in crate::commands) fn for_host(
@@ -118,103 +168,127 @@ impl AppToolExecutor {
     }
 
     /// One planned read through the ordinary executor path (connection grants,
-    /// the unattended allowlist, retention and `max_age` reuse). Returns the
-    /// retained payload and the provider that served it.
+    /// the unattended allowlist, retention and `max_age` reuse). The asset's
+    /// listing market governs every automatic provider choice.
     pub(in crate::commands) async fn host_read(
         &self,
         policy: &ToolPolicy,
+        page: &assets::PageRecord,
         read: &PlannedRead,
         max_age: Option<u64>,
     ) -> Result<(Value, Option<String>), BrokerError> {
-        let mut arguments = read.arguments.clone();
-        if let Some(max_age) = max_age {
-            arguments["max_age"] = json!(max_age);
-        }
-        match read.server {
-            None => {
-                let method = native_method(read.tool).ok_or(BrokerError::MethodDenied)?;
-                if !crate::briefings::policy::allowed_method(method) {
-                    return Err(BrokerError::MethodDenied);
-                }
-                let result = self.host_call(policy, method, arguments).await?;
-                let payload = self.retained(&result).await.unwrap_or(result);
-                let provider = payload
-                    .get("source_id")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned);
-                Ok((payload, provider))
-            }
-            Some(server) => {
-                let requested = arguments
-                    .get("provider")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned);
-                let provider = self
-                    .host_provider(server, read.tool, requested.as_deref(), PREFERRED_PROVIDERS)
-                    .await;
-                match &provider {
-                    Some(provider) => arguments["provider"] = json!(provider),
-                    None => {
-                        if let Some(object) = arguments.as_object_mut() {
-                            object.remove("provider");
-                        }
-                    }
-                }
-                let response = self
-                    .host_call(
-                        policy,
-                        ToolMethod::McpCall,
-                        json!({"server_id": server, "tool_name": read.tool, "arguments": arguments}),
-                    )
-                    .await?;
-                if response.get("call_error").and_then(Value::as_bool) == Some(true) {
-                    return Err(BrokerError::Execution(
-                        response["message"]
-                            .as_str()
-                            .unwrap_or("the market-data read failed")
-                            .to_owned(),
-                    ));
-                }
-                let delivered = response.get("result").cloned().unwrap_or(response);
-                // Observations come from the retained result, not the
-                // delimited view the model would receive.
-                let payload = self.retained(&delivered).await.ok_or_else(|| {
-                    BrokerError::Execution("the market-data read was not retained".into())
-                })?;
-                if payload.get("isError").and_then(Value::as_bool) == Some(true) {
-                    return Err(BrokerError::Execution("the market-data read failed".into()));
-                }
-                Ok((payload, provider))
-            }
-        }
+        self.host_read_with(policy, page, read, max_age, None)
+            .await
+            .map_err(|error| match error {
+                HostReadError::NoProvider => BrokerError::Execution(
+                    "no enabled provider serves this read's listing market".into(),
+                ),
+                HostReadError::Failed(error) => error,
+            })
     }
 
-    /// A host read that only some providers may serve (consensus only from
-    /// FMP or Intrinio; never a scraped provider for expectations). Without
-    /// one of them the read is not made.
+    /// Restricts automatic selection and fallback to this caller's providers.
+    /// A single allowed provider or a caller-named provider stays pinned.
     pub(in crate::commands) async fn host_read_among(
         &self,
         policy: &ToolPolicy,
+        page: &assets::PageRecord,
         read: &PlannedRead,
         max_age: Option<u64>,
         allowed: &[&str],
     ) -> Result<(Value, Option<String>), HostReadError> {
+        self.host_read_with(policy, page, read, max_age, Some(allowed))
+            .await
+    }
+
+    async fn host_read_with(
+        &self,
+        policy: &ToolPolicy,
+        page: &assets::PageRecord,
+        read: &PlannedRead,
+        max_age: Option<u64>,
+        allowed: Option<&[&str]>,
+    ) -> Result<(Value, Option<String>), HostReadError> {
+        let mut arguments = read.arguments.clone();
+        if let Some(max_age) = max_age {
+            arguments["max_age"] = json!(max_age);
+        }
         let Some(server) = read.server else {
-            return self
-                .host_read(policy, read, max_age)
+            let method =
+                native_method(read.tool).ok_or(HostReadError::Failed(BrokerError::MethodDenied))?;
+            if !crate::briefings::policy::allowed_method(method) {
+                return Err(HostReadError::Failed(BrokerError::MethodDenied));
+            }
+            let result = self
+                .host_call(policy, method, arguments)
                 .await
-                .map_err(HostReadError::Failed);
+                .map_err(HostReadError::Failed)?;
+            let payload = self.retained(&result).await.unwrap_or(result);
+            let provider = payload
+                .get("source_id")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            return Ok((payload, provider));
         };
-        let provider = self
-            .host_provider(server, read.tool, None, allowed)
-            .await
-            .filter(|provider| allowed.contains(&provider.as_str()))
-            .ok_or(HostReadError::NoProvider)?;
-        let mut pinned = read.clone();
-        pinned.arguments["provider"] = json!(provider);
-        self.host_read(policy, &pinned, max_age)
-            .await
-            .map_err(HostReadError::Failed)
+        let available = self.host_providers(server, read.tool).await;
+        let candidates = host_candidates(page, read, &available, allowed);
+        if candidates.is_empty() {
+            return Err(HostReadError::NoProvider);
+        }
+        let mut last = None;
+        for provider in candidates.into_iter().take(3) {
+            arguments["provider"] = json!(provider);
+            let outcome = self
+                .host_mcp_read(policy, server, read.tool, arguments.clone())
+                .await;
+            match outcome {
+                Ok(payload) => {
+                    let empty = crate::knowledge::watch::detect::rows(&payload, "")
+                        .is_some_and(|(rows, _)| rows.is_empty());
+                    if !empty {
+                        return Ok((payload, Some(provider)));
+                    }
+                    // Preserve an empty result when no later provider serves rows.
+                    last = Some(Ok((payload, Some(provider))));
+                }
+                Err(error) => last = Some(Err(HostReadError::Failed(error))),
+            }
+        }
+        last.expect("nonempty host provider candidates")
+    }
+
+    /// Each attempt uses the same ordinary MCP admission, reuse and retention path.
+    async fn host_mcp_read(
+        &self,
+        policy: &ToolPolicy,
+        server: &str,
+        tool: &str,
+        arguments: Value,
+    ) -> Result<Value, BrokerError> {
+        let response = self
+            .host_call(
+                policy,
+                ToolMethod::McpCall,
+                json!({"server_id": server, "tool_name": tool, "arguments": arguments}),
+            )
+            .await?;
+        if response.get("call_error").and_then(Value::as_bool) == Some(true) {
+            return Err(BrokerError::Execution(
+                response["message"]
+                    .as_str()
+                    .unwrap_or("the market-data read failed")
+                    .to_owned(),
+            ));
+        }
+        let delivered = response.get("result").cloned().unwrap_or(response);
+        // Observations come from the retained result, not the delimited model view.
+        let payload = self.retained(&delivered).await.ok_or_else(|| {
+            BrokerError::Execution("the market-data read was not retained".into())
+        })?;
+        if payload.get("isError").and_then(Value::as_bool) == Some(true) {
+            return Err(BrokerError::Execution("the market-data read failed".into()));
+        }
+        Ok(payload)
     }
 
     /// The complete result a delivery acknowledged, by its `result_ref`.

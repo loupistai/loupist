@@ -13,7 +13,7 @@ or when a turn records an observation for a followed asset. It opens over the cu
 reasons, and lines with their last reading), for an equity the
 [results card](../analysis/results.md#results-events) while an event is due within 14 days or was reported in
 the last 30, What changed (since the last look, 7 or 30 days; 50 rows, then Show
-earlier), thesis history (10, then Show all), Earlier results (up to four other events,
+earlier), thesis history (10, then Show all), Earlier results (up to four filed events,
 each expanding to its card), At a glance, a Korean equity's
 [investor flows](../analysis/korea.md#korean-asset-rows), what the Loupist checks (failed or
 ungranted sources and what this class is not checked for yet), Watch for (a switch per
@@ -73,10 +73,15 @@ Korean equity adds up to two capital decisions and, when due, its investor flows
 (`AppToolExecutor::for_host`, policy without Memory, in Bot) with the
 Loupist's captured connection grants: native OpenDART, KRX and Korea Investment reads
 need their own grant and the unattended allowlist; OpenBB reads need a grant the bundled runtime serves and use a provider the Loupist enabled
-(the requested one, then a fixed preference order). Identical reads from the last 30
+(a named provider stays pinned; otherwise the shared
+[market-aware order and bounded fallback](../capabilities/data-services.md#agent-facing-data-services)
+apply). Identical reads from the last 30
 minutes are reused (`max_age` 1800). Each source's status (`ok`, `failed`,
 `needs_connection`) is stored on the page; one failed source does not fail the
 refresh. Briefings refresh followed assets before [scheduler admission](../runtime/scheduled-runs.md#scheduled-chats).
+Change rows and briefing context list each source once, even when a calculated
+price move cites two rows of the same provider read; both endpoint observations
+and their evidence remain stored.
 
 At commit, Rust records the turn's observations and re-checks each staged
 `thesis_update` against the committed page, applying only the first per asset. An

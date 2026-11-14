@@ -101,6 +101,36 @@ pub fn is_korean_market(market: &str) -> bool {
     KOREAN_MARKETS.contains(&upper(market).as_str())
 }
 
+/// The listing market used by host provider selection. Canadian suffixes are
+/// explicit listing identities, even when the caller has no market code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListingMarket {
+    Canada,
+    Us,
+}
+
+pub fn listing_market(symbol: &str, market: &str) -> Option<ListingMarket> {
+    let market = upper(market);
+    let symbol = upper(symbol);
+    if [
+        "CA", "CAN", "CANADA", "TSX", "TO", "TSXV", "TSX-V", "V", "CSE", "CNSX", "NEO", "XTSE",
+        "XTSX", "XCNQ",
+    ]
+    .contains(&market.as_str())
+        || [".TO", ".V"].iter().any(|suffix| symbol.ends_with(suffix))
+    {
+        Some(ListingMarket::Canada)
+    } else if [
+        "US", "USA", "NYSE", "NASDAQ", "AMEX", "NYSEARCA", "ARCA", "BATS", "CBOE", "NMS", "NYQ",
+    ]
+    .contains(&market.as_str())
+    {
+        Some(ListingMarket::Us)
+    } else {
+        None
+    }
+}
+
 /// The exchange's time zone (codes as `chat/marketStatus.ts` knows them). A
 /// daily crypto bar closes at midnight UTC.
 pub fn exchange_time_zone(market: &str) -> Option<chrono_tz::Tz> {

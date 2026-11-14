@@ -949,50 +949,31 @@ impl AppToolExecutor {
             .await
     }
 
-    /// The provider a host read uses: the requested one when this Loupist enabled
-    /// it and the tool accepts it, else the first preferred provider that is.
-    pub(super) async fn host_provider(
-        &self,
-        server_id: &str,
-        tool: &str,
-        requested: Option<&str>,
-        preferred: &[&str],
-    ) -> Option<String> {
-        let session = self.capture.mcp_session(server_id).await?;
-        let guard = session.lock().await;
-        let server = guard.as_ref()?;
-        let schema = server
-            .tools
-            .get(tool)?
-            .input_schema
-            .pointer("/properties/provider")?;
-        let accepted: Vec<String> = schema
-            .get("enum")
-            .and_then(Value::as_array)
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default();
-        let allowed = |provider: &str| {
-            server.enabled_provider_ids.contains(provider)
-                && (accepted.is_empty() || accepted.iter().any(|item| item == provider))
+    /// Enabled providers accepted by this tool, before host market selection.
+    pub(super) async fn host_providers(&self, server_id: &str, tool: &str) -> Vec<String> {
+        let Some(session) = self.capture.mcp_session(server_id).await else {
+            return Vec::new();
         };
-        if let Some(requested) = requested.filter(|provider| allowed(provider)) {
-            return Some(requested.to_owned());
+        let guard = session.lock().await;
+        let Some(server) = guard.as_ref() else {
+            return Vec::new();
+        };
+        let Some(schema) = server
+            .tools
+            .get(tool)
+            .and_then(|tool| tool.input_schema.pointer("/properties/provider"))
+        else {
+            return Vec::new();
+        };
+        match schema.get("enum").and_then(Value::as_array) {
+            Some(accepted) => accepted
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|provider| server.enabled_provider_ids.contains(*provider))
+                .map(str::to_owned)
+                .collect(),
+            None => server.enabled_provider_ids.iter().cloned().collect(),
         }
-        preferred
-            .iter()
-            .find(|provider| allowed(provider))
-            .map(|provider| (*provider).to_owned())
-            .or_else(|| {
-                accepted
-                    .into_iter()
-                    .find(|provider| server.enabled_provider_ids.contains(provider))
-            })
     }
 
     /// A provider that exists in the runtime but needs setup gets a recovery
@@ -1793,6 +1774,9 @@ done
     ) -> Result<Value, BrokerError> {
         call_as_of(executor, tool_name, arguments, None).await
     }
+
+    #[cfg(unix)]
+    mod host_reads;
 
     #[cfg(unix)]
     fn tool_names(response: &Value) -> Vec<String> {
