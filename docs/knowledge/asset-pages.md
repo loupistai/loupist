@@ -79,6 +79,9 @@ apply). Identical reads from the last 30
 minutes are reused (`max_age` 1800). Each source's status (`ok`, `failed`,
 `needs_connection`) is stored on the page; one failed source does not fail the
 refresh. Briefings refresh followed assets before [scheduler admission](../runtime/scheduled-runs.md#scheduled-chats).
+Change rows and briefing context list each source once, even when a calculated
+price move cites two rows of the same provider read; both endpoint observations
+and their evidence remain stored.
 
 At commit, Rust records the turn's observations and re-checks each staged
 `thesis_update` against the committed page, applying only the first per asset. An
