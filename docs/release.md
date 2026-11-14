@@ -62,7 +62,10 @@ schema 1 records `macos_signing`: mode, notarized, team ID or null, certificate
 SHA-256, and the app's designated requirement. A release with an Apple Team ID
 admits only
 helpers with that team; a teamless signed release requires the helper's actual
-leaf certificate SHA-256 to match the running app's own signature. Ad-hoc apps
+leaf certificate SHA-256 to match the running app's own signature. The app finds
+its resources and that signature from its own executable path with symlinks
+resolved once at start, so an app opened through a symlinked folder (`/tmp`) still
+finds its helpers; Tauri's `resource_dir` refuses such a path. Ad-hoc apps
 cannot establish a shared signer and refuse all bundled helpers; ad-hoc mode is
 therefore not selectable for a release. Unsigned development/CI staging remains
 available, without claiming release runtime trust. Qualification compares these

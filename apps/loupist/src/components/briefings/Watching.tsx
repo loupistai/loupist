@@ -12,6 +12,7 @@ import { useAssetNames } from "../assets/assetName";
 import { citationNumbers, shortDay, SourceChips } from "../assets/assetText";
 import { newestFirst, watchKindColumn, watchSentence } from "../assets/watchText";
 import { connectionText } from "../marketplace/connectionCopy";
+import { tickerLabel } from "@/lib/market";
 import "@/styles/watch.css";
 
 const t = i18n.getFixedT(null, "briefings");
@@ -190,7 +191,7 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
           <tbody>{group.rows.map(asset => {
             const name = nameOf(asset);
             return <tr key={asset.assetId} data-asset={asset.assetId}>
-              <th scope="row" className="watching-asset-cell"><span className="watching-asset-line"><span className="watching-asset">{embedded && openAsset ? <button type="button" className="watching-asset-open" onClick={() => openPage(asset)}>{name}</button> : <strong>{name}</strong>}<small className="gg-num">{asset.symbol} · {asset.market}</small></span>{rowMenu?.(asset, name)}</span></th>
+              <th scope="row" className="watching-asset-cell"><span className="watching-asset-line"><span className="watching-asset">{embedded && openAsset ? <button type="button" className="watching-asset-open" onClick={() => openPage(asset)}>{name}</button> : <strong>{name}</strong>}<small className="gg-num">{tickerLabel(asset.symbol, asset.market)}</small></span>{rowMenu?.(asset, name)}</span></th>
               {group.kinds.map(kind => <td key={kind} className="watching-kind">
                 {(() => {
                   const state = asset.kinds.find(item => item.kind === kind);

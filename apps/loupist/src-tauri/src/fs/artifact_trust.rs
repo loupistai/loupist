@@ -1,7 +1,7 @@
 use std::{
     fs::{File, OpenOptions},
     io::{self, Read},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 #[cfg(unix)]
@@ -21,6 +21,40 @@ use crate::fs::windows::{
 };
 #[cfg(all(not(debug_assertions), windows))]
 use crate::fs::windows::{authenticode_signer_certificate, open_regular_no_reparse};
+
+static APP_EXECUTABLE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// The running app's executable with every symlink resolved, fixed on first use
+/// (`AppState::initialize`, before any helper is found). The bundled resources
+/// and the helper signature check both derive from this one path.
+///
+/// macOS reports the path the app was opened by, which may pass through a
+/// symlink such as `/tmp` → `/private/tmp`. Tauri refuses such a path, which
+/// left the app without its resources; resolving it here does not widen trust,
+/// because every helper still runs only after codesign verifies the real files
+/// inside this bundle and their signer matches this executable's.
+pub fn app_executable() -> io::Result<PathBuf> {
+    if let Some(path) = APP_EXECUTABLE.get() {
+        return Ok(path.clone());
+    }
+    let path = std::env::current_exe()?.canonicalize()?;
+    Ok(APP_EXECUTABLE.get_or_init(|| path).clone())
+}
+
+/// The `Contents/Resources` directory of the macOS app bundle that holds
+/// `executable`, after resolving symlinks; `None` outside an app bundle.
+pub fn bundle_resources(executable: &Path) -> io::Result<Option<PathBuf>> {
+    let executable = executable.canonicalize()?;
+    let macos = executable.parent();
+    let contents = macos.and_then(Path::parent);
+    let bundle = contents.and_then(Path::parent);
+    let in_bundle = macos.and_then(Path::file_name) == Some("MacOS".as_ref())
+        && contents.and_then(Path::file_name) == Some("Contents".as_ref())
+        && bundle.and_then(Path::extension) == Some("app".as_ref());
+    Ok(contents
+        .filter(|_| in_bundle)
+        .map(|contents| contents.join("Resources")))
+}
 
 #[derive(Debug, Error)]
 pub enum ArtifactTrustError {
@@ -388,7 +422,7 @@ fn ensure_existing_ancestry_trusted(path: &Path) -> Result<(), ArtifactTrustErro
 
 #[cfg(all(not(debug_assertions), target_os = "macos"))]
 fn verify_macos_distribution_identity(helper: &Path) -> Result<(), ArtifactTrustError> {
-    verify_macos_identity_for_app(&std::env::current_exe()?, helper)
+    verify_macos_identity_for_app(&app_executable()?, helper)
 }
 
 #[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
@@ -521,6 +555,52 @@ mod macos_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn bundle_resources_resolve_through_a_symlinked_folder_to_the_real_bundle() {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("private").join("Loupist.app");
+        std::fs::create_dir_all(real.join("Contents/MacOS")).unwrap();
+        std::fs::create_dir_all(real.join("Contents/Resources/pi-runtime")).unwrap();
+        std::fs::write(real.join("Contents/MacOS/loupist"), b"app").unwrap();
+        // Like /tmp -> /private/tmp: the app is opened through a symlinked ancestor.
+        let linked = root.path().join("tmp");
+        std::os::unix::fs::symlink(root.path().join("private"), &linked).unwrap();
+        let opened = linked.join("Loupist.app/Contents/MacOS/loupist");
+        assert!(opened.ancestors().any(|ancestor| ancestor
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink())));
+
+        let resources = bundle_resources(&opened).unwrap().unwrap();
+        assert_eq!(
+            resources,
+            real.join("Contents/Resources").canonicalize().unwrap()
+        );
+        assert!(resources.join("pi-runtime").is_dir());
+        assert!(!resources.ancestors().any(|ancestor| ancestor
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink())));
+
+        // Outside an app bundle (a development build) there is no bundle answer.
+        std::fs::create_dir_all(root.path().join("target/debug")).unwrap();
+        std::fs::write(root.path().join("target/debug/loupist"), b"dev").unwrap();
+        assert_eq!(
+            bundle_resources(&root.path().join("target/debug/loupist")).unwrap(),
+            None
+        );
+        assert!(bundle_resources(&root.path().join("missing/loupist")).is_err());
+    }
+
+    #[test]
+    fn the_app_executable_is_resolved_once_and_has_no_symlink() {
+        let first = app_executable().unwrap();
+        assert_eq!(
+            first,
+            std::env::current_exe().unwrap().canonicalize().unwrap()
+        );
+        assert_eq!(app_executable().unwrap(), first);
+    }
 
     #[cfg(target_os = "macos")]
     #[test]

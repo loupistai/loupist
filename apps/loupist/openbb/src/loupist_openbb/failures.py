@@ -1,7 +1,9 @@
-"""Typed network failures across OpenBB's REST and MCP boundaries.
+"""Typed provider failures across OpenBB's REST and MCP boundaries.
 
-Only exception types and our private REST marker are inspected. Provider text,
-URLs and credentials never enter the MCP diagnostic.
+Only exception types and our private REST markers are inspected. Provider text,
+URLs and credentials never enter the MCP diagnostic: an unreachable provider is
+``offline`` and a provider that refuses the configured key is
+``credential_rejected`` with one fixed reason code.
 """
 
 from __future__ import annotations
@@ -12,6 +14,68 @@ from typing import Any
 from urllib.error import URLError
 
 OFFLINE = {"loupist_error": {"kind": "offline"}}
+CREDENTIAL_REASONS = frozenset({"key_format", "key_not_accepted"})
+
+
+def credential_rejected(reason: str) -> dict[str, Any]:
+    if reason not in CREDENTIAL_REASONS:
+        raise ValueError("unknown credential rejection reason")
+    return {"loupist_error": {"kind": "credential_rejected", "reason": reason}}
+
+
+class CredentialRejectedError(Exception):
+    """The provider answered and refused the configured key.
+
+    Carries only a fixed reason code, never the provider's text or the key.
+    """
+
+    def __init__(self, reason: str) -> None:
+        credential_rejected(reason)
+        super().__init__("The provider rejected the configured key.")
+        self.reason = reason
+
+
+def _causes(error: BaseException) -> list[BaseException]:
+    causes: list[BaseException] = []
+    original = getattr(error, "original", None)
+    if isinstance(original, BaseException):
+        causes.append(original)
+    causes.extend(
+        cause for cause in (error.__cause__, error.__context__) if cause is not None
+    )
+    # OpenBB can wrap an exception as an argument without an explicit cause.
+    causes.extend(arg for arg in error.args if isinstance(arg, BaseException))
+    return causes
+
+
+def credential_rejection(error: BaseException) -> dict[str, Any] | None:
+    """Return the fixed MCP diagnostic when ``error`` is a key rejection."""
+
+    import httpx
+
+    pending = [error]
+    seen: set[int] = set()
+    while pending and len(seen) < 32:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, CredentialRejectedError):
+            return credential_rejected(current.reason)
+        if isinstance(current, httpx.HTTPStatusError):
+            try:
+                body = current.response.json()
+            except ValueError:
+                body = None
+            marker = body.get("loupist_error") if isinstance(body, dict) else None
+            if (
+                isinstance(marker, dict)
+                and marker.get("kind") == "credential_rejected"
+                and marker.get("reason") in CREDENTIAL_REASONS
+            ):
+                return credential_rejected(marker["reason"])
+        pending.extend(_causes(current))
+    return None
 
 
 def is_offline_error(error: BaseException) -> bool:
@@ -81,6 +145,8 @@ def classify_rest_failures(app: Any) -> None:
         async def classified(request: Any, error: Exception) -> Any:
             if is_offline_error(error):
                 return JSONResponse(OFFLINE, status_code=503)
+            if rejection := credential_rejection(error):
+                return JSONResponse(rejection, status_code=401)
             return await handler(request, error)
 
         return classified
@@ -95,6 +161,8 @@ def classify_rest_failures(app: Any) -> None:
         async def unhandled(request: Any, error: Exception) -> Any:
             if is_offline_error(error):
                 return JSONResponse(OFFLINE, status_code=503)
+            if rejection := credential_rejection(error):
+                return JSONResponse(rejection, status_code=401)
             raise error
 
         app.exception_handlers[Exception] = unhandled
@@ -109,10 +177,16 @@ async def call_tool_with_failures(
     try:
         return await run(arguments)
     except Exception as error:
-        if not is_offline_error(error):
-            raise
-        return ToolResult(
-            content="The data provider could not be reached.",
-            structured_content=OFFLINE,
-            is_error=True,
-        )
+        if is_offline_error(error):
+            return ToolResult(
+                content="The data provider could not be reached.",
+                structured_content=OFFLINE,
+                is_error=True,
+            )
+        if rejection := credential_rejection(error):
+            return ToolResult(
+                content="The data provider rejected the configured key.",
+                structured_content=rejection,
+                is_error=True,
+            )
+        raise

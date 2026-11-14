@@ -287,7 +287,7 @@
     "reactionText": "{{from}} → {{to}} ({{fromDate}} 종가 → {{toDate}} 종가)",
     "waitingClose": "다음 종가를 기다리는 중",
     "tone": "콜 분위기",
-    "toneRead": "{{loupist}}가 본 콜 분위기:",
+    "toneRead": "콜 분위기 ({{loupist}} 판단):",
     "noTranscript": "콜 스크립트가 없어요. 자료로 추가하면 분위기를 정리해 드려요.",
     "chain": "제출된 공시",
     "stage": {
@@ -358,8 +358,8 @@
   },
   "watch": {
     "title": "알림 받을 일",
-    "footer": "{{time}} 확인 · {{loupist}}가 열려 있는 동안 매시간",
-    "notChecked": "{{loupist}}가 열려 있는 동안 매시간",
+    "footer": "{{time}} 확인 · {{loupist}} 실행 중 매시간",
+    "notChecked": "{{loupist}} 실행 중 매시간",
     "checking": "확인하는 중…",
     "switchLabel": "{{name}} {{kind}}",
     "kind": {

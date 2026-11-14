@@ -36,3 +36,13 @@ test("justified allowlists suppress only an exact locale, namespace, key and jar
   assert.throws(() => validateAllowlist([{ key: "en.app.label", term: "worker", reason: " " }]));
   assert.throws(() => inspectCatalog("broken.json", "{broken}", "en", "app"));
 });
+
+test("Korean copy puts no single bare particle after a placeholder and the right one after the app name", () => {
+  const wrong = ["루피스트이 최신 버전이에요", "루피스트을 열지 못했어요", "{{name}}을 삭제할까요?", "{{loupist}}가 확인해요", "{{provider}}로 로그인", "“{{title}}”을 바꿔 줘", "{{date}}이 끝날 때까지"];
+  for (const value of wrong) {
+    assert.ok(inspect({ text: value }, "ko").some((hit) => hit.rule === "ui-copy/particle" && !hit.allowed), value);
+  }
+  const right = ["루피스트가 최신 버전이에요", "{{name}} 스킬을 삭제할까요?", "{{label}}을(를) 삭제할까요?", "버전 {{to}}(으)로 추가", "“{{title}}”을(를) 바꿔 줘", "{{loupist}}에서 확인해요", "{{date}}까지", "{{nearest}}인데", "‘깨짐’으로 표시"];
+  for (const value of right) assert.deepEqual(inspect({ text: value }, "ko"), [], value);
+  assert.deepEqual(inspect({ text: "{{name}}을" }, "en"), []);
+});

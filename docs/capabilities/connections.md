@@ -23,8 +23,13 @@ keys in release builds use the OS keyring under the catalog's environment identi
 debug builds keep them in process memory. Secrets are not returned to the renderer or placed in
 TOML, tool arguments or receipts.
 
-A replacement key is a candidate until a captured verification succeeds. Failed
-verification preserves the working credential. Blank saved-key fields preserve
+A replacement key is a candidate until a captured verification succeeds. Verified
+means the provider answered the connection's fixed check with data. A refusal is
+rejected, with a fixed reason code when the market data helper can tell one (FRED's
+"not a 32 character key" is `key_format`); an unreachable provider, or an answer
+without data, is "could not check": saved, not verified. A bundled probe that never
+sends the key (Nasdaq `equity_search`, EconDB `country_profile`) proves only that
+the provider answers. Failed verification preserves the working credential. Blank saved-key fields preserve
 keys; explicit recheck still contacts the provider. A newer replacement or deletion
 invalidates an outstanding check. Declared nonsecret setup fields live under global
 TOML `connectors`; scope changes invalidate old credentials and disable access.

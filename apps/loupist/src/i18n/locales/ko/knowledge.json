@@ -804,7 +804,7 @@
     "rename": "이름 바꾸기",
     "copyAddress": "주소 복사",
     "more": "{{wallet}} 더 보기",
-    "walletLabel": "{{ending}}로 끝나는 {{network}} 지갑",
+    "walletLabel": "끝자리 {{ending}}인 {{network}} 지갑",
     "limit": "지갑은 10개까지 추가할 수 있어요.",
     "offline": "오프라인 상태예요",
     "error": "보유 자산을 업데이트하지 못했어요. 다시 시도하세요.",

@@ -12,6 +12,7 @@ import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { attentionNamesLoupist, attentionWhat } from "./NeedsAttention";
 import type { WatchlistEntry } from "../../contracts/userContext";
 import { useAssetPageOpener } from "../assets/assetOpener";
+import { tickerLabel } from "@/lib/market";
 
 const t = i18n.getFixedT(null, "app");
 /** Each group shows this many rows before "More from {group}". */
@@ -140,7 +141,7 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
       if (q && selectedLoupistId && openAsset) {
         for (const asset of loaded.followed) {
           const label = asset.displayName?.trim() || asset.symbol;
-          if (matches(q, label, asset.symbol)) all.push({ key: `following:${asset.symbol}:${asset.market}`, group: "following", label, caption: [asset.symbol, asset.market].join(" · "), run: () => openAsset({ loupistId: selectedLoupistId, symbol: asset.symbol, market: asset.market, name: label }) });
+          if (matches(q, label, asset.symbol)) all.push({ key: `following:${asset.symbol}:${asset.market}`, group: "following", label, caption: tickerLabel(asset.symbol, asset.market), run: () => openAsset({ loupistId: selectedLoupistId, symbol: asset.symbol, market: asset.market, name: label }) });
         }
       }
       // Grouped by kind, then by Loupist: the active one first, each row captioned with its Loupist.

@@ -2,6 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
+import { mockAssetId } from "../../bridge/mock/assets";
 import { TooltipProvider } from "../ui/tooltip";
 import type { ChatThread, LoupistSummary } from "../../types";
 import { cryptoFixture, hanulFixture, noThesisFixture, partialFixture, privateFixture, type AssetFixture } from "../../preview/assets";
@@ -28,6 +29,17 @@ it("starts a question with the asset's readable name, symbol and market", async 
   const { handlers, page, user } = await fixture(hanulFixture());
   await user.click(within(page).getAllByRole("button", { name: "Ask about it" })[0]!);
   expect(handlers.onAsk).toHaveBeenCalledWith("Hanul Precision (HANUL · KRX) ");
+});
+
+it("shows the ticker alone when the asset was followed without a market", async () => {
+  const unknown = hanulFixture();
+  unknown.page = { ...unknown.page, market: "UNKNOWN", assetId: mockAssetId(unknown.page.symbol, "UNKNOWN") };
+  const { handlers, page, user } = await fixture(unknown);
+  const meta = page.querySelector(".asset-page-meta") as HTMLElement;
+  expect(meta).toHaveTextContent("HANUL");
+  expect(meta).not.toHaveTextContent("UNKNOWN");
+  await user.click(within(page).getAllByRole("button", { name: "Ask about it" })[0]!);
+  expect(handlers.onAsk).toHaveBeenCalledWith("Hanul Precision (HANUL) ");
 });
 
 it("shows the read, the user's reasons and lines, and changes that each carry a date and a source", async () => {

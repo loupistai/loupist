@@ -10,6 +10,13 @@ const advice = {
   en: /\b(you should (buy|sell|hold)|we recommend|our recommendation|buy now|sell now|guaranteed returns?)\b/gi,
   ko: /(매수하세요|매도하세요|추천 종목|수익 보장|꼭 사세요|꼭 파세요)/g,
 };
+// A Korean particle depends on the word before it. After a placeholder, write
+// both forms for the koreanParticles post-processor ("{{name}}이(가)") or
+// reword; a single bare form is wrong for half the values. The app's own name
+// ends in a vowel: 루피스트가, 루피스트를, 루피스트는, 루피스트와, 루피스트로.
+const particle = {
+  ko: /\}\}[”’"']?(?:이|가|은|는|을|를|와|과|으로|로|이에요|예요)(?![가-힣(])|루피스트(?:이|은|을|과|으로)(?![가-힣])/g,
+};
 
 export function validateAllowlist(entries) {
   if (!Array.isArray(entries) || entries.some((entry) =>
@@ -32,7 +39,8 @@ export function inspectCatalog(file, text, locale, namespace, entries = []) {
   function visit(node, keys) {
     if (ts.isStringLiteral(node)) {
       const key = [locale, namespace, ...keys].join(".");
-      for (const [rule, pattern] of [["ui-copy/advice", advice[locale]], ["ui-copy/jargon", jargon]]) {
+      const rules = [["ui-copy/advice", advice[locale]], ["ui-copy/jargon", jargon], ["ui-copy/particle", particle[locale]]];
+      for (const [rule, pattern] of rules.filter(([, pattern]) => pattern)) {
         for (const match of node.text.matchAll(pattern)) {
           const exception = rule === "ui-copy/jargon" && entries.find((entry) =>
             entry.key === key && entry.term.toLowerCase() === match[0].toLowerCase());
