@@ -343,9 +343,15 @@ const FOLLOWED = "[data-testid=following-page] .following-main";
 
 async function verifyFollowedAndHoldings({ copied }) {
   await openMemorySegment("about");
-  const list = await browser.$(FOLLOWED);
-  const names = (await list.isExisting()) ? await list.getText() : "";
-  assert.equal(names.includes("NWHLD"), !copied, "Followed assets belong to app data, not a copied Loupist folder");
+  const followedNames = async () => {
+    const list = await browser.$(FOLLOWED);
+    return (await list.isExisting()) ? await list.getText() : "";
+  };
+  // The rows arrive with the Watching settings, after the page and the holdings line.
+  if (!copied) {
+    await browser.waitUntil(async () => (await followedNames()).includes("NWHLD"), { timeout: 10_000, timeoutMsg: "The followed asset did not survive the restart" });
+  }
+  assert.equal((await followedNames()).includes("NWHLD"), !copied, "Followed assets belong to app data, not a copied Loupist folder");
   const summary = await (await displayed("[data-holdings-kinds]")).getText();
   if (copied) assert.doesNotMatch(summary, /3 assets/u, "Global holdings followed a copied folder");
   else assert.match(summary, /3 assets/u, "The committed holdings snapshot did not survive");
