@@ -48,7 +48,8 @@ codesign -d -r- /Applications/Loupist.app
 - It is not notarized by Apple. First launch needs the one-time step above.
 - It has been tested by its maintainer on one Mac. It has not been tested on every supported macOS version.
 - Your data stays in your Loupist folders and is upgraded in place by later versions, after a backup is written beside each database. Downgrading is not supported.
-- A later version will switch to an Apple Developer ID signature. On that update macOS will ask once for permission to use each saved Data connection key. Choosing Always Allow settles it.
+- **After every update, macOS asks once for your login password for each saved Data connection key**, until Loupist is signed with an Apple Developer ID. macOS ties a saved key to the exact app that saved it, and each Beta update is a new app to macOS. The request appears once per key soon after the updated Loupist starts, while the rest of the app stays usable. It reads "Loupist wants to access key ‘com.monarchjuno.loupist.finance’ in your keychain". Enter your Mac login password and click **Always Allow**: macOS stops asking for that key until the next update. **Deny** keeps the key saved but locked for that session; Settings → Data connections marks it "Locked until you allow access in macOS" with **Try again**, and every other connection keeps working.
+- A later version will switch to an Apple Developer ID signature. On that update macOS will ask once for permission to use each saved Data connection key. Choosing Always Allow settles it; after that, updates no longer ask.
 - Loupist never trades and is not a licensed adviser.
 
 ## 한국어 설치 안내
@@ -99,7 +100,8 @@ codesign -d -r- /Applications/Loupist.app
 - Apple 공증을 받지 않았습니다. 첫 실행 때 위의 절차가 한 번 필요합니다.
 - 관리자가 Mac 한 대에서 테스트했습니다. 지원하는 모든 macOS 버전에서 테스트하지는 못했습니다.
 - 데이터는 각 Loupist 폴더에 남고, 이후 버전이 데이터베이스 옆에 백업을 만든 뒤 그 자리에서 업그레이드합니다. 다운그레이드는 지원하지 않습니다.
-- 이후 버전에서 Apple Developer ID 서명으로 바뀝니다. 그 업데이트 때 macOS가 저장된 데이터 연결 키마다 사용 허용을 한 번 묻습니다. "항상 허용"을 선택하면 됩니다.
+- **Apple Developer ID로 서명되기 전까지는 업데이트할 때마다 macOS가 저장된 데이터 연결 키마다 로그인 암호를 한 번 묻습니다.** macOS는 저장된 키를 그 키를 저장한 앱에 묶어 두는데, 베타 업데이트는 macOS가 보기에 매번 새 앱이기 때문입니다. 업데이트한 Loupist가 시작된 직후 키마다 한 번 나타나며(그동안 앱의 나머지는 그대로 쓸 수 있습니다), "Loupist이(가) 키체인에서 ‘com.monarchjuno.loupist.finance’ 키 접근을 허용하고자 합니다."라고 표시됩니다. Mac 로그인 암호를 입력하고 **항상 허용**을 누르세요. 다음 업데이트까지 그 키는 다시 묻지 않습니다. **거부**를 누르면 키는 저장된 채로 그 실행 동안 잠기고, 설정 → 데이터 연결에 "macOS에서 접근을 허용할 때까지 잠겨 있어요"와 **다시 시도**가 표시됩니다. 다른 연결은 그대로 동작합니다.
+- 이후 버전에서 Apple Developer ID 서명으로 바뀝니다. 그 업데이트 때 macOS가 저장된 데이터 연결 키마다 사용 허용을 한 번 묻습니다. "항상 허용"을 선택하면 됩니다. 그 뒤로는 업데이트할 때 묻지 않습니다.
 - Loupist는 매매를 하지 않으며 인가받은 투자자문업자가 아닙니다.
 
 ## Updates

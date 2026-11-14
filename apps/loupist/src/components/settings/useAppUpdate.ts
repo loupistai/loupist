@@ -7,6 +7,16 @@ import type {
   UpdateState,
 } from "../../types";
 
+/** The native install confirmation's words in the interface language; the host adds the versions line itself. */
+export function updateConfirmation(currentVersion: string, version: string): UpdateInstallRequest["confirmation"] {
+  return {
+    title: i18n.t("settings:useAppUpdate.confirmTitle"),
+    message: i18n.t("settings:useAppUpdate.confirmMessage", { current: currentVersion, version }),
+    install: i18n.t("settings:useAppUpdate.confirmInstall"),
+    cancel: i18n.t("settings:useAppUpdate.confirmCancel"),
+  };
+}
+
 const statusWithPhase = (
   status: UpdateState | null,
   phase: UpdateState["phase"],
@@ -22,6 +32,7 @@ export function useAppUpdate(bridge: LoupistBridge) {
   const polling = useRef(false);
   const acting = useRef(false);
   const mounted = useRef(true);
+  const latestStatus = useRef<UpdateState | null>(null);
 
   const refreshStatus = useCallback(async () => {
     if (polling.current) return;
@@ -67,8 +78,13 @@ export function useAppUpdate(bridge: LoupistBridge) {
   }, [bridge, refreshStatus]);
 
   const installUpdate = useCallback(
-    async (request: UpdateInstallRequest) => {
+    async (offerId: string) => {
       if (acting.current) return;
+      const offered = latestStatus.current?.offer;
+      const request: UpdateInstallRequest = {
+        offer_id: offerId,
+        confirmation: updateConfirmation(latestStatus.current?.current_version ?? "", offered?.offer_id === offerId ? offered.version : ""),
+      };
       acting.current = true;
       requestEpoch.current++;
       setActionPhase("confirming");
@@ -109,6 +125,8 @@ export function useAppUpdate(bridge: LoupistBridge) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a request counter, not a DOM node: cleanup invalidates the request that is in flight.
     return () => { mounted.current = false; requestEpoch.current++; };
   }, [refreshStatus]);
+
+  useEffect(() => { latestStatus.current = status; }, [status]);
 
   const phase = status?.phase && status.phase !== "idle" ? status.phase : actionPhase ?? "idle";
   useEffect(() => {

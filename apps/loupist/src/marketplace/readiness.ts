@@ -1,7 +1,7 @@
 import i18n from "@/i18n";
 import type { MarketplaceConnectorStatus, MarketplaceEntry } from "./types";
 
-export type ConnectionState = "ready" | "not_connected" | "needs_attention" | "unavailable";
+export type ConnectionState = "ready" | "not_connected" | "needs_attention" | "locked" | "unavailable";
 export type ConnectionTone = "neutral" | "positive" | "warning" | "negative";
 
 /** What a user sees for each state. Only `needs_attention` is a problem to fix. */
@@ -12,6 +12,7 @@ export const CONNECTION_STATES: Record<
   ready: { get label() { return i18n.t("connections:state.ready"); }, tone: "positive", needsAttention: false },
   not_connected: { get label() { return i18n.t("connections:state.notConnected"); }, tone: "neutral", needsAttention: false },
   needs_attention: { get label() { return i18n.t("connections:state.needsAttention"); }, tone: "warning", needsAttention: true },
+  locked: { get label() { return i18n.t("connections:state.locked"); }, tone: "warning", needsAttention: true },
   unavailable: { get label() { return i18n.t("connections:state.unavailable"); }, tone: "negative", needsAttention: false },
 };
 
@@ -24,6 +25,8 @@ export function connectionState(connector?: MarketplaceConnectorStatus): Connect
   if (!connector) return "not_connected";
   if (connector.readiness === "runtime_unavailable") return "unavailable";
   if (connector.readiness === "ready") return "ready";
+  // macOS refused this session's read of the saved key: only this connection waits for Try again.
+  if (connector.credentials.some((credential) => credential.locked)) return "locked";
   const savedConfig = Object.values(connector.config).some((value) => value.trim() !== "");
   const failing =
     connector.credentials.some((credential) => credential.stored || credential.last_error) ||

@@ -141,6 +141,13 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
     setSnapshot(next);
   }
 
+  /** Try again: macOS may ask for the login password once more. True when the key is readable again. */
+  async function unlockEntry(entry: MarketplaceEntry) {
+    const credentials = await bridge.marketplaceCredentialUnlock({ entry_id: entry.id });
+    await refreshMarketplace();
+    return !credentials.some((credential) => credential.locked);
+  }
+
   return (
     <section className="marketplace-page" aria-labelledby="marketplace-title">
       <div className="marketplace-shell">
@@ -229,6 +236,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
                         connector={connectorById.get(entry.id)}
                         headingLevel={showGroupHeading(group) ? 4 : 3}
                         onSetup={(next) => setSelectedEntryId(next.id)}
+                        onUnlock={unlockEntry}
                       />
                     ))}
                   </div>

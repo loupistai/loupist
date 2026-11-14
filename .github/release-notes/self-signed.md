@@ -8,6 +8,11 @@ with OK (macOS 13 and 14) or Done (macOS 15 and later; not Move to Trash), then 
 System Settings → Privacy & Security → Open Anyway. The warning's "This software needs to be updated"
 is macOS's wording for any app that is not notarized; it does not mean the download is old.
 Full steps: https://github.com/loupistai/loupist/blob/main/installation.md
+**After updating:** until Loupist is signed with an Apple Developer ID, macOS asks once for your login
+password for each saved Data connection key after every update ("Loupist wants to access key
+‘com.monarchjuno.loupist.finance’ in your keychain"). Enter your Mac login password and click
+**Always Allow**; it does not ask again for that key until the next update. Deny leaves the key saved but
+locked, shown in Settings → Data connections with Try again.
 
 ## What's in it
 {{changelog}}

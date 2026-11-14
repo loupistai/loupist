@@ -57,6 +57,7 @@ command_error_codes! {
     ConflictingDependencyRevision => "conflicting_dependency_revision",
     ConnectionUnavailable => "connection_unavailable",
     CredentialFormatRejected => "credential_format_rejected",
+    CredentialLocked => "credential_locked",
     CredentialRejected => "credential_rejected",
     CredentialStoreUnavailable => "credential_store_unavailable",
     CursorStale => "cursor_stale",

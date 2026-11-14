@@ -1,8 +1,9 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { UpdateSettingsCard } from "../../components/settings/UpdateSettingsCard";
+import { useAppUpdate } from "../../components/settings/useAppUpdate";
 import type { UpdateState } from "../../types";
 import { mainTab, openApp } from "../renderApp";
 
@@ -57,7 +58,60 @@ describe("Loupist · Updates", () => {
     expect(await screen.findByText("Loupist 1.1.0 is available")).toBeVisible();
     expect(install).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Install and restart" }));
-    await waitFor(() => expect(install).toHaveBeenCalledWith({ offer_id: OFFER_ID }));
+    await waitFor(() => expect(install).toHaveBeenCalledWith({
+      offer_id: OFFER_ID,
+      confirmation: {
+        title: "Install Loupist update",
+        message: "Update Loupist from 0.0.1 to 1.1.0? Active work has been checked. Loupist will download the signed update, install it and restart right away.",
+        install: "Install and restart",
+        cancel: "Not now",
+      },
+    }));
+  });
+
+  it("words the native confirmation in Korean", async () => {
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    try {
+      const bridge = new MockLoupistBridge({ delay_ms: 0 });
+      vi.spyOn(bridge, "updateStatus").mockResolvedValue(available);
+      const install = vi.spyOn(bridge, "updateInstall").mockResolvedValue({ outcome: "cancelled", blockers: [] });
+      const { result } = renderHook(() => useAppUpdate(bridge));
+      await waitFor(() => expect(result.current.status?.offer?.offer_id).toBe(OFFER_ID));
+      await act(() => result.current.installUpdate(OFFER_ID));
+      expect(install).toHaveBeenCalledWith({
+        offer_id: OFFER_ID,
+        confirmation: {
+          title: "루피스트 업데이트 설치",
+          message: "루피스트를 업데이트할까요? 현재 버전 0.0.1, 새 버전 1.1.0. 진행 중인 작업을 확인했어요. 서명된 업데이트를 내려받아 설치한 뒤 바로 다시 시작해요.",
+          install: "설치 후 다시 시작",
+          cancel: "나중에",
+        },
+      });
+      render(<UpdateSettingsCard status={available} phase="confirming" error={null} onCheck={vi.fn()} onInstall={vi.fn()} />);
+      expect(screen.getByText("방금 열린 확인 창에서 선택해 주세요.")).toBeVisible();
+    } finally { await act(async () => { await i18n.changeLanguage("en"); }); }
+  });
+
+  it("says where to confirm while the native dialog is open", () => {
+    render(<UpdateSettingsCard status={available} phase="confirming" error={null} onCheck={vi.fn()} onInstall={vi.fn()} />);
+    expect(screen.getByText("Confirm in the dialog that just opened.")).toBeVisible();
+  });
+
+  it("dates a release the updater sent in its own form, never the raw text", async () => {
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    try {
+      const raw = { ...available, offer: { ...available.offer!, published_at: "2026-11-14 8:50:41.0 +00:00:00" } };
+      render(<UpdateSettingsCard status={raw} phase="idle" error={null} onCheck={vi.fn()} onInstall={vi.fn()} />);
+      expect(screen.getByText("2026년 11월 14일")).toBeVisible();
+      expect(screen.queryByText(/8:50:41/)).not.toBeInTheDocument();
+    } finally { await act(async () => { await i18n.changeLanguage("en"); }); }
+  });
+
+  it("leaves out a release date it cannot read", () => {
+    const unreadable = { ...available, offer: { ...available.offer!, published_at: "soon" } };
+    render(<UpdateSettingsCard status={unreadable} phase="idle" error={null} onCheck={vi.fn()} onInstall={vi.fn()} />);
+    expect(screen.queryByText(/Released/)).not.toBeInTheDocument();
+    expect(screen.queryByText("soon")).not.toBeInTheDocument();
   });
 
   it("dates a Korean release in the long form", async () => {

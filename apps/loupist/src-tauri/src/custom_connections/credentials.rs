@@ -112,7 +112,7 @@ fn entry(environment: &str, id: &str) -> Result<keyring::Entry, ConnectionError>
     not(any(debug_assertions, test, feature = "webdriver")),
     any(target_os = "macos", windows)
 ))]
-pub(super) fn load(environment: &str, id: &str) -> Result<Secrets, ConnectionError> {
+fn store_load(environment: &str, id: &str) -> Result<Secrets, ConnectionError> {
     match entry(environment, id)?.get_password() {
         Ok(encoded) => serde_json::from_str(&encoded).map_err(|_| ConnectionError::CredentialStore),
         Err(keyring::Error::NoEntry) => Ok(Secrets::default()),
@@ -124,7 +124,7 @@ pub(super) fn load(environment: &str, id: &str) -> Result<Secrets, ConnectionErr
     not(any(debug_assertions, test, feature = "webdriver")),
     any(target_os = "macos", windows)
 ))]
-pub(super) fn save(environment: &str, id: &str, secrets: &Secrets) -> Result<(), ConnectionError> {
+fn store_save(environment: &str, id: &str, secrets: &Secrets) -> Result<(), ConnectionError> {
     let encoded = serde_json::to_string(secrets).map_err(|_| ConnectionError::CredentialStore)?;
     entry(environment, id)?
         .set_password(&encoded)
@@ -135,7 +135,7 @@ pub(super) fn save(environment: &str, id: &str, secrets: &Secrets) -> Result<(),
     not(any(debug_assertions, test, feature = "webdriver")),
     any(target_os = "macos", windows)
 ))]
-pub(super) fn remove(environment: &str, id: &str) -> Result<(), ConnectionError> {
+fn store_remove(environment: &str, id: &str) -> Result<(), ConnectionError> {
     match entry(environment, id)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(_) => Err(ConnectionError::CredentialStore),
@@ -146,21 +146,21 @@ pub(super) fn remove(environment: &str, id: &str) -> Result<(), ConnectionError>
     not(any(debug_assertions, test, feature = "webdriver")),
     not(any(target_os = "macos", windows))
 ))]
-pub(super) fn load(_: &str, _: &str) -> Result<Secrets, ConnectionError> {
+fn store_load(_: &str, _: &str) -> Result<Secrets, ConnectionError> {
     Err(ConnectionError::CredentialStore)
 }
 #[cfg(all(
     not(any(debug_assertions, test, feature = "webdriver")),
     not(any(target_os = "macos", windows))
 ))]
-pub(super) fn save(_: &str, _: &str, _: &Secrets) -> Result<(), ConnectionError> {
+fn store_save(_: &str, _: &str, _: &Secrets) -> Result<(), ConnectionError> {
     Err(ConnectionError::CredentialStore)
 }
 #[cfg(all(
     not(any(debug_assertions, test, feature = "webdriver")),
     not(any(target_os = "macos", windows))
 ))]
-pub(super) fn remove(_: &str, _: &str) -> Result<(), ConnectionError> {
+fn store_remove(_: &str, _: &str) -> Result<(), ConnectionError> {
     Err(ConnectionError::CredentialStore)
 }
 
@@ -170,8 +170,28 @@ fn memory_store() -> &'static std::sync::Mutex<BTreeMap<(String, String), Secret
         std::sync::OnceLock::new();
     STORE.get_or_init(Default::default)
 }
+/// Test seam: reads of each connection's secrets, and connections whose reads
+/// fail as a denied macOS prompt does.
+#[cfg(test)]
+pub(crate) fn test_reads() -> &'static std::sync::Mutex<BTreeMap<String, (usize, bool)>> {
+    static READS: std::sync::OnceLock<std::sync::Mutex<BTreeMap<String, (usize, bool)>>> =
+        std::sync::OnceLock::new();
+    READS.get_or_init(Default::default)
+}
+
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
-pub(super) fn load(environment: &str, id: &str) -> Result<Secrets, ConnectionError> {
+fn store_load(environment: &str, id: &str) -> Result<Secrets, ConnectionError> {
+    #[cfg(test)]
+    {
+        let mut reads = test_reads()
+            .lock()
+            .map_err(|_| ConnectionError::CredentialStore)?;
+        let read = reads.entry(format!("{environment}:{id}")).or_default();
+        read.0 += 1;
+        if read.1 {
+            return Err(ConnectionError::CredentialStore);
+        }
+    }
     Ok(memory_store()
         .lock()
         .map_err(|_| ConnectionError::CredentialStore)?
@@ -180,7 +200,7 @@ pub(super) fn load(environment: &str, id: &str) -> Result<Secrets, ConnectionErr
         .unwrap_or_default())
 }
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
-pub(super) fn save(environment: &str, id: &str, secrets: &Secrets) -> Result<(), ConnectionError> {
+fn store_save(environment: &str, id: &str, secrets: &Secrets) -> Result<(), ConnectionError> {
     memory_store()
         .lock()
         .map_err(|_| ConnectionError::CredentialStore)?
@@ -188,7 +208,7 @@ pub(super) fn save(environment: &str, id: &str, secrets: &Secrets) -> Result<(),
     Ok(())
 }
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
-pub(super) fn remove(environment: &str, id: &str) -> Result<(), ConnectionError> {
+fn store_remove(environment: &str, id: &str) -> Result<(), ConnectionError> {
     memory_store()
         .lock()
         .map_err(|_| ConnectionError::CredentialStore)?
@@ -196,9 +216,74 @@ pub(super) fn remove(environment: &str, id: &str) -> Result<(), ConnectionError>
     Ok(())
 }
 
+/// Connections whose secrets macOS refused in this session. Holding the lock
+/// is the gate: concurrent readers wait for the first answer, and a refused
+/// connection is not asked again until its secrets are saved or removed.
+fn refused() -> &'static std::sync::Mutex<BTreeSet<String>> {
+    static REFUSED: std::sync::OnceLock<std::sync::Mutex<BTreeSet<String>>> =
+        std::sync::OnceLock::new();
+    REFUSED.get_or_init(Default::default)
+}
+
+pub(super) fn load(environment: &str, id: &str) -> Result<Secrets, ConnectionError> {
+    let mut refused = refused()
+        .lock()
+        .map_err(|_| ConnectionError::CredentialStore)?;
+    let account = format!("{environment}:{id}");
+    if refused.contains(&account) {
+        return Err(ConnectionError::CredentialStore);
+    }
+    let secrets = store_load(environment, id);
+    if secrets.is_err() {
+        refused.insert(account);
+    }
+    secrets
+}
+
+pub(super) fn save(environment: &str, id: &str, secrets: &Secrets) -> Result<(), ConnectionError> {
+    let mut refused = refused()
+        .lock()
+        .map_err(|_| ConnectionError::CredentialStore)?;
+    store_save(environment, id, secrets)?;
+    refused.remove(&format!("{environment}:{id}"));
+    Ok(())
+}
+
+pub(super) fn remove(environment: &str, id: &str) -> Result<(), ConnectionError> {
+    let mut refused = refused()
+        .lock()
+        .map_err(|_| ConnectionError::CredentialStore)?;
+    store_remove(environment, id)?;
+    refused.remove(&format!("{environment}:{id}"));
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refused_connection_is_asked_once_until_its_secrets_change() {
+        let environment = uuid::Uuid::new_v4().to_string();
+        let account = format!("{environment}:custom-gate");
+        save(&environment, "custom-gate", &Secrets::default()).unwrap();
+        test_reads()
+            .lock()
+            .unwrap()
+            .insert(account.clone(), (0, true));
+        for _ in 0..4 {
+            assert!(load(&environment, "custom-gate").is_err());
+        }
+        assert_eq!(test_reads().lock().unwrap()[&account].0, 1);
+        test_reads()
+            .lock()
+            .unwrap()
+            .insert(account.clone(), (1, false));
+        save(&environment, "custom-gate", &Secrets::default()).unwrap();
+        assert!(load(&environment, "custom-gate").is_ok());
+        assert_eq!(test_reads().lock().unwrap()[&account].0, 2);
+        remove(&environment, "custom-gate").unwrap();
+    }
 
     #[test]
     fn short_settings_do_not_hide_ordinary_results_but_secret_names_always_do() {

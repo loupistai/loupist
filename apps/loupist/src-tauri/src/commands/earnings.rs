@@ -181,11 +181,18 @@ pub struct EarningsSnapshotGetRequest {
 }
 
 #[tauri::command]
-pub fn earnings_snapshot_get(
+pub async fn earnings_snapshot_get(
     state: State<'_, AppState>,
     request: EarningsSnapshotGetRequest,
 ) -> Result<Option<SnapshotView>, CommandError> {
-    admit(&state, &request.loupist_id)?;
+    crate::app::off_main_thread(&state, move |state| snapshot_get(state, request)).await
+}
+
+fn snapshot_get(
+    state: &AppState,
+    request: EarningsSnapshotGetRequest,
+) -> Result<Option<SnapshotView>, CommandError> {
+    admit(state, &request.loupist_id)?;
     if !assets::valid_asset_id(&request.asset_id)
         || request
             .event_id
@@ -195,7 +202,7 @@ pub fn earnings_snapshot_get(
         return Err(CommandError::invalid("assetId or eventId is not valid"));
     }
     snapshot_for(
-        &state,
+        state,
         &request.loupist_id,
         &request.asset_id,
         request.event_id.as_deref(),

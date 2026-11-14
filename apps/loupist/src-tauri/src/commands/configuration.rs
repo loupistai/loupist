@@ -35,17 +35,25 @@ pub fn config_read(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn config_update(
+pub async fn config_update(
     request: ConfigUpdateRequest,
     state: State<'_, AppState>,
 ) -> Result<ConfigSnapshot, CommandError> {
-    let project = project_directory(&state, &request.scope)?;
+    // Reconciliation may delete a saved key that a new setting invalidates.
+    crate::app::off_main_thread(&state, move |state| update_config(request, state)).await
+}
+
+fn update_config(
+    request: ConfigUpdateRequest,
+    state: &AppState,
+) -> Result<ConfigSnapshot, CommandError> {
+    let project = project_directory(state, &request.scope)?;
     let snapshot =
         scoped_config::update_scope(&state.artifacts.app_data_dir, project.as_deref(), &request)?;
     // Saving is complete before reconciliation. If invalidation fails the new
     // file remains the source of truth and the connection stays blocked.
     if matches!(request.scope, ConfigScope::Global) {
-        crate::marketplace::connector_config::reconcile_connector_configs(&state).map_err(
+        crate::marketplace::connector_config::reconcile_connector_configs(state).map_err(
             |error| {
                 CommandError::new(
                     "config_apply_pending",

@@ -3,7 +3,15 @@
 
 import type { WatchEventView, WatchKind } from "../knowledge/watch";
 
-export type ConnectionRef = { id: string, name: string };
+export type ConnectionRef = {
+  id: string,
+  name: string,
+  /**
+   * macOS refused Loupist this connection's saved key in this session, so
+   * the connection is locked rather than off (Try again in Connections).
+   */
+  locked: boolean,
+};
 
 export type KindFailure = { connection: string, atMs: number };
 

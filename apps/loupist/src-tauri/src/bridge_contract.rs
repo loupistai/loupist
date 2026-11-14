@@ -488,6 +488,7 @@ commands! {
         marketplace_connector_configure: crate::marketplace::MarketplaceConnectorConfigureRequest => crate::marketplace::MarketplaceConnectorStatusDto;
         marketplace_credential_delete: crate::marketplace::MarketplaceCredentialRequest => Vec<crate::marketplace::MarketplaceCredentialStatusDto>;
         marketplace_credential_save: crate::marketplace::MarketplaceCredentialSaveRequest => Vec<crate::marketplace::MarketplaceCredentialStatusDto>;
+        marketplace_credential_unlock: crate::marketplace::MarketplaceCredentialRequest => Vec<crate::marketplace::MarketplaceCredentialStatusDto>;
         marketplace_credential_verify: crate::marketplace::MarketplaceCredentialRequest => Vec<crate::marketplace::MarketplaceCredentialStatusDto>;
         model_notice_ack: crate::providers::connection::ModelNoticeAckRequest => crate::providers::catalog::ModelCatalogView;
         provider_configure: crate::providers::connection::ProviderConfigureRequest => crate::providers::catalog::ModelCatalogView;
@@ -677,7 +678,8 @@ async fn command_signatures() {
         crate::commands::configuration::config_update(
             any::<crate::scoped_config::ConfigUpdateRequest>(),
             any(),
-        );
+        )
+        .await;
     let _: Result<Option<String>, CommandError> =
         crate::commands::dialog::pick_file(any::<crate::commands::dialog::PickFileRequest>()).await;
     let _: Result<Vec<crate::knowledge::earnings::EventSummary>, CommandError> =
@@ -695,7 +697,8 @@ async fn command_signatures() {
         crate::commands::earnings::earnings_snapshot_get(
             any(),
             any::<crate::commands::earnings::EarningsSnapshotGetRequest>(),
-        );
+        )
+        .await;
     let _: Result<Option<String>, CommandError> = crate::commands::export_file::export_save(
         any(),
         any::<crate::commands::export_file::ExportRequest>(),
@@ -1229,17 +1232,20 @@ async fn command_signatures() {
         crate::commands::watch::watch_pause_set(
             any(),
             any::<crate::commands::watch::WatchPauseSetRequest>(),
-        );
+        )
+        .await;
     let _: Result<crate::commands::watch::WatchSettingsView, CommandError> =
         crate::commands::watch::watch_setting_set(
             any(),
             any::<crate::commands::watch::WatchSettingSetRequest>(),
-        );
+        )
+        .await;
     let _: Result<crate::commands::watch::WatchSettingsView, CommandError> =
         crate::commands::watch::watch_settings_list(
             any(),
             any::<crate::commands::watch::WatchSettingsListRequest>(),
-        );
+        )
+        .await;
     let _: Result<crate::chat::activity::ChatActivityDetail, CommandError> =
         crate::commands::workspace::chat_activity_read(
             any::<crate::commands::workspace::ChatActivityRequest>(),
@@ -1364,16 +1370,18 @@ async fn command_signatures() {
         crate::marketplace::loupist_capability_disable(
             any::<crate::marketplace::LoupistCapabilityRequest>(),
             any(),
-        );
+        )
+        .await;
     let _: Result<crate::marketplace::LoupistCapabilityBindingDto, CommandError> =
         crate::marketplace::loupist_capability_enable(
             any::<crate::marketplace::LoupistCapabilityRequest>(),
             any(),
-        );
+        )
+        .await;
     let _: Result<Vec<crate::marketplace::LoupistCapabilityBindingDto>, CommandError> =
-        crate::marketplace::loupist_capability_list(any(), any());
+        crate::marketplace::loupist_capability_list(any(), any()).await;
     let _: Result<crate::marketplace::MarketplaceSnapshotDto, CommandError> =
-        crate::marketplace::marketplace_snapshot(any());
+        crate::marketplace::marketplace_snapshot(any()).await;
     let _: Result<crate::marketplace::MarketplaceConnectorStatusDto, CommandError> =
         crate::marketplace::connector_config::marketplace_connector_configure(
             any::<crate::marketplace::MarketplaceConnectorConfigureRequest>(),
@@ -1390,7 +1398,14 @@ async fn command_signatures() {
         crate::marketplace::credentials::marketplace_credential_save(
             any::<crate::marketplace::MarketplaceCredentialSaveRequest>(),
             any(),
-        );
+        )
+        .await;
+    let _: Result<Vec<crate::marketplace::MarketplaceCredentialStatusDto>, CommandError> =
+        crate::marketplace::credentials::marketplace_credential_unlock(
+            any::<crate::marketplace::MarketplaceCredentialRequest>(),
+            any(),
+        )
+        .await;
     let _: Result<Vec<crate::marketplace::MarketplaceCredentialStatusDto>, CommandError> =
         crate::marketplace::credentials::marketplace_credential_verify(
             any::<crate::marketplace::MarketplaceCredentialRequest>(),
@@ -1503,7 +1518,7 @@ async fn command_signatures() {
     let _: Result<(), CommandError> =
         crate::sharing::commands::github_account::github_sign_in_open(any());
     let _: Result<crate::sharing::commands::github_account::GithubAccount, CommandError> =
-        crate::sharing::commands::github_account::github_sign_out(any());
+        crate::sharing::commands::github_account::github_sign_out(any()).await;
     let _: Result<serde_json::Value, CommandError> = crate::sharing::commands::add::pack_add(
         any::<crate::sharing::commands::add::PackAddRequest>(),
         any(),

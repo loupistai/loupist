@@ -171,6 +171,7 @@
       "commodity": "원자재"
     },
     "kindNeeds": "{{kind}}: {{connection}} 연결 필요",
+    "kindLocked": "{{kind}}: macOS에서 접근을 허용할 때까지 잠김 ({{connection}})",
     "asset": "자산",
     "lastAlert": "최근 알림",
     "col": {

@@ -37,7 +37,7 @@ describe("update request lifecycle", () => {
     act(() => {
       void result.current.checkForUpdates();
       void result.current.checkForUpdates();
-      void result.current.installUpdate({ offer_id: "current-offer" });
+      void result.current.installUpdate("current-offer");
     });
     expect(result.current.phase).toBe("checking");
     expect(check).toHaveBeenCalledTimes(1);

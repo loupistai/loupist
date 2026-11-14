@@ -24,9 +24,24 @@ type Props = {
   onInstall: (offerId: string) => Promise<void>;
 };
 
+/**
+ * The release time in milliseconds. The host sends RFC 3339; an older host sent
+ * the updater's own form, `2026-11-14 8:50:41.0 +00:00:00`, which `Date.parse` rejects.
+ */
+const publishedAtMs = (value: string) => {
+  const parsed = Date.parse(value);
+  if (!Number.isNaN(parsed)) return parsed;
+  const legacy = /^(\d{4})-(\d{2})-(\d{2}) (\d{1,2}):(\d{2}):(\d{2})(?:\.\d+)? ([+-])(\d{2}):(\d{2})(?::\d{2})?$/.exec(value.trim());
+  if (!legacy) return null;
+  const [, year, month, day, hour, minute, second, sign, offsetHours, offsetMinutes] = legacy;
+  const offset = (Number(offsetHours) * 60 + Number(offsetMinutes)) * (sign === "-" ? -1 : 1);
+  return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute) - offset, Number(second));
+};
+
+/** A date only, in the interface language and this Mac's time zone. */
 const displayPublishedAt = (value: string) => {
-  const timestamp = Date.parse(value);
-  if (Number.isNaN(timestamp)) return value;
+  const timestamp = publishedAtMs(value);
+  if (timestamp === null) return null;
   // Korean reads the long form (2026년 11월 4일), not "2026. 11. 4.", as Schedule and sources do.
   return formatDate(timestamp, { dateStyle: i18n.language.toLowerCase().startsWith("ko") ? "long" : "medium" });
 };
@@ -40,6 +55,7 @@ export function UpdateSettingsCard({
 }: Props) {
   useTranslation("settings");
   const offer = updateState?.supported === true ? updateState.offer : null;
+  const released = offer?.published_at ? displayPublishedAt(offer.published_at) : null;
   const upToDate =
     updateState?.supported === true &&
     !offer &&
@@ -102,9 +118,9 @@ export function UpdateSettingsCard({
               <DownloadIcon aria-hidden="true" />
               <div>
                 <strong>{i18n.t("settings:updateSettingsCard.availableVersionNotice", { version: offer.version })}</strong>
-                {offer.published_at ? (
+                {released ? (
                   <p>
-                    <Trans ns="settings" i18nKey="updateSettingsCard.released" values={{ date: displayPublishedAt(offer.published_at) }} components={[<time dateTime={offer.published_at} />]} />
+                    <Trans ns="settings" i18nKey="updateSettingsCard.released" values={{ date: released }} components={[<time dateTime={offer.published_at ?? undefined} />]} />
                   </p>
                 ) : null}
               </div>

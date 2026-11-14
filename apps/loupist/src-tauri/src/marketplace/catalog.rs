@@ -304,6 +304,10 @@ pub struct MarketplaceCredentialStatusDto {
     pub verified_at: Option<i64>,
     pub last_error: Option<String>,
     pub krx_coverage: Option<crate::finance_credentials::KrxCoverage>,
+    /// macOS did not let Loupist read this saved key in this session (its
+    /// access prompt was denied). Only this connection is affected; Try again
+    /// (`marketplace_credential_unlock`) asks once more.
+    pub locked: bool,
 }
 
 #[derive(Debug, Deserialize)]

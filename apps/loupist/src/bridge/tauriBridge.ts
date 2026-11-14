@@ -131,6 +131,7 @@ const bridge = (): StrictBridge => ({
   marketplaceCredentialSave: request("marketplace_credential_save"),
   marketplaceCredentialVerify: request("marketplace_credential_verify"),
   marketplaceCredentialDelete: request("marketplace_credential_delete"),
+  marketplaceCredentialUnlock: request("marketplace_credential_unlock"),
   agentSkillCatalog: (loupist_id) => call("agent_skill_catalog", { loupist_id }),
   skillsList: request("skills_list"),
   skillsRead: request("skills_read"),
