@@ -230,14 +230,6 @@ pub fn earnings_events_list(
     with_assets(&state, &loupist, false, |tx| {
         Ok(earnings::events_for(tx, &loupist, &request.asset_id)?
             .iter()
-            .filter(|event| {
-                event.release.is_some()
-                    || event.final_report.is_some()
-                    || matches!(
-                        event.status,
-                        earnings::Status::Reported | earnings::Status::Final
-                    )
-            })
             .map(earnings::EventSummary::from)
             .collect())
     })

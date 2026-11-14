@@ -107,6 +107,45 @@ pub fn is_korean_market(market: &str) -> bool {
 pub enum ListingMarket {
     Canada,
     Us,
+    Foreign,
+}
+
+/// Explicit foreign listing venues and the Yahoo suffixes the pinned yfinance
+/// package maps to them. Unrecognised/free-form venue names keep the US default.
+pub fn foreign_listing_suffixes(market: &str) -> &'static [&'static str] {
+    match upper(market).as_str() {
+        "LSE" | "LON" | "L" | "XLON" => &["L"],
+        "XETRA" | "ETR" | "DE" | "XETR" => &["DE"],
+        "FRA" | "XFRA" => &["F"],
+        "EURONEXT" => &["PA", "AS", "BR", "LS", "MI"],
+        "EPA" | "PAR" | "PA" | "XPAR" => &["PA"],
+        "AMS" | "AS" | "XAMS" => &["AS"],
+        "BRU" | "BR" | "XBRU" => &["BR"],
+        "LIS" | "LS" | "XLIS" => &["LS"],
+        "MIL" | "MI" | "MTAA" => &["MI"],
+        "TSE" | "JPX" | "TYO" | "T" | "XTKS" => &["T"],
+        "HKEX" | "HKG" | "HK" | "SEHK" | "XHKG" => &["HK"],
+        "ASX" | "AX" | "XASX" => &["AX"],
+        "SSE" | "SHA" | "SS" | "XSHG" => &["SS"],
+        "SZSE" | "SHE" | "SZ" | "XSHE" => &["SZ"],
+        "KRX" | "XKRX" => &["KS", "KQ"],
+        "KOSPI" | "KS" => &["KS"],
+        "KOSDAQ" | "KQ" => &["KQ"],
+        "SGX" | "SI" | "XSES" => &["SI"],
+        "SIX" | "SWX" | "SW" | "XSWX" => &["SW"],
+        "NSE" | "NS" | "XNSE" => &["NS"],
+        "BSE" | "BO" | "XBOM" => &["BO"],
+        "TWSE" | "TW" | "XTAI" => &["TW"],
+        "TPEX" | "TWO" | "ROCO" => &["TWO"],
+        _ => &[],
+    }
+}
+
+pub fn has_listing_suffix(symbol: &str, suffixes: &[&str]) -> bool {
+    let symbol = upper(symbol);
+    suffixes
+        .iter()
+        .any(|suffix| symbol.len() > suffix.len() + 1 && symbol.ends_with(&format!(".{suffix}")))
 }
 
 pub fn listing_market(symbol: &str, market: &str) -> Option<ListingMarket> {
@@ -117,7 +156,7 @@ pub fn listing_market(symbol: &str, market: &str) -> Option<ListingMarket> {
         "XTSX", "XCNQ",
     ]
     .contains(&market.as_str())
-        || [".TO", ".V"].iter().any(|suffix| symbol.ends_with(suffix))
+        || has_listing_suffix(&symbol, &["TO", "V"])
     {
         Some(ListingMarket::Canada)
     } else if [
@@ -126,6 +165,8 @@ pub fn listing_market(symbol: &str, market: &str) -> Option<ListingMarket> {
     .contains(&market.as_str())
     {
         Some(ListingMarket::Us)
+    } else if !foreign_listing_suffixes(&market).is_empty() {
+        Some(ListingMarket::Foreign)
     } else {
         None
     }

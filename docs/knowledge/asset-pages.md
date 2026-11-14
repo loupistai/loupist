@@ -79,6 +79,10 @@ apply). Identical reads from the last 30
 minutes are reused (`max_age` 1800). Each source's status (`ok`, `failed`,
 `needs_connection`) is stored on the page; one failed source does not fail the
 refresh. Briefings refresh followed assets before [scheduler admission](../runtime/scheduled-runs.md#scheduled-chats).
+A symbol no enabled provider can interpret for this listing records
+`needs_connection`, not a retryable failure. The page keeps its existing connection
+prompt ("Turn on {connection} in Connections to check {kind}"), even when the
+platform is already on but cannot serve that listing; it adds no price observation.
 Change rows and briefing context list each source once, even when a calculated
 price move cites two rows of the same provider read; both endpoint observations
 and their evidence remain stored.

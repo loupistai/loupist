@@ -9,7 +9,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::State;
 
-use super::{map_store, now_ms, tool_executor::AppToolExecutor};
+use super::{
+    map_store, now_ms,
+    tool_executor::{assets::HostReadError, AppToolExecutor},
+};
 use crate::{
     app::{AppState, CommandError},
     broker::ToolPolicy,
@@ -572,10 +575,15 @@ pub(in crate::commands) async fn refresh_with(
                 ));
                 statuses.insert(read.kind.to_owned(), status(read, "ok"));
             }
-            Err(_) => {
+            Err(error) => {
                 // A lookup that fails says nothing about the class.
                 if read.tool != "etf_info" || !lookup {
-                    statuses.insert(read.kind.to_owned(), status(read, "failed"));
+                    let reason = if matches!(error, HostReadError::NoProvider) {
+                        "needs_connection"
+                    } else {
+                        "failed"
+                    };
+                    statuses.insert(read.kind.to_owned(), status(read, reason));
                 }
             }
         }

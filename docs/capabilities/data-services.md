@@ -45,13 +45,25 @@ opt-out stays. KIS, KRX and OpenDART appear in the optional Korea group and star
 only when the user opens their connection details. Rust
 filters read-only tools/provider choices to the Loupist's active bindings and rejects
 response-provider mismatches. Host reads for asset pages, watch checks and earnings
-share market-aware provider selection (`commands/tool_executor/assets.rs`): TMX is
-an automatic candidate only for Canadian markets or a recognised Canadian symbol
-suffix; Cboe and Nasdaq equity routes only for US listings. Unknown markets exclude
-these market-limited providers. Explicitly named providers remain pinned. An
+share market-aware provider selection (`commands/tool_executor/assets.rs`): an
+equity/ETF candidate must interpret the symbol as that asset's listing. A bare
+Canadian symbol goes only to TMX, including when paid vendors are enabled; `.TO`
+or `.V` symbols try TMX first and may fall back only to yfinance, whose pinned
+package preserves these Yahoo listing suffixes. Explicit foreign venues from
+`knowledge/assets/class.rs` require their existing Yahoo suffix (`7203.T`,
+`SAP.DE`, `BP.L`, and the other reviewed venue mappings), and only yfinance is
+verified for these suffixes; bare foreign symbols have no candidate. Free-form,
+unrecognised venues (including NGM, PCX, OTC and empty market strings) keep the
+US bare-symbol default. Cboe and Nasdaq equity routes still require known US
+listings, and TMX is excluded outside Canada. Explicitly named providers must
+also match the listing and remain pinned. An
 unpinned read tries up to three enabled, tool-accepted candidates after failures or
 empty rows, including within a caller's allowed list; a single-provider list never
-falls back. The result names the provider that served it. Each attempt keeps the
+falls back. If all later attempts fail, an earlier empty result remains a truthful
+empty result. When no provider is eligible, callers retain `needs_connection`,
+including a pinned SEC read while SEC is unavailable; this does not enter failure
+retry backoff.
+The result names the provider that served it. Each attempt keeps the
 ordinary retention and identical-request `max_age` rules.
 KIS account reads require an account profile;
 its exposed inventory contains no order operations, every account operation carries a

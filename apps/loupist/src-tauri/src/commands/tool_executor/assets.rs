@@ -57,16 +57,28 @@ fn host_candidates(
         available.iter().any(|item| item == provider)
             && allowed.is_none_or(|allowed| allowed.contains(&provider))
     };
-    if let Some(requested) = read.arguments.get("provider").and_then(Value::as_str) {
-        return if enabled(requested) {
-            vec![requested.to_owned()]
-        } else {
-            Vec::new()
-        };
-    }
     let market = assets::class::listing_market(&page.symbol, &page.market);
     let compatible = |provider: &str| {
-        use assets::class::ListingMarket;
+        use assets::class::{foreign_listing_suffixes, has_listing_suffix, ListingMarket};
+        if read.tool.starts_with("equity_") || read.tool.starts_with("etf_") {
+            match market {
+                Some(ListingMarket::Canada) => {
+                    // Bare symbols are Canadian only at TMX. Only yfinance's
+                    // pinned suffix mapping is verified for a fallback vendor.
+                    return provider == "tmx"
+                        || (provider == "yfinance"
+                            && has_listing_suffix(&page.symbol, &["TO", "V"]));
+                }
+                Some(ListingMarket::Foreign) => {
+                    return provider == "yfinance"
+                        && has_listing_suffix(
+                            &page.symbol,
+                            foreign_listing_suffixes(&page.market),
+                        );
+                }
+                _ => {}
+            }
+        }
         match provider {
             "tmx" => market == Some(ListingMarket::Canada),
             "cboe" | "nasdaq"
@@ -77,14 +89,26 @@ fn host_candidates(
             _ => true,
         }
     };
+    if let Some(requested) = read.arguments.get("provider").and_then(Value::as_str) {
+        return if enabled(requested) && compatible(requested) {
+            vec![requested.to_owned()]
+        } else {
+            Vec::new()
+        };
+    }
     let preferred = allowed.unwrap_or(PREFERRED_PROVIDERS);
     let mut candidates = Vec::new();
-    for provider in preferred.iter().copied().chain(
-        available
-            .iter()
-            .map(String::as_str)
-            .filter(|_| allowed.is_none()),
-    ) {
+    let canadian = market == Some(assets::class::ListingMarket::Canada);
+    for provider in std::iter::once("tmx")
+        .filter(|_| canadian)
+        .chain(preferred.iter().copied())
+        .chain(
+            available
+                .iter()
+                .map(String::as_str)
+                .filter(|_| allowed.is_none()),
+        )
+    {
         if enabled(provider)
             && compatible(provider)
             && !candidates.iter().any(|item| item == provider)
@@ -176,15 +200,8 @@ impl AppToolExecutor {
         page: &assets::PageRecord,
         read: &PlannedRead,
         max_age: Option<u64>,
-    ) -> Result<(Value, Option<String>), BrokerError> {
-        self.host_read_with(policy, page, read, max_age, None)
-            .await
-            .map_err(|error| match error {
-                HostReadError::NoProvider => BrokerError::Execution(
-                    "no enabled provider serves this read's listing market".into(),
-                ),
-                HostReadError::Failed(error) => error,
-            })
+    ) -> Result<(Value, Option<String>), HostReadError> {
+        self.host_read_with(policy, page, read, max_age, None).await
     }
 
     /// Restricts automatic selection and fallback to this caller's providers.
@@ -235,7 +252,8 @@ impl AppToolExecutor {
         if candidates.is_empty() {
             return Err(HostReadError::NoProvider);
         }
-        let mut last = None;
+        let mut empty_result = None;
+        let mut last_error = None;
         for provider in candidates.into_iter().take(3) {
             arguments["provider"] = json!(provider);
             let outcome = self
@@ -249,12 +267,12 @@ impl AppToolExecutor {
                         return Ok((payload, Some(provider)));
                     }
                     // Preserve an empty result when no later provider serves rows.
-                    last = Some(Ok((payload, Some(provider))));
+                    empty_result = Some((payload, Some(provider)));
                 }
-                Err(error) => last = Some(Err(HostReadError::Failed(error))),
+                Err(error) => last_error = Some(HostReadError::Failed(error)),
             }
         }
-        last.expect("nonempty host provider candidates")
+        empty_result.ok_or_else(|| last_error.expect("nonempty host provider candidates"))
     }
 
     /// Each attempt uses the same ordinary MCP admission, reuse and retention path.
