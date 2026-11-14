@@ -139,6 +139,23 @@ fn events(state: &AppState, loupist_id: &str) -> Vec<WatchEventView> {
 }
 
 #[tokio::test]
+async fn listing_identity_disabled_sec_filings_need_a_connection_without_retry_failure() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "NVDA", "NASDAQ", "Nvidia");
+    let page = followed_pages(&state, "loupist-a").unwrap().remove(0);
+    let mut session = HostSession::open(&state, "loupist-a", None).unwrap();
+    session.capabilities.insert(OPENBB_CONNECTION.into());
+    // No MCP provider is enabled in this fixture; avoid starting a real sidecar.
+    session.connected = Some(true);
+    let request = route_read(Route::Filings, &page, day(0)).unwrap();
+    assert_eq!(request.arguments["provider"], "sec");
+    assert!(
+        matches!(session.read(&page, &request, None).await, ReadOutcome::NeedsConnection(connection) if connection == OPENBB_CONNECTION)
+    );
+}
+
+#[tokio::test]
 async fn a_new_filing_fires_once_after_the_baseline_and_routes_to_the_most_specific_kind() {
     let temporary = tempfile::tempdir().unwrap();
     let state = fixture(&temporary, &["loupist-a"]);

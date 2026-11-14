@@ -16,7 +16,11 @@ while IFS= read -r line; do
       printf '{"jsonrpc":"2.0","id":"%s","result":{"tools":[{"name":"equity_price_historical","inputSchema":{"type":"object","properties":{"symbol":{"type":"string"},"provider":{"enum":["fmp","intrinio","tiingo","tmx","cboe","nasdaq","yfinance"]}},"required":["symbol","provider"]},"annotations":{"readOnlyHint":true}}]}}\n' "$id" ;;
     *'"method":"tools/call"'*)
       provider=${line#*\"provider\":\"}; provider=${provider%%\"*}
-      if [ "$provider" = fmp ] && { [[ "$line" = *'"symbol":"FAIL"'* ]] || [[ "$line" = *'"symbol":"ALLFAIL"'* ]]; }; then
+      if { [ "$provider" = tmx ] && [[ "$line" = *'"fixture_case":"tmx_error"'* ]]; } || { [ "$provider" != fmp ] && [[ "$line" = *'"fixture_case":"empty_then_error"'* ]]; }; then
+        printf '{"jsonrpc":"2.0","id":"%s","result":{"isError":true,"content":[{"type":"text","text":"fixture unavailable"}]}}\n' "$id"
+      elif { [ "$provider" = tmx ] && [[ "$line" = *'"fixture_case":"tmx_empty"'* ]]; } || { [ "$provider" = fmp ] && [[ "$line" = *'"fixture_case":"empty_then_error"'* ]]; }; then
+        printf '{"jsonrpc":"2.0","id":"%s","result":{"structuredContent":{"provider":"%s","results":[]},"isError":false}}\n' "$id" "$provider"
+      elif [ "$provider" = fmp ] && { [[ "$line" = *'"symbol":"FAIL"'* ]] || [[ "$line" = *'"symbol":"ALLFAIL"'* ]]; }; then
         printf '{"jsonrpc":"2.0","id":"%s","result":{"isError":true,"content":[{"type":"text","text":"fixture unavailable"}]}}\n' "$id"
       elif [[ "$line" = *'"symbol":"ALLFAIL"'* ]] || { [ "$provider" = fmp ] && [[ "$line" = *'"symbol":"EMPTY"'* ]]; }; then
         printf '{"jsonrpc":"2.0","id":"%s","result":{"structuredContent":{"provider":"%s","results":[]},"isError":false}}\n' "$id" "$provider"
@@ -88,10 +92,11 @@ async fn asset_read(
                 .host_read_among(&policy("loupist-a", None), page, read, max_age, allowed)
                 .await
         }
-        None => executor
-            .host_read(&policy("loupist-a", None), page, read, max_age)
-            .await
-            .map_err(HostReadError::Failed),
+        None => {
+            executor
+                .host_read(&policy("loupist-a", None), page, read, max_age)
+                .await
+        }
     }
 }
 
@@ -122,7 +127,6 @@ async fn host_market_routes_us_unknown_and_canadian_equities() {
         ("NVDA", "unknown", "yfinance"),
         ("SHOP", "TSXV", "tmx"),
         ("SHOP.V", "unknown", "tmx"),
-        ("7203", "TSE", "yfinance"),
     ] {
         let page = page_with_market(&executor, symbol, market);
         let (_, provider) = asset_read(&executor, &page, &read(symbol), None, None)
@@ -132,7 +136,7 @@ async fn host_market_routes_us_unknown_and_canadian_equities() {
     }
     assert_eq!(
         providers_called(&transcript),
-        ["tmx", "tmx", "cboe", "yfinance", "tmx", "tmx", "yfinance"]
+        ["tmx", "tmx", "cboe", "yfinance", "tmx", "tmx"]
     );
     executor.host_shutdown().await;
 }
@@ -239,5 +243,210 @@ async fn host_market_retries_at_most_three_and_never_falls_back_when_pinned() {
         let _ = asset_read(&executor, &page, &pinned, None, None).await;
         assert_eq!(&providers_called(&transcript)[before..], ["fmp", "fmp"]);
     }
+    executor.host_shutdown().await;
+}
+
+async fn canadian_bare_failure(case: &str) {
+    let temporary = tempfile::tempdir().unwrap();
+    let (executor, transcript) = fixture(&temporary, &["tmx", "yfinance"]).await;
+    let page = page_with_market(&executor, "SHOP", "TSX");
+    let mut request = read("SHOP");
+    request.arguments["fixture_case"] = json!(case);
+    let outcome = asset_read(&executor, &page, &request, None, None).await;
+    assert_eq!(
+        providers_called(&transcript),
+        ["tmx"],
+        "a bare Canadian symbol must never reach a US-default vendor"
+    );
+    if case == "tmx_error" {
+        assert!(outcome.is_err());
+    } else {
+        assert_eq!(
+            outcome.unwrap().0["structuredContent"]["results"],
+            json!([])
+        );
+    }
+    executor.host_shutdown().await;
+}
+
+#[tokio::test]
+async fn listing_identity_canadian_bare_never_falls_back_after_error() {
+    canadian_bare_failure("tmx_error").await;
+}
+
+#[tokio::test]
+async fn listing_identity_canadian_bare_never_falls_back_after_empty() {
+    canadian_bare_failure("tmx_empty").await;
+}
+
+#[tokio::test]
+async fn listing_identity_canadian_vendor_order_requires_a_verified_suffix() {
+    let temporary = tempfile::tempdir().unwrap();
+    let (executor, transcript) = fixture(
+        &temporary,
+        &["fmp", "intrinio", "tiingo", "tmx", "cboe", "yfinance"],
+    )
+    .await;
+    for (symbol, market) in [("RY", "TSX"), ("TD.TO", "TSX"), ("SHOP.V", "TSXV")] {
+        let page = page_with_market(&executor, symbol, market);
+        let (_, provider) = asset_read(&executor, &page, &read(symbol), None, None)
+            .await
+            .unwrap();
+        assert_eq!(provider.as_deref(), Some("tmx"));
+    }
+    for symbol in ["TD.TO", "SHOP.V"] {
+        let page = page_with_market(&executor, symbol, "TSX");
+        for case in ["tmx_error", "tmx_empty"] {
+            let mut request = read(symbol);
+            request.arguments["fixture_case"] = json!(case);
+            let (_, provider) = asset_read(&executor, &page, &request, None, None)
+                .await
+                .unwrap();
+            assert_eq!(provider.as_deref(), Some("yfinance"));
+        }
+    }
+    let calls = providers_called(&transcript);
+    assert!(calls
+        .iter()
+        .all(|provider| ["tmx", "yfinance"].contains(&provider.as_str())));
+    executor.host_shutdown().await;
+}
+
+#[tokio::test]
+async fn listing_identity_known_foreign_bare_symbols_have_no_candidate() {
+    let temporary = tempfile::tempdir().unwrap();
+    let (executor, transcript) = fixture(
+        &temporary,
+        &["fmp", "intrinio", "tiingo", "tmx", "cboe", "yfinance"],
+    )
+    .await;
+    for (symbol, market) in [
+        ("BP", "LSE"),
+        ("SAP", "XETRA"),
+        ("AIR", "EURONEXT"),
+        ("7203", "JPX"),
+        ("0700", "HKEX"),
+        ("BHP", "ASX"),
+        ("600519", "SSE"),
+        ("000001", "SZSE"),
+    ] {
+        let page = page_with_market(&executor, symbol, market);
+        assert!(
+            matches!(
+                asset_read(&executor, &page, &read(symbol), None, None).await,
+                Err(HostReadError::NoProvider)
+            ),
+            "{symbol}:{market}"
+        );
+    }
+    assert!(providers_called(&transcript).is_empty());
+    executor.host_shutdown().await;
+}
+
+#[tokio::test]
+async fn listing_identity_foreign_suffixes_use_only_the_verified_vendor() {
+    let temporary = tempfile::tempdir().unwrap();
+    let (executor, transcript) = fixture(
+        &temporary,
+        &["fmp", "intrinio", "tiingo", "tmx", "cboe", "yfinance"],
+    )
+    .await;
+    for (symbol, market) in [
+        ("BP.L", "LSE"),
+        ("SAP.DE", "XETRA"),
+        ("AIR.PA", "EURONEXT"),
+        ("7203.T", "TSE"),
+        ("0700.HK", "HKEX"),
+        ("BHP.AX", "ASX"),
+        ("600519.SS", "SSE"),
+        ("000001.SZ", "SZSE"),
+    ] {
+        let page = page_with_market(&executor, symbol, market);
+        let (_, provider) = asset_read(&executor, &page, &read(symbol), None, None)
+            .await
+            .unwrap();
+        assert_eq!(provider.as_deref(), Some("yfinance"), "{symbol}:{market}");
+    }
+    let wrong_suffix = page_with_market(&executor, "SAP.T", "XETRA");
+    assert!(matches!(
+        asset_read(&executor, &wrong_suffix, &read("SAP.T"), None, None).await,
+        Err(HostReadError::NoProvider)
+    ));
+    assert_eq!(providers_called(&transcript), vec!["yfinance"; 8]);
+    executor.host_shutdown().await;
+}
+
+#[tokio::test]
+async fn listing_identity_unknown_us_venue_codes_keep_the_us_default() {
+    let temporary = tempfile::tempdir().unwrap();
+    let (executor, _) = fixture(&temporary, &["tmx", "cboe", "yfinance"]).await;
+    for market in ["NGM", "PCX", "OTC", "", "unrecognised", "unknown"] {
+        let mut page = page_with_market(&executor, "NVDA", "unknown");
+        page.market = market.to_owned();
+        let (_, provider) = asset_read(&executor, &page, &read("NVDA"), None, None)
+            .await
+            .unwrap();
+        assert_eq!(provider.as_deref(), Some("yfinance"), "{market}");
+    }
+    executor.host_shutdown().await;
+}
+
+#[tokio::test]
+async fn listing_identity_empty_rows_survive_a_later_provider_error() {
+    let temporary = tempfile::tempdir().unwrap();
+    let (executor, transcript) = fixture(&temporary, &["fmp", "intrinio", "tiingo"]).await;
+    let page = page_with_market(&executor, "NVDA", "NASDAQ");
+    let mut request = read("NVDA");
+    request.arguments["fixture_case"] = json!("empty_then_error");
+    let (payload, provider) = asset_read(&executor, &page, &request, None, None)
+        .await
+        .unwrap();
+    assert_eq!(provider.as_deref(), Some("fmp"));
+    assert_eq!(payload["structuredContent"]["results"], json!([]));
+    assert_eq!(providers_called(&transcript), ["fmp", "intrinio", "tiingo"]);
+    executor.host_shutdown().await;
+}
+
+#[tokio::test]
+async fn listing_identity_no_provider_is_a_connection_outcome_on_refresh() {
+    use crate::commands::assets::{refresh_with, with_assets, HostReads};
+    let temporary = tempfile::tempdir().unwrap();
+    let (executor, transcript) = fixture(&temporary, &["yfinance"]).await;
+    let page = page_with_market(&executor, "SAP", "XETRA");
+    let grants = BTreeSet::from(["openbb.platform".into()]);
+    refresh_with(
+        &executor.state,
+        "loupist-a",
+        &page.asset_id,
+        assets::ObservationOrigin::Refresh,
+        HostReads {
+            executor: &executor,
+            capabilities: &grants,
+            max_age: None,
+        },
+        None,
+    )
+    .await
+    .unwrap();
+    let context = crate::commands::assets::view_context(&executor.state).unwrap();
+    let view = with_assets(&executor.state, "loupist-a", false, |tx| {
+        assets::page_view(tx, "loupist-a", &page.asset_id, 0, &context)
+    })
+    .unwrap();
+    let price = view
+        .checks
+        .failures
+        .iter()
+        .find(|failure| failure.kind == "price")
+        .expect("a bare foreign symbol must be unavailable instead of recording a US price");
+    assert_eq!(price.reason, "needs_connection");
+    let filings = view
+        .checks
+        .failures
+        .iter()
+        .find(|failure| failure.kind == "filings")
+        .unwrap();
+    assert_eq!(filings.reason, "needs_connection");
+    assert!(providers_called(&transcript).is_empty());
     executor.host_shutdown().await;
 }

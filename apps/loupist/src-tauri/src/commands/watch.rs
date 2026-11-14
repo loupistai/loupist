@@ -352,11 +352,11 @@ impl HostSession {
                     .host_read_among(&self.policy, page, read, None, allowed)
                     .await
             }
-            None => self
-                .executor
-                .host_read(&self.policy, page, read, None)
-                .await
-                .map_err(HostReadError::Failed),
+            None => {
+                self.executor
+                    .host_read(&self.policy, page, read, None)
+                    .await
+            }
         };
         match outcome {
             Ok((payload, provider)) => ReadOutcome::Ok { payload, provider },
@@ -880,7 +880,9 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
                         match assets::class::listing_market(&page.symbol, &page.market) {
                             Some(assets::class::ListingMarket::Canada) => "CA".to_owned(),
                             Some(assets::class::ListingMarket::Us) => "US".to_owned(),
-                            None => format!("market:{}", page.market.trim().to_uppercase()),
+                            Some(assets::class::ListingMarket::Foreign) | None => {
+                                format!("market:{}", page.market.trim().to_uppercase())
+                            }
                         }
                     } else {
                         format!(
