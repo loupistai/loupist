@@ -102,6 +102,10 @@ multiple filings; the first matching audit filing also stays attached within and
 across passes, and attaching a release preserves current audit and capture flags.
 At a glance's "Next earnings" falls back to the next event, a legal deadline marked
 `dueBy`; the morning message's "Coming up" strip lists such a deadline as "Results due (filing deadline)".
+The asset page's earlier-results list includes only events with a release, a final
+filing or a reported status. An unfiled calendar date or statutory deadline stays
+out of that history, even after its date passes; upcoming events remain available
+to the current card and At a glance.
 
 ## Code
 

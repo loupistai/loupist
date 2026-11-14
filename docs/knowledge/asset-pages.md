@@ -13,7 +13,7 @@ or when a turn records an observation for a followed asset. It opens over the cu
 reasons, and lines with their last reading), for an equity the
 [results card](../analysis/results.md#results-events) while an event is due within 14 days or was reported in
 the last 30, What changed (since the last look, 7 or 30 days; 50 rows, then Show
-earlier), thesis history (10, then Show all), Earlier results (up to four other events,
+earlier), thesis history (10, then Show all), Earlier results (up to four filed events,
 each expanding to its card), At a glance, a Korean equity's
 [investor flows](../analysis/korea.md#korean-asset-rows), what the Loupist checks (failed or
 ungranted sources and what this class is not checked for yet), Watch for (a switch per
