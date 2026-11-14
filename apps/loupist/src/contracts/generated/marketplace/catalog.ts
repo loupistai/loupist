@@ -53,6 +53,12 @@ export type MarketplaceCredentialStatusDto = {
   verified_at: number | null,
   last_error: string | null,
   krx_coverage: KrxCoverage | null,
+  /**
+   * macOS did not let Loupist read this saved key in this session (its
+   * access prompt was denied). Only this connection is affected; Try again
+   * (`marketplace_credential_unlock`) asks once more.
+   */
+  locked: boolean,
 };
 
 export type MarketplaceCredentialVerification =

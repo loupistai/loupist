@@ -49,6 +49,38 @@ describe("connection states", () => {
     expect(screen.getByText("1 of 24 connections")).toBeVisible();
   });
 
+  it("shows a key macOS refused as locked on its own card, explains the prompt before Try again, and asks again", async () => {
+    const lock = (snapshot: Awaited<ReturnType<MockLoupistBridge["marketplaceSnapshot"]>>) => {
+      const fred = snapshot.connectors.find((connector) => connector.entry_id === "fred.macro")!;
+      fred.credentials = fred.credentials.map((credential) => ({ ...credential, stored: true, active: false, locked: true }));
+      fred.readiness = "needs_configuration";
+    };
+    const { bridge, user } = await renderView(lock);
+    expect(cardOf("FRED").getByText("Locked until you allow access in macOS")).toBeVisible();
+    expect(cardOf("FRED").getByText(/macOS asks once for your login password .* not signed with an Apple Developer ID\. Choose “Always Allow”/)).toBeVisible();
+    // Every other connection still lists and none of them is locked.
+    expect(cardOf("SEC EDGAR").queryByText("Locked until you allow access in macOS")).toBeNull();
+    expect(screen.getAllByText("Locked until you allow access in macOS")).toHaveLength(1);
+
+    // Denied again: still locked, and it says so.
+    const unlock = vi.spyOn(bridge, "marketplaceCredentialUnlock").mockImplementationOnce(async () => {
+      const snapshot = await bridge.marketplaceSnapshot();
+      return snapshot.connectors.find((connector) => connector.entry_id === "fred.macro")!.credentials;
+    });
+    await user.click(cardOf("FRED").getByRole("button", { name: "Try again FRED" }));
+    expect(unlock).toHaveBeenCalledWith({ entry_id: "fred.macro" });
+    expect(await cardOf("FRED").findByText("macOS did not allow access. Try again and enter your login password.")).toBeVisible();
+
+    // Allowed: the card is no longer locked.
+    unlock.mockResolvedValueOnce([]);
+    vi.mocked(bridge.marketplaceSnapshot).mockImplementation(async () => {
+      const snapshot = await new MockLoupistBridge({ delay_ms: 0 }).marketplaceSnapshot();
+      return snapshot;
+    });
+    await user.click(cardOf("FRED").getByRole("button", { name: "Try again FRED" }));
+    await vi.waitFor(() => expect(screen.queryByText("Locked until you allow access in macOS")).toBeNull());
+  });
+
   it("shows no Needs attention count when nothing is wrong", async () => {
     await renderView();
     expect(screen.getByRole("radio", { name: "Needs attention" })).toBeVisible();

@@ -654,6 +654,16 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
       .credentials;
   }
 
+  /** The preview keeps keys in memory, so macOS never refuses one: Try again just reports them. */
+  async marketplaceCredentialUnlock(
+    request: Contract.MarketplaceCredentialRequest,
+  ) {
+    return (await this.marketplaceSnapshot()).connectors.find(
+      (connector) => connector.entry_id === request.entry_id,
+    )!
+      .credentials;
+  }
+
   async marketplaceCredentialDelete(
     request: Contract.MarketplaceCredentialRequest,
   ) {

@@ -226,6 +226,10 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   marketplaceCredentialDelete(
     request: MarketplaceCredentialRequest,
   ): Promise<MarketplaceCredentialStatus[]>;
+  /** Try again on a connection whose saved key macOS refused (macOS may ask once more). */
+  marketplaceCredentialUnlock(
+    request: MarketplaceCredentialRequest,
+  ): Promise<MarketplaceCredentialStatus[]>;
   openExternalUrl(url: string): Promise<void>;
   siteFavicon(url: string): Promise<string | null>;
   browserTabOpen(

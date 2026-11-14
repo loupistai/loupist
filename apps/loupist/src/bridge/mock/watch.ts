@@ -151,7 +151,7 @@ export class MockWatch implements WatchBridge {
     for (const asset of settings.watched) for (const kind of asset.kinds) {
       if (!kind.enabled || !kind.needsConnection) continue;
       const key = `${kind.kind}:${kind.needsConnection.id}`;
-      const entry = needs.get(key) ?? { kind: kind.kind, connection: kind.needsConnection, assetIds: [] };
+      const entry = needs.get(key) ?? { kind: kind.kind, connection: { ...kind.needsConnection, locked: Boolean(kind.needsConnection.locked) }, assetIds: [] };
       entry.assetIds.push(asset.assetId); needs.set(key, entry);
     }
     this.emit(loupistId);

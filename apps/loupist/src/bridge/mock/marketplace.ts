@@ -170,6 +170,7 @@ export function createMockMarketplaceSnapshot(
               : ("never" as const),
             verified_at: activeFields.has(field.id) ? 1 : null,
             last_error: null,
+            locked: false,
           }))
         : [],
       readiness: runtimeUnavailableIds.has(entry_id)

@@ -4,6 +4,7 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { mockAssetId } from "../../bridge/mock/assets";
 import { previewWatchSettings } from "../../preview/finance";
 import type { LoupistSummary } from "../../types";
+import type { WatchAsset } from "../../contracts/watch";
 import { WatchFor } from "./WatchFor";
 
 async function section() {
@@ -40,6 +41,23 @@ it("a kind whose connection is off stays focusable, says which connection it nee
   await user.click(flows);
   expect(bridge.watch.setCalls).toHaveLength(0);
   await user.click(within(region).getByRole("button", { name: "Turn on" }));
+  expect(onOpenConnections).toHaveBeenCalled();
+});
+
+it("a kind whose connection macOS locked says which connection is locked and leads to Try again", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const [loupist] = await bridge.loupistList() as LoupistSummary[];
+  const settings = previewWatchSettings();
+  const lock = (item: WatchAsset): WatchAsset => ({ ...item, kinds: item.kinds.map(kind => kind.needsConnection ? { ...kind, needsConnection: { ...kind.needsConnection, locked: true } } : kind) });
+  bridge.watch.install(loupist!.id, { ...settings, watched: settings.watched?.map(lock) });
+  const onOpenConnections = vi.fn();
+  render(<WatchFor bridge={bridge} loupistId={loupist!.id} loupistName="Quality" assetId={mockAssetId("HANUL", "KRX")} name="Hanul Precision" onOpenConnections={onOpenConnections} />);
+  const region = await screen.findByRole("region", { name: "Watch for" });
+  const flows = within(region).getByRole("switch", { name: "Foreign and institution buying turns for Hanul Precision" });
+  expect(flows).toHaveAccessibleDescription("Korea Investment is locked until you allow access in macOS · Try again in Connections");
+  // The other kinds keep working.
+  expect(within(region).getByRole("switch", { name: "New filings for Hanul Precision" })).not.toHaveAttribute("aria-disabled");
+  await userEvent.setup().click(within(region).getByRole("button", { name: "Try again in Connections" }));
   expect(onOpenConnections).toHaveBeenCalled();
 });
 

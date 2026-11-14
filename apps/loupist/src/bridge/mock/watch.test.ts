@@ -2,7 +2,7 @@ import type { WatchAsset } from "../../contracts/watch";
 import { mockWatchKinds, MockWatch } from "./watch";
 
 const equity = (assetId: string, name: string): WatchAsset => ({ assetId, symbol: assetId.toUpperCase(), market: "NASDAQ", name, revision: 1, kinds: mockWatchKinds("NASDAQ") });
-const kis = { id: "koreainvestment.market-data", name: "Korea Investment" };
+const kis = { id: "koreainvestment.market-data", name: "Korea Investment", locked: false };
 
 it("applies Watch all like the host: undecided assets get the class defaults even without their connection, decided ones keep their switches", async () => {
   const watch = new MockWatch(async () => []);

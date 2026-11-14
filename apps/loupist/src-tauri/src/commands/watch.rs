@@ -1702,6 +1702,9 @@ pub(crate) fn on_followed(
 pub struct ConnectionRef {
     pub id: String,
     pub name: String,
+    /// macOS refused Loupist this connection's saved key in this session, so
+    /// the connection is locked rather than off (Try again in Connections).
+    pub locked: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1777,6 +1780,9 @@ pub(crate) fn settings_view(
     let openbb = openbb_capabilities();
     let names = connection_names();
     let name = |id: &str| names.get(id).cloned().unwrap_or_else(|| id.to_owned());
+    // Only what this session already learned; reads no secret.
+    let locked =
+        |id: &str| crate::finance_credentials::is_locked(&state.credential_environment, id);
     let today = chrono::Local::now().date_naive();
     let (watch_state, switches, routes, assets) = with_assets(state, loupist_id, false, |tx| {
         let mut out = Vec::new();
@@ -1823,11 +1829,13 @@ pub(crate) fn settings_view(
                     .map(|state| ConnectionRef {
                         id: state.connection.clone(),
                         name: name(&state.connection),
+                        locked: locked(&state.connection),
                     })
                     .or_else(|| {
                         (!granted).then(|| ConnectionRef {
                             id: needed.to_owned(),
                             name: name(needed),
+                            locked: locked(needed),
                         })
                     });
                 KindStateView {
@@ -1888,16 +1896,15 @@ pub struct WatchSettingsListRequest {
 }
 
 #[tauri::command]
-pub fn watch_settings_list(
+pub async fn watch_settings_list(
     state: State<'_, AppState>,
     request: WatchSettingsListRequest,
 ) -> Result<WatchSettingsView, CommandError> {
-    admit(&state, &request.loupist_id)?;
-    settings_view(
-        &state,
-        &state.scheduled.watch_runtime(),
-        &request.loupist_id,
-    )
+    crate::app::off_main_thread(&state, move |state| {
+        admit(state, &request.loupist_id)?;
+        settings_view(state, &state.scheduled.watch_runtime(), &request.loupist_id)
+    })
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -2006,11 +2013,11 @@ pub struct WatchSettingSetRequest {
 }
 
 #[tauri::command]
-pub fn watch_setting_set(
+pub async fn watch_setting_set(
     state: State<'_, AppState>,
     request: WatchSettingSetRequest,
 ) -> Result<WatchSettingsView, CommandError> {
-    update_setting(&state, request)
+    crate::app::off_main_thread(&state, move |state| update_setting(state, request)).await
 }
 
 pub(crate) fn update_setting(
@@ -2075,17 +2082,20 @@ pub struct WatchPauseSetRequest {
 }
 
 #[tauri::command]
-pub fn watch_pause_set(
+pub async fn watch_pause_set(
     state: State<'_, AppState>,
     request: WatchPauseSetRequest,
 ) -> Result<WatchSettingsView, CommandError> {
-    admit(&state, &request.loupist_id)?;
-    let loupist = request.loupist_id.clone();
-    with_assets(&state, &loupist, true, |tx| {
-        watch::set_paused(tx, &loupist, request.paused, now_ms())
-    })?;
-    changed(&loupist);
-    settings_view(&state, &state.scheduled.watch_runtime(), &loupist)
+    crate::app::off_main_thread(&state, move |state| {
+        admit(state, &request.loupist_id)?;
+        let loupist = request.loupist_id.clone();
+        with_assets(state, &loupist, true, |tx| {
+            watch::set_paused(tx, &loupist, request.paused, now_ms())
+        })?;
+        changed(&loupist);
+        settings_view(state, &state.scheduled.watch_runtime(), &loupist)
+    })
+    .await
 }
 
 #[derive(Debug, Deserialize)]

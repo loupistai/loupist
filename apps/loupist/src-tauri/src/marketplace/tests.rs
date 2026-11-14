@@ -941,3 +941,94 @@ fn unfinished_or_failed_setup_never_configures_or_grants_a_connector() {
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn a_locked_key_shows_on_its_own_connection_and_the_rest_keep_loading() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    let environment = state.credential_environment.to_string();
+    seed_loupist(&state, "g-locked");
+    let (locked, other) = ("fred.macro", "krx.market-data");
+    let catalog = bundled_catalog().unwrap();
+    let field = |entry_id: &str| {
+        credential_entry(&catalog, entry_id)
+            .unwrap()
+            .setup
+            .as_ref()
+            .unwrap()
+            .credential_fields[0]
+            .id
+            .clone()
+    };
+    for entry_id in [locked, other] {
+        crate::finance_credentials::stage(
+            &environment,
+            entry_id,
+            &BTreeMap::from([(field(entry_id), "test-locked-fixture-key".to_owned())]),
+        )
+        .unwrap();
+        let candidate = crate::finance_credentials::candidate(&environment, entry_id)
+            .unwrap()
+            .unwrap();
+        crate::finance_credentials::finish_verification(
+            &environment,
+            entry_id,
+            candidate.revision(),
+            crate::finance_credentials::VerificationOutcome::Verified,
+            10,
+            None,
+        )
+        .unwrap();
+        // The update: a new build, and this session has read nothing yet.
+        crate::finance_credentials::test_store::restart(&environment, entry_id);
+    }
+    crate::finance_credentials::test_store::deny(&environment, locked, true);
+    let reads_before = crate::finance_credentials::test_store::secret_reads(&environment, locked);
+
+    let connector = |snapshot: &MarketplaceSnapshotDto, id: &str| {
+        snapshot
+            .connectors
+            .iter()
+            .find(|connector| connector.entry_id == id)
+            .unwrap()
+            .clone()
+    };
+    for _ in 0..3 {
+        let snapshot =
+            with_connector_lifecycle(&state, || marketplace_snapshot_for_state(&state)).unwrap();
+        let fred = connector(&snapshot, locked);
+        assert!(fred.credentials.iter().all(|credential| credential.locked));
+        assert_ne!(fred.readiness, MarketplaceConnectorReadiness::Ready);
+        let krx = connector(&snapshot, other);
+        assert!(krx
+            .credentials
+            .iter()
+            .all(|credential| !credential.locked && credential.active));
+        // Bot's connection list and every run's authority (Following,
+        // Watching, asset checks) still load.
+        with_connector_lifecycle(&state, || {
+            loupist_capability_list_for_state("g-locked", &state)
+        })
+        .unwrap();
+        crate::commands::capture_chat_connector_authority(&state, "g-locked").unwrap();
+    }
+    // The refused prompt was asked once, not on every screen.
+    assert_eq!(
+        crate::finance_credentials::test_store::secret_reads(&environment, locked),
+        reads_before + 1
+    );
+
+    let request = || MarketplaceCredentialRequest {
+        entry_id: locked.to_owned(),
+    };
+    let still_locked = super::credentials::unlock_credential_for_state(request(), &state).unwrap();
+    assert!(still_locked.iter().all(|credential| credential.locked));
+    crate::finance_credentials::test_store::deny(&environment, locked, false);
+    let unlocked = super::credentials::unlock_credential_for_state(request(), &state).unwrap();
+    assert!(unlocked
+        .iter()
+        .all(|credential| !credential.locked && credential.active));
+    for entry_id in [locked, other] {
+        crate::finance_credentials::delete(&environment, entry_id).unwrap();
+    }
+}

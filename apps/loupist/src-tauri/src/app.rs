@@ -277,6 +277,22 @@ pub struct AppState {
     pub(crate) sharing: crate::sharing::commands::SharingSession,
 }
 
+/// Runs a command body that may read the keychain on a blocking thread.
+///
+/// A synchronous Tauri command runs on the main thread, and a keychain read
+/// can wait minutes on the macOS access prompt; on the main thread that
+/// freezes the whole window. Commands that can reach a saved secret are
+/// `async` and hand their work to this.
+pub(crate) async fn off_main_thread<T: Send + 'static>(
+    state: &AppState,
+    work: impl FnOnce(&AppState) -> Result<T, CommandError> + Send + 'static,
+) -> Result<T, CommandError> {
+    let state = state.clone();
+    tauri::async_runtime::spawn_blocking(move || work(&state))
+        .await
+        .map_err(|_| CommandError::internal("a background task stopped unexpectedly"))?
+}
+
 impl AppState {
     #[cfg(feature = "eval-harness")]
     pub(crate) fn for_eval(app_data_dir: PathBuf) -> Self {

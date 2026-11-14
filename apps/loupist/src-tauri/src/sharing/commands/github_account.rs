@@ -42,15 +42,16 @@ pub struct GithubAccount {
     login: Option<String>,
 }
 
-fn account(state: &AppState) -> GithubAccount {
-    let environment = state.credential_environment.to_string();
-    let login = github::load_token(&environment).and_then(|_| {
-        state
-            .store
-            .lock()
-            .ok()
-            .and_then(|connection| github::stored_login(&connection).ok().flatten())
-    });
+/// The account as Settings shows it. The login recorded at sign-in is
+/// enough: showing it never reads the token from the keychain, which after an
+/// update would make macOS ask for the login password. A token that no longer
+/// works is found when sharing uses it, and that clears the login.
+pub(super) fn account(state: &AppState) -> GithubAccount {
+    let login = state
+        .store
+        .lock()
+        .ok()
+        .and_then(|connection| github::stored_login(&connection).ok().flatten());
     GithubAccount {
         client_configured: github::client_id().is_some(),
         index_configured: github::index_url().is_some(),
@@ -203,11 +204,41 @@ pub fn github_sign_in_cancel(state: State<'_, AppState>) {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn github_sign_out(state: State<'_, AppState>) -> Result<GithubAccount, CommandError> {
-    let state = state.inner();
-    github::delete_token(&state.credential_environment);
-    if let Ok(connection) = state.store.lock() {
-        github::store_login(&connection, None).map_err(internal)?;
+pub async fn github_sign_out(state: State<'_, AppState>) -> Result<GithubAccount, CommandError> {
+    crate::app::off_main_thread(&state, |state| {
+        github::delete_token(&state.credential_environment);
+        if let Ok(connection) = state.store.lock() {
+            github::store_login(&connection, None).map_err(internal)?;
+        }
+        Ok(account(state))
+    })
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn showing_the_account_never_reads_the_token() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = AppState::for_folder_test(temp.path().join("account"));
+        let environment = state.credential_environment.to_string();
+        assert!(github::save_token(&environment, "pine"));
+        github::store_login(&state.store.lock().unwrap(), Some("octo")).unwrap();
+        let reads = || {
+            github::token_store::reads()
+                .lock()
+                .unwrap()
+                .get(&environment)
+                .map(|read| read.0)
+                .unwrap_or_default()
+        };
+        let before = reads();
+        for _ in 0..3 {
+            assert_eq!(account(&state).login.as_deref(), Some("octo"));
+        }
+        assert_eq!(reads(), before);
+        github::delete_token(&environment);
     }
-    Ok(account(state))
 }

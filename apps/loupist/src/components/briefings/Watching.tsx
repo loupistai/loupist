@@ -164,8 +164,8 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
   const sorted = newestFirst(events ?? []);
   const alerts = sorted.slice(0, shownAlerts);
   // A kind that needs a connection says so once under the matrix, beside its disabled boxes.
-  const needed = new Map<WatchKind, { id: string; text: string }>();
-  for (const asset of rows) for (const state of asset.kinds) if (state.needsConnection && !needed.has(state.kind)) needed.set(state.kind, { id: state.needsConnection.id, text: connectionText(state.needsConnection.name) });
+  const needed = new Map<WatchKind, { id: string; text: string; locked: boolean }>();
+  for (const asset of rows) for (const state of asset.kinds) if (state.needsConnection && !needed.has(state.kind)) needed.set(state.kind, { id: state.needsConnection.id, text: connectionText(state.needsConnection.name), locked: Boolean(state.needsConnection.locked) });
   const numbers = citationNumbers(alerts.map(event => event.evidence));
   const openPage = (event: Pick<WatchEvent, "assetId" | "name" | "symbol" | "market">) => openAsset?.({ loupistId, assetId: event.assetId, name: nameOf(event) });
   const openEvidence = (event: WatchEvent) => (evidence: AssetEvidence) => { if (evidence.url) void bridge.openExternalUrl(evidence.url); else openPage(event); };
@@ -212,7 +212,7 @@ export function WatchingReader({ bridge, loupist, settings, onBack, onSettings, 
       </MatrixScroll>;
     })}
     {toggleFailed ? <p className="inline-error" role="alert">{t("watch.toggleFailed")}</p> : null}
-    {[...needed].map(([kind, connection]) => <p key={kind} className="watching-hint">{t("watch.kindNeeds", { kind: watchKindColumn(kind), connection: connection.text })}
+    {[...needed].map(([kind, connection]) => <p key={kind} className="watching-hint">{t(connection.locked ? "watch.kindLocked" : "watch.kindNeeds", { kind: watchKindColumn(kind), connection: connection.text })}
       {onOpenConnections ? <> <Button variant="link" size="sm" onClick={() => onOpenConnections(connection.id)}>{t("following.openConnections")}</Button></> : null}</p>)}
     {listed.length > rows.length ? <Button variant="ghost" size="sm" onClick={() => setAllRows(true)}>{t("watch.showAll")}</Button> : null}
 

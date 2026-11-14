@@ -21,6 +21,10 @@ pub enum FinanceCredentialError {
     Unsupported,
     #[error("the native credential store operation failed")]
     Store,
+    /// macOS did not let Loupist read this saved key (the access prompt was
+    /// denied or could not be answered). Remembered for the session.
+    #[error("access to this saved key was not allowed in macOS")]
+    Locked,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -244,11 +248,71 @@ fn native_account(environment_id: &str, entry_id: &str) -> String {
     format!("credential-state/v1/{environment_id}/{entry_id}")
 }
 
+/// Test seam for the in-memory store: counts reads of each account and can
+/// refuse them the way macOS refuses an item whose access prompt was denied.
+#[cfg(test)]
+pub(crate) mod test_store {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::{Mutex, OnceLock};
+
+    fn reads() -> &'static Mutex<BTreeMap<String, usize>> {
+        static READS: OnceLock<Mutex<BTreeMap<String, usize>>> = OnceLock::new();
+        READS.get_or_init(Default::default)
+    }
+
+    fn denied() -> &'static Mutex<BTreeSet<String>> {
+        static DENIED: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
+        DENIED.get_or_init(Default::default)
+    }
+
+    pub(super) fn record_read(account: &str) -> bool {
+        *reads()
+            .lock()
+            .unwrap()
+            .entry(account.to_owned())
+            .or_default() += 1;
+        !denied().lock().unwrap().contains(account)
+    }
+
+    /// How many times the secret of this credential was read.
+    pub(crate) fn secret_reads(environment_id: &str, entry_id: &str) -> usize {
+        reads()
+            .lock()
+            .unwrap()
+            .get(&super::native_account(environment_id, entry_id))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Makes reads of this credential fail as a denied macOS prompt does.
+    pub(crate) fn deny(environment_id: &str, entry_id: &str, deny: bool) {
+        let account = super::native_account(environment_id, entry_id);
+        let mut denied = denied().lock().unwrap();
+        if deny {
+            denied.insert(account);
+        } else {
+            denied.remove(&account);
+        }
+    }
+
+    /// Forgets what this session learned about the credential, as a restart does.
+    pub(crate) fn restart(environment_id: &str, entry_id: &str) {
+        super::session()
+            .lock()
+            .unwrap()
+            .remove(&super::native_account(environment_id, entry_id));
+    }
+}
+
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
 fn read_memory_blob(
     environment_id: &str,
     entry_id: &str,
 ) -> Result<Option<String>, FinanceCredentialError> {
+    #[cfg(test)]
+    if !test_store::record_read(&native_account(environment_id, entry_id)) {
+        return Err(FinanceCredentialError::Store);
+    }
     Ok(memory_store()
         .lock()
         .map_err(|_| FinanceCredentialError::Store)?
@@ -424,19 +488,111 @@ fn delete_blob(environment_id: &str, _entry_id: &str) -> Result<(), FinanceCrede
     Err(FinanceCredentialError::Unsupported)
 }
 
+/// What this session learned about one saved credential, without its secret.
+///
+/// macOS ties a keychain item to the build that saved it, so the first read
+/// after an update asks for the login password. Every read takes
+/// `operation_lock` (the gate), so callers that arrive while the prompt is up
+/// wait for its answer instead of asking again. The answer is kept for the
+/// session: the status (so listing connections reads nothing more) or a
+/// denial (so no screen asks again until the user chooses Try again). The
+/// secret itself is never kept here.
+#[derive(Clone)]
+enum SessionAccess {
+    Known {
+        status: CredentialStatus,
+        active_revision: Option<String>,
+    },
+    Locked,
+}
+
+fn session() -> &'static std::sync::Mutex<BTreeMap<String, SessionAccess>> {
+    static SESSION: std::sync::OnceLock<std::sync::Mutex<BTreeMap<String, SessionAccess>>> =
+        std::sync::OnceLock::new();
+    SESSION.get_or_init(Default::default)
+}
+
+fn remembered(environment_id: &str, entry_id: &str) -> Option<SessionAccess> {
+    session()
+        .lock()
+        .ok()?
+        .get(&native_account(environment_id, entry_id))
+        .cloned()
+}
+
+fn remember(environment_id: &str, entry_id: &str, access: Option<SessionAccess>) {
+    if let Ok(mut session) = session().lock() {
+        let account = native_account(environment_id, entry_id);
+        match access {
+            Some(access) => session.insert(account, access),
+            None => session.remove(&account),
+        };
+    }
+}
+
+fn remember_envelope(environment_id: &str, entry_id: &str, envelope: &CredentialEnvelope) {
+    remember(
+        environment_id,
+        entry_id,
+        Some(SessionAccess::Known {
+            status: status_from(envelope),
+            active_revision: envelope
+                .active
+                .as_ref()
+                .map(|active| active.credential.revision.clone()),
+        }),
+    );
+}
+
+/// Reads the envelope for a passive caller. A credential this session was
+/// refused stays refused without asking macOS again.
 fn load_locked(
     environment_id: &str,
     entry_id: &str,
 ) -> Result<CredentialEnvelope, FinanceCredentialError> {
     validate_revision(environment_id)?;
     validate_entry_id(entry_id)?;
-    let Some(value) = read_blob(environment_id, entry_id)? else {
-        return Ok(CredentialEnvelope::default());
+    if matches!(
+        remembered(environment_id, entry_id),
+        Some(SessionAccess::Locked)
+    ) {
+        return Err(FinanceCredentialError::Locked);
+    }
+    let value = match read_blob(environment_id, entry_id) {
+        Ok(Some(value)) => value,
+        Ok(None) => {
+            let envelope = CredentialEnvelope::default();
+            remember_envelope(environment_id, entry_id, &envelope);
+            return Ok(envelope);
+        }
+        Err(FinanceCredentialError::Store | FinanceCredentialError::Locked) => {
+            remember(environment_id, entry_id, Some(SessionAccess::Locked));
+            return Err(FinanceCredentialError::Locked);
+        }
+        Err(error) => return Err(error),
     };
     let envelope: CredentialEnvelope =
         serde_json::from_str(&value).map_err(|_| FinanceCredentialError::Store)?;
     validate_envelope(&envelope)?;
+    remember_envelope(environment_id, entry_id, &envelope);
     Ok(envelope)
+}
+
+/// Reads the envelope for something the user just asked for (save, check,
+/// Try again): a remembered denial is set aside and macOS may ask once more.
+fn load_for_user_locked(
+    environment_id: &str,
+    entry_id: &str,
+) -> Result<CredentialEnvelope, FinanceCredentialError> {
+    validate_revision(environment_id)?;
+    validate_entry_id(entry_id)?;
+    if matches!(
+        remembered(environment_id, entry_id),
+        Some(SessionAccess::Locked)
+    ) {
+        remember(environment_id, entry_id, None);
+    }
+    load_locked(environment_id, entry_id)
 }
 
 fn save_locked(
@@ -446,7 +602,9 @@ fn save_locked(
 ) -> Result<(), FinanceCredentialError> {
     validate_envelope(envelope)?;
     let value = serde_json::to_string(envelope).map_err(|_| FinanceCredentialError::Store)?;
-    write_blob(environment_id, entry_id, &value)
+    write_blob(environment_id, entry_id, &value)?;
+    remember_envelope(environment_id, entry_id, envelope);
+    Ok(())
 }
 
 fn status_from(envelope: &CredentialEnvelope) -> CredentialStatus {
@@ -511,7 +669,7 @@ pub fn stage(
     let _guard = operation_lock()
         .lock()
         .map_err(|_| FinanceCredentialError::Store)?;
-    let mut envelope = load_locked(environment_id, entry_id)?;
+    let mut envelope = load_for_user_locked(environment_id, entry_id)?;
     let mut secrets = envelope
         .active
         .as_ref()
@@ -542,7 +700,7 @@ pub fn candidate(
     let _guard = operation_lock()
         .lock()
         .map_err(|_| FinanceCredentialError::Store)?;
-    Ok(load_locked(environment_id, entry_id)?
+    Ok(load_for_user_locked(environment_id, entry_id)?
         .candidate
         .map(|candidate| CredentialCandidate {
             revision: candidate.credential.revision,
@@ -561,7 +719,7 @@ pub fn candidate_for_verification(
     let _guard = operation_lock()
         .lock()
         .map_err(|_| FinanceCredentialError::Store)?;
-    let mut envelope = load_locked(environment_id, entry_id)?;
+    let mut envelope = load_for_user_locked(environment_id, entry_id)?;
     if envelope.candidate.is_none() {
         let Some(active) = &envelope.active else {
             return Ok(None);
@@ -599,7 +757,7 @@ pub fn finish_verification(
     let _guard = operation_lock()
         .lock()
         .map_err(|_| FinanceCredentialError::Store)?;
-    let mut envelope = load_locked(environment_id, entry_id)?;
+    let mut envelope = load_for_user_locked(environment_id, entry_id)?;
     let Some(candidate) = envelope.candidate.as_mut() else {
         return Ok(FinishVerification::Stale);
     };
@@ -649,7 +807,34 @@ pub fn status(
     let _guard = operation_lock()
         .lock()
         .map_err(|_| FinanceCredentialError::Store)?;
-    Ok(status_from(&load_locked(environment_id, entry_id)?))
+    match remembered(environment_id, entry_id) {
+        Some(SessionAccess::Known { status, .. }) => Ok(status),
+        Some(SessionAccess::Locked) => Err(FinanceCredentialError::Locked),
+        None => Ok(status_from(&load_locked(environment_id, entry_id)?)),
+    }
+}
+
+/// Whether this session was refused the credential. Reads nothing.
+pub fn is_locked(environment_id: &str, entry_id: &str) -> bool {
+    matches!(
+        remembered(environment_id, entry_id),
+        Some(SessionAccess::Locked)
+    )
+}
+
+/// Try again: forgets a remembered denial and reads the credential once more,
+/// so macOS may ask again. Only an explicit user action calls this.
+pub fn unlock(
+    environment_id: &str,
+    entry_id: &str,
+) -> Result<CredentialStatus, FinanceCredentialError> {
+    let _guard = operation_lock()
+        .lock()
+        .map_err(|_| FinanceCredentialError::Store)?;
+    Ok(status_from(&load_for_user_locked(
+        environment_id,
+        entry_id,
+    )?))
 }
 
 /// Returns only a verified active bundle. Staged or rejected values are never
@@ -692,9 +877,15 @@ pub(crate) fn active_revision(
     let _guard = operation_lock()
         .lock()
         .map_err(|_| FinanceCredentialError::Store)?;
-    Ok(load_locked(environment_id, entry_id)?
-        .active
-        .map(|active| active.credential.revision))
+    match remembered(environment_id, entry_id) {
+        Some(SessionAccess::Known {
+            active_revision, ..
+        }) => Ok(active_revision),
+        Some(SessionAccess::Locked) => Err(FinanceCredentialError::Locked),
+        None => Ok(load_locked(environment_id, entry_id)?
+            .active
+            .map(|active| active.credential.revision)),
+    }
 }
 
 pub fn delete(environment_id: &str, entry_id: &str) -> Result<(), FinanceCredentialError> {
@@ -703,7 +894,9 @@ pub fn delete(environment_id: &str, entry_id: &str) -> Result<(), FinanceCredent
     let _guard = operation_lock()
         .lock()
         .map_err(|_| FinanceCredentialError::Store)?;
-    delete_blob(environment_id, entry_id)
+    delete_blob(environment_id, entry_id)?;
+    remember_envelope(environment_id, entry_id, &CredentialEnvelope::default());
+    Ok(())
 }
 
 #[cfg(feature = "eval-harness")]
@@ -1098,4 +1291,145 @@ fn krx_coverage_belongs_to_the_verified_key_and_survives_a_failed_replacement() 
     assert_eq!(retained.krx_coverage, Some(coverage));
     delete(&environment, entry).unwrap();
     assert_eq!(status(&environment, entry).unwrap().krx_coverage, None);
+}
+
+#[cfg(test)]
+mod session_gate_tests {
+    use super::*;
+
+    fn saved(environment: &str, entry: &str) {
+        let key = BTreeMap::from([("api_key".into(), "fixture-gate-key".into())]);
+        stage(environment, entry, &key).unwrap();
+        let pending = candidate(environment, entry).unwrap().unwrap();
+        finish_verification(
+            environment,
+            entry,
+            pending.revision(),
+            VerificationOutcome::Verified,
+            5,
+            None,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn listing_status_reads_a_saved_secret_at_most_once_per_session() {
+        let environment = Uuid::new_v4().to_string();
+        let entry = "fred.macro";
+        saved(&environment, entry);
+        let after_save = test_store::secret_reads(&environment, entry);
+        for _ in 0..5 {
+            assert!(status(&environment, entry).unwrap().active);
+            assert!(active_revision(&environment, entry).unwrap().is_some());
+        }
+        assert_eq!(test_store::secret_reads(&environment, entry), after_save);
+
+        // After a restart (an update) the first status read is the only one.
+        test_store::restart(&environment, entry);
+        for _ in 0..5 {
+            assert!(status(&environment, entry).unwrap().active);
+        }
+        assert_eq!(
+            test_store::secret_reads(&environment, entry),
+            after_save + 1
+        );
+        delete(&environment, entry).unwrap();
+    }
+
+    #[test]
+    fn concurrent_first_reads_wait_for_one_answer() {
+        let environment = Uuid::new_v4().to_string();
+        let entry = "fred.macro";
+        saved(&environment, entry);
+        test_store::restart(&environment, entry);
+        let before = test_store::secret_reads(&environment, entry);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let threads = (0..8)
+            .map(|_| {
+                let barrier = barrier.clone();
+                let environment = environment.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    status(&environment, entry).unwrap().active
+                })
+            })
+            .collect::<Vec<_>>();
+        for thread in threads {
+            assert!(thread.join().unwrap());
+        }
+        assert_eq!(test_store::secret_reads(&environment, entry), before + 1);
+
+        // A denial reached by concurrent callers is also asked once.
+        test_store::restart(&environment, entry);
+        test_store::deny(&environment, entry, true);
+        let before = test_store::secret_reads(&environment, entry);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let threads = (0..8)
+            .map(|_| {
+                let barrier = barrier.clone();
+                let environment = environment.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    status(&environment, entry).is_err()
+                })
+            })
+            .collect::<Vec<_>>();
+        for thread in threads {
+            assert!(thread.join().unwrap());
+        }
+        assert_eq!(test_store::secret_reads(&environment, entry), before + 1);
+        test_store::deny(&environment, entry, false);
+        delete(&environment, entry).unwrap();
+    }
+
+    #[test]
+    fn a_denial_is_remembered_for_its_own_credential_until_try_again() {
+        let environment = Uuid::new_v4().to_string();
+        let (locked, other) = ("fred.macro", "krx.market-data");
+        saved(&environment, locked);
+        saved(&environment, other);
+        test_store::restart(&environment, locked);
+        test_store::restart(&environment, other);
+        test_store::deny(&environment, locked, true);
+
+        let before = test_store::secret_reads(&environment, locked);
+        assert!(matches!(
+            status(&environment, locked),
+            Err(FinanceCredentialError::Locked)
+        ));
+        assert!(is_locked(&environment, locked));
+        // Every later passive caller is refused without asking again.
+        assert!(matches!(
+            status(&environment, locked),
+            Err(FinanceCredentialError::Locked)
+        ));
+        assert!(matches!(
+            get(&environment, locked),
+            Err(FinanceCredentialError::Locked)
+        ));
+        assert!(matches!(
+            active_revision(&environment, locked),
+            Err(FinanceCredentialError::Locked)
+        ));
+        assert_eq!(test_store::secret_reads(&environment, locked), before + 1);
+
+        // The other connection is unaffected.
+        assert!(!is_locked(&environment, other));
+        assert!(status(&environment, other).unwrap().active);
+        assert!(get(&environment, other).unwrap().is_some());
+
+        // Try again asks again; still denied, still locked.
+        assert!(matches!(
+            unlock(&environment, locked),
+            Err(FinanceCredentialError::Locked)
+        ));
+        assert_eq!(test_store::secret_reads(&environment, locked), before + 2);
+        // Allowed this time: the connection is back.
+        test_store::deny(&environment, locked, false);
+        assert!(unlock(&environment, locked).unwrap().active);
+        assert!(!is_locked(&environment, locked));
+        assert!(get(&environment, locked).unwrap().is_some());
+        delete(&environment, locked).unwrap();
+        delete(&environment, other).unwrap();
+    }
 }
