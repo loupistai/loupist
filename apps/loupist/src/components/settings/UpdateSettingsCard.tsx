@@ -46,6 +46,25 @@ const displayPublishedAt = (value: string) => {
   return formatDate(timestamp, { dateStyle: i18n.language.toLowerCase().startsWith("ko") ? "long" : "medium" });
 };
 
+const blockerLabel = (kind: string) => {
+  // The host's labels describe fixed activity kinds, not user-authored titles.
+  switch (kind) {
+    case "chat": return i18n.t("settings:updateSettingsCard.blockers.chat");
+    case "chat_mutation": return i18n.t("settings:updateSettingsCard.blockers.chatChange");
+    case "memory_write": return i18n.t("settings:updateSettingsCard.blockers.memoryWrite");
+    case "memory_mutation": return i18n.t("settings:updateSettingsCard.blockers.memoryChange");
+    case "loupist_mutation": return i18n.t("settings:updateSettingsCard.blockers.loupistChange");
+    case "loupist_deletion": return i18n.t("settings:updateSettingsCard.blockers.loupistDeletion");
+    case "marketplace_configuration": return i18n.t("settings:updateSettingsCard.blockers.marketplaceSettings");
+    case "marketplace_credential": return i18n.t("settings:updateSettingsCard.blockers.marketplaceCredentials");
+    case "provider_inference": return i18n.t("settings:updateSettingsCard.blockers.modelWork");
+    case "provider_support": return i18n.t("settings:updateSettingsCard.blockers.modelConnection");
+    case "graph": return i18n.t("settings:updateSettingsCard.blockers.map");
+    case "update": return i18n.t("settings:updateSettingsCard.blockers.update");
+    default: return i18n.t("settings:updateSettingsCard.blockers.other");
+  }
+};
+
 export function UpdateSettingsCard({
   status: updateState,
   phase,
@@ -178,7 +197,7 @@ export function UpdateSettingsCard({
               <strong>{i18n.t("settings:updateSettingsCard.finishActiveWorkBeforeUpdating")}</strong>
               <ul>
                 {updateState.blockers.map((blocker) => (
-                  <li key={`${blocker.kind}:${blocker.id}`}>{blocker.label}</li>
+                  <li key={`${blocker.kind}:${blocker.id}`}>{blockerLabel(blocker.kind)}</li>
                 ))}
               </ul>
             </div>

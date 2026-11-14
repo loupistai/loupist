@@ -108,4 +108,11 @@ codesign -d -r- /Applications/Loupist.app
 
 Loupist checks the stable signed update feed daily after a successful check, with shorter retries after failures. Settings → Updates also provides **Check for updates**. Download, installation, and restart always require user confirmation. Prereleases are never offered on the stable channel.
 
+Settings shows update errors and the kinds of work blocking installation in the
+interface language, never the host's diagnostic strings. A background check failure
+says Loupist will retry later; a manual failure asks the user to check the internet
+connection and try again. Download or signature-verification failure, installation
+failure and a changed update offer each have their own localized guidance. Unknown
+host failures use a localized message for the failed operation.
+
 Compatible development databases are upgraded in place on first open, after a private backup is written beside the database. Formats older than the supported baseline, and databases from newer versions, are refused and left unchanged.

@@ -1,6 +1,6 @@
 import i18n, { useTranslation } from "../../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { errorMessage } from "../../lib/errors";
+import { commandErrorCode } from "../../lib/errors";
 import type {
   LoupistBridge,
   UpdateInstallRequest,
@@ -22,11 +22,48 @@ const statusWithPhase = (
   phase: UpdateState["phase"],
 ): UpdateState | null => (status ? { ...status, phase, error: null } : status);
 
+type UpdateErrorKey = "couldNotReadUpdateStatus" | "couldNotCheckForUpdates" |
+  "couldNotInstallTheUpdate" | "backgroundCheckFailed" | "couldNotSaveUpdateSchedule" |
+  "couldNotVerifyTheUpdate" | "couldNotDownloadTheUpdate" | "updateChanged" |
+  "updatesUnavailable" | "updateBusy";
+
+// UpdateState predates coded errors. Keep its host diagnostics at the bridge
+// boundary; only translated keys reach the settings card, including unknown errors.
+function statusErrorKey(message: string): UpdateErrorKey {
+  switch (message) {
+    case "Could not check for updates. Loupist will retry.": return "backgroundCheckFailed";
+    case "Could not save update scheduling state.": return "couldNotSaveUpdateSchedule";
+    case "Could not verify the update. Try again.": return "couldNotVerifyTheUpdate";
+    case "Could not download the update. Try again.":
+    case "The update download timed out. Try again.": return "couldNotDownloadTheUpdate";
+    case "Could not install the update. Try again.": return "couldNotInstallTheUpdate";
+    case "The available update changed. Check again before installing.": return "updateChanged";
+    case "Automatic updates are unavailable in this build.": return "updatesUnavailable";
+    default: return "couldNotReadUpdateStatus";
+  }
+}
+
+function actionErrorKey(cause: unknown, fallback: UpdateErrorKey): UpdateErrorKey {
+  switch (commandErrorCode(cause)) {
+    case "update_busy": return "updateBusy";
+    case "conflict":
+    case "not_found":
+    case "update_changed": return "updateChanged";
+    case "updater_unavailable": return "updatesUnavailable";
+    case "update_check_failed": return fallback === "couldNotInstallTheUpdate" ? "couldNotVerifyTheUpdate" : "couldNotCheckForUpdates";
+    // The updater verifies the package signature during download. A refused
+    // signature is the same host error as a failed download, never install success.
+    case "update_download_failed": return "couldNotDownloadTheUpdate";
+    case "update_install_failed": return "couldNotInstallTheUpdate";
+    default: return fallback;
+  }
+}
+
 export function useAppUpdate(bridge: LoupistBridge) {
   useTranslation("settings");
   const [status, setStatus] = useState<UpdateState | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<UpdateErrorKey | null>(null);
+  const [actionError, setActionError] = useState<UpdateErrorKey | null>(null);
   const [actionPhase, setActionPhase] = useState<UpdateState["phase"] | null>(null);
   const requestEpoch = useRef(0);
   const polling = useRef(false);
@@ -34,7 +71,7 @@ export function useAppUpdate(bridge: LoupistBridge) {
   const mounted = useRef(true);
   const latestStatus = useRef<UpdateState | null>(null);
 
-  const refreshStatus = useCallback(async () => {
+  const refreshStatus = useCallback(async (preserveActionError = false) => {
     if (polling.current) return;
     polling.current = true;
     const epoch = requestEpoch.current;
@@ -43,10 +80,10 @@ export function useAppUpdate(bridge: LoupistBridge) {
       if (!mounted.current || epoch !== requestEpoch.current) return;
       setStatus(current => JSON.stringify(current) === JSON.stringify(next) ? current : next);
       setStatusError(null);
-      if (!next.error) setActionError(null);
-    } catch (cause) {
+      if (!next.error && !preserveActionError) setActionError(null);
+    } catch {
       if (!mounted.current || epoch !== requestEpoch.current) return;
-      setStatusError(errorMessage(cause, i18n.t("settings:useAppUpdate.couldNotReadUpdateStatus")));
+      setStatusError("couldNotReadUpdateStatus");
     } finally {
       polling.current = false;
     }
@@ -69,8 +106,8 @@ export function useAppUpdate(bridge: LoupistBridge) {
       if (!mounted.current) return;
       requestEpoch.current++;
       setStatus((current) => statusWithPhase(current, "idle"));
-      setActionError(errorMessage(cause, i18n.t("settings:useAppUpdate.couldNotCheckForUpdates")));
-      await refreshStatus();
+      setActionError(actionErrorKey(cause, "couldNotCheckForUpdates"));
+      await refreshStatus(true);
     } finally {
       acting.current = false;
       if (mounted.current) setActionPhase(null);
@@ -109,8 +146,8 @@ export function useAppUpdate(bridge: LoupistBridge) {
         if (!mounted.current) return;
         requestEpoch.current++;
         setStatus((current) => statusWithPhase(current, "idle"));
-        setActionError(errorMessage(cause, i18n.t("settings:useAppUpdate.couldNotInstallTheUpdate")));
-        await refreshStatus();
+        setActionError(actionErrorKey(cause, "couldNotInstallTheUpdate"));
+        await refreshStatus(true);
       } finally {
         acting.current = false;
         if (mounted.current) setActionPhase(null);
@@ -138,10 +175,11 @@ export function useAppUpdate(bridge: LoupistBridge) {
     return () => window.clearInterval(interval);
   }, [refreshStatus, phase]);
 
+  const errorKey = actionError ?? statusError ?? (status?.error ? statusErrorKey(status.error) : null);
   return {
     status,
     phase,
-    error: actionError ?? statusError ?? status?.error ?? null,
+    error: errorKey ? i18n.t(`settings:useAppUpdate.${errorKey}`) : null,
     checkForUpdates,
     installUpdate,
   };
