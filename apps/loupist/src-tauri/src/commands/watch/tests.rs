@@ -112,11 +112,47 @@ async fn check(
     .unwrap_or_default()
 }
 
+#[tokio::test]
+async fn calendars_share_reads_only_within_the_same_listing_market() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    for (symbol, market) in [("MORR", "NASDAQ"), ("OTHER", "NYSE"), ("SHOP", "TSX")] {
+        follow(&state, symbol, market, symbol);
+    }
+    defaults(&state, "loupist-a");
+    let mut reader = Scripted::default();
+    reader.script_from(
+        "equity_calendar_earnings",
+        None,
+        "fmp",
+        json!({"structuredContent": {"results": []}}),
+    );
+    check(&state, &Runtime::default(), "loupist-a", &mut reader).await;
+    assert_eq!(reader.calls_to("equity_calendar_earnings"), 2);
+}
+
 fn events(state: &AppState, loupist_id: &str) -> Vec<WatchEventView> {
     with_assets(state, loupist_id, false, |tx| {
         watch::list_events(tx, loupist_id, None, 100)
     })
     .unwrap()
+}
+
+#[tokio::test]
+async fn listing_identity_disabled_sec_filings_need_a_connection_without_retry_failure() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary, &["loupist-a"]);
+    follow(&state, "NVDA", "NASDAQ", "Nvidia");
+    let page = followed_pages(&state, "loupist-a").unwrap().remove(0);
+    let mut session = HostSession::open(&state, "loupist-a", None).unwrap();
+    session.capabilities.insert(OPENBB_CONNECTION.into());
+    // No MCP provider is enabled in this fixture; avoid starting a real sidecar.
+    session.connected = Some(true);
+    let request = route_read(Route::Filings, &page, day(0)).unwrap();
+    assert_eq!(request.arguments["provider"], "sec");
+    assert!(
+        matches!(session.read(&page, &request, None).await, ReadOutcome::NeedsConnection(connection) if connection == OPENBB_CONNECTION)
+    );
 }
 
 #[tokio::test]
@@ -1075,7 +1111,8 @@ async fn deferred_filing_events(origin: Option<ObservationOrigin>, missing_grant
         ]),
     );
     let read = route_read(Route::Filings, &page, today).unwrap();
-    let ReadOutcome::Ok { payload, provider } = reader.read(&state, "loupist-a", &read, None).await
+    let ReadOutcome::Ok { payload, provider } =
+        reader.read(&state, "loupist-a", &page, &read, None).await
     else {
         panic!("scripted read")
     };
@@ -1253,7 +1290,7 @@ async fn first_read_stays_a_baseline_when_delivery_was_skipped() {
             )]),
         );
         let ReadOutcome::Ok { payload, provider } =
-            reader.read(&state, "loupist-a", &read, None).await
+            reader.read(&state, "loupist-a", &page, &read, None).await
         else {
             panic!("scripted read")
         };
@@ -1361,8 +1398,9 @@ async fn class_starting_points_survive_a_skipped_delivery_phase() {
             ],
         ),
     );
-    let ReadOutcome::Ok { payload, provider } =
-        reader.read(&state, "loupist-crypto", &read, None).await
+    let ReadOutcome::Ok { payload, provider } = reader
+        .read(&state, "loupist-crypto", &page, &read, None)
+        .await
     else {
         panic!("scripted read")
     };

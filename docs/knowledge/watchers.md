@@ -72,7 +72,7 @@ offer Watch all only for them, hiding it when there are none.
 [Watch kinds](watchers.md#watchers) map to routes: filings (holders, and every
 Korean kind except flows; OpenDART, or SEC filings through OpenBB), insider trades
 (`sec`, `fmp` or `intrinio` only), the earnings calendar (`nasdaq`, `fmp` or `tmx`; one
-read for every US asset), dividends, Korean investor flows (KIS), prices
+read per listing market), dividends, Korean investor flows (KIS), prices
 (`crypto_price_historical` for the coin's USD pair, `derivatives_futures_historical` for a
 futures root), value locked (`defillama_read`), CFTC positioning (`cftc_cot`, `cftc`
 provider only) and EIA's weekly petroleum report (`eia` only; one read for every oil
@@ -81,6 +81,9 @@ Filings and insiders are due hourly, prices and value locked every six hours, th
 calendar, dividends, positioning and the petroleum report once a day after 06:00 local
 time, and flows on KRX trading days (published holidays skipped) after 18:30 Seoul time.
 
+Provider choice and bounded fallback follow the shared
+[host-read market rules](../capabilities/data-services.md#agent-facing-data-services),
+including calendar reads: Toronto data never supplies a US or unknown-market asset.
 Reads go through each Loupist's own executor (`AppToolExecutor::for_host`: its captured
 grants and the unattended allowlist). One read per route and asset serves every Loupist
 that wants it: the first one holding the grant reads, the others get a copy in their own

@@ -38,10 +38,10 @@ describe("Loupist · Updates", () => {
   });
 
   it("does not call a failed check up to date", async () => {
-    await openUpdates({ ...current, error: "Could not check for updates." });
+    await openUpdates({ ...current, error: "Could not check for updates. Loupist will retry." });
     await screen.findByRole("button", { name: "Check for updates" });
     expect(screen.queryByText("Loupist is up to date")).not.toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("Could not check for updates.");
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't check for updates. Loupist will try again later.");
   });
 
   it("loads native status and checks manually from Settings", async () => {
@@ -127,7 +127,8 @@ describe("Loupist · Updates", () => {
     vi.spyOn(bridge, "updateInstall").mockResolvedValue({ outcome: "blocked", blockers: [{ id: "run-1", kind: "memory_mutation", label: "memory update for Loupist value (session-1)" }] });
     await user.click(await screen.findByRole("button", { name: "Install and restart" }));
     expect(await screen.findByText("Finish active work before updating")).toBeVisible();
-    expect(screen.getByText("memory update for Loupist value (session-1)")).toBeVisible();
+    expect(screen.getByText("Changing Memory")).toBeVisible();
+    expect(screen.queryByText(/session-1/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /force/i })).not.toBeInTheDocument();
   });
 

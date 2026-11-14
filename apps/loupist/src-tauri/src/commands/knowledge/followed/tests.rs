@@ -87,6 +87,76 @@ fn set_job_status(state: &AppState, loupist_id: &str, status: &str) {
     .unwrap();
 }
 
+fn library_sources(
+    state: &AppState,
+    loupist_id: &str,
+) -> Vec<super::super::KnowledgeRecordSummaryDto> {
+    super::super::catalog(
+        state,
+        super::super::KnowledgeCatalogRequest {
+            loupist_id: loupist_id.into(),
+        },
+    )
+    .unwrap()
+    .sources
+}
+
+#[tokio::test]
+async fn followed_library_preview_contains_asset_lines_without_the_model_lead() {
+    let root = tempfile::tempdir().unwrap();
+    let state = connected(root.path()).await;
+    state
+        .store
+        .watchlist_add("NVDA", "NASDAQ", Some("NVIDIA"))
+        .unwrap();
+    let loupist_id = create_managed(&state).await;
+    let sources = library_sources(&state, &loupist_id);
+    assert_eq!(sources.len(), 1);
+    assert_eq!(
+        sources[0].objects[0].summary.as_deref(),
+        Some("- NVIDIA (NVDA:NASDAQ)")
+    );
+    // Presentation must not alter the exact material the World worker reads.
+    assert!(bodies(&followed_state(&state, &loupist_id).1)[0]
+        .starts_with("Assets the user follows. Each line is one asset"));
+}
+
+#[tokio::test]
+async fn followed_library_previews_each_addition_with_only_its_own_asset_lines() {
+    let root = tempfile::tempdir().unwrap();
+    let state = connected(root.path()).await;
+    state
+        .store
+        .watchlist_add("NVDA", "NASDAQ", Some("NVIDIA"))
+        .unwrap();
+    let loupist_id = create_managed(&state).await;
+    state
+        .store
+        .watchlist_add("005930", "KRX", Some("삼성전자"))
+        .unwrap();
+    assert_eq!(sync_followed_assets(&state, &loupist_id).unwrap(), 1);
+    let sources = library_sources(&state, &loupist_id);
+    assert_eq!(sources.len(), 2);
+    let previews = sources
+        .iter()
+        .map(|source| {
+            assert_eq!(source.title_key, Some("followed"));
+            source.objects[0].summary.as_deref().unwrap()
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        previews,
+        std::collections::BTreeSet::from(["- NVIDIA (NVDA:NASDAQ)", "- 삼성전자 (005930:KRX)",])
+    );
+    // These are incremental captures, not superseded versions: keep both exact
+    // Sources and ordinary jobs available to evidence reads and processing.
+    let (retained, jobs, _) = followed_state(&state, &loupist_id);
+    assert_eq!((retained.len(), jobs.len()), (2, 2));
+    assert!(retained
+        .iter()
+        .any(|record| record.record_id == sources[0].record_id));
+}
+
 #[tokio::test]
 async fn a_new_loupist_reads_what_the_user_follows_by_name_only() {
     let root = tempfile::tempdir().unwrap();

@@ -1527,14 +1527,25 @@ fn summarize(
                             .flatten()
                     })
                     .map(|text| {
-                        let readable = source_presentation::source_presentation(
-                            source.source_class,
-                            rep.role,
-                            &rep.media_type,
-                            &text,
-                        )
-                        .map(|presentation| presentation.text)
-                        .unwrap_or(text);
+                        let readable = if crate::knowledge::title_key(&source.provider_identity)
+                            == Some("followed")
+                        {
+                            // The lead belongs to the model. A Library preview
+                            // shows only the assets this immutable addition holds.
+                            text.lines()
+                                .filter(|line| line.starts_with("- "))
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        } else {
+                            source_presentation::source_presentation(
+                                source.source_class,
+                                rep.role,
+                                &rep.media_type,
+                                &text,
+                            )
+                            .map(|presentation| presentation.text)
+                            .unwrap_or(text)
+                        };
                         readable.chars().take(240).collect()
                     })
             })

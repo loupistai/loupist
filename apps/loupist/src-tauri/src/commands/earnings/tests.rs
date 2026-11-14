@@ -135,6 +135,73 @@ fn snapshot(state: &AppState, page: &PageRecord, event: &EventRecord) -> Snapsho
 }
 
 #[test]
+fn listing_identity_event_list_keeps_unfiled_ir_dates_for_upcoming_labels() {
+    use tauri::Manager;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary);
+    state
+        .store
+        .watchlist_add("005930", "KRX", Some("Samsung Electronics"))
+        .unwrap();
+    let page = watch_commands::followed_pages(&state, "loupist-a")
+        .unwrap()
+        .into_iter()
+        .find(|page| page.symbol == "005930")
+        .unwrap();
+    let filed = event(&state, &page, -40, true);
+    with_assets(&state, "loupist-a", true, |tx| {
+        for (period, offset) in [("Q4 2026", 100), ("Q1 2026", -100)] {
+            earnings::upsert_event(
+                tx,
+                "loupist-a",
+                &page.asset_id,
+                period,
+                None,
+                day(offset),
+                DateSource::LegalDeadline,
+                1,
+            )?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    let confirmed = with_assets(&state, "loupist-a", true, |tx| {
+        earnings::upsert_event(
+            tx,
+            "loupist-a",
+            &page.asset_id,
+            "Q1 2027",
+            None,
+            day(7),
+            DateSource::IrNotice,
+            1,
+        )
+        .map(|(event, _)| event)
+    })
+    .unwrap();
+    let app = tauri::test::mock_builder()
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    app.manage(state);
+    let history = earnings_events_list(
+        app.state(),
+        EarningsEventsListRequest {
+            loupist_id: "loupist-a".into(),
+            asset_id: page.asset_id,
+        },
+    )
+    .unwrap();
+    assert_eq!(history.len(), 4);
+    assert!(history.iter().any(|event| event.event_id == filed.event_id));
+    let confirmed = history
+        .iter()
+        .find(|event| event.event_id == confirmed.event_id)
+        .unwrap();
+    assert_eq!(confirmed.date_source, DateSource::IrNotice);
+    assert_eq!(confirmed.status, Status::Upcoming);
+}
+
+#[test]
 fn period_rows_prefer_dates_and_only_use_fiscal_labels_for_undated_payloads() {
     let temporary = tempfile::tempdir().unwrap();
     let state = fixture(&temporary);

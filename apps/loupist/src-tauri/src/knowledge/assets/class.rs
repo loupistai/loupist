@@ -101,6 +101,77 @@ pub fn is_korean_market(market: &str) -> bool {
     KOREAN_MARKETS.contains(&upper(market).as_str())
 }
 
+/// The listing market used by host provider selection. Canadian suffixes are
+/// explicit listing identities, even when the caller has no market code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListingMarket {
+    Canada,
+    Us,
+    Foreign,
+}
+
+/// Explicit foreign listing venues and the Yahoo suffixes the pinned yfinance
+/// package maps to them. Unrecognised/free-form venue names keep the US default.
+pub fn foreign_listing_suffixes(market: &str) -> &'static [&'static str] {
+    match upper(market).as_str() {
+        "LSE" | "LON" | "L" | "XLON" => &["L"],
+        "XETRA" | "ETR" | "DE" | "XETR" => &["DE"],
+        "FRA" | "XFRA" => &["F"],
+        "EURONEXT" => &["PA", "AS", "BR", "LS", "MI"],
+        "EPA" | "PAR" | "PA" | "XPAR" => &["PA"],
+        "AMS" | "AS" | "XAMS" => &["AS"],
+        "BRU" | "BR" | "XBRU" => &["BR"],
+        "LIS" | "LS" | "XLIS" => &["LS"],
+        "MIL" | "MI" | "MTAA" => &["MI"],
+        "TSE" | "JPX" | "TYO" | "T" | "XTKS" => &["T"],
+        "HKEX" | "HKG" | "HK" | "SEHK" | "XHKG" => &["HK"],
+        "ASX" | "AX" | "XASX" => &["AX"],
+        "SSE" | "SHA" | "SS" | "XSHG" => &["SS"],
+        "SZSE" | "SHE" | "SZ" | "XSHE" => &["SZ"],
+        "KRX" | "XKRX" => &["KS", "KQ"],
+        "KOSPI" | "KS" => &["KS"],
+        "KOSDAQ" | "KQ" => &["KQ"],
+        "SGX" | "SI" | "XSES" => &["SI"],
+        "SIX" | "SWX" | "SW" | "XSWX" => &["SW"],
+        "NSE" | "NS" | "XNSE" => &["NS"],
+        "BSE" | "BO" | "XBOM" => &["BO"],
+        "TWSE" | "TW" | "XTAI" => &["TW"],
+        "TPEX" | "TWO" | "ROCO" => &["TWO"],
+        _ => &[],
+    }
+}
+
+pub fn has_listing_suffix(symbol: &str, suffixes: &[&str]) -> bool {
+    let symbol = upper(symbol);
+    suffixes
+        .iter()
+        .any(|suffix| symbol.len() > suffix.len() + 1 && symbol.ends_with(&format!(".{suffix}")))
+}
+
+pub fn listing_market(symbol: &str, market: &str) -> Option<ListingMarket> {
+    let market = upper(market);
+    let symbol = upper(symbol);
+    if [
+        "CA", "CAN", "CANADA", "TSX", "TO", "TSXV", "TSX-V", "V", "CSE", "CNSX", "NEO", "XTSE",
+        "XTSX", "XCNQ",
+    ]
+    .contains(&market.as_str())
+        || has_listing_suffix(&symbol, &["TO", "V"])
+    {
+        Some(ListingMarket::Canada)
+    } else if [
+        "US", "USA", "NYSE", "NASDAQ", "AMEX", "NYSEARCA", "ARCA", "BATS", "CBOE", "NMS", "NYQ",
+    ]
+    .contains(&market.as_str())
+    {
+        Some(ListingMarket::Us)
+    } else if !foreign_listing_suffixes(&market).is_empty() {
+        Some(ListingMarket::Foreign)
+    } else {
+        None
+    }
+}
+
 /// The exchange's time zone (codes as `chat/marketStatus.ts` knows them). A
 /// daily crypto bar closes at midnight UTC.
 pub fn exchange_time_zone(market: &str) -> Option<chrono_tz::Tz> {

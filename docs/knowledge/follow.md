@@ -47,6 +47,14 @@ interface shows the title and origin in its own language through the display key
 growth events). Briefings leave these Sources out of the World growth they summarize,
 and the morning message never names one as where a value came from.
 
+Library previews show only the asset lines in each Source, without its model-facing
+English lead. This is a display projection; retained text and World jobs keep the
+lead. Successive additions are still separate immutable Sources, each previewing
+its own added assets. They are not superseded revisions of one document. A single
+Library item for the derived followed list remains open work: reuse one Source
+through the capture/revision API, make that currently test-only entry point
+available to the host, and account for existing Loupists with several Sources.
+
 ## Code
 
 - What you follow (followed assets to the Map): `src-tauri/src/knowledge/followed.rs`, `src-tauri/src/commands/knowledge/followed.rs`, `src-tauri/src/commands/user_context.rs`, `src/knowledge/hostSource.ts`

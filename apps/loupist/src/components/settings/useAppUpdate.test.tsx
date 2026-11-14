@@ -56,7 +56,7 @@ describe("update request lifecycle", () => {
       const { result } = renderHook(() => useAppUpdate(bridge));
       await act(async () => { await vi.advanceTimersByTimeAsync(0); });
       await act(() => result.current.checkForUpdates());
-      expect(result.current.error).toBe("update check failed");
+      expect(result.current.error).toBe("Couldn't check for updates. Check your internet connection and try again.");
       status.mockResolvedValue({ ...idle, last_checked_at_ms: 20, error: null });
       await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
       expect(result.current.error).toBeNull();

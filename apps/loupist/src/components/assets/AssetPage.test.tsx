@@ -25,6 +25,33 @@ async function fixture(asset: AssetFixture, visitedDaysAgo?: number, configure?:
 
 afterEach(() => localStorage.clear());
 
+it("keeps unfiled calendar and legal deadline events out of Earlier results", async () => {
+  const { page } = await fixture(noThesisFixture(), undefined, bridge => {
+    vi.spyOn(bridge, "earningsSnapshotGet").mockResolvedValue(null);
+    vi.spyOn(bridge, "earningsEventsList").mockResolvedValue([
+      { eventId: "future-deadline", period: "Q4 2098", reportDate: "2099-03-31", dateSource: "legal_deadline", status: "upcoming" },
+      { eventId: "captured-unfiled", period: "Q3 2098", reportDate: "2098-11-15", dateSource: "calendar", status: "before_captured" },
+      { eventId: "expired-unfiled", period: "Q1 2020", reportDate: "2020-05-15", dateSource: "legal_deadline", status: "upcoming" },
+      { eventId: "filed", period: "Q2 2026", reportDate: "2026-07-30", dateSource: "ir_notice", status: "reported" },
+    ]);
+  });
+  const earlier = await within(page).findByRole("heading", { name: "Earlier results" });
+  expect(within(earlier.parentElement!).getAllByRole("listitem")).toHaveLength(1);
+  expect(within(earlier.parentElement!).getByRole("button", { name: /Q2 2026/ })).toBeVisible();
+});
+
+it("keeps an upcoming IR-notice date labelled confirmed at a glance", async () => {
+  const asset = noThesisFixture();
+  asset.page.glance = [{ key: "nextEarnings", facts: { date: "2099-03-31" }, evidence: [] }];
+  const { page } = await fixture(asset, undefined, bridge => {
+    vi.spyOn(bridge, "earningsSnapshotGet").mockResolvedValue(null);
+    vi.spyOn(bridge, "earningsEventsList").mockResolvedValue([
+      { eventId: "confirmed", period: "Q4 2098", reportDate: "2099-03-31", dateSource: "ir_notice", status: "upcoming" },
+    ]);
+  });
+  expect(await within(page).findByText(/\(confirmed\)/)).toBeVisible();
+});
+
 it("starts a question with the asset's readable name, symbol and market", async () => {
   const { handlers, page, user } = await fixture(hanulFixture());
   await user.click(within(page).getAllByRole("button", { name: "Ask about it" })[0]!);

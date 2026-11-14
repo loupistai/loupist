@@ -316,9 +316,10 @@ impl HostSession {
         self.capabilities.contains(capability)
     }
 
-    /// One read; `allowed` pins the providers that may serve it.
+    /// One asset read; `allowed` restricts the providers that may serve it.
     pub(in crate::commands) async fn read(
         &mut self,
+        page: &PageRecord,
         read: &plan::PlannedRead,
         allowed: Option<&[&str]>,
     ) -> ReadOutcome {
@@ -348,14 +349,14 @@ impl HostSession {
         let outcome = match allowed {
             Some(allowed) => {
                 self.executor
-                    .host_read_among(&self.policy, read, None, allowed)
+                    .host_read_among(&self.policy, page, read, None, allowed)
                     .await
             }
-            None => self
-                .executor
-                .host_read(&self.policy, read, None)
-                .await
-                .map_err(HostReadError::Failed),
+            None => {
+                self.executor
+                    .host_read(&self.policy, page, read, None)
+                    .await
+            }
         };
         match outcome {
             Ok((payload, provider)) => ReadOutcome::Ok { payload, provider },
@@ -397,6 +398,7 @@ pub(in crate::commands) trait HostReader: Send {
         &mut self,
         state: &AppState,
         loupist_id: &str,
+        page: &PageRecord,
         read: &plan::PlannedRead,
         allowed: Option<&'static [&'static str]>,
     ) -> impl std::future::Future<Output = ReadOutcome> + Send;
@@ -452,6 +454,7 @@ impl HostReader for HostSessions {
         &mut self,
         state: &AppState,
         loupist_id: &str,
+        page: &PageRecord,
         read: &plan::PlannedRead,
         allowed: Option<&'static [&'static str]>,
     ) -> impl std::future::Future<Output = ReadOutcome> + Send {
@@ -460,7 +463,7 @@ impl HostReader for HostSessions {
         let fallback = connection_of(read);
         async move {
             match session {
-                Some(session) => session.read(read, allowed).await,
+                Some(session) => session.read(page, read, allowed).await,
                 None => ReadOutcome::Failed(fallback),
             }
         }
@@ -469,7 +472,7 @@ impl HostReader for HostSessions {
 
 // ───────────────────────────── Routes and cadence ─────────────────────────────
 
-/// The read behind one route for one asset (calendar: all US assets at once).
+/// The read behind one route for one asset (calendars share a listing market).
 pub(in crate::commands) fn route_read(
     route: Route,
     page: &PageRecord,
@@ -765,11 +768,11 @@ struct Want {
     prior: Option<RouteState>,
 }
 
-/// A shared read: the route, and for the calendar every US page that wants it.
+/// A shared read: the route, and for a calendar the listing market.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 struct ReadKey {
     route: Route,
-    /// `SYMBOL:MARKET`, or empty for the calendar.
+    /// `SYMBOL:MARKET`, the calendar listing market, or empty for inventory.
     asset: String,
 }
 
@@ -869,9 +872,18 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
                 }
                 let key = ReadKey {
                     route,
-                    // The calendar and the petroleum report are one read for every asset.
-                    asset: if matches!(route, Route::Calendar | Route::Inventory) {
+                    // Calendar recipients must have the same eligible providers.
+                    // The petroleum report is shared across every oil asset.
+                    asset: if route == Route::Inventory {
                         String::new()
+                    } else if route == Route::Calendar {
+                        match assets::class::listing_market(&page.symbol, &page.market) {
+                            Some(assets::class::ListingMarket::Canada) => "CA".to_owned(),
+                            Some(assets::class::ListingMarket::Us) => "US".to_owned(),
+                            Some(assets::class::ListingMarket::Foreign) | None => {
+                                format!("market:{}", page.market.trim().to_uppercase())
+                            }
+                        }
                     } else {
                         format!(
                             "{}:{}",
@@ -945,7 +957,7 @@ pub(in crate::commands) async fn run_pass_with<R: HostReader>(
             Some(id) => {
                 runtime.count_read(now_ms);
                 reader
-                    .read(state, id, &read, allowed_providers(key.route))
+                    .read(state, id, &first.page, &read, allowed_providers(key.route))
                     .await
             }
             None => ReadOutcome::NeedsConnection(if read.server.is_some() {
@@ -1605,7 +1617,7 @@ pub(in crate::commands) async fn sync_earnings<R: HostReader>(
             connection: OPENDART_CONNECTION,
             arguments: json!({"rcept_no": notice.filing_id}),
         };
-        let date = match reader.read(state, &loupist_id, &read, None).await {
+        let date = match reader.read(state, &loupist_id, page, &read, None).await {
             ReadOutcome::Ok { payload, .. } => ["/data/document/text", "/document/text", "/text"]
                 .iter()
                 .find_map(|pointer| payload.pointer(pointer).and_then(Value::as_str))
