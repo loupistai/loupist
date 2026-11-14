@@ -283,7 +283,22 @@
     "installing": "설치 중…",
     "restarting": "다시 시작 중…",
     "installAndRestart": "설치 후 다시 시작",
-    "finishActiveWorkBeforeUpdating": "업데이트 전에 진행 중인 작업을 마쳐 주세요"
+    "finishActiveWorkBeforeUpdating": "업데이트 전에 진행 중인 작업을 마쳐 주세요",
+    "blockers": {
+      "chat": "대화 진행 중",
+      "chatChange": "대화 변경 중",
+      "memoryWrite": "메모리 저장 중",
+      "memoryChange": "메모리 변경 중",
+      "loupistChange": "루피스트 변경 중",
+      "loupistDeletion": "루피스트 삭제 중",
+      "marketplaceSettings": "마켓플레이스 설정 변경 중",
+      "marketplaceCredentials": "마켓플레이스 인증 정보 변경 중",
+      "modelWork": "백그라운드 모델 작업 중",
+      "modelConnection": "모델 연결 확인 중",
+      "map": "지도 처리 중",
+      "update": "업데이트 설치 중",
+      "other": "작업 진행 중"
+    }
   },
   "worldSettings": {
     "loupist": "루피스트",
@@ -304,12 +319,19 @@
   },
   "useAppUpdate": {
     "couldNotReadUpdateStatus": "업데이트 상태를 읽지 못했어요. 다시 시도해 주세요.",
-    "couldNotCheckForUpdates": "업데이트를 확인하지 못했어요. 연결 상태를 확인해 주세요.",
+    "couldNotCheckForUpdates": "업데이트를 확인하지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.",
     "couldNotInstallTheUpdate": "업데이트를 설치하지 못했어요. 다시 시도해 주세요.",
     "confirmTitle": "루피스트 업데이트 설치",
     "confirmMessage": "루피스트를 업데이트할까요? 현재 버전 {{current}}, 새 버전 {{version}}. 진행 중인 작업을 확인했어요. 서명된 업데이트를 내려받아 설치한 뒤 바로 다시 시작해요.",
     "confirmInstall": "설치 후 다시 시작",
-    "confirmCancel": "나중에"
+    "confirmCancel": "나중에",
+    "backgroundCheckFailed": "업데이트를 확인하지 못했어요. 잠시 후 다시 시도할게요.",
+    "couldNotSaveUpdateSchedule": "업데이트 일정을 저장하지 못했어요. 다시 시도해 주세요.",
+    "couldNotVerifyTheUpdate": "업데이트를 검증하지 못했어요. 업데이트를 다시 확인한 뒤 시도해 주세요.",
+    "couldNotDownloadTheUpdate": "업데이트를 내려받거나 서명을 확인하지 못했어요. 다시 시도해 주세요.",
+    "updateChanged": "설치할 업데이트가 변경됐어요. 업데이트를 다시 확인해 주세요.",
+    "updatesUnavailable": "이 빌드에서는 자동 업데이트를 사용할 수 없어요.",
+    "updateBusy": "다른 업데이트 작업이 진행 중이에요. 끝난 뒤 다시 시도해 주세요."
   },
   "agentCapabilityList": {
     "enabledLabel": "{{name}}: 켜짐",

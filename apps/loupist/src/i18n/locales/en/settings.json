@@ -282,7 +282,22 @@
     "installing": "Installing…",
     "restarting": "Restarting…",
     "installAndRestart": "Install and restart",
-    "finishActiveWorkBeforeUpdating": "Finish active work before updating"
+    "finishActiveWorkBeforeUpdating": "Finish active work before updating",
+    "blockers": {
+      "chat": "Chat in progress",
+      "chatChange": "Changing a chat",
+      "memoryWrite": "Saving Memory",
+      "memoryChange": "Changing Memory",
+      "loupistChange": "Changing a Loupist",
+      "loupistDeletion": "Deleting a Loupist",
+      "marketplaceSettings": "Changing Marketplace settings",
+      "marketplaceCredentials": "Changing Marketplace credentials",
+      "modelWork": "Background model work",
+      "modelConnection": "Checking a model connection",
+      "map": "Processing the map",
+      "update": "Installing an update",
+      "other": "Work in progress"
+    }
   },
   "worldSettings": {
     "loupist": "Loupist",
@@ -303,12 +318,19 @@
   },
   "useAppUpdate": {
     "couldNotReadUpdateStatus": "Could not read update status.",
-    "couldNotCheckForUpdates": "Couldn't check for updates. Check your connection and try again.",
-    "couldNotInstallTheUpdate": "Could not install the update.",
+    "couldNotCheckForUpdates": "Couldn't check for updates. Check your internet connection and try again.",
+    "couldNotInstallTheUpdate": "Couldn't install the update. Try again.",
     "confirmTitle": "Install Loupist update",
     "confirmMessage": "Update Loupist from {{current}} to {{version}}? Active work has been checked. Loupist will download the signed update, install it and restart right away.",
     "confirmInstall": "Install and restart",
-    "confirmCancel": "Not now"
+    "confirmCancel": "Not now",
+    "backgroundCheckFailed": "Couldn't check for updates. Loupist will try again later.",
+    "couldNotSaveUpdateSchedule": "Couldn't save the update schedule. Try again.",
+    "couldNotVerifyTheUpdate": "Couldn't verify the update. Check for updates and try again.",
+    "couldNotDownloadTheUpdate": "Couldn't download or verify the update. Try again.",
+    "updateChanged": "The available update changed. Check again before installing.",
+    "updatesUnavailable": "Automatic updates are unavailable in this build.",
+    "updateBusy": "Another update is in progress. Try again when it finishes."
   },
   "agentCapabilityList": {
     "enabledLabel": "{{name}}: enabled",
