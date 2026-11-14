@@ -1,6 +1,7 @@
 import { connectionText } from "./connectionCopy";
 import i18n, { useTranslation } from "@/i18n";
 import { ChevronRightIcon } from "lucide-react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { MarketplaceConnectorStatus, MarketplaceEntry, MarketplaceFreeState } from "../../marketplace/types";
@@ -37,16 +38,26 @@ export function setupEntryLabel(entry: MarketplaceEntry, connector?: Marketplace
   return i18n.t("connections:marketplaceCard.setupEntry", { name });
 }
 
-export function MarketplaceCard({ entry, connector, onSetup, headingLevel = 4 }: {
+export function MarketplaceCard({ entry, connector, onSetup, onUnlock, headingLevel = 4 }: {
   entry: MarketplaceEntry;
   connector?: MarketplaceConnectorStatus;
   onSetup?: (entry: MarketplaceEntry) => void;
+  /** Try again on a key macOS refused; resolves false when it is still locked. */
+  onUnlock?: (entry: MarketplaceEntry) => Promise<boolean>;
   headingLevel?: 3 | 4;
 }) {
   const Title = `h${headingLevel}` as const;
   useTranslation();
+  const [unlocking, setUnlocking] = useState(false);
+  const [stillLocked, setStillLocked] = useState(false);
   const action = setupActionLabel(entry, connector);
+  const locked = connectionState(connector) === "locked";
   const state = CONNECTION_STATES[connectionState(connector)];
+  const tryAgain = async () => {
+    if (!onUnlock || unlocking) return;
+    setUnlocking(true);
+    try { setStillLocked(!(await onUnlock(entry))); } catch { setStillLocked(true); } finally { setUnlocking(false); }
+  };
   return (
     <article className="marketplace-card" data-testid="marketplace-card" aria-labelledby={`connection-${entry.id}`}>
       <div className="marketplace-entry-copy">
@@ -59,6 +70,12 @@ export function MarketplaceCard({ entry, connector, onSetup, headingLevel = 4 }:
           <span>{accessLabel(entry)}</span>
           {entry.markets.length ? <span>{entry.markets.map(connectionText).join(" · ")}</span> : null}
         </div>
+        {/* Said before Try again, the read that makes macOS ask for the login password. */}
+        {locked ? <div className="marketplace-locked" data-connection-locked>
+          <p>{i18n.t("connections:marketplaceCard.lockedExplanation")}</p>
+          {stillLocked ? <p role="status">{i18n.t("connections:marketplaceCard.stillLocked")}</p> : null}
+          {onUnlock ? <Button type="button" size="sm" variant="outline" disabled={unlocking} aria-label={i18n.t("connections:marketplaceCard.tryAgainEntry", { name: connectionText(entry.name) })} onClick={() => void tryAgain()}>{i18n.t("connections:marketplaceCard.tryAgain")}</Button> : null}
+        </div> : null}
       </div>
       <div className="marketplace-entry-actions">
         {/* Twenty grey "Not connected" labels say nothing: only Ready and what needs attention are marked. */}

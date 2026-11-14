@@ -877,7 +877,7 @@ mod token_store {
 
 /// Debug and test builds keep the token in process memory, like connector keys.
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
-mod token_store {
+pub(super) mod token_store {
     use super::TokenStoreError;
     use std::{collections::HashMap, sync::Mutex};
     fn tokens() -> &'static Mutex<HashMap<String, String>> {
@@ -885,7 +885,24 @@ mod token_store {
             std::sync::OnceLock::new();
         TOKENS.get_or_init(Default::default)
     }
+    /// Test seam: token reads per environment, and environments whose reads
+    /// fail as a denied macOS prompt does.
+    #[cfg(test)]
+    pub(crate) fn reads() -> &'static Mutex<HashMap<String, (usize, bool)>> {
+        static READS: std::sync::OnceLock<Mutex<HashMap<String, (usize, bool)>>> =
+            std::sync::OnceLock::new();
+        READS.get_or_init(Default::default)
+    }
     pub(super) fn load(environment: &str) -> Result<Option<String>, TokenStoreError> {
+        #[cfg(test)]
+        {
+            let mut reads = reads().lock().map_err(|_| TokenStoreError)?;
+            let read = reads.entry(environment.into()).or_default();
+            read.0 += 1;
+            if read.1 {
+                return Err(TokenStoreError);
+            }
+        }
         Ok(tokens()
             .lock()
             .map_err(|_| TokenStoreError)?
@@ -927,14 +944,38 @@ pub(crate) fn load_token(environment: &str) -> Option<String> {
     try_load_token(environment).ok().flatten()
 }
 
+/// Environments whose token macOS refused in this session. Holding this lock
+/// is the gate: concurrent readers wait for the first answer, and a refusal
+/// is not asked again until the user signs in or out.
+fn token_gate() -> &'static std::sync::Mutex<std::collections::BTreeSet<String>> {
+    static REFUSED: std::sync::OnceLock<std::sync::Mutex<std::collections::BTreeSet<String>>> =
+        std::sync::OnceLock::new();
+    REFUSED.get_or_init(Default::default)
+}
+
 pub(crate) fn try_load_token(environment: &str) -> Result<Option<String>, TokenStoreError> {
-    token_store::load(environment)
+    let mut refused = token_gate().lock().map_err(|_| TokenStoreError)?;
+    if refused.contains(environment) {
+        return Err(TokenStoreError);
+    }
+    let token = token_store::load(environment);
+    if token.is_err() {
+        refused.insert(environment.to_owned());
+    }
+    token
 }
 pub(crate) fn save_token(environment: &str, token: &str) -> bool {
+    let Ok(mut refused) = token_gate().lock() else {
+        return false;
+    };
+    refused.remove(environment);
     token_store::save(environment, token)
 }
 pub(crate) fn delete_token(environment: &str) {
-    token_store::delete(environment)
+    if let Ok(mut refused) = token_gate().lock() {
+        refused.remove(environment);
+        token_store::delete(environment);
+    }
 }
 
 /// The signed-in login lives in the global catalog; the token never does.
@@ -1082,6 +1123,31 @@ mod tests {
         assert_eq!(load_token(&environment), Some("pine".into()));
         delete_token(&environment);
         assert_eq!(try_load_token(&environment), Ok(None));
+    }
+
+    #[test]
+    fn a_refused_token_is_asked_once_per_session_until_the_user_signs_in_again() {
+        let environment = format!("token-test-{}", uuid::Uuid::new_v4());
+        assert!(save_token(&environment, "pine"));
+        let reads = |environment: &str| token_store::reads().lock().unwrap()[environment].0;
+        token_store::reads()
+            .lock()
+            .unwrap()
+            .insert(environment.clone(), (0, true));
+        for _ in 0..4 {
+            assert_eq!(try_load_token(&environment), Err(TokenStoreError));
+            assert_eq!(load_token(&environment), None);
+        }
+        assert_eq!(reads(&environment), 1);
+        // Signing in again stores a fresh token and lifts the remembered refusal.
+        token_store::reads()
+            .lock()
+            .unwrap()
+            .insert(environment.clone(), (1, false));
+        assert!(save_token(&environment, "cedar"));
+        assert_eq!(try_load_token(&environment), Ok(Some("cedar".into())));
+        assert_eq!(reads(&environment), 2);
+        delete_token(&environment);
     }
     use std::sync::{
         atomic::{AtomicUsize, Ordering},

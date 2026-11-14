@@ -178,6 +178,7 @@
       "commodity": "Commodities"
     },
     "kindNeeds": "{{kind}}: needs {{connection}} connected",
+    "kindLocked": "{{kind}}: {{connection}} is locked until you allow access in macOS",
     "asset": "Asset",
     "lastAlert": "Last alert",
     "col": {

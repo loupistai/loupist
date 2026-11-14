@@ -23,6 +23,27 @@ keys in release builds use the OS keyring under the catalog's environment identi
 debug builds keep them in process memory. Secrets are not returned to the renderer or placed in
 TOML, tool arguments or receipts.
 
+The self-signed Beta has no Apple Team ID, so macOS ties each keychain item to the
+build that saved it and asks for the login password the first time an updated build
+reads it ("Always Allow" adds the new build until the next update). Keychain reads
+and writes never run on the main thread: every command that can reach a saved
+secret is `async` and runs its body on a blocking thread (`off_main_thread`), so a
+waiting prompt never freezes the window. `finance_credentials` serializes reads behind
+one gate and keeps, for the session and without the secret, what each read learned:
+the connection's status (so listing connections, Bot, Following, asset pages and run
+authority read nothing more) or a refusal. A refused key is `locked`: its connection
+alone shows "Locked until you allow access in macOS" with the one-sentence reason and
+**Try again** (`marketplace_credential_unlock`, which asks macOS once more); passive
+callers, tool calls included, are refused without asking again, the list and every
+other connection keep loading, and Watching names the locked connection. Saving, a
+check the user starts and Try again set a remembered refusal aside. Custom
+connections and the GitHub sharing token use the same gate and session refusal; the
+GitHub account in Settings shows the login recorded at sign-in without reading the
+token. Status still lives inside the secret blob, so the first status read of each
+saved key after a restart reads the keychain once (after an update, that is the one
+prompt per key); recording status outside the keychain would remove it and needs a
+store record that does not exist yet.
+
 A replacement key is a candidate until a captured verification succeeds. Verified
 means the provider answered the connection's fixed check with data. A refusal is
 rejected, with a fixed reason code when the market data helper can tell one (FRED's

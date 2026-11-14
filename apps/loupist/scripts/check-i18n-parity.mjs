@@ -45,12 +45,14 @@ const allowedTerms = new Map([
   ["Word", "Document product name"],
   ["PowerPoint", "Presentation product name"],
   ["Python", "Programming language the file Skills run in the sandbox"],
+  ["macOS", "Operating system name, as its own keychain prompt writes it"],
 ]);
 
 // Technical literals and subscription names are exceptions only at the exact
 // catalog key where they are required. Keep a reason with every exception.
 const exceptions = new Map([
   ["settings.general.betaNotice", { terms: ["Apple"], reason: "Company name in the Beta notarization notice" }],
+  ["connections.marketplaceCard.lockedExplanation", { terms: ["Apple", "Developer"], reason: "Apple Developer ID, the signing certificate the Beta lacks" }],
   ["settings.custom.pasteJson", { terms: ["JSON"], reason: "Literal data format the user pastes" }],
   ["settings.custom.commandWarning", { terms: ["name"], reason: "Literal package@version example (name@1.2.3)" }],
   ["app.navigation.agentDefaultsReasoningThinkingRetryTokensContextConfiguration", { terms: ["TOML"], reason: "Search keyword for the configuration file format" }],

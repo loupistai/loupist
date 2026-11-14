@@ -485,6 +485,7 @@ pub fn run() {
             marketplace::credentials::marketplace_credential_save,
             marketplace::credentials::marketplace_credential_verify,
             marketplace::credentials::marketplace_credential_delete,
+            marketplace::credentials::marketplace_credential_unlock,
             commands::open_external_url,
             web::favicon::site_favicon,
             web::browser::browser_tab_open,

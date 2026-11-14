@@ -3,9 +3,28 @@
 
 import type { MaintenanceBlocker } from "./runs/maintenance";
 
+/**
+ * What the install confirmation says, worded by the renderer (like the Save
+ * panel's title). Each part is bounded; anything unusable falls back to
+ * the English wording.
+ */
+export type UpdateConfirmationText = {
+  title: string,
+  message: string,
+  install: string,
+  cancel: string,
+};
+
 export type UpdateInstallOutcome = "blocked" | "cancelled";
 
-export type UpdateInstallRequest = { offer_id: string };
+export type UpdateInstallRequest = {
+  offer_id: string,
+  /**
+   * The confirmation alert's words in the interface language. Only text:
+   * the host still decides what is installed and adds the versions itself.
+   */
+  confirmation: UpdateConfirmationText,
+};
 
 export type UpdateInstallResult = {
   outcome: UpdateInstallOutcome,

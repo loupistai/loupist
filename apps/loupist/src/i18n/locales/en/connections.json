@@ -14,7 +14,11 @@
     "manageEntry": "Manage {{name}}",
     "continueEntry": "Continue setup {{name}}",
     "setupEntry": "Set up {{name}}",
-    "contactEmailOnly": "Contact email only"
+    "contactEmailOnly": "Contact email only",
+    "lockedExplanation": "After each update, macOS asks once for your login password before Loupist can use a saved key, because this Beta is not signed with an Apple Developer ID. Choose “Always Allow” and it stops asking until the next update.",
+    "tryAgain": "Try again",
+    "tryAgainEntry": "Try again {{name}}",
+    "stillLocked": "macOS did not allow access. Try again and enter your login password."
   },
   "marketplaceSetupDialog": {
     "couldNotDeleteTheSavedCredentialsTryAgain": "Could not delete the saved credentials. Try again.",
@@ -261,6 +265,7 @@
     "ready": "Ready",
     "notConnected": "Not connected",
     "needsAttention": "Needs attention",
-    "unavailable": "Connection unavailable"
+    "unavailable": "Connection unavailable",
+    "locked": "Locked until you allow access in macOS"
   }
 }

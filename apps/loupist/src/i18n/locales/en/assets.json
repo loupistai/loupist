@@ -379,6 +379,8 @@
     },
     "needsConnection": "Needs {{connection}} ·",
     "turnOn": "Turn on",
+    "locked": "{{connection}} is locked until you allow access in macOS ·",
+    "tryAgainInConnections": "Try again in Connections",
     "failed": "Couldn't check {{kind}} · {{connection}} didn't answer"
   }
 }

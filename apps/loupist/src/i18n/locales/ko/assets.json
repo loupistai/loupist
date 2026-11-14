@@ -378,6 +378,8 @@
       "oilInventory": "원유 재고 발표"
     },
     "needsConnection": "{{connection}} 연결 필요 ·",
+    "locked": "macOS에서 접근을 허용할 때까지 잠김: {{connection}} ·",
+    "tryAgainInConnections": "연결에서 다시 시도",
     "turnOn": "켜기",
     "failed": "{{kind}}을(를) 확인하지 못했어요 · {{connection}} 응답 없음"
   }

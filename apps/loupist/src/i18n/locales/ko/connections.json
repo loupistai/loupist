@@ -15,7 +15,11 @@
     "manageEntry": "{{name}} 관리",
     "continueEntry": "{{name}} 설정 계속",
     "setupEntry": "{{name}} 설정",
-    "contactEmailOnly": "연락처 이메일만 필요"
+    "contactEmailOnly": "연락처 이메일만 필요",
+    "lockedExplanation": "업데이트할 때마다 macOS가 저장된 키를 쓰기 전에 로그인 암호를 한 번 물어요. 이 베타 버전은 Apple Developer ID로 서명되지 않았기 때문이에요. ‘항상 허용’을 선택하면 다음 업데이트까지 다시 묻지 않아요.",
+    "tryAgain": "다시 시도",
+    "tryAgainEntry": "{{name}} 다시 시도",
+    "stillLocked": "macOS가 접근을 허용하지 않았어요. 다시 시도하고 로그인 암호를 입력하세요."
   },
   "marketplaceSetupDialog": {
     "couldNotDeleteTheSavedCredentialsTryAgain": "저장된 인증 정보를 삭제하지 못했어요. 다시 시도해 주세요.",
@@ -262,6 +266,7 @@
     "ready": "준비됨",
     "notConnected": "연결 안 됨",
     "needsAttention": "확인 필요",
-    "unavailable": "연결을 사용할 수 없어요"
+    "unavailable": "연결을 사용할 수 없어요",
+    "locked": "macOS에서 접근을 허용할 때까지 잠겨 있어요"
   }
 }

@@ -24,7 +24,7 @@ export type WatchKindState = {
   kind: WatchKind;
   enabled: boolean;
   /** The connection this kind needs is off: the switch is disabled and says which one (Settings › Connections id). */
-  needsConnection?: { id: string; name: string };
+  needsConnection?: { id: string; name: string; locked?: boolean };
   /** The last check of this kind failed: the connection that did not answer. */
   failed?: { connection: string; atMs: number };
 };

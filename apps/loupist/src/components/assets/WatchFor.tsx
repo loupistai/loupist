@@ -73,7 +73,7 @@ export function WatchFor({ bridge, loupistId, loupistName, assetId, name, onOpen
             aria-label={t("watch.switchLabel", { kind: watchKindLabel(state.kind), name })}
             aria-disabled={needs || busy === state.kind ? true : undefined} aria-describedby={needs ? reasonId : undefined}
             onCheckedChange={checked => { if (!needs) void toggle(state.kind, checked); }} />
-          {needs ? <p id={reasonId} className="watch-for-reason">{t("watch.needsConnection", { connection: connectionText(needs.name) })} <button type="button" className="asset-inline-link" onClick={onOpenConnections}>{t("watch.turnOn")}</button></p> : null}
+          {needs ? <p id={reasonId} className="watch-for-reason" data-connection-locked={needs.locked || undefined}>{t(needs.locked ? "watch.locked" : "watch.needsConnection", { connection: connectionText(needs.name) })} <button type="button" className="asset-inline-link" onClick={onOpenConnections}>{t(needs.locked ? "watch.tryAgainInConnections" : "watch.turnOn")}</button></p> : null}
         </li>;
       })}
     </ul>

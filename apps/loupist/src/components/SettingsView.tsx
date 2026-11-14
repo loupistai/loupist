@@ -106,7 +106,7 @@ export function SettingsView({
         {section === "general" ? <ApplicationSettings bridge={bridge} /> : null}
 
         {section === "updates" ? (
-          <UpdateSettingsCard status={update.status} phase={update.phase} error={update.error} onCheck={update.checkForUpdates} onInstall={(offer_id) => update.installUpdate({ offer_id })} />
+          <UpdateSettingsCard status={update.status} phase={update.phase} error={update.error} onCheck={update.checkForUpdates} onInstall={update.installUpdate} />
         ) : null}
 
       </div>

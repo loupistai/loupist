@@ -121,6 +121,130 @@ pub struct UpdateStateDto {
 #[serde(deny_unknown_fields)]
 pub struct UpdateInstallRequest {
     pub offer_id: String,
+    /// The confirmation alert's words in the interface language. Only text:
+    /// the host still decides what is installed and adds the versions itself.
+    pub confirmation: UpdateConfirmationText,
+}
+
+/// What the install confirmation says, worded by the renderer (like the Save
+/// panel's title). Each part is bounded; anything unusable falls back to
+/// the English wording.
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct UpdateConfirmationText {
+    pub title: String,
+    pub message: String,
+    pub install: String,
+    pub cancel: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    not(all(any(target_os = "macos", windows), not(debug_assertions))),
+    allow(dead_code)
+)]
+struct ConfirmationDialog {
+    title: String,
+    message: String,
+    install: String,
+    cancel: String,
+}
+
+/// One bounded line of dialog text, or `fallback` when nothing usable is left.
+fn dialog_line(text: &str, max_chars: usize, fallback: &str) -> String {
+    let line = text
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if line.is_empty() {
+        return fallback.to_owned();
+    }
+    line.chars().take(max_chars).collect()
+}
+
+/// The alert the user answers before anything is downloaded. The renderer's
+/// words are bounded; the versions line is always the host's own, so the
+/// alert states exactly what will be installed whatever the text says.
+#[cfg_attr(
+    not(all(any(target_os = "macos", windows), not(debug_assertions))),
+    allow(dead_code)
+)]
+fn confirmation_dialog(
+    text: &UpdateConfirmationText,
+    current_version: &str,
+    offer_version: &str,
+) -> ConfirmationDialog {
+    let message = text
+        .message
+        .lines()
+        .map(|line| dialog_line(line, 400, ""))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let message: String = message.trim().chars().take(800).collect();
+    let message = if message.is_empty() {
+        "Active work has been checked. The app will download the signed update, install it, and restart immediately.".to_owned()
+    } else {
+        message
+    };
+    let mut install = dialog_line(&text.install, 40, "Install");
+    let mut cancel = dialog_line(&text.cancel, 40, "Cancel");
+    if install == cancel {
+        install = "Install".to_owned();
+        cancel = "Cancel".to_owned();
+    }
+    ConfirmationDialog {
+        title: dialog_line(&text.title, 80, "Install Loupist update"),
+        message: format!("{message}\n\n{current_version} → {offer_version}"),
+        install,
+        cancel,
+    }
+}
+
+/// Shows the confirmation attached to Loupist's window as a sheet, after
+/// bringing the window forward, so it cannot open behind other apps.
+#[cfg(any(target_os = "macos", windows))]
+#[cfg_attr(debug_assertions, allow(dead_code))]
+async fn confirm_install(app: &AppHandle, dialog: ConfirmationDialog) -> bool {
+    use rfd::{AsyncMessageDialog, MessageButtons, MessageDialogResult, MessageLevel};
+    use tauri::Manager;
+
+    let mut alert = AsyncMessageDialog::new()
+        .set_level(MessageLevel::Warning)
+        .set_title(&dialog.title)
+        .set_description(&dialog.message)
+        .set_buttons(MessageButtons::OkCancelCustom(
+            dialog.install.clone(),
+            dialog.cancel.clone(),
+        ));
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        alert = alert.set_parent(&window);
+    }
+    alert.show().await == MessageDialogResult::Custom(dialog.install)
+}
+
+/// The release date as RFC 3339 (UTC), which the renderer parses and shows
+/// as a date in the interface language. The updater's own `Display` form
+/// (`2026-11-14 8:50:41.0 +00:00:00`) is not a format a browser parses.
+#[cfg_attr(
+    not(all(any(target_os = "macos", windows), not(debug_assertions))),
+    allow(dead_code)
+)]
+fn published_at(unix_seconds: i64, nanoseconds: u32) -> Option<String> {
+    chrono::DateTime::<chrono::Utc>::from_timestamp(unix_seconds, nanoseconds)
+        .map(|date| date.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -646,11 +770,15 @@ async fn check_for_updates(
             return Ok(None);
         }
         let update = bounded_update_check(app).await?;
-        Ok::<_, CommandError>(update.map(|update| UpdateOfferDto {
-            offer_id: uuid::Uuid::new_v4().to_string(),
-            version: update.version,
-            notes: update.body,
-            published_at: update.date.map(|date| date.to_string()),
+        Ok::<_, CommandError>(update.map(|update| {
+            UpdateOfferDto {
+                offer_id: uuid::Uuid::new_v4().to_string(),
+                version: update.version,
+                notes: update.body,
+                published_at: update
+                    .date
+                    .and_then(|date| published_at(date.unix_timestamp(), date.nanosecond())),
+            }
         }))
     }
     .await;
@@ -704,19 +832,15 @@ pub async fn update_install(
     };
     #[cfg(all(any(target_os = "macos", windows), not(debug_assertions)))]
     {
-        use rfd::{AsyncMessageDialog, MessageButtons, MessageDialogResult, MessageLevel};
-
-        let confirmed = AsyncMessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title("Install Loupist update")
-            .set_description(format!(
-                "Update Loupist from {} to {}?\n\nActive work has been checked. The app will download the signed update, install it, and restart immediately.",
-                current_version(&app), offer.version
-            ))
-            .set_buttons(MessageButtons::YesNo)
-            .show()
-            .await
-            == MessageDialogResult::Yes;
+        let confirmed = confirm_install(
+            &app,
+            confirmation_dialog(
+                &request.confirmation,
+                &current_version(&app),
+                &offer.version,
+            ),
+        )
+        .await;
         if !confirmed {
             drop(maintenance);
             state.updates.install_cancelled();
@@ -813,7 +937,7 @@ pub async fn update_install(
 
     #[cfg(not(all(any(target_os = "macos", windows), not(debug_assertions))))]
     {
-        let _ = (app, offer, maintenance);
+        let _ = (app, offer, maintenance, request.confirmation);
         state
             .updates
             .install_failed("Automatic updates are unavailable in this build.", false);
@@ -843,20 +967,76 @@ mod tests {
     use super::*;
     use tauri::utils::config::PluginConfig;
 
+    fn words() -> serde_json::Value {
+        serde_json::json!({
+            "title": "Loupist 업데이트 설치",
+            "message": "루피스트를 업데이트할까요?",
+            "install": "설치 후 다시 시작",
+            "cancel": "취소"
+        })
+    }
+
     #[test]
     fn install_request_accepts_only_an_opaque_offer_id() {
         assert!(
             serde_json::from_value::<UpdateInstallRequest>(serde_json::json!({
-                "offer_id": uuid::Uuid::new_v4().to_string()
+                "offer_id": uuid::Uuid::new_v4().to_string(),
+                "confirmation": words()
             }))
             .is_ok()
         );
         assert!(
             serde_json::from_value::<UpdateInstallRequest>(serde_json::json!({
                 "offer_id": uuid::Uuid::new_v4().to_string(),
+                "confirmation": words(),
                 "url": "https://attacker.invalid/update"
             }))
             .is_err()
+        );
+    }
+
+    #[test]
+    fn the_install_confirmation_speaks_the_interface_language_and_states_the_versions() {
+        let text: UpdateConfirmationText = serde_json::from_value(words()).unwrap();
+        let dialog = confirmation_dialog(&text, "0.1.0-rc.2", "0.1.0-rc.3");
+        assert_eq!(dialog.title, "Loupist 업데이트 설치");
+        assert_eq!(dialog.install, "설치 후 다시 시작");
+        assert_eq!(dialog.cancel, "취소");
+        assert!(dialog.message.starts_with("루피스트를 업데이트할까요?"));
+        assert!(dialog.message.ends_with("0.1.0-rc.2 → 0.1.0-rc.3"));
+
+        // Unusable words fall back to English; equal buttons cannot be told apart.
+        let blank = UpdateConfirmationText {
+            title: "\n\t".into(),
+            message: String::new(),
+            install: "Same".into(),
+            cancel: "Same".into(),
+        };
+        let dialog = confirmation_dialog(&blank, "1", "2");
+        assert_eq!(dialog.title, "Install Loupist update");
+        assert_eq!(
+            (dialog.install.as_str(), dialog.cancel.as_str()),
+            ("Install", "Cancel")
+        );
+        assert!(dialog.message.ends_with("1 → 2"));
+        let long = UpdateConfirmationText {
+            title: "t".repeat(500),
+            message: "m".repeat(5000),
+            install: "i".repeat(500),
+            cancel: "c".repeat(500),
+        };
+        let dialog = confirmation_dialog(&long, "1", "2");
+        assert_eq!(dialog.title.chars().count(), 80);
+        assert_eq!(dialog.install.chars().count(), 40);
+        assert!(dialog.message.chars().count() <= 800 + 10);
+    }
+
+    #[test]
+    fn the_release_date_reaches_the_renderer_in_a_parseable_form() {
+        // 2026-11-14 08:50:41 UTC, as the feed published rc.3.
+        assert_eq!(
+            published_at(1_794_646_241, 0).as_deref(),
+            Some("2026-11-14T08:50:41Z")
         );
     }
 

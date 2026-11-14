@@ -113,7 +113,9 @@ When Developer ID is first used, require `anchor apple generic` together with Te
 ID equality in the runtime helper check; Team ID equality alone does not establish
 an Apple signer because a self-signed certificate can carry a team identifier.
 The identity change can ask once for access to each saved Data/custom connection
-secret and GitHub sharing token. Choosing Always Allow settles it. AI sign-ins
+secret and GitHub sharing token. Choosing Always Allow settles it. Until then every
+self-signed update asks once per saved key (each build has its own cdhash
+partition); the install guide and `.github/release-notes/self-signed.md` say so. AI sign-ins
 are files and are unaffected. The ad-hoc release fallback was removed because it
 cannot satisfy helper trust.
 
@@ -207,7 +209,7 @@ gh workflow run promote-release.yml --ref v0.1.0 \
   -f candidate_tag=v0.1.0 -f qualification_run_id=<successful-run-id>
 ```
 
-The public download link is `releases/latest/download/Loupist-macOS-arm64.dmg`; do not advertise a Windows installer. The app feed is `https://github.com/loupistai/loupist/releases/latest/download/latest.json`. Install and restart need explicit user confirmation. A release build sets `requireSignedVersion`, and the app treats any other updater configuration as unsupported. The signature's trusted comment has to carry the same version as `latest.json`. A rewritten feed cannot pair a new version number with an older signed package.
+The public download link is `releases/latest/download/Loupist-macOS-arm64.dmg`; do not advertise a Windows installer. The app feed is `https://github.com/loupistai/loupist/releases/latest/download/latest.json`. Install and restart need explicit user confirmation: a native alert attached as a sheet to the Loupist window (brought forward first), worded in the interface language from the renderer's `confirmation` text while the host bounds it and appends the versions line itself; the Updates page says to answer it there. The offer's release date reaches the renderer as RFC 3339 and shows as a local date. A release build sets `requireSignedVersion`, and the app treats any other updater configuration as unsupported. The signature's trusted comment has to carry the same version as `latest.json`. A rewritten feed cannot pair a new version number with an older signed package.
 
 Replace a bad stable release with a higher patch; do not downgrade storage or silently roll back.
 

@@ -116,6 +116,8 @@ export type MarketplaceCredentialStatus = {
   verification: "never" | "verified" | "rejected" | "temporarily_unavailable";
   verified_at: number | null;
   last_error: string | null;
+  /** macOS refused Loupist this saved key in this session; Try again asks once more. */
+  locked: boolean;
   krx_coverage?: {
     kospi: "verified" | "needs_approval" | "unavailable";
     kosdaq: "verified" | "needs_approval" | "unavailable";

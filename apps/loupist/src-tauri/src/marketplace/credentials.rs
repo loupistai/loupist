@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use tauri::State;
 
 use crate::{
-    app::{AppState, CommandError},
+    app::{off_main_thread, AppState, CommandError},
     mcp::{
         contains_protected_value, filter_tool_providers, validate_result_provider, McpCallResult,
         McpError, McpLaunchConfig, McpSession,
@@ -131,8 +131,34 @@ pub(super) fn credential_statuses(
     if fields.is_empty() {
         return Ok(Vec::new());
     }
-    let status = crate::finance_credentials::status(&state.credential_environment, &entry.id)
-        .map_err(|error| CommandError::internal(error.to_string()))?;
+    let status = match crate::finance_credentials::status(&state.credential_environment, &entry.id)
+    {
+        Ok(status) => status,
+        // One unreadable key never fails the list: only its own connection
+        // shows it, as locked (macOS refused access) or as a read error.
+        Err(error) => {
+            let locked = matches!(
+                error,
+                crate::finance_credentials::FinanceCredentialError::Locked
+            );
+            return Ok(fields
+                .iter()
+                .map(|field| MarketplaceCredentialStatusDto {
+                    entry_id: entry.id.clone(),
+                    credential_id: field.id.clone(),
+                    stored: true,
+                    active: false,
+                    pending: false,
+                    verification: MarketplaceCredentialVerification::Never,
+                    verified_at: None,
+                    last_error: (!locked)
+                        .then(|| "Loupist could not read the saved credentials.".to_owned()),
+                    krx_coverage: None,
+                    locked,
+                })
+                .collect());
+        }
+    };
     Ok(fields
         .iter()
         .map(|field| {
@@ -178,9 +204,24 @@ pub(super) fn credential_statuses(
                 verified_at: active.then_some(status.verified_at).flatten(),
                 last_error,
                 krx_coverage: status.krx_coverage,
+                locked: false,
             }
         })
         .collect())
+}
+
+/// A credential store failure as a command error. A refused macOS prompt has
+/// its own code so the renderer can say which connection is locked.
+pub(crate) fn credential_store_error(
+    error: crate::finance_credentials::FinanceCredentialError,
+) -> CommandError {
+    match error {
+        crate::finance_credentials::FinanceCredentialError::Locked => CommandError::new(
+            crate::app::CommandErrorCode::CredentialLocked,
+            "macOS did not allow Loupist to read this saved key. Choose Try again and allow access.",
+        ),
+        error => CommandError::internal(error.to_string()),
+    }
 }
 
 pub(super) fn credential_provider_context(
@@ -312,9 +353,47 @@ pub(super) fn validate_required_credential_fields(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn marketplace_credential_save(
+pub async fn marketplace_credential_save(
     request: MarketplaceCredentialSaveRequest,
     state: State<'_, AppState>,
+) -> Result<Vec<MarketplaceCredentialStatusDto>, CommandError> {
+    off_main_thread(&state, move |state| {
+        save_credential_for_state(request, state)
+    })
+    .await
+}
+
+/// Try again on a connection whose saved key macOS refused: asks macOS once
+/// more (the user chose to) and returns the connection's credentials, still
+/// `locked` when access was refused again.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn marketplace_credential_unlock(
+    request: MarketplaceCredentialRequest,
+    state: State<'_, AppState>,
+) -> Result<Vec<MarketplaceCredentialStatusDto>, CommandError> {
+    off_main_thread(&state, move |state| {
+        unlock_credential_for_state(request, state)
+    })
+    .await
+}
+
+pub(super) fn unlock_credential_for_state(
+    request: MarketplaceCredentialRequest,
+    state: &AppState,
+) -> Result<Vec<MarketplaceCredentialStatusDto>, CommandError> {
+    let catalog = bundled_catalog()?;
+    ensure_installable(&request.entry_id)?;
+    let entry = credential_entry(&catalog, &request.entry_id)?;
+    match crate::finance_credentials::unlock(&state.credential_environment, &request.entry_id) {
+        Ok(_) | Err(crate::finance_credentials::FinanceCredentialError::Locked) => {}
+        Err(error) => return Err(CommandError::internal(error.to_string())),
+    }
+    credential_statuses(state, entry)
+}
+
+pub(super) fn save_credential_for_state(
+    request: MarketplaceCredentialSaveRequest,
+    state: &AppState,
 ) -> Result<Vec<MarketplaceCredentialStatusDto>, CommandError> {
     let _activity = state
         .maintenance
@@ -322,20 +401,22 @@ pub fn marketplace_credential_save(
     let catalog = bundled_catalog()?;
     ensure_installable(&request.entry_id)?;
     let _lifecycle_guard = connector_lifecycle_lock()?;
-    reconcile_connector_configs_locked(&state, &_lifecycle_guard)?;
+    reconcile_connector_configs_locked(state, &_lifecycle_guard)?;
     let entry = credential_entry(&catalog, &request.entry_id)?;
     validate_credential_secrets(entry, &request.secrets)?;
+    // Saving is the user's own action: a key refused earlier this session is
+    // read again here (macOS may ask) rather than reported as locked.
     let current =
-        crate::finance_credentials::status(&state.credential_environment, &request.entry_id)
-            .map_err(|error| CommandError::internal(error.to_string()))?;
+        crate::finance_credentials::unlock(&state.credential_environment, &request.entry_id)
+            .map_err(credential_store_error)?;
     validate_required_credential_fields(entry, &request.secrets, &current)?;
     crate::finance_credentials::stage(
         &state.credential_environment,
         &request.entry_id,
         &request.secrets,
     )
-    .map_err(|error| CommandError::internal(error.to_string()))?;
-    credential_statuses(&state, entry)
+    .map_err(credential_store_error)?;
+    credential_statuses(state, entry)
 }
 
 pub(super) fn credential_verification_outcome<T>(
@@ -634,7 +715,7 @@ pub async fn marketplace_credential_verify(
             &state.credential_environment,
             &request.entry_id,
         )
-        .map_err(|error| CommandError::internal(error.to_string()))?
+        .map_err(credential_store_error)?
         else {
             return Err(CommandError::conflict(
                 "connector credentials must be saved first",
@@ -693,7 +774,7 @@ pub async fn marketplace_credential_verify(
             Utc::now().timestamp_millis(),
             None,
         )
-        .map_err(|error| CommandError::internal(error.to_string()))?;
+        .map_err(credential_store_error)?;
         if finished == crate::finance_credentials::FinishVerification::Stale {
             return Err(CommandError::conflict(
                 "connector credential changed while verification was in progress",
@@ -736,7 +817,7 @@ pub async fn marketplace_credential_verify(
         Utc::now().timestamp_millis(),
         result.as_ref().ok().copied().flatten(),
     )
-    .map_err(|error| CommandError::internal(error.to_string()))?;
+    .map_err(credential_store_error)?;
     if finished == crate::finance_credentials::FinishVerification::Stale {
         return Err(CommandError::conflict(
             "connector credential changed while verification was in progress",
@@ -757,7 +838,10 @@ pub async fn marketplace_credential_delete(
     state: State<'_, AppState>,
 ) -> Result<Vec<MarketplaceCredentialStatusDto>, CommandError> {
     let entry_id = request.entry_id.clone();
-    let result = delete_credential_for_state(request, &state);
+    let result = off_main_thread(&state, move |state| {
+        delete_credential_for_state(request, state)
+    })
+    .await;
     if entry_id == crate::finance_data::KIS_SOURCE_ID {
         state.finance_data.clear_kis_token_cache().await;
     }
@@ -819,7 +903,7 @@ pub(super) fn disable_bindings_and_delete_credentials_locked(
         )));
     }
     crate::finance_credentials::delete(&state.credential_environment, entry_id)
-        .map_err(|error| CommandError::internal(error.to_string()))
+        .map_err(credential_store_error)
 }
 
 #[cfg(test)]

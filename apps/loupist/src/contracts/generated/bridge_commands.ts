@@ -309,6 +309,10 @@ export type BridgeCommands = {
     request: MarketplaceCredentialSaveRequest,
     response: Array<MarketplaceCredentialStatusDto>,
   },
+  marketplace_credential_unlock: {
+    request: MarketplaceCredentialRequest,
+    response: Array<MarketplaceCredentialStatusDto>,
+  },
   marketplace_credential_verify: {
     request: MarketplaceCredentialRequest,
     response: Array<MarketplaceCredentialStatusDto>,

@@ -16,7 +16,7 @@ use chrono::Utc;
 use tauri::State;
 
 use crate::{
-    app::{AppState, CommandError},
+    app::{off_main_thread, AppState, CommandError},
     domain::LoupistCapabilityBinding,
     runs::maintenance::MaintenanceActivityKind,
 };
@@ -38,21 +38,27 @@ pub(crate) fn with_connector_lifecycle<T>(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn marketplace_snapshot(
+pub async fn marketplace_snapshot(
     state: State<'_, AppState>,
 ) -> Result<MarketplaceSnapshotDto, CommandError> {
-    with_connector_lifecycle(&state, || marketplace_snapshot_for_state(&state))
+    off_main_thread(&state, |state| {
+        with_connector_lifecycle(state, || marketplace_snapshot_for_state(state))
+    })
+    .await
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn loupist_capability_list(
+pub async fn loupist_capability_list(
     loupist_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<LoupistCapabilityBindingDto>, CommandError> {
-    state.ensure_loupist_available(&loupist_id)?;
-    with_connector_lifecycle(&state, || {
-        loupist_capability_list_for_state(&loupist_id, &state)
+    off_main_thread(&state, move |state| {
+        state.ensure_loupist_available(&loupist_id)?;
+        with_connector_lifecycle(state, || {
+            loupist_capability_list_for_state(&loupist_id, state)
+        })
     })
+    .await
 }
 
 fn installed_entries(
@@ -368,19 +374,19 @@ fn save_binding(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn loupist_capability_enable(
+pub async fn loupist_capability_enable(
     request: LoupistCapabilityRequest,
     state: State<'_, AppState>,
 ) -> Result<LoupistCapabilityBindingDto, CommandError> {
-    save_binding(request, &state, true)
+    off_main_thread(&state, move |state| save_binding(request, state, true)).await
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn loupist_capability_disable(
+pub async fn loupist_capability_disable(
     request: LoupistCapabilityRequest,
     state: State<'_, AppState>,
 ) -> Result<LoupistCapabilityBindingDto, CommandError> {
-    save_binding(request, &state, false)
+    off_main_thread(&state, move |state| save_binding(request, state, false)).await
 }
 
 #[cfg(test)]

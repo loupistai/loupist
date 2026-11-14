@@ -1681,6 +1681,7 @@ async fn watch_pause_command_stops_reads_and_resume_restarts_them() {
             paused: true,
         },
     )
+    .await
     .unwrap();
     assert!(paused.paused);
     let runtime = Runtime::default();
@@ -1697,6 +1698,7 @@ async fn watch_pause_command_stops_reads_and_resume_restarts_them() {
             paused: false,
         },
     )
+    .await
     .unwrap();
     assert!(!resumed.paused);
     run_pass_with(&state, &runtime, Scope::Scheduled, at, &mut reader)

@@ -5,7 +5,7 @@ const connector = (patch: Partial<MarketplaceConnectorStatus> = {}): Marketplace
   entry_id: "x", config: {}, config_state: "not_required", credentials: [], readiness: "needs_configuration", ...patch,
 });
 const credential = (patch: Partial<MarketplaceConnectorStatus["credentials"][number]>): MarketplaceConnectorStatus["credentials"][number] => ({
-  entry_id: "x", credential_id: "api_key", stored: false, active: false, pending: false, verification: "never", verified_at: null, last_error: null, ...patch,
+  entry_id: "x", credential_id: "api_key", stored: false, active: false, pending: false, verification: "never", verified_at: null, last_error: null, locked: false, ...patch,
 });
 
 describe("connection states", () => {
@@ -27,7 +27,14 @@ describe("connection states", () => {
   it("keeps ready and unavailable apart from attention", () => {
     expect(connectionState(connector({ readiness: "ready" }))).toBe("ready");
     expect(connectionState(connector({ readiness: "runtime_unavailable", credentials: [credential({ stored: true })] }))).toBe("unavailable");
-    expect(Object.values(CONNECTION_STATES).filter((state) => state.needsAttention)).toHaveLength(1);
+    expect(Object.values(CONNECTION_STATES).filter((state) => state.needsAttention)).toHaveLength(2);
+  });
+
+  it("marks a key macOS refused as locked, on its own connection only", () => {
+    const locked = connector({ credentials: [credential({ stored: true, locked: true })] });
+    expect(connectionState(locked)).toBe("locked");
+    expect(CONNECTION_STATES.locked).toMatchObject({ label: "Locked until you allow access in macOS", tone: "warning", needsAttention: true });
+    expect(connectionState(connector({ credentials: [credential({ stored: true, active: true })], readiness: "ready" }))).toBe("ready");
   });
 });
 
