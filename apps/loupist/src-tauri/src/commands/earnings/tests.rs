@@ -135,7 +135,7 @@ fn snapshot(state: &AppState, page: &PageRecord, event: &EventRecord) -> Snapsho
 }
 
 #[test]
-fn earlier_results_exclude_unfiled_events_even_after_a_deadline_passes() {
+fn listing_identity_event_list_keeps_unfiled_ir_dates_for_upcoming_labels() {
     use tauri::Manager;
     let temporary = tempfile::tempdir().unwrap();
     let state = fixture(&temporary);
@@ -165,6 +165,20 @@ fn earlier_results_exclude_unfiled_events_even_after_a_deadline_passes() {
         Ok(())
     })
     .unwrap();
+    let confirmed = with_assets(&state, "loupist-a", true, |tx| {
+        earnings::upsert_event(
+            tx,
+            "loupist-a",
+            &page.asset_id,
+            "Q1 2027",
+            None,
+            day(7),
+            DateSource::IrNotice,
+            1,
+        )
+        .map(|(event, _)| event)
+    })
+    .unwrap();
     let app = tauri::test::mock_builder()
         .build(tauri::test::mock_context(tauri::test::noop_assets()))
         .unwrap();
@@ -177,13 +191,14 @@ fn earlier_results_exclude_unfiled_events_even_after_a_deadline_passes() {
         },
     )
     .unwrap();
-    assert_eq!(
-        history
-            .iter()
-            .map(|event| event.event_id.as_str())
-            .collect::<Vec<_>>(),
-        [filed.event_id.as_str()]
-    );
+    assert_eq!(history.len(), 4);
+    assert!(history.iter().any(|event| event.event_id == filed.event_id));
+    let confirmed = history
+        .iter()
+        .find(|event| event.event_id == confirmed.event_id)
+        .unwrap();
+    assert_eq!(confirmed.date_source, DateSource::IrNotice);
+    assert_eq!(confirmed.status, Status::Upcoming);
 }
 
 #[test]

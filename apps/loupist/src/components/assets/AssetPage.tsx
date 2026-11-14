@@ -430,7 +430,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onA
   </section>;
 
   const history = allHistory ? page.history : page.history.slice(0, HISTORY_ROWS);
-  const earlier = events.filter(event => event.eventId !== snapshot?.eventId).slice(0, 4);
+  const earlier = events.filter(event => event.eventId !== snapshot?.eventId && (event.status === "reported" || event.status === "final")).slice(0, 4);
   // "Last results" and "Next earnings" lead to the results card (or Earlier results) when there is one.
   const hasResults = Boolean(snapshot || earlier.length);
   const glanceRows = page.class === "equity" && !page.checks.sourcesOnly && page.glance.length > 0 ? withNextEarnings(page.glance, events, snapshot) : page.glance;
