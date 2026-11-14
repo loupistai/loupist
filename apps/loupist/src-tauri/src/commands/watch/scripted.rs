@@ -95,6 +95,7 @@ impl HostReader for Scripted {
         &mut self,
         state: &AppState,
         loupist_id: &str,
+        _page: &crate::knowledge::assets::PageRecord,
         read: &plan::PlannedRead,
         allowed: Option<&'static [&'static str]>,
     ) -> impl std::future::Future<Output = ReadOutcome> + Send {

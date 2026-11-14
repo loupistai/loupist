@@ -73,7 +73,9 @@ Korean equity adds up to two capital decisions and, when due, its investor flows
 (`AppToolExecutor::for_host`, policy without Memory, in Bot) with the
 Loupist's captured connection grants: native OpenDART, KRX and Korea Investment reads
 need their own grant and the unattended allowlist; OpenBB reads need a grant the bundled runtime serves and use a provider the Loupist enabled
-(the requested one, then a fixed preference order). Identical reads from the last 30
+(a named provider stays pinned; otherwise the shared
+[market-aware order and bounded fallback](../capabilities/data-services.md#agent-facing-data-services)
+apply). Identical reads from the last 30
 minutes are reused (`max_age` 1800). Each source's status (`ok`, `failed`,
 `needs_connection`) is stored on the page; one failed source does not fail the
 refresh. Briefings refresh followed assets before [scheduler admission](../runtime/scheduled-runs.md#scheduled-chats).

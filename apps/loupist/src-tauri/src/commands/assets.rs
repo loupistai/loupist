@@ -532,7 +532,7 @@ pub(in crate::commands) async fn refresh_with(
             }
         }
         let outcome = tokio::select! {
-            outcome = executor.host_read(&policy, read, max_age) => outcome,
+            outcome = executor.host_read(&policy, &page, read, max_age) => outcome,
             _ = until_stopped(&mut stop) => return Ok(0),
         };
         match outcome {
@@ -582,6 +582,7 @@ pub(in crate::commands) async fn refresh_with(
     if page.class == AssetClass::Equity && assets::class::is_korean_market(&page.market) {
         let korea = KoreaReads {
             executor,
+            page: &page,
             capabilities,
             openbb: &openbb,
             policy: &policy,
@@ -641,6 +642,7 @@ const CAPITAL_KINDS: [&str; 4] = [
 /// filings just read, and Korea Investment's investor flows once a day.
 struct KoreaReads<'a> {
     executor: &'a AppToolExecutor,
+    page: &'a assets::PageRecord,
     capabilities: &'a BTreeSet<String>,
     openbb: &'a BTreeSet<String>,
     policy: &'a ToolPolicy,
@@ -663,7 +665,7 @@ impl KoreaReads<'_> {
         stop: &mut RefreshStop,
     ) -> Option<Option<(Value, Option<String>)>> {
         tokio::select! {
-            outcome = self.executor.host_read(self.policy, read, self.max_age) => Some(outcome.ok()),
+            outcome = self.executor.host_read(self.policy, self.page, read, self.max_age) => Some(outcome.ok()),
             _ = until_stopped(stop) => None,
         }
     }

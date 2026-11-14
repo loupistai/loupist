@@ -599,7 +599,8 @@ async fn record_prices<R: HostReader>(
     else {
         return;
     };
-    if let ReadOutcome::Ok { payload, provider } = reader.read(state, loupist_id, &read, None).await
+    if let ReadOutcome::Ok { payload, provider } =
+        reader.read(state, loupist_id, page, &read, None).await
     {
         let found = observe::extract(
             &tool_read(read.tool, provider.as_deref(), &payload, page, now),
@@ -686,7 +687,7 @@ async fn consensus_rows<R: HostReader>(
         );
         attempts.0 += 1;
         match reader
-            .read(state, loupist_id, &read, Some(CONSENSUS_PROVIDERS))
+            .read(state, loupist_id, page, &read, Some(CONSENSUS_PROVIDERS))
             .await
         {
             ReadOutcome::Ok { payload, provider } => {
@@ -765,7 +766,7 @@ async fn implied_row<R: HostReader>(
         );
         attempts.0 += 1;
         match reader
-            .read(state, loupist_id, &read, Some(STATEMENT_PROVIDERS))
+            .read(state, loupist_id, page, &read, Some(STATEMENT_PROVIDERS))
             .await
         {
             ReadOutcome::Ok { payload, provider } => reads.push((tool, payload, provider)),
@@ -970,7 +971,7 @@ async fn reported_rows<R: HostReader>(
         )
     };
     attempts.0 += 1;
-    let (payload, provider) = match reader.read(state, loupist_id, &read, allowed).await {
+    let (payload, provider) = match reader.read(state, loupist_id, page, &read, allowed).await {
         ReadOutcome::Ok { payload, provider } => (payload, provider),
         ReadOutcome::NeedsConnection(_) => return Vec::new(),
         ReadOutcome::Failed(_) => {
