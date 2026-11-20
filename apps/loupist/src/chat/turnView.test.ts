@@ -100,6 +100,7 @@ describe("the live line", () => {
       ["an autolink", "See <https://secret.example/token>.", "See secret.example."],
       ["a bare URL", "Details are at https://www.secret.example/path?token=abc.", "Details are at secret.example."],
       ["other HTML tags", "The margin<br/> fell <em>sharply</em>.", "The margin fell sharply."],
+      ["a tag written around another", "Rates <<b>script>held.", "Rates held."],
       ["bold, a code span and an inline link", "The **filing** uses `EBIT` from [the review](https://secret.example/r).", "The filing uses EBIT from the review."],
       ["a heading", "## Next I’ll compare margins.", "Next I’ll compare margins."],
       ["a list marker", "- Next I’ll compare margins.", "Next I’ll compare margins."],

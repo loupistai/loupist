@@ -362,9 +362,18 @@ const bareUrl = (match: string) => {
  * A link's target is never shown or announced.
  */
 const DEFINITION = /^ {0,3}\[([^\]\n]+)\]:[ \t]*\S+.*$/gmu;
+/** Removes HTML tags until none is left, so a tag written around another (`<<b>script>`) leaves no tag behind. */
+const withoutTags = (value: string) => {
+  let text = value;
+  for (let before = ""; before !== text;) {
+    before = text;
+    text = text.replace(/<\/?[A-Za-z][^>]*>/gu, "");
+  }
+  return text;
+};
 const lineText = (value: string) => {
   const defined = new Set([...value.matchAll(DEFINITION)].map(([, label]) => label!.trim().toLowerCase()));
-  return value
+  const linked = value
     .replace(DEFINITION, "")
     .replace(/!?\[([^\]]*)\]\([^)]*\)/gu, "$1")
     .replace(/\[([^\]]+)\]\[[^\]]*\]/gu, "$1")
@@ -372,8 +381,8 @@ const lineText = (value: string) => {
     .replace(/\[([^\]]+)\](?![[(])/gu, (match, label: string) => defined.has(label.trim().toLowerCase()) ? label : match)
     .replace(/<a\b[^>]*>([\s\S]*?)<\/a\s*>/giu, "$1")
     .replace(/<((?:https?|ftp):[^\s<>]+)>/giu, (_match, url: string) => shortUrl(url))
-    .replace(/<(?:mailto:)?([^\s@<>]+@[^\s@<>]+)>/giu, "$1")
-    .replace(/<\/?[A-Za-z][^>]*>/gu, "")
+    .replace(/<(?:mailto:)?([^\s@<>]+@[^\s@<>]+)>/giu, "$1");
+  return withoutTags(linked)
     .replace(/\b(?:https?:\/\/|www\.)[^\s<>()]+/giu, bareUrl)
     .replace(/\*\*|__|`/gu, "")
     .replace(/^\s*(?:#{1,6}|[-*+>]|\d+[.)])\s+/gmu, "")
