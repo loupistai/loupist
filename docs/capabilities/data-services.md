@@ -57,7 +57,10 @@ Loupists enable keyless entries without required setup, including the Market dat
 platform, World Bank, DefiLlama, Web Research and Asset lookup. KIS, KRX and
 OpenDART start disabled in the optional Korea group. Rust filters read-only tool
 and provider choices against the Loupist's active bindings and rejects provider
-mismatches.
+mismatches. The host sends saved provider settings only for providers in that
+run's grant. A failed platform connect marks its Settings row unavailable until
+a connect succeeds. A price setup that could not connect names the platform in
+its Bot report for assets still missing a price.
 
 A [saved price read](../knowledge/asset-pages.md#saved-price-reads) reuses the
 original provider arguments and current grants. The replay keeps the provider's
@@ -127,8 +130,8 @@ one. Vendor keys (`x-widget_config`, provider-keyed `choices`) and titles are
 removed and description sentences marked for other providers go. Listed choices
 become the property's enum only when every enabled provider that accepts it lists
 them, so a provider without choices (TMX intervals) keeps the upstream union. When
-a provider rejects some of the union's values, the description says which
-(`yfinance rejects unadjusted`), up to twelve values in all; longer disjoint lists
+a provider rejects some of the union's values, the description names up to
+twelve rejected values. Longer disjoint lists
 such as screener industries keep the bare union. The nine default cards fall from
 21,860 to about 8,250 bytes for the keyless providers.
 No model-facing text names the runtime; the model and the user see "market
@@ -137,7 +140,12 @@ data", and the capability index lists no provider ids. Scraped providers
 effort. Their failures come from individual requests (layout changes, consent
 walls, blocking), so there is no active health probe: the first failure of one
 in a turn returns a hint naming only official providers enabled for the run, with
-the same listing-market limits. TMX is never described as generally preferred.
+the same listing-market limits. For an explicitly unadjusted Yahoo daily equity
+read, the sidecar checks split events through the present before cutting the
+chart to the requested range. It uses Yahoo's Close if the share basis is
+unchanged. A later split, missing split information, or a non-daily interval
+returns the supported adjustments `splits_only` and `splits_and_dividends`.
+TMX is never described as generally preferred.
 
 Sequential turns with matching Loupist/authority can reuse a warm OpenBB process.
 The host resets its tools to the control surface before reuse; concurrent turns

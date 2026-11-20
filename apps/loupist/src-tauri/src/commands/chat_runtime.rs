@@ -100,6 +100,7 @@ pub(crate) struct ChatEventSink {
     pub(crate) eval_pi_event: Option<Arc<EvalPiEventCallback>>,
     #[cfg(feature = "eval-harness")]
     pub(crate) eval_native_read: Option<Arc<EvalNativeReadCallback>>,
+    pub(in crate::commands) price_setup_connect_failed: Option<Arc<std::sync::atomic::AtomicBool>>,
     send: Arc<ChatEventCallback>,
     baseline: Option<Arc<ChatBaselineCallback>>,
     evidence: Arc<std::sync::Mutex<Vec<crate::domain::ChatEvidenceRef>>>,
@@ -128,6 +129,7 @@ impl ChatEventSink {
             eval_pi_event: None,
             #[cfg(feature = "eval-harness")]
             eval_native_read: None,
+            price_setup_connect_failed: None,
             send: Arc::new(send),
             baseline: None,
             evidence: Arc::default(),

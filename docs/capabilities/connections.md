@@ -44,13 +44,16 @@ saved key after a restart reads the keychain once (after an update, that is the 
 prompt per key); recording status outside the keychain would remove it and needs a
 store record that does not exist yet.
 
+FRED checks the published GDP observation for January 1, 2024. The earliest GDP
+row contains a missing-value marker.
+
 A replacement key is a candidate until a captured verification succeeds. Verified
-means the provider answered the connection's fixed check with data. A refusal is
+means a credential-dependent check returned data. EconDB reads US CPI with the
+candidate token and bypasses its token-independent HTTP cache. A refusal is
 rejected, with a fixed reason code when the market data helper can tell one (FRED's
 "not a 32 character key" is `key_format`); an unreachable provider, or an answer
-without data, is "could not check": saved, not verified. A bundled probe that never
-sends the key (Nasdaq `equity_search`, EconDB `country_profile`) proves only that
-the provider answers. Failed verification preserves the working credential. Blank saved-key fields preserve
+without data, is "could not check": saved, not verified. Alpha Vantage compact daily prices can answer invented keys,
+and Nasdaq equity search sends no key. Both leave a saved key unverified. Failed verification preserves the working credential. Blank saved-key fields preserve
 keys; explicit recheck still contacts the provider. A newer replacement or deletion
 invalidates an outstanding check. Declared nonsecret setup fields live under global
 TOML `connectors`; scope changes invalidate old credentials and disable access.

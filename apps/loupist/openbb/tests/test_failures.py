@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 import socket
 from urllib.error import URLError
 
@@ -141,9 +144,10 @@ def test_network_failure_crosses_openbb_rest_and_mcp_without_private_text() -> N
     asyncio.run(exercise())
 
 
-class _FredResponse:
+class _ProviderResponse:
     def __init__(self, status: int, payload: object) -> None:
         self.status = status
+        self.reason = "OK" if status == 200 else "Unauthorized"
         self.headers: dict[str, str] = {}
         self._payload = payload
 
@@ -151,7 +155,7 @@ class _FredResponse:
         return self._payload
 
 
-def _fred_series_with(monkeypatch: pytest.MonkeyPatch, status: int, payload: object):
+def _fred_series_with(monkeypatch: pytest.MonkeyPatch, status: int, payload: object, arguments=None):
     from openbb_core.provider.utils import helpers as provider_helpers
     from openbb_fred.models.series import FredSeriesFetcher
     from openbb_fred.utils import rate_limiter
@@ -160,7 +164,8 @@ def _fred_series_with(monkeypatch: pytest.MonkeyPatch, status: int, payload: obj
 
     async def scripted(url: str, response_callback=None, **_kwargs):
         assert "private-canary" in url
-        return await response_callback(_FredResponse(status, payload), None)
+        body = payload(url) if callable(payload) else payload
+        return await response_callback(_ProviderResponse(status, body), None)
 
     monkeypatch.setattr(provider_helpers, "amake_request", scripted)
     monkeypatch.setattr(
@@ -171,7 +176,7 @@ def _fred_series_with(monkeypatch: pytest.MonkeyPatch, status: int, payload: obj
     monkeypatch.setattr(rate_limiter, "MIN_INTERVAL_SECONDS", 0)
     rate_limiter.cache_clear()
     apply_fred_error_guard()
-    query = FredSeriesFetcher.transform_query({"symbol": "GDP", "limit": 1})
+    query = FredSeriesFetcher.transform_query(arguments or {"symbol": "GDP", "limit": 1})
     return asyncio.run(
         FredSeriesFetcher.aextract_data(query, {"fred_api_key": "private-canary"})
     )
@@ -221,6 +226,27 @@ def test_fred_other_errors_fail_without_provider_text(
         )
     assert provider_refusal(raised.value) is None
     assert "private-canary" not in str(raised.value)
+
+
+def test_fred_bundled_probe_skips_the_missing_first_gdp_observation(monkeypatch):
+    root = Path(__file__).resolve().parents[2]
+    descriptor = root / "marketplace/plugins/openbb/connectors/fred.macro.json"
+    arguments = json.loads(descriptor.read_text())["runtime"]["verification_probe"]["arguments"]
+
+    def response(url):
+        if urlsplit(url).path == "/fred/series":
+            return {"seriess": [{"title": "Gross Domestic Product"}]}
+        query = parse_qs(urlsplit(url).query)
+        rows = [("1946-01-01", "."), ("2024-01-01", "28793.191")]
+        observations = [
+            {"date": date, "value": value, "realtime_start": date, "realtime_end": date}
+            for date, value in rows
+            if query.get("observation_start", [""])[0] <= date <= query.get("observation_end", ["9999"])[0]
+        ]
+        return {"observations": observations[:int(query["limit"][0])]}
+
+    results = _fred_series_with(monkeypatch, 200, response, arguments)
+    assert results[0]["GDP"]["data"] == {"2024-01-01": 28793.191}
 
 
 def test_fred_accepted_key_still_returns_observations(
@@ -292,3 +318,48 @@ def test_key_rejection_crosses_openbb_rest_and_mcp_as_a_fixed_reason() -> None:
 def test_rejection_reasons_are_a_closed_set() -> None:
     with pytest.raises(ValueError):
         CredentialRejectedError("provider said private-canary")
+
+
+@pytest.mark.parametrize("authorized", [True, False])
+def test_econdb_probe_checks_the_supplied_token_without_cache(monkeypatch, authorized):
+    from openbb_core.provider.utils.errors import EmptyDataError
+    from openbb_econdb.models.economic_indicators import EconDbEconomicIndicatorsFetcher
+    from openbb_econdb.utils import helpers
+    from loupist_openbb.manifest import load_runtime_manifest
+
+    descriptor = (
+        Path(__file__).resolve().parents[2]
+        / "marketplace/plugins/openbb/connectors/econdb.macro.json"
+    )
+    probe = json.loads(descriptor.read_text())["runtime"]["verification_probe"]
+    manifest = next(
+        p for p in load_runtime_manifest()["providers"] if p["id"] == "econdb"
+    )
+    assert (
+        probe["tool_name"]
+        == manifest["verification_probe"]["tool"]
+        == "economy_indicators"
+    )
+    assert probe["arguments"] == manifest["verification_probe"]["arguments"]
+    record = {"ticker": "CPIUS", "data": {"dates": ["2024-01-01"], "values": [308.4]}}
+
+    async def request(url, response_callback, **kwargs):
+        query = parse_qs(urlsplit(url).query)
+        assert query["ticker"] == ["[CPIUS]"]
+        assert query["token"] == ["fixture"]
+        assert "session" not in kwargs
+        response = _ProviderResponse(
+            200 if authorized else 401, {"results": [record]} if authorized else {}
+        )
+        return await response_callback(response, None)
+
+    monkeypatch.setattr(helpers, "amake_request", request)
+    query = EconDbEconomicIndicatorsFetcher.transform_query(probe["arguments"])
+    result = EconDbEconomicIndicatorsFetcher.aextract_data(
+        query, {"econdb_api_key": "fixture"}
+    )
+    if authorized:
+        assert asyncio.run(result) == [record]
+    else:
+        with pytest.warns(UserWarning, match="401"), pytest.raises(EmptyDataError):
+            asyncio.run(result)

@@ -157,6 +157,7 @@ pub(super) struct ToolCapture {
     pub(in crate::commands) quiet_schedule: std::sync::atomic::AtomicBool,
     scheduled_data_attempted: std::sync::atomic::AtomicBool,
     pub(super) tool_trace: Arc<crate::broker::ToolTraceCapture>,
+    pub(super) price_setup_connect_failed: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(crate) surface: Option<crate::chat::surface::ChatSurface>,
     pub(super) host_handoff: bool,
     pub(super) interface_locale: Option<crate::agent_harness::interface::InterfaceLocale>,

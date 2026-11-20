@@ -101,6 +101,9 @@ pub(super) fn map_mcp_error(error: McpError) -> BrokerError {
     BrokerError::Execution(message.into()).with_next(next)
 }
 
+/// What the agent is told when Yahoo Finance cannot serve the price as traded.
+const YAHOO_ADJUSTMENT_EXPECTED: &str = "splits_only or splits_and_dividends. Yahoo Finance restates its prices for later share splits, so it gives the price as traded only for a daily bar with no split after it. Read the adjusted price and say that it is adjusted, or read the price as traded from a connected source that serves unadjusted prices.";
+
 pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerError {
     match result
         .structured_content
@@ -108,6 +111,9 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
         .and_then(|value| value.pointer("/loupist_error/kind"))
         .and_then(Value::as_str)
     {
+        Some("unsupported_adjustment") => {
+            return BrokerError::invalid("adjustment", YAHOO_ADJUSTMENT_EXPECTED);
+        }
         Some("offline") => return BrokerError::Offline("market data provider".into()),
         Some("alpha_vantage_paid_plan_required") => {
             return BrokerError::Execution("This needs a paid Alpha Vantage plan.".into());
@@ -227,6 +233,24 @@ mod tests {
             assert!(matches!(error, BrokerError::Offline(_)));
             assert!(!error.to_string().contains("private provider diagnostic"));
         }
+    }
+
+    #[test]
+    fn yahoo_adjustment_refusal_keeps_the_same_providers_supported_options() {
+        let result = serde_json::from_value(json!({
+            "isError": true, "content": [],
+            "structuredContent": {"loupist_error": {"kind": "unsupported_adjustment"}},
+        }))
+        .unwrap();
+        let error = super::super::provider_failure(
+            rejected_mcp_result(&result),
+            Some("yfinance"),
+            &Default::default(),
+        );
+        assert!(
+            matches!(error, BrokerError::InvalidArguments { field, expected }
+            if field == "adjustment" && expected == YAHOO_ADJUSTMENT_EXPECTED)
+        );
     }
 
     #[test]

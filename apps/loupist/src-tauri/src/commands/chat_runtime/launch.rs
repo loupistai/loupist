@@ -147,6 +147,7 @@ pub(super) async fn launch_chat_turn(
         capture.interface_locale = surface.interactive().then(|| {
             agent_harness::interface::InterfaceLocale::from_language(&envelope.appearance.language)
         });
+        capture.price_setup_connect_failed = on_event.price_setup_connect_failed.clone();
         capture.tool_trace = on_event.tool_trace.clone();
         // A previous run's summary from an answer that read third-party text
         // arrives delimited and raises the tier, as `chat_history` returns it.

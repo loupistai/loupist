@@ -236,7 +236,7 @@ pub(super) async fn launch(
     tauri::async_runtime::spawn(async move {
         let (terminal, settled) = tokio::sync::oneshot::channel();
         let terminal = Mutex::new(Some(terminal));
-        let sink = ChatEventSink::new(move |event| {
+        let mut sink = ChatEventSink::new(move |event| {
             if matches!(
                 event,
                 ChatStreamEvent::Completed { .. }
@@ -249,6 +249,8 @@ pub(super) async fn launch(
             }
             Ok(())
         });
+        let connect_failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        sink.price_setup_connect_failed = Some(connect_failed.clone());
         let reply = match send_chat(request, sink, &state, Some(admission)).await {
             Ok(_) => match settled.await {
                 Ok(
@@ -274,6 +276,7 @@ pub(super) async fn launch(
             &assets,
             &language,
             reply.as_deref(),
+            connect_failed.load(std::sync::atomic::Ordering::Relaxed),
         );
         drop(reservation);
         if let Err(error) = report {
@@ -398,6 +401,7 @@ fn report_missing_prices(
     assets: &[AssetRow],
     language: &str,
     reply: Option<&str>,
+    platform_unavailable: bool,
 ) -> Result<(), CommandError> {
     let missing = with_assets(state, loupist, false, |tx| {
         let mut names = Vec::new();
@@ -412,17 +416,30 @@ fn report_missing_prices(
     if missing.is_empty() {
         return Ok(());
     }
-    let content = reply.filter(|text| !text.trim().is_empty()).map_or_else(
-        || {
-            let names = missing.join(", ");
-            if language == "ko" {
-                format!("{names}의 가격을 찾지 못했습니다.")
-            } else {
-                format!("Could not find a price for {names}.")
-            }
-        },
-        str::to_owned,
-    );
+    let content = if platform_unavailable {
+        let names = missing.join(", ");
+        let reason = if language == "ko" {
+            format!("시장 데이터 플랫폼에 연결하지 못해 {names}의 가격을 가져오지 못했습니다.")
+        } else {
+            format!("The market data platform could not connect to look up a price for {names}.")
+        };
+        match reply.filter(|text| !text.trim().is_empty()) {
+            Some(detail) => format!("{reason}\n\n{detail}"),
+            None => reason,
+        }
+    } else {
+        reply.filter(|text| !text.trim().is_empty()).map_or_else(
+            || {
+                let names = missing.join(", ");
+                if language == "ko" {
+                    format!("{names}의 가격을 찾지 못했습니다.")
+                } else {
+                    format!("Could not find a price for {names}.")
+                }
+            },
+            str::to_owned,
+        )
+    };
     crate::chat::home::queue_price_setup_reply(state, loupist, run_id, &content)
 }
 
@@ -488,6 +505,7 @@ mod tests {
             std::slice::from_ref(&nvidia),
             "en",
             Some("Nvidia: saved."),
+            true,
         )
         .unwrap();
         assert!(ensure_home_thread(&state, loupist)
@@ -512,6 +530,7 @@ mod tests {
             &assets,
             "ko",
             Some(reply),
+            false,
         )
         .unwrap();
         assert!(ensure_home_thread(&state, loupist)
@@ -528,12 +547,28 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].content, reply);
 
+        report_missing_prices(
+            &state,
+            loupist,
+            "platform-unavailable",
+            &assets,
+            "en",
+            None,
+            true,
+        )
+        .unwrap();
+        let messages = ensure_home_thread(&state, loupist).unwrap().messages;
+        assert_eq!(
+            messages.last().unwrap().content,
+            "The market data platform could not connect to look up a price for 삼성전자."
+        );
+
         for (language, expected) in [
             ("en", "Could not find a price for 삼성전자."),
             ("ko", "삼성전자의 가격을 찾지 못했습니다."),
         ] {
             let id = format!("price-setup-failed-{language}");
-            report_missing_prices(&state, loupist, &id, &assets, language, None).unwrap();
+            report_missing_prices(&state, loupist, &id, &assets, language, None, false).unwrap();
             let messages = ensure_home_thread(&state, loupist).unwrap().messages;
             assert_eq!(messages.last().unwrap().content, expected);
         }

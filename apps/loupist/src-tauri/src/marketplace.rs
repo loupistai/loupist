@@ -99,7 +99,15 @@ fn marketplace_snapshot_for_state(
     let connectors = catalog
         .entries
         .iter()
-        .map(|entry| connector_status(entry, state))
+        .map(|entry| -> Result<_, CommandError> {
+            let mut status = connector_status(entry, state)?;
+            // Settings reports the last observed connection. Admission still checks the
+            // installed runtime so that the next attempt can recover.
+            if entry.id == "openbb.platform" && state.mcp_pool.openbb_connect_failed() {
+                status.readiness = MarketplaceConnectorReadiness::RuntimeUnavailable;
+            }
+            Ok(status)
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let installed = installed_entries(&catalog, &connectors);
     let snapshot = MarketplaceSnapshotDto {

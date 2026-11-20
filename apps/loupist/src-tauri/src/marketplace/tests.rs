@@ -212,6 +212,29 @@ fn bundled_catalog_snapshot_reports_readiness_from_the_staged_runtime() {
         after["sec.edgar"],
         MarketplaceConnectorReadiness::NeedsConfiguration
     );
+
+    state.mcp_pool.record_openbb_connect(false);
+    assert_eq!(
+        readiness(&state)["openbb.platform"],
+        MarketplaceConnectorReadiness::RuntimeUnavailable
+    );
+    // Other connections and the next retry remain admitted.
+    assert_eq!(
+        readiness(&state)["world-bank.indicators"],
+        MarketplaceConnectorReadiness::Ready
+    );
+    let catalog = bundled_catalog().unwrap();
+    let entry = catalog
+        .entries
+        .iter()
+        .find(|e| e.id == "openbb.platform")
+        .unwrap();
+    assert!(connector_ready(entry, &state).unwrap());
+    state.mcp_pool.record_openbb_connect(true);
+    assert_eq!(
+        readiness(&state)["openbb.platform"],
+        MarketplaceConnectorReadiness::Ready
+    );
 }
 
 #[test]

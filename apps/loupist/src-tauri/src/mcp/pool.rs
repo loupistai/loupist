@@ -105,6 +105,7 @@ struct McpProcessPoolInner {
 }
 
 struct PoolLifecycle {
+    openbb_connect_failed: AtomicBool,
     closing: AtomicBool,
     releases: AtomicUsize,
     changes: watch::Sender<u64>,
@@ -222,11 +223,22 @@ impl McpProcessPool {
                 next_start: 0,
             })),
             lifecycle: Arc::new(PoolLifecycle {
+                openbb_connect_failed: AtomicBool::new(false),
                 closing: AtomicBool::new(false),
                 releases: AtomicUsize::new(0),
                 changes,
             }),
         }
+    }
+
+    pub(crate) fn record_openbb_connect(&self, connected: bool) {
+        self.lifecycle
+            .openbb_connect_failed
+            .store(!connected, Ordering::Relaxed);
+    }
+
+    pub(crate) fn openbb_connect_failed(&self) -> bool {
+        self.lifecycle.openbb_connect_failed.load(Ordering::Relaxed)
     }
 
     /// A private working directory for one process. It carries no Loupist,

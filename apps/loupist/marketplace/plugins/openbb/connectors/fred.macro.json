@@ -21,6 +21,8 @@
       "tool_name": "economy_fred_series",
       "arguments": {
         "symbol": "GDP",
+        "start_date": "2024-01-01",
+        "end_date": "2024-01-01",
         "limit": 1,
         "provider": "fred"
       }

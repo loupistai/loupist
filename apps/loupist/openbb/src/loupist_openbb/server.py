@@ -25,9 +25,11 @@ from loupist_openbb.manifest import (
     resolve_provider_config,
     resolve_providerless_tool_policy,
 )
+from loupist_openbb.yahoo_history import RAW_DAILY_REQUEST, apply_yahoo_history
 from loupist_openbb.network import apply_network_policy
 from loupist_openbb.failures import (
     AlphaVantagePaidPlanRequired,
+    YAHOO_ADJUSTMENT,
     CredentialRejectedError,
     call_tool_with_failures,
     classify_rest_failures,
@@ -363,7 +365,7 @@ def _canonicalize_implicit_provider_result(result: Any, provider: str) -> Any:
 
 
 def mark_registered_tools_read_only(
-    server: Any, implicit_provider: dict[str, str]
+    server: Any, implicit_provider: dict[str, str], *, yahoo_raw_daily: bool = False
 ) -> int:
     """Attach MCP safety annotations and bound generated output schemas.
 
@@ -401,6 +403,13 @@ def mark_registered_tools_read_only(
                     if schema.get("x-fastmcp-wrap-result"):
                         tool.output_schema["x-fastmcp-wrap-result"] = True
                 provider_id = implicit_provider.get(tool.name)
+                if yahoo_raw_daily and tool.name == "equity_price_historical":
+                    adjustment = tool.parameters.get("properties", {}).get(
+                        "adjustment", {}
+                    )
+                    choices = adjustment.get("yfinance", {}).get("choices", [])
+                    if choices and "unadjusted" not in choices:
+                        choices.append("unadjusted")
                 original_run = tool.run
 
                 @wraps(original_run)
@@ -426,6 +435,28 @@ def mark_registered_tools_read_only(
                             )
                         finally:
                             _ALPHA_RAW_DAILY.reset(token)
+                    elif (
+                        yahoo_raw_daily
+                        and _tool_name == "equity_price_historical"
+                        and arguments.get("provider") == "yfinance"
+                        and arguments.get("adjustment") == "unadjusted"
+                    ):
+                        if arguments.get("interval", "1d") != "1d":
+                            from fastmcp.tools.tool import ToolResult
+
+                            return ToolResult(
+                                content="unsupported_adjustment",
+                                structured_content=YAHOO_ADJUSTMENT,
+                                is_error=True,
+                            )
+                        token = RAW_DAILY_REQUEST.set(arguments)
+                        try:
+                            result = await call_tool_with_failures(
+                                _original_run,
+                                {**arguments, "adjustment": "splits_only"},
+                            )
+                        finally:
+                            RAW_DAILY_REQUEST.reset(token)
                     else:
                         result = await call_tool_with_failures(_original_run, arguments)
                     if _provider_id is not None:
@@ -473,6 +504,8 @@ def create_server(bootstrap: Bootstrap) -> Any:
     apply_sec_contact_email(provider_config.get("sec_contact_email"))
     if "alpha_vantage" in bootstrap.settings.enabled_provider_ids:
         apply_alpha_vantage_history()
+    if "yfinance" in bootstrap.settings.enabled_provider_ids:
+        apply_yahoo_history()
     if "fred" in bootstrap.settings.enabled_provider_ids:
         apply_fred_error_guard()
     security = manifest.get("security", {})
@@ -516,6 +549,7 @@ def create_server(bootstrap: Bootstrap) -> Any:
             for tool_name, provider_id in implicit_provider.items()
             if provider_id in enabled_provider_ids
         },
+        yahoo_raw_daily="yfinance" in enabled_provider_ids,
     )
     server.disable(names=_DISABLED_COMPONENTS)
     return server

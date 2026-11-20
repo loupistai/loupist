@@ -232,7 +232,7 @@
       "keyless": false,
       "network_hosts": ["www.econdb.com"],
       "credential_mapping": {"api_key": "econdb_api_key"},
-      "verification_probe": {"tool": "economy_country_profile", "arguments": {"country": "US", "provider": "econdb"}}
+      "verification_probe": {"tool": "economy_indicators", "arguments": {"symbol": "CPI", "country": "US", "start_date": "2024-01-01", "end_date": "2024-02-01", "use_cache": false, "provider": "econdb"}}
     },
     {
       "id": "eia",
@@ -294,7 +294,7 @@
       "keyless": false,
       "network_hosts": ["api.stlouisfed.org", "fred.stlouisfed.org"],
       "credential_mapping": {"api_key": "fred_api_key"},
-      "verification_probe": {"tool": "economy_fred_series", "arguments": {"symbol": "GDP", "limit": 1, "provider": "fred"}}
+      "verification_probe": {"tool": "economy_fred_series", "arguments": {"symbol": "GDP", "start_date": "2024-01-01", "end_date": "2024-01-01", "limit": 1, "provider": "fred"}}
     },
     {
       "id": "government_us",

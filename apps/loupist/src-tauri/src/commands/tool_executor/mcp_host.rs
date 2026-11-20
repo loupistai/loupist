@@ -472,8 +472,20 @@ impl AppToolExecutor {
             }));
         }
 
-        self.attach_or_spawn_mcp(&request.server_id, authority, &request.activate_tool_names)
-            .await
+        let result = self
+            .attach_or_spawn_mcp(&request.server_id, authority, &request.activate_tool_names)
+            .await;
+        self.record_openbb_connect(&request.server_id, result.is_ok());
+        result
+    }
+
+    fn record_openbb_connect(&self, server_id: &str, connected: bool) {
+        if server_id == openbb::OPENBB_SERVER_ID {
+            self.state.mcp_pool.record_openbb_connect(connected);
+            if let Some(failed) = &self.capture.price_setup_connect_failed {
+                failed.store(!connected, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
     }
 
     async fn connected_mcp_tools(
@@ -498,7 +510,11 @@ impl AppToolExecutor {
             },
         };
         if matches!(&cached, Ok(Some(_))) {
+            self.record_openbb_connect(server_id, true);
             return cached;
+        }
+        if cached.is_err() {
+            self.record_openbb_connect(server_id, false);
         }
         let stale = guard.take();
         drop(guard);
@@ -1187,11 +1203,15 @@ impl AppToolExecutor {
         .map_err(|_| BrokerError::Execution("credential lookup failed".into()))?
         .map_err(|_| BrokerError::Execution("credential lookup failed".into()))?;
 
-        let provider_config =
-            collect_server_provider_config(server_id, &catalog.entries, |entry_id, field_id| {
+        let provider_config = collect_server_provider_config(
+            server_id,
+            &catalog.entries,
+            &requested_provider_ids,
+            |entry_id, field_id| {
                 crate::marketplace::connector_config_value(&self.state, entry_id, field_id)
                     .map_err(|_| BrokerError::Execution("connector setup is unavailable".into()))
-            })?;
+            },
+        )?;
         // A manifest-keyless provider can still require non-secret operational
         // configuration (SEC contact identity is the current case). Keep it in
         // the platform catalog, but do not expose or authorize it for a run
@@ -1329,7 +1349,8 @@ fn provider_failure(
     provider: Option<&str>,
     enabled_provider_ids: &BTreeSet<String>,
 ) -> BrokerError {
-    if matches!(&error, BrokerError::WithNext { next, .. } if next.as_ref() == openbb::COMPANY_NEWS_UNAVAILABLE)
+    if matches!(&error, BrokerError::InvalidArguments { .. })
+        || matches!(&error, BrokerError::WithNext { next, .. } if next.as_ref() == openbb::COMPANY_NEWS_UNAVAILABLE)
         || !provider.is_some_and(openbb::is_best_effort)
     {
         return error;
@@ -1373,6 +1394,7 @@ fn configured_provider_ids(
 fn collect_server_provider_config(
     server_id: &str,
     catalog_entries: &[MarketplaceEntryDto],
+    requested: &BTreeSet<String>,
     mut read_field: impl FnMut(&str, &str) -> Result<Option<String>, BrokerError>,
 ) -> Result<BTreeMap<String, BTreeMap<String, String>>, BrokerError> {
     let mut provider_config = BTreeMap::<String, BTreeMap<String, String>>::new();
@@ -1388,6 +1410,9 @@ fn collect_server_provider_config(
                 "MCP provider configuration is ambiguous".into(),
             ));
         };
+        if !requested.contains(provider_id) {
+            continue;
+        }
         let mut values = BTreeMap::new();
         let mut complete = true;
         for field_id in entry.runtime.config_mapping.keys() {
@@ -2686,7 +2711,7 @@ done
             ("yfinance".into(), BTreeSet::new()),
         ]);
         assert_eq!(
-            configured_provider_ids(requested, &required, &BTreeMap::new()),
+            configured_provider_ids(requested.clone(), &required, &BTreeMap::new()),
             BTreeSet::from(["yfinance".into()])
         );
 
@@ -2699,20 +2724,25 @@ done
                 "research@example.com".to_owned(),
             )]),
         )]);
-        let config =
-            collect_server_provider_config("openbb", &catalog.entries, |entry_id, field_id| {
+        let config = collect_server_provider_config(
+            "openbb",
+            &catalog.entries,
+            &requested,
+            |entry_id, field_id| {
                 Ok(stored
                     .get(entry_id)
                     .and_then(|values| values.get(field_id))
                     .cloned())
-            })
-            .unwrap();
+            },
+        )
+        .unwrap();
         assert_eq!(config["sec"]["contact_email"], "research@example.com");
 
         // Without the email the SEC provider is dropped and named, not silently lost,
         // and the other granted providers keep running.
         let missing =
-            collect_server_provider_config("openbb", &catalog.entries, |_, _| Ok(None)).unwrap();
+            collect_server_provider_config("openbb", &catalog.entries, &requested, |_, _| Ok(None))
+                .unwrap();
         assert!(!missing.contains_key("sec"));
         let required = BTreeMap::from([("sec".into(), BTreeSet::from(["contact_email".into()]))]);
         let requested = BTreeSet::from(["sec".to_owned(), "yfinance".to_owned()]);
@@ -2992,6 +3022,7 @@ done
         let temporary = tempfile::tempdir().unwrap();
         let mut state = AppState::for_test(temporary.path().join("app"));
         let mut runtime = authority(&temporary, "cftc", "unused").runtime;
+        runtime.executable = temporary.path().join("missing-runtime");
         runtime.provider_ids.insert("cftc".into());
         runtime.provider_network_hosts.insert(
             "cftc".into(),
@@ -3000,14 +3031,38 @@ done
         Arc::make_mut(&mut state.artifacts)
             .mcp_runtimes
             .insert("openbb".into(), runtime);
-        let executor = AppToolExecutor::for_host(
+        let mut executor = AppToolExecutor::for_host(
             &state,
             "fixture",
             BTreeSet::from(["cftc.commitments".into()]),
         );
+        // A saved setup choice for a disconnected sibling must not reach the
+        // sidecar, which rejects config for any provider outside this grant.
+        crate::scoped_config::write_global_connector_settings(
+            &state.artifacts.app_data_dir,
+            "tradier.market-data",
+            &BTreeMap::from([("account_type".into(), "sandbox".into())]),
+        )
+        .unwrap();
+        crate::marketplace::connector_config::reconcile_connector_configs(&state).unwrap();
         let grant = executor.mcp_run_authority("openbb").await.unwrap();
         assert_eq!(grant.enabled_provider_ids, BTreeSet::from(["cftc".into()]));
+        assert!(
+            grant.provider_config.is_empty(),
+            "{:?}",
+            grant.provider_config
+        );
         assert!(grant.credentials.is_empty());
+        let price_failure = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        Arc::get_mut(&mut executor.capture)
+            .unwrap()
+            .price_setup_connect_failed = Some(price_failure.clone());
+        assert!(executor
+            .mcp_connect(json!({"server_id": "openbb"}))
+            .await
+            .is_err());
+        assert!(state.mcp_pool.openbb_connect_failed());
+        assert!(price_failure.load(std::sync::atomic::Ordering::Relaxed));
         let env = &state.credential_environment;
         let id = "cftc.commitments";
         crate::finance_credentials::stage(

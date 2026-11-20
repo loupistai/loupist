@@ -112,6 +112,18 @@ fn classify_probe_response(response: &McpCallResult) -> Result<(), McpCredential
             _ => McpCredentialProbeError::Rejected,
         });
     }
+    // The compact Alpha Vantage endpoint accepts invented keys. Nasdaq search
+    // never sends the key. Records from either route cannot verify a candidate.
+    if matches!(
+        response
+            .structured_content
+            .as_ref()
+            .and_then(|v| v.get("provider"))
+            .and_then(Value::as_str),
+        Some("alpha_vantage" | "nasdaq")
+    ) {
+        return Err(McpCredentialProbeError::Unavailable);
+    }
     let has_records = response
         .structured_content
         .as_ref()
@@ -953,6 +965,21 @@ mod probe_tests {
         match classify_probe_response(response) {
             Ok(()) => VerificationOutcome::Verified,
             Err(error) => error.outcome(),
+        }
+    }
+
+    #[test]
+    fn public_probe_records_cannot_verify_a_secret() {
+        for provider in ["alpha_vantage", "nasdaq"] {
+            let response = answer(
+                false,
+                Some(json!({"provider": provider, "results": [{"close": 185.64}]})),
+                "",
+            );
+            assert_eq!(
+                outcome(&response),
+                VerificationOutcome::TemporarilyUnavailable
+            );
         }
     }
 

@@ -15,6 +15,13 @@ from urllib.error import URLError
 
 OFFLINE = {"loupist_error": {"kind": "offline"}}
 PAID_ALPHA_PLAN = {"loupist_error": {"kind": "alpha_vantage_paid_plan_required"}}
+YAHOO_ADJUSTMENT = {
+    "loupist_error": {
+        "kind": "unsupported_adjustment",
+        "provider": "yfinance",
+        "supported": ["splits_only", "splits_and_dividends"],
+    }
+}
 CREDENTIAL_REASONS = frozenset({"key_format", "key_not_accepted"})
 
 
@@ -36,6 +43,10 @@ class CredentialRejectedError(Exception):
         self.reason = reason
 
 
+class YahooAdjustmentUnavailable(Exception):
+    """Yahoo chart prices cannot establish an as-traded value for this range."""
+
+
 class AlphaVantagePaidPlanRequired(Exception):
     def __init__(self) -> None:
         super().__init__("alpha_vantage_paid_plan_required")
@@ -55,7 +66,7 @@ def _causes(error: BaseException) -> list[BaseException]:
 
 
 def provider_refusal(error: BaseException) -> dict[str, Any] | None:
-    """Return a fixed diagnostic for a key or plan refusal."""
+    """Return a fixed diagnostic for a credential, plan, or adjustment refusal."""
 
     import httpx
 
@@ -66,6 +77,8 @@ def provider_refusal(error: BaseException) -> dict[str, Any] | None:
         if id(current) in seen:
             continue
         seen.add(id(current))
+        if isinstance(current, YahooAdjustmentUnavailable):
+            return YAHOO_ADJUSTMENT
         if isinstance(current, AlphaVantagePaidPlanRequired):
             return PAID_ALPHA_PLAN
         if isinstance(current, CredentialRejectedError):
@@ -75,6 +88,8 @@ def provider_refusal(error: BaseException) -> dict[str, Any] | None:
                 body = current.response.json()
             except ValueError:
                 body = None
+            if body == YAHOO_ADJUSTMENT:
+                return YAHOO_ADJUSTMENT
             if body == PAID_ALPHA_PLAN:
                 return PAID_ALPHA_PLAN
             marker = body.get("loupist_error") if isinstance(body, dict) else None
@@ -147,6 +162,12 @@ def is_offline_error(error: BaseException) -> bool:
     return False
 
 
+def _refusal_status(rejection):
+    if rejection == YAHOO_ADJUSTMENT:
+        return 422
+    return 402 if rejection == PAID_ALPHA_PLAN else 401
+
+
 def classify_rest_failures(app: Any) -> None:
     """Keep OpenBB's handlers, replacing only unreachable-provider failures."""
     from starlette.responses import JSONResponse
@@ -157,7 +178,7 @@ def classify_rest_failures(app: Any) -> None:
                 return JSONResponse(OFFLINE, status_code=503)
             if rejection := provider_refusal(error):
                 return JSONResponse(
-                    rejection, status_code=402 if rejection == PAID_ALPHA_PLAN else 401
+                    rejection, status_code=_refusal_status(rejection)
                 )
             return await handler(request, error)
 
@@ -175,7 +196,7 @@ def classify_rest_failures(app: Any) -> None:
                 return JSONResponse(OFFLINE, status_code=503)
             if rejection := provider_refusal(error):
                 return JSONResponse(
-                    rejection, status_code=402 if rejection == PAID_ALPHA_PLAN else 401
+                    rejection, status_code=_refusal_status(rejection)
                 )
             raise error
 
@@ -200,8 +221,8 @@ async def call_tool_with_failures(
         if rejection := provider_refusal(error):
             return ToolResult(
                 content=(
-                    "alpha_vantage_paid_plan_required"
-                    if rejection == PAID_ALPHA_PLAN
+                    rejection["loupist_error"]["kind"]
+                    if rejection in (PAID_ALPHA_PLAN, YAHOO_ADJUSTMENT)
                     else "The data provider rejected the configured key."
                 ),
                 structured_content=rejection,
