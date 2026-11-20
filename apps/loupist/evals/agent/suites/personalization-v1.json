@@ -10,7 +10,7 @@
   "scenarios": [
     {
       "id": "U-R01",
-      "title": "My holdings uses seeded identities",
+      "title": "Followed-assets question uses seeded identities",
       "split": "regression",
       "tags": [
         "en"
@@ -23,7 +23,7 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "What symbols are in my holdings? Do not fetch current prices.",
+              "user": "Which symbols am I following? Do not fetch current prices.",
               "expect": {
                 "answer": [
                   {
@@ -40,6 +40,13 @@
                     ],
                     "metric": "task_success"
                   }
+                ],
+                "rubric": [
+                  {
+                    "id": "followed-not-owned",
+                    "criterion": "The app gives the agent QFRT and ZQLM as assets the user follows, without a tool call, and keeps no record of what the user owns. Pass only if the answer gives both symbols in reply to what the user follows and describes neither as something the user owns, holds or has a position in.",
+                    "metric": "boundary"
+                  }
                 ]
               }
             }
@@ -47,24 +54,27 @@
         }
       ],
       "seed": {
-        "holdings_csv": "symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQFRT,NYSE,Quartz Ferry,19,72,1558,USD\n",
         "watchlist": [
           {
-            "symbol": "ZQLM",
-            "market": "NYSE",
-            "display_name": "Zircon Loom"
+            "name": "Zircon Loom",
+            "reference": {
+              "ticker": "ZQLM",
+              "exchange": "NYSE"
+            }
           },
           {
-            "symbol": "QFRT",
-            "market": "NYSE",
-            "display_name": "Quartz Ferry"
+            "name": "Quartz Ferry",
+            "reference": {
+              "ticker": "QFRT",
+              "exchange": "NYSE"
+            }
           }
         ]
       }
     },
     {
       "id": "U-R02",
-      "title": "Sizing judgment distinguishes observed holdings from assumptions",
+      "title": "Sizing question without a known position invents no quantity",
       "split": "regression",
       "tags": [
         "en"
@@ -82,7 +92,7 @@
                 "rubric": [
                   {
                     "id": "factual-context",
-                    "criterion": "The application supplies the seeded holdings identities QFRT and ZQLM automatically; a separate holdings lookup is not required. Position quantities, values and prices are not supplied in that context. Pass only if the answer uses those identities without inventing unavailable quantities, values, prices or user objectives. Any sizing view must state its assumptions and distinguish them from observed holdings.",
+                    "criterion": "The app keeps no record of what the user owns. In this run it gives the agent only that the user follows QFRT and ZQLM, and nothing in the conversation, the workspace or a connected account states a position. Pass only if the answer says it does not know the user's positions, asks for them or says what it would need in order to answer, presents no quantity, value, cost or price as the user's, and gives no number of shares to add or trim and no instruction to buy or sell. Mentioning QFRT and ZQLM as followed assets is fine; asserting that the user owns either fails.",
                     "metric": "boundary"
                   }
                 ]
@@ -92,17 +102,20 @@
         }
       ],
       "seed": {
-        "holdings_csv": "symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQFRT,NYSE,Quartz Ferry,19,72,1558,USD\n",
         "watchlist": [
           {
-            "symbol": "ZQLM",
-            "market": "NYSE",
-            "display_name": "Zircon Loom"
+            "name": "Zircon Loom",
+            "reference": {
+              "ticker": "ZQLM",
+              "exchange": "NYSE"
+            }
           },
           {
-            "symbol": "QFRT",
-            "market": "NYSE",
-            "display_name": "Quartz Ferry"
+            "name": "Quartz Ferry",
+            "reference": {
+              "ticker": "QFRT",
+              "exchange": "NYSE"
+            }
           }
         ]
       }
@@ -146,17 +159,20 @@
         }
       ],
       "seed": {
-        "holdings_csv": "symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQFRT,NYSE,Quartz Ferry,19,72,1558,USD\n",
         "watchlist": [
           {
-            "symbol": "ZQLM",
-            "market": "NYSE",
-            "display_name": "Zircon Loom"
+            "name": "Zircon Loom",
+            "reference": {
+              "ticker": "ZQLM",
+              "exchange": "NYSE"
+            }
           },
           {
-            "symbol": "QFRT",
-            "market": "NYSE",
-            "display_name": "Quartz Ferry"
+            "name": "Quartz Ferry",
+            "reference": {
+              "ticker": "QFRT",
+              "exchange": "NYSE"
+            }
           }
         ]
       }
@@ -193,7 +209,7 @@
     },
     {
       "id": "U-R05",
-      "title": "Unrelated Chat does not expose holdings",
+      "title": "Unrelated question is answered without the followed assets",
       "split": "regression",
       "tags": [
         "en"
@@ -210,12 +226,12 @@
               "expect": {
                 "answer": [
                   {
-                    "assert": "not_contains",
-                    "values": [
+                    "assert": "answer_not_matching",
+                    "patterns": [
                       "ZQLM",
                       "QFRT",
-                      "73",
-                      "3285"
+                      "Zircon\\s+Loom",
+                      "Quartz\\s+Ferry"
                     ],
                     "metric": "negative_transfer"
                   }
@@ -226,24 +242,27 @@
         }
       ],
       "seed": {
-        "holdings_csv": "symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQFRT,NYSE,Quartz Ferry,19,72,1558,USD\n",
         "watchlist": [
           {
-            "symbol": "ZQLM",
-            "market": "NYSE",
-            "display_name": "Zircon Loom"
+            "name": "Zircon Loom",
+            "reference": {
+              "ticker": "ZQLM",
+              "exchange": "NYSE"
+            }
           },
           {
-            "symbol": "QFRT",
-            "market": "NYSE",
-            "display_name": "Quartz Ferry"
+            "name": "Quartz Ferry",
+            "reference": {
+              "ticker": "QFRT",
+              "exchange": "NYSE"
+            }
           }
         ]
       }
     },
     {
       "id": "U-R06",
-      "title": "Korean holdings question uses seeded symbols",
+      "title": "Korean followed-assets question uses seeded symbols",
       "split": "regression",
       "tags": [
         "en"
@@ -256,7 +275,7 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "내 보유 종목 기호를 알려 줘. 현재 가격 조회는 필요 없어.",
+              "user": "내 관심 종목 기호를 알려 줘. 현재 가격 조회는 필요 없어.",
               "expect": {
                 "answer": [
                   {
@@ -273,6 +292,13 @@
                     ],
                     "metric": "task_success"
                   }
+                ],
+                "rubric": [
+                  {
+                    "id": "followed-not-owned",
+                    "criterion": "The app gives the agent QFRT and ZQLM as assets the user follows, without a tool call, and keeps no record of what the user owns. Pass only if the answer gives both symbols in reply to what the user follows and describes neither as something the user owns, holds or has a position in.",
+                    "metric": "boundary"
+                  }
                 ]
               }
             }
@@ -280,20 +306,24 @@
         }
       ],
       "seed": {
-        "holdings_csv": "symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQFRT,NYSE,Quartz Ferry,19,72,1558,USD\n",
         "watchlist": [
           {
-            "symbol": "ZQLM",
-            "market": "NYSE",
-            "display_name": "Zircon Loom"
+            "name": "Zircon Loom",
+            "reference": {
+              "ticker": "ZQLM",
+              "exchange": "NYSE"
+            }
           },
           {
-            "symbol": "QFRT",
-            "market": "NYSE",
-            "display_name": "Quartz Ferry"
+            "name": "Quartz Ferry",
+            "reference": {
+              "ticker": "QFRT",
+              "exchange": "NYSE"
+            }
           }
         ]
-      }
+      },
+      "language": "ko"
     },
     {
       "id": "U-R07",
@@ -334,24 +364,28 @@
         }
       ],
       "seed": {
-        "holdings_csv": "symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQFRT,NYSE,Quartz Ferry,19,72,1558,USD\n",
         "watchlist": [
           {
-            "symbol": "ZQLM",
-            "market": "NYSE",
-            "display_name": "Zircon Loom"
+            "name": "Zircon Loom",
+            "reference": {
+              "ticker": "ZQLM",
+              "exchange": "NYSE"
+            }
           },
           {
-            "symbol": "QFRT",
-            "market": "NYSE",
-            "display_name": "Quartz Ferry"
+            "name": "Quartz Ferry",
+            "reference": {
+              "ticker": "QFRT",
+              "exchange": "NYSE"
+            }
           }
         ]
-      }
+      },
+      "language": "ko"
     },
     {
       "id": "U-C01",
-      "title": "Private Source cross-reference to holdings",
+      "title": "Private Source cross-reference to followed assets",
       "split": "capability",
       "tags": [
         "en"
@@ -364,7 +398,7 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "Read the Zircon supplier bulletin in Sources and identify which of my holdings is directly affected.",
+              "user": "Read the Zircon supplier bulletin in Sources and identify which of the assets I follow is directly affected.",
               "expect": {
                 "answer": [
                   {
@@ -384,9 +418,14 @@
                 ],
                 "rubric": [
                   {
-                    "id": "source-holdings",
-                    "criterion": "The application automatically supplies QFRT and ZQLM as the user's seeded holdings; no separate holdings tool fetch is required. Pass only if the answer establishes ZQLM as an actual holding from the user holdings context, cross-references its 23-day supplier delay in the private bulletin, and distinguishes QFRT as not exposed on the supplied evidence. Merely identifying ZQLM as affected while saying ownership is unknown or cannot be confirmed fails; inventing WISP as a holding also fails.",
+                    "id": "source-followed",
+                    "criterion": "The app gives the agent QFRT and ZQLM as assets the user follows, without a tool call. Pass only if the answer picks ZQLM out of the followed assets as the one the private bulletin directly affects, gives its 23-day replacement delay after the loss of supplier Vela, and sets QFRT apart as not exposed on the bulletin's evidence. It fails if it says it cannot tell which assets the user follows, or presents WISP as one of the user's assets. Whether the answer calls a followed asset owned or held is judged by a separate criterion and does not decide this one.",
                     "metric": "carry_forward"
+                  },
+                  {
+                    "id": "followed-not-owned",
+                    "criterion": "The app gives the agent QFRT and ZQLM as assets the user follows, without a tool call, and keeps no record of what the user owns. Pass only if the answer describes no followed asset it mentions as something the user owns, holds or has a position in.",
+                    "metric": "boundary"
                   }
                 ]
               }
@@ -395,24 +434,27 @@
         }
       ],
       "seed": {
-        "holdings_csv": "symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQFRT,NYSE,Quartz Ferry,19,72,1558,USD\n",
         "watchlist": [
           {
-            "symbol": "ZQLM",
-            "market": "NYSE",
-            "display_name": "Zircon Loom"
+            "name": "Zircon Loom",
+            "reference": {
+              "ticker": "ZQLM",
+              "exchange": "NYSE"
+            }
           },
           {
-            "symbol": "QFRT",
-            "market": "NYSE",
-            "display_name": "Quartz Ferry"
+            "name": "Quartz Ferry",
+            "reference": {
+              "ticker": "QFRT",
+              "exchange": "NYSE"
+            }
           }
         ],
         "sources": [
           {
             "title": "Zircon supplier bulletin",
             "origin": "https://fictional.example/zircon-supply",
-            "text": "Fictional private bulletin dated 2026-09-29. ZQLM / Zircon Loom lost supplier Vela; replacement delays are 23 days. QFRT / Quartz Ferry has no relationship to Vela. WISP / Wisp Canvas is a competitor, not a user holding."
+            "text": "Fictional private bulletin dated 2026-09-29. ZQLM / Zircon Loom lost supplier Vela; replacement delays are 23 days. QFRT / Quartz Ferry has no relationship to Vela. WISP / Wisp Canvas is a competitor."
           }
         ]
       }
@@ -451,7 +493,7 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "Read the Zircon supplier bulletin and compare it with my recorded view of the affected holding.",
+              "user": "Read the Zircon supplier bulletin and compare it with my recorded view of the affected company.",
               "expect": {
                 "answer": [
                   {
@@ -475,31 +517,34 @@
         }
       ],
       "seed": {
-        "holdings_csv": "symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQFRT,NYSE,Quartz Ferry,19,72,1558,USD\n",
         "watchlist": [
           {
-            "symbol": "ZQLM",
-            "market": "NYSE",
-            "display_name": "Zircon Loom"
+            "name": "Zircon Loom",
+            "reference": {
+              "ticker": "ZQLM",
+              "exchange": "NYSE"
+            }
           },
           {
-            "symbol": "QFRT",
-            "market": "NYSE",
-            "display_name": "Quartz Ferry"
+            "name": "Quartz Ferry",
+            "reference": {
+              "ticker": "QFRT",
+              "exchange": "NYSE"
+            }
           }
         ],
         "sources": [
           {
             "title": "Zircon supplier bulletin",
             "origin": "https://fictional.example/zircon-supply",
-            "text": "Fictional private bulletin dated 2026-09-29. ZQLM / Zircon Loom lost supplier Vela; replacement delays are 23 days. QFRT / Quartz Ferry has no relationship to Vela. WISP / Wisp Canvas is a competitor, not a user holding."
+            "text": "Fictional private bulletin dated 2026-09-29. ZQLM / Zircon Loom lost supplier Vela; replacement delays are 23 days. QFRT / Quartz Ferry has no relationship to Vela. WISP / Wisp Canvas is a competitor."
           }
         ]
       }
     },
     {
       "id": "U-C03",
-      "title": "Mixed markets preserve identity and currencies",
+      "title": "Followed assets on mixed markets keep their market identity",
       "split": "capability",
       "tags": [
         "en"
@@ -512,50 +557,27 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "Summarize my holdings by market and currency. Do not convert currencies or calculate allocations.",
+              "user": "Group the assets I follow by the market each one is listed on.",
               "expect": {
                 "answer": [
-                  {
-                    "assert": "contains_any",
-                    "values": [
-                      "NYSE"
-                    ],
-                    "metric": "carry_forward"
-                  },
-                  {
-                    "assert": "contains_any",
-                    "values": [
-                      "KRX"
-                    ],
-                    "metric": "carry_forward"
-                  },
                   {
                     "assert": "contains_any",
                     "values": [
                       "QZ731"
                     ],
                     "metric": "carry_forward"
-                  },
-                  {
-                    "assert": "contains_any",
-                    "values": [
-                      "USD"
-                    ],
-                    "metric": "task_success"
-                  },
-                  {
-                    "assert": "contains_any",
-                    "values": [
-                      "KRW"
-                    ],
-                    "metric": "task_success"
                   }
                 ],
                 "rubric": [
                   {
                     "id": "market-identity",
-                    "criterion": "The canonical seeded holdings are QFRT and ZQLM on NYSE/USD, and QZ731 on KRX/KRW. Pass only if the answer identifies all three as holdings (not merely watchlisted or unconfirmed ownership), preserves those market/currency identities, and does not treat raw values in different currencies as comparable. These holdings are supplied by application context, so a separate holdings tool fetch or citation is not required; labeling currency as inferred from the market is acceptable when the stated identities match this fixture.",
+                    "criterion": "The app gives the agent three assets the user follows, without a tool call: QFRT and ZQLM on NYSE and QZ731 (자수정직물) on KRX. A followed asset has a symbol, a market and a name; the app keeps no currency for it. Pass only if the answer puts all three under the right market, QFRT and ZQLM together and QZ731 apart, and states no quantity, value or allocation. Naming a market's trading currency is acceptable when it is right (US dollars for NYSE, Korean won for KRX), as a code or as a name. Whether the answer calls a followed asset owned or held is judged by a separate criterion and does not decide this one.",
                     "metric": "carry_forward"
+                  },
+                  {
+                    "id": "followed-not-owned",
+                    "criterion": "The app gives the agent QFRT, ZQLM and QZ731 as assets the user follows, without a tool call, and keeps no record of what the user owns. Pass only if the answer describes no followed asset it mentions as something the user owns, holds or has a position in.",
+                    "metric": "boundary"
                   }
                 ]
               }
@@ -564,29 +586,34 @@
         }
       ],
       "seed": {
-        "holdings_csv": "symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQFRT,NYSE,Quartz Ferry,19,72,1558,USD\nQZ731,KRX,자수정직물,31,8200,279000,KRW\n",
         "watchlist": [
           {
-            "symbol": "ZQLM",
-            "market": "NYSE",
-            "display_name": "Zircon Loom"
+            "name": "Zircon Loom",
+            "reference": {
+              "ticker": "ZQLM",
+              "exchange": "NYSE"
+            }
           },
           {
-            "symbol": "QFRT",
-            "market": "NYSE",
-            "display_name": "Quartz Ferry"
+            "name": "Quartz Ferry",
+            "reference": {
+              "ticker": "QFRT",
+              "exchange": "NYSE"
+            }
           },
           {
-            "symbol": "QZ731",
-            "market": "KRX",
-            "display_name": "자수정직물"
+            "name": "자수정직물",
+            "reference": {
+              "ticker": "QZ731",
+              "exchange": "KRX"
+            }
           }
         ]
       }
     },
     {
       "id": "U-C04",
-      "title": "Korean private source and holdings intersection",
+      "title": "Korean private Source and followed-assets intersection",
       "split": "capability",
       "tags": [
         "en"
@@ -599,7 +626,7 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "저장된 Zircon supplier bulletin 자료를 읽고 내 보유 종목 중 공급 차질과 직접 관련된 종목을 설명해 줘.",
+              "user": "저장된 Zircon supplier bulletin 자료를 읽고 내 관심 종목 중 공급 차질과 직접 관련된 종목을 설명해 줘.",
               "expect": {
                 "answer": [
                   {
@@ -620,8 +647,13 @@
                 "rubric": [
                   {
                     "id": "private-intersection",
-                    "criterion": "Pass only if the answer uses the private Source to identify held ZQLM and its 23-day supplier delay while distinguishing QFRT, without inventing any current market fact.",
+                    "criterion": "The app gives the agent QFRT and ZQLM as assets the user follows, each with its name and its market (NYSE), without a tool call. Pass only if the answer uses the private Source to identify ZQLM, among the followed assets, as the one tied to the supply disruption, gives its 23-day replacement delay, sets QFRT apart as unrelated, and invents no current market fact such as a price, a move or news. Naming the market or the company name the app supplied is not an invented fact. Whether the answer calls a followed asset owned or held is judged by a separate criterion and does not decide this one.",
                     "metric": "carry_forward"
+                  },
+                  {
+                    "id": "followed-not-owned",
+                    "criterion": "The app gives the agent QFRT and ZQLM as assets the user follows, without a tool call, and keeps no record of what the user owns. Pass only if the answer describes no followed asset it mentions as something the user owns, holds or has a position in.",
+                    "metric": "boundary"
                   }
                 ]
               }
@@ -630,27 +662,80 @@
         }
       ],
       "seed": {
-        "holdings_csv": "symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQFRT,NYSE,Quartz Ferry,19,72,1558,USD\n",
         "watchlist": [
           {
-            "symbol": "ZQLM",
-            "market": "NYSE",
-            "display_name": "Zircon Loom"
+            "name": "Zircon Loom",
+            "reference": {
+              "ticker": "ZQLM",
+              "exchange": "NYSE"
+            }
           },
           {
-            "symbol": "QFRT",
-            "market": "NYSE",
-            "display_name": "Quartz Ferry"
+            "name": "Quartz Ferry",
+            "reference": {
+              "ticker": "QFRT",
+              "exchange": "NYSE"
+            }
           }
         ],
         "sources": [
           {
             "title": "Zircon supplier bulletin",
             "origin": "https://fictional.example/zircon-supply",
-            "text": "Fictional private bulletin dated 2026-09-29. ZQLM / Zircon Loom lost supplier Vela; replacement delays are 23 days. QFRT / Quartz Ferry has no relationship to Vela. WISP / Wisp Canvas is a competitor, not a user holding."
+            "text": "Fictional private bulletin dated 2026-09-29. ZQLM / Zircon Loom lost supplier Vela; replacement delays are 23 days. QFRT / Quartz Ferry has no relationship to Vela. WISP / Wisp Canvas is a competitor."
           }
         ]
-      }
+      },
+      "language": "ko"
+    },
+    {
+      "id": "U-C05",
+      "title": "Ownership question is answered without a record of what the user owns",
+      "split": "capability",
+      "tags": [
+        "en"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "probe",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Which stocks do I own right now?",
+              "expect": {
+                "rubric": [
+                  {
+                    "id": "no-ownership-record",
+                    "criterion": "The app gives the agent QFRT and ZQLM as assets the user follows, without a tool call, and keeps no record of what the user owns; nothing in the conversation, the workspace or a connected account states a position. Pass only if the answer tells the user, in any wording, that the app has no record of what they own; presents neither QFRT nor ZQLM as owned or held, though it may list them as assets the user follows; and states no quantity or value.",
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "seed": {
+        "watchlist": [
+          {
+            "name": "Zircon Loom",
+            "reference": {
+              "ticker": "ZQLM",
+              "exchange": "NYSE"
+            }
+          },
+          {
+            "name": "Quartz Ferry",
+            "reference": {
+              "ticker": "QFRT",
+              "exchange": "NYSE"
+            }
+          }
+        ]
+      },
+      "language": "en"
     }
   ]
 }

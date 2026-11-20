@@ -36,7 +36,9 @@ export type SourceClass =
   | "code_revision"
   | "web_page"
   | "historical_document"
-  | "user_file";
+  | "user_file"
+  /** Material the user pasted into a Chat, kept verbatim; its origin is as the user stated it. */
+  | "user_provided";
 
 export type Coverage =
   | "included_full"
@@ -73,6 +75,8 @@ export type KnowledgeObjectRef = {
   id: string;
   title: string;
   titleKey?: SourceTitleKey;
+  /** Material the user pasted into a Chat (`sourceClass` `user_provided`). */
+  userProvided?: boolean;
 };
 
 export type KnowledgeRecordSummary = {
@@ -231,6 +235,8 @@ export type SourceDetail = {
   selectedSpanId: string | null;
   publicationTime: TimePoint | null;
   acquiredAt: TimePoint | null;
+  /** Where a user-provided Source was pasted and the link and publisher the user stated. */
+  provided?: Wire.ProvidedOrigin;
 };
 
 export type KnowledgeLensReadRequest = {
@@ -587,7 +593,6 @@ export type KnowledgeMapNode = {
   recordId?: string;
   archived?: boolean;
   watched: boolean;
-  held: boolean;
 };
 export type KnowledgeMapEdge = {
   id: string;
@@ -599,12 +604,11 @@ export type KnowledgeMapEdge = {
   weight?: number;
   firstSeenAtMs?: number;
 };
-export type KnowledgeMapItem = { symbol: string; market: string; displayName: string | null };
+export type KnowledgeMapItem = { assetId: string; symbol: string; market: string; displayName: string | null };
 export type KnowledgeMapCount = Wire.KnowledgeMapCount;
 export type KnowledgeMap = {
   nodes: KnowledgeMapNode[];
   edges: KnowledgeMapEdge[];
-  unmatchedHoldings: KnowledgeMapItem[];
   unmatchedWatchlist: KnowledgeMapItem[];
   /** Counts of projected nodes/edges; multi-endpoint claims are projected as stars. */
   counts: Record<KnowledgeMapNodeKind | KnowledgeMapEdgeKind, KnowledgeMapCount>;

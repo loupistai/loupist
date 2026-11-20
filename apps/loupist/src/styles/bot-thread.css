@@ -1,0 +1,186 @@
+/*
+ * Bot: a conversation with a person (owner redesign, area D). The Loupist's face and
+ * name beside its messages, its words in bubbles on the left, the user's in accent
+ * bubbles on the right, one quiet working line, and the greeting when the thread is
+ * empty. Everything is scoped to `[data-surface="bot"]`, which the chat workspace and
+ * its scroller carry in Bot only; research sessions keep the document layout.
+ */
+
+/* Rhythm: messages sit closer than a document's sections, with room between turns. */
+[data-surface="bot"] .conversation-content { gap: var(--gg-space-6); }
+[data-surface="bot"] .turn { gap: var(--gg-space-4); }
+
+/* The user's message: an accent bubble on the right. */
+[data-surface="bot"] .message.user { max-width: min(480px, 82%); }
+[data-surface="bot"] .message.user .message-content {
+  padding: 10px 15px; border: 0; border-radius: var(--gg-radius-bubble); border-bottom-right-radius: 6px;
+  background: var(--gg-color-accent); color: var(--gg-color-text-on-accent);
+  font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading);
+}
+[data-surface="bot"] .message.user .message-content :is(.message-user-text, .message-user-context) { color: inherit; }
+[data-surface="bot"] .message.user .message-user-text .message-mention { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+[data-surface="bot"] .message.user .message-action-bar { justify-content: flex-end; }
+
+/* The Loupist's message: face, then a column with its name, bubbles, cards and the working line.
+   A host post (a result, a crossed line, a hand-off, a link, the news) sits the same way. */
+[data-surface="bot"] .message.assistant:is([data-bot-message], [data-bot-post]) { display: flex; align-items: flex-start; gap: 10px; }
+.bot-face {
+  flex: none; display: grid; place-items: center; margin-top: 22px; padding: 0; border: 0; border-radius: var(--gg-radius-full);
+  background: transparent; cursor: pointer;
+}
+.bot-face:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
+/* A host post's face is identity, not a control. */
+.bot-face.bot-face-still { cursor: default; }
+.bot-col { display: flex; flex: 1 1 auto; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.bot-col > * { max-width: 100%; }
+/* Cards, tables and questions take the column's width; bubbles and lines take their own. */
+.bot-col > :is(.bot-card, .turn-block, .chat-artifact-block, .grid-card, .connection-setup-card, .turn-footer, .message-outputs, .message-attachments, .as-of-note, .morning-ask) { align-self: stretch; }
+.bot-col > .morning-lead { margin: 0; }
+.bot-col > .morning-ask { margin-top: var(--gg-space-3); }
+[data-surface="bot"] .bot-who { display: flex; align-items: baseline; gap: 6px; min-height: 16px; margin: 0; padding-left: 4px; }
+[data-surface="bot"] .bot-who > span:first-child { color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-semibold); }
+[data-surface="bot"] .bot-who time { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-variant-numeric: tabular-nums; }
+
+/* The answer's text: a raised bubble whose corner nearest the face is tight. */
+[data-surface="bot"] .bot-col > [data-turn-item="prose"],
+.bot-bubble {
+  width: fit-content; max-width: 100%; margin: 0; padding: 10px 15px;
+  border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-bubble); border-top-left-radius: 6px;
+  background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary);
+  font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading);
+}
+[data-surface="bot"] .bot-col > [data-turn-item="prose"] .message-content { width: auto; }
+[data-surface="bot"] .bot-col > [data-turn-item="prose"] .message-content :is(p, ul, ol, blockquote) { max-width: 60ch; }
+[data-surface="bot"] .bot-col > [data-turn-item="prose"] + [data-turn-item="prose"] { border-top-left-radius: var(--gg-radius-bubble); }
+
+/* Working: one quiet line by the face. It opens the activity sheet. */
+.turn-live.bot-working {
+  display: inline-flex; align-items: center; gap: var(--gg-space-2); max-width: 100%; min-height: 40px; padding: 0 4px;
+  border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-secondary);
+  font: inherit; font-size: var(--gg-text-body); text-align: left; cursor: pointer;
+}
+.turn-live.bot-working:disabled { cursor: default; }
+.turn-live.bot-working .turn-live-text { overflow: hidden; }
+.turn-live.bot-working .turn-live-label { font-weight: var(--gg-weight-medium); }
+.turn-live.bot-working .turn-live-target { color: var(--gg-color-text-tertiary); }
+.bot-working-clock { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; }
+.bot-working-open {
+  flex: none; display: inline-flex; align-items: center; gap: 2px; padding: 3px 8px; border-radius: var(--gg-radius-sm);
+  color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta);
+}
+.bot-working-open > svg { width: 12px; height: 12px; }
+.turn-live.bot-working:not(:disabled):is(:hover, :focus-visible) .bot-working-open { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.turn-live.bot-working:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
+
+/* Settled: the footer is at most one line of evidence, with copy and feedback beside it. */
+[data-surface="bot"] .bot-col > .turn-footer { min-height: 0; margin-top: 0; }
+[data-surface="bot"] .bot-col > .turn-footer > div.message-action-bar { gap: var(--gg-space-1) var(--gg-space-2); margin-left: -4px; }
+[data-surface="bot"] .bot-col > .turn-footer > div.message-action-bar:empty { display: none; }
+[data-surface="bot"] .bot-col .message-action-bar > .memory-row:empty { display: none; }
+[data-surface="bot"] .bot-col .message-action-bar > :is(.memory-row, .message-run-state, .message-model-note) { flex-basis: 100%; }
+/* The relation pill ("A sees B") belongs to the Map, not under an answer. */
+[data-surface="bot"] .answer-map-preview { display: none; }
+.bot-trace { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+/* "2 figures checked · 1 source" is short and stays one line, so its "·" never ends a line;
+   the two buttons wrap between them. */
+.bot-trace > button {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 8px; border: 0; border-radius: var(--gg-radius-sm);
+  background: transparent; color: var(--gg-color-text-tertiary); font: inherit; font-size: var(--gg-text-meta); white-space: nowrap; cursor: pointer;
+}
+.bot-trace > button:is(:hover, :focus-visible) { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.bot-trace > button > svg { width: 14px; height: 14px; flex: none; }
+.bot-trace-open > svg { color: var(--gg-color-positive); }
+.bot-trace-check { color: var(--gg-color-warning); }
+.bot-trace-check > svg { color: var(--gg-color-warning); }
+/* Copy and feedback are quiet: they show with the pointer or keyboard focus on the message. */
+@media (hover: hover) {
+  [data-surface="bot"] .message.assistant[data-bot-message] .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
+  [data-surface="bot"] .message.assistant[data-bot-message]:is(:hover, :focus-within) .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 1; }
+  /* What the answer saved stays one pointer away; the activity sheet lists it too. */
+  [data-surface="bot"] .message.assistant[data-bot-message] .memory-row:not([data-expanded="true"]) .chat-receipt { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
+  [data-surface="bot"] .message.assistant[data-bot-message]:is(:hover, :focus-within) .memory-row .chat-receipt { opacity: 1; }
+}
+[data-surface="bot"] .bot-col .chat-receipt { font-size: var(--gg-text-meta); }
+/* A reply that failed as a whole says so in a bubble of its own, its edge on the answer's
+   bubbles (the action bar it sits in starts 4 px to the left for the trace's buttons). */
+[data-surface="bot"] .bot-col .message-run-state[data-kind="failed"] {
+  flex-basis: calc(100% - 4px); margin-left: 4px;
+  padding: 10px 15px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-bubble); border-top-left-radius: 6px;
+  background: var(--gg-color-bg-raised);
+}
+
+/* Follow-ups: pills a person would tap. */
+[data-surface="bot"] .next-step-chips { gap: 6px; margin-top: var(--gg-space-1); }
+[data-surface="bot"] .next-step-chip {
+  min-height: 32px; padding: 0 13px; border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-full);
+  background: var(--gg-color-bg-raised); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium);
+}
+[data-surface="bot"] .next-step-chip:is(:hover, :focus-visible) { border-color: var(--gg-color-accent-ink); background: var(--gg-color-bg-raised); color: var(--gg-color-accent-ink); }
+
+/* The day between messages: a small pill, no rule. */
+[data-surface="bot"] .chat-divider { justify-content: center; margin: var(--gg-space-2) 0; }
+[data-surface="bot"] .chat-divider::before,
+[data-surface="bot"] .chat-divider::after { display: none; }
+[data-surface="bot"] .chat-divider > span { padding: 2px 10px; border-radius: var(--gg-radius-full); background: var(--gg-color-bg-sunken); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); }
+
+/* Arrival: a message rises 8 px and fades in (DIRECTION, motion). */
+[data-surface="bot"] .message.assistant[data-bot-message][data-entering] { animation: bot-rise var(--gg-motion-slow) var(--gg-ease-out) both; }
+@keyframes bot-rise { from { opacity: 0; transform: translateY(8px); } }
+
+/* The greeting: the empty Bot. */
+.bot-greeting { display: flex; flex-direction: column; justify-content: center; gap: 14px; min-height: 100%; padding-block: var(--gg-space-5) var(--gg-space-3); }
+.bot-greeting-top { display: flex; align-items: center; gap: 14px; }
+.bot-greeting-top > span { display: grid; min-width: 0; }
+.bot-greeting-top strong { color: var(--gg-color-text-primary); font-size: var(--gg-text-heading); font-weight: var(--gg-weight-bold); line-height: var(--gg-leading-heading); }
+.bot-greeting-top small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-control); }
+.bot-greeting-bubbles { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.bot-greeting-bubbles > .bot-bubble + .bot-bubble { border-top-left-radius: var(--gg-radius-bubble); }
+.bot-greeting-group { display: grid; gap: var(--gg-space-2); margin-top: 6px; }
+.bot-greeting-label { margin: 0 0 0 2px; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-semibold); }
+.bot-asks, .bot-tiles { display: grid; gap: var(--gg-space-2); margin: 0; padding: 0; list-style: none; }
+.bot-asks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bot-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.bot-ask {
+  display: flex; align-items: center; gap: 12px; width: 100%; height: 100%; padding: 11px 14px;
+  border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-lg); background: var(--gg-color-bg-raised);
+  box-shadow: var(--gg-shadow-card); color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer;
+}
+.bot-ask > span { display: grid; flex: 1 1 auto; min-width: 0; }
+.bot-ask strong { font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); }
+.bot-ask small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.bot-ask > svg { flex: none; width: 16px; height: 16px; color: var(--gg-color-text-disabled); }
+.bot-ask:is(:hover, :focus-visible) { border-color: var(--gg-color-accent-ink); }
+.bot-ask:is(:hover, :focus-visible) > svg { color: var(--gg-color-accent-ink); }
+.bot-greeting-suggestion { display: flex; align-items: center; gap: 2px; margin: 0; }
+.bot-greeting-suggestion > button { border: 0; background: transparent; font: inherit; cursor: pointer; }
+.bot-greeting-suggestion-text { padding: 3px 4px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); text-align: left; text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
+.bot-greeting-suggestion-text:hover { color: var(--gg-color-text-primary); }
+.bot-greeting-suggestion-hide { display: grid; place-items: center; width: 24px; height: 24px; border-radius: var(--gg-radius-sm); color: var(--gg-color-text-tertiary); }
+.bot-greeting-suggestion-hide:hover { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.bot-greeting-suggestion-hide > svg { width: 14px; height: 14px; }
+/* Tiles in a row share one height; the name, price and "As of" line start at the top. */
+.bot-tile {
+  display: grid; align-content: start; gap: 4px; width: 100%; height: 100%; min-width: 0; padding: 10px 12px; border: 0; border-radius: var(--gg-radius-lg);
+  background: var(--gg-color-bg-sunken); color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer;
+}
+.bot-tile:not(:disabled):is(:hover, :focus-visible) { background: var(--gg-color-bg-hover); }
+.bot-tile:disabled { cursor: default; }
+.bot-tile-name { overflow: hidden; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
+.bot-tile-price { font-size: var(--gg-text-body); font-weight: var(--gg-weight-bold); }
+/* "As of {date} · {provider}" is the tile's quietest line, never larger than the name above it. */
+.bot-tile-foot { min-width: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.bot-greeting[aria-busy="false"] > :not(.bot-greeting-top) { animation: bot-rise var(--gg-motion-slow) var(--gg-ease-out) both; }
+
+/* Four closes stay one row down to an 800 px window, so the greeting fits without a scroll. */
+@container chat-workspace (max-width: 600px) {
+  .bot-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container chat-workspace (max-width: 560px) {
+  .bot-asks { grid-template-columns: minmax(0, 1fr); }
+  [data-surface="bot"] .message.assistant:is([data-bot-message], [data-bot-post]) { gap: var(--gg-space-2); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-surface="bot"] .message.assistant[data-bot-message][data-entering],
+  .bot-greeting[aria-busy="false"] > :not(.bot-greeting-top) { animation: none; }
+}

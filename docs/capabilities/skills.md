@@ -14,7 +14,9 @@ with every figure from `calculate`: `dividend-income` (history, payout, cuts, gr
 dated yield and record dates; Korea through `dart_dividends`), `fund-compare` (cost,
 size, age, `holdings_overlap` and returns over one shared window; KRX ETFs by price
 only), `why-it-moved` (the measured move beside the market, reported reasons, the
-assistant's labelled reading and what isn't explained) and `goal-math` (`goal_grid` over
+assistant's labelled reading and what isn't explained; used in a research session
+or when the user picks it, while the Bot answers a question about a move as a
+[quick ask](../agent/prompt.md#quick-asks-in-the-bot)) and `goal-math` (`goal_grid` over
 several rates or `dca_history`, using only the numbers the user gives). The `filings`
 Skill's `references/korea-statements.md` sets statement basis, periods and the Korean
 disclosure and flow reads for KRX companies. Skill Creator starts off in every

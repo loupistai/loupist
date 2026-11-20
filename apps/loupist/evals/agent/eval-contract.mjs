@@ -3,22 +3,81 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 
 export const TRACE_SCHEMA = 'loupist-agent-trace/1';
 export const SUITE_SCHEMA = 'loupist-agent-suite/1';
-export const TRACE_ASSERTS = new Set(['tool_called', 'tool_not_called', 'tool_called_before', 'max_tool_calls', 'max_tool_errors', 'no_repeated_failed_call', 'capability_loaded', 'scheduled_tasks', 'tool_args_not_matching', 'calculate_inputs_cited', 'as_of_left_out', 'as_of_refused', 'grid_cells_linked', 'sensitivity_card', 'plan_progress', 'skill_read']);
+export const TRACE_ASSERTS = new Set(['tool_called', 'tool_not_called', 'tool_called_before', 'max_tool_calls', 'max_tool_errors', 'no_repeated_failed_call', 'capability_loaded', 'scheduled_tasks', 'tool_args_not_matching', 'calculate_inputs_cited', 'as_of_left_out', 'as_of_refused', 'grid_cells_linked', 'scheduled_delivery', 'scheduled_quiet', 'followed_names', 'replayed_price', 'skill_read']);
 export const LENS_ASSERTS = new Set(['lens_pages', 'lens_unchanged', 'lens_read', 'lens_not_read']);
 export const MEMORY_ASSERTS = new Set(['committed', 'not_committed', ...LENS_ASSERTS]);
 const LENS_KINDS = new Set(['principle', 'perspective', 'method', 'subject', 'idea']);
 const BASIS_KINDS = new Set(['span', 'claim', 'said', 'page']);
 export const MEMORY_KINDS = new Set(['source', 'note', 'lens', 'principle', 'journal']);
-export const ANSWER_ASSERTS = new Set(['metrics', 'contains_any', 'not_contains', 'answer_not_matching', 'prediction', 'cites_result', 'numbers_linked', 'calculation_chip', 'no_false_save_claim']);
+export const ANSWER_ASSERTS = new Set(['metrics', 'contains_any', 'contains_number_any', 'figures_present', 'not_contains', 'answer_matching', 'answer_not_matching', 'prediction', 'cites_result', 'cites_source_span', 'numbers_linked', 'calculation_chip', 'no_false_save_claim', 'answer_language', 'visible_labels']);
 /** Saved Memory an as-of answer left out, as Rust counts it in `as_of_report.left_out`. */
 export const AS_OF_LEFT_OUT_KINDS = new Set(['facts', 'sources', 'notes', 'methods']);
 const NUMBER_CHECK_STATUSES = new Set(['matched', 'rounded', 'not_found', 'differs']);
 const CITATION_URL = /#evidence-ev_[0-9a-f]{32}/gu;
 
-export function planProgressAssertion(assertion) {
-  const min = assertion.min_items ?? 2;
-  if (!Number.isInteger(min) || min < 2 || min > 6) throw new Error('plan_progress min_items must be 2 to 6');
-  return { min_items: min };
+const SCRIPT_COMPONENTS = {
+  Jpan: ['Hani', 'Hira', 'Kana'], Hrkt: ['Hira', 'Kana'], Kore: ['Hang'],
+  Hans: ['Hani'], Hant: ['Hani'], Hanb: ['Hani', 'Bopo'],
+};
+
+export function answerLanguageScript(script) {
+  if (!script) return null;
+  const names = SCRIPT_COMPONENTS[script] ?? [script];
+  try {
+    return new RegExp(names.map(name => `\\p{Script_Extensions=${name}}`).join('|'), 'u');
+  } catch {
+    return null; // ICU also permits script codes that are not Unicode script properties.
+  }
+}
+
+/** BCP 47 answer language, independent of the scenario's appearance. */
+export function answerLanguageAssertion(assertion) {
+  let locale;
+  try {
+    if (typeof assertion.language === 'string') locale = new Intl.Locale(assertion.language);
+  } catch { /* Invalid BCP 47 language identifier. */ }
+  if (!locale || locale.language === 'und' || !answerLanguageScript(locale.maximize().script)) {
+    throw new Error('answer_language requires a BCP 47 language with a known script');
+  }
+  if (assertion.per_paragraph !== undefined && typeof assertion.per_paragraph !== 'boolean') throw new Error('answer_language per_paragraph must be a boolean');
+  return locale.baseName;
+}
+
+export const VISIBLE_LABEL_KEYS = new Set(['bot', 'map', 'schedule', 'research_sessions_heading', 'market_data_group']);
+
+export function visibleLabelsAssertion(assertion, scenario) {
+  const { keys } = assertion;
+  if (!Array.isArray(keys) || !keys.length || new Set(keys).size !== keys.length
+    || keys.some(key => !VISIBLE_LABEL_KEYS.has(key))) throw new Error('visible_labels requires distinct supported keys');
+  if (!['en', 'ko'].includes(scenario.language)) throw new Error('visible_labels requires a fixed scenario appearance');
+  return keys;
+}
+
+export function scheduledFixture(scenario, session, turn) {
+  if (!('scheduled' in turn)) return;
+  const fixture = turn.scheduled;
+  if (!isRecord(fixture) || !['briefing', 'custom'].includes(fixture.kind)) throw new Error('scheduled requires kind briefing or custom');
+  if (fixture.run_existing === true) {
+    if (fixture.kind !== 'custom' || !Object.keys(fixture).every(key => ['kind', 'run_existing', 'clock'].includes(key))
+      || typeof fixture.clock !== 'string' || !Number.isFinite(Date.parse(fixture.clock))
+      || session.turns.indexOf(turn) < 1 || session.turns[0].scheduled) {
+      throw new Error('run_existing requires a previous creation turn and a clock for the custom run');
+    }
+  } else if (Object.keys(fixture).length !== 1 || session.turns.length !== 1) {
+    throw new Error('scheduled fixture requires one isolated turn');
+  }
+  if (turn.briefing || turn.as_of !== undefined || turn.attachments?.length
+    || scenario.sessions.length !== 1
+    || session.id !== 'bot' || session.role !== 'probe' || session.memory !== 'remember'
+    || !['en', 'ko'].includes(scenario.language)) {
+    throw new Error('scheduled requires an isolated bot/probe/remember turn with fixed appearance and no conflicting fixture flags');
+  }
+  const populatedSeed = Object.values(scenario.seed ?? {}).some(value => Array.isArray(value) ? value.length > 0 : Boolean(value));
+  if (turn.scheduled.kind === 'briefing' && ((scenario.connections?.length ?? 0) > 0
+    || Object.keys(scenario.workspace_files ?? {}).length || populatedSeed)) throw new Error('scheduled briefing requires an empty library and no connections');
+  if (turn.scheduled.kind === 'custom' && turn.user.trim() !== turn.user) {
+    throw new Error('the saved custom request must have no surrounding whitespace');
+  }
 }
 
 /** A checked answer link to a formula computed from pinned dataset cells. */
@@ -29,6 +88,22 @@ export function calculationChipAssertion(assertion) {
   if (!isRecord(assertion.inputs) || !Object.keys(assertion.inputs).length
     || Object.values(assertion.inputs).some(value => !Number.isFinite(value))) throw new Error('calculation_chip inputs must contain finite expected values');
   return assertion;
+}
+
+/** The benchmark identifies a seeded Source by origin. Its runtime IDs vary per trial. */
+export function sourceSpanAssertion(assertion, scenario) {
+  const sources = (scenario.seed?.sources ?? []).filter(source => source.origin === assertion.source_origin);
+  if (!assertion.source_origin || sources.length !== 1 || !sources[0].title || !sources[0].text) {
+    throw new Error('cites_source_span requires one seeded Source with the specified origin, title and text');
+  }
+  if (typeof assertion.figure_pattern !== 'string' || !assertion.figure_pattern || assertion.figure_pattern.length > 200) {
+    throw new Error('cites_source_span requires a figure_pattern of at most 200 characters');
+  }
+  const figure = new RegExp(assertion.figure_pattern, 'iu');
+  if (figure.test('') || !figure.test(sources[0].text)) throw new Error('figure_pattern must match a figure in the seeded text');
+  const { allow_plain_count = false } = assertion;
+  if (typeof allow_plain_count !== 'boolean') throw new Error('cites_source_span allow_plain_count must be a boolean');
+  return { source: sources[0], figure, allowPlainCount: allow_plain_count };
 }
 
 /** `cites_result` names one tool or a list and optional nearby strings (the material value as written). */
@@ -119,30 +194,6 @@ export function argumentsInclude(actual, expected) {
   return actual === expected;
 }
 
-const SENSITIVITY_OPERATIONS = new Set(['reverse_dcf', 'dcf_grid']);
-
-/**
- * `sensitivity_card` asks for a grid card Rust built from a paragraph that is
- * only a link to a `reverse_dcf` or `dcf_grid` result; `reference: true` also
- * needs the past growth the grid is read against.
- */
-export function sensitivityCardAssertion(assertion) {
-  if (assertion.operation !== undefined && !SENSITIVITY_OPERATIONS.has(assertion.operation)) {
-    throw new Error('sensitivity_card operation must be reverse_dcf or dcf_grid');
-  }
-  if (assertion.reference !== undefined && typeof assertion.reference !== 'boolean') {
-    throw new Error('sensitivity_card reference must be a boolean');
-  }
-  return { operation: assertion.operation ?? null, reference: assertion.reference ?? false };
-}
-
-/** The answer's sensitivity cards: undefined when the record predates them, null when malformed. */
-export function sensitivityCards(trace) {
-  if (!('sensitivity_cards' in trace)) return undefined;
-  const cards = trace.sensitivity_cards;
-  return Array.isArray(cards) && cards.every((card) => isRecord(card) && typeof card.operation === 'string') ? cards : null;
-}
-
 /** `calculate_inputs_cited` names inputs a calculate call must link to evidence with input_sources. */
 export function calculateInputsAssertion(assertion) {
   const inputs = assertion.inputs;
@@ -166,6 +217,8 @@ const GRID_LAYOUTS = new Set(['assets', 'conflict']);
  */
 export function gridCellsAssertion(assertion) {
   const layout = assertion.layout ?? 'assets';
+  const { when } = assertion;
+  if (when !== undefined && when !== 'published') throw new Error('grid_cells_linked when must be published');
   if (!GRID_LAYOUTS.has(layout)) throw new Error('grid_cells_linked layout must be assets or conflict');
   for (const key of ['rows', 'columns']) {
     const value = assertion[key];
@@ -178,7 +231,7 @@ export function gridCellsAssertion(assertion) {
   if (layout === 'conflict' && (assertion.rows !== undefined || assertion.columns !== undefined || empty.length)) {
     throw new Error('grid_cells_linked rows, columns and empty apply to the assets layout');
   }
-  return { layout, rows: assertion.rows ?? null, columns: assertion.columns ?? null, empty };
+  return { layout, rows: assertion.rows ?? null, columns: assertion.columns ?? null, empty, when };
 }
 
 /** An absolute metric tolerance, when the scenario accepts rounding. */
@@ -216,10 +269,7 @@ export function returnedCitationUrls(calls, tool) {
   return known ? urls : null;
 }
 
-/** Answer paragraphs that cite one of `urls`. */
-export function citingParagraphs(answer, urls) {
-  const markdown = String(answer ?? '');
-  const tree = fromMarkdown(markdown);
+function linkDestination(tree) {
   const definitions = new Map();
   const collectDefinitions = (node) => {
     // CommonMark resolves duplicate reference definitions to the first one.
@@ -227,13 +277,38 @@ export function citingParagraphs(answer, urls) {
     node.children?.forEach(collectDefinitions);
   };
   collectDefinitions(tree);
+  return node => node.type === 'link' ? node.url
+    : node.type === 'linkReference' ? definitions.get(node.identifier) : undefined;
+}
+
+function citationMatcher(tree, urls, labelPattern) {
+  const destination = linkDestination(tree);
   const hasCitation = (node) => {
-    const href = node.type === 'link' ? node.url
-      : node.type === 'linkReference' ? definitions.get(node.identifier) : undefined;
+    const href = destination(node);
     // Match the full href, as the answer renderer does. Bare handles, code and
     // image destinations are not link nodes and cannot stand in for a citation.
-    return urls.has(href) || (node.children?.some(hasCitation) ?? false);
+    return (urls.has(href) && (!labelPattern || labelPattern.test(visibleText(node)))) || (node.children?.some(hasCitation) ?? false);
   };
+  return hasCitation;
+}
+
+export function citesFigure(answer, url, figure, allowPlainCount) {
+  const tree = fromMarkdown(answer);
+  const urls = new Set([url]);
+  if (citationMatcher(tree, urls, figure)(tree)) return true;
+  if (!allowPlainCount) return false;
+  const citesSource = citationMatcher(tree, urls);
+  const visit = node => (node.type === 'paragraph' && citesSource(node)
+    && figure.test(visibleText(node, undefined, true).replace(/https?:\/\/\S+/gu, ' ')))
+    || (node.children?.some(visit) ?? false);
+  return visit(tree);
+}
+
+/** Answer paragraphs that cite one of `urls`. */
+export function citingParagraphs(answer, urls) {
+  const markdown = String(answer ?? '');
+  const tree = fromMarkdown(markdown);
+  const hasCitation = citationMatcher(tree, urls);
   const paragraphs = [];
   const visit = (node) => {
     if (node.type === 'paragraph' && hasCitation(node)) {
@@ -245,18 +320,90 @@ export function citingParagraphs(answer, urls) {
   return paragraphs;
 }
 
+// Link destinations, literal URLs, code blocks and HTML attributes are absent from screen-label evidence.
+function visibleText(node, markdown, omitLinks = false) {
+  if (['code', 'html', 'definition', 'image', 'imageReference'].includes(node.type)) return '';
+  if (omitLinks && ['link', 'linkReference'].includes(node.type)) return ' ';
+  if (node.type === 'list' && node.ordered && markdown !== undefined) {
+    const delimiter = /^\d+([.)])/u.exec(markdown.slice(node.position.start.offset))?.[1] ?? '.';
+    return node.children.map((item, index) => `${node.start + index}${delimiter} ${visibleText(item, markdown)}`).join('\n');
+  }
+  return node.value ?? (node.children ?? []).map(child => visibleText(child, markdown, omitLinks)).join(
+    ['root', 'list', 'listItem', 'blockquote'].includes(node.type) ? '\n' : '',
+  );
+}
+
+export function visibleAnswerText(answer) {
+  const markdown = String(answer ?? '');
+  return visibleText(fromMarkdown(markdown), markdown).replace(/https?:\/\/\S+/gu, ' ');
+}
+
+/**
+ * The Markdown with only its bold and italic delimiters removed, so a phrase matches
+ * however much of it is emphasized. Links, code, intraword underscores and every
+ * other character stay as written.
+ */
+export function withoutEmphasis(text) {
+  const markdown = String(text ?? '');
+  const cuts = [];
+  const visit = (node) => {
+    if ((node.type === 'emphasis' || node.type === 'strong') && node.children?.length) {
+      cuts.push([node.position.start.offset, node.children[0].position.start.offset],
+        [node.children.at(-1).position.end.offset, node.position.end.offset]);
+    }
+    node.children?.forEach(visit);
+  };
+  visit(fromMarkdown(markdown));
+  cuts.sort((left, right) => left[0] - right[0]);
+  let kept = '';
+  let from = 0;
+  for (const [start, end] of cuts) {
+    kept += markdown.slice(from, start);
+    from = end;
+  }
+  return kept + markdown.slice(from);
+}
+
+export function evidenceLinkLabels(answer) {
+  const tree = fromMarkdown(answer);
+  const destination = linkDestination(tree);
+  const labels = [];
+  const visit = node => {
+    if (/^#evidence-ev_[0-9a-f]{32}$/u.test(destination(node) ?? '')) labels.push(visibleText(node));
+    else node.children?.forEach(visit);
+  };
+  visit(tree);
+  return labels;
+}
+
+export function numberSpellings(values, name = 'contains_number_any') {
+  if (!Array.isArray(values) || !values.length
+    || values.some(value => typeof value !== 'string' || !value.trim())) {
+    throw new Error(`${name} requires nonempty numeric spellings`);
+  }
+  return values;
+}
+
+export function figureSpellings(assertion) {
+  if (!Array.isArray(assertion.figures) || !assertion.figures.length) {
+    throw new Error('figures_present requires nonempty groups of figure spellings');
+  }
+  return assertion.figures.map(values => numberSpellings(values, 'figures_present'));
+}
+
 /** Compile at load time, including when no traces are available to grade. */
 export function answerPatterns(assertion) {
+  const name = assertion.assert ?? 'answer_not_matching';
   if (!Array.isArray(assertion.patterns) || assertion.patterns.length === 0
     || assertion.patterns.some((pattern) => typeof pattern !== 'string' || pattern.length === 0 || pattern.length > 200)) {
-    throw new Error('answer_not_matching requires nonempty patterns of at most 200 characters');
+    throw new Error(`${name} requires nonempty patterns of at most 200 characters`);
   }
   const flags = assertion.flags ?? 'iu';
-  if (typeof flags !== 'string') throw new Error('answer_not_matching flags must be a string');
+  if (typeof flags !== 'string') throw new Error(`${name} flags must be a string`);
   try {
     return assertion.patterns.map((pattern) => new RegExp(pattern, flags));
   } catch (error) {
-    throw new Error(`answer_not_matching has an invalid regular expression or flags: ${error.message}`);
+    throw new Error(`${name} has an invalid regular expression or flags: ${error.message}`);
   }
 }
 const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
@@ -368,12 +515,18 @@ export function validateSuite(suite) {
       sessions.add(session.id);
       for (const turn of session.turns) {
         if (typeof turn.user !== 'string' || !turn.user.trim()) throw new Error(`Session ${session.id} has an invalid user prompt`);
+        scheduledFixture(scenario, session, turn);
         if (turn.as_of !== undefined && !validDate(turn.as_of)) throw new Error(`Session ${session.id} has an invalid as_of date`);
         for (const assertion of turn.expect?.answer ?? []) {
-          if (assertion.assert === 'answer_not_matching') answerPatterns(assertion);
+          if (assertion.assert === 'figures_present') figureSpellings(assertion);
+          if (assertion.assert === 'contains_number_any') numberSpellings(assertion.values);
+          if (['answer_matching', 'answer_not_matching'].includes(assertion.assert)) answerPatterns(assertion);
+          if (assertion.assert === 'cites_source_span') sourceSpanAssertion(assertion, scenario);
           if (assertion.assert === 'cites_result') citationAssertion(assertion);
           if (assertion.assert === 'numbers_linked') numbersLinkedAssertion(assertion);
           if (assertion.assert === 'calculation_chip') calculationChipAssertion(assertion);
+          if (assertion.assert === 'answer_language') answerLanguageAssertion(assertion);
+          if (assertion.assert === 'visible_labels') visibleLabelsAssertion(assertion, scenario);
           if (assertion.assert === 'metrics') metricTolerance(assertion);
         }
         for (const assertion of turn.expect?.trace ?? []) {
@@ -382,8 +535,16 @@ export function validateSuite(suite) {
           if (assertion.assert === 'as_of_refused') asOfRefusedAssertion(assertion);
           if (assertion.assert === 'calculate_inputs_cited') calculateInputsAssertion(assertion);
           if (assertion.assert === 'tool_called') toolCalledAssertion(assertion);
-          if (assertion.assert === 'sensitivity_card') sensitivityCardAssertion(assertion);
-          if (assertion.assert === 'plan_progress') planProgressAssertion(assertion);
+          if (assertion.assert === 'grid_cells_linked') gridCellsAssertion(assertion);
+          if (assertion.assert === 'followed_names' && (!Array.isArray(assertion.names) || !assertion.names.length
+            || assertion.names.some(name => typeof name !== 'string' || !name.trim())
+            || new Set(assertion.names).size !== assertion.names.length)) throw new Error('followed_names requires distinct names');
+          if (assertion.assert === 'replayed_price' && (typeof turn.replay_price !== 'string' || !turn.replay_price.trim()
+            || turn.replay_price !== assertion.asset || !Number.isFinite(assertion.value) || !validDate(assertion.date))) {
+            throw new Error('replayed_price requires the replay target, expected value and date');
+          }
+          if (assertion.assert === 'scheduled_quiet' && turn.scheduled?.kind !== 'custom') throw new Error('scheduled_quiet requires a custom run');
+          if (assertion.assert === 'scheduled_delivery' && !turn.scheduled) throw new Error('scheduled_delivery requires a scheduled turn');
           if (assertion.assert === 'skill_read') skillReadAssertion(assertion);
           if (assertion.assert === 'tool_called_before') toolOrderAssertion(assertion);
         }

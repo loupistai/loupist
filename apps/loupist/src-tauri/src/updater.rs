@@ -169,7 +169,7 @@ fn dialog_line(text: &str, max_chars: usize, fallback: &str) -> String {
     if line.is_empty() {
         return fallback.to_owned();
     }
-    line.chars().take(max_chars).collect()
+    crate::util::shorten(&line, max_chars)
 }
 
 /// The alert the user answers before anything is downloaded. The renderer's
@@ -190,7 +190,7 @@ fn confirmation_dialog(
         .map(|line| dialog_line(line, 400, ""))
         .collect::<Vec<_>>()
         .join("\n");
-    let message: String = message.trim().chars().take(800).collect();
+    let message: String = crate::util::shorten(message.trim(), 800);
     let message = if message.is_empty() {
         "Active work has been checked. The app will download the signed update, install it, and restart immediately.".to_owned()
     } else {
@@ -970,7 +970,7 @@ mod tests {
     fn words() -> serde_json::Value {
         serde_json::json!({
             "title": "Loupist 업데이트 설치",
-            "message": "루피스트를 업데이트할까요?",
+            "message": "루피스트를 업데이트하시겠습니까?",
             "install": "설치 후 다시 시작",
             "cancel": "취소"
         })
@@ -1002,7 +1002,9 @@ mod tests {
         assert_eq!(dialog.title, "Loupist 업데이트 설치");
         assert_eq!(dialog.install, "설치 후 다시 시작");
         assert_eq!(dialog.cancel, "취소");
-        assert!(dialog.message.starts_with("루피스트를 업데이트할까요?"));
+        assert!(dialog
+            .message
+            .starts_with("루피스트를 업데이트하시겠습니까?"));
         assert!(dialog.message.ends_with("0.1.0-rc.2 → 0.1.0-rc.3"));
 
         // Unusable words fall back to English; equal buttons cannot be told apart.

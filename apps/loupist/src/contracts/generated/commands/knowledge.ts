@@ -6,7 +6,7 @@ import type { CustomOrigin } from "../custom_connections/taint";
 import type { SourceProcessing } from "../knowledge";
 import type { GraphPublicSettings } from "../knowledge/graph_jobs";
 import type { LensKind } from "../knowledge/lens_page";
-import type { GraphCoverage, GraphEdge, GraphNode, IndexingState, JournalSourceInput, QueryScan, RecordKind, TimePoint } from "../knowledge/model";
+import type { GraphCoverage, GraphEdge, GraphNode, IndexingState, JournalSourceInput, ProvidedOrigin, QueryScan, RecordKind, TimePoint } from "../knowledge/model";
 import type { SourceWorldClaim, WorldSourceTarget } from "../knowledge/world_source";
 
 export type JournalSourceReadDto = {
@@ -70,6 +70,8 @@ export type KnowledgeObjectRefDto = {
   title: string,
   /** A Source the host wrote keeps an English title; the interface shows this key. */
   titleKey?: string,
+  /** Material the user pasted into a Chat (`SourceClass::UserProvided`). */
+  userProvided?: boolean,
 };
 
 export type KnowledgePinDto = {
@@ -180,6 +182,8 @@ export type SourceDetailDto = {
   selectedSpanId: string | null,
   publicationTime: TimePoint | null,
   acquiredAt: TimePoint | null,
+  /** Where a user-provided Source was pasted and what the user stated about it. */
+  provided?: ProvidedOrigin,
 };
 
 export type SourceSpanViewDto = {

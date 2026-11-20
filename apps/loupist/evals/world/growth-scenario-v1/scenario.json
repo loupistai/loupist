@@ -1,23 +1,29 @@
 {
   "schema": "loupist-growth-scenario/1",
   "loupist": "Semiconductors",
-  "model": "openai-codex/gpt-6.1-sol",
+  "model": "openai-codex/gpt-6.2-sol",
   "thinking": "medium",
   "watchlist": [
     {
-      "symbol": "ASTF",
-      "market": "NASDAQ",
-      "display_name": "Aster Silicon"
+      "name": "Aster Silicon",
+      "reference": {
+        "ticker": "ASTF",
+        "exchange": "NASDAQ"
+      }
     },
     {
-      "symbol": "BRDF",
-      "market": "NASDAQ",
-      "display_name": "Brindle Devices"
+      "name": "Brindle Devices",
+      "reference": {
+        "ticker": "BRDF",
+        "exchange": "NASDAQ"
+      }
     },
     {
-      "symbol": "COWF",
-      "market": "NASDAQ",
-      "display_name": "Cobalt Wafer"
+      "name": "Cobalt Wafer",
+      "reference": {
+        "ticker": "COWF",
+        "exchange": "NASDAQ"
+      }
     }
   ],
   "sources": [

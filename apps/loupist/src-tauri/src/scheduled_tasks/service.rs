@@ -27,12 +27,16 @@ fn validate_draft(state: &AppState, draft: &TaskDraft) -> Result<(), CommandErro
     Ok(())
 }
 
+fn saved_task(state: &AppState, task: Task) -> Result<Task, CommandError> {
+    state.scheduled.changed();
+    if task.status == TaskStatus::Active {
+        crate::briefings::desktop::enable(state)?;
+    }
+    Ok(task)
+}
+
 pub(crate) fn list(state: &AppState, loupist_id: &str) -> Result<Vec<TaskListItem>, CommandError> {
     ensure_visible(state, loupist_id)?;
-    // The automatic results task appears with the first followed equity.
-    if state.ensure_loupist_available(loupist_id).is_ok() {
-        let _ = crate::commands::earnings::ensure_task(state, loupist_id, false);
-    }
     state
         .store
         .scheduled_tasks_list_with_latest(loupist_id)
@@ -68,7 +72,7 @@ pub(crate) fn create(
             .scheduled_task_create(loupist_id, draft, now_ms()),
     }
     .map_err(map_store)
-    .inspect(|_| state.scheduled.changed())
+    .and_then(|task| saved_task(state, task))
 }
 
 pub(crate) fn update(
@@ -88,11 +92,6 @@ pub(crate) fn update(
                 "Use briefing settings to edit the host-authored briefing",
             ))
         }
-        super::types::TaskKind::Earnings => {
-            return Err(CommandError::invalid(
-                "The results task is automatic; pause or resume it instead",
-            ))
-        }
         // The store refuses a kind another version wrote.
         super::types::TaskKind::Custom | super::types::TaskKind::Unknown(_) => {}
     }
@@ -101,7 +100,7 @@ pub(crate) fn update(
         .store
         .scheduled_task_update(loupist_id, id, revision, draft, now_ms())
         .map_err(map_store)
-        .inspect(|_| state.scheduled.changed())
+        .and_then(|task| saved_task(state, task))
 }
 
 pub(crate) fn set_status(
@@ -117,19 +116,15 @@ pub(crate) fn set_status(
     ensure_visible(state, loupist_id)?;
     if status == TaskStatus::Active {
         state.ensure_loupist_available(loupist_id)?;
-        let task = get(state, loupist_id, id)?;
-        // The earnings task makes no model call, so no model must be ready.
-        if task.kind != super::types::TaskKind::Earnings {
-            let mut draft = task.draft();
-            draft.status = status;
-            validate_draft(state, &draft)?;
-        }
+        let mut draft = get(state, loupist_id, id)?.draft();
+        draft.status = status;
+        validate_draft(state, &draft)?;
     }
     state
         .store
         .scheduled_task_set_status(loupist_id, id, revision, status, now_ms())
         .map_err(map_store)
-        .inspect(|_| state.scheduled.changed())
+        .and_then(|task| saved_task(state, task))
 }
 
 /// The user's one-tap OK in the Chat card for a task the agent proposed.
@@ -145,7 +140,7 @@ pub(crate) fn confirm(state: &AppState, loupist_id: &str, id: &str) -> Result<Ta
         .store
         .scheduled_task_confirm(loupist_id, id, now_ms())
         .map_err(map_store)
-        .inspect(|_| state.scheduled.changed())
+        .and_then(|task| saved_task(state, task))
 }
 
 /// Removes a proposed task the user declined; confirmed tasks are managed elsewhere.
@@ -186,24 +181,66 @@ pub(crate) fn delete(
     ensure_visible(state, loupist_id)?;
     // Checked here so that the agent's `schedule_delete` meets the same rule
     // as the app: only a custom task is deleted.
-    match get(state, loupist_id, id)?.kind {
-        super::types::TaskKind::Earnings => {
-            return Err(CommandError::invalid(
-                "The results task is automatic; pause it instead of deleting it",
-            ))
-        }
-        super::types::TaskKind::Briefing => {
-            return Err(CommandError::invalid(
-                "Turn the briefing off instead of deleting it",
-            ))
-        }
-        _ => {}
+    if get(state, loupist_id, id)?.kind == super::types::TaskKind::Briefing {
+        return Err(CommandError::invalid(
+            "Turn the briefing off instead of deleting it",
+        ));
     }
-    state
+    let sessions = state
         .store
         .scheduled_task_delete(loupist_id, id, revision)
-        .map_err(map_store)
-        .inspect(|_| state.scheduled.changed())
+        .map_err(map_store)?;
+    crate::chat::questions::forget_task(loupist_id, id);
+    state.scheduled.changed();
+    release_sessions(state, loupist_id, Some(&sessions));
+    Ok(())
+}
+
+/// Deletes the scheduler-only run sessions among `candidates` (every session
+/// the scheduler made, when `None`) that nothing in Schedule points at any
+/// more (`scheduled_released_sessions`), through the same path as the user's
+/// Delete. One that cannot go now, such as a session with a turn running in
+/// it, is left for a later release or the next startup. Returns how many went.
+pub(crate) fn release_sessions(
+    state: &AppState,
+    loupist_id: &str,
+    candidates: Option<&[String]>,
+) -> usize {
+    if candidates.is_some_and(<[String]>::is_empty) {
+        return 0;
+    }
+    let released = match state
+        .store
+        .scheduled_released_sessions(loupist_id, candidates)
+    {
+        Ok(released) => released,
+        Err(_) => {
+            eprintln!("Scheduled run sessions could not be read for release");
+            return 0;
+        }
+    };
+    let mut count = 0;
+    for thread_id in released {
+        let result =
+            crate::commands::records::delete_chat_session(state, loupist_id, &thread_id, |_| {
+                // Checked again while the session is held: the user may have
+                // written in it, or a task may point at it now.
+                let still = state
+                    .store
+                    .scheduled_released_sessions(loupist_id, Some(std::slice::from_ref(&thread_id)))
+                    .map_err(map_store)?;
+                if still.is_empty() {
+                    Err(CommandError::conflict("the run session is in use again"))
+                } else {
+                    Ok(())
+                }
+            });
+        match result {
+            Ok(()) => count += 1,
+            Err(error) => eprintln!("A scheduled run session was kept for now: {}", error.code),
+        }
+    }
+    count
 }
 
 pub(crate) fn runs(state: &AppState, loupist_id: &str, id: &str) -> Result<Vec<Run>, CommandError> {

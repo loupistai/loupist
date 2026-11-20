@@ -18,7 +18,7 @@ import type {
 import { defaultRunOptions, defaultThinkingLevel, thinkingLabel, runControlLabel, runChoiceLabel, runChoiceDescription } from "../../lib/modelSelection";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { ChevronDownIcon, Settings2Icon } from "lucide-react";
+import { ChevronDownIcon, Settings2Icon, XIcon } from "lucide-react";
 
 export type ModelSelectionMenuProps = {
   models: ConfiguredModel[];
@@ -37,6 +37,11 @@ export type ModelSelectionMenuProps = {
   auto?: { active: boolean; onSelect: () => void };
   /** A billing line under the model list ("Using your ChatGPT plan · Manage usage"). */
   planLine?: ReactNode;
+  /**
+   * The level stored when a model is picked without a level. Settings store the
+   * model's default; the composer stores "" so each surface resolves its own.
+   */
+  levelOnModelPick?: (model: ConfiguredModel) => string;
 };
 
 type ProviderModels = {
@@ -87,6 +92,7 @@ export function ModelSelectionMenu({
   openSignal = 0,
   auto,
   planLine,
+  levelOnModelPick = (model) => defaultThinkingLevel(model.thinking_levels),
 }: ModelSelectionMenuProps) {
   useTranslation(["settings", "chat"]);
   const [open, setOpen] = useState(false);
@@ -130,7 +136,7 @@ export function ModelSelectionMenu({
       ? selection
       : {
           model_profile_id: model.id,
-          thinking_level: defaultThinkingLevel(model.thinking_levels),
+          thinking_level: levelOnModelPick(model),
           run_options: defaultRunOptions(model),
         };
 
@@ -154,6 +160,8 @@ export function ModelSelectionMenu({
           side="top"
           align="start"
           sideOffset={8}
+          // Near the window's right edge the panel shifts in, and keeps a margin from it.
+          collisionPadding={8}
           aria-label={i18n.t("settings:modelSelectionMenu.availableModels")}
           onCloseAutoFocus={() => setQuery("")}
           onKeyDown={event => {
@@ -171,7 +179,7 @@ export function ModelSelectionMenu({
           <div className="model-menu-header">
             <strong>{contextLabel}</strong>
             {/* A short list fits at a glance: the composer hides search under eight models (chat design 35). */}
-            {models.length >= searchFrom ? <Input autoFocus type="search" aria-label={i18n.t("settings:modelSelectionMenu.searchModels")} placeholder={i18n.t("settings:modelSelectionMenu.searchProvidersOrModels")} value={query}
+            {models.length >= searchFrom ? <div className="model-menu-search"><Input autoFocus type="search" aria-label={i18n.t("settings:modelSelectionMenu.searchModels")} placeholder={i18n.t("settings:modelSelectionMenu.searchProvidersOrModels")} value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -183,7 +191,7 @@ export function ModelSelectionMenu({
                 }
                 if (event.key === "Enter") event.preventDefault();
                 if (event.key !== "Escape" && event.key !== "Tab") event.stopPropagation();
-              }} /> : null}
+              }} />{query ? <Button variant="ghost" size="icon-sm" aria-label={i18n.t("settings:modelSelectionMenu.clearSearch")} onClick={() => setQuery("")}><XIcon /></Button> : null}</div> : null}
           </div>
           <div className="model-menu-catalog" role="menu" aria-label={i18n.t("settings:modelSelectionMenu.availableModels")}>
           {auto && models.length ? <>

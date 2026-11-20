@@ -29,13 +29,13 @@ struct MarketCalendar {
     #[allow(dead_code)]
     time_zone: String,
     years: Vec<i32>,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[allow(dead_code)]
     sources: Vec<String>,
     #[allow(dead_code)]
     note: String,
     closed: BTreeMap<String, String>,
     /// Shortened sessions; only the header's market status shows them.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[allow(dead_code)]
     early_close: BTreeMap<String, String>,
 }
 
@@ -50,12 +50,12 @@ fn table() -> &'static Table {
 /// The calendar a market code uses (`KOSDAQ` → KRX, `NASDAQ` → US), if any.
 fn calendar_for(market: &str) -> Option<&'static MarketCalendar> {
     let market = market.trim().to_uppercase();
-    let id = if crate::knowledge::assets::class::is_korean_market(&market) {
-        "KRX"
-    } else if matches!(
+    let id = if matches!(
         market.as_str(),
-        "US" | "NYSE" | "NASDAQ" | "AMEX" | "NYSEARCA" | "ARCA" | "BATS" | "CBOE" | "NMS"
+        "KRX" | "XKRX" | "KOSPI" | "KOSDAQ" | "KONEX" | "KS" | "KQ"
     ) {
+        "KRX"
+    } else if is_us_session_market(&market) {
         "US"
     } else {
         return None;
@@ -74,8 +74,26 @@ pub fn is_trading_day(market: &str, day: NaiveDate) -> bool {
         .is_none_or(|calendar| !calendar.closed.contains_key(&day.to_string()))
 }
 
-/// The last trading day strictly before `day`.
-pub fn previous_trading_day(market: &str, day: NaiveDate) -> NaiveDate {
+pub(crate) fn is_us_session_market(market: &str) -> bool {
+    matches!(
+        market,
+        "US" | "USA"
+            | "NYSE"
+            | "NASDAQ"
+            | "AMEX"
+            | "NYSEARCA"
+            | "ARCA"
+            | "BATS"
+            | "CBOE"
+            | "NMS"
+            | "NYQ"
+            | "XNAS"
+            | "XNYS"
+    )
+}
+
+#[cfg(test)]
+fn previous_trading_day(market: &str, day: NaiveDate) -> NaiveDate {
     let mut day = day.pred_opt().expect("a day before");
     while !is_trading_day(market, day) {
         day = day.pred_opt().expect("a day before");

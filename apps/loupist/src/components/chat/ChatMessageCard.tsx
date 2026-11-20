@@ -3,7 +3,7 @@ import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { Disclosure } from "../ui/disclosure";
 import { ApprovalCards } from "./ApprovalCard";
 import { holdTurnHeight, QuestionCards } from "./QuestionCard";
-import type { LoupistBridge } from "../../types";
+import type { ChatThread, LoupistBridge } from "../../types";
 import { formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
@@ -22,7 +22,11 @@ import {
 import { Message, MessageContent } from "@/components/ai-elements/message";
 import { deriveTurnView, STALL_AFTER_MS, useLastActivity } from "../../chat/turnView";
 import { DRAIN_LIMIT_MS } from "../../chat/usePacedText";
-import { TurnArrivalProvider, useArrived } from "./turnMotion";
+import { openActivitySheet, TurnArrivalProvider, useArrived, useChatSurface } from "./turnMotion";
+import { LoupistAvatar } from "../app/LoupistAvatar";
+import { AnswerTrace } from "./ChatReceipt";
+import { useRevealNumberToCheck } from "./NumberChip";
+import { needsChecking } from "../../chat/numberChecks";
 import { deliveredFiles } from "../../chat/deliveredFiles";
 import { DeliveredFiles } from "./DeliveredFiles";
 import { thinkingLabel } from "../../lib/modelSelection";
@@ -35,6 +39,7 @@ import type {
   ChatMessage,
   ChatPerformance,
   GraphJobView,
+  ScheduledTurn as ScheduledRequest,
 } from "../../types";
 import { TurnLedger } from "./TurnLedger";
 import { ProseSegment } from "./ProseSegment";
@@ -43,10 +48,6 @@ import { TurnProvider, useTurn } from "./TurnProvider";
 import { SourceRow } from "./SourceRow";
 import { useGo } from "../navigation/Open";
 import { MessageSchedules } from "./MessageSchedules";
-import { EarningsChatCard } from "./EarningsChatCard";
-import { earningsCards } from "../../chat/earningsLinks";
-import { heldSensitivityParagraphs, sensitivityParagraphs, type SensitivitySegment } from "../../chat/sensitivity";
-import { SensitivityCard } from "./SensitivityCard";
 import { ChatArtifactBlock } from "./ChatArtifactBlock";
 import { chartBlocks, gridBlocks, sameBlock, type ChartBlock } from "../../chat/chartBlocks";
 import { connectionSetupBlocks } from "../../chat/connectionSetupBlocks";
@@ -57,10 +58,13 @@ import { NextStepChips, nextStepQuestions } from "./NextStepChips";
 import { useChatMap } from "../workspace/ChatMapContext";
 import { AnswerOutline } from "./AnswerOutline";
 import { SentImages } from "./SentImages";
+import { RunScheduledAgain, ScheduledTurn } from "./ScheduledTurn";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { ChatErrorState, type ProviderErrorAction } from "./ChatErrorState";
 import { AsOfNote } from "./AsOfNote";
 import { AsOfTag } from "./ComposerAsOf";
+import { ResearchSessionLink } from "./ThreadLink";
+import { HandoffNote } from "./HandoffNote";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -166,6 +170,7 @@ type Props = {
   feedbackBusy?: boolean;
   active?: boolean;
   message: ChatMessage;
+  researchSession?: ChatThread;
   loupistId: string;
   chatId?: string;
   loupistName: string;
@@ -174,7 +179,7 @@ type Props = {
   guiding?: readonly string[];
   /** Set on the latest finished answer: follow-up questions go into the composer. */
   onNextStep?: (question: string) => void;
-  /** Puts text into this Chat's composer; never sends ("Change the rates"). */
+  /** Puts text into this Chat's composer; never sends (Ask again on a setup card or a failed card). */
   onFillComposer?: (text: string) => void;
   /** The user's message this answer replies to, which a setup card offers to ask again. */
   previousQuestion?: string;
@@ -196,6 +201,8 @@ type Props = {
   onEarlierVersion?: () => void;
   onLaterVersion?: () => void;
   onRetry?: () => void;
+  /** A failed or stopped scheduled run: its task runs again with Run now instead of Try again. */
+  scheduledRetry?: ScheduledRequest;
   /** The newest answer, or the newest question, keeps its action row visible; earlier ones show it on hover or focus (X1). */
   latest?: boolean;
   /** A stop was requested for this reply and the host has not confirmed it yet. */
@@ -253,6 +260,7 @@ function ChatMessageCardComponent({
   bridge,
   active = true,
   message,
+  researchSession,
   loupistId,
   chatId,
   loupistName,
@@ -274,6 +282,7 @@ function ChatMessageCardComponent({
   onEarlierVersion,
   onLaterVersion,
   onRetry,
+  scheduledRetry,
   latest = false,
   stopping = false,
   providerName,
@@ -289,7 +298,6 @@ function ChatMessageCardComponent({
   const { state: copyState, copy } = useCopyFeedback(message.id);
   const revealedResult = useTurn()?.revealedResult ?? null;
   const go = useGo();
-  const evidenceRefs = message.evidence_refs ?? [];
   // Memory declines are told once per chat by the memory row, not as connection activity.
   const connectionRefusals = (message.tool_refusals ?? []).filter(refusal => refusal.reason !== "sensitive_memory");
   const lastActivityAt = useLastActivity(message);
@@ -299,17 +307,31 @@ function ChatMessageCardComponent({
   const view = useMemo(() => deriveTurnView({ message, now, lastActivityAt, stopping, holding, retry: { attempt: retryAttempt, offered: retryOffered } }), [message, now, lastActivityAt, stopping, holding, retryAttempt, retryOffered]);
   const halted = message.status === "aborted" || message.status === "error";
   const conversation = useConversationScroll();
+  const revealNumberToCheck = useRevealNumberToCheck();
+  const surface = useChatSurface();
+  // Bot draws the Loupist's answer as a message from a person: its face, its name, bubbles, one quiet working line.
+  const bot = surface.kind === "bot" && message.role === "assistant";
   const article = useRef<HTMLElement>(null);
+  /** Where the turn's blocks are direct children: the article, or Bot's message column. */
+  const blocks = useRef<HTMLDivElement>(null);
   // A block appended at the end of the turn may make room for itself, once; growth never scrolls.
   const lastSegment = view.segments.at(-1);
   const lastKey = lastSegment?.key;
   useLayoutEffect(() => {
     if (!lastKey || message.status !== "streaming") return;
-    const block = [...(article.current?.querySelectorAll<HTMLElement>(":scope > [data-turn-item]") ?? [])].at(-1);
+    const block = [...((blocks.current ?? article.current)?.querySelectorAll<HTMLElement>(":scope > [data-turn-item]") ?? [])].at(-1);
     if (block) conversation?.blockAppended(block, lastSegment?.kind === "prose" ? "prose" : "card");
   // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new last block counts, not its growth.
   }, [lastKey]);
   const complete = view.state.kind === "complete";
+  // Bot shows no steps; "Show step" from a figure opens the activity sheet at this answer instead.
+  const revealedRequest = revealedResult?.request;
+  useEffect(() => {
+    if (bot && revealedRequest !== undefined && view.segments.some((segment) => segment.kind === "ledger" && segment.evidence.some((item) => item.id === revealedResult?.id))) {
+      openActivitySheet({ messageId: message.id, tab: "steps" });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- one request opens the sheet once.
+  }, [bot, revealedRequest]);
   const settled = view.footer.kind === "settled" ? view.footer : null;
   const copyText = settled?.copyText ?? null;
   // Delivered files (X13): written by this answer and linked from it; a write the answer never links stays a step.
@@ -331,17 +353,9 @@ function ChatMessageCardComponent({
   // Grid answers and conflict cards render in the answer too, after its charts.
   const grids = useMemo(() => gridBlocks(message), [message]);
   const connectionSetups = useMemo(() => connectionSetupBlocks(message), [message]);
-  // A paragraph that only links to a grid result renders as the sensitivity card where the
-  // paragraph stood, and one that only links to a results snapshot as the compact results card.
-  // Rust counted the links of the answer as written, so the grid paragraphs come out first.
+  // The settled answer as written, for its outline.
   const answerSegment = view.segments.find((segment) => segment.kind === "prose" && segment.tone === "answer");
   const answerText = complete && answerSegment?.kind === "prose" ? answerSegment.text : null;
-  const settledAnswer = useMemo(() => {
-    if (message.role !== "assistant" || answerText === null) return null;
-    const grids = sensitivityParagraphs(answerText, message.sensitivity_cards, message.number_checks);
-    const segments = grids.segments.map((segment) => ({ ...earningsCards(segment.text, message.evidence_refs, segment.numberChecks), card: segment.card }));
-    return { segments: segments as SensitivitySegment[], cards: segments.flatMap((segment) => segment.cards) };
-  }, [message.role, answerText, message.evidence_refs, message.number_checks, message.sensitivity_cards]);
   const documents = (message.artifact_refs ?? []).filter((artifact) => artifact.kind === "markdown");
   const executionModelTitle = message.execution_model
     ? [
@@ -353,11 +367,11 @@ function ChatMessageCardComponent({
     ? t("chatMessageCard.responseTime", { value1: responseDuration(message.performance.totalMs) })
     : undefined;
   const tokenLines = responseTokenLines(message.performance);
-  // `drains`: this piece's last word releases the commit; an answer split around a held card drains at its last piece.
-  const prose = (segment: { key: string; text: string; streaming: boolean; tone: "answer" | "note"; short?: boolean; checks?: ChatMessage["number_checks"] }, drains = true) =>
+  // The answer's last revealed word releases the commit.
+  const prose = (segment: { key: string; text: string; streaming: boolean; tone: "answer" | "note"; short?: boolean; checks?: ChatMessage["number_checks"] }) =>
     <ProseSegment key={segment.key} text={segment.text} streaming={segment.streaming} tone={segment.tone} short={segment.short} checks={segment.checks}
       // A note a tool call followed shows what it received at once, so the ledger under it never moves.
-      halted={halted || segment.tone === "note"} paused={stopping} onDrained={segment.tone === "answer" && drains ? releaseCommit : undefined} workspacePath={workspacePath} />;
+      halted={halted || segment.tone === "note"} paused={stopping} onDrained={segment.tone === "answer" ? releaseCommit : undefined} workspacePath={workspacePath} />;
   const cardBlocks = (tool: "chart_publish" | "grid_publish") => tool === "chart_publish" ? charts : grids;
   const placedSteps = new Set(view.segments.flatMap((segment) => segment.kind === "card" ? [segment.itemId] : []));
   const renderBlock = (tool: "chart_publish" | "grid_publish", block: ChartBlock, key: string) => tool === "chart_publish"
@@ -365,10 +379,15 @@ function ChatMessageCardComponent({
     : <ChatGridBlock key={key} block={block} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onAskAgain={askAgain} />;
 
   const transcript: ReactNode[] = [];
+  // In Bot the reply's own notes ("I'll check the price first") are the working line's business, and the
+  // steps live in the activity sheet. Notes stay only when the reply ended with no answer to show.
+  const hasAnswer = view.segments.some((segment) => segment.kind === "prose" && segment.tone === "answer");
+  const hideNotes = bot && (view.footer.kind === "live" || hasAnswer);
   if (message.role === "assistant") {
     for (const segment of view.segments) {
       switch (segment.kind) {
         case "ledger":
+          if (bot) continue;
           transcript.push(<TurnLedger key={segment.key} segment={segment} focusItemId={progressFocus} asOf={message.as_of}
             revealedResult={segment.evidence.some(e => e.id === revealedResult?.id) ? revealedResult : undefined} />);
           continue;
@@ -390,32 +409,8 @@ function ChatMessageCardComponent({
           </TurnBlock>);
           continue;
         case "prose":
+          if (hideNotes && segment.tone === "note") continue;
           break;
-      }
-      // The settled answer alone splits around its cards; the first piece keeps the answer's key.
-      if (settledAnswer && segment.tone === "answer" && !segment.streaming) {
-        settledAnswer.segments.forEach((piece, index) => {
-          if (piece.text) transcript.push(prose({ key: index ? `${segment.key}:${index}` : segment.key, text: piece.text, streaming: false, tone: "answer", checks: piece.numberChecks }));
-          if (piece.card) {
-            const card = piece.card;
-            transcript.push(<SensitivitySlot key={`grid-${card.evidence_id}-${index}`}><SensitivityCard grid={card} subject={card.subject}
-              evidence={evidenceRefs.find(item => item.id === card.evidence_id)} evidenceRefs={evidenceRefs} asOf={message.as_of}
-              onChangeRates={onFillComposer} /></SensitivitySlot>);
-          }
-        });
-        continue;
-      }
-      // While it is written, a paragraph Rust will make a sensitivity card is held behind the card's frame, split
-      // exactly as the settled answer is, so the card fills that frame at commit and no text moves or is replaced.
-      if (segment.tone === "answer" && !settledAnswer) {
-        const pieces = heldSensitivityParagraphs(segment.text, evidenceRefs);
-        if (pieces.length > 1 || pieces[0]?.held) {
-          pieces.forEach((piece, index) => {
-            if (piece.text) transcript.push(prose({ key: index ? `${segment.key}:${index}` : segment.key, text: piece.text, streaming: segment.streaming, tone: "answer" }, index === pieces.length - 1));
-            if (piece.held) transcript.push(<SensitivitySlot key={`grid-${piece.held}-${index}`} />);
-          });
-          continue;
-        }
       }
       transcript.push(prose(segment));
     }
@@ -430,42 +425,15 @@ function ChatMessageCardComponent({
       <CornerDownRightIcon aria-hidden="true" />{t("chatProgressTimeline.guided", { text: message.content })}
     </p>
   );
+  if (message.role === "user" && message.scheduled) return <ScheduledTurn message={message} />;
 
-  return (
-    <article ref={article} data-message-id={message.id} data-latest={latest || undefined} data-entering={entering || undefined} data-turn-message=""
-      className={`message ${message.role} ${message.status ?? ""}`}>
-      <div className="message-meta">
-        <span>{message.role === "user" ? t("chatMessageCard.you") : loupistName}</span>
-        <time>{formatTime(new Date(message.created_at))}</time>
-        {message.role === "assistant" && message.as_of ? <AsOfTag asOf={message.as_of} kind="answer" /> : null}
-        {message.role === "assistant" && answerText ? <LateTrigger><AnswerOutline messageId={message.id} markdown={answerText} /></LateTrigger> : null}
-        {message.execution_model || message.performance || message.host_composed ? <LateTrigger><Popover>
-          <PopoverTrigger asChild><button type="button" className="message-details-trigger" aria-label={t("chatMessageCard.responseDetails")} aria-description={[executionModelTitle, performanceTitle, ...tokenLines].filter(Boolean).join(" · ")}><InfoIcon /></button></PopoverTrigger>
-          <PopoverContent className="message-details-panel" align="start" aria-label={t("chatMessageCard.responseDetails")}>
-            <strong>{t("chatMessageCard.responseDetails")}</strong>
-            {executionModelTitle ? <p>{executionModelTitle}</p> : null}
-            {performanceTitle ? <p>{performanceTitle}</p> : null}
-            {message.host_composed ? <p>{t("chatMessageCard.thisAnswerListsWhatWasSavedBecauseTheModel")}</p> : null}
-            <div className="message-token-usage">{tokenLines.map((line) => <p key={line}>{line}</p>)}</div>
-          </PopoverContent>
-        </Popover></LateTrigger> : null}
-      </div>
-      {message.role === "user" ? <SentImages message={message} /> : null}
-      {message.role === "user" ? (
-        <Message from={message.role} className="max-w-full">
-          <MessageContent className="message-content overflow-visible">
-            {(message.content || message.as_of) && <UserMessageText text={message.content} asOf={message.as_of} skills={mentionSkills} plugins={mentionPlugins} />}
-          </MessageContent>
-        </Message>
-      ) : null}
-      {transcript}
-      {bridge && settledAnswer ? settledAnswer.cards.map((card) => <EarningsChatCard key={card.evidenceId} bridge={bridge} loupistId={loupistId} loupistName={loupistName} assetId={card.assetId} eventId={card.eventId} />) : null}
-
+  const extras = <>
       {unplaced(charts).map((block) => renderBlock("chart_publish", block, block.key))}
       {bridge ? connectionSetups.map((block) => <ConnectionSetupCard key={block.key} bridge={bridge} loupistId={loupistId} entryId={block.entryId}
         onAskAgain={askAgain} />) : null}
       {unplaced(grids).map((block) => renderBlock("grid_publish", block, block.key))}
 
+      {researchSession && <ResearchSessionLink session={researchSession} />}
       {message.role === "assistant" && <MessageSchedules receipts={message.schedule_receipts ?? []} />}
 
       <DeliveredFiles paths={deliveredPaths}
@@ -494,49 +462,131 @@ function ChatMessageCardComponent({
           ))}
         </div>
       )}
+  </>;
+  const memoryRow = <MessageMemoryRow
+    bridge={bridge}
+    active={active}
+    loupistId={loupistId}
+    chatId={chatId}
+    message={message}
+    onReadWorldJob={onReadWorldJob}
+    onWorldChanged={onWorldChanged}
+  />;
+  const copyAction = copyText !== null ? <div className="message-actions">
+    <button type="button" aria-label={copyState === "copied" ? t("chatMessageCard.answerCopied") : t("chatMessageCard.copyAnswer")} title={copyState === "copied" ? t("chatMessageCard.copied") : t("chatMessageCard.copyAnswer")} onClick={() => {
+      void copy(copyText);
+    }}>{copyState === "copied" ? <CheckIcon /> : <CopyIcon />}</button>
+    {copyState === "failed" ? <span role="alert">{t("chatMessageCard.couldNotCopySelectTheAnswerToCopyIt")}</span> : null}
+  </div> : null;
+  const feedback = settled?.feedback && onSaveFeedback && onTeachFeedback ? <AnswerFeedback bridge={bridge} loupistId={loupistId} chatId={chatId} message={message} onSave={onSaveFeedback} onTeach={onTeachFeedback} feedbackBusy={feedbackBusy} /> : null;
+  const modelNote = note ? <p className="message-model-note">{note}</p> : null;
+  const runState = settled?.runState ? (
+    // A failure is a bordered block with its actions; a stop is the user's own doing: one quiet line.
+    <div className="message-run-state" data-kind={settled.runState.kind} role={settled.runState.kind === "failed" ? "alert" : "status"}>
+      {settled.runState.kind === "failed" ? <>
+        <ChatErrorState kind={settled.runState.failure} retryInSeconds={settled.runState.retryInSeconds} provider={providerName ?? t("chatError.yourProvider")}
+          fallback={failureMessages()[settled.runState.failure] ?? failureMessages().other} onRetry={onRetry}
+          onProviderAction={onProviderAction ? (action) => onProviderAction(action, message.execution_model?.provider) : undefined} />
+        {settled.runState.kept ? <p className="message-run-state-kept">{t("chatMessageCard.failedKept")}</p> : null}
+        {scheduledRetry && bridge ? <RunScheduledAgain bridge={bridge} loupistId={loupistId} request={scheduledRetry} /> : null}
+      </> : <>
+        <p>{settled.runState.label}</p>
+        {onRetry ? <button type="button" onClick={onRetry}>{t("chatMessageCard.tryAgain")}</button> : null}
+        {scheduledRetry && bridge ? <RunScheduledAgain bridge={bridge} loupistId={loupistId} request={scheduledRetry} /> : null}
+      </>}
+    </div>
+  ) : null;
+  const asOfNote = message.role === "assistant" && complete && message.as_of_report ? <AsOfNote report={message.as_of_report} loupistName={loupistName} /> : null;
+  const nextSteps = message.role === "assistant" && complete && onNextStep ? <NextSteps loupistId={loupistId} chatId={chatId} messageId={message.id} onAsk={onNextStep} /> : null;
 
-      {message.role === "assistant" ? <TurnFooter footer={view.footer} announce={view.announce} guiding={guiding}>
+  if (bot && surface.kind === "bot") {
+    const openActivity = () => openActivitySheet({ messageId: message.id });
+    const checks = message.number_checks ?? [];
+    const toCheck = checks.filter(needsChecking).length;
+    return (
+      <article ref={article} data-message-id={message.id} data-latest={latest || undefined} data-entering={entering || undefined} data-turn-message="" data-bot-message=""
+        className={`message ${message.role} ${message.status ?? ""}`}>
+        {/* The face opens what the Loupist did for this answer; it turns while the reply runs. */}
+        <button type="button" className="bot-face" aria-label={t("bot.openActivity")} title={t("bot.openActivity")} onClick={openActivity}>
+          <LoupistAvatar loupist={surface.loupist} size={32} busy={view.footer.kind === "live"} />
+        </button>
+        <div className="bot-col" ref={blocks}>
+          <div className="message-meta bot-who">
+            <span>{loupistName}</span>
+            <time>{formatTime(new Date(message.created_at))}</time>
+            {message.as_of ? <AsOfTag asOf={message.as_of} kind="answer" /> : null}
+          </div>
+          {transcript}
+          {extras}
+          {/* Settled, the thread says no step counts or failed attempts, aloud either; the sheet lists them. */}
+          <TurnFooter footer={view.footer} announce={view.footer.kind === "live" ? view.announce : ""} guiding={guiding} onOpenActivity={openActivity} noteOnPage={!hideNotes}>
+            {settled ? <>
+              {runState}
+              <AnswerTrace figures={checks.length - toCheck} sources={settled.sources.length} toCheck={toCheck}
+                onOpen={() => openActivitySheet({ messageId: message.id, tab: "sources" })} onCheck={() => revealNumberToCheck(message.id)} />
+              {copyAction}
+              {feedback}
+              {modelNote}
+              {memoryRow}
+            </> : null}
+          </TurnFooter>
+          {asOfNote}
+          {nextSteps}
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <article ref={article} data-message-id={message.id} data-latest={latest || undefined} data-entering={entering || undefined} data-turn-message=""
+      className={`message ${message.role} ${message.status ?? ""}`}>
+      <div className="message-meta">
+        <span>{message.role === "user" ? t("chatMessageCard.you") : loupistName}</span>
+        <time>{formatTime(new Date(message.created_at))}</time>
+        {message.role === "assistant" && message.as_of ? <AsOfTag asOf={message.as_of} kind="answer" /> : null}
+        {message.role === "assistant" && answerText ? <LateTrigger><AnswerOutline messageId={message.id} markdown={answerText} /></LateTrigger> : null}
+        {message.execution_model || message.performance || message.host_composed ? <LateTrigger><Popover>
+          <PopoverTrigger asChild><button type="button" className="message-details-trigger" aria-label={t("chatMessageCard.responseDetails")} aria-description={[executionModelTitle, performanceTitle, ...tokenLines].filter(Boolean).join(" · ")}><InfoIcon /></button></PopoverTrigger>
+          <PopoverContent className="message-details-panel" align="start" aria-label={t("chatMessageCard.responseDetails")}>
+            <strong>{t("chatMessageCard.responseDetails")}</strong>
+            {executionModelTitle ? <p>{executionModelTitle}</p> : null}
+            {performanceTitle ? <p>{performanceTitle}</p> : null}
+            {message.host_composed ? <p>{t("chatMessageCard.thisAnswerListsWhatWasSavedBecauseTheModel")}</p> : null}
+            <div className="message-token-usage">{tokenLines.map((line) => <p key={line}>{line}</p>)}</div>
+          </PopoverContent>
+        </Popover></LateTrigger> : null}
+      </div>
+      {message.role === "user" ? <SentImages message={message} /> : null}
+      {message.role === "user" ? (
+        <Message from={message.role} className="max-w-full">
+          <MessageContent className="message-content overflow-visible">
+            {/* A chosen action stands for the request: the host's caption is written for the model. */}
+            {message.handoff_action
+              ? <p className="message-user-text" data-handoff-action={message.handoff_action.kind}>{t("handoff.choseLink")}</p>
+              : (message.content || message.as_of) && <UserMessageText text={message.content} asOf={message.as_of} skills={mentionSkills} plugins={mentionPlugins} />}
+          </MessageContent>
+        </Message>
+      ) : null}
+      {message.role === "user" && message.handoff_note ? <HandoffNote note={message.handoff_note} fromLink={Boolean(message.handoff_action)} /> : null}
+      {transcript}
+      {extras}
+
+      {message.role === "assistant" ? <TurnFooter footer={view.footer} announce={view.announce} guiding={guiding} noteOnPage>
         {settled ? <>
           {settled.sources.length > 0 ? (
             <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<><span>{t("chatMessageCard.sourceCount", { formattedCount: formatNumber(settled.sources.length) })}</span><span className="message-sources-site"> · {sourceIdentityLabel(settled.sources[0]!)}{settled.sources.length > 1 ? ` +${formatNumber(settled.sources.length - 1)}` : ""}</span></>}>
               <ol>{settled.sources.map((evidence, index) => <SourceRow key={evidence.id} evidence={evidence} number={index + 1} />)}</ol>
             </Disclosure>
           ) : null}
-          <MessageMemoryRow
-            bridge={bridge}
-            active={active}
-            loupistId={loupistId}
-            chatId={chatId}
-            message={message}
-            onReadWorldJob={onReadWorldJob}
-            onWorldChanged={onWorldChanged}
-          />
-          {copyText !== null ? <div className="message-actions">
-            <button type="button" aria-label={copyState === "copied" ? t("chatMessageCard.answerCopied") : t("chatMessageCard.copyAnswer")} title={copyState === "copied" ? t("chatMessageCard.copied") : t("chatMessageCard.copyAnswer")} onClick={() => {
-              void copy(copyText);
-            }}>{copyState === "copied" ? <CheckIcon /> : <CopyIcon />}</button>
-            {copyState === "failed" ? <span role="alert">{t("chatMessageCard.couldNotCopySelectTheAnswerToCopyIt")}</span> : null}
-          </div> : null}
-          {settled.feedback && onSaveFeedback && onTeachFeedback ? <AnswerFeedback bridge={bridge} loupistId={loupistId} chatId={chatId} message={message} onSave={onSaveFeedback} onTeach={onTeachFeedback} feedbackBusy={feedbackBusy} /> : null}
-          {note ? <p className="message-model-note">{note}</p> : null}
-          {settled.runState ? (
-            // A failure is a bordered block with its actions; a stop is the user's own doing: one quiet line.
-            <div className="message-run-state" data-kind={settled.runState.kind} role={settled.runState.kind === "failed" ? "alert" : "status"}>
-              {settled.runState.kind === "failed" ? <>
-                <ChatErrorState kind={settled.runState.failure} retryInSeconds={settled.runState.retryInSeconds} provider={providerName ?? t("chatError.yourProvider")}
-                  fallback={failureMessages()[settled.runState.failure] ?? failureMessages().other} onRetry={onRetry}
-                  onProviderAction={onProviderAction ? (action) => onProviderAction(action, message.execution_model?.provider) : undefined} />
-                {settled.runState.kept ? <p className="message-run-state-kept">{t("chatMessageCard.failedKept")}</p> : null}
-              </> : <>
-                <p>{settled.runState.label}</p>
-                {onRetry ? <button type="button" onClick={onRetry}>{t("chatMessageCard.tryAgain")}</button> : null}
-              </>}
-            </div>
-          ) : null}
+          {memoryRow}
+          {copyAction}
+          {feedback}
+          {modelNote}
+          {runState}
         </> : null}
       </TurnFooter> : null}
-      {message.role === "assistant" && complete && message.as_of_report ? <AsOfNote report={message.as_of_report} loupistName={loupistName} /> : null}
-      {message.role === "assistant" && complete && onNextStep ? <NextSteps loupistId={loupistId} chatId={chatId} messageId={message.id} onAsk={onNextStep} /> : null}
+      {asOfNote}
+      {nextSteps}
       {message.role === "user" && (onEditUser || onEarlierVersion || onLaterVersion) ? <div className="message-actions message-action-bar">
         {onEditUser ? <button type="button" aria-label={t("chatMessageCard.editMessage")} title={t("chatMessageCard.edit")} disabled={editDisabled} onClick={() => onEditUser(message)}>{t("chatMessageCard.edit")}</button> : null}
         {onEarlierVersion ? <button type="button" className="message-version-link" onClick={onEarlierVersion}>{t("chatBranch.earlierVersion")}</button> : null}
@@ -551,18 +601,6 @@ function TurnBlock({ kind, leaving = false, blockRef, children }: { kind: "card"
   const arrived = useArrived();
   return <div ref={blockRef} className="turn-block" data-turn-item={kind} data-enter={(arrived && !leaving) || undefined}
     data-leaving={leaving ? "" : undefined} aria-hidden={leaving || undefined} inert={leaving || undefined}>{children}</div>;
-}
-
-/**
- * Where a sensitivity card stands. While the reply streams it is a ruled frame
- * of the card's reserved height; at commit the card fills it, keeping at least
- * that height, so nothing below moves. A card read later has no frame to keep.
- */
-function SensitivitySlot({ children }: { children?: ReactNode }) {
-  const [held] = useState(!children);
-  return <div className="sensitivity-slot" data-turn-item="card" data-held={held || undefined}>
-    {children ?? <div className="sensitivity-pending" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div>}
-  </div>;
 }
 
 /** A card's exit (`--gg-motion-fast`): a card the stopped reply takes away fades out where it stood. */

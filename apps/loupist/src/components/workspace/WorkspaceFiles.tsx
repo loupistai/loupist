@@ -8,7 +8,7 @@ import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
 import { errorMessage } from "../../lib/errors";
 import type { LoupistBridge, WorkspaceDirectory, WorkspaceFile } from "../../types";
 import { delimitedPreview, PREVIEW_COLUMNS, PREVIEW_ROWS } from "./delimitedPreview";
-import { workspaceRasterPreview } from "./WorkspaceFileContext";
+import { workspaceRasterPreview, workspaceSvgPreview } from "./WorkspaceFileContext";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -85,14 +85,16 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
     if (scrollPositions.current.size > 50) scrollPositions.current.delete(scrollPositions.current.keys().next().value!);
   };
   const markdown = file && /\.(md|markdown)$/i.test(file.path);
-  const browserFile = file && !file.binary && /\.(html?|svg)$/i.test(file.path);
+  // A complete SVG previews as an image, like a PNG; Source shows its text.
+  const svgImage = file ? workspaceSvgPreview(file) : null;
+  const browserFile = file && !file.binary && !svgImage && /\.(html?|svg)$/i.test(file.path);
   const tabular = file && isDelimited(file);
   const entries = directory?.entries.filter((entry) => entry.name.toLowerCase().includes(filter.toLowerCase())) ?? [];
   const crumbs = (filePath ?? path).split("/").filter((part) => part && part !== ".");
 
   return <section className="workspace-files reader-files" aria-label={t("workspaceFiles.workspaceFiles")}>
     <div className="workspace-file-toolbar">
-      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.parentFolder")} disabled={!filePath && (!path || path === ".")} onClick={() => onNavigate(filePath ? parentPath(filePath) : parentPath(path))}><ArrowLeftIcon /></Button>
+      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.parentFolder")} title={t("workspaceFiles.parentFolder")} disabled={!filePath && (!path || path === ".")} onClick={() => onNavigate(filePath ? parentPath(filePath) : parentPath(path))}><ArrowLeftIcon /></Button>
       <nav className="reader-breadcrumbs" aria-label={t("workspaceFiles.fileLocation")}>
         {crumbs.length ? <button type="button" onClick={() => onNavigate("")}>{t("workspaceFiles.files")}</button> : <span aria-current="page">{t("workspaceFiles.files")}</span>}
         {crumbs.map((part, index) => <span className="reader-breadcrumb-part" key={`${index}-${part}`}><ChevronRightIcon aria-hidden="true" />
@@ -101,14 +103,16 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
       </nav>
       {/* The file's type and size share the location row (chat design change 23). */}
       {file ? <span className="workspace-file-meta">{fileType(file)} · {bytes(file.size_bytes)}{file.truncated ? t("workspaceFiles.previewTruncated") : ""}</span> : null}
-      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.refreshFiles")} disabled={loading} onClick={() => setRevision((current) => current + 1)}><RefreshCwIcon className={loading ? "reader-refreshing" : undefined} /></Button>
+      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.refreshFiles")} title={t("workspaceFiles.refreshFiles")} disabled={loading} onClick={() => setRevision((current) => current + 1)}><RefreshCwIcon className={loading ? "reader-refreshing" : undefined} /></Button>
       {/* The workspace folder's path is in the reveal button's tooltip rather than its own row. */}
-      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.showInFileManager")} title={rootPath ? `${t("workspaceFiles.localWorkspace")}: ${rootPath}` : undefined} onClick={() => void reveal()}><FolderOpenIcon /></Button>
+      <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.showInFileManager")} title={rootPath ? `${t("workspaceFiles.showInFileManager")} · ${rootPath}` : t("workspaceFiles.showInFileManager")} onClick={() => void reveal()}><FolderOpenIcon /></Button>
     </div>
     {loading ? <p className={`workspace-file-state reader-loading${value ? " is-refresh" : ""}`} role="status">{value ? t("workspaceFiles.refreshing") : t("workspaceFiles.opening")}</p> : null}
     {error ? <div className="workspace-file-state reader-error" role="alert"><p>{error}</p>{value ? <p>{t("workspaceFiles.theLastLoadedPreviewIsStillAvailableBelow")}</p> : null}<Button type="button" variant="outline" size="sm" onClick={() => setRevision((current) => current + 1)}>{t("workspaceFiles.tryAgain")}</Button></div> : null}
     {directory ? <>
-      <div className="reader-file-filter"><SearchIcon aria-hidden="true" /><input aria-label={t("workspaceFiles.filterFiles")} placeholder={t("workspaceFiles.findAFileInThisFolder")} value={filter} onChange={(event) => setFilters((current) => ({ ...current, [selection]: event.target.value }))} />{filter && <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.clearFileFilter")} onClick={() => setFilters((current) => ({ ...current, [selection]: "" }))}><XIcon /></Button>}<span>{t("workspaceFiles.items", { count: entries.length, formattedCount: formatNumber(entries.length) })}</span></div>
+      {/* An empty folder has nothing to filter; its empty state says so instead. */}
+      {directory.entries.length || filter ? <div className="reader-file-filter"><SearchIcon aria-hidden="true" /><input aria-label={t("workspaceFiles.filterFiles")} placeholder={t("workspaceFiles.findAFileInThisFolder")} value={filter} onChange={(event) => setFilters((current) => ({ ...current, [selection]: event.target.value }))}
+        onKeyDown={(event) => { if (event.key === "Escape" && filter && !event.nativeEvent.isComposing) { event.preventDefault(); setFilters((current) => ({ ...current, [selection]: "" })); } }} />{filter && <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.clearFileFilter")} title={t("workspaceFiles.clearFileFilter")} onClick={() => setFilters((current) => ({ ...current, [selection]: "" }))}><XIcon /></Button>}<span>{t("workspaceFiles.items", { count: entries.length, formattedCount: formatNumber(entries.length) })}</span></div> : null}
       <div className="workspace-file-list" ref={contentRef} onScroll={rememberScroll}>
         {entries.length ? entries.map((entry) => <button type="button" key={entry.path} data-file-path={entry.path} className="workspace-file-entry" onClick={() => { returnEntries.current.set(selection, entry.path); if (returnEntries.current.size > 50) returnEntries.current.delete(returnEntries.current.keys().next().value!); entry.kind === "directory" ? onNavigate(entry.path) : onNavigate(path, entry.path); }}>
           {entry.kind === "directory" ? <FolderIcon /> : /\.(csv|tsv|xlsx)$/i.test(entry.name) ? <FileSpreadsheetIcon /> : <FileIcon />}<span>{entry.name}</span><small>{entry.size_bytes == null ? "" : bytes(entry.size_bytes)}</small>{entry.kind === "directory" ? <ChevronRightIcon className="reader-directory-arrow" /> : null}
@@ -118,7 +122,7 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
     </> : null}
     {file ? <>
       <div className="workspace-file-actions">
-        {(markdown || tabular) && !file.binary ? <div className="reader-view-switch" role="group" aria-label={t("workspaceFiles.fileView")}>
+        {(markdown || tabular || svgImage) && !file.binary ? <div className="reader-view-switch" role="group" aria-label={t("workspaceFiles.fileView")}>
           <button type="button" aria-pressed={!source} onClick={() => setSourceViews((current) => ({ ...current, [selection]: false }))}>{tabular ? t("workspaceFiles.table") : t("workspaceFiles.preview")}</button>
           <button type="button" aria-pressed={source} onClick={() => setSourceViews((current) => ({ ...current, [selection]: true }))}>{t("workspaceFiles.source")}</button>
         </div> : null}
@@ -130,6 +134,7 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
       </div> : null}
       <div className={`workspace-file-content${tabular && !source ? " reader-table-content" : ""}`} ref={contentRef} onScroll={rememberScroll}>
         {workspaceRasterPreview(file) ? <WorkspaceImage key={`${selection}:${file.content_sha256}`} file={file} src={workspaceRasterPreview(file)!} onReveal={() => void reveal()} />
+          : svgImage && !source ? <WorkspaceImage key={`${selection}:${file.content_sha256}`} file={file} src={svgImage} onReveal={() => void reveal()} />
           : file.binary || file.content === null ? <div className="reader-empty"><p>{t("workspaceFiles.noTextPreviewForThisFileUseShowIn")}</p><Button type="button" variant="outline" size="sm" onClick={() => void reveal()}>{t("workspaceFiles.openInFileManager")}</Button></div>
           : tabular && !source ? <DelimitedFilePreview file={file} header={headerViews[selection] ?? !/header=absent/i.test(file.media_type)} onHeaderChange={(header) => setHeaderViews((current) => ({ ...current, [selection]: header }))} />
           : markdown && !source ? <OpenProvider open={open}><SafeMessageResponse text={file.content} isAnimating={false} workspacePath={rootPath} workspaceBasePath={parentPath(file.path)} /></OpenProvider>
@@ -145,7 +150,7 @@ function WorkspaceImage({ file, src, onReveal }: { file: WorkspaceFile; src: str
   const [failed, setFailed] = useState(false);
   if (failed) return <div className="reader-empty" role="status"><p>{t("workspaceFiles.couldNotDisplayThisImage")}</p><Button type="button" variant="outline" size="sm" onClick={onReveal}>{t("workspaceFiles.openInFileManager")}</Button></div>;
   return <div className="reader-image-preview">
-    <div className="reader-image-controls"><Button type="button" variant="outline" size="sm" aria-pressed={actualSize} onClick={() => setActualSize((current) => !current)}>{actualSize ? t("workspaceFiles.fitToPanel") : t("workspaceFiles.actualSize")}</Button></div>
+    <div className="reader-image-controls"><Button type="button" variant="outline" size="sm" onClick={() => setActualSize((current) => !current)}>{actualSize ? t("workspaceFiles.fitToPanel") : t("workspaceFiles.actualSize")}</Button></div>
     <div className={`reader-image-canvas${actualSize ? " is-actual-size" : ""}`}><img src={src} alt={file.path.split("/").at(-1) ?? t("workspaceFiles.workspaceImage")} onError={() => setFailed(true)} /></div>
   </div>;
 }

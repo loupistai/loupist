@@ -1038,3 +1038,83 @@ fn a_unit_names_its_currency_only_when_it_names_exactly_one() {
         assert_eq!(currency_code(unit).as_deref(), code, "{unit}");
     }
 }
+
+fn conversion_request() -> Value {
+    json!({"operation": "convert", "inputs": {"amount": 3930, "rate": "1334.87"},
+        "unit": "USD billions", "to": "KRW"})
+}
+
+#[test]
+fn convert_applies_scale_and_explains_the_assumed_rate() {
+    let result = run(conversion_request()).unwrap();
+    assert_eq!(result["title"], "Currency conversion");
+    assert_eq!(value(&result, "converted"), 5_246_039_100_000_000.0);
+    assert_eq!(result["values"][0]["unit"], "KRW");
+    assert_eq!(
+        formulas(&result),
+        ["Amount × Rate = 3,930 USD billions × 1,334.87 KRW per USD (assumed rate) = 5,246,039.1 KRW billions"]
+    );
+    assert_eq!(result["inputs"][1]["label"], "Rate");
+    assert_eq!(
+        result["inputs"][1]["provenance"],
+        json!({"kind": "provided"})
+    );
+    assert_eq!(result["inputs"][1]["unit"]["kind"], "number");
+    assert_eq!(result["inputs"][1]["unit"]["text"], "KRW per USD");
+    assert_eq!(result["conversion"], json!({"from": "USD", "to": "KRW"}));
+}
+
+#[test]
+fn convert_requires_an_explicit_currency_code_and_a_distinct_supported_target() {
+    for (field, bad) in [
+        ("unit", "$ billions"),
+        ("unit", "dollars billions"),
+        ("unit", "XXX billions"),
+        ("unit", " "),
+        ("unit", "USDbillions"),
+        ("unit", "USD percent"),
+        ("unit", "USD EUR billions"),
+        ("to", "XXX"),
+        ("to", "krw"),
+        ("to", "USD"),
+    ] {
+        let mut request = conversion_request();
+        request[field] = json!(bad);
+        let error = run(request).unwrap_err();
+        assert_eq!(error.field(), field, "{bad}");
+        let expected = match (field, bad) {
+            ("unit", _) => "name the currency by a supported ISO code".to_owned(),
+            (_, "USD") => "the target currency must differ from USD".to_owned(),
+            _ => format!("{bad} is not a supported ISO currency code"),
+        };
+        assert_eq!(error.detail(), expected);
+    }
+    for field in ["unit", "to"] {
+        let mut request = conversion_request();
+        request.as_object_mut().unwrap().remove(field);
+        assert_eq!(run(request).unwrap_err().field(), field);
+    }
+}
+
+#[test]
+fn top_level_to_belongs_only_to_convert() {
+    let request =
+        json!({"operation": "percent_change", "inputs": {"from": 1, "to": 2}, "to": "KRW"});
+    assert!(matches!(run(request), Err(CalcError::UnknownField { field, .. }) if field == "to"));
+}
+
+#[test]
+fn review_convert_units_reject_minor_and_mixed_case_currency_codes() {
+    for unit in ["GBp", "ZAc", "ILA", "UsD"] {
+        let mut request = conversion_request();
+        request["unit"] = json!(unit);
+        let error = run(request).unwrap_err();
+        assert_eq!(error.field(), "unit");
+        assert_eq!(error.detail(), "name the currency by a supported ISO code");
+    }
+    for unit in ["GBP", "gbp"] {
+        let mut request = conversion_request();
+        request["unit"] = json!(unit);
+        assert_eq!(run(request).unwrap()["conversion"]["from"], "GBP");
+    }
+}

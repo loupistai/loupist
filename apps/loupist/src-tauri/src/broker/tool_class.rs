@@ -12,9 +12,24 @@ use crate::knowledge::Authorship;
 pub(crate) enum RunResultOrigin {
     AcquiredOriginal,
     WorkspaceFile,
+    /// Text the user pasted into this Chat, copied from their own message.
+    UserProvided,
     Discovery,
     Derived,
     SavedContext,
+}
+
+impl RunResultOrigin {
+    /// Originals `source_save` may retain. Derived analysis and saved
+    /// context belong in a note with their original evidence.
+    pub(crate) const fn saveable_as_source(self) -> bool {
+        match self {
+            Self::AcquiredOriginal | Self::Discovery | Self::WorkspaceFile | Self::UserProvided => {
+                true
+            }
+            Self::Derived | Self::SavedContext => false,
+        }
+    }
 }
 
 /// Whether a call can reach past this computer or outlive the reply. Every
@@ -199,7 +214,7 @@ impl ToolMethod {
             Self::ScheduleRead         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
             Self::ScheduleCreate       => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
             Self::ScheduleHandoff      => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
-            Self::ScheduleWatch        => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
+            Self::ScheduleQuiet        => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
             Self::ScheduleBriefing     => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
             Self::ScheduleUpdate       => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
             Self::ScheduleSetStatus    => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
@@ -208,6 +223,7 @@ impl ToolMethod {
             Self::ScheduleStop         => row(Local,    Paused,       Own,        NoWrite,      Refused,      NoPack),
             Self::ResearchOpen         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
             Self::BotMemory            => row(Local,    Open,         Own,        Text,         Refused,      NoPack),
+            Self::InterfaceLabels      => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
             Self::ChatHistory          => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
             Self::DatasetDescribe      => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
             Self::DatasetQuery         => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
@@ -215,6 +231,7 @@ impl ToolMethod {
             Self::DatasetImport        => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
             Self::Calculate            => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
             Self::WorldbankSeries      => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
+            Self::FxRate               => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
             Self::DefillamaRead        => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
             Self::KrxDailyQuote        => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
             // Searches the bundled operation catalog; no request leaves the host.
@@ -230,7 +247,6 @@ impl ToolMethod {
             Self::McpConnect           => row(Outbound, CustomPaused, Own,        NoWrite,      GrantChecked, NoPack),
             Self::McpCall              => row(Outbound, CustomPaused, ByRoute,    NoWrite,      GrantChecked, NoPack),
             Self::RunResultsList       => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::PlanUpdate           => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
             Self::WebSearch            => row(Outbound, Open,         ThirdParty, NoWrite,      Allowed,      NoPack),
             Self::WebFetch             => row(Outbound, Open,         ThirdParty, NoWrite,      Allowed,      NoPack),
             Self::SourceSave           => row(Local,    Open,         Own,        Retained,     Allowed,      NoPack),
@@ -249,9 +265,10 @@ impl ToolMethod {
             Self::LensRead             => row(Local,    Open,         Own,        NoWrite,      Allowed,      Delimited),
             Self::WorldJob             => row(Outbound, Open,         Own,        Retained,     Allowed,      NoPack),
             Self::ConversationMemory   => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
+            Self::AssetLookup          => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
+            Self::PriceReadSave        => row(Local,    Open,         Own,        Retained,     Allowed,      NoPack),
             Self::AssetPageRead        => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
             Self::ThesisUpdate         => row(Local,    Open,         Own,        Text,         Allowed,      NoPack),
-            Self::EarningsSnapshotSave => row(Local,    Open,         Own,        Text,         Allowed,      NoPack),
             Self::ArtifactList         => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
             Self::ArtifactRead         => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
             Self::ArtifactPublish      => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
@@ -259,6 +276,8 @@ impl ToolMethod {
             Self::ChartPublish         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
             Self::GridPublish          => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
             Self::WorkspaceCapture     => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
+            // Interactive only: an unattended run's request is no message the user typed.
+            Self::PastedCapture        => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
             Self::PythonRun            => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
         }
     }
@@ -283,6 +302,8 @@ impl ToolMethod {
             Self::LensSearch           => native(KNOWLEDGE,          SavedContext,     Tool,      Turn),
             Self::LensRead             => native(KNOWLEDGE,          SavedContext,     Tool,      Turn),
             Self::ConversationMemory   => native(KNOWLEDGE,          SavedContext,     Tool,      Turn),
+            Self::FxRate               => native("fx-reference", AcquiredOriginal, Publisher, Turn),
+            Self::AssetLookup          => native("openfigi.lookup", Discovery,         Publisher, Dataset),
             Self::AssetPageRead        => native(KNOWLEDGE,          SavedContext,     Tool,      Turn),
             Self::WorldbankSeries      => native(FINANCE,            AcquiredOriginal, Publisher, DatasetMaxAge),
             Self::DefillamaRead        => native(FINANCE,            AcquiredOriginal, Publisher, DatasetMaxAge),
@@ -302,6 +323,7 @@ impl ToolMethod {
             Self::ArtifactRead         => native(ARTIFACTS,          Derived,          Tool,      Turn),
             Self::ChartQuery           => native(ARTIFACTS,          Derived,          Tool,      Turn),
             Self::WorkspaceCapture     => native(WORKSPACE,          WorkspaceFile,    User,      Turn),
+            Self::PastedCapture        => native("chat-paste",       UserProvided,     User,      Turn),
             Self::PythonRun            => native("python-worker",    Derived,          Tool,      Turn),
             Self::DatasetDescribe      => native(DATASETS,           SavedContext,     Tool,      Turn),
             Self::DatasetQuery         => native(DATASETS,           SavedContext,     Tool,      Turn),
@@ -312,7 +334,8 @@ impl ToolMethod {
             | Self::ScheduleRead
             | Self::ScheduleCreate
             | Self::ScheduleHandoff
-            | Self::ScheduleWatch
+            | Self::ScheduleQuiet
+            | Self::PriceReadSave
             | Self::ScheduleBriefing
             | Self::ScheduleUpdate
             | Self::ScheduleSetStatus
@@ -321,12 +344,12 @@ impl ToolMethod {
             | Self::ScheduleStop
             | Self::ResearchOpen
             | Self::BotMemory
+            | Self::InterfaceLabels
             | Self::ChatHistory
             | Self::DatasetExport
             | Self::McpConnect
             | Self::McpCall
             | Self::RunResultsList
-            | Self::PlanUpdate
             | Self::SourceSave
             | Self::NoteSave
             | Self::JournalSave
@@ -339,7 +362,6 @@ impl ToolMethod {
             | Self::AskUser
             | Self::WorldJob
             | Self::ThesisUpdate
-            | Self::EarningsSnapshotSave
             | Self::ArtifactPublish
             | Self::ChartPublish
             | Self::GridPublish => None,

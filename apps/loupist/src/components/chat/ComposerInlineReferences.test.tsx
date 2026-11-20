@@ -45,6 +45,20 @@ it("inserts a selected file at the cursor, preserves trailing prose and sends it
   expect(input.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
+it("leaves an unfocused composer's caret to the action that hands it the keyboard", async () => {
+  const user = userEvent.setup();
+  render(<Composer draft={makeDraft("What changed?")} />);
+  const input = screen.getByRole("textbox", { name: "Message Loupist" }) as HTMLTextAreaElement;
+  const place = vi.spyOn(input, "setSelectionRange");
+  // A chart's or the Map's Ask adds its reference from outside the composer.
+  await user.click(screen.getByRole("button", { name: "Add object" }));
+  expect(input).toHaveValue("What changed? ⟦Apple⟧ ");
+  // WebKit takes focus when a script places the caret in an unfocused field: here it would sit after the
+  // reference, not after everything, which the action's own focus (`focusComposerAtEnd`) does.
+  expect(place).not.toHaveBeenCalled();
+  expect(input).not.toHaveFocus();
+});
+
 it("keeps an object typed, removes it atomically and leaves the rest of the question editable", async () => {
   const user = userEvent.setup(), send = vi.fn(), draft = makeDraft("Read  carefully");
   render(<Composer draft={draft} onSend={send} />);

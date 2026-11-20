@@ -3,7 +3,7 @@ import { prepareFixture, PreviewBridge, previewKo } from "../fixtures";
 import { workspaceOverlayMedia } from "../../components/workspace/useWorkspacePanelResize";
 import type { ChatProgressItem } from "../../contracts/chat";
 import i18n from "../../i18n";
-import { base, chatGrowth, chatResearchMap, click, enterMap, hasLayout, inlineChartFixture, localViewMap, mapCanvas, pressMenu, rememberPreviewMap, select, selectPanel, submitPrompt, until, visible, type PreviewScenario } from "./kit";
+import { asSession, base, chatGrowth, chatResearchMap, click, enterMap, hasLayout, inlineChartFixture, localViewMap, mapCanvas, pressMenu, rememberPreviewMap, select, selectPanel, submitPrompt, until, visible, type PreviewScenario } from "./kit";
 
 /** The chat's first answer is the one that adds names; its growth appears once it completes. */
 const firstMapChange = { messageId: "" };
@@ -13,9 +13,9 @@ async function versionedDocument(bridge: PreviewBridge) {
   const ko = previewKo();
   const title = ko ? "한울정밀 3분기 메모" : "Hanul Precision Q3 notes";
   const bodies = ko ? [
-    "새 생산라인의 인증 비용이 늘면서 영업이익률이 14.8%로 낮아졌어요.",
-    "영업이익률이 14.8%로 낮아졌어요. 인증 비용이 대부분을 설명하고, 가동률은 4분기에 회복될 것으로 보여요.",
-    "영업이익률이 14.8%로 낮아졌어요. 인증 비용이 대부분을 설명하지만, 재고일수 54일은 수요가 아직 따라오지 못했다는 뜻이에요.",
+    "새 생산라인의 인증 비용이 늘면서 영업이익률이 14.8%로 낮아졌습니다.",
+    "영업이익률이 14.8%로 낮아졌습니다. 인증 비용이 대부분을 설명하고, 가동률은 4분기에 회복될 것으로 보입니다.",
+    "영업이익률이 14.8%로 낮아졌습니다. 인증 비용이 대부분을 설명하지만, 재고일수 54일은 수요가 아직 따라오지 못했다는 뜻입니다.",
   ] : [
     "Operating margin fell to 14.8% as qualification costs at the new line rose.",
     "Operating margin fell to 14.8%. Qualification costs explain most of it; utilization should recover in Q4.",
@@ -135,7 +135,7 @@ export const panelScenarios: PreviewScenario[] = [
       await prepareFixture(bridge, "answer");
       const catalog = await bridge.knowledgeCatalog({ loupistId: "loupist-quality" });
       const title = previewKo() ? "한울정밀 3분기 보고서" : "Hanul Precision quarterly report";
-      const saved = await bridge.knowledgeSourceRetain({ loupistId: "loupist-quality", title, originLocator: "Pasted text", coverage: "included_full", text: previewKo() ? "매출은 11% 늘었지만 영업이익률은 14.8%로 낮아졌어요. 새 생산라인의 인증 비용이 늘었어요. 재고일수와 가동률을 함께 확인해야 해요." : "Revenue grew 11% while operating margin fell to 14.8%. Qualification costs at the new production line increased. Compare inventory days with utilization." });
+      const saved = await bridge.knowledgeSourceRetain({ loupistId: "loupist-quality", title, originLocator: "Pasted text", coverage: "included_full", text: previewKo() ? "매출은 11% 늘었지만 영업이익률은 14.8%로 낮아졌습니다. 새 생산라인의 인증 비용이 늘었습니다. 재고일수와 가동률을 함께 확인해야 합니다." : "Revenue grew 11% while operating margin fell to 14.8%. Qualification costs at the new production line increased. Compare inventory days with utilization." });
       catalog.sources.unshift({ ...catalog.sources[0], recordId: saved.recordId, revisionId: saved.revisionId, title, objects: [{ id: saved.sourceId, title }] });
       bridge.knowledgeCatalog = async ({ loupistId }) => structuredClone({ ...catalog, loupistId });
       await bridge.workspaceUiWrite({ version: 1, open: true, placement: "side", width: 480, height: 360, sessions: [{ loupist_id: "loupist-quality", thread_id: "preview-chat", active_tab_id: "saved-source", tabs: [{ id: "saved-source", kind: "memory", title, record_id: saved.recordId, location: { loupistId: "loupist-quality", surface: "source", recordId: saved.recordId, revisionId: saved.revisionId, selection: { kind: "source", sourceId: saved.sourceId, spanId: saved.spanId ?? undefined } } }] }] });
@@ -186,7 +186,7 @@ export const panelScenarios: PreviewScenario[] = [
       const readMap = bridge.knowledgeMap.bind(bridge);
       bridge.knowledgeMap = async request => {
         const map = await readMap(request);
-        map.nodes = ["Hanul Precision", "Morrow Components", "Capacity utilization", "Operating margin"].map((label, index) => ({ id: `chat-node-${index}`, kind: "entity", label, entityKind: index < 2 ? "Organization" : "Entity", degree: index === 0 ? 3 : 1, watched: false, held: false }));
+        map.nodes = ["Hanul Precision", "Morrow Components", "Capacity utilization", "Operating margin"].map((label, index) => ({ id: `chat-node-${index}`, kind: "entity", label, entityKind: index < 2 ? "Organization" : "Entity", degree: index === 0 ? 3 : 1, watched: false }));
         map.edges = [1, 2, 3].map(index => ({ id: `chat-edge-${index}`, kind: "claim", source: "chat-node-0", target: `chat-node-${index}`, relation: "related_to", status: "active" }));
         map.worldRevisionId = "chat-mini-map";
         return map;
@@ -216,6 +216,7 @@ export const panelScenarios: PreviewScenario[] = [
       observer({ type: "phase", run_id, phase: "tool" });
       return { run_id };
     };
+    asSession(bridge);
   } },
   // W15.29, W15.32, W15.33: the inspector's Relationships view, the panel's Work list, and charts docked below the chat.
   { ...base("map-relationships", "A company's suppliers, customers and peers in the inspector", () => select(".map-relationships"), async (root) => {
@@ -266,17 +267,13 @@ export const panelScenarios: PreviewScenario[] = [
   }), setup: bridge => citedAnswerFixture(bridge) },
   // The panel menu pins one placement for every kind. The overlay under 1060 px
   // offers no panel menu, so there the Work list stands in.
-  { ...base("panel-dock-menu", "The Dock control's menu with Always dock here", () => select(".workspace-dock-menu") ?? (window.matchMedia(workspaceOverlayMedia).matches ? select(".work-list .work-row") : null), async (root) => {
+  { ...base("panel-dock-menu", "The Dock control's menu with Always dock at side", () => select(".workspace-dock-menu") ?? (window.matchMedia(workspaceOverlayMedia).matches ? select(".work-list .work-row") : null), async (root) => {
     await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
     await selectPanel("materials");
     await click("#workspace-tab-work");
     if (window.matchMedia(workspaceOverlayMedia).matches) return;
     pressMenu(await until(() => select(".workspace-dock-options"), "The Dock control's menu did not render"));
   }), setup: workListFixture },
-  { ...base("panel-kind-menu", "The panel kind menu names what Lens, World and Chat materials hold", () => select("[data-workspace-kind]") ? select("[data-workspace-kind=\"lens\"]") : null, async (root) => {
-    await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
-    pressMenu(await until(() => select(".header-panel-toggle"), "Panel control did not initialize"));
-  }) },
   // The docked chart is the subject: a capture waits for its canvas, not just the Work tab's status row.
   // jsdom cannot draw a canvas, so there the status row stays the landmark.
   { ...base("panel-dock-chart", "A chart opened from Work docks below the chat", () => {
@@ -307,7 +304,7 @@ export const panelScenarios: PreviewScenario[] = [
         const at = Date.parse(answer.created_at);
         const wrote = (id: string, filePath: string): ChatProgressItem => ({ id, kind: "tool", toolName: "write", category: "files", operation: "write", action: "Wrote a file", filePath, status: "succeeded", startedAtMs: at - 4_000, finishedAtMs: at - 3_000, target: null, href: null });
         answer.progress = { startedAtMs: at - 9_000, finishedAtMs: at, ...answer.progress, items: [...(answer.progress?.items ?? []), wrote("preview-write-memo", "notes/q3-margin-memo.md"), wrote("preview-write-table", "exports/hanul-margins-2024-2026.csv")] };
-        answer.content = `${answer.content}\n\n${previewKo() ? "비교 메모는 [q3-margin-memo.md](notes/q3-margin-memo.md)에, 분기별 수치는 [hanul-margins-2024-2026.csv](exports/hanul-margins-2024-2026.csv)에 저장했어요." : "I saved the comparison to [q3-margin-memo.md](notes/q3-margin-memo.md) and the quarterly figures to [hanul-margins-2024-2026.csv](exports/hanul-margins-2024-2026.csv)."}`;
+        answer.content = `${answer.content}\n\n${previewKo() ? "비교 메모는 [q3-margin-memo.md](notes/q3-margin-memo.md)에, 분기별 수치는 [hanul-margins-2024-2026.csv](exports/hanul-margins-2024-2026.csv)에 저장했습니다." : "I saved the comparison to [q3-margin-memo.md](notes/q3-margin-memo.md) and the quarterly figures to [hanul-margins-2024-2026.csv](exports/hanul-margins-2024-2026.csv)."}`;
       }
       return workspace;
     };
@@ -335,4 +332,15 @@ export const panelScenarios: PreviewScenario[] = [
       observer(event);
     });
   } },
+  // The page header's two splits: the one in use reads pressed (a filled button), the other does not.
+  ...(["side", "bottom"] as const).map((placement): PreviewScenario => ({
+    ...base(`panel-split-${placement}`, placement === "side" ? "Split left and right is pressed while the panel docks beside the chat" : "Split top and bottom is pressed while the panel docks below the chat",
+      () => select(`[data-workspace-split="${placement}"][aria-pressed="true"]`) && select(`#workspace-panel[data-placement="${placement}"]`), async root => {
+        await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
+        // A pointer press, so focus stays on the header as it does after a click.
+        (await until(() => select(`[data-workspace-split="${placement}"]`), "The split control did not render")).dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+        await until(() => select(`#workspace-panel[data-placement="${placement}"]`), "The split did not open the panel");
+      }),
+    setup: workListFixture,
+  })),
 ];

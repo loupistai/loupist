@@ -1,11 +1,11 @@
 {
   "id": "fmp.market-data",
   "name": "Financial Modeling Prep",
-  "summary": "Global company, market, and fundamental data.",
+  "summary": "Global company, market, and fundamental data. Free Basic signup includes limited US quotes and up to 250 calls per day. Other data may require a paid plan.",
   "publisher": "Loupist",
   "data_authority": "Financial Modeling Prep",
   "kind": "data_source",
-  "free_state": "paid",
+  "free_state": "free_account",
   "trust": "first_party",
   "runtime": {
     "kind": "mcp",
@@ -68,7 +68,7 @@
         "required": true,
         "min_length": 8,
         "max_length": 512,
-        "help_url": "https://site.financialmodelingprep.com/developer/docs"
+        "help_url": "https://site.financialmodelingprep.com/pricing-plans"
       }
     ]
   }

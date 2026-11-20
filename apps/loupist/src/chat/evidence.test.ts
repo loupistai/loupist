@@ -1,5 +1,5 @@
 import { evidenceFixture } from "../test/evidenceFixtures";
-import { citationLabel, citationPageUrl, citationSources, evidenceExcerptParts, evidenceTitle, webEvidenceUrl } from "./evidence";
+import { citationLabel, citationPageUrl, citationSources, evidenceExcerptParts, evidencePresentation, evidenceTitle, sourceIdentityLabel, webEvidenceUrl } from "./evidence";
 import { isInlineWorkEvidence, memoryReadForEvidence } from "./memoryActivity";
 
 it("opens a host website address and ignores titles, finance, files and search previews", () => {
@@ -78,4 +78,19 @@ it("does not highlight invalid, out-of-range or split-character offsets", () => 
   for (const excerpt_match of [{ start: -1, end: 3 }, { start: 0, end: 100 }, { start: 0, end: 1 }, { start: 2, end: 2 }, { start: 0.5, end: 3 }]) {
     expect(evidenceExcerptParts(evidenceFixture({ excerpt: "한글", excerpt_match }))).toBeNull();
   }
+});
+
+it("labels pasted material as user-provided, in this reply and when a saved one is read back", () => {
+  const pasted = evidenceFixture({ id: `ev_${"6".repeat(32)}`, kind: "user_provided", tool_name: "pasted_capture", title: "pasted capture", url: undefined });
+  const other = evidenceFixture({ id: `ev_${"7".repeat(32)}`, kind: "user_provided", tool_name: "pasted_capture", title: "pasted capture", url: undefined });
+  const saved = evidenceFixture({ id: `ev_${"8".repeat(32)}`, kind: "saved_context", tool_name: "world_read", title: "world read", url: undefined, read_ref: "pasted", user_provided: true });
+  const map = evidenceFixture({ id: `ev_${"9".repeat(32)}`, kind: "saved_context", tool_name: "world_read", title: "world read", url: undefined, read_ref: "fetched" });
+  expect(evidenceTitle(pasted)).toBe("Pasted text");
+  expect(evidencePresentation(pasted).label).toBe("User-provided");
+  expect(sourceIdentityLabel(pasted)).toBe("User-provided");
+  // Each paste is its own numbered source, never merged by its shared placeholder title.
+  expect(citationLabel(other, [pasted, other])).toBe("Source 2: Pasted text");
+  expect(sourceIdentityLabel(saved)).toBe("User-provided");
+  expect(evidencePresentation(saved).label).toBe("User-provided");
+  expect(sourceIdentityLabel(map)).toBe("Map");
 });

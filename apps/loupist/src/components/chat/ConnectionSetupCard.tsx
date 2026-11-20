@@ -1,10 +1,10 @@
 import i18n, { useTranslation } from "@/i18n";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { LoupistBridge } from "../../types";
 import type { MarketplaceConnectorStatus, MarketplaceEntry } from "../../marketplace/types";
 import { Button } from "../ui/button";
 import { MarketplaceSetupDialog } from "../marketplace/MarketplaceSetupDialog";
-import { connectionText } from "../marketplace/connectionCopy";
+import { connectionText } from "@/lib/connectionCopy";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -77,13 +77,32 @@ export function ConnectionSetupCard({ bridge, loupistId, entryId, onAskAgain }: 
       setBusy(false);
     }
   };
+  // Set up (its dialog) and Use in this Loupist take themselves away as the state turns: the
+  // keyboard stays on the card, on the action the new state offers, not on the page.
+  const cardRef = useRef<HTMLElement>(null);
+  const keepFocus = useRef(false);
+  useEffect(() => {
+    if (!keepFocus.current || dialogOpen) return;
+    // After the dialog's own focus restore, which has no trigger to return to.
+    const timer = window.setTimeout(() => {
+      const card = cardRef.current;
+      const focused = document.activeElement;
+      if (!card) return;
+      if (focused && focused !== document.body) {
+        if (!card.contains(focused)) keepFocus.current = false;
+        return;
+      }
+      (card.querySelector<HTMLElement>(".connection-setup-card-actions button") ?? card).focus({ preventScroll: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [state.status, dialogOpen]);
   const live = "live" in state ? state.live : undefined;
   const name = live ? connectionText(live.entry.name) : state.status === "unavailable" ? state.name ?? entryId : entryId;
   const closeDialog = () => {
     setDialogOpen(false);
     void refresh();
   };
-  return <section className="connection-setup-card" data-state={state.status} data-entry-id={entryId} aria-label={t("connectionSetupCard.label", { name })}>
+  return <section ref={cardRef} tabIndex={-1} className="connection-setup-card" data-state={state.status} data-entry-id={entryId} aria-label={t("connectionSetupCard.label", { name })}>
     <header><strong>{t("connectionSetupCard.title", { name })}</strong></header>
     {state.status === "loading" ? <p className="connection-setup-card-note">{t("connectionSetupCard.loading", { name })}</p> : null}
     {state.status === "unavailable" ? <p>{t("connectionSetupCard.unavailable", { name })}</p> : null}
@@ -91,13 +110,13 @@ export function ConnectionSetupCard({ bridge, loupistId, entryId, onAskAgain }: 
       <p>{t("connectionSetupCard.needsSetup", { name })}</p>
       <p className="connection-setup-card-note">{t("connectionSetupCard.keyNote")}</p>
       <div className="connection-setup-card-actions">
-        <Button type="button" onClick={() => setDialogOpen(true)}>{t("connectionSetupCard.setUp")}</Button>
+        <Button type="button" onClick={() => { keepFocus.current = true; setDialogOpen(true); }}>{t("connectionSetupCard.setUp")}</Button>
       </div>
     </> : null}
     {state.status === "off_here" ? <>
       <p>{t("connectionSetupCard.offHere", { name })}</p>
       <div className="connection-setup-card-actions">
-        <Button type="button" disabled={busy} onClick={() => void enable()}>{t("connectionSetupCard.useHere")}</Button>
+        <Button type="button" aria-disabled={busy || undefined} onClick={() => { if (busy) return; keepFocus.current = true; void enable(); }}>{t("connectionSetupCard.useHere")}</Button>
       </div>
     </> : null}
     {state.status === "ready" ? <>

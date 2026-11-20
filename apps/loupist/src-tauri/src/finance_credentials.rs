@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::finance_data::openfigi::SOURCE_ID as ASSET_LOOKUP_SOURCE_ID;
+
 const CREDENTIAL_SCHEMA_VERSION: &str = "loupist-finance-credential/1";
 
 #[cfg(all(
@@ -103,7 +105,8 @@ impl CredentialCandidate {
     }
 }
 
-/// A verified credential bundle that finance execution may use.
+/// An active credential bundle that finance execution may use. Only the
+/// optional OpenFIGI key becomes active without verification.
 ///
 /// This type intentionally has no `Debug` or serialization implementation so
 /// secrets cannot accidentally cross the command boundary or enter logs.
@@ -120,6 +123,13 @@ impl ActiveCredentialBundle {
     pub fn get(&self, credential_id: &str) -> Option<&str> {
         self.secrets.get(credential_id).map(String::as_str)
     }
+
+    /// Stored values by reference, for sharing's existing private context only.
+    /// No other caller may use this accessor. Do not log or serialize these
+    /// values or retain them beyond that private context.
+    pub(crate) fn stored_values_for_sharing(&self) -> impl Iterator<Item = &str> {
+        self.secrets.values().map(String::as_str)
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -131,7 +141,8 @@ struct StoredCredentialBundle {
 #[derive(Clone, Deserialize, Serialize)]
 struct ActiveCredential {
     credential: StoredCredentialBundle,
-    verified_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    verified_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     krx_coverage: Option<KrxCoverage>,
 }
@@ -213,14 +224,20 @@ fn validate_revision(revision: &str) -> Result<(), FinanceCredentialError> {
     Ok(())
 }
 
-fn validate_envelope(envelope: &CredentialEnvelope) -> Result<(), FinanceCredentialError> {
+fn validate_envelope(
+    entry_id: &str,
+    envelope: &CredentialEnvelope,
+) -> Result<(), FinanceCredentialError> {
     if envelope.schema_version != CREDENTIAL_SCHEMA_VERSION {
         return Err(FinanceCredentialError::Store);
     }
     if let Some(active) = &envelope.active {
         validate_revision(&active.credential.revision)?;
         validate_secrets(&active.credential.secrets)?;
-        if active.verified_at < 0 {
+        if !active
+            .verified_at
+            .map_or(entry_id == ASSET_LOOKUP_SOURCE_ID, |at| at >= 0)
+        {
             return Err(FinanceCredentialError::Store);
         }
     }
@@ -573,7 +590,7 @@ fn load_locked(
     };
     let envelope: CredentialEnvelope =
         serde_json::from_str(&value).map_err(|_| FinanceCredentialError::Store)?;
-    validate_envelope(&envelope)?;
+    validate_envelope(entry_id, &envelope)?;
     remember_envelope(environment_id, entry_id, &envelope);
     Ok(envelope)
 }
@@ -600,7 +617,7 @@ fn save_locked(
     entry_id: &str,
     envelope: &CredentialEnvelope,
 ) -> Result<(), FinanceCredentialError> {
-    validate_envelope(envelope)?;
+    validate_envelope(entry_id, envelope)?;
     let value = serde_json::to_string(envelope).map_err(|_| FinanceCredentialError::Store)?;
     write_blob(environment_id, entry_id, &value)?;
     remember_envelope(environment_id, entry_id, envelope);
@@ -618,6 +635,10 @@ fn status_from(envelope: &CredentialEnvelope) -> CredentialStatus {
         .as_ref()
         .map(|candidate| candidate.credential.secrets.keys().cloned().collect())
         .unwrap_or_default();
+    let verified_at = envelope
+        .active
+        .as_ref()
+        .and_then(|credential| credential.verified_at);
     let verification = envelope
         .candidate
         .as_ref()
@@ -629,7 +650,7 @@ fn status_from(envelope: &CredentialEnvelope) -> CredentialStatus {
             }
         })
         .unwrap_or_else(|| {
-            if envelope.active.is_some() {
+            if verified_at.is_some() {
                 CredentialVerification::Verified
             } else {
                 CredentialVerification::Never
@@ -642,10 +663,7 @@ fn status_from(envelope: &CredentialEnvelope) -> CredentialStatus {
         active_fields,
         candidate_fields,
         verification,
-        verified_at: envelope
-            .active
-            .as_ref()
-            .map(|credential| credential.verified_at),
+        verified_at,
         krx_coverage: envelope
             .active
             .as_ref()
@@ -689,6 +707,36 @@ pub fn stage(
     });
     save_locked(environment_id, entry_id, &envelope)?;
     Ok(status_from(&envelope))
+}
+
+/// Stores the optional OpenFIGI key as the active credential in one write.
+pub(crate) fn save_lookup_key(
+    environment_id: &str,
+    key: &str,
+) -> Result<(), FinanceCredentialError> {
+    let _guard = operation_lock()
+        .lock()
+        .map_err(|_| FinanceCredentialError::Store)?;
+    // An explicit save may unlock a key whose access was previously refused.
+    load_for_user_locked(environment_id, ASSET_LOOKUP_SOURCE_ID)?;
+    let envelope = CredentialEnvelope {
+        active: Some(ActiveCredential {
+            credential: StoredCredentialBundle {
+                revision: Uuid::new_v4().hyphenated().to_string(),
+                secrets: BTreeMap::from([("api_key".to_owned(), key.to_owned())]),
+            },
+            verified_at: None,
+            krx_coverage: None,
+        }),
+        ..CredentialEnvelope::default()
+    };
+    save_locked(environment_id, ASSET_LOOKUP_SOURCE_ID, &envelope)
+}
+
+pub(crate) fn lookup_key(
+    environment_id: &str,
+) -> Result<Option<ActiveCredentialBundle>, FinanceCredentialError> {
+    get(environment_id, ASSET_LOOKUP_SOURCE_ID)
 }
 
 /// Loads only the current candidate. An active credential is never returned by
@@ -772,7 +820,7 @@ pub fn finish_verification(
                 .expect("candidate was checked above");
             envelope.active = Some(ActiveCredential {
                 credential: candidate.credential,
-                verified_at,
+                verified_at: Some(verified_at),
                 krx_coverage,
             });
         }
@@ -837,8 +885,8 @@ pub fn unlock(
     )?))
 }
 
-/// Returns only a verified active bundle. Staged or rejected values are never
-/// visible to finance execution.
+/// Returns the active bundle. Credentials that require verification become
+/// active only after successful verification.
 pub fn get(
     environment_id: &str,
     entry_id: &str,
@@ -861,7 +909,7 @@ pub fn get(
         }))
 }
 
-/// Returns the revision of the verified active credential, if one exists.
+/// Returns the revision of the active credential, if one exists.
 ///
 /// This deliberately returns only the revision needed to bind a Pi session
 /// cache to credential authority. It never constructs or exposes a credential

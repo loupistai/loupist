@@ -1,8 +1,8 @@
 import i18n, { useTranslation } from "@/i18n";
-import { formatTime } from "@/i18n/format";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessage, LoupistBridge } from "../../types";
-import { Button } from "../ui/button";
+import { BotPostBody } from "./BotPost";
+import "@/styles/bot-cards.css";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -20,6 +20,13 @@ export function ThreadVocabulary({ message, bridge, loupistId, loupistName }: {
   const korean = i18n.language.toLowerCase().startsWith("ko") && record.labelsKo?.length === record.labels.length;
   const list = (korean ? record.labelsKo! : record.labels).join(", ");
   const at = Date.parse(message.created_at);
+  // Undo goes away once it has run: focus moves to what happened.
+  const statusRef = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    if (!undone) return;
+    const focused = document.activeElement;
+    if (!focused || focused === document.body) statusRef.current?.focus({ preventScroll: true });
+  }, [undone]);
   const undo = async () => {
     if (!bridge || busy) return;
     setBusy(true);
@@ -33,16 +40,15 @@ export function ThreadVocabulary({ message, bridge, loupistId, loupistName }: {
       setBusy(false);
     }
   };
-  return <article className="message assistant thread-alert" aria-label={list}>
-    <div className="message-meta">
-      <span>{loupistName}</span>
-      {Number.isFinite(at) ? <time dateTime={new Date(at).toISOString()}>{formatTime(at)}</time> : null}
-    </div>
-    <p>{t("vocabulary.message", { list })}</p>
-    {undone ? <p className="thread-delivery-source" role="status">{t("vocabulary.undone")}</p> : null}
-    {error ? <p className="inline-error" role="alert">{t("vocabulary.error")}</p> : null}
-    {bridge && !undone ? <div className="thread-alert-actions">
-      <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void undo()}>{t("vocabulary.undo")}</Button>
-    </div> : null}
+  return <article className="message assistant thread-alert thread-vocabulary" data-bot-post="" aria-label={t("vocabulary.label", { list })}>
+    <BotPostBody loupistName={loupistName} at={at}>
+      <p className="bot-quiet-line">
+        <span>{t("vocabulary.message", { list })}</span>
+        {/* Waiting keeps the button focusable, so a failed Undo leaves the keyboard where it was. */}
+        {bridge && !undone ? <button type="button" className="bot-quiet-action" aria-disabled={busy || undefined} onClick={() => void undo()}>{t("vocabulary.undo")}</button> : null}
+      </p>
+      {undone ? <p ref={statusRef} tabIndex={-1} className="thread-delivery-source" role="status">{t("vocabulary.undone")}</p> : null}
+      {error ? <p className="inline-error" role="alert">{t("vocabulary.error")}</p> : null}
+    </BotPostBody>
   </article>;
 }

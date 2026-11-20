@@ -1,6 +1,7 @@
 //! Replay is opt-in, fail-closed, and installed only by the serial runner.
 //! Unit tests scope it to their Tokio runtime so unrelated tests and their
 //! local HTTP servers cannot be intercepted by another test's fixture.
+use crate::domain::LoupistCapabilityBinding;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
@@ -137,7 +138,12 @@ impl Response {
     }
 }
 type ReplayScope = Option<tokio::runtime::Id>;
-type ActiveReplays = HashMap<ReplayScope, (Replay, String)>;
+struct InstalledReplay {
+    fixture: Replay,
+    environment: String,
+    openbb_loupist: Option<String>,
+}
+type ActiveReplays = HashMap<ReplayScope, InstalledReplay>;
 static ACTIVE: OnceLock<RwLock<ActiveReplays>> = OnceLock::new();
 static FALLBACKS: OnceLock<Mutex<HashMap<ReplayScope, Vec<Value>>>> = OnceLock::new();
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -174,7 +180,7 @@ impl Replay {
             )
         {
             if crate::finance_data::native_vendor(provider).is_none()
-                && !matches!(provider.as_str(), "web" | "web-search")
+                && !matches!(provider.as_str(), "web" | "web-search" | "ecb")
             {
                 return Err("unknown replay provider".into());
             }
@@ -203,7 +209,14 @@ impl Replay {
         if active.contains_key(&scope) {
             return Err("a replay is already installed in this runtime".into());
         }
-        active.insert(scope, (self, environment.into()));
+        active.insert(
+            scope,
+            InstalledReplay {
+                fixture: self,
+                environment: environment.into(),
+                openbb_loupist: None,
+            },
+        );
         Ok(Guard {
             scope,
             _serial: serial,
@@ -227,11 +240,41 @@ pub(crate) fn credential_environment(environment: &str, entry: &str) -> bool {
     ) {
         return false;
     }
+    installed_for(environment)
+}
+
+/// Whether replay is active for this state's credential environment.
+pub(crate) fn installed_for(environment: &str) -> bool {
     active()
         .read()
         .unwrap()
         .get(&scope())
-        .is_some_and(|(_, expected)| expected == environment)
+        .is_some_and(|replay| replay.environment == environment)
+}
+
+pub(super) fn set_openbb_loupist(environment: &str, loupist: Option<&str>) {
+    let mut installed = active().write().unwrap();
+    if let Some(replay) = installed
+        .get_mut(&scope())
+        .filter(|replay| replay.environment == environment)
+    {
+        replay.openbb_loupist = loupist.map(str::to_owned);
+    }
+}
+
+/// Readiness override for the platform binding in this state's replay.
+pub(crate) fn execute_binding_readiness(
+    binding: &LoupistCapabilityBinding,
+    environment: &str,
+) -> Option<bool> {
+    if binding.entry_id != "openbb.platform" {
+        return None;
+    }
+    let installed = active().read().unwrap();
+    let replay = installed
+        .get(&scope())
+        .filter(|replay| replay.environment == environment)?;
+    Some(replay.openbb_loupist.as_deref() == Some(binding.loupist_id.as_str()))
 }
 /// The active replay answers a Korea Investment account (trading) read.
 pub(crate) fn wants_kis_account() -> bool {
@@ -239,8 +282,8 @@ pub(crate) fn wants_kis_account() -> bool {
         .read()
         .unwrap()
         .get(&scope())
-        .is_some_and(|(replay, _)| {
-            replay.requests.iter().any(|entry| {
+        .is_some_and(|replay| {
+            replay.fixture.requests.iter().any(|entry| {
                 entry.provider == "koreainvestment.market-data"
                     && entry
                         .request
@@ -255,7 +298,7 @@ pub(crate) fn enabled() -> bool {
 }
 pub(crate) fn lookup(provider: &str, request: &Value) -> Option<Result<Response, String>> {
     let active = active().read().unwrap();
-    let (replay, _) = active.get(&scope())?;
+    let replay = &active.get(&scope())?.fixture;
     if let Some(entry) = replay
         .requests
         .iter()
@@ -299,6 +342,95 @@ pub(crate) fn take_fallbacks() -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn platform_grant_is_ready_only_when_listed_under_replay() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = crate::app::AppState::for_eval(temporary.path().join("app"));
+        let workspace = temporary.path().join("workspace");
+        std::fs::create_dir(&workspace).unwrap();
+        let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
+            .await
+            .unwrap();
+        let guard = serde_json::from_value::<Replay>(
+            serde_json::json!({"schema":"loupist-connection-replay/1","requests":[]}),
+        )
+        .unwrap()
+        .install(&state.credential_environment)
+        .unwrap();
+        let ready = || {
+            crate::commands::enabled_execute_capability_ids(&state, &loupist.id)
+                .unwrap()
+                .iter()
+                .any(|id| id == "openbb.platform")
+        };
+        super::super::enable_connections(&state, &loupist.id, &[]).unwrap();
+        assert!(!ready());
+        super::super::enable_connections(&state, &loupist.id, &["openbb.platform".into()]).unwrap();
+        assert!(state
+            .store
+            .list_loupist_capabilities(&loupist.id)
+            .unwrap()
+            .iter()
+            .any(|binding| binding.entry_id == "openbb.platform" && binding.enabled));
+        assert!(state.artifacts.mcp_runtimes.is_empty());
+        assert!(ready());
+        drop(guard);
+        assert!(!ready());
+    }
+
+    #[tokio::test]
+    async fn platform_replay_readiness_stays_inside_one_listed_loupist() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = crate::app::AppState::for_eval(temporary.path().join("app"));
+        let other_state = crate::app::AppState::for_eval(temporary.path().join("other-app"));
+        let mut loupists = Vec::new();
+        for (state, name) in [
+            (&state, "listed"),
+            (&state, "unlisted"),
+            (&other_state, "other-state"),
+        ] {
+            let workspace = temporary.path().join(name);
+            std::fs::create_dir(&workspace).unwrap();
+            let loupist = crate::commands::loupist::create_folder_loupist(state, &workspace)
+                .await
+                .unwrap();
+            loupists.push((state, loupist.id));
+        }
+        let ready = |(state, id): &(&crate::app::AppState, String)| {
+            crate::commands::enabled_execute_capability_ids(state, id)
+                .unwrap()
+                .iter()
+                .any(|entry| entry == "openbb.platform")
+        };
+        let guard = serde_json::from_value::<Replay>(
+            serde_json::json!({"schema":"loupist-connection-replay/1","requests":[]}),
+        )
+        .unwrap()
+        .install(&state.credential_environment)
+        .unwrap();
+        let connections = ["openbb.platform".into()];
+        let listed = &loupists[0].1;
+        super::super::enable_connections(&state, listed, &connections).unwrap();
+        assert_eq!(
+            loupists.iter().map(ready).collect::<Vec<_>>(),
+            [true, false, false]
+        );
+
+        let binding = state
+            .store
+            .get_loupist_capability(listed, "openbb.platform")
+            .unwrap()
+            .unwrap();
+        assert!(!crate::marketplace::execute_binding_ready(&binding, &other_state).unwrap());
+        super::super::enable_connections(&state, listed, &[]).unwrap();
+        assert!(!crate::marketplace::execute_binding_ready(&binding, &state).unwrap());
+        super::super::enable_connections(&state, listed, &connections).unwrap();
+        assert!(ready(&loupists[0]));
+
+        drop(guard);
+        assert!(loupists.iter().all(|loupist| !ready(loupist)));
+    }
+
     #[test]
     fn optional_query_filters_allow_absence_but_never_duplicate_or_unknown_keys() {
         let entry: Entry = serde_json::from_value(serde_json::json!({"provider":"opendart.disclosures",

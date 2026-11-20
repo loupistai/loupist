@@ -18,7 +18,7 @@ function merge(target: ObjectValue, patch: ObjectValue, source?: ConfigSource, s
 }
 
 const defaults = (): EffectiveConfig => ({
-  appearance: { theme: "system", language: "system" }, models: { hidden_model_profile_ids: [] }, connectors: {},
+  appearance: { theme: "system", language: "system", price_colors: "auto" }, models: { hidden_model_profile_ids: [] }, connectors: {},
   chat: { model_profile_id: null, thinking_level: null, run_options: {}, use_memory: true, update_memory: true },
   skills: Object.fromEntries(DEFAULT_AGENT_SKILL_IDS.map((id) => [id, { enabled: id !== "skill-creator" }])),
   pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 20000 }, retry: { enabled: true, max_retries: 3, base_delay_ms: 2000, max_agent_delay_ms: 60000 } },
@@ -47,6 +47,10 @@ export class MockConfig {
     if (request.scope.kind === "project" && ["appearance", "models", "connectors"].some((key) => key in request.set || request.unset.some((path) => path[0] === key))) throw new Error("This setting is only available globally.");
     for (const [id, skill] of Object.entries(request.set.skills ?? {})) {
       if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || ["world", "lens", "journal", "visualize"].includes(id) || skill.enabled !== undefined && typeof skill.enabled !== "boolean") throw new Error("Unknown or fixed app skill.");
+    }
+    const currency = request.set.appearance?.display_currency;
+    if (currency !== undefined && (typeof currency !== "string" || currency.length !== 3 || !/^[A-Z]{3}$/.test(currency))) {
+      throw new Error("appearance.display_currency must be three uppercase ASCII letters");
     }
     const document = snapshot.explicit ?? {};
     for (const path of request.unset) {

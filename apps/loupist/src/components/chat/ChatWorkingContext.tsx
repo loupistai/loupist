@@ -38,6 +38,9 @@ export function ChatWorkingContext({ bridge, loupistId, chatId, isRunning, updat
   const [error, setError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
   const generation = useRef(0);
+  // "Ask for a change" puts the request in the composer once the note has closed: while it is open, its focus
+  // trap would pull focus back, and closing would return it to the note's button.
+  const asking = useRef(false);
 
   useEffect(() => {
     const ticket = ++generation.current;
@@ -77,7 +80,12 @@ export function ChatWorkingContext({ bridge, loupistId, chatId, isRunning, updat
       {error ? <div className="working-context-error" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => setRefresh((value) => value + 1)}>{t("chatWorkingContext.tryAgain")}</Button></div> : null}
       <div className="working-context-conversation">{children}</div>
       <Dialog open={readerOpen} onOpenChange={setReaderOpen}>
-        <DialogContent className="working-note-dialog sm:max-w-2xl">
+        <DialogContent className="working-note-dialog sm:max-w-2xl" onCloseAutoFocus={(event) => {
+          if (!asking.current) return;
+          asking.current = false;
+          event.preventDefault();
+          onAskForChange();
+        }}>
           <DialogHeader><DialogTitle>{note?.title ?? t("chatWorkingContext.workingNote")}</DialogTitle>
           <DialogDescription>{t("chatWorkingContext.theCurrentResearchNoteForThisConversation")}</DialogDescription></DialogHeader>
           {note ? <article className="working-note" aria-label={t("chatWorkingContext.workingNote")}>
@@ -90,7 +98,7 @@ export function ChatWorkingContext({ bridge, loupistId, chatId, isRunning, updat
           </article> : null}
           {error ? <p className="working-context-error" role="alert">{error}</p> : null}
           {note ? <div className="working-note-actions">
-              <Button variant="ghost" size="sm" onClick={() => { setReaderOpen(false); onAskForChange(); }}><MessageSquareIcon />{t("chatWorkingContext.askForAChange")}</Button>
+              <Button variant="ghost" size="sm" onClick={() => { asking.current = true; setReaderOpen(false); }}><MessageSquareIcon />{t("chatWorkingContext.askForAChange")}</Button>
             </div> : null}
         </DialogContent>
       </Dialog>

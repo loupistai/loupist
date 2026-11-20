@@ -1,99 +1,26 @@
 use super::*;
 
-pub(in crate::commands) const PERSPECTIVE_TITLE: &str = "Outlook";
-
-/// The Loupist's one perspective page, kept in step with its focus: creation
-/// seeds it, a later focus change from settings rewrites its `focus` section.
-pub(in crate::commands) fn ensure_perspective(
+/// A perspective page the user filed (one `beliefs` section), for tests that
+/// need the standing perspective in context.
+#[cfg(test)]
+pub(in crate::commands) fn file_test_perspective(
     state: &AppState,
     loupist_id: &str,
-    focus: &str,
-) -> Result<Option<String>, CommandError> {
-    let at_ms = crate::commands::now_ms();
+    markdown: &str,
+) -> String {
     with_loupist_knowledge(state, loupist_id, |tx, blobs| {
-        sync_perspective_focus(
-            &crate::knowledge::KnowledgeWrite::bind(tx, blobs),
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).file_section(
             loupist_id,
-            focus,
-            at_ms,
+            crate::knowledge::lens_page::PageKind::Perspective,
+            "Perspective",
+            "beliefs",
+            markdown,
+            &crate::knowledge::test_support::user_origin(),
+            crate::commands::now_ms(),
         )
     })
-}
-
-/// Make the perspective page's `focus` section hold `focus`, creating the page
-/// when there is none. Other sections stay as written. An empty focus files
-/// nothing; the first filed perspective then becomes the page.
-pub(in crate::commands) fn sync_perspective_focus(
-    write: &crate::knowledge::KnowledgeWrite<'_>,
-    loupist_id: &str,
-    focus: &str,
-    at_ms: i64,
-) -> crate::knowledge::KnowledgeResult<Option<String>> {
-    use crate::knowledge::lens_page::{
-        Basis, FilingOrigin, LensOp, PageDelta, PageKind, PageTarget, SectionKey, MAX_SECTION_CHARS,
-    };
-    let page = write.active_perspective(loupist_id)?;
-    let focus: String = focus.trim().chars().take(MAX_SECTION_CHARS).collect();
-    if focus.is_empty() {
-        return Ok(page);
-    }
-    let key = SectionKey::new("focus")?;
-    let (target, heading, expected) = match &page {
-        Some(record_id) => {
-            let read = write.read_page(loupist_id, record_id)?;
-            let current = read
-                .body
-                .sections()
-                .iter()
-                .find(|section| section.key == key);
-            if current.is_some_and(|section| section.markdown == focus) {
-                return Ok(page);
-            }
-            (
-                PageTarget::Existing {
-                    record_id: record_id.clone(),
-                },
-                current.map_or_else(|| "Focus".to_owned(), |section| section.heading.clone()),
-                current.map(|section| section.digest.clone()),
-            )
-        }
-        None => (
-            PageTarget::Create {
-                kind: PageKind::Perspective,
-                title: PERSPECTIVE_TITLE.into(),
-                anchors: Vec::new(),
-            },
-            "Focus".to_owned(),
-            None,
-        ),
-    };
-    let filed = write.file(
-        loupist_id,
-        &FilingOrigin::User {
-            chat_id: None,
-            message_id: None,
-        },
-        vec![PageDelta {
-            target,
-            ops: vec![LensOp::Put {
-                key,
-                heading,
-                markdown: focus,
-                basis: Basis::default(),
-                expected,
-            }],
-        }],
-        at_ms,
-    )?;
-    if filed.iter().any(|page| page.refused_text()) {
-        return Err(crate::knowledge::KnowledgeError::LensBodyForbidden);
-    }
-    Ok(filed
-        .into_iter()
-        .next()
-        .filter(|page| !page.record_id.is_empty())
-        .map(|page| page.record_id)
-        .or(page))
+    .unwrap()
+    .record_id
 }
 
 #[derive(Clone)]
@@ -145,12 +72,7 @@ pub(super) fn lens_catalog_preview(markdown: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ");
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(180)
-        .collect()
+    crate::util::shorten(&text.split_whitespace().collect::<Vec<_>>().join(" "), 180)
 }
 
 /// `set_aside` lists principle and method ids the user set aside for this
@@ -275,7 +197,7 @@ fn host_memory_context_excluding(
     let set_aside = &excluded;
     let followed = state
         .store
-        .map_context()
+        .map_context(loupist_id)
         .map_err(crate::commands::map_store)?;
     let (modules, perspective, mut entries, anchored) =
         with_loupist_knowledge(state, loupist_id, |tx, blobs| {
@@ -540,12 +462,7 @@ fn followed_node_ids(
     loupist_id: &str,
     followed: &crate::store::user_context::MapContext,
 ) -> Result<std::collections::BTreeSet<String>, KnowledgeError> {
-    let items: Vec<_> = followed
-        .holdings
-        .iter()
-        .chain(&followed.watchlist)
-        .cloned()
-        .collect();
+    let items = &followed.watchlist;
     if items.is_empty() {
         return Ok(Default::default());
     }
@@ -562,7 +479,7 @@ fn followed_node_ids(
     let body: crate::knowledge::WorldSnapshotBody =
         serde_json::from_value(write.get_revision(loupist_id, &revision_id)?.payload)
             .map_err(|_| KnowledgeError::Invalid("world payload is invalid"))?;
-    Ok(crate::knowledge::match_items(&items, &body.nodes).0)
+    Ok(crate::knowledge::match_items(items, &body.nodes).0)
 }
 
 /// Pages anchored to World nodes whose name or alias the request names.
@@ -860,7 +777,9 @@ fn relevant_memory(
     if terms.is_empty() {
         return Ok(relevant);
     }
-    let hits = host_search(state, loupist_id, &terms.join(" "), "lens")?;
+    let query = terms.join(" ");
+    let hits = host_search(state, loupist_id, &query, "lens")?;
+    let groups = crate::knowledge::query_group_count(&query);
     for hit in hits.as_array().into_iter().flatten() {
         if relevant.len() >= LENS_POINTERS {
             break;
@@ -876,9 +795,12 @@ fn relevant_memory(
             continue;
         };
         let matched = hit["matched_terms"].as_array().map_or(0, Vec::len);
-        // A whole financial concept can be one alias group (e.g. cash flow).
+        // A whole financial concept can be one alias group (e.g. cash flow),
+        // so a page that matches every group of the request also counts. A
+        // title-only row is too weak alone. The rank-fused score says where a
+        // page ranks, not how much of the request it matched, so it is not read.
         let strong_match = matched >= terms.len().min(2)
-            || (matched > 0 && hit["score"].as_u64().unwrap_or_default() >= 600);
+            || (matched > 0 && matched == groups && hit["coverage"] != "metadata_only");
         if !strong_match
             || relevant
                 .iter()
@@ -974,7 +896,7 @@ pub(in crate::commands) fn host_search(
         scope,
         &crate::knowledge::SearchOptions {
             include_metadata: true,
-            semantic_assets: state.graph.semantic_assets(),
+            semantic_model: state.graph.semantic_model(),
             ..crate::knowledge::SearchOptions::default()
         },
     )
@@ -1002,7 +924,7 @@ pub(super) fn renderer_lens_search(
         "lens",
         &crate::knowledge::SearchOptions {
             include_metadata: true,
-            semantic_assets: state.graph.semantic_assets(),
+            semantic_model: state.graph.semantic_model(),
             ..crate::knowledge::SearchOptions::default()
         },
         true,
@@ -1154,8 +1076,8 @@ fn search_with_options(
                 "researchId": hit.research_id,
                 "recordedAtMs": hit.recorded_at_ms,
                 "laterNotes": hit.later_notes,
-                "title": hit.conclusion.lines().next().unwrap_or("Saved work").chars().take(160).collect::<String>(),
-                "snippet": hit.conclusion.chars().take(500).collect::<String>(),
+                "title": crate::util::shorten(hit.conclusion.lines().next().unwrap_or("Saved work"), 160),
+                "snippet": crate::util::shorten(&hit.conclusion, 500),
                 "coverage": "snippet",
             }));
         }
@@ -1442,6 +1364,7 @@ pub(in crate::commands) fn capture_source_read(
             coverage: overlay.coverage,
             attribution: overlay.attribution,
             publication_time: overlay.publication_time,
+            provided: overlay.provided.map(Box::new),
         },
     ))
 }
@@ -1455,6 +1378,7 @@ struct SourceOverlay {
     coverage: String,
     attribution: String,
     publication_time: Option<crate::knowledge::TimePoint>,
+    provided: Option<crate::knowledge::ProvidedOrigin>,
 }
 
 /// Who authored the retained material behind one Source span, as its
@@ -1465,6 +1389,9 @@ pub(in crate::commands) struct SpanAuthorship {
     pub authorship: crate::knowledge::Authorship,
     /// Saved from a custom connection's result.
     pub custom_connection: bool,
+    /// Material the user pasted into a Chat (`SourceClass::UserProvided`).
+    /// The user handed it over, but someone else wrote it.
+    pub user_provided: bool,
     pub title: String,
     pub origin_locator: Option<String>,
     /// The dataset a saved provider payload names (`/dataset_ref/dataset_id`),
@@ -1474,6 +1401,9 @@ pub(in crate::commands) struct SpanAuthorship {
 
 impl SpanAuthorship {
     pub(in crate::commands) fn untrusted(&self, state: &AppState, loupist_id: &str) -> bool {
+        if self.user_provided {
+            return true;
+        }
         match self.authorship {
             crate::knowledge::Authorship::User | crate::knowledge::Authorship::Analysis => {
                 self.custom_connection
@@ -1588,6 +1518,7 @@ pub(in crate::commands) fn source_span_authorship(
             return Ok(Vec::new());
         };
         let source = parsed.source;
+        let user_provided = source.source_class == crate::knowledge::SourceClass::UserProvided;
         let mut found = Vec::new();
         for capture in &source.captures {
             let before = found.len();
@@ -1621,6 +1552,7 @@ pub(in crate::commands) fn source_span_authorship(
                     found.push(SpanAuthorship {
                         authorship: capture.authorship,
                         custom_connection: source.origin.is_some(),
+                        user_provided,
                         title: source.title.clone(),
                         origin_locator: source.origin_locator.clone(),
                         dataset_id,
@@ -1632,6 +1564,7 @@ pub(in crate::commands) fn source_span_authorship(
                 found.push(SpanAuthorship {
                     authorship: capture.authorship,
                     custom_connection: source.origin.is_some(),
+                    user_provided,
                     title: source.title.clone(),
                     origin_locator: source.origin_locator.clone(),
                     dataset_id: None,
@@ -1678,6 +1611,7 @@ fn source_overlay(payload: &serde_json::Value, span_id: &str) -> Option<SourceOv
                 coverage: capture.coverage.as_str().to_string(),
                 attribution,
                 publication_time: capture.publication_time,
+                provided: capture.provided,
             });
         }
     }

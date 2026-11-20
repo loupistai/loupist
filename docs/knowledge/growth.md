@@ -59,10 +59,62 @@ credentials, the GitHub sign-in, Pi caches and process leases remain app-private
 The derived World index travels in the folder database and rebuilds on first use
 when its embedding model or revision does not match.
 
-Open a copied folder to restore its saved identity; moving a registered folder
-requires Reconnect folder. The saved profile name survives copying/reconnection. An
-empty folder cannot replace saved data, and a registered identity cannot be opened
-as a second independent Loupist. Removing its registration preserves the folder.
+Open a copied folder to restore its saved identity. Use Reconnect folder when
+you move a registered workspace or replace its directory with a copy at the
+same path. Select the restored directory and confirm that you trust it before
+opening its pages. The saved profile name survives copying and reconnecting.
+An empty folder cannot replace saved data, and a registered identity cannot be
+opened as a second independent Loupist. Removing its registration preserves the
+folder.
+
+Asset pages carry their local ID, saved name, thesis and saved price data
+in the folder. A copied folder keeps those pages. Each Loupist's followed
+list, display preferences, grants and credentials live in the app profile:
+another app that opens a copy or fork shows its pages and reasons with
+nothing followed, and the original app keeps the original's follows.
+Removing a Loupist's registration removes its follows.
+
+Unix device numbers may change after a reboot or remount. On reading a registered
+profile, Rust silently refreshes a changed device number only if the stored path
+still opens as a directory without following its leaf as a symlink, its inode is
+unchanged, and its filesystem birth time proves the same directory generation.
+The private runtime requires the same evidence. A saved birth time must match
+exactly. For legacy identities without one, birth must be no later than that
+catalog profile's update time, compared at full birth-time precision; an ambiguous
+final millisecond fails closed. A legacy workspace also requires birth no later
+than the folder profile's positive `created_at_ms`, checked against the catalog's
+original creation time when available. That value is captured before database
+creation and ordinary edits/reconnect preserve it, so later profile updates cannot
+advance this cutoff. An unusable creation value (zero) leaves the catalog cutoff
+alone; this is a known limit. Missing, zero or negative birth times never permit
+silent recovery on any platform. macOS uses descriptor `st_birthtime` and Linux
+uses `statx` `stx_btime`.
+
+Legacy private runtimes keep only the catalog cutoff: their directories are
+legitimately allocated after profile creation is sampled, so the folder creation
+value cannot bound them. This is a known limit without a tolerance window. That
+identity check guards accidental replacement; a process able to recreate this
+private directory can already write inside the existing one. The directory holds
+Chat caches/CWD files, attachments and activity, while shared authentication and
+run capability files live elsewhere. After first recovery, or for new bindings,
+the stored birth time must match exactly.
+
+The folder must pass reconnect admission with exactly one profile bearing this
+Loupist's ID. Recovery keeps a no-follow database descriptor and the same SQLite
+connection open from admission through commit, checks that SQLite and the live
+path still identify that held file, and repeats ownership, digest and foreign-owner
+validation inside its transaction. The folder remains SQLite's main database;
+the catalog is attached to it. Root and runtime identities, including optional
+`birthTime { seconds, nanoseconds }`, in both profile JSON copies and the root
+device/inode columns change in one transaction with rollback journals, before
+restoring catalog WAL. The optional identity metadata also travels in deletion
+journals; SQL columns and renderer contracts do not change. Manual reconnect
+compares its runtime against the pre-recovery saved profile.
+
+Existing bound connections are never rebound. A missing path, changed inode or
+birth time, newer replacement, foreign or missing data, or symlink still requires
+the ordinary unavailable-folder recovery; a failed identity write rolls back both
+databases. Ordinary access and deletion enforce a saved birth time when present.
 
 Registration validates database identity/schema, SQLite integrity/foreign keys,
 record ownership and declared blob hashes/sizes. A folder in an earlier format is
@@ -76,3 +128,25 @@ the ordinary recovery requirements.
 ## Code
 
 - Growth event log: `src-tauri/src/knowledge/growth.rs`, `src-tauri/src/commands/knowledge.rs`, `src/contracts/knowledge.ts`
+
+## On the Map
+
+What's new lists growth events since the last visit (the same per-device value as
+the morning message), 7 or 30 days, or a date, grouped by day with one row per
+subject: names, relationships, reported values, conflicts, methods and principles. Relationship and
+conflict rows are built from local names and the translated relation. A claim whose two ends are
+one name (the same node, or names that share a spelling, `oneName` in `knowledge/mapItems.ts`) is
+a value reported about it, never "A → A": it reads "6 new facts about KRW-BTC" and opens that name,
+whose Key facts list the values; a disputed one reads "Two sources disagree: KRW-BTC (reports)".
+Changes one publication made that would read the same (kind, ends, relation and Source) are one
+row, and a reported-values row counts them; changes that differ in any of these stay separate.
+The same rule keeps the Bot's morning questions from asking how a name is linked to itself.
+Rows open the inspector or the Lens entry; rows for items no longer on the Map are dimmed. The
+toolbar badge counts changes since the last visit; Bot does not repeat this growth.
+Schema and truncation events are excluded.
+
+Replay reveals the current projection by first-seen timestamps; it is not a
+historical snapshot or revision browser. Export creates a PNG or a replay video
+(MP4 when supported, otherwise WebM) with Loupist/date/count/disclosure context.
+React captures the canvas; Rust `export_save` owns the native save dialog,
+size/extension validation and file write. Cancellation returns no saved path.

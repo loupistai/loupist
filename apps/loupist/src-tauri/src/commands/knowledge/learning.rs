@@ -1,4 +1,5 @@
 use super::*;
+use crate::commands::tool_executor::StagedSource;
 use crate::domain::{KnowledgeReference, MemoryUpdateChange};
 
 #[derive(Default)]
@@ -66,8 +67,9 @@ pub(in crate::commands) fn persist_saved_turn_sources(
         return Ok(SavedTurn::default());
     }
     let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
+    let sources = current_paste_saves(sources).map_err(map_knowledge)?;
     let retained =
-        retain_staged_sources(&write, loupist_id, turn_id, sources).map_err(map_knowledge)?;
+        retain_staged_sources(&write, loupist_id, turn_id, &sources).map_err(map_knowledge)?;
     let settings = crate::knowledge::load_settings(tx, loupist_id).map_err(map_knowledge)?;
     for (_, saved) in &retained {
         write
@@ -76,18 +78,15 @@ pub(in crate::commands) fn persist_saved_turn_sources(
     }
     let mut changes = Vec::new();
     let mut reported_sources = std::collections::BTreeSet::new();
-    for (request_ref, retained) in &retained {
+    for ((_, source), (_, retained)) in sources.iter().zip(&retained) {
         if !reported_sources.insert(retained.source_id.clone()) {
             continue;
         }
-        let source = sources
-            .iter()
-            .find(|source| &source.request_ref == request_ref)
-            .ok_or_else(|| CommandError::internal("retained Source lost its input"))?;
         let processing = write
             .source_processing(loupist_id, &retained.record_id)
             .map_err(map_knowledge)?;
         changes.push(MemoryUpdateChange {
+            user_provided: source.provided.is_some(),
             outcomes: Vec::new(),
             world_job_id: processing.job_id,
             world_status: Some(processing.status),
@@ -206,7 +205,7 @@ pub(in crate::commands) fn persist_saved_turn_sources(
         {
             let staged = sources
                 .iter()
-                .find(|source| &source.request_ref == request_ref)
+                .find_map(|(key, source)| (*key == request_ref).then_some(*source))
                 .ok_or_else(|| CommandError::invalid("retained source was not staged"))?;
             let _ = request_ref;
             let publication = staged
@@ -249,6 +248,7 @@ pub(in crate::commands) fn persist_saved_turn_sources(
                 coverage,
                 attribution,
                 publication_time,
+                ..
             } = &read.payload
             else {
                 return Err(CommandError::invalid(
@@ -404,9 +404,9 @@ pub(in crate::commands) fn persist_saved_turn_sources(
             .collect::<Result<Vec<_>, _>>()?,
         None => Vec::new(),
     };
-    if let Some((_, identity)) = staged_journal.and_then(|journal| journal.thesis.as_ref()) {
+    if let Some((_, Some(page))) = staged_journal.and_then(|journal| journal.thesis.as_ref()) {
         write
-            .ensure_asset_page(loupist_id, identity, at_ms)
+            .ensure_asset_page(loupist_id, page, at_ms)
             .map_err(map_knowledge)?;
     }
     let saved = write
@@ -457,6 +457,11 @@ pub(in crate::commands) fn persist_saved_turn_sources(
         })
         .map_err(map_knowledge)?;
     if let Some(pair) = thesis_pair {
+        if let Some((_, Some(page))) = &pair.thesis {
+            write
+                .ensure_asset_page(loupist_id, page, at_ms)
+                .map_err(map_knowledge)?;
+        }
         let journal = crate::knowledge::journal::create(
             tx,
             loupist_id,
@@ -471,6 +476,7 @@ pub(in crate::commands) fn persist_saved_turn_sources(
         )
         .map_err(map_knowledge)?;
         changes.push(MemoryUpdateChange {
+            user_provided: false,
             outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
@@ -493,6 +499,7 @@ pub(in crate::commands) fn persist_saved_turn_sources(
     }
     if let Some(journal) = saved.journal {
         changes.push(MemoryUpdateChange {
+            user_provided: false,
             outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
@@ -524,6 +531,7 @@ pub(in crate::commands) fn persist_saved_turn_sources(
         });
     } else {
         changes.push(MemoryUpdateChange {
+            user_provided: false,
             outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
@@ -601,15 +609,36 @@ pub(in crate::commands) fn earlier_research<'a>(
     ))
 }
 
-pub(in crate::commands) fn retain_staged_sources(
+/// Keep every saveRef usable in the turn, with the final attribution for a repeated paste.
+fn current_paste_saves(
+    sources: &[StagedSource],
+) -> crate::knowledge::KnowledgeResult<Vec<(&str, &StagedSource)>> {
+    let mut latest = std::collections::HashMap::new();
+    let mut saves = Vec::with_capacity(sources.len());
+    for staged in sources.iter().rev() {
+        let source =
+            if staged.provided.is_some() && Coverage::parse(&staged.coverage)?.retains_bytes() {
+                *latest
+                    .entry((&staged.coverage, &staged.bytes))
+                    .or_insert(staged)
+            } else {
+                staged
+            };
+        saves.push((staged.request_ref.as_str(), source));
+    }
+    saves.reverse();
+    Ok(saves)
+}
+
+fn retain_staged_sources(
     write: &crate::knowledge::KnowledgeWrite<'_>,
     loupist_id: &str,
     origin_message_id: &str,
-    sources: &[crate::commands::tool_executor::StagedSource],
+    sources: &[(&str, &StagedSource)],
 ) -> crate::knowledge::KnowledgeResult<Vec<(String, crate::knowledge::RetainedSource)>> {
     let mut retained = Vec::new();
-    for source in sources {
-        let coverage = crate::knowledge::Coverage::parse(&source.coverage)?;
+    for &(save_ref, source) in sources {
+        let coverage = Coverage::parse(&source.coverage)?;
         let role = match source.material_role.as_str() {
             "excerpt" => crate::knowledge::RepresentationRole::Excerpt,
             "original" => crate::knowledge::RepresentationRole::Original,
@@ -673,8 +702,9 @@ pub(in crate::commands) fn retain_staged_sources(
                 material,
             },
             origin_message_id,
+            source.provided.as_ref(),
         )?;
-        retained.push((source.request_ref.clone(), saved));
+        retained.push((save_ref.to_owned(), saved));
     }
     Ok(retained)
 }
@@ -712,8 +742,17 @@ pub(in crate::commands) fn write_chat_learning_report(
     performance: Option<crate::domain::ChatPerformance>,
     // Run-log entries the commit itself produced (an asset read it could not save).
     trace_notes: Vec<crate::domain::ChatToolTraceEntry>,
+    quiet_request: Option<(&str, i64)>,
+    research_session_id: Option<String>,
 ) -> crate::store::StoreResult<crate::domain::ChatMessage> {
     let mut chat = provisional.clone();
+    if let Some((run_id, previous)) = quiet_request {
+        // Delivery is optional. The reply and its Memory still commit if this
+        // occurrence was interrupted or no longer satisfies the quiet guard.
+        if crate::scheduled_tasks::store::mark_quiet(tx, &chat.loupist_id, run_id).is_ok() {
+            chat.updated_at_ms = previous;
+        }
+    }
     let message = chat
         .messages
         .iter_mut()
@@ -770,16 +809,18 @@ pub(in crate::commands) fn write_chat_learning_report(
             .join("\n");
     }
     message.performance = performance;
+    message.research_session_id = research_session_id;
     let completed = message.clone();
     chat.validate()
         .map_err(|error| crate::store::StoreError::Invalid(error.to_string()))?;
     let changed = tx.execute(
-        "UPDATE chat_sessions SET data_json = ?1 WHERE id = ?2 AND loupist_id = ?3 AND data_json = ?4",
+        "UPDATE chat_sessions SET data_json = ?1, updated_at_ms = ?5 WHERE id = ?2 AND loupist_id = ?3 AND data_json = ?4",
         rusqlite::params![
             serde_json::to_string(&chat)?,
             chat.id,
             chat.loupist_id,
-            serde_json::to_string(provisional)?
+            serde_json::to_string(provisional)?,
+            chat.updated_at_ms,
         ],
     )?;
     if changed != 1 {

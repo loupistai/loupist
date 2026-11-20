@@ -19,14 +19,14 @@ model not to add later facts from its own knowledge.
 | Tables (`grid_publish`) | Every cell must be known by then: a cell citing a local file fails with `as_of_unsupported`, later material with `as_of_later`; the table keeps the date, and `artifact_read` of a table needs one built under a cutoff on or before it |
 | Saved reports | A Markdown artifact written after the date is left out (`as_of_later`) |
 | Saved Memory | [Memory under a cutoff](../knowledge/memory.md#memory-under-a-cutoff) |
-| What the user follows | Watched names only, by symbol and without flags; holdings never reach the model |
+| What the user follows | Saved followed names and references, with their price-read state |
 | Principles | Apply as they are today |
 
 Writes: `source_save` keeps only material whose publication date is on or before
 the cutoff; later material fails with `as_of_later` and undated material with an
 `as_of_undated` argument error on `publicationTime`. `note_save`, `principle_save`
 and `journal_save` save as usual, dated today. `thesis_update` and
-`earnings_snapshot_save` are refused and no asset observations are recorded ([asset pages](../knowledge/asset-pages.md#asset-pages));
+`price_read_save` require a current turn ([asset pages](../knowledge/asset-pages.md#asset-pages));
 `journal_review` waits for its check date ([Journal](../knowledge/sources-notes.md#working-notes-and-journal)).
 
 The answer's `as_of_report` lists refused and empty reads and counts the Memory left

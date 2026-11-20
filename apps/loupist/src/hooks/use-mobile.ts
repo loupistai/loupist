@@ -1,6 +1,8 @@
 import * as React from "react"
 
-const MOBILE_BREAKPOINT = 900
+// The window is at least 700 px wide (tauri.conf.json), so the sidebar is a drawer only in
+// narrower previews; from 700 px it is an icon rail or the full sidebar.
+const MOBILE_BREAKPOINT = 640
 
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)

@@ -1,6 +1,22 @@
 /** Preview scenarios, in the capture order `src/preview/scenarios.ts` assembles. */
 import { prepareConnectionSetupFixture, prepareCustomConnectionFixture } from "../fixtures/connections";
+import { prepareFixture, type PreviewBridge } from "../fixtures";
+import { commandError } from "../../bridge/mock/commandError";
 import { base, click, hasLayout, select, settings, until, type PreviewScenario } from "./kit";
+
+type SetupDialog = { id: string; title: string; entry: string; key?: string; landmark: string; prepare?: (bridge: PreviewBridge) => void | Promise<void> };
+const SETUP_DIALOGS: SetupDialog[] = [
+  { id: "connection-setup-verifying", title: "OpenDART: a key typed and saved, verification under way", entry: "opendart.disclosures", key: "preview-opendart-key",
+    landmark: ".marketplace-setup-progress", prepare: bridge => { bridge.marketplaceCredentialVerify = () => new Promise(() => {}); } },
+  { id: "connection-setup-verified", title: "OpenDART: the key verified, ready and on for every Loupist", entry: "opendart.disclosures", key: "preview-opendart-key",
+    landmark: '.marketplace-setup-message[data-tone="success"]' },
+  { id: "connection-setup-rejected", title: "KRX: the key rejected, with KRX's per-market approval named", entry: "krx.market-data", key: "preview-krx-key",
+    landmark: '.marketplace-setup-message[data-tone="error"]', prepare: bridge => { bridge.marketplaceCredentialVerify = () => Promise.reject(commandError("credential_rejected", "The provider rejected these credentials.")); } },
+  { id: "connection-setup-unchecked", title: "OpenDART: the key saved but not checked, and Verify again", entry: "opendart.disclosures", key: "preview-opendart-key",
+    landmark: '.marketplace-setup-message[data-tone="error"]', prepare: bridge => { bridge.marketplaceCredentialVerify = () => Promise.reject(commandError("provider_unavailable", "The provider could not verify these credentials right now.")); } },
+  { id: "connection-setup-openfigi", title: "Asset lookup: no key needed, and off for this Loupist with Turn on", entry: "openfigi.lookup",
+    landmark: ".marketplace-setup-here", prepare: async bridge => { await bridge.loupistCapabilityDisable({ loupist_id: "loupist-quality", entry_id: "openfigi.lookup" }); } },
+];
 
 /** Custom connections and a connection set up from Chat. */
 export const connectionScenarios: PreviewScenario[] = [
@@ -50,4 +66,27 @@ export const connectionScenarios: PreviewScenario[] = [
     }),
     setup: bridge => prepareConnectionSetupFixture(bridge, state),
   })),
+
+  // The setup dialog for a key source, from its card, in each state a key goes through.
+  ...SETUP_DIALOGS.map(({ id, title, entry, key, landmark, prepare }): PreviewScenario => ({
+    ...base(id, title, () => select(landmark), async root => {
+      await settings(root, "connections");
+      await click(`[aria-labelledby="connection-${entry}"] button`);
+      if (!key) return;
+      const input = await until(() => select(".marketplace-setup-dialog input[type=password]") as HTMLInputElement | null, "Key field did not load");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, key);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await click('.marketplace-setup-dialog button[type="submit"]');
+    }),
+    setup: async bridge => { await prepareFixture(bridge); await prepare?.(bridge); },
+  })),
+
+  {
+    ...base("connections-off-here", "Connections: a ready connection that is off for this Loupist says so on its card", () => select(".marketplace-off-here"), async root => {
+      await settings(root, "connections");
+      const note = await until(() => select(".marketplace-off-here"), "The off-here note did not appear");
+      if (hasLayout()) note.closest("article")?.scrollIntoView({ block: "center" });
+    }),
+    setup: async bridge => { await prepareFixture(bridge); await bridge.loupistCapabilityDisable({ loupist_id: "loupist-quality", entry_id: "openfigi.lookup" }); },
+  },
 ];

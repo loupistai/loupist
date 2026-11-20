@@ -24,8 +24,8 @@ function rate(pass, total) {
   return { pass, total, rate: total === 0 ? null : pass / total };
 }
 
-export function latencySummary(traces) {
-  const values = traces.map((trace) => trace.duration_ms).filter((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+export function latencySummary(traces, measure = (trace) => trace.duration_ms) {
+  const values = traces.map(measure).filter((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0);
   return { n: values.length, unknown: traces.length - values.length, p50: quantile(values, 0.5), p95: quantile(values, 0.95) };
 }
 
@@ -216,6 +216,7 @@ function measureReport({ suite, traces, judgments = [], trials = 3 }) {
     tool_validity: observedTools,
     trajectory: trajectory(suite, traces),
     latency_ms: latencySummary(traces),
+    answer_text_ms: latencySummary(traces, (trace) => trace.performance?.answer_text_ms),
     tokens: tokenTotals(traces),
   };
   return { report, checks };

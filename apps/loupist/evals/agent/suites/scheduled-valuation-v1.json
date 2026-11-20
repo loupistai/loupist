@@ -1,0 +1,78 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "scheduled-valuation",
+  "version": 1,
+  "description": "Valuation under scheduled admission with the same dated market replay as the research question.",
+  "scenarios": [
+    {
+      "split": "capability",
+      "connections": [
+        "opendart",
+        "krx"
+      ],
+      "id": "SV-001",
+      "title": "Scheduled review of growth implied by the dated share price",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "opendart",
+        "krx",
+        "valuation",
+        "en"
+      ],
+      "replay": "replay/opendart-solsup-implied-growth.json",
+      "replay_needs": "dart_company_lookup resolves Solsup Foods or 990221 to 99022100. dart_financials 99022100 annual consolidated for each fiscal year 2020 to 2025 returns revenue, operating income, net income, net income attributable to owners, basic EPS, cash, short- and long-term borrowings, operating cash flow and purchases of property, plant and equipment (negative): FY2025 operating cash flow 52600000000 and capex -18900000000 KRW (free cash flow 33.7bn), FY2020 33000000000 and -12100000000 (20.9bn), so free cash flow grew 10.0% a year over FY2020–FY2025; FY2025 cash 41200000000, short-term borrowings 30000000000 and long-term borrowings 65000000000. krx_daily_quote 990221 on 2026-04-16 closes at 21950 KRW with 20000000 listed shares. No other date, company or basis.",
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What growth does Solsup Foods' (990221) share price imply? Use the close on 2026-04-16.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "opendart",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "capability_loaded",
+                    "id": "krx",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "calculate_inputs_cited",
+                    "operation": "reverse_dcf",
+                    "inputs": [
+                      "price",
+                      "reference_growth_pct"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "metric": "task_success",
+                    "assert": "scheduled_delivery"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "range-against-history",
+                    "criterion": "Read the full scheduled reply, including any displayed sensitivity card linked to the reverse DCF result. Using the cited 2026-04-16 close and historical growth input, give a range of implied growth rates under different discount and long-run growth assumptions. Compare the range with annual free cash flow growth of about 10% over FY2020–FY2025 and identify which assumptions require faster growth. A single implied rate, target price or fair value as the conclusion fails.",
+                    "metric": "task_success"
+                  }
+                ]
+              },
+              "scheduled": {
+                "kind": "custom"
+              }
+            }
+          ]
+        }
+      ],
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00"
+    }
+  ]
+}

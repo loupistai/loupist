@@ -183,8 +183,13 @@ export function useComposerInlineReferences({ prompt, onPromptChange, items, dra
     const pending = pendingCursor.current;
     if (pending && textarea.current?.value === previous.current) {
       pendingCursor.current = null;
-      if (pending.focus) textarea.current.focus();
-      textarea.current.setSelectionRange(pending.cursor, pending.cursor);
+      // A reference another surface added (a chart's or the Map's Ask) leaves the field's caret to the action
+      // that hands it the keyboard, which puts it after everything (`focusComposerAtEnd`). Set here on an
+      // unfocused field, WebKit would take focus with the caret after this reference, before any text after it.
+      if (pending.focus) {
+        textarea.current.focus();
+        textarea.current.setSelectionRange(pending.cursor, pending.cursor);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the draft's text or items change; `insert` and the textarea ref read the latest refs.
   }, [itemKey, prompt, draft?.prompt, draft?.inlineReferences]);

@@ -1,5 +1,5 @@
 //! The community index (W19.6): an open catalog repository whose CI validates
-//! each listed pack (it validates, carries no holdings, has a license and fits
+//! each listed pack (it validates, has a license and fits
 //! the caps) and nobody reviews by hand. The index URL is a build constant;
 //! without it there is no Gallery, listing, Report or blocked-list check.
 //! Rust fetches the index (https, no redirects, ≤ 4 MiB), keeps it in app data

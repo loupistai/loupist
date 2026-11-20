@@ -24,6 +24,10 @@ export type MockBridgeState = {
   >;
   run_activities: Map<string, RunActivity>;
   knowledgeStores: Record<string, unknown>;
+  handoffLinks: Map<string, {
+    status: import("../../contracts/knowledge").ConnectionStatus;
+    options?: import("../../contracts/chat").ResearchHandoffRequest;
+  }>;
   /** Application-wide keep-awake while the World is processing. */
   keepAwake?: boolean;
 };
@@ -43,6 +47,7 @@ export const createMockBridgeState = (delay_ms: number): MockBridgeState => ({
   artifacts: {},
   run_activities: new Map(),
   knowledgeStores: {},
+  handoffLinks: new Map(),
 });
 
 /** Mirrors the host's one-run-per-target rule; worker caps and Memory locks stay in Rust. */

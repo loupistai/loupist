@@ -21,7 +21,7 @@ A method is its own page, kind `method`, titled after what it checks. Only the u
    each with `expected` set to the digest from your read. A section that changed
    since is skipped: read again and refile.
 4. Every op on a method cites the user's words this turn: a section's basis
-   includes `{"said": true}` (plus `{source}` when a file grounds it), and a
+   includes `{"said": true}` (plus `{source}` when a file or pasted material grounds it), and a
    `retire` or `summary` op carries `"said": true`.
 5. Give the page a one-line `summary` that says when the method applies: the
    index shows it, and later turns choose methods from that line.

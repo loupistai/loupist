@@ -6,6 +6,7 @@ import type { ChatMessage } from "../types";
 import { evidenceFixture } from "../test/evidenceFixtures";
 import { prepareFixture, previewKo, type PreviewBridge } from "./fixtures";
 import type { PreviewScenario } from "./scenarios";
+import { asSession } from "./scenarios/kit";
 
 const quotes = [
   { symbol: "AAPL", name: "Apple", currency: "USD", last_price: 271.4, last_timestamp: "2026-10-11T14:30:00Z" },
@@ -54,7 +55,9 @@ type Helpers = {
 export function quoteEvidenceScenarios({ base, select, until, click }: Helpers): PreviewScenario[] {
   return [{
     ...base("quote-evidence", "A price-quote basket opens as a compact receipt", () => select(".quote-evidence"), async (root) => {
-      await until(() => root.querySelector("button.loupist-citation"), "Quote citation did not render");
+      const citation = await until(() => root.querySelector("button.loupist-citation"), "Quote citation did not render");
+      // The reader presses a citation they can see.
+      if (document.documentElement.clientWidth > 0) citation.scrollIntoView({ block: "center" });
       await click("button.loupist-citation");
       const dialog = await until(() => select(".quote-evidence"), "Quote receipt did not open");
       // jsdom has no layout. In the preview, the receipt has to sit in the window beside the citation.
@@ -105,7 +108,7 @@ export function quoteEvidenceScenarios({ base, select, until, click }: Helpers):
             status: "complete",
             created_at: "2026-10-11T15:05:00Z",
             content: previewKo()
-              ? `저장한 시세는 [가격 시세](#evidence-${complete.id})이고, 잘린 원문은 [잘린 시세](#evidence-${truncated.id})예요.`
+              ? `저장한 시세는 [가격 시세](#evidence-${complete.id})이고, 잘린 원문은 [잘린 시세](#evidence-${truncated.id})입니다.`
               : `The saved quotes are the [price quote](#evidence-${complete.id}). The cut original is the [truncated quote](#evidence-${truncated.id}).`,
             evidence_refs: [complete, truncated],
           };
@@ -113,6 +116,8 @@ export function quoteEvidenceScenarios({ base, select, until, click }: Helpers):
         }
         return workspace;
       };
+      // A research session: the home Thread's morning post would follow the answer and push the citation out of view.
+      asSession(bridge);
     },
   }];
 }

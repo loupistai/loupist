@@ -40,6 +40,8 @@ export type MemoryUpdateChange = {
   futureUse: string;
   /** What each requested operation did, when Rust filed outcomes for this change. */
   outcomes?: Wire.FiledOutcome[];
+  /** A Source the user pasted into the Chat. */
+  userProvided?: boolean;
 } & (
   | { kind: "Research"; knowledge?: never }
   | { kind: "principle"; statement: string; knowledge: KnowledgeReference }

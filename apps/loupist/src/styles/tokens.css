@@ -1,51 +1,81 @@
 /* Semantic design tokens. Primitive palette values are private to this file. */
 :root, .theme-preview[data-theme-preview="light"], .print-sheet {
-  --gg-p-neutral-0: #ffffff;
-  --gg-p-neutral-25: #fbfaf8;
-  --gg-p-neutral-50: #f3f2ee;
-  --gg-p-neutral-100: #ecebe6;
-  --gg-p-neutral-150: #e5e3dd;
-  --gg-p-neutral-200: #dcdad3;
-  --gg-p-neutral-400: #8c8980;
-  --gg-p-neutral-500: #67645c;
-  --gg-p-neutral-600: #5c5a53;
-  --gg-p-neutral-900: #262624;
+  /* Cool neutrals that lean toward the accent. Hierarchy comes from hairlines, the accent,
+     larger figures and coloured data, not from heavier surface contrast. */
+  --gg-p-slate-0: #ffffff;
+  --gg-p-slate-25: #f5f5f8;
+  --gg-p-slate-50: #ececf2;
+  --gg-p-slate-75: #f0f0f5;
+  --gg-p-slate-100: #e9e9f0;
+  --gg-p-slate-150: #e2e2ea;
+  --gg-p-slate-400: #8a8a9c;
+  --gg-p-slate-450: #9c9cac;
+  --gg-p-slate-500: #66667a;
+  --gg-p-slate-600: #4f4f66;
+  --gg-p-slate-900: #15151c;
+  /* Iris violet: the hue furthest from the red, blue and green that carry price meaning
+     and from the amber of a warning. */
+  --gg-p-iris-700: #4d38cc;
+  --gg-p-iris-600: #5b45e0;
+  --gg-p-iris-line: #c2b8f5;
+  --gg-p-iris-tint: #ece9fd;
+  /* Amber remains only for the Map's idea kinds. */
   --gg-p-amber-700: #8f4709;
   --gg-p-amber-600: #a4530c;
-  --gg-p-amber-tint: #f8ece1;
-  --gg-color-bg-app: var(--gg-p-neutral-25);
-  --gg-color-bg-sidebar: var(--gg-p-neutral-50);
-  --gg-color-bg-raised: var(--gg-p-neutral-0);
-  --gg-color-bg-sunken: var(--gg-p-neutral-50);
-  --gg-color-bg-hover: var(--gg-p-neutral-100);
-  --gg-color-bg-selected: #e7e5df;
-  --gg-color-bg-overlay: rgb(17 17 19 / 48%);
-  --gg-color-text-primary: var(--gg-p-neutral-900);
-  --gg-color-text-secondary: var(--gg-p-neutral-600);
-  --gg-color-text-tertiary: var(--gg-p-neutral-500);
-  --gg-color-text-disabled: var(--gg-p-neutral-400);
+  --gg-color-bg-app: var(--gg-p-slate-25);
+  --gg-color-bg-sidebar: var(--gg-p-slate-50);
+  --gg-color-bg-raised: var(--gg-p-slate-0);
+  --gg-color-bg-sunken: var(--gg-p-slate-75);
+  --gg-color-bg-hover: var(--gg-p-slate-100);
+  --gg-color-bg-selected: var(--gg-p-slate-150);
+  --gg-color-bg-overlay: rgb(17 17 28 / 48%);
+  --gg-color-text-primary: var(--gg-p-slate-900);
+  --gg-color-text-secondary: var(--gg-p-slate-600);
+  --gg-color-text-tertiary: var(--gg-p-slate-500);
+  --gg-color-text-disabled: var(--gg-p-slate-450);
   --gg-color-text-on-accent: #ffffff;
-  --gg-color-border-subtle: var(--gg-p-neutral-150);
-  --gg-color-border-default: var(--gg-p-neutral-200);
-  --gg-color-control-off: var(--gg-p-neutral-500);
-  --gg-color-border-strong: var(--gg-p-neutral-400);
-  --gg-color-accent: var(--gg-p-amber-600);
-  --gg-color-accent-hover: var(--gg-p-amber-700);
-  --gg-color-accent-soft: var(--gg-p-amber-tint);
-  --gg-color-accent-ink: var(--gg-p-amber-700);
-  --gg-color-focus: var(--gg-p-amber-600);
-  --gg-color-action: var(--gg-p-neutral-900);
-  --gg-color-action-ink: var(--gg-p-neutral-25);
-  --gg-color-positive: #17794a;
-  --gg-color-negative: #be352c;
-  --gg-color-warning: #8f5f00;
-  --gg-color-info: #2d6aa8;
-  --gg-color-positive-soft: #e8f4ec;
-  --gg-color-negative-soft: #fbecea;
-  --gg-color-warning-soft: #fbf3e1;
-  --gg-color-info-soft: #eaf1f9;
+  --gg-color-text-on-negative: #ffffff;
+  /* Hairlines are translucent so one value reads on every surface step. */
+  --gg-color-border-subtle: rgb(22 22 45 / 10%);
+  --gg-color-border-default: rgb(22 22 45 / 17%);
+  --gg-color-control-off: var(--gg-p-slate-500);
+  --gg-color-border-strong: var(--gg-p-slate-400);
+  --gg-color-accent: var(--gg-p-iris-600);
+  --gg-color-accent-hover: var(--gg-p-iris-700);
+  --gg-color-accent-soft: var(--gg-p-iris-tint);
+  --gg-color-accent-ink: var(--gg-p-iris-600);
+  --gg-color-accent-line: var(--gg-p-iris-line);
+  --gg-color-focus: var(--gg-p-iris-600);
+  /* The primary action wears the accent. */
+  --gg-color-action: var(--gg-color-accent);
+  --gg-color-action-ink: var(--gg-color-text-on-accent);
+  /* Each semantic colour holds 4.5:1 on its own soft fill and on the page. */
+  --gg-color-positive: #0a784a;
+  --gg-color-negative: #ca2f37;
+  --gg-color-warning: #8f5b00;
+  --gg-color-info: #2760d8;
+  --gg-color-positive-soft: #e3f4eb;
+  --gg-color-negative-soft: #fcebec;
+  --gg-color-warning-soft: #fbf1dc;
+  --gg-color-info-soft: #e8effd;
+  /* The Loupist's face: its body, the dark of its eyes, and the white of its loupe. */
+  --gg-color-face: #6a55f2;
+  --gg-color-face-ink: #1b1640;
+  --gg-color-face-detail: #ffffff;
+  /* Ten face colours, one per stored portrait id (lib/loupistAvatar.ts). Each holds 3:1
+     against the page, the sidebar, the dark eyes and the white loupe in both themes. */
+  --gg-color-face-01: #6a55f2;
+  --gg-color-face-02: #13858f;
+  --gg-color-face-03: #5b7f3a;
+  --gg-color-face-04: #2f7fae;
+  --gg-color-face-05: #c2602a;
+  --gg-color-face-06: #5d6884;
+  --gg-color-face-07: #9a7a12;
+  --gg-color-face-08: #a94ac0;
+  --gg-color-face-09: #c8457f;
+  --gg-color-face-10: #8c5f45;
   /* The canvas sits a step darker than the app (map spec B5), which frames the Map without a border. */
-  --gg-color-map-bg: #f4f2ec;
+  --gg-color-map-bg: #ededf2;
   --gg-color-map-company: #2f6fb3;
   --gg-color-map-product: #7550bd;
   --gg-color-map-technology: #7f7416;
@@ -54,20 +84,20 @@
   --gg-color-map-event: #23806f;
   --gg-color-map-metric: rgb(35 128 111 / 55%);
   --gg-color-map-market: #3f7f2a;
-  --gg-color-map-other: var(--gg-p-neutral-500);
+  --gg-color-map-other: var(--gg-p-slate-500);
   --gg-color-map-principle: var(--gg-p-amber-600);
   --gg-color-map-method: var(--gg-p-amber-600);
   --gg-color-map-perspective: var(--gg-p-amber-700);
   --gg-color-map-subject: var(--gg-p-amber-600);
   --gg-color-map-idea: var(--gg-p-amber-600);
-  --gg-color-map-holding-ring: var(--gg-p-neutral-900);
-  --gg-color-map-edge: rgb(38 38 36 / 22%);
-  --gg-color-map-edge-active: rgb(38 38 36 / 55%);
-  --gg-color-disagree: #c2382f;
+  --gg-color-map-followed-ring: var(--gg-p-slate-900);
+  --gg-color-map-edge: rgb(21 21 28 / 16%);
+  --gg-color-map-edge-active: rgb(21 21 28 / 55%);
+  --gg-color-disagree: #ca2f37;
   --gg-color-map-edge-disputed: var(--gg-color-disagree);
-  --gg-color-map-label: var(--gg-p-neutral-900);
-  --gg-color-map-label-halo: rgb(244 242 236 / 90%);
-  --gg-color-map-new-glow: rgb(164 83 12 / 35%);
+  --gg-color-map-label: var(--gg-p-slate-900);
+  --gg-color-map-label-halo: rgb(237 237 242 / 90%);
+  --gg-color-map-new-glow: rgb(91 69 224 / 35%);
   --gg-color-map-dim: 0.25;
   --gg-font-ui: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", "Segoe UI", sans-serif;
   --gg-font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -91,9 +121,15 @@
   --gg-leading-page: 32px;
   --gg-text-display: 30px;
   --gg-leading-display: 38px;
+  /* The headline price of an asset. */
+  --gg-text-figure: 38px;
+  --gg-leading-figure: 42px;
   --gg-weight-regular: 450;
   --gg-weight-medium: 520;
   --gg-weight-semibold: 600;
+  /* Names and figures; then the headline price and page titles. */
+  --gg-weight-strong: 650;
+  --gg-weight-bold: 700;
   --gg-space-1: 4px;
   --gg-space-2: 8px;
   --gg-space-3: 12px;
@@ -121,14 +157,19 @@
   --gg-size-dialog-md: 560px;
   --gg-radius-xs: 6px;
   --gg-radius-sm: 8px;
-  --gg-radius-md: 12px;
+  /* Controls 10, cards 16, chips and change pills full. */
+  --gg-radius-md: 10px;
   --gg-radius-lg: 16px;
   --gg-radius-xl: 24px;
   --gg-radius-full: 9999px;
-  --gg-shadow-xs: 0 1px 2px rgb(17 17 19 / 4%);
-  --gg-shadow-sm: 0 4px 14px rgb(17 17 19 / 7%);
-  --gg-shadow-md: 0 12px 32px rgb(17 17 19 / 10%);
-  --gg-shadow-lg: 0 24px 64px rgb(17 17 19 / 16%);
+  /* A message bubble; the corner nearest the speaker drops to --gg-radius-xs. */
+  --gg-radius-bubble: 20px;
+  /* Light cards carry a hairline and a soft shadow; popovers and sheets carry the strong one. */
+  --gg-shadow-xs: 0 1px 2px rgb(22 22 45 / 5%);
+  --gg-shadow-sm: 0 1px 2px rgb(22 22 45 / 4%), 0 6px 20px rgb(22 22 45 / 6%);
+  --gg-shadow-md: 0 2px 6px rgb(22 22 45 / 6%), 0 12px 32px rgb(22 22 45 / 11%);
+  --gg-shadow-lg: 0 2px 6px rgb(22 22 45 / 8%), 0 16px 44px rgb(22 22 45 / 16%);
+  --gg-shadow-card: var(--gg-shadow-sm);
   --gg-motion-instant: 80ms;
   --gg-motion-fast: 120ms;
   --gg-motion-normal: 180ms;
@@ -164,52 +205,73 @@
 }
 
 :root[data-theme="dark"], .theme-preview[data-theme-preview="dark"] {
-  --gg-p-neutral-0: #131312;
-  --gg-p-neutral-25: #1c1c1a;
-  --gg-p-neutral-50: #202020;
-  --gg-p-neutral-75: #252523;
-  --gg-p-neutral-100: #2a2a27;
-  --gg-p-neutral-150: #323230;
-  --gg-p-neutral-200: #3b3a37;
-  --gg-p-neutral-400: #6b6962;
-  --gg-p-neutral-500: #a09e96;
-  --gg-p-neutral-600: #b5b3ab;
-  --gg-p-neutral-900: #ecece7;
+  --gg-p-slate-0: #0b0b0f;
+  --gg-p-slate-25: #111116;
+  --gg-p-slate-75: #1a1a21;
+  --gg-p-slate-100: #22222b;
+  --gg-p-slate-125: #25252e;
+  --gg-p-slate-150: #2c2c37;
+  --gg-p-slate-400: #6e6e7d;
+  --gg-p-slate-450: #62626f;
+  --gg-p-slate-500: #8c8c9c;
+  --gg-p-slate-600: #b3b3c2;
+  --gg-p-slate-900: #f1f1f6;
+  --gg-p-iris-600: #6a55f2;
+  --gg-p-iris-500: #7a67f5;
+  --gg-p-iris-300: #a99bff;
+  --gg-p-iris-line: #4a3f8f;
+  --gg-p-iris-tint: #262140;
   --gg-p-amber-300: #f3b27c;
   --gg-p-amber-400: #eea062;
-  --gg-p-amber-tint: #3a2a1c;
-  --gg-color-bg-app: var(--gg-p-neutral-25);
-  --gg-color-bg-sidebar: #181817;
-  --gg-color-bg-raised: var(--gg-p-neutral-75);
-  --gg-color-bg-sunken: #171716;
-  --gg-color-bg-hover: var(--gg-p-neutral-100);
-  --gg-color-bg-selected: #33322e;
+  /* Dark is not an inversion: surfaces get lighter as they rise, and shadows give way to hairlines. */
+  --gg-color-bg-app: var(--gg-p-slate-25);
+  --gg-color-bg-sidebar: var(--gg-p-slate-0);
+  --gg-color-bg-raised: var(--gg-p-slate-75);
+  --gg-color-bg-sunken: var(--gg-p-slate-100);
+  --gg-color-bg-hover: var(--gg-p-slate-125);
+  --gg-color-bg-selected: var(--gg-p-slate-150);
   --gg-color-bg-overlay: rgb(0 0 0 / 66%);
-  --gg-color-text-primary: var(--gg-p-neutral-900);
-  --gg-color-text-secondary: var(--gg-p-neutral-600);
-  --gg-color-text-tertiary: var(--gg-p-neutral-500);
-  --gg-color-text-disabled: var(--gg-p-neutral-400);
-  --gg-color-text-on-accent: #1c1c1a;
-  --gg-color-border-subtle: var(--gg-p-neutral-150);
-  --gg-color-border-default: var(--gg-p-neutral-200);
-  --gg-color-control-off: var(--gg-p-neutral-500);
-  --gg-color-border-strong: var(--gg-p-neutral-400);
-  --gg-color-accent: var(--gg-p-amber-400);
-  --gg-color-accent-hover: var(--gg-p-amber-300);
-  --gg-color-accent-soft: var(--gg-p-amber-tint);
-  --gg-color-accent-ink: var(--gg-p-amber-300);
-  --gg-color-focus: var(--gg-p-amber-400);
-  --gg-color-action: var(--gg-p-neutral-900);
-  --gg-color-action-ink: #1c1c1a;
-  --gg-color-positive: #4dbf87;
-  --gg-color-negative: #f0736a;
-  --gg-color-warning: #e3ac4c;
-  --gg-color-info: #7eaae6;
-  --gg-color-positive-soft: #1d3327;
-  --gg-color-negative-soft: #3a2425;
-  --gg-color-warning-soft: #3a3020;
-  --gg-color-info-soft: #1f2a38;
-  --gg-color-map-bg: #131312;
+  --gg-color-text-primary: var(--gg-p-slate-900);
+  --gg-color-text-secondary: var(--gg-p-slate-600);
+  --gg-color-text-tertiary: var(--gg-p-slate-500);
+  --gg-color-text-disabled: var(--gg-p-slate-450);
+  --gg-color-text-on-accent: #ffffff;
+  --gg-color-text-on-negative: #111116;
+  --gg-color-border-subtle: rgb(255 255 255 / 8%);
+  --gg-color-border-default: rgb(255 255 255 / 15%);
+  --gg-color-control-off: var(--gg-p-slate-500);
+  --gg-color-border-strong: var(--gg-p-slate-400);
+  /* The fill stays deep enough for white text; text and focus take the lighter step. */
+  --gg-color-accent: var(--gg-p-iris-600);
+  --gg-color-accent-hover: var(--gg-p-iris-500);
+  --gg-color-accent-soft: var(--gg-p-iris-tint);
+  --gg-color-accent-ink: var(--gg-p-iris-300);
+  --gg-color-accent-line: var(--gg-p-iris-line);
+  --gg-color-focus: var(--gg-p-iris-300);
+  --gg-color-action: var(--gg-color-accent);
+  --gg-color-action-ink: var(--gg-color-text-on-accent);
+  --gg-color-positive: #3dd68c;
+  --gg-color-negative: #ff6b70;
+  --gg-color-warning: #e8b04c;
+  --gg-color-info: #5c9dff;
+  --gg-color-positive-soft: #14342a;
+  --gg-color-negative-soft: #3a1f23;
+  --gg-color-warning-soft: #382f1b;
+  --gg-color-info-soft: #1a2946;
+  --gg-color-face: #7c69fa;
+  --gg-color-face-ink: #15112f;
+  --gg-color-face-detail: #ffffff;
+  --gg-color-face-01: #7c69fa;
+  --gg-color-face-02: #2aa3ad;
+  --gg-color-face-03: #729a4c;
+  --gg-color-face-04: #4a9acb;
+  --gg-color-face-05: #d97a40;
+  --gg-color-face-06: #76819e;
+  --gg-color-face-07: #ad8a1b;
+  --gg-color-face-08: #bb62d2;
+  --gg-color-face-09: #da5f95;
+  --gg-color-face-10: #a8775a;
+  --gg-color-map-bg: #0d0d11;
   --gg-color-map-company: #6ea6ea;
   --gg-color-map-product: #a98ae8;
   --gg-color-map-technology: #cfc057;
@@ -218,37 +280,49 @@
   --gg-color-map-event: #5cc5b0;
   --gg-color-map-metric: rgb(92 197 176 / 55%);
   --gg-color-map-market: #86c86e;
-  --gg-color-map-other: var(--gg-p-neutral-500);
+  --gg-color-map-other: var(--gg-p-slate-500);
   --gg-color-map-principle: var(--gg-p-amber-400);
   --gg-color-map-method: var(--gg-p-amber-400);
   --gg-color-map-perspective: var(--gg-p-amber-300);
   --gg-color-map-subject: var(--gg-p-amber-400);
   --gg-color-map-idea: var(--gg-p-amber-400);
-  --gg-color-map-holding-ring: var(--gg-p-neutral-900);
-  --gg-color-map-edge: rgb(236 236 231 / 16%);
-  --gg-color-map-edge-active: rgb(236 236 231 / 55%);
-  --gg-color-disagree: #f0736a;
+  --gg-color-map-followed-ring: var(--gg-p-slate-900);
+  --gg-color-map-edge: rgb(241 241 246 / 12%);
+  --gg-color-map-edge-active: rgb(241 241 246 / 55%);
+  --gg-color-disagree: #ff6b70;
   --gg-color-map-edge-disputed: var(--gg-color-disagree);
-  --gg-color-map-label: #d9d8d2;
-  --gg-color-map-label-halo: rgb(19 19 18 / 85%);
-  --gg-color-map-new-glow: rgb(238 160 98 / 40%);
+  --gg-color-map-label: #dcdce6;
+  --gg-color-map-label-halo: rgb(13 13 17 / 85%);
+  --gg-color-map-new-glow: rgb(169 155 255 / 40%);
   --gg-color-map-dim: 0.22;
-  --gg-shadow-xs: 0 1px 2px rgb(0 0 0 / 18%);
-  --gg-shadow-sm: 0 4px 16px rgb(0 0 0 / 22%);
-  --gg-shadow-md: 0 12px 36px rgb(0 0 0 / 30%);
-  --gg-shadow-lg: 0 24px 72px rgb(0 0 0 / 42%);
+  --gg-shadow-xs: 0 1px 2px rgb(0 0 0 / 20%);
+  --gg-shadow-sm: 0 4px 16px rgb(0 0 0 / 24%);
+  --gg-shadow-md: 0 2px 6px rgb(0 0 0 / 30%), 0 12px 36px rgb(0 0 0 / 40%);
+  --gg-shadow-lg: 0 2px 6px rgb(0 0 0 / 40%), 0 18px 48px rgb(0 0 0 / 55%);
+  /* A dark card is a lighter surface with a hairline and no shadow. */
+  --gg-shadow-card: 0 0 transparent;
   color-scheme: dark;
 }
 
+/* Up and down follow data-price-colors, which the renderer resolves from the
+   appearance.price_colors setting (auto follows the interface locale). They mean price
+   direction only, and never colour alone: a change also carries a sign and a glyph.
+   data-price-preview draws one choice in place, as Settings › Appearance samples each. */
 :root,
-:root[data-price-colors="green-up"] {
+:root[data-price-colors="green-up"],
+[data-price-preview="green-up"] {
   --gg-color-price-up: var(--gg-color-positive);
   --gg-color-price-down: var(--gg-color-negative);
+  --gg-color-price-up-soft: var(--gg-color-positive-soft);
+  --gg-color-price-down-soft: var(--gg-color-negative-soft);
 }
 
-:root[data-price-colors="red-up"] {
+:root[data-price-colors="red-up"],
+[data-price-preview="red-up"] {
   --gg-color-price-up: var(--gg-color-negative);
   --gg-color-price-down: var(--gg-color-info);
+  --gg-color-price-up-soft: var(--gg-color-negative-soft);
+  --gg-color-price-down-soft: var(--gg-color-info-soft);
 }
 
 /* The only shadcn mapping; theme values resolve through semantic tokens. */
@@ -259,8 +333,8 @@
   --popover: var(--gg-color-bg-raised);
   --card-foreground: var(--gg-color-text-primary);
   --popover-foreground: var(--gg-color-text-primary);
-  --primary: var(--gg-color-action);
-  --primary-foreground: var(--gg-color-action-ink);
+  --primary: var(--gg-color-accent);
+  --primary-foreground: var(--gg-color-text-on-accent);
   --secondary: var(--gg-color-bg-hover);
   --shadcn-muted: var(--gg-color-bg-hover);
   --secondary-foreground: var(--gg-color-text-primary);
@@ -273,8 +347,8 @@
   --ring: var(--gg-color-focus);
   --sidebar: var(--gg-color-bg-sidebar);
   --sidebar-foreground: var(--gg-color-text-primary);
-  --sidebar-primary: var(--gg-color-action);
-  --sidebar-primary-foreground: var(--gg-color-action-ink);
+  --sidebar-primary: var(--gg-color-accent);
+  --sidebar-primary-foreground: var(--gg-color-text-on-accent);
   --sidebar-accent: var(--gg-color-bg-hover);
   --sidebar-accent-foreground: var(--gg-color-text-primary);
   --sidebar-border: var(--gg-color-border-subtle);
@@ -287,7 +361,7 @@
 }
 
 /* Figures line up (X10): tables, receipts, the Map stats, briefing rows, attention counts and palette captions. */
-.gg-num, table, .chat-receipt, .map-stats, .briefing-sections, .needs-attention, .command-palette-row small, .market-status { font-variant-numeric: tabular-nums; }
+.gg-num, table, .chat-receipt, .map-stats, .briefing-sections, .needs-attention, .command-palette-row small { font-variant-numeric: tabular-nums; }
 :root:lang(ko) { word-break: keep-all; overflow-wrap: anywhere; }
 /* The UI font has no Hangul: Apple SD Gothic Neo rounds 450/520 up to Medium/SemiBold, so Korean reads heavier than Latin. */
 :root:lang(ko) { --gg-weight-regular: 400; --gg-weight-medium: 500; --gg-size-prose-measure: 40ic; --gg-leading-reading: 28px; }
@@ -311,6 +385,8 @@ button, input, textarea, select {
   font-size: var(--gg-text-control);
   font-weight: var(--gg-weight-medium);
 }
+/* Elevation: a light card carries a hairline and a soft shadow; a dark card only the hairline. */
+[data-slot="card"] { --tw-shadow: var(--gg-shadow-card); }
 [data-slot="select-content"], [data-slot="dropdown-menu-content"] {
   font-family: var(--gg-font-ui);
   border-radius: var(--gg-radius-md);

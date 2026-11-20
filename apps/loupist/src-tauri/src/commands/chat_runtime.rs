@@ -48,9 +48,7 @@ use crate::{
         ChatControlRequest,
     },
     chat::execution_session::ChatExecutionSession,
-    chat::progress::{
-        summarize_tool_result, ChatProgress, ChatProgressOperation, ChatProgressProjection,
-    },
+    chat::progress::{ChatProgress, ChatProgressOperation, ChatProgressProjection},
     chat::turn::ChatTurnResources,
     domain::{
         memory_refs_digest, ChatMessage, ChatMessageStatus, ChatRole, MemoryAccess, MemoryPolicy,
@@ -78,7 +76,7 @@ use super::{
     types::{
         memory_ref_dto, ChatControlModeDto, ChatControlReceiptDto, ChatControlRequestDto,
         ChatPerformanceDto, ChatRunPhase, ChatSendRequest, ChatSessionCacheStatusDto,
-        ChatStreamEvent, RunStarted,
+        ChatStreamEvent, ChatWatchRequest, ChatWatchSnapshot, RunStarted,
     },
     MAX_CHAT_OUTPUT_BYTES, MAX_PROMPT_BYTES,
 };
@@ -242,7 +240,23 @@ impl ChatEventSink {
                 }
             }
         }
-        (self.send)(event)
+        #[cfg(feature = "eval-harness")]
+        let terminal = match &event {
+            ChatStreamEvent::Completed { message_id, .. } => {
+                Some(serde_json::json!({"status":"completed","message_id":message_id}))
+            }
+            ChatStreamEvent::Error { failure_kind, .. } => {
+                Some(serde_json::json!({"status":"failed","failure_kind":failure_kind}))
+            }
+            ChatStreamEvent::Aborted { .. } => Some(serde_json::json!({"status":"aborted"})),
+            _ => None,
+        };
+        let result = (self.send)(event);
+        #[cfg(feature = "eval-harness")]
+        if let (Some(observe), Some(terminal)) = (&self.eval_pi_event, terminal) {
+            observe(&serde_json::json!({"type":"eval_terminal","terminal":terminal}));
+        }
+        result
     }
 
     fn set_retry_after_seconds(&self, seconds: Option<u32>) {
@@ -398,6 +412,37 @@ pub async fn chat_send(
     send_chat(request, ChatEventSink::from(on_event), state.inner(), None).await
 }
 
+#[tauri::command(rename_all = "snake_case")]
+pub async fn chat_watch(
+    request: ChatWatchRequest,
+    on_event: Channel<ChatStreamEvent>,
+    state: State<'_, AppState>,
+) -> Result<Option<ChatWatchSnapshot>, CommandError> {
+    validate_watch_request(&request)?;
+    state.ensure_loupist_available(&request.loupist_id)?;
+    state
+        .live_handoffs
+        .attach(request, move |event| on_event.send(event).map_err(|_| ()))
+        .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn chat_unwatch(
+    request: ChatWatchRequest,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    validate_watch_request(&request)?;
+    state.live_handoffs.detach(&request);
+    Ok(())
+}
+
+fn validate_watch_request(request: &ChatWatchRequest) -> Result<(), CommandError> {
+    require_text(&request.loupist_id, "Loupist", 512)?;
+    require_text(&request.thread_id, "Chat thread", 512)?;
+    require_text(&request.subscription_id, "Chat watch subscription", 128)?;
+    Ok(())
+}
+
 /// A registered Chat owns both its cancellation identity and model capacity.
 /// Scheduled claims obtain this while their SQLite transaction is still open,
 /// so a busy target rolls back the occurrence instead of consuming it.
@@ -408,9 +453,19 @@ pub(crate) struct ChatAdmission {
     registration: RunRegistration,
     controls: ChatControlReceiver,
     pub(crate) untrusted_text: bool,
+    /// The scheduled run this turn is; its request is then the task's, not the user's.
+    pub(crate) scheduled: Option<crate::domain::ScheduledTurn>,
+    /// For a custom scheduled run, how its task's last finished run ended.
+    pub(crate) previous_run: Option<crate::scheduled_tasks::types::PreviousRun>,
+    pub(crate) price_setup: bool,
+    pub(crate) handoff: Option<crate::chat::handoff::HandoffAdmission>,
 }
 
 impl ChatAdmission {
+    pub(crate) fn cancellation(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.registration.cancel.clone()
+    }
+
     pub(crate) fn new(
         state: &AppState,
         run_id: &str,
@@ -434,6 +489,10 @@ impl ChatAdmission {
             registration,
             controls,
             untrusted_text: false,
+            scheduled: None,
+            previous_run: None,
+            price_setup: false,
+            handoff: None,
         })
     }
 }

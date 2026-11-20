@@ -82,13 +82,13 @@ describe("Loupist · Updates", () => {
         offer_id: OFFER_ID,
         confirmation: {
           title: "루피스트 업데이트 설치",
-          message: "루피스트를 업데이트할까요? 현재 버전 0.0.1, 새 버전 1.1.0. 진행 중인 작업을 확인했어요. 서명된 업데이트를 내려받아 설치한 뒤 바로 다시 시작해요.",
+          message: "루피스트를 업데이트하시겠습니까? 현재 버전 0.0.1, 새 버전 1.1.0. 진행 중인 작업을 확인했습니다. 서명된 업데이트를 내려받아 설치한 뒤 바로 다시 시작합니다.",
           install: "설치 후 다시 시작",
           cancel: "나중에",
         },
       });
       render(<UpdateSettingsCard status={available} phase="confirming" error={null} onCheck={vi.fn()} onInstall={vi.fn()} />);
-      expect(screen.getByText("방금 열린 확인 창에서 선택해 주세요.")).toBeVisible();
+      expect(screen.getByText("방금 열린 확인 창에서 선택하십시오.")).toBeVisible();
     } finally { await act(async () => { await i18n.changeLanguage("en"); }); }
   });
 

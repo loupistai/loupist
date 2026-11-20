@@ -1,0 +1,29 @@
+/* The Loupist's face (components/app/LoupistAvatar.tsx). The face is identity, not a
+   decorative icon (docs/dev/ui-qa.md#desktop-design-system). It fills the box its
+   caller gives it; the default is the shell's 28 px control size. */
+/* Size at zero specificity, so a caller's rule (or the `size` prop) always wins. */
+:where(.loupist-face) { flex: 0 0 var(--gg-size-control-sm); width: var(--gg-size-control-sm); height: var(--gg-size-control-sm); }
+.loupist-avatar.loupist-face {
+  --loupist-face-color: var(--gg-color-face);
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  border-radius: var(--gg-radius-full);
+  overflow: visible;
+}
+.loupist-face svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.loupist-face .loupist-face-body { fill: var(--loupist-face-color); }
+.loupist-face .loupist-face-lens { fill: var(--gg-color-face-detail); fill-opacity: .2; stroke: var(--gg-color-face-detail); stroke-width: 2.4; }
+.loupist-face .loupist-face-handle { fill: none; stroke: var(--gg-color-face-detail); stroke-width: 3; stroke-linecap: round; }
+.loupist-face .loupist-face-mouth { fill: none; stroke: var(--gg-color-face-ink); stroke-width: 2.2; stroke-linecap: round; }
+.loupist-face .loupist-face-eyes ellipse { fill: var(--gg-color-face-ink); transform-box: fill-box; transform-origin: center; animation: loupist-face-blink 5.2s infinite; }
+/* Working: the eyes look side to side and a thin ring turns around the face. */
+.loupist-face[data-busy] .loupist-face-eyes { animation: loupist-face-scan 1.6s var(--gg-ease-out) infinite alternate; }
+.loupist-face[data-busy]::after { content: ""; position: absolute; inset: -3px; border-radius: var(--gg-radius-full); border: 2px solid var(--gg-color-border-default); border-top-color: var(--gg-color-accent-ink); animation: loupist-face-spin 1.1s linear infinite; pointer-events: none; }
+@keyframes loupist-face-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+@keyframes loupist-face-scan { from { transform: translateX(-1.6px); } to { transform: translateX(1.6px); } }
+@keyframes loupist-face-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .loupist-face .loupist-face-eyes, .loupist-face .loupist-face-eyes ellipse, .loupist-face[data-busy]::after { animation: none; }
+}

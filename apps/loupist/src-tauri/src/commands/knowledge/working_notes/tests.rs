@@ -287,6 +287,7 @@ fn note_and_journal_preserve_distinct_evidence_at_their_combined_limit() {
             provider_identity: "example-publisher".into(),
             document_id: format!("filing-{index}"),
             material_role: "original".into(),
+            provided: None,
         })
         .collect();
     let mut research = staged(

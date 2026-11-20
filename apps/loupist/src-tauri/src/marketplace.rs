@@ -18,10 +18,11 @@ use tauri::State;
 use crate::{
     app::{off_main_thread, AppState, CommandError},
     domain::LoupistCapabilityBinding,
+    finance_data::openfigi::SOURCE_ID as ASSET_LOOKUP_SOURCE_ID,
     runs::maintenance::MaintenanceActivityKind,
 };
 
-fn connector_lifecycle_lock() -> Result<MutexGuard<'static, ()>, CommandError> {
+pub(crate) fn connector_lifecycle_lock() -> Result<MutexGuard<'static, ()>, CommandError> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(Default::default)
         .lock()
@@ -127,14 +128,53 @@ fn loupist_capability_list_for_state(
             .map(|entry| connector_status(entry, state))
             .collect::<Result<Vec<_>, _>>()?,
     );
-    let stored = state
-        .store
-        .list_loupist_capabilities(loupist_id)
+    let stored = loupist_bindings(state, loupist_id)
         .map_err(|error| CommandError::internal(error.to_string()))?;
     bindings_for_installed_entries(loupist_id, installed, stored)
         .into_iter()
         .map(|binding| binding_dto(binding, &catalog, state))
         .collect()
+}
+
+// Existing profiles may predate the connector. Keep an explicitly saved choice
+// authoritative and use the same default in Connections and in runtime grants.
+pub(crate) fn default_asset_lookup_binding(loupist_id: &str) -> LoupistCapabilityBinding {
+    LoupistCapabilityBinding {
+        loupist_id: loupist_id.to_owned(),
+        entry_id: ASSET_LOOKUP_SOURCE_ID.to_owned(),
+        enabled: true,
+        granted_permissions: vec!["execute".to_owned()],
+        config: BTreeMap::new(),
+        updated_at_ms: 0,
+    }
+}
+
+/// One Loupist's binding for an entry, with the Asset lookup default applied when none is
+/// saved, so every reader agrees with Connections.
+pub(crate) fn loupist_binding(
+    state: &AppState,
+    loupist_id: &str,
+    entry_id: &str,
+) -> crate::store::StoreResult<Option<LoupistCapabilityBinding>> {
+    Ok(state
+        .store
+        .get_loupist_capability(loupist_id, entry_id)?
+        .or_else(|| {
+            (entry_id == ASSET_LOOKUP_SOURCE_ID).then(|| default_asset_lookup_binding(loupist_id))
+        }))
+}
+
+pub(crate) fn loupist_bindings(
+    state: &AppState,
+    loupist_id: &str,
+) -> crate::store::StoreResult<Vec<LoupistCapabilityBinding>> {
+    let mut bindings = state.store.list_loupist_capabilities(loupist_id)?;
+    if let Err(index) =
+        bindings.binary_search_by(|binding| binding.entry_id.as_str().cmp(ASSET_LOOKUP_SOURCE_ID))
+    {
+        bindings.insert(index, default_asset_lookup_binding(loupist_id));
+    }
+    Ok(bindings)
 }
 
 fn bindings_for_installed_entries(
@@ -282,19 +322,9 @@ pub(super) fn enable_ready_bindings_locked(
             config: existing.map(|binding| binding.config).unwrap_or_default(),
             updated_at_ms,
         };
-        state
-            .store
-            .save_loupist_capability(&binding)
-            .map_err(|error| CommandError::internal(error.to_string()))?;
+        persist_binding(state, &binding, false)?;
     }
     Ok(())
-}
-
-/// Turns a host-only connection on for every Loupist when the user first uses
-/// it (the first wallet address for `onchain.wallets`); opt-outs made later stay.
-pub(crate) fn enable_on_first_use(state: &AppState, entry_id: &str) -> Result<(), CommandError> {
-    let guard = connector_lifecycle_lock()?;
-    enable_ready_bindings_locked(state, entry_id, &guard)
 }
 
 /// Rechecks mutable connector setup at the moment a run captures authority.
@@ -311,6 +341,13 @@ pub(crate) fn execute_binding_ready(
     else {
         return Ok(false);
     };
+    #[cfg(feature = "eval-harness")]
+    if let Some(ready) = crate::eval_harness::replay::execute_binding_readiness(
+        binding,
+        &state.credential_environment,
+    ) {
+        return Ok(ready);
+    }
     connector_ready(entry, state)
 }
 
@@ -328,6 +365,27 @@ fn next_binding_timestamp(existing: Option<&LoupistCapabilityBinding>) -> i64 {
             .map(|binding| binding.updated_at_ms.saturating_add(1))
             .unwrap_or_default(),
     )
+}
+
+fn fx_granted(binding: &LoupistCapabilityBinding) -> bool {
+    binding.entry_id == "openbb.platform"
+        && binding.enabled
+        && crate::commands::binding_grants_execute(binding)
+}
+
+fn persist_binding(
+    state: &AppState,
+    binding: &LoupistCapabilityBinding,
+    fx_was_granted: bool,
+) -> Result<(), CommandError> {
+    state
+        .store
+        .save_loupist_capability(binding)
+        .map_err(|error| CommandError::internal(error.to_string()))?;
+    if fx_was_granted != fx_granted(binding) {
+        state.fx_reference.invalidate_display();
+    }
+    Ok(())
 }
 
 fn save_binding(
@@ -349,6 +407,7 @@ fn save_binding(
         .get_loupist_capability(&request.loupist_id, &request.entry_id)
         .map_err(|error| CommandError::internal(error.to_string()))?;
     let updated_at_ms = next_binding_timestamp(existing.as_ref());
+    let fx_was_granted = existing.as_ref().is_some_and(fx_granted);
     let binding = LoupistCapabilityBinding {
         loupist_id: request.loupist_id,
         entry_id: request.entry_id,
@@ -366,10 +425,7 @@ fn save_binding(
             "Marketplace connector must be configured before it is enabled",
         ));
     }
-    state
-        .store
-        .save_loupist_capability(&binding)
-        .map_err(|error| CommandError::internal(error.to_string()))?;
+    persist_binding(state, &binding, fx_was_granted)?;
     binding_dto(binding, &catalog, state)
 }
 

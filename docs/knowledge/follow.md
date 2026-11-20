@@ -1,60 +1,86 @@
 # What you follow
 
-Followed assets are an explicit list the host reads onto the Map. Following is not a holding and not a trade.
+Each Loupist follows its own assets. The app catalog (`assets` in
+`catalog.sqlite3`) keeps one identity per asset for every Loupist: an ID, a
+name, a creation time and optional reference fields (FIGI, ticker, exchange
+and security type, with their origin). The host records the listing labels as
+supplied. `asset_follows` records which Loupist follows which asset and since
+when; the catalog creates it when it opens. Every command, tool and run reads
+the follows of the Loupist it acts for. A new Loupist follows nothing until
+its New Loupist starters or the user follow something. Removing a Loupist
+removes its follows and keeps the catalog.
 
-What the user follows (the followed list, then holdings; one entry per symbol and market)
-reaches each Loupist's World as Sources the host writes, never as a host-written World
-snapshot (`knowledge/followed.rs`, `commands/knowledge/followed.rs`). Each is a
-`user_statement` Source with provider `loupist:followed` and the stored English title
-"What you follow". Its first line says each line is one asset with its ticker in
-parentheses, written `TICKER:MARKET` when the market is known; then one
-`- {name} ({symbol}:{market})` line per asset, with no market when the user gave none.
-The market stays inside the identifier, as it does in anchors. The reader also accepts
-the earlier `- {name} ({symbol}, {market})` form, so existing Sources do not cause
-the same assets to be listed again. Holdings appear by name only, never quantities or
-values. Sources are immutable, so a Loupist gets a new Source for the assets none of its
-earlier "What you follow" Sources lists, at most 24 per Source (the
-per-episode anchor limit). The followed list and processing settings keep at most
-200 anchors. An unknown market is written as a bare ticker and read back as
-`UNKNOWN`, so an unchanged list creates no new Source or job. Each new asset becomes an anchor (its symbol, plus
-`symbol:market` for a known market), and each Source gets one ordinary World job.
-Unfollowing or selling removes nothing; following again adds nothing.
+What hangs off an asset is per Loupist and lives in its folder: the asset
+page, its Journal reasons and lines, the read and its moves, the saved price
+read, the stored price and chart points (see [Asset pages](asset-pages.md)).
+Two Loupists that follow the same listing share its ID, name and reference,
+and keep their own follow time, page, thesis and prices. A reference that one
+Loupist's follow adds to a name-only asset is the catalog's, so every Loupist
+reads it.
 
-Following shares the followed list across Loupists and opens assets, holdings
-import, per-Loupist Watch-for choices and recent alerts. Each followed asset is one
-row of the Watching table with a menu (Open asset page, Stop following, which calls
-`watchlist_remove` without confirmation); follows the table cannot list, or all of
-them when Watching settings fail to load, keep a row with the same menu above the
-add field. A bare six-digit page input means KRX. In Chat, [`loupist_setup`](../agent/turn-tools.md#turn-tools) uses
-the same `follow` and `watchlist_remove` functions; an unspecified market stays
-unknown, and an asset followed under any market is not added twice. The UI shows
-an unknown market's ticker alone (`tickerLabel`), never the stored `UNKNOWN`; the
-market is part of the asset's identity (`asset_id` hashes `SYMBOL:MARKET`), so it
-is not filled in later. Its receipt
-lists additions and removals. Following starts no automatic checks on a new
-install. Watch all (`watch_defaults_apply`) gives consent and applies class
-defaults only where no decision exists, preserving choices and reporting missing
-Data connections. Pause/Resume and Check now control Watching; Check now waits
-while paused. Earlier briefing opt-ins retain legacy automatic defaults.
+Typing in Following filters the local list. A submitted lookup sends its
+query to OpenFIGI under the Asset lookup connection. Picking a candidate
+follows the listing with its reference fields. The host reuses a matching
+FIGI first, then adds the reference to a same-name asset that has none, or
+creates an asset. Following by name alone reuses an exact name match
+regardless of its reference, or creates a name-only asset. Exact name
+matching trims whitespace and ignores case. When several assets share a
+name, a name-only follow prefers one this Loupist already follows, then the
+lowest ID. The agent follows by name through `loupist_setup`. An asset can
+stay followed without a matching listing or saved price.
 
-Rust brings a Loupist up to date when it is created, when it is opened, and for every
-Loupist about three seconds after the last follow, holdings import or wallet read, so a
-burst makes one Source and one job per Loupist. A Loupist that is unavailable or under
-maintenance catches up when next opened. Without a connected model the Source waits for
-the backfill; with processing off it is read once processing is turned on. The
-interface shows the title and origin in its own language through the display key
-`followed` (`titleKey` on catalog records, the Source reader and `source_retained`
-growth events). Briefings leave these Sources out of the World growth they summarize,
-and the morning message never names one as where a value came from.
+Unfollowing removes this Loupist's follow and leaves the ID, name and its
+research. A later follow that matches the asset follows the same ID again
+from that time. The host emits `assets-changed` when a follow or stored
+price changes; each surface reads its own Loupist's list again.
 
-Library previews show only the asset lines in each Source, without its model-facing
-English lead. This is a display projection; retained text and World jobs keep the
-lead. Successive additions are still separate immutable Sources, each previewing
-its own added assets. They are not superseded revisions of one document. A single
-Library item for the derived followed list remains open work: reuse one Source
-through the capture/revision API, make that currently test-only entry point
-available to the host, and account for existing Loupists with several Sources.
+Each Loupist's Map receives immutable “What you follow” Sources with
+provider `loupist:followed`, listing that Loupist's follows by name with
+reference tickers when present. Each Source gets an ordinary World job.
+Source synthesis runs when the Loupist opens and after a short burst of
+follows. Unfollowing leaves earlier Sources. Re-following an asset that
+appears in an earlier Source adds no duplicate Source.
 
-## Code
+## Following search
 
-- What you follow (followed assets to the Map): `src-tauri/src/knowledge/followed.rs`, `src-tauri/src/commands/knowledge/followed.rs`, `src-tauri/src/commands/user_context.rs`, `src/knowledge/hostSource.ts`
+Following is a search field and the selected Loupist's followed assets (`assets_list`), in one column under
+the shell header, which is the page's only title (`src/components/briefings/FollowingPage.tsx`).
+The list is read again on its own follows and removals and on every `assets-changed`. A row is
+the asset's one name (`useAssetNames` over the saved name), its reference fields as stored
+(`TICKER · exchange · security type`, or "Name only" for an asset followed by name), and a
+visible Stop following (`asset_unfollow` by `assetId` at once, no confirmation; a failure keeps
+the row with a retry). The name opens the asset page by `assetId`. Rows sort by name. The row shows the latest stored price when available. The list reads
+these prices together from `watchlist_quotes` and uses the asset page’s price formatter. The field takes focus only when nothing is followed or when Bot's "Add assets to
+follow" opened the page.
+
+Typing replaces the list with options and sends nothing: followed matches (a case-insensitive
+substring of name or ticker) show at once, then "Search listings for '{text}'" and, last,
+"Follow '{text}' as typed". When the trimmed text matches a followed asset's name
+exactly, ignoring case, the last option says "Already followed" and opens its
+page. Enter (with no option active) or Search listings sends the
+submitted text once to OpenFIGI through `asset_lookup`; a second Enter on the same answered
+text sends nothing, and no request runs on typing, focus, page open or offline. Exact ticker
+matches come first. For a name, common stocks, depositary receipts and ETFs precede derivatives
+and debt. Regional listings with the same OpenFIGI composite identity share one result. When
+OpenFIGI returns the composite listing, it represents the group. Different issuers and country
+listings stay separate. Each result shows its name and `ticker · exchange · security type`; a
+readable exchange name takes precedence over the code in search results, followed rows
+and the command palette. Following preserves the host’s lookup order. A listing already
+shown among local results by FIGI appears there once. Picking a candidate calls
+`asset_follow_name` with the candidate's name and its FIGI, ticker, exchange code, available exchange name and security type
+as the reference; Follow as typed calls it with the trimmed text and no reference. The host starts
+one short delegated run per burst of follows to find each new asset's saved read. The field
+clears, the followed row comes into view and
+the follow is announced; a failure keeps the query and results with a retry. Down and Up move
+the active option with focus kept in the field, Enter takes it, Escape clears the active option
+and then the query; input-method composition keeps its Enter. One line under the options says
+where listings came from (and that the text was sent to OpenFIGI), that none matched (with an
+action that drafts a follow request in Bot's composer when the name is available to follow),
+or why the search did not run: offline,
+Asset lookup switched off for the Loupist (`connection_unavailable`), a saved OpenFIGI key
+that was rejected (`credential_rejected`) or cannot be read (`credential_locked`,
+`credential_unavailable`), each with Open Connections and no Try again,
+OpenFIGI asking to wait (`rate_limited`) or another failure (with Try again). The field's
+accessible description says what typing and Enter do; a long name ends in an ellipsis and
+shows whole under the pointer. A cleared or
+changed field drops a late answer.

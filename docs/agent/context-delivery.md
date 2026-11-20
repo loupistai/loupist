@@ -11,7 +11,9 @@ to keep one; its own checks stay on subject and idea pages until
 [method learning](../knowledge/lens.md#method-learning) sees them recur. This Chat's progress and user-stated facts use `note_save`; in Bot they use
 [Bot memory](../ui/home-thread.md#bot-memory) (tool `bot_memory`) instead;
 handed-over originals use acknowledged capture followed by `source_save`. Chatter, light questions and
-explicit one-offs are not saved. A reply promising to remember is not a Memory write.
+explicit one-offs are not saved. A [Bot quick ask](prompt.md#quick-asks-in-the-bot)
+files nothing to Lens and saves no Source; a file handed over in the Bot, or a
+request there to keep something, is saved and filed as in a session. A reply promising to remember is not a Memory write.
 World processing extracts relationships from retained Sources. Research filed in
 two Chats from two retained originals queues a
 [method-learning review](../knowledge/lens.md#method-learning). Methods also change through Chat tools;
@@ -21,7 +23,8 @@ distinguishes editable Loupist fields from the
 [host instruction snapshot](../runtime/chat-turns.md#local-workspace-execution).
 
 Before substantive research, discover relevant Source/World evidence, methods and
-notes, then exact-read useful matches. Existing retained originals can answer dated
+notes, then exact-read useful matches. A Bot quick ask is not substantive
+research and makes no discovery searches. Existing retained originals can answer dated
 questions without refetching unchanged files. Fresh retrieval is for missing
 coverage, newer evidence or an explicit request to inspect the current original.
 Native file reads and `run_python` output alone do not retain Sources.
@@ -74,11 +77,11 @@ counts (6b, 6d) use only entries created by then with later outcomes read as pen
 later notes (6e, 6g) are left out, and Bot memory (5c) reads as it stood then;
 principles (2) stay as they are today.
 
-Automatic context never serializes holdings position fields. It reads the Map's
-identity-only SQL projection and serializes an explicit symbol/market/name allowlist.
-The followed-companies hint supplies relevance and identity, not evidence of
-position quantities or values. Full evidence behind a working note or due Journal
-stays behind exact-read tools; recursively retained Journal inputs do not enter
+Automatic context reads only the turn's Loupist's saved followed list and serializes each asset's id,
+name and reference, with `price_read` when the asset has no working saved price read.
+Live and as-of turns receive the same block. Its hint supplies relevance and identity
+and states that following an asset is not owning it. Full evidence behind a working
+note or due Journal stays behind exact-read tools; recursively retained Journal inputs do not enter
 automatic context.
 
 Text from a [shared Loupist](../knowledge/sharing.md#sharing) keeps these positions and
@@ -95,36 +98,80 @@ method that sends holdings to a URL template, a principle claiming trade authori
 summary asking for the system prompt, and a method asking to edit `AGENTS.md` and create
 a schedule.
 
-Briefings use the same Chat path and additionally supply the fixed briefing prompt
-plus bounded host data: instructions (≤4,000 characters), explanation enum, ≤60
-symbol/market identities, ≤30 principles selected within the 6,000-character rule
-budget, ≤40 growth events with ≤240-character summaries, ≤5 bounded due-Journal
-pointers, `assetDeltas` (≤24 followed assets with a material change, ≤3 rows each
-with fact date, facts and source titles/URLs), `earnings` (≤8 results events with Rust's
-snapshot view), `watchAlerts` (≤24 watcher alerts since the previous run with dates,
-facts and source titles/URLs; [selection](../runtime/scheduled-runs.md#scheduled-chats)), language,
-date and previous-run timing. Briefing principle records retain
-statement/why/example limits of 280/500/500 characters respectively; their count
-is bounded independently of stored history. The ordinary Chat envelope also carries the Loupist's definition.
-The briefing prompt asks the run to explain each `assetDeltas` row with its date and
-source, retain the risk factors and management's discussion (사업의 내용, 이사의
-경영진단) of a new 10-K, 10-Q, 사업보고서 or 분기보고서 with `source_save`, and change a read
-only with `thesis_update` on evidence read in that run. For each `earnings` entry it says
-what was expected and what was reported using the app's differences, records the figures
-and any new guidance of one reported since the last briefing with
-`earnings_snapshot_save` after reading its release, and names the date of one coming up;
-it explains each `watchAlerts` entry with its date and source link and adds no others.
+Briefings use the same Chat path. Their JSON carries the date, previous-run
+time, up to 60 of the run's Loupist's followed assets with saved-read state, up to 30 bounded
+principles, up to 40 growth summaries, up to five due Journal pointers, and
+disputed entity IDs. The run chooses its own reads under the unattended
+allowlist. The briefing and delegated previews take the first prose paragraph
+after headings, tables and lists.
 
-`agent/prompts/earnings.md` holds the before and after capture procedures (guidance
-first, then consensus only from FMP or Intrinio; reported figures with their stage and
-new guidance; never a difference, beat or miss). The product's captures make no model
-call, so only evaluations send it (`capture_prompt`, built with the `eval-harness`
-feature). The filings Skill's `references/earnings-review.md` carries the same snapshot
-procedure for replies.
+A completed delegated answer without prose uses its research title in Bot.
+Opening the research session shows the complete answer. A Bot-initiated
+hand-off keeps the original typed request in `current_user_message` and
+delivers the Bot's context separately as `handoff.bot_note`. A link action
+uses the ordinary `session` name and hint, with a host caption, `handoff.hint`
+and `handoff.map_link`, whose path states the
+direction of each recorded relationship. The link context and notes from
+exposed Bot replies use the untrusted-text delimiters. Cold rebuild and
+`chat_history` keep that context beside the original message.
+Neither hand-off can ask a question. The user can open the session while it
+runs, and a further user message is their guidance for this run.
+
+The price-setup prompt carries the interface language and the selected names
+and references. It runs in a delegated Chat and saves price reads for the
+selected assets when a source supports them.
+
+Interactive Bot and research turns receive only `interface.display_currency`
+when set. They can read the seven product and navigation labels through
+`interface_labels` with or without Memory. The same admitted appearance drives
+every tool round and a same-turn retry. The next turn reads appearance again.
+Scheduled, delegated and host-started Map-link turns receive the resolved
+`interface.language`, five product `names` and the optional currency. For scheduled
+runs, the task stands in for the user. The run answers in the language the task names or, by default,
+the language the task is written in. A task with no wording of its own follows
+`interface.language`. Briefings receive that value as `appLanguage` as well. A
+link-action hand-off also follows `interface.language`: its first message is
+the host's English caption and the user wrote nothing. A Bot-initiated hand-off
+answers in the language of the original user request or the language it asks
+for. Its `interface.language` describes the app's screens.
+
+A custom scheduled run after the first also receives `previous_run`, after
+`chat_surface`, with its own `hint` (`PREVIOUS_RUN_HINT` in `agent_harness.rs`):
+the task's last finished run's `finished_at`, `status`, `quiet` and `summary`,
+the first prose paragraph of its answer cut at 280 characters (left out when the
+run wrote none, including a quiet run's host placeholder), and `last_delivered`
+(`finished_at`, `summary`) for the last run whose answer reached the user when
+that is another run. Rust builds it at dispatch from the run records
+(`PreviousRun::from_runs`): only runs under the task's current prompt count, so
+after a prompt edit a run receives none, and the briefing keeps its own
+since-the-last-briefing facts instead. A summary from an answer whose reply
+recorded third-party text (or whose answer can no longer be read) is delimited
+as `chat_history` returns a tainted reply and raises the untrusted-text tier
+([untrusted text](../runtime/untrusted-text.md)). The block is left out of the
+envelope digest, as `live_time` is, and an abbreviated envelope carries it whole,
+so a continuing session's context is not resent every run.
+
+The earlier unattended hint made `interface.language` the default. In the
+wave 11 evaluation, GPT-6.2 Sol at medium answered in the saved task's language
+in five of six runs where the task and the app used different languages.
+
+Scheduled and delegated turns have no `interface_labels` tool; a Map-link run
+on the Session surface retains it. The host reads the five product
+names from the bundled agent catalogs, the Research sessions heading from the
+sidebar catalog and Market data from the Connections catalog. An unbundled
+language keeps its tag in unattended context and uses English labels.
+The `system` preference looks up the OS language
+on macOS, then `LC_ALL`, `LC_MESSAGES` and `LANG`, with English as the default.
+The block comes after `chat_surface` and before Memory catalogs. A currency change or an unattended language change updates the envelope digest
+and resends full context on the next turn. Interactive language changes affect
+label reads and leave the envelope digest stable. Both preferences are outside
+the runtime execution digest.
+Eval runs use this same launch path; scenario language or language tags set the
+disposable profile's appearance language (including `principles-v1` P-R09).
 
 Envelope digests exclude live time and the transient standing read reference.
 Unchanged warm turns retain prior perspective/catalog/principle blocks and send an
-unchanged digest plus current instructions, followed identities, the Loupist's tone,
+unchanged digest plus any current interface fields, instructions, followed identities, the Loupist's tone,
 due reviews, record counts and relevant pointers. A changed definition produces a
 new digest and full context; compaction forces full context delivery again. Stable
 Loupist blocks precede per-turn data without rewriting the system prefix. Provider

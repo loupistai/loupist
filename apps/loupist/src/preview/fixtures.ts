@@ -40,7 +40,7 @@ export const previewWorldPage = { nextCursor: null, appliedCursor: null, originL
 const evidenceId = `ev_${"a".repeat(32)}`;
 const answerMessages: ChatMessage[] = [
   { id: "preview-user", role: "user", status: "complete", created_at: "2026-10-28T00:00:00Z", content: `Review ${LONG_TITLE}. What explains the margin decline?` },
-  { id: "preview-answer", role: "assistant", status: "complete", created_at: "2026-10-28T00:00:12Z", content: `Hanul Precision’s operating margin fell from **16.2% to 14.8%**, while revenue grew 11% to ₩184.2 billion. The report attributes most of the decline to qualification costs at the new production line. [1](#evidence-${evidenceId})\n\nThe next useful comparison is utilization against inventory days. Inventory is 54 days, so stronger reported demand has not yet translated into faster cash conversion.`, evidence_refs: [{ id: evidenceId, title: LONG_TITLE, kind: "original", url: "https://hanul.example/quarterly-review", provider: "Hanul Precision IR", tool_name: "web_fetch", retrieved_at: "2026-10-28T00:00:00Z", published_at: "2026-10-27", excerpt: "Revenue ₩184.2bn; operating margin 14.8%; inventory days 54.", excerpt_truncated: false, content_sha256: "b".repeat(64), warnings: [] }], memory_update: { status: "applied", commitId: "preview-commit", changes: [{ kind: "Source", recordId: "preview-sources", operation: "create", title: LONG_TITLE, lesson: "", basis: "Quarterly operating report", futureUse: "Compare the next quarter", knowledge: { kind: "source", recordId: "preview-sources", revisionId: revision.revisionId, objectId: "preview-source-0", spanId: "preview-span" } }] } },
+  { id: "preview-answer", role: "assistant", status: "complete", created_at: "2026-10-28T00:00:12Z", content: `Hanul Precision’s operating margin fell from **16.2% to 14.8%**, while revenue grew 11% to ₩184.2 billion. The report attributes most of the decline to qualification costs at the new production line. [1](#evidence-${evidenceId})\n\nInventory stands at 54 days, so demand has not yet turned into faster cash conversion.`, evidence_refs: [{ id: evidenceId, title: LONG_TITLE, kind: "original", url: "https://hanul.example/quarterly-review", provider: "Hanul Precision IR", tool_name: "web_fetch", retrieved_at: "2026-10-28T00:00:00Z", published_at: "2026-10-27", excerpt: "Revenue ₩184.2bn; operating margin 14.8%; inventory days 54.", excerpt_truncated: false, content_sha256: "b".repeat(64), warnings: [] }], memory_update: { status: "applied", commitId: "preview-commit", changes: [{ kind: "Source", recordId: "preview-sources", operation: "create", title: LONG_TITLE, lesson: "", basis: "Quarterly operating report", futureUse: "Compare the next quarter", knowledge: { kind: "source", recordId: "preview-sources", revisionId: revision.revisionId, objectId: "preview-source-0", spanId: "preview-span" } }] } },
 ];
 const previewInboxItems: InboxItem[] = [
   { briefingContext: { symbols: ["005930", "000660", "AAPL"], principlesChecked: 2, newFacts: 14, disputedEntityIds: [],
@@ -49,11 +49,11 @@ const previewInboxItems: InboxItem[] = [
       { kind: "claim_disputed", subjectId: null, summary: "Capacity timing differs between two reports" },
       { kind: "source_retained", subjectId: null, summary: "Q3 operating review" },
     ] },
-    ahead: [{ journalId: "preview-journal-1", title: "Inventory days below 50", byDate: "2026-11-04" }], assets: [] }, runId: "preview-briefing-1", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "succeeded", summary: "October 28: Hanul Precision reported higher qualification costs and a lower operating margin. The new capacity figures conflict with the saved utilization rule.", startedAtMs: FIXTURE_TIME, finishedAtMs: FIXTURE_TIME + 12000, readAtMs: null, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], error: null, summaryItems: [] },
-  { runId: "preview-custom-1", taskId: "preview-task-0", kind: "custom", title: TASK_TITLE, status: "succeeded", summary: "October 27: Supplier delivery times fell by two days. The scheduled run used retained Sources; one requested check was unavailable.", startedAtMs: FIXTURE_TIME - 86400000, finishedAtMs: FIXTURE_TIME - 86390000, readAtMs: null, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], briefingContext: null, error: null, summaryItems: [] },
-  { runId: "preview-briefing-2", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "failed", error: "The model provider could not be reached. Please try again.", summary: "", startedAtMs: FIXTURE_TIME - 2*86400000, finishedAtMs: FIXTURE_TIME - 2*86400000 + 5000, readAtMs: FIXTURE_TIME - 86400000, threadId: "preview-chat", messageId: null, skippedTools: [], briefingContext: null, summaryItems: [] },
-  { runId: "preview-briefing-3", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "succeeded", summary: "October 25: No material changes appeared in the available company Sources.", startedAtMs: FIXTURE_TIME - 3*86400000, finishedAtMs: FIXTURE_TIME - 3*86400000 + 12000, readAtMs: FIXTURE_TIME - 2*86400000, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], briefingContext: null, error: null, summaryItems: [] },
-  { runId: "preview-custom-2", taskId: "preview-task-1", kind: "custom", title: "Weekly supplier capacity comparison", status: "succeeded", summary: "October 24: Morrow Components disclosed an additional production shift; the announcement did not specify the added capacity.", startedAtMs: FIXTURE_TIME - 4*86400000, finishedAtMs: FIXTURE_TIME - 4*86400000 + 12000, readAtMs: FIXTURE_TIME - 3*86400000, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], briefingContext: null, error: null, summaryItems: [] },
+    ahead: [{ journalId: "preview-journal-1", title: "Inventory days below 50", byDate: "2026-11-04" }] }, runId: "preview-briefing-1", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "succeeded", summary: "October 28: Hanul Precision reported higher qualification costs and a lower operating margin. The new capacity figures conflict with the saved utilization rule.", startedAtMs: FIXTURE_TIME, finishedAtMs: FIXTURE_TIME + 12000, readAtMs: null, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], error: null },
+  { runId: "preview-custom-1", taskId: "preview-task-0", kind: "custom", title: TASK_TITLE, status: "succeeded", summary: "October 27: Supplier delivery times fell by two days. The scheduled run used retained Sources; one requested check was unavailable.", startedAtMs: FIXTURE_TIME - 86400000, finishedAtMs: FIXTURE_TIME - 86390000, readAtMs: null, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], briefingContext: null, error: null },
+  { runId: "preview-briefing-2", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "failed", error: "The model provider could not be reached. Please try again.", summary: "", startedAtMs: FIXTURE_TIME - 2*86400000, finishedAtMs: FIXTURE_TIME - 2*86400000 + 5000, readAtMs: FIXTURE_TIME - 86400000, threadId: "preview-chat", messageId: null, skippedTools: [], briefingContext: null },
+  { runId: "preview-briefing-3", taskId: "preview-briefing", kind: "briefing", title: "Briefings", status: "succeeded", summary: "October 25: No material changes appeared in the available company Sources.", startedAtMs: FIXTURE_TIME - 3*86400000, finishedAtMs: FIXTURE_TIME - 3*86400000 + 12000, readAtMs: FIXTURE_TIME - 2*86400000, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], briefingContext: null, error: null },
+  { runId: "preview-custom-2", taskId: "preview-task-1", kind: "custom", title: "Weekly supplier capacity comparison", status: "succeeded", summary: "October 24: Morrow Components disclosed an additional production shift; the announcement did not specify the added capacity.", startedAtMs: FIXTURE_TIME - 4*86400000, finishedAtMs: FIXTURE_TIME - 4*86400000 + 12000, readAtMs: FIXTURE_TIME - 3*86400000, threadId: "preview-chat", messageId: "preview-answer", skippedTools: [], briefingContext: null, error: null },
 ];
 
 const previewLearningReviews: import("../contracts/knowledge").LearningReview[] = [
@@ -66,7 +66,7 @@ function localizedAnswers() {
   const messages = structuredClone(answerMessages);
   if (!previewKo()) return messages;
   const answer = messages.find(message => message.id === "preview-answer");
-  if (answer) answer.content = `한울정밀의 영업이익률이 **16.2%에서 14.8%**로 낮아졌고, 매출은 11% 늘어 1,842억 원이에요. 보고서에는 새 생산라인의 인증 비용이 하락의 대부분이라고 나와요. [1](#evidence-${evidenceId})\n\n가동률과 재고일수를 비교하는 것이 다음으로 유용해요. 재고일수는 54일이에요. 보고된 수요가 늘어도 현금 전환은 아직 빨라지지 않았어요.`;
+  if (answer) answer.content = `한울정밀의 영업이익률은 **16.2%에서 14.8%**로 낮아졌고, 매출은 11% 늘어 1,842억 원입니다. 보고서는 하락의 대부분을 새 생산라인의 인증 비용으로 설명합니다. [1](#evidence-${evidenceId})\n\n재고일수는 54일로, 수요 증가가 아직 현금 전환으로 이어지지 않았습니다.`;
   return messages;
 }
 
@@ -96,7 +96,7 @@ function nextSeoulRun(schedule: ScheduledTask["schedule"]) {
 
 function briefingBodyMessage(): ChatMessage {
   const content = previewKo()
-    ? "10월 28일 브리핑: 한울정밀의 인증 비용이 늘었고 영업이익률은 14.8%예요. 재고일수는 54일이에요."
+    ? "10월 28일 브리핑: 한울정밀의 인증 비용이 늘었고 영업이익률은 14.8%입니다. 재고일수는 54일입니다."
     : "October 28 briefing: Hanul Precision’s qualification costs rose, and the operating margin settled at 14.8%. Inventory is 54 days.";
   return { id: "preview-briefing-body", role: "assistant", status: "complete", created_at: "2026-10-28T00:00:20Z", content };
 }
@@ -105,10 +105,10 @@ function localizeInbox(items: InboxItem[]) {
   const copy = structuredClone(items);
   if (!previewKo()) return copy;
   const summaries: Record<string, string> = {
-    "preview-briefing-1": "10월 28일: 한울정밀이 더 높은 인증 비용과 더 낮은 영업이익률을 보고했어요. 새 생산능력 수치는 저장된 가동률 원칙과 어긋나요.",
-    "preview-custom-1": "10월 27일: 공급사의 납기가 이틀 줄었어요. 예약 실행은 보관한 자료를 사용했고, 요청한 확인 하나는 쓸 수 없었어요.",
-    "preview-briefing-3": "10월 25일: 확인할 수 있는 회사 자료에서 중요한 변화는 없었어요.",
-    "preview-custom-2": "10월 24일: Morrow Components가 생산 교대를 추가했다고 밝혔고, 늘어난 생산능력은 적지 않았어요.",
+    "preview-briefing-1": "10월 28일: 한울정밀이 더 높은 인증 비용과 더 낮은 영업이익률을 보고했습니다. 새 생산능력 수치는 저장된 가동률 원칙과 어긋납니다.",
+    "preview-custom-1": "10월 27일: 공급사의 납기가 이틀 줄었습니다. 예약 실행은 보관한 자료를 사용했고, 요청한 확인 하나는 쓸 수 없었습니다.",
+    "preview-briefing-3": "10월 25일: 확인할 수 있는 회사 자료에서 중요한 변화는 없었습니다.",
+    "preview-custom-2": "10월 24일: Morrow Components가 생산 교대를 추가했다고 밝혔고, 늘어난 생산능력은 밝히지 않았습니다.",
   };
   for (const item of copy) {
     if (item.title === TASK_TITLE) item.title = KOREAN_TASK_TITLE;
@@ -118,7 +118,7 @@ function localizeInbox(items: InboxItem[]) {
     if (context?.changed) {
       const rows: Record<string, string> = {
         "Hanul Precision supplies Morrow Components": "한울정밀 → Morrow Components (공급) 연결",
-        "Capacity timing differs between two reports": "두 보고서의 증설 시점이 서로 달라요",
+        "Capacity timing differs between two reports": "두 보고서의 증설 시점이 서로 다릅니다",
         "Q3 operating review": "3분기 영업 검토 자료",
       };
       for (const row of context.changed.rows) row.summary = rows[row.summary] ?? row.summary;
@@ -201,7 +201,7 @@ export class PreviewBridge extends MockLoupistBridge {
       thread_id: item.threadId, scheduled_for_ms: item.startedAtMs, started_at_ms: item.startedAtMs, finished_at_ms: item.finishedAtMs,
       status: item.status, error: item.error ?? null, briefing_context: item.briefingContext ?? null, kind: item.kind, summary: item.summary,
       read_at_ms: item.readAtMs, message_id: this.includeBriefingBody && item.kind === "briefing" && item.messageId === "preview-answer" ? "preview-briefing-body" : item.messageId,
-      skipped_tools: item.skippedTools,
+      skipped_tools: item.skippedTools, quiet: false,
     }));
   }
   override async scheduledTasksList({ loupist_id }: { loupist_id: string }): Promise<ScheduledTaskListItem[]> {
@@ -306,7 +306,7 @@ export class PreviewBridge extends MockLoupistBridge {
     const run_id = request.run_id;
     observer({ type: "started", run_id });
     const draft = previewKo()
-      ? "한울정밀의 매출은 **11% 증가**했지만 영업이익률은 낮아졌어요.\n\n새 생산라인의 가동률과 재고일수를 함께 보면"
+      ? "한울정밀의 매출은 **11% 증가**했지만 영업이익률은 낮아졌습니다.\n\n새 생산라인의 가동률과 재고일수를 함께 보면"
       : "Hanul Precision’s revenue **grew 11%**, while operating margin declined.\n\nThe new line’s utilization and the change in inventory days suggest";
     observer({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: Date.now() - 2400, items: [{ id: "preview-read", kind: "tool", toolName: "world_read", category: "memory", operation: "read", action: "Read saved notes", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null }], finishedAtMs: null } });
     observer({ type: "phase", run_id, phase: "writing" });

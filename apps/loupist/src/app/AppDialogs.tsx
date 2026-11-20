@@ -17,7 +17,6 @@ import { Label } from "@/components/ui/label";
 import { FolderOpenIcon, ShieldCheckIcon } from "lucide-react";
 import { errorMessage } from "../lib/errors";
 import type { ChatThread, LoupistCreateRequest, LoupistImportRequest } from "../types";
-import type { WatchlistAddRequest } from "@/contracts/userContext";
 import { LoupistTemplateFields, templateDraft, type LoupistDraft } from "@/components/onboarding/LoupistTemplateFields";
 import "@/styles/sharing.css";
 
@@ -29,7 +28,7 @@ export function useAppDialogs() {
   const [workspacePath, setWorkspacePath] = useState("");
   const [workspaceTrusted, setWorkspaceTrusted] = useState(false);
   const [renameThreadOpen, setRenameThreadOpen] = useState(false);
-  const [loupistDraft, setLoupistDraft] = useState<LoupistDraft>({ template: "portfolio", avatar: "loupist-01", name: "", focus: "", tone: "balanced" });
+  const [loupistDraft, setLoupistDraft] = useState<LoupistDraft>({ template: "portfolio", avatar: "loupist-01", name: "", focus: "", tone: "balanced", starters: [] });
   const [threadNameDraft, setThreadNameDraft] = useState("");
   const [threadToRename, setThreadToRename] = useState<ChatThread | null>(null);
   const [threadToDelete, setThreadToDelete] = useState<ChatThread | null>(null);
@@ -115,8 +114,8 @@ type AppDialogsProps = {
   onUseLinkOrFile?: () => void;
   /** "Browse the Gallery" (W19.6); absent when no community index is configured. */
   onBrowseGallery?: () => void;
-  /** A template's starter chip follows that asset right away. */
-  onFollowStarter?: (entry: WatchlistAddRequest) => Promise<void>;
+  /** Follows one picked template starter, by name, in the Loupist New Loupist just created. */
+  onFollowStarter?: (loupistId: string, name: string) => Promise<void>;
 };
 
 export function AppDialogs({
@@ -174,7 +173,7 @@ export function AppDialogs({
     finally { if (request === folderRequest.current) setChoosingFolder(false); }
   };
   const folderControls = <section className="loupist-folder-section" aria-label={i18n.t("onboarding:appDialogs.workspaceSelection")}>
-    <div className="loupist-folder-heading"><div><h3>{i18n.t("onboarding:appDialogs.localFolder")}</h3><p>{i18n.t(importLoupistOpen ? "onboarding:appDialogs.chooseTheFolderThatHoldsTheLoupist" : "onboarding:appDialogs.chooseTheOriginalFolderOrACopyOf")}</p></div><Button type="button" variant="outline" size="sm" disabled={loupistMutationBusy || choosingFolder} onClick={() => void chooseFolder()}><FolderOpenIcon />{choosingFolder ? i18n.t("onboarding:appDialogs.choosing") : workspacePath ? i18n.t("onboarding:appDialogs.changeFolder") : i18n.t("onboarding:appDialogs.chooseFolder")}</Button></div>
+    <div className="loupist-folder-heading"><div><h3>{i18n.t("onboarding:appDialogs.localFolder")}</h3></div><Button type="button" variant="outline" size="sm" disabled={loupistMutationBusy || choosingFolder} onClick={() => void chooseFolder()}><FolderOpenIcon />{choosingFolder ? i18n.t("onboarding:appDialogs.choosing") : workspacePath ? i18n.t("onboarding:appDialogs.changeFolder") : i18n.t("onboarding:appDialogs.chooseFolder")}</Button></div>
     {workspacePath ? <div className="loupist-folder-selection"><FolderOpenIcon aria-hidden="true" /><p className="workspace-path" aria-label={i18n.t("onboarding:appDialogs.selectedWorkspaceFolder")}>{workspacePath}</p></div> : null}
     {workspacePath ? <label className="workspace-trust loupist-folder-trust"><input type="checkbox" checked={workspaceTrusted} disabled={!workspacePath || loupistMutationBusy || choosingFolder} onChange={(event) => setWorkspaceTrusted(event.target.checked)} /><span><Trans ns="onboarding" i18nKey="appDialogs.workspaceTrust" components={[<strong />]} /></span></label> : null}
     {folderError ? <p className="inline-error" role="alert">{folderError}</p> : null}
@@ -203,26 +202,31 @@ export function AppDialogs({
       <Dialog open={createLoupistOpen} onOpenChange={open => { if (!loupistMutationBusy) setCreateLoupistOpen(open); }}>
         <DialogContent className="loupist-dialog loupist-workspace-dialog" showCloseButton={!loupistMutationBusy} onOpenAutoFocus={focusDialogTitle} onCloseAutoFocus={event => {
           const opener = dialogs.createLoupistOpener.current;
-          const target = opener?.isConnected ? opener : document.querySelector<HTMLElement>(".loupist-header-new");
+          const target = opener?.isConnected ? opener : document.querySelector<HTMLElement>("[data-testid=loupist-header-identity]");
           if (target) { event.preventDefault(); target.focus({ preventScroll: true }); }
         }}>
           <form className="dialog-form" onKeyDown={preventComposingSubmit} onSubmit={event => {
             event.preventDefault();
             if (!dialogs.loupistDraft.name.trim() || loupistMutationBusy) return;
             const generation = createLoupistGeneration.current;
-            void onCreateLoupist({ name: dialogs.loupistDraft.name.trim(), focus: dialogs.loupistDraft.focus.trim() || undefined, avatar: dialogs.loupistDraft.avatar, template: dialogs.loupistDraft.template, tone: dialogs.loupistDraft.tone }).then(created => {
-              if (created && generation === createLoupistGeneration.current) setCreateLoupistOpen(false);
+            const draft = dialogs.loupistDraft;
+            void onCreateLoupist({ name: draft.name.trim(), focus: draft.focus.trim() || undefined, avatar: draft.avatar, template: draft.template, tone: draft.tone }).then(async created => {
+              if (!created) return;
+              if (generation === createLoupistGeneration.current) setCreateLoupistOpen(false);
+              // The picked starters belong to the new Loupist. One that does not follow can still be followed from Following.
+              for (const name of draft.starters) await onFollowStarter?.(created, name).catch(() => undefined);
             });
           }}>
             <DialogHeader><DialogTitle>{i18n.t("onboarding:wizard.newLoupist")}</DialogTitle>
               <DialogDescription>{i18n.t("onboarding:wizard.newLoupistBody")}</DialogDescription></DialogHeader>
-            <DialogBody><LoupistTemplateFields draft={dialogs.loupistDraft} onChange={dialogs.setLoupistDraft} busy={loupistMutationBusy} onFollow={onFollowStarter} />
-              <p className="onboarding-spending" data-background-reading>{i18n.t("onboarding:wizard.backgroundReading")}</p>
+            <DialogBody><LoupistTemplateFields draft={dialogs.loupistDraft} onChange={dialogs.setLoupistDraft} busy={loupistMutationBusy} />
               {loupistMutationError && <div className="inline-error" role="alert">{loupistMutationError}</div>}</DialogBody>
             {onUseLinkOrFile ? <div className="loupist-shared-entry" data-loupist-shared-entry><span>{i18n.t("sharing:fromShared")}</span>
               {onBrowseGallery ? <Button type="button" variant="ghost" size="sm" disabled={loupistMutationBusy} data-browse-gallery onClick={onBrowseGallery}>{i18n.t("sharing:browseGallery")}</Button> : null}
               <Button type="button" variant="ghost" size="sm" disabled={loupistMutationBusy} data-use-link-or-file onClick={onUseLinkOrFile}>{i18n.t("sharing:useLinkOrFile")}</Button></div> : null}
-            <DialogFooter><Button type="button" variant="outline" disabled={loupistMutationBusy} onClick={() => setCreateLoupistOpen(false)}>{i18n.t("onboarding:wizard.cancel")}</Button>
+            {/* The background-reading notice sits above Create in the fixed footer, so it is read before creating. */}
+            <DialogFooter><p className="onboarding-spending dialog-footer-note" data-background-reading>{i18n.t("onboarding:wizard.backgroundReading")}</p>
+              <Button type="button" variant="outline" disabled={loupistMutationBusy} onClick={() => setCreateLoupistOpen(false)}>{i18n.t("onboarding:wizard.cancel")}</Button>
               <Button type="submit" disabled={loupistMutationBusy || !dialogs.loupistDraft.name.trim()}>{i18n.t(loupistMutationBusy ? "onboarding:wizard.creating" : "onboarding:wizard.create")}</Button></DialogFooter>
           </form>
         </DialogContent>
@@ -256,7 +260,7 @@ export function AppDialogs({
         </DialogContent>
       </Dialog>
       <Dialog open={reconnectLoupistOpen} onOpenChange={setReconnectLoupistOpen}>
-        <DialogContent className="loupist-dialog loupist-workspace-dialog" onOpenAutoFocus={focusDialogTitle}>
+        <DialogContent className="loupist-dialog loupist-workspace-dialog" onOpenAutoFocus={focusDialogTitle} data-loupist-reconnect-dialog>
           <DialogHeader><span className="loupist-dialog-eyebrow">{selectedLoupistName ?? i18n.t("onboarding:appDialogs.loupistWorkspace")}</span><DialogTitle>{i18n.t("onboarding:appDialogs.reconnectWorkspaceFolder")}</DialogTitle><DialogDescription>{i18n.t("onboarding:appDialogs.locateThisLoupistSOriginalOrCopiedFolder")}</DialogDescription></DialogHeader>
           <DialogBody>
             {currentWorkspacePath ? <div className="loupist-current-folder"><strong>{i18n.t("onboarding:appDialogs.currentLocation")}</strong><p className="workspace-path">{currentWorkspacePath}</p></div> : null}

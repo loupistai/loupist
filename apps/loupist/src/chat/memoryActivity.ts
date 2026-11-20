@@ -33,7 +33,14 @@ export function isInlineWorkEvidence(
   return !isCitationSource(evidence) && memoryReadForEvidence(evidence, refs) === null;
 }
 
+/** The host's record kinds in the interface language; one it does not list is "record", never its English name. */
+const KINDS = { source: "source", lens: "lens", journal: "journal", principle: "principle", thesis: "thesis", world: "world" } as const;
+const kindName = (kind: string) => {
+  const key = KINDS[kind.toLowerCase() as keyof typeof KINDS] ?? "record";
+  return t(`memoryActivity.kinds.${key}`);
+};
+
 export const memoryChangeVerb = (change: Pick<MemoryUpdateChange, "operation" | "kind">) => {
   const operation = change.operation === "revise" || change.operation === "rename" ? change.operation : "create";
-  return change.kind === "Research" ? t(`memoryActivity.${operation}Note`) : t(`memoryActivity.${operation}Kind`, { kind: change.kind });
+  return change.kind === "Research" ? t(`memoryActivity.${operation}Note`) : t(`memoryActivity.${operation}Kind`, { kind: kindName(change.kind) });
 };

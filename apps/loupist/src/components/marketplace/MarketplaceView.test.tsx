@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
+import i18n from "@/i18n";
 import { MarketplaceView } from "./MarketplaceView";
 
 it("filters connection readiness using the host’s verified state and combines it with search", async () => {
@@ -23,7 +24,17 @@ it("filters connection readiness using the host’s verified state and combines 
   expect(screen.getByRole("heading", { name: unavailable.name, level: 4 })).toBeVisible();
 });
 
-async function renderView(patch?: (snapshot: Awaited<ReturnType<MockLoupistBridge["marketplaceSnapshot"]>>) => void) {
+it("clears the connection search with the app's own button, which shows only while there is text", async () => {
+  const { user } = await renderView();
+  const search = screen.getByRole("searchbox", { name: "Search connections" });
+  expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
+  await user.type(search, "FRED");
+  await user.click(screen.getByRole("button", { name: "Clear search" }));
+  expect(search).toHaveValue("");
+  expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
+});
+
+async function renderView(patch?:(snapshot: Awaited<ReturnType<MockLoupistBridge["marketplaceSnapshot"]>>) => void) {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const snapshot = await bridge.marketplaceSnapshot();
   patch?.(snapshot);
@@ -67,7 +78,7 @@ describe("connection states", () => {
       const snapshot = await bridge.marketplaceSnapshot();
       return snapshot.connectors.find((connector) => connector.entry_id === "fred.macro")!.credentials;
     });
-    await user.click(cardOf("FRED").getByRole("button", { name: "Try again FRED" }));
+    await user.click(cardOf("FRED").getByRole("button", { name: "Try again for FRED" }));
     expect(unlock).toHaveBeenCalledWith({ entry_id: "fred.macro" });
     expect(await cardOf("FRED").findByText("macOS did not allow access. Try again and enter your login password.")).toBeVisible();
 
@@ -77,13 +88,22 @@ describe("connection states", () => {
       const snapshot = await new MockLoupistBridge({ delay_ms: 0 }).marketplaceSnapshot();
       return snapshot;
     });
-    await user.click(cardOf("FRED").getByRole("button", { name: "Try again FRED" }));
+    await user.click(cardOf("FRED").getByRole("button", { name: "Try again for FRED" }));
     await vi.waitFor(() => expect(screen.queryByText("Locked until you allow access in macOS")).toBeNull());
   });
 
   it("shows no Needs attention count when nothing is wrong", async () => {
     await renderView();
     expect(screen.getByRole("radio", { name: "Needs attention" })).toBeVisible();
+  });
+
+  it("shows account and payment requirements before opening setup", async () => {
+    await renderView();
+    expect(cardOf("Korea Investment Open Trading API").getByText("Brokerage account required")).toBeVisible();
+    expect(cardOf("Tradier").getByText("Brokerage account required")).toBeVisible();
+    expect(cardOf("Biztoc").getByText("Free tier requires a card")).toBeVisible();
+    expect(cardOf("EconDB").getByText("Paid")).toBeVisible();
+    expect(cardOf("Financial Modeling Prep").getByText("Free account required")).toBeVisible();
   });
 
   it("labels SEC EDGAR by what it asks for instead of No API key required", async () => {
@@ -99,8 +119,8 @@ describe("connection list", () => {
     await renderView();
     const group = screen.getByRole("heading", { name: /^Market data/, level: 3 }).closest("section")!;
     const names = within(group).getAllByRole("heading", { level: 4 }).map((heading) => heading.textContent!);
-    expect(names[0]).toBe("Market data platform");
-    const rest = names.slice(1);
+    expect(names.slice(0, 2)).toEqual(["Market data platform", "CFTC"]);
+    const rest = names.slice(2);
     expect(rest).toEqual([...rest].sort((left, right) => left.localeCompare(right, "en", { sensitivity: "base" })));
     expect(rest.indexOf("U.S. Bureau of Labor Statistics")).toBeGreaterThan(rest.indexOf("Tiingo"));
   });
@@ -126,6 +146,19 @@ describe("connection list", () => {
     custom.querySelector("summary")!.click();
     expect(await screen.findByRole("button", { name: "Add a connection" })).toBeVisible();
     expect(screen.queryByRole("combobox", { name: "Loupist" })).toBeNull();
+  });
+
+  it("gives Asset lookup no English group heading in Korean, as in English", async () => {
+    await i18n.changeLanguage("ko");
+    try {
+      const bridge = new MockLoupistBridge({ delay_ms: 0 });
+      render(<MarketplaceView bridge={bridge} />);
+      // Its one entry is the group: the card title stands as its heading, as "Asset lookup" does in English.
+      expect(await screen.findByRole("heading", { name: "자산 검색", level: 3 })).toBeVisible();
+      expect(screen.queryByRole("heading", { name: /^Asset lookup/u })).toBeNull();
+    } finally {
+      await i18n.changeLanguage("en");
+    }
   });
 
   it("marks the loading state as a status", async () => {

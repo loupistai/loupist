@@ -1,7 +1,7 @@
 export type MapExportFooter = { name: string; stats: string; date: string; disclosure: string; avatar?: HTMLImageElement };
 const FOOTER_HEIGHT = 64;
 // Only the map bitmap and these explicit display fields cross into an export.
-// The graph contract supplies holding rings, never quantities or valuations.
+// The graph contract supplies a followed ring per node.
 export function composeMapExport(source: HTMLCanvasElement, footer: MapExportFooter, video = false, output = document.createElement("canvas")) {
   const width = source.clientWidth || source.width, height = source.clientHeight || source.height;
   const scale = video ? (1080 - FOOTER_HEIGHT) / height : 2;

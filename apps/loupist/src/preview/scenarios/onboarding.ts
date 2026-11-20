@@ -3,7 +3,7 @@ import { prepareFixture } from "../fixtures";
 import i18n from "../../i18n";
 import type { ProviderConnectFailure } from "../../contracts/model";
 import { signInTiming } from "../../components/settings/signIn";
-import { base, click, hasLayout, openNavigation, select, settings, until, type PreviewScenario } from "./kit";
+import { base, click, hasLayout, newLoupist, select, settings, until, type PreviewScenario } from "./kit";
 
 /** First launch, sign-in and the new Loupist dialogs. */
 export const onboardingScenarios: PreviewScenario[] = [
@@ -13,14 +13,32 @@ export const onboardingScenarios: PreviewScenario[] = [
     }),
     setup: bridge => prepareFixture(bridge, "provider"),
   })),
-  // Step 3 with an account already connected: templates, Name and Create, then the spending line.
-  { ...base("onboarding-create", "Onboarding: create the first Loupist", () => select('[data-onboarding="3"] [data-onboarding-create]') && select('[data-onboarding="3"] [data-background-reading]'), async root => {
+  // Step 3 with an account already connected: the templates and Continue.
+  { ...base("onboarding-create", "Onboarding: choose what the first Loupist researches", () => select('[data-onboarding="3"] [data-onboarding-next]'), async root => {
     await click("[data-notice-acknowledgment]", root);
     await click("[data-onboarding-start]", root);
   }), setup: bridge => prepareFixture(bridge, "loupist") },
+  // Step 4: the face, the suggested name, the ten face colours, Create, then the spending line.
+  { ...base("onboarding-name", "Onboarding: name the first Loupist", () => select('[data-onboarding="4"] [data-onboarding-create]') && select('[data-onboarding="4"] [data-background-reading]'), async root => {
+    await click("[data-notice-acknowledgment]", root);
+    await click("[data-onboarding-start]", root);
+    await click("[data-onboarding-next]", root);
+  }), setup: bridge => prepareFixture(bridge, "loupist") },
+  // Step 4 for a Loupist that existed before onboarding and carries only its folder's name.
+  { ...base("onboarding-rename", "Onboarding: name a Loupist the host named after its folder", () => select('[data-onboarding="4"] [data-loupist-identity]') && !select("[data-background-reading]") ? select('[data-onboarding="4"]') : null, async root => {
+    await click("[data-notice-acknowledgment]", root);
+    await click("[data-onboarding-start]", root);
+    await click("[data-onboarding-skip]", root);
+  }), setup: async bridge => {
+    await prepareFixture(bridge, "provider");
+    await bridge.loupistImport({ workspace_path: "/Users/research/workspace" });
+    // A new profile: the notice has not been accepted yet, so onboarding opens over the Loupist.
+    bridge.noticeSettingsGet = async () => ({ notice_acknowledged_version: 0 });
+  } },
   { ...base("onboarding-bot", "First launch opens Bot after the notice", () => document.getElementById("current-location")?.textContent === i18n.t("app:thread.title") ? select(".chat-layout") : null, async root => {
     await click("[data-notice-acknowledgment]", root);
     await click("[data-onboarding-start]", root);
+    await click("[data-onboarding-next]", root);
     await click("[data-onboarding-create]", root);
     await until(() => select("textarea[data-chat-composer]"), "Bot did not initialize");
   }), setup: async bridge => {
@@ -111,10 +129,9 @@ export const onboardingScenarios: PreviewScenario[] = [
   })(),
   base("new-loupist-dialog", "New Loupist templates", () => select(".loupist-template-fields"), async () => {
     await until(() => select('textarea[data-chat-composer]'), "Chat did not initialize");
-    await openNavigation(".loupist-header-new");
-    await click(".loupist-header-new");
+    await newLoupist();
   }),
-  { ...base("loupist-import-dialog", "Open a Loupist folder", () => {
+  { ...base("loupist-import-dialog", "Import a Loupist", () => {
     const dialog = select("[data-loupist-import-dialog]");
     return dialog?.querySelector(".workspace-path") && dialog.querySelector('input[type="checkbox"]:not(:checked)') ? dialog : null;
   }, async root => {
@@ -123,6 +140,22 @@ export const onboardingScenarios: PreviewScenario[] = [
     await click("[data-loupist-import-dialog] .loupist-folder-heading button");
   }), setup: async bridge => {
     await prepareFixture(bridge);
+    bridge.loupistChooseFolder = async () => "/Users/research/Backups/Quality Compounder";
+  } },
+  // A moved folder: Reconnect folder from the line above Bot, with a copy chosen and not yet trusted.
+  { ...base("loupist-reconnect-dialog", "Reconnect a moved Loupist folder", () => {
+    const dialog = select("[data-loupist-reconnect-dialog]");
+    return dialog?.querySelector(".loupist-folder-selection .workspace-path") ? dialog : null;
+  }, async () => {
+    await click('.app-selection-error[role="status"]:not(.legacy-holdings-notice) button');
+    await click("[data-loupist-reconnect-dialog] .loupist-folder-heading button");
+  }), setup: async bridge => {
+    await prepareFixture(bridge);
+    const availability = { status: "workspace_unavailable" } as const;
+    const list = bridge.loupistList.bind(bridge);
+    bridge.loupistList = async () => (await list()).map(item => ({ ...item, availability }));
+    const read = bridge.loupistSelect.bind(bridge);
+    bridge.loupistSelect = async id => { const workspace = await read(id); return { ...workspace, loupist: { ...workspace.loupist, availability } }; };
     bridge.loupistChooseFolder = async () => "/Users/research/Backups/Quality Compounder";
   } },
 ];

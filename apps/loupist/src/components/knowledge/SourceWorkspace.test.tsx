@@ -3,7 +3,7 @@ import { useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { KnowledgeLocation, RetainedSource } from "../../types";
+import type { KnowledgeLocation, RetainedSource, SourceDetail } from "../../types";
 import { AddSourceDialog, SourceWorkspace } from "./SourceWorkspace";
 
 async function fixture() {
@@ -237,6 +237,37 @@ it("opens the original source in the supplied workspace reader without losing it
   expect(props.onAsk).toHaveBeenCalledWith(expect.objectContaining({ recordId: props.location.recordId, revisionId: props.location.revisionId, spanId: expect.any(String) }));
 });
 
+it("shows pasted material as user-provided in the Library and the reader, with what the user stated", async () => {
+  const props = await fixture();
+  const record = props.catalog.sources[0];
+  const catalog = { ...props.catalog, sources: [{ ...record, objects: [{ ...record.objects[0], title: "Solsup backlog", userProvided: true, originLabel: "Pasted text" }] }] };
+  const view = render(<SourceWorkspace {...props} catalog={catalog} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+  const row = screen.getByRole("button", { name: /Solsup backlog/ });
+  expect(row).toHaveTextContent("User-provided");
+  expect(row).toHaveTextContent("Pasted text");
+  const read = props.bridge.knowledgeSourceRead.bind(props.bridge);
+  vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async (request) => ({
+    ...await read(request), sourceClass: "user_provided", originLabel: "https://fictional.example/solsup/backlog-2025",
+    provided: { chatId: "chat-a", messageId: "user-paste", pastedAtMs: Date.UTC(2026, 10, 19, 12), statedPublisher: "솔숲식품", statedUrl: "https://fictional.example/solsup/backlog-2025" },
+  }));
+  view.rerender(<SourceWorkspace {...props} catalog={catalog} />);
+  const reader = await screen.findByRole("article", { name: "Source reader" });
+  expect(within(reader).getByText("User-provided")).toBeVisible();
+  expect(within(reader).getByRole("button", { name: /Link you gave \(fictional\.example\)/ })).toBeVisible();
+  const note = within(reader).getByTestId("source-provided");
+  expect(note).toHaveTextContent("Pasted into a Chat on Nov 19, 2026");
+  expect(note).toHaveTextContent("publisher as you stated it: 솔숲식품");
+  expect(note).toHaveTextContent("were not verified");
+  try {
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    view.rerender(<SourceWorkspace {...props} catalog={catalog} />);
+    expect(await within(screen.getByRole("article")).findByText("사용자 제공")).toBeVisible();
+    expect(screen.getByTestId("source-provided")).toHaveTextContent("알려 주신 발행처: 솔숲식품");
+  } finally {
+    await act(async () => { await i18n.changeLanguage("en"); });
+  }
+});
+
 it("keeps a source locator with an unsupported scheme as plain text", async () => {
   const props = await fixture();
   const read = props.bridge.knowledgeSourceRead.bind(props.bridge);
@@ -267,17 +298,21 @@ it("shows the What you follow Source in the interface language whatever title it
   const props = await fixture();
   const record = props.catalog.sources[0];
   const followed = { ...record, title: "What you follow", titleKey: "followed" as const, objects: [{
+    // An older host stored this origin label; the interface's own wording replaces it.
     ...record.objects[0], title: "What you follow", titleKey: "followed" as const, originLabel: "What you follow and your holdings",
   }] };
   const catalog = { ...props.catalog, sources: [followed] };
   const location = { loupistId: props.location.loupistId, surface: "source" as const };
   const view = render(<SourceWorkspace {...props} catalog={catalog} location={location} />);
-  expect(screen.getByRole("button", { name: /What you follow.*What you follow and your holdings/ })).toBeVisible();
+  const english = screen.getByRole("button", { name: /What you follow.*What you follow/ });
+  expect(english).toBeVisible();
+  expect(english).not.toHaveTextContent("holdings");
   try {
     await act(async () => { await i18n.changeLanguage("ko"); });
     view.rerender(<SourceWorkspace {...props} catalog={catalog} location={location} />);
     const row = screen.getByRole("button", { name: /관심 자산/ });
-    expect(row).toHaveTextContent("관심 자산과 보유 자산");
+    expect(row).toHaveTextContent("관심 자산");
+    expect(row).not.toHaveTextContent("보유");
     expect(row).not.toHaveTextContent("What you follow");
     // The title the user reads is the one they can search for.
     view.rerender(<SourceWorkspace {...props} catalog={catalog} location={location} query="관심" />);
@@ -359,4 +394,19 @@ describe("Try again for a Source whose Map building stopped", () => {
     await screen.findByRole("article", { name: "Source reader" });
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
+});
+
+it("shows neutral metadata for source details saved by a newer app", async () => {
+  const props = await fixture();
+  const read = props.bridge.knowledgeSourceRead.bind(props.bridge);
+  vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async request => ({
+    ...await read(request),
+    coverage: "future_coverage" as SourceDetail["coverage"],
+    material: "future_material" as SourceDetail["material"],
+    sourceClass: "future_class" as SourceDetail["sourceClass"],
+  }));
+  render(<SourceWorkspace {...props} />);
+  await userEvent.setup().click(await screen.findByText("Source details"));
+  expect(screen.getAllByText("Unspecified", { selector: "dd" })).toHaveLength(2);
+  expect(screen.getByText("Unspecified", { selector: ".memory-meta-row > [data-slot=badge]" })).toBeVisible();
 });

@@ -423,7 +423,7 @@ class PythonRuntimeTests(unittest.TestCase):
         setup = check_runner.setup_steps("rust", [])
         self.assertEqual(
             [item["name"] for item in setup],
-            ["install-cargo", "install-python-runtime"],
+            ["install-cargo", "install-python-runtime", "install-embed-assets"],
         )
         self.assertIn("--ensure", setup[1]["command"])
         installed = [item["name"] for item in check_runner.rust_plan(True)]

@@ -1,0 +1,141 @@
+{
+  "schema": "loupist-world-retrieval-scale/1",
+  "version": 1,
+  "description": "Paired local index queries over retained evidence and prepared claims. Each case has a literal name control, a transliterated name and a topic-only query, in that order.",
+  "sources": [
+    {
+      "id": "src-01",
+      "title": "Mirae Tile kiln operations note",
+      "origin": "https://fictional.example/src-01",
+      "text": "Mirae Tile reports: Recovered heat supplied 23% of the tunnel kiln’s heat demand.",
+      "acquired_at": "2026-10-02T12:00:00Z",
+      "publication_time": "2026-10-01T09:00:00Z",
+      "authorship": "publisher",
+      "canonical_import": {
+        "node_id": "node-src-01",
+        "name": "Mirae Tile",
+        "entity_identifier": "FICT-001",
+        "claim_id": "claim-src-01",
+        "proposition": "Mirae Tile reports: Recovered heat supplied 23% of the tunnel kiln’s heat demand.",
+        "relation": "reports",
+        "value": 23,
+        "unit": "%",
+        "period": "2026",
+        "basis": "facility",
+        "quote": "Recovered heat supplied 23% of the tunnel kiln’s heat demand.",
+        "utf8_start": 20,
+        "utf8_end_exclusive": 83
+      }
+    },
+    {
+      "id": "src-02",
+      "title": "Mira Tile kiln operations note",
+      "origin": "https://fictional.example/src-02",
+      "text": "Mira Tile reports: Recovered heat supplied 31% of the roller kiln’s heat demand.",
+      "acquired_at": "2026-10-02T12:00:00Z",
+      "publication_time": "2026-10-01T09:00:00Z",
+      "authorship": "publisher",
+      "canonical_import": {
+        "node_id": "node-src-02",
+        "name": "Mira Tile",
+        "entity_identifier": "FICT-002",
+        "claim_id": "claim-src-02",
+        "proposition": "Mira Tile reports: Recovered heat supplied 31% of the roller kiln’s heat demand.",
+        "relation": "reports",
+        "value": 31,
+        "unit": "%",
+        "period": "2026",
+        "basis": "facility",
+        "quote": "Recovered heat supplied 31% of the roller kiln’s heat demand.",
+        "utf8_start": 19,
+        "utf8_end_exclusive": 82
+      }
+    },
+    {
+      "id": "src-03",
+      "title": "미래타일 가마 가동 메모",
+      "origin": "https://fictional.example/src-03",
+      "text": "미래타일에 따르면, 회수한 폐열은 터널 가마 열 수요의 23%를 충당했다.",
+      "acquired_at": "2026-10-02T12:00:00Z",
+      "publication_time": "2026-10-01T09:00:00Z",
+      "authorship": "publisher",
+      "canonical_import": {
+        "node_id": "node-src-03",
+        "name": "미래타일",
+        "entity_identifier": "FICT-003",
+        "claim_id": "claim-src-03",
+        "proposition": "미래타일에 따르면, 회수한 폐열은 터널 가마 열 수요의 23%를 충당했다.",
+        "relation": "reports",
+        "value": 23,
+        "unit": "%",
+        "period": "2026",
+        "basis": "시설",
+        "quote": "회수한 폐열은 터널 가마 열 수요의 23%를 충당했다.",
+        "utf8_start": 27,
+        "utf8_end_exclusive": 95
+      }
+    },
+    {
+      "id": "src-04",
+      "title": "미라타일 가마 가동 메모",
+      "origin": "https://fictional.example/src-04",
+      "text": "미라타일에 따르면, 회수한 폐열은 롤러 가마 열 수요의 31%를 충당했다.",
+      "acquired_at": "2026-10-02T12:00:00Z",
+      "publication_time": "2026-10-01T09:00:00Z",
+      "authorship": "publisher",
+      "canonical_import": {
+        "node_id": "node-src-04",
+        "name": "미라타일",
+        "entity_identifier": "FICT-004",
+        "claim_id": "claim-src-04",
+        "proposition": "미라타일에 따르면, 회수한 폐열은 롤러 가마 열 수요의 31%를 충당했다.",
+        "relation": "reports",
+        "value": 31,
+        "unit": "%",
+        "period": "2026",
+        "basis": "시설",
+        "quote": "회수한 폐열은 롤러 가마 열 수요의 31%를 충당했다.",
+        "utf8_start": 27,
+        "utf8_end_exclusive": 95
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "SRC-X01-KO-EN",
+      "distractor_count": 1,
+      "source_ids": [
+        "src-02",
+        "src-01"
+      ],
+      "focal_source_ids": [
+        "src-01"
+      ],
+      "queries": [
+        "Mirae Tile",
+        "미래타일",
+        "터널 가마 폐열 회수"
+      ],
+      "browse_page_size": 20,
+      "user": "제 자료에서 미래타일은 가마에 필요한 열의 얼마를 폐열로 충당했다고 했나요?"
+    },
+    {
+      "id": "SRC-X01-EN-KO",
+      "distractor_count": 1,
+      "source_ids": [
+        "src-04",
+        "src-03"
+      ],
+      "focal_source_ids": [
+        "src-03"
+      ],
+      "queries": [
+        "미래타일",
+        "Mirae Tile",
+        "tunnel kiln waste heat recovery"
+      ],
+      "browse_page_size": 20,
+      "user": "In my notes, what share of Mirae Tile’s kiln heat demand did recovered heat supply?"
+    }
+  ]
+}

@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { suite, traces, HIDDEN_SENTINEL } from './fixtures/sample.mjs';
 import { agreement, labelViews } from './labels.mjs';
-import { buildJudgeInput, modelFamily, DEFAULT_REASONING_EFFORT, codexBackend, grokBackend, grokJudgeArgs, itemId, judgeAll, judgeCacheKey, judgeItems, openAIBackend, parseGrokJudgeStdout, parseJudgeResult, renderJudgePrompt } from './judge.mjs';
+import sessionLanguage from './suites/session-language-v1.json' with { type: 'json' };
+import { buildJudgeInput, modelFamily, DEFAULT_REASONING_EFFORT, JUDGE_SCHEMA, claudeBackend, claudeJudgeArgs, claudeJudgeEnv, codexBackend, grokBackend, grokJudgeArgs, itemId, judgeAll, judgeCacheKey, judgeItems, openAIBackend, parseClaudeJudgeStdout, parseGrokJudgeStdout, parseJudgeResult, renderJudgePrompt } from './judge.mjs';
 
 async function cacheDir(t) {
   const directory = await mkdtemp(join(tmpdir(), 'agent-judge-test-'));
@@ -70,6 +71,42 @@ test('judge follow-ups retain earlier turns from the current session and exclude
   assert.equal(history.turns[0].answer, first.answer);
   assert.equal(JSON.stringify(input).includes('FUTURE_SENTINEL'), false);
   assert.equal(JSON.stringify(input).includes('FOREIGN_SENTINEL'), false);
+});
+
+test('Claude receives the turn’s exact screen labels for directions even without tool calls', async (t) => {
+  const rows = [
+    ['F3-UI-01', 'ko', 0, '**봇** opens chat. **지도** opens relationships. **예약** opens schedules.',
+      { bot: '봇', map: '지도', schedule: '예약' }, true],
+    ['F3-UI-02', 'en', 1, '사이드바 제목은 **Research sessions**, 연결 그룹은 **Market data**입니다.',
+      { research_sessions_heading: 'Research sessions', market_data_group: 'Market data' }, true],
+    ['F3-UI-02', 'en', 1, '사이드바 제목은 **Research sessions**, 연결 그룹은 **Market data platform**입니다.',
+      { research_sessions_heading: 'Research sessions', market_data_group: 'Market data' }, false],
+  ];
+  const directions = rows.map(([id, appearance, index, answer], trial) => {
+    const scenario = sessionLanguage.scenarios.find(scenario => scenario.id === id);
+    const [session] = scenario.sessions;
+    return { ...traces[0], suite: sessionLanguage.suite, scenario_id: id, trial,
+      session_id: session.id, session_role: session.role, memory_mode: session.memory,
+      turn_index: index, user: session.turns[index].user, answer,
+      resolved_appearance: appearance, tool_calls: [], memory_reads: [], memory_commits: [] };
+  });
+  let call = 0;
+  const backend = claudeBackend({ env: {}, run: async (_command, _args, { input }) => {
+    const packet = JSON.parse(input.split('\nObserved input:\n')[1]);
+    const labels = rows[call++][4];
+    assert.deepEqual(packet.screen_labels, labels);
+    assert.deepEqual(packet.trace_summary.tools, []);
+    assert.match(input, /screen_labels.*no tool call/u);
+    const pass = Object.values(packet.screen_labels).every(label => packet.answer.includes(`**${label}**`));
+    return claudeResult({ structured_output: { pass, reason: 'Compared with the screen labels.' } });
+  } });
+  const judgments = await judgeAll({ suite: sessionLanguage, traces: directions, cacheDir: await cacheDir(t), backend });
+  assert.equal(call, rows.length);
+  assert.deepEqual(judgments.map(row => row.pass), rows.map(row => row[5]));
+
+  const followUp = { ...directions[0], turn_index: 2, user: 'Summarize the note.', answer: 'Summary.' };
+  const [item] = judgeItems(sessionLanguage, [followUp]);
+  assert.equal(Object.hasOwn(buildJudgeInput(sessionLanguage, item, [followUp]), 'screen_labels'), false);
 });
 
 test('one run id still distinguishes turns when labels join judgments', async (t) => {
@@ -290,6 +327,120 @@ test('codex judge runs tool-free with the verdict schema and reads the last mess
   assert.equal(modelFamily(backend.model), 'openai');
 });
 
+const claudeResult = (fields) => JSON.stringify({ type: 'result', subtype: 'success', is_error: false, stop_reason: 'end_turn',
+  num_turns: 1, result: '', session_id: 'fixture', ...fields });
+
+test('claude judge arguments pin a tool-free, context-free single turn', () => {
+  // A security pin: every flag here is required to keep untrusted trace text from reaching a tool or loaded context.
+  assert.deepEqual(claudeJudgeArgs({ model: 'claude-opus-5-5', reasoningEffort: 'low' }), [
+    '-p', '--model', 'claude-opus-5-5', '--effort', 'low',
+    '--tools', '', '--strict-mcp-config', '--disallowedTools', 'mcp__*', '--safe-mode',
+    '--setting-sources', '', '--disable-slash-commands', '--no-session-persistence', '--max-turns', '1',
+    '--output-format', 'json', '--json-schema', JSON.stringify(JUDGE_SCHEMA),
+  ]);
+  const defaults = claudeJudgeArgs();
+  assert.equal(defaults[defaults.indexOf('--model') + 1], 'claude-opus-5-5');
+  assert.equal(defaults[defaults.indexOf('--effort') + 1], 'medium');
+  for (const flag of ['--mcp-config', '--allowedTools', '--allowed-tools', '--add-dir', '--plugin-dir', '--settings', '--agents',
+    '--bare', '--dangerously-skip-permissions', '--allow-dangerously-skip-permissions', '--continue', '--resume']) {
+    assert.equal(defaults.includes(flag), false, flag);
+  }
+  assert.equal(modelFamily(claudeBackend().model), 'anthropic');
+});
+
+test('claude judge child environment keeps the subscription login and drops API keys and parent session state', () => {
+  const env = claudeJudgeEnv({
+    PATH: '/usr/bin', HOME: '/home/fixture', CLAUDE_CONFIG_DIR: '/home/fixture/.claude', CLAUDE_CODE_OAUTH_TOKEN: 'oauth-fixture',
+    ANTHROPIC_API_KEY: 'key-fixture', ANTHROPIC_AUTH_TOKEN: 'token-fixture', CLAUDECODE: '1', CLAUDE_CODE_SIMPLE: '1',
+    ANTHROPIC_PROFILE: 'work', ANTHROPIC_FEDERATION_RULE_ID: 'rule', ANTHROPIC_ORGANIZATION_ID: 'org',
+    ANTHROPIC_CUSTOM_HEADERS: 'Authorization: Bearer x', ANTHROPIC_BASE_URL: 'https://gateway.example',
+    ANTHROPIC_AWS_API_KEY: 'aws', ANTHROPIC_FOUNDRY_API_KEY: 'foundry',
+    CLAUDE_CODE_SESSION_ID: 'parent', CLAUDE_CODE_MESSAGING_SOCKET: '/tmp/socket', CLAUDE_CODE_USE_BEDROCK: '1', CLAUDE_EFFORT: 'max',
+  });
+  assert.deepEqual(Object.keys(env).sort(), ['CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CONFIG_DIR', 'HOME', 'PATH']);
+});
+
+test('claude judge sends the prompt on stdin from a new directory that is removed afterwards', async () => {
+  const seen = [];
+  const backend = claudeBackend({ env: { PATH: '/usr/bin', ANTHROPIC_API_KEY: 'key-fixture' }, run: async (command, args, options) => {
+    seen.push({ command, args, ...options, existed: (await stat(options.cwd)).isDirectory() });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return claudeResult({ structured_output: { pass: true, reason: `verdict for ${options.input}` } });
+  } });
+  const verdicts = await Promise.all([backend.judge('first prompt', { reasoningEffort: 'high' }), backend.judge('second prompt')]);
+  assert.deepEqual(verdicts.map((verdict) => verdict.reason), ['verdict for first prompt', 'verdict for second prompt']);
+  assert.equal(seen.length, 2);
+  assert.notEqual(seen[0].cwd, seen[1].cwd);
+  for (const call of seen) {
+    assert.equal(call.command, 'claude');
+    assert.equal(call.existed, true);
+    assert.equal(call.args.includes(call.input), false, 'the prompt is not an argument');
+    assert.deepEqual(call.env, { PATH: '/usr/bin' });
+    await assert.rejects(stat(call.cwd), { code: 'ENOENT' });
+  }
+  const effort = (input) => { const { args } = seen.find((call) => call.input === input); return args[args.indexOf('--effort') + 1]; };
+  assert.equal(effort('first prompt'), 'high');
+  assert.equal(effort('second prompt'), 'medium');
+});
+
+test('claude judge process receives the prompt on stdin, its own directory and a filtered environment', async (t) => {
+  const { writeFile, realpath } = await import('node:fs/promises');
+  const bin = await cacheDir(t);
+  const fake = join(bin, 'fake-claude.mjs');
+  await writeFile(fake, `#!/usr/bin/env node
+let input = '';
+process.stdin.setEncoding('utf8').on('data', (chunk) => { input += chunk; }).on('end', () => {
+  const reason = JSON.stringify({ input, cwd: process.cwd(), apiKey: process.env.ANTHROPIC_API_KEY ?? null, args: process.argv.slice(2) });
+  if (input === 'fail') { process.stdout.write(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, errors: ['Not logged in'] })); process.exit(1); }
+  process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, stop_reason: 'end_turn', structured_output: { pass: true, reason } }));
+});
+`, { mode: 0o755 });
+  const backend = claudeBackend({ command: fake, env: { PATH: process.env.PATH, ANTHROPIC_API_KEY: 'key-fixture' } });
+  const observed = JSON.parse((await backend.judge('Judge "this" criterion.\nSecond line.')).reason);
+  assert.equal(observed.input, 'Judge "this" criterion.\nSecond line.');
+  assert.equal(observed.apiKey, null);
+  assert.deepEqual(observed.args, claudeJudgeArgs());
+  assert.match(observed.cwd, /agent-judge-claude-/u);
+  assert.notEqual(observed.cwd, await realpath(process.cwd()));
+  await assert.rejects(stat(observed.cwd), { code: 'ENOENT' });
+  await assert.rejects(backend.judge('fail'), /exited 1.*error_during_execution.*Not logged in/u);
+});
+
+test('claude judge accepts only a successful structured verdict and fails malformed or refused answers', async (t) => {
+  assert.deepEqual(parseClaudeJudgeStdout(claudeResult({ structured_output: { pass: false, reason: 'stale value' } })),
+    { pass: false, reason: 'stale value' });
+  for (const [stdout, error] of [
+    ['I think it passes.', /not JSON/u],
+    [JSON.stringify({ pass: true, reason: 'bare verdict without a result message' }), /not a result message/u],
+    [claudeResult({ result: '{"pass":true,"reason":"text instead of the schema tool"}' }), /no structured verdict/u],
+    [claudeResult({ structured_output: '{"pass":true,"reason":"string"}' }), /no structured verdict/u],
+    [claudeResult({ structured_output: { pass: 'yes', reason: 'not boolean' } }), /boolean pass/u],
+    [claudeResult({ structured_output: { pass: true, reason: 'kept', score: 1 } }), /unexpected field/u],
+    [claudeResult({ structured_output: { pass: true, reason: ' ' } }), /non-empty reason/u],
+    [claudeResult({ stop_reason: 'refusal', result: 'I cannot help with that.' }), /refused/u],
+    [claudeResult({ stop_reason: 'refusal', is_error: true, structured_output: { pass: true, reason: 'retracted' } }), /refused/u],
+    [claudeResult({ is_error: true, result: 'API Error: 500', structured_output: { pass: true, reason: 'kept' } }), /failed \(success\): API Error/u],
+    [claudeResult({ subtype: 'error_max_turns', is_error: true, errors: ['Reached maximum number of turns (1)'] }), /error_max_turns.*maximum number of turns/u],
+    [claudeResult({ subtype: 'error_max_structured_output_retries', is_error: true, errors: [] }), /error_max_structured_output_retries/u],
+  ]) assert.throws(() => parseClaudeJudgeStdout(stdout), error, stdout);
+
+  const failed = claudeBackend({ env: {}, run: async () => {
+    throw Object.assign(new Error('claude exited 1: '), { stdout: claudeResult({ subtype: 'error_during_execution', is_error: true, errors: ['Not logged in'] }) });
+  } });
+  await assert.rejects(failed.judge('prompt'), /claude exited 1.*Not logged in/u);
+  const passingButNonzero = claudeBackend({ env: {}, run: async () => {
+    throw Object.assign(new Error('claude exited 1: '), { stdout: claudeResult({ structured_output: { pass: true, reason: 'kept' } }) });
+  } });
+  await assert.rejects(passingButNonzero.judge('prompt'), /claude exited 1/u);
+
+  const directory = await cacheDir(t);
+  const refusing = claudeBackend({ env: {}, run: async () => claudeResult({ stop_reason: 'refusal', result: 'I cannot help with that.' }) });
+  await assert.rejects(judgeAll({ suite, traces: [traces[0]], cacheDir: directory, backend: refusing, model: refusing.model }), /refused/u);
+  const judged = claudeBackend({ env: {}, run: async () => claudeResult({ structured_output: { pass: false, reason: 'The answer omits diluted shares.' } }) });
+  const rows = await judgeAll({ suite, traces: [traces[0]], cacheDir: directory, backend: judged, model: judged.model });
+  assert.equal(rows.every((row) => row.cache === 'miss' && row.pass === false && row.model === 'claude-opus-5-5'), true, 'a refusal leaves no cached verdict');
+});
+
 test('a judged Lens commit carries the stored page kind and basis', () => {
   const suite = { schema: 'loupist-agent-suite/1', suite: 'lens', version: 1, scenarios: [{ id: 'LC', sessions: [{ id: 'train', role: 'train', memory: 'remember', turns: [{ user: 'Research.' }] }] }] };
   const trace = { schema: 'loupist-agent-trace/1', run_id: 'r', suite: 'lens', scenario_id: 'LC', session_id: 'train', session_role: 'train', memory_mode: 'remember', turn_index: 0, trial: 0, user: 'Research.', status: 'completed', answer: 'Filed.', tool_calls: [],
@@ -333,4 +484,43 @@ test('judge input carries the stored Lens pages so a stale current value is visi
   const input = (markdown) => { const traces = [trace(markdown)]; return buildJudgeInput(suite, judgeItems(suite, traces)[0], traces); };
   assert.equal(input('Current fleet: 14 ships.').lens_pages_after_turn[0].sections[0].markdown, 'Current fleet: 14 ships.');
   assert.notDeepEqual(input('Current fleet: 18 ships. A rumor of 14 was rejected.'), input('Current fleet: 14 ships.'));
+});
+
+test('a scheduled rubric sees the full verified reply and the exact Bot preview', () => {
+  const user = 'Give an implied growth range for Fictional Forge.';
+  const kind = 'custom';
+  const scheduledSuite = { schema: 'loupist-agent-suite/1', suite: 'scheduled', scenarios: [{
+    id: 'VALUATION', language: 'en', sessions: [{ id: 'bot', role: 'probe', memory: 'remember', turns: [
+      { user, scheduled: { kind }, expect: { rubric: [{ id: 'range', criterion: 'Give an implied growth range, not a single value.', metric: 'task_success' }] } },
+    ] }],
+  }] };
+  const answer = 'I compared the valuations.';
+  const full = answer + '\n\nThe implied growth range is 8% to 12%.';
+  const identity = { run_id: 'scheduled-run', task_id: 'scheduled-task' };
+  const reply = { thread_id: 'research-thread', message_id: 'originating-reply' };
+  const trace = { ...traces[0], suite: 'scheduled', scenario_id: 'VALUATION', session_id: 'bot',
+    turn_index: 0, user, answer, resolved_appearance: 'en',
+    saved_task: { id: identity.task_id, prompt: user, kind },
+    admission: { ...identity, prompt: user, surface: 'scheduled', thread_id: reply.thread_id },
+    home_thread_id: 'home-thread',
+    runs: [{ ...identity, ...reply, kind, status: 'succeeded', summary: answer, scheduled_for_ms: 10, started_at_ms: 11, finished_at_ms: 12 }],
+    deliveries: [{ ...identity, kind, status: 'succeeded', finished_at_ms: 12, thread_id: 'home-thread', run_thread_id: reply.thread_id,
+      message_id: 'bot-delivery', content: answer }],
+    session_answer: { ...reply, status: 'complete', host_composed: false, content: full },
+    terminal_event: { status: 'completed', message_id: reply.message_id },
+  };
+  const input = row => buildJudgeInput(scheduledSuite, judgeItems(scheduledSuite, [row])[0], [row]);
+  assert.equal(input(trace).answer, full);
+  assert.equal(input(trace).bot_preview, answer);
+  for (const changed of [
+    { ...trace, terminal_event: { ...trace.terminal_event, message_id: 'other-reply' } },
+    { ...trace, session_answer: { ...trace.session_answer, host_composed: true } },
+    { ...trace, deliveries: [] },
+  ]) {
+    assert.equal(input(changed).answer, answer);
+    assert.equal(Object.hasOwn(input(changed), 'bot_preview'), false);
+  }
+  const interactive = structuredClone(scheduledSuite);
+  delete interactive.scenarios[0].sessions[0].turns[0].scheduled;
+  assert.equal(buildJudgeInput(interactive, judgeItems(interactive, [trace])[0], [trace]).answer, answer);
 });

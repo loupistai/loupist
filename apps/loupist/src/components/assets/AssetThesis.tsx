@@ -10,7 +10,7 @@ import { NativeSelect } from "../ui/native-select";
 import { Textarea } from "../ui/textarea";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { VerdictChip } from "./VerdictChip";
-import { crossedReason, lineValue, midSentence, shortDay, SourceChips, verdictLabel, type CitationNumbers, type EvidenceOpener } from "./assetText";
+import { lineValue, readSentence, shortDay, SourceChips, verdictLabel, type CitationNumbers, type EvidenceOpener } from "./assetText";
 import { formatAsOf, localDayOf } from "../../chat/asOf";
 import { useLookBack } from "../knowledge/lookBack";
 
@@ -46,7 +46,7 @@ function ThesisForm({ bridge, loupistId, page, editing, onDone, onCancel }: {
   const [text, setText] = useState(reason?.text ?? "");
   const [claim, setClaim] = useState(line?.claim ?? "");
   const [metric, setMetric] = useState(line?.metric ?? "");
-  const [direction, setDirection] = useState<"above" | "below">(line?.direction ?? "above");
+  const [direction, setDirection] = useState<"above" | "below">(line?.direction === "below" ? "below" : "above");
   const [threshold, setThreshold] = useState(line ? String(line.threshold) : "");
   const [unit, setUnit] = useState(line?.unit ?? "");
   const [busy, setBusy] = useState(false);
@@ -55,7 +55,7 @@ function ThesisForm({ bridge, loupistId, page, editing, onDone, onCancel }: {
     event.preventDefault();
     if (busy) return;
     setBusy(true); setError(false);
-    const thesis = { assetId: page.assetId, role: editing.kind } as const;
+    const thesis = { assetId: page.asset.assetId, role: editing.kind } as const;
     const check = editing.kind === "line"
       ? { claim, metric, direction, threshold: Number(threshold), ...(unit.trim() ? { unit: unit.trim() } : {}), ...(line?.byDate ? { byDate: line.byDate } : {}) }
       : null;
@@ -132,18 +132,15 @@ export function AssetThesis({ bridge, loupistId, loupistName, page, name, thread
     ? <ThesisForm bridge={bridge} loupistId={loupistId} page={page} editing={editing} onDone={finish} onCancel={() => setEditing(null)} />
     : null;
 
-  const latest = read?.latestMove;
   let sentence: ReactNode = null;
   if (read) {
-    if (read.started || !latest) sentence = <p className="asset-read-sentence">{t("verdict.started", { date: shortDay(read.since) })}</p>;
-    else if (latest.actor === "user" && latest.undoesMoveId) sentence = <p className="asset-read-sentence">{t("verdict.undone", { verdict: verdictLabel(read.verdict), date: shortDay(latest.factDate) })}</p>;
+    const { text, move } = readSentence(read);
+    if (!move) sentence = <p className="asset-read-sentence">{text}</p>;
     else {
-      const reason = latest.line?.crossed ? crossedReason(latest.line, latest.factDate) : midSentence(latest.reason);
-      const text = `${t("verdict.since", { verdict: verdictLabel(read.verdict), date: shortDay(read.since) })} — ${reason}`;
       const long = text.length > LONG_SENTENCE;
       sentence = <div className="asset-read-sentence-row">
         <p className="asset-read-sentence" data-clamped={long && !expanded || undefined}>
-          {text} <SourceChips evidence={latest.evidence} numbers={numbers} onOpen={onOpenEvidence} />
+          {text} <SourceChips evidence={move.evidence} numbers={numbers} onOpen={onOpenEvidence} />
         </p>
         {long && !expanded ? <Button type="button" variant="link" size="sm" onClick={() => setExpanded(true)}>{t("page.more")}</Button> : null}
         {read.undoMoveId ? <Button type="button" variant="link" size="sm" className="asset-undo" onClick={() => onUndo(read.undoMoveId!)}>{t("verdict.undo")}</Button> : null}

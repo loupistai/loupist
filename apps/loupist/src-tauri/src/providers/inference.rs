@@ -866,7 +866,11 @@ mod tests {
                 (service.admit().unwrap(), support)
             };
             assert_eq!(
-                state.provider_support.try_acquire().unwrap_err().code,
+                state
+                    .provider_support
+                    .try_acquire_search()
+                    .unwrap_err()
+                    .code,
                 "conflict"
             );
             let blockers = state.maintenance.begin_update().unwrap_err();

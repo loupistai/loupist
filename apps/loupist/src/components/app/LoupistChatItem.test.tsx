@@ -3,30 +3,59 @@ import type { ChatThread } from "../../types";
 import { LoupistChatItem } from "./LoupistChatItem";
 import { SidebarProvider } from "../ui/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
+import "../../styles/tokens.css";
 
-it("marks unsent drafts and private chats in the sidebar", () => {
-  const thread: ChatThread = {
-    id: "chat-1", loupist_id: "loupist", title: "Hanul Q3 deep dive",
-    updated_at: "2026-10-31T00:00:00Z", use_memory: true, update_memory: true, messages: [],
-  };
-  render(<TooltipProvider><SidebarProvider><ul>
-    <LoupistChatItem thread={thread} active={false} running={false} draft onSelect={vi.fn()} onRename={vi.fn()} onDelete={vi.fn()} />
-    <LoupistChatItem thread={{ ...thread, id: "chat-2", title: "Private notes", use_memory: false, update_memory: false }} active={false} running={false} onSelect={vi.fn()} onRename={vi.fn()} onDelete={vi.fn()} />
-  </ul></SidebarProvider></TooltipProvider>);
+const thread: ChatThread = {
+  id: "chat-1", loupist_id: "loupist", title: "Hanul Q3 deep dive",
+  updated_at: "2026-10-31T00:00:00Z", use_memory: true, update_memory: true, messages: [],
+};
+
+const row = (props: Partial<Parameters<typeof LoupistChatItem>[0]> = {}) => (
+  <LoupistChatItem thread={thread} active={false} running={false} onSelect={vi.fn()} onRename={vi.fn()} onDelete={vi.fn()} {...props} />
+);
+const inSidebar = (rows: React.ReactNode) => <TooltipProvider><SidebarProvider><ul>{rows}</ul></SidebarProvider></TooltipProvider>;
+
+it("marks unsent drafts and private chats in the sidebar, and describes the row with them", () => {
+  render(inSidebar(<>{row({ draft: true })}{row({ thread: { ...thread, id: "chat-2", title: "Private notes", use_memory: false, update_memory: false } })}</>));
   expect(screen.getByRole("img", { name: "Unsent draft" })).toBeInTheDocument();
   expect(screen.getAllByRole("img", { name: "Private chat" })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Hanul Q3 deep dive" })).toHaveAccessibleDescription("Unsent draft");
+  expect(screen.getByRole("button", { name: "Private notes" })).toHaveAccessibleDescription("Private chat");
 });
 
-it("marks a running chat with a still ring that keeps its spoken name, never a spinner", () => {
-  const thread: ChatThread = {
-    id: "chat-1", loupist_id: "loupist", title: "Hanul Q3 deep dive",
-    updated_at: "2026-10-31T00:00:00Z", use_memory: true, update_memory: true, messages: [],
-  };
-  const { container } = render(<TooltipProvider><SidebarProvider><ul>
-    <LoupistChatItem thread={thread} active={false} running onSelect={vi.fn()} onRename={vi.fn()} onDelete={vi.fn()} />
-  </ul></SidebarProvider></TooltipProvider>);
-  const mark = screen.getByRole("status", { name: "Hanul Q3 deep dive is running" });
-  expect(mark).toHaveClass("thread-running");
-  expect(mark.tagName).toBe("SPAN");
-  expect(container.querySelector(".animate-spin, [data-slot='spinner']")).toBeNull();
+it("shows the app's spinner in the status slot while a reply runs, named once in the row's description", () => {
+  const { rerender } = render(inSidebar(row({ running: true, finished: true, thread: { ...thread, use_memory: false, update_memory: false } })));
+  const button = screen.getByRole("button", { name: "Hanul Q3 deep dive" });
+  const spinner = button.querySelector("[data-slot=spinner]")!;
+  // Running wins the one status slot over a finished dot and the private mark.
+  expect(spinner).toHaveClass("thread-running", "animate-spin");
+  expect(spinner).toHaveAccessibleName("Running");
+  expect(button.querySelector(".loupist-status-dot, .loupist-private-mark")).toBeNull();
+  // A fixed name, not a live region: nothing is announced as the ring turns.
+  expect(spinner).toHaveAttribute("role", "img");
+  expect(button).toHaveAccessibleDescription("Running");
+  expect(button).not.toHaveAttribute("aria-busy");
+
+  rerender(inSidebar(row({ running: false, finished: true })));
+  expect(button.querySelector("[data-slot=spinner]")).toBeNull();
+  expect(button).toHaveAccessibleDescription("Finished while you were away");
+});
+
+it("keeps Bot's name and descriptor while it runs, in the rail too", () => {
+  const bot: ChatThread = { ...thread, id: "home-loupist", home: true, title: "Thread" };
+  const { rerender } = render(inSidebar(row({ thread: bot, running: true })));
+  expect(screen.getByRole("button", { name: "Bot" })).toHaveAccessibleDescription("Chat, briefings, and alerts Running");
+  rerender(inSidebar(row({ thread: bot, running: true, iconOnly: true })));
+  expect(screen.getByRole("button", { name: "Bot" })).toHaveAccessibleDescription("Running");
+});
+
+it("stills the spinner with reduced motion", () => {
+  render(inSidebar(row({ running: true })));
+  const spinner = screen.getByRole("img", { name: "Running" });
+  // The tokens' reduced-motion guard is what stops it: a rule there matches this element.
+  const stills = [...document.styleSheets].flatMap((sheet) => [...sheet.cssRules])
+    .filter((rule): rule is CSSMediaRule => rule instanceof CSSMediaRule && rule.conditionText.includes("prefers-reduced-motion: reduce"))
+    .flatMap((media) => [...media.cssRules])
+    .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && spinner.matches(rule.selectorText) && /^none\b/.test(rule.style.getPropertyValue("animation")));
+  expect(stills).not.toHaveLength(0);
 });

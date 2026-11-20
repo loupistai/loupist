@@ -1,7 +1,7 @@
 import { nodeRadius } from "../../knowledge/mapKinds";
 import { conflictMark, LIVE_GLOW_REACH, nodeRings, placeLabels } from "./labels";
 import type { PositionedNode } from "./layout";
-const node = (id: string, x = 0, y = 0, extra: Partial<PositionedNode> = {}): PositionedNode => ({ id, label: id, x, y, fx: x, fy: y, kind: "entity", degree: 1, watched: false, held: false, ...extra });
+const node = (id: string, x = 0, y = 0, extra: Partial<PositionedNode> = {}): PositionedNode => ({ id, label: id, x, y, fx: x, fy: y, kind: "entity", degree: 1, watched: false, ...extra });
 const measure = (text: string) => text.length * 6;
 const named = { label: "Hanbit Battery", localNames: ["한빛배터리", "東京"] };
 it("draws a Hangul alias for Korean", () => {
@@ -17,28 +17,35 @@ it("greedily omits colliding boxes and boxes covering another node", () => {
   expect(box("blocked").y).toBeLessThan(0);
   for (const a of placed) for (const b of placed) if (a !== b) expect(a.box.x < b.box.x+b.box.w && a.box.x+a.box.w > b.box.x && a.box.y < b.box.y+b.box.h && a.box.y+a.box.h > b.box.y).toBe(false);
 });
-it("prioritizes the selection, its neighbours, then held or watched nodes", () => {
+it("prioritizes the selection, its neighbours, then followed nodes", () => {
   const nodes = [node("degree",0,0,{degree:30}),node("hub",0,0,{degree:2}),node("neighbor"),node("watched",0,0,{watched:true}),node("hovered"),node("selected")];
   const priority = {selectedId:"selected", hoveredId:"hovered", neighbors:new Set(["neighbor"]),hubs:new Set(["hub"])};
   expect(placeLabels(nodes,[],measure,1,priority).map(item => item.node.id)).toEqual(["selected","neighbor","watched","hovered"]);
 });
-it("with no selection, labels held and watched before a learned link, then degree", () => {
-  const held = node("held", 0, 0, { held: true, degree: 1 });
+it("with no selection, labels followed names before a learned link, then degree", () => {
+  const first = node("first", 0, 0, { watched: true, degree: 1 });
   const watched = node("watched", 220, 0, { watched: true, degree: 1 });
   const linked = node("linked", 440, 0, { degree: 2 });
   const hub = node("hub", 660, 0, { degree: 40 });
-  const placed = placeLabels([hub, linked, watched, held], [hub, linked, watched, held], measure, 1, { learnedLinkedIds: new Set(["linked"]) }, 3);
-  expect(placed.map(item => item.node.id)).toEqual(["held", "watched", "linked"]);
+  const placed = placeLabels([hub, linked, watched, first], [hub, linked, watched, first], measure, 1, { learnedLinkedIds: new Set(["linked"]) }, 3);
+  expect(placed.map(item => item.node.id)).toEqual(["first", "watched", "linked"]);
+});
+it("gives a name an older host still marks held no ring and no label priority", () => {
+  // Hosts before holdings left the app sent `held`; it carries no meaning now.
+  const legacy = node("legacy", 0, 0, { held: true, degree: 1 } as Partial<PositionedNode>);
+  const plain = node("plain", 300, 0, { degree: 2 });
+  expect(nodeRings(legacy, 1, {})).toEqual([]);
+  expect(placeLabels([legacy, plain], [legacy, plain], measure, 1, {}, 1).map(item => item.node.id)).toEqual(["plain"]);
 });
 it("never attaches a label nearer another node than its owner", () => {
-  const held = node("Bluehaven Logistics", 0, 0, { held: true, degree: 6 });
+  const followed = node("Bluehaven Logistics", 0, 0, { watched: true, degree: 6 });
   const blockers = [];
   for (let angle = 0; angle < 16; angle++) {
     const theta = angle / 16 * Math.PI * 2;
     blockers.push(node(`near-${angle}`, Math.cos(theta) * 28, Math.sin(theta) * 28));
     blockers.push(node(`mid-${angle}`, Math.cos(theta) * 56, Math.sin(theta) * 56));
   }
-  const world = [held, ...blockers];
+  const world = [followed, ...blockers];
   const gap = (box: { x: number; y: number; w: number; h: number }, other: PositionedNode) => Math.hypot(other.x - Math.max(box.x, Math.min(other.x, box.x + box.w)), other.y - Math.max(box.y, Math.min(other.y, box.y + box.h))) - nodeRadius(other);
   for (const placed of placeLabels(world, world, measure, 0.86, {})) {
     for (const other of world) if (other.id !== placed.node.id) expect(gap(placed.box, other)).toBeGreaterThan(gap(placed.box, placed.node));
@@ -71,7 +78,7 @@ it("export considers all labels but still omits collisions", () => {
   expect(placeLabels(nodes,nodes,measure,1,{},200)).toHaveLength(200);
 });
 it.each([.6, 2])("keeps ring-aware labels outside every drawn ring at scale %s", scale => {
-  const nodes = [node('selected', 0, 0, {held:true}), node('learned', 100, 0, {kind:'lens_method'}), node('watched', 200, 0, {watched:true}), node('conflict', 300), node('obstacle', 0, 35)];
+  const nodes = [node('selected', 0, 0, {watched:true}), node('learned', 100, 0, {kind:'lens_method'}), node('watched', 200, 0, {watched:true}), node('conflict', 300), node('obstacle', 0, 35)];
   const state = {selectedId:'selected', learnedIds:new Set(['learned']), disputedIds:new Set(['selected','conflict','obstacle'])};
   const placed = placeLabels(nodes, nodes, text => measure(text) / scale, scale, state);
   expect(placed.length).toBeGreaterThan(0);
@@ -138,17 +145,17 @@ it("keeps a top hub identifiable with a callout when a comparable dot blocks the
   expect(placed).toHaveLength(1);
   expect(placed[0].callout).toBe(true);
 });
-it("names the focal centre first, then held or watched names", () => {
-  const held = node("held", 0, 0, { held: true, degree: 9 });
+it("names the focal centre first, then followed names", () => {
+  const followed = node("followed", 0, 0, { watched: true, degree: 9 });
   const focal = node("focal", 300, 0);
-  expect(placeLabels([held, focal], [held, focal], measure, 1).map((item) => item.node.id)).toEqual(["held", "focal"]);
-  expect(placeLabels([held, focal], [held, focal], measure, 1, { focalId: "focal" }).map((item) => item.node.id)).toEqual(["focal", "held"]);
+  expect(placeLabels([followed, focal], [followed, focal], measure, 1).map((item) => item.node.id)).toEqual(["followed", "focal"]);
+  expect(placeLabels([followed, focal], [followed, focal], measure, 1, { focalId: "focal" }).map((item) => item.node.id)).toEqual(["focal", "followed"]);
 });
 it("marks conflicting evidence with a dot, not a ring that reads like the watch ring", () => {
   const disputed = node("disputed", 0, 0, { degree: 4 });
   expect(nodeRings(disputed, 1, { disputedIds: new Set(["disputed"]) })).toEqual([]);
   const watched = node("watched", 0, 0, { degree: 4, watched: true });
-  expect(nodeRings(watched, 1, { disputedIds: new Set(["watched"]) }).map((ring) => ring.color)).toEqual(["holding-ring"]);
+  expect(nodeRings(watched, 1, { disputedIds: new Set(["watched"]) }).map((ring) => ring.color)).toEqual(["followed-ring"]);
   const mark = conflictMark(disputed, 1), radius = nodeRadius(disputed);
   expect(mark.x).toBeGreaterThan(disputed.x);
   expect(mark.y).toBeLessThan(disputed.y);

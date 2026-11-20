@@ -2,6 +2,7 @@ import { headerAction } from "../renderApp";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
+import { mockAssetId } from "../../bridge/mock/assets";
 import userEvent from "@testing-library/user-event";
 import { chooseLoupist, mainTab, newChatButton, openApp } from "../renderApp";
 
@@ -24,56 +25,48 @@ describe("Loupist · New Chat", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("lands on the home Thread with the morning message, and a new Chat offers only questions", async () => {
+  it("lands on Bot's greeting, whose questions fill the composer, and a new Chat offers only questions", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const create = vi.spyOn(bridge, "chatCreate");
     render(<App bridge={bridge} />);
     expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
-    const message = await screen.findByRole("article", { name: "Message from Quality Compounder" });
-    // The first visit has no "since"; it counts what there is to look at.
-    expect(await within(message).findByText(/^(One thing|\d+ things) to look at\.$/)).toBeVisible();
-    await user.click(within(screen.getByRole("region", { name: "You could ask" })).getByRole("button", { name: "What have you learned so far?" }));
-    expect(composer()).toHaveValue("What have you learned so far?");
+    const greeting = await screen.findByRole("region", { name: "Quality Compounder greets you" });
+    await waitFor(() => expect(greeting).toHaveAttribute("aria-busy", "false"));
+    // A new user's cards are first steps; with assets followed they are questions.
+    const ask = within(within(greeting).getByRole("region", { name: /^(Start here|Suggested questions)$/ })).getAllByRole("button")
+      .find((button) => button.dataset.ask === "markets" || button.dataset.ask === "status")!;
+    await user.click(ask);
+    // The card names the question; the composer gets it as the user's own request.
+    expect((composer() as HTMLTextAreaElement).value).toMatch(ask.dataset.ask === "markets" ? /^What matters in markets this week\? List the dates and figures to watch\.$/ : /^Where does .+ stand\? /);
     // The Thread already exists, so writing in it never creates a Chat.
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByText("Response complete.");
     expect(create).not.toHaveBeenCalled();
-    // The first message replaces the morning message; the setup steps still open stay below the conversation.
-    expect(screen.queryByText(/^(One thing|\d+ things) to look at\.$/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "You could ask" })).not.toBeInTheDocument();
-    expect(within(screen.getByRole("article", { name: "Message from Quality Compounder" })).getByRole("region", { name: "Get set up" })).toBeVisible();
+    // The first message replaces the greeting; nothing about setup stays under the conversation.
+    expect(screen.queryByRole("region", { name: "Quality Compounder greets you" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Get set up" })).not.toBeInTheDocument();
 
     await user.click(newChatButton());
     const questions = await screen.findByRole("region", { name: "You could ask" });
-    expect(screen.queryByRole("article", { name: "Message from Quality Compounder" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Quality Compounder greets you" })).not.toBeInTheDocument();
     await user.click(within(questions).getAllByRole("button")[0]!);
     await user.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith({ loupist_id: "loupist-quality" }));
   });
 
-  it("tells what changed since the last visit and opens names on the Map and checks in the Journal", async () => {
+  it("shows the followed asset's stored price with its date and provider", async () => {
     const user = userEvent.setup();
-    localStorage.setItem("loupist.loupistVisit.v1", JSON.stringify({ "loupist-quality": { lastSeenAtMs: Date.now() - 86_400_000 } }));
     const bridge = await openApp();
-    const growth = vi.spyOn(bridge, "knowledgeGrowthEvents").mockResolvedValue({ nextCursor: null, events: [{
-      eventId: "event-apple", loupistId: "loupist-quality", atMs: Date.now(), kind: "entity_added", subjectId: "map-entity-00", recordId: null,
-      originChatId: null, originMessageId: null, actor: "loupist", summary: "", beforeSummary: null, afterSummary: null,
-    }] });
+    const assetId = mockAssetId("NVIDIA");
+    bridge.assets.installAsset({ assetId, name: "NVIDIA" });
+    bridge.assets.installPrice("loupist-quality", assetId, { price: { value: 162.85, date: "2026-11-13", currency: "USD", provider: "yfinance", sourceUrl: null, dataset: { dataset_id: "chat-empty", revision: 1, digest: "test" } } });
     await user.click(screen.getByRole("button", { name: "Bot" }));
-    const message = await screen.findByRole("article", { name: "Message from Quality Compounder" });
-    expect(await within(message).findByText(/^2 things since /)).toBeVisible();
-    expect(growth).toHaveBeenCalledWith(expect.objectContaining({ loupistId: "loupist-quality", sinceMs: expect.any(Number) }));
-    expect(within(message).getByText("+1 on the map:")).toBeVisible();
-    expect(within(screen.getByRole("region", { name: "You could ask" })).getAllByRole("button")[0]).toHaveTextContent(/^What changed for Apple since /);
-
-    await user.click(within(message).getByRole("button", { name: "Review this check" }));
-    const workspace = await screen.findByRole("complementary", { name: "Chat workspace panel" });
-    // The entry's heading and its Then · Now both name the judgment.
-    expect((await within(workspace).findAllByText(/Treat the dependency as a reported protocol fact/))[0]).toBeVisible();
-
-    await user.click(within(message).getByRole("button", { name: "Apple" }));
-    expect(await screen.findByRole("complementary", { name: "Apple" })).toBeVisible();
+    const greeting = await screen.findByRole("region", { name: "Quality Compounder greets you" });
+    expect(within(greeting).getByRole("button", { name: /Where NVIDIA stands/ })).toBeVisible();
+    const tile = await within(greeting).findByRole("button", { name: "Open NVIDIA" });
+    expect(tile).toHaveTextContent("$162.85");
+    expect(tile).toHaveTextContent("As of Nov 13 · Yahoo Finance");
   });
 
   it("opens model settings and the central Loupist page while preserving the draft", async () => {

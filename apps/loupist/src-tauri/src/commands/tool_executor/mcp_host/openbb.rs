@@ -127,7 +127,6 @@ const CURATED_SUMMARIES: &[(&str, &str)] = &[
     ("equity_calendar_dividend", "Dividend calendar (ex, record and payment dates) for a date range."),
     ("etf_info", "ETF profile: issuer, inception, expense ratio and fund details."),
     ("etf_holdings", "ETF holdings with weights as reported by the provider."),
-    ("currency_reference_rates", "Official daily euro reference exchange rates."),
     ("fixedincome_government_treasury_rates", "Daily US Treasury yields by maturity."),
     ("news_company", "Company news headlines with publication time and source link."),
 ];
@@ -229,7 +228,7 @@ fn listing_limit(provider: &str) -> Option<&'static str> {
     }
 }
 
-fn provider_note(providers: &[String]) -> Option<String> {
+fn provider_note(providers: &[String], tool: &str) -> Option<String> {
     if providers.is_empty() {
         return None;
     }
@@ -257,10 +256,17 @@ fn provider_note(providers: &[String]) -> Option<String> {
     }
     for provider in ["cboe", "nasdaq", "tmx"] {
         if providers.iter().any(|item| item == provider) {
-            notes.push(format!(
-                "{provider} {}",
-                listing_limit(provider).expect("limited provider")
-            ));
+            if provider == "tmx" && tool == "news_company" {
+                notes.push(
+                    "tmx: Toronto-listed symbols as written; a US listing with the :US suffix."
+                        .into(),
+                );
+            } else {
+                notes.push(format!(
+                    "{provider} {}",
+                    listing_limit(provider).expect("limited provider")
+                ));
+            }
         }
     }
     if !best_effort.is_empty() {
@@ -617,7 +623,7 @@ pub(super) fn shape_card(
     }
     if local {
         parts.push("Computes locally on the data you pass; no provider call.".into());
-    } else if let Some(note) = provider_note(&providers) {
+    } else if let Some(note) = provider_note(&providers, &tool.name) {
         parts.push(note);
     }
     if dated_route(&tool.name).is_some() {
@@ -644,6 +650,11 @@ pub(super) fn shape_card(
     card["description"] = json!(parts.join(" "));
 }
 
+/// A failed news read supplies no move attribution. Shared by the standalone
+/// failure and the host snapshot's one missing-headlines entry.
+pub(super) const COMPANY_NEWS_UNAVAILABLE: &str =
+    "company headlines unavailable from enabled providers";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,11 +680,15 @@ mod tests {
 
     #[test]
     fn provider_notes_limit_exchange_sources_in_place_and_in_recovery() {
-        assert_eq!(provider_note(&["tmx".into(), "cboe".into(), "yfinance".into()]).unwrap(),
+        assert_eq!(provider_note(&["tmx".into(), "cboe".into(), "yfinance".into()], "equity_price_quote").unwrap(),
             "Providers: cboe for US-listed symbols only; tmx for Toronto-listed symbols only; yfinance best effort (scraped website data that can break or be blocked).");
-        assert!(provider_note(&["nasdaq".into()])
+        assert!(provider_note(&["nasdaq".into()], "equity_price_quote")
             .unwrap()
             .contains("nasdaq for US-listed symbols only"));
+        let news = provider_note(&["tmx".into(), "yfinance".into()], "news_company").unwrap();
+        assert!(news
+            .contains("tmx: Toronto-listed symbols as written; a US listing with the :US suffix."));
+        assert!(!news.contains("Toronto-listed symbols only"));
         let next = best_effort_failure_next(&enabled(&["yfinance", "tmx", "cboe", "nasdaq"]));
         assert!(
             next.contains("tmx for Toronto-listed symbols only"),
@@ -945,6 +960,15 @@ mod tests {
         for text in shaped {
             assert!(!text.to_ascii_lowercase().contains("openbb"), "{text}");
         }
+    }
+
+    #[test]
+    fn reference_rates_are_only_advertised_by_the_core_tool() {
+        assert!(curated_summary("currency_reference_rates").is_none());
+        assert!(curated_summary("currency_price_historical").is_some());
+        let summary = control_summary("available_categories").unwrap();
+        assert!(!summary.contains("currency_reference_rates"));
+        assert!(summary.contains("currency_price_historical"));
     }
 
     #[test]

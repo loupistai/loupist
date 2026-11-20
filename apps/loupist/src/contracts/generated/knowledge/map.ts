@@ -9,7 +9,6 @@ import type { MapContextItem } from "../store/user_context";
 export type KnowledgeMap = {
   nodes: Array<KnowledgeMapNode>,
   edges: Array<KnowledgeMapEdge>,
-  unmatchedHoldings: Array<MapContextItem>,
   unmatchedWatchlist: Array<MapContextItem>,
   /** Counts refer to projected nodes/edges (multi-endpoint claims form a star). */
   counts: { [key in string]: KnowledgeMapCount },
@@ -51,7 +50,6 @@ export type KnowledgeMapNode = {
   recordId?: string,
   archived?: boolean,
   watched: boolean,
-  held: boolean,
   learnedAtMs?: number,
   learnedRationale?: string,
 };

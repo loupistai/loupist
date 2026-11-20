@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ChatStreamEvent } from "../../types";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import { chooseLoupist, loupistIsRunning, newChatButton, openApp, privateChatOn, waitForLoupistRunning, openChat } from "../renderApp";
+import { chooseLoupist, loupistIsRunning, newChatButton, openApp, privateChatOn, rowIsRunning, waitForLoupistRunning, openChat } from "../renderApp";
 import { completedRun } from "../streamFixtures";
 
 type User = ReturnType<typeof userEvent.setup>;
@@ -196,11 +196,11 @@ describe("Loupist · Chat streaming and concurrency", () => {
       const chatAbort = vi.spyOn(bridge, "chatAbort");
       await openApp(bridge);
       await send(user, "First quality thread");
-      await screen.findByRole("status", { name: "How should we read the margin decline? is running" });
+      await waitFor(() => expect(rowIsRunning("How should we read the margin decline?")).toBe(true));
       await user.click(screen.getByRole("button", { name: /^Capital allocation checklist$/ }));
       await send(user, "Second quality thread");
       await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(2));
-      expect(screen.getByRole("status", { name: "Capital allocation checklist is running" })).toBeVisible();
+      expect(rowIsRunning("Capital allocation checklist")).toBe(true);
       const [first, second] = await Promise.all(chatSend.mock.results.map((result) => result.value));
       await user.click(screen.getByRole("button", { name: /^How should we read the margin decline\?$/ }));
       await user.click(await screen.findByRole("button", { name: "Stop response" }));
@@ -261,11 +261,11 @@ describe("Loupist · Chat streaming and concurrency", () => {
     await waitForLoupistRunning("Quality Compounder");
     await chooseLoupist(user, "Contrarian Value");
     await waitForLoupistRunning("Quality Compounder", false);
-    expect(screen.queryByLabelText("Chat workspace panel")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Side panel")).not.toBeInTheDocument();
     await chooseLoupist(user, "Quality Compounder");
     await openChat("Background document");
     await user.click(screen.getByRole("button", { name: /Open document Research note/ }));
-    expect(await screen.findByLabelText("Chat workspace panel")).toBeVisible();
+    expect(await screen.findByLabelText("Side panel")).toBeVisible();
   });
 
   it("merges a late canonical Loupist snapshot without losing a completed local stream", async () => {

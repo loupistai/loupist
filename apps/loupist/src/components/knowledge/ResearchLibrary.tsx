@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowLeftIcon, SearchIcon, XIcon } from "lucide-react";
 import type { LoupistBridge, JournalRecord, KnowledgeLocation, KnowledgePin, ResearchRecord } from "../../types";
 import { errorMessage } from "../../lib/errors";
+import { focusForKeyboard } from "../../lib/inputModality";
 import { Button } from "../ui/button";
 import { EmptyState } from "../ui/empty-state";
 import { Spinner } from "../ui/spinner";
@@ -34,6 +35,8 @@ export function ResearchLibrary({ bridge, location, query, onQueryChange, refres
   const [reload, setReload] = useState(0);
   const libraryRef = useRef<HTMLDivElement>(null);
   const readerRef = useRef<HTMLDivElement>(null);
+  // Cancel removes the form; focus goes back to the button that opened it.
+  const newEntryRef = useRef<HTMLButtonElement>(null);
   const restoreLibraryFocus = useRef(false);
   const patchView = (view: NonNullable<KnowledgeLocation["view"]>) => onPatch({ ...location, view: { ...location.view, ...view } });
   // "New Journal entry" from the palette: open the form once, then clear the request so it can come again.
@@ -81,8 +84,8 @@ export function ResearchLibrary({ bridge, location, query, onQueryChange, refres
       <div className="research-library-controls"><div className="memory-search"><SearchIcon aria-hidden="true" /><Input aria-label={t("journal.search")} placeholder={t("journal.searchPlaceholder")} value={query} onChange={event => onQueryChange(event.target.value)} />{query ? <Button variant="ghost" size="icon-sm" aria-label={t("researchLibrary.clearSearch")} onClick={() => onQueryChange("")}><XIcon /></Button> : null}</div></div>
       {error ? <div role="alert"><p>{error}</p><Button variant="outline" onClick={changed}>{t("researchLibrary.retryResearch")}</Button></div> : null}
       {show !== "notes" ? <section className="journal-library-section" aria-label={t("journal.yourJournal")}>
-        <div className="source-library-heading library-section-label"><h2>{t("journal.yourJournal")}</h2><span>{formatNumber(matches.length)}</span>{journals.length > 0 ? <p className="journal-summary">{t("journal.summary", { cameTrue: formatNumber(counts.cameTrue), didNot: formatNumber(counts.didNot), pending: formatNumber(counts.pending) })}{counts.unclear ? ` · ${t("journal.unclearCount", { count: counts.unclear, value: formatNumber(counts.unclear) })}` : ""}</p> : null}<Button variant="outline" size="sm" className="library-add" onClick={() => setCreating(true)}>{t("journal.newEntry")}</Button></div>
-        {creating ? <ResearchJournalForm bridge={bridge} loupistId={location.loupistId} checkOpen={location.view?.journalCheckOpen} onCancel={() => setCreating(false)} onSaved={entry => { setCreating(false); changed(); openJournal(entry); }} /> : null}
+        <div className="source-library-heading library-section-label"><h2>{t("journal.yourJournal")}</h2><span>{formatNumber(matches.length)}</span>{journals.length > 0 ? <p className="journal-summary">{t("journal.summary", { cameTrue: formatNumber(counts.cameTrue), didNot: formatNumber(counts.didNot), pending: formatNumber(counts.pending) })}{counts.unclear ? ` · ${t("journal.unclearCount", { count: counts.unclear, value: formatNumber(counts.unclear) })}` : ""}</p> : null}<Button ref={newEntryRef} variant="outline" size="sm" className="library-add" onClick={() => setCreating(true)}>{t("journal.newEntry")}</Button></div>
+        {creating ? <ResearchJournalForm bridge={bridge} loupistId={location.loupistId} checkOpen={location.view?.journalCheckOpen} onCancel={() => { setCreating(false); focusForKeyboard(newEntryRef.current); }} onSaved={entry => { setCreating(false); changed(); openJournal(entry); }} /> : null}
         {loading ? <p className="memory-loading-inline" role="status"><Spinner />{t("journal.loading")}</p> : !error && !matches.length && !creating ? <p className="journal-caption">{t(query ? "journal.noMatches" : "journal.empty")}</p> : null}
         <ul className="journal-entry-list">{matches.map(entry => <li key={entry.journalId}><Button variant="ghost" className="research-library-row journal-library-row" data-testid="journal-library-row" data-research-id={entry.journalId} aria-current={entry.journalId === selectedId ? "true" : undefined} onClick={() => openJournal(entry)}><span className="memory-rail-copy"><strong className="journal-judgment-clamp">{entry.judgment}</strong><small><time dateTime={new Date(entry.createdAtMs).toISOString()}>{formatDate(entry.createdAtMs)}</time>{entry.check ? <><span aria-hidden="true"> · </span><ResearchJournalStatus entry={entry} /></> : null}</small></span></Button></li>)}</ul>
       </section> : null}

@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { openApp } from "../renderApp";
 
 const composer = () => screen.getByRole("textbox", { name: "Message Loupist" });
@@ -36,5 +37,19 @@ describe("Loupist · Edit forks (X18)", () => {
     const restored = userMessages().find((article) => article.textContent?.includes("Why did the margin fall?"))!;
     expect(within(restored).getByRole("button", { name: "Later version" })).toBeVisible();
     // Two full mock replies stream in this test; under a loaded suite that takes longer than the default.
+  }, 60_000);
+
+  it("cancels an edit back to an empty message that keeps focus", async () => {
+    const user = userEvent.setup();
+    await openApp(new MockLoupistBridge({ delay_ms: 0 }));
+    await user.type(composer(), "Why did the margin fall?");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Stop response" })).not.toBeInTheDocument(), { timeout: 30_000 });
+    const original = userMessages().find((article) => article.textContent?.includes("Why did the margin fall?"))!;
+    await user.click(within(original).getByRole("button", { name: "Edit message" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText("Editing your message. Sending keeps the earlier version.")).toBeNull();
+    expect(composer()).toHaveValue("");
+    await waitFor(() => expect(composer()).toHaveFocus());
   }, 60_000);
 });

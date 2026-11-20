@@ -11,6 +11,7 @@ fn policy(save: bool) -> ToolPolicy {
         propose_memory_updates: save,
         memory_proposal_budget: 1,
         as_of: None,
+        display_currency: None,
     }
 }
 

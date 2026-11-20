@@ -56,6 +56,10 @@ pub enum SourceClass {
     WebPage,
     HistoricalDocument,
     UserFile,
+    /// Original material the user pasted into a Chat message (a filing
+    /// excerpt, an article, a notice, a table), kept verbatim. Its origin is
+    /// what the user stated, never verified (`ProvidedOrigin`).
+    UserProvided,
 }
 enum_str!(SourceClass {
     PublisherDocument => "publisher_document",
@@ -68,6 +72,7 @@ enum_str!(SourceClass {
     WebPage => "web_page",
     HistoricalDocument => "historical_document",
     UserFile => "user_file",
+    UserProvided => "user_provided",
 });
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -481,6 +486,27 @@ pub struct PublishedRepresentation {
     pub spans: Vec<PublishedSpan>,
 }
 
+/// Where a user-provided capture (`SourceClass::UserProvided`) came from: the
+/// Chat message its bytes were copied from verbatim, when that message was
+/// sent, and the link and publisher the user named for the material. The host
+/// checked that the text, the link and the publisher appear in the user's own
+/// messages in that Chat; it never checked that the material comes from that
+/// link or publisher.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProvidedOrigin {
+    pub chat_id: String,
+    pub message_id: String,
+    pub pasted_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub stated_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub stated_publisher: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PublishedCapture {
@@ -493,6 +519,9 @@ pub struct PublishedCapture {
     pub representations: Vec<PublishedRepresentation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publication_time: Option<TimePoint>,
+    /// Set exactly for a user-provided capture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provided: Option<ProvidedOrigin>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

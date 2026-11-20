@@ -54,6 +54,7 @@ fn staged(bytes: &str) -> StagedSource {
         provider_identity: "example-publisher".into(),
         document_id: "doc-notes".into(),
         material_role: "original".into(),
+        provided: None,
     }
 }
 
@@ -311,20 +312,23 @@ fn a_followed_asset_reason_commits_without_a_memory_read() {
     store.create_loupist(&loupist_profile("loupist-a")).unwrap();
     store.create_chat(&chat("chat-1", "loupist-a")).unwrap();
     let blobs = BlobStore::open(directory.path().join("blobs")).unwrap();
-    let identity = crate::knowledge::assets::AssetIdentity {
-        symbol: "NVDA".into(),
-        market: "NASDAQ".into(),
+    let asset_id = crate::knowledge::assets::asset_id("NVDA", "NASDAQ");
+    let page = crate::commands::assets::wire::AssetRow {
+        asset_id: asset_id.clone(),
         name: "NVDA".into(),
+        created_at_ms: 1,
+        followed_at_ms: None,
+        reference: None,
     };
     let reason = StagedResearch {
         thesis_pair: None,
         journal: Some(StagedResearchJournal {
             thesis: Some((
                 crate::knowledge::assets::JournalThesis {
-                    asset_id: crate::knowledge::assets::asset_id("NVDA", "NASDAQ"),
+                    asset_id,
                     role: crate::knowledge::assets::ThesisRole::Reason,
                 },
-                identity,
+                Some(page),
             )),
             check: None,
             judgment: "Data-center growth slows in 2027 as capex normalizes.".into(),
@@ -377,16 +381,19 @@ fn followed_asset_thesis_pair_commits_reason_before_line_atomically_in_both_orde
         let mut reason = research(Vec::new(), Vec::new(), Vec::new());
         let journal = reason.journal.as_mut().unwrap();
         journal.check = None;
+        let asset_id = crate::knowledge::assets::asset_id("NVDA", "NASDAQ");
         journal.thesis = Some((
             crate::knowledge::assets::JournalThesis {
-                asset_id: crate::knowledge::assets::asset_id("NVDA", "NASDAQ"),
+                asset_id: asset_id.clone(),
                 role: crate::knowledge::assets::ThesisRole::Reason,
             },
-            crate::knowledge::assets::AssetIdentity {
-                symbol: "NVDA".into(),
-                market: "NASDAQ".into(),
+            Some(crate::commands::assets::wire::AssetRow {
+                asset_id,
                 name: "NVDA".into(),
-            },
+                created_at_ms: 1,
+                followed_at_ms: None,
+                reference: None,
+            }),
         ));
         let mut line = journal.clone();
         line.thesis.as_mut().unwrap().0.role = crate::knowledge::assets::ThesisRole::Line;
@@ -663,9 +670,7 @@ fn journals_keep_the_acknowledged_snapshot_and_refuse_unacknowledged_or_foreign_
         Ok(world.record_id)
     })
     .unwrap();
-    let lens = ensure_perspective(&state, "loupist-a", "Use the first method.")
-        .unwrap()
-        .unwrap();
+    let lens = file_test_perspective(&state, "loupist-a", "Use the first method.");
     let charter = host_memory_context(&state, "loupist-a", "")
         .unwrap()
         .charter_delivery
@@ -695,7 +700,7 @@ fn journals_keep_the_acknowledged_snapshot_and_refuse_unacknowledged_or_foreign_
         write.put_section(
             "loupist-a",
             &lens,
-            "focus",
+            "beliefs",
             "Use the edited method.",
             &crate::knowledge::test_support::user_origin(),
             12,
@@ -869,7 +874,7 @@ async fn source_catalog_lists_bounded_text_while_exact_reads_verify_the_blob() {
     .unwrap();
     assert_eq!(
         page.sources[0].objects[0].summary.as_deref(),
-        Some(original.chars().take(240).collect::<String>().as_str())
+        Some(format!("{}…", original[..239].trim_end()).as_str())
     );
     let span_id = saved.span_id.unwrap();
     with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
@@ -1054,9 +1059,7 @@ fn lens_delivery_includes_every_section_and_large_base_requires_an_exact_read() 
         .store
         .create_loupist(&loupist_profile("loupist-a"))
         .unwrap();
-    let lens = ensure_perspective(&state, "loupist-a", "Base")
-        .unwrap()
-        .unwrap();
+    let lens = file_test_perspective(&state, "loupist-a", "Base");
     let put = |key: &str, text: &str, at_ms: i64| {
         with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
             KnowledgeWrite::bind(tx, blobs).put_section(

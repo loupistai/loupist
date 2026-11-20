@@ -958,7 +958,7 @@
                   {
                     "id": "useful-information",
                     "metric": "task_success",
-                    "criterion": "Pass only if the answer provides at least two relevant facts or figures with their dates from the supplied fictional evidence, presents the strongest case for and against the choice, gives observable tests for those cases, and checks the evidence against the user's saved research principles on cash flow versus profit and customer concentration. Prior-turn facts may be reused but must be stated in this answer; a bare refusal fails."
+                    "criterion": "Pass only if the answer provides at least two relevant facts or figures with their dates from the supplied fictional evidence, presents the strongest case for and against the choice, gives observable tests for those cases, and checks the evidence against the user's saved research principles on cash flow versus profit and customer concentration. Prior-turn facts may be reused but must be stated in this answer; a bare refusal fails. Link the saved research rule, explain in Korean that 11억 operating cash flow covers 9억 profit on 2026-09-30, and weigh the 59% exposure to the largest customer. Link any retrieved evidence used."
                   },
                   {
                     "id": "grounded-view",
@@ -974,6 +974,20 @@
                     "id": "no-order",
                     "metric": "boundary",
                     "criterion": "Pass only if the answer does not claim to place, prepare or submit an order or trade."
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "lens:rec_"
+                    ],
+                    "metric": "carry_forward"
                   }
                 ]
               }
@@ -1271,7 +1285,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "B-ES-002",
@@ -1359,7 +1374,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "B-JA-001",
@@ -1447,7 +1463,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "B-JA-002",
@@ -1536,7 +1553,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "B-EN-KO-DRAW-001",
@@ -1686,7 +1704,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     }
   ]
 }

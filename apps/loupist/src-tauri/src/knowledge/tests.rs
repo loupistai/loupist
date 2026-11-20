@@ -664,6 +664,87 @@ fn source_retention_rejects_invalid_material_and_credentials_and_rolls_back() {
 }
 
 #[test]
+fn repeated_paste_updates_its_provenance_under_one_source() {
+    let (_directory, store) = open_store();
+    let mut request = source_request("loupist-a", b"Revenue rose in March.");
+    request.source_class = SourceClass::UserProvided;
+    request.authorship = Authorship::User;
+    request.provider_identity = "user".into();
+    request.origin_locator = "Pasted text".into();
+    request.origin_chat_id = Some("chat-a".into());
+    let provided = ProvidedOrigin {
+        chat_id: "chat-a".into(),
+        message_id: "original".into(),
+        pasted_at_ms: AT,
+        stated_url: None,
+        stated_publisher: None,
+    };
+    let save = |request: &RetainNewSource, origin: &ProvidedOrigin| {
+        store
+            .transact(|write| {
+                write.retain_new_source_with_origin(request.clone(), "reply", Some(origin))
+            })
+            .unwrap()
+    };
+    let first = save(&request, &provided);
+    request.title = "March revenue".into();
+    request.origin_locator = "https://example.test/march".into();
+    request.origin_chat_id = Some("chat-b".into());
+    request.at_ms += 1;
+    request.publication_time = Some(TimePoint {
+        precision: TimePrecision::Date,
+        value: Some("2025-03-31".into()),
+        approximate: false,
+    });
+    request.material.as_mut().unwrap().document_id = "paste.second".into();
+    let corrected = ProvidedOrigin {
+        chat_id: "chat-b".into(),
+        message_id: "second".into(),
+        pasted_at_ms: AT + 1,
+        stated_url: Some(request.origin_locator.clone()),
+        stated_publisher: Some("Issuer".into()),
+    };
+    let next = save(&request, &corrected);
+    assert_eq!(next.record_id, first.record_id);
+    assert_eq!(next.source_id, first.source_id);
+    assert_eq!(save(&request, &corrected), next);
+    let records = store.list_records("loupist-a").unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].title, request.title);
+    let revision = store
+        .read(|write| write.get_revision("loupist-a", &next.revision_id))
+        .unwrap();
+    let payload: SourceRecordPayload = serde_json::from_value(revision.payload).unwrap();
+    assert_eq!(payload.source.title, request.title);
+    assert_eq!(
+        payload.source.origin_locator.as_deref(),
+        Some(request.origin_locator.as_str())
+    );
+    let capture = payload.source.captures.last().unwrap();
+    assert_eq!(capture.publication_time, request.publication_time);
+    assert_eq!(capture.provided.as_ref(), Some(&corrected));
+    assert_eq!(next.capture_id, first.capture_id);
+    assert_eq!(next.span_id, first.span_id);
+    assert_eq!(next.selected_digest, first.selected_digest);
+    let publisher_only = ProvidedOrigin {
+        stated_publisher: Some("Corrected issuer".into()),
+        ..corrected
+    };
+    let last = save(&request, &publisher_only);
+    assert_eq!(last.source_id, first.source_id);
+    let revision = store
+        .read(|write| write.get_revision("loupist-a", &last.revision_id))
+        .unwrap();
+    let payload: SourceRecordPayload = serde_json::from_value(revision.payload).unwrap();
+    assert_eq!(
+        payload.source.captures[0].provided.as_ref(),
+        Some(&publisher_only)
+    );
+    request.loupist_id = "loupist-b".into();
+    assert_ne!(save(&request, &publisher_only).source_id, first.source_id);
+}
+
+#[test]
 fn new_sources_deduplicate_per_loupist_and_reject_a_redirected_index() {
     let (_directory, store) = open_store();
     let request = source_request("loupist-a", b"Identical words");
@@ -1204,3 +1285,5 @@ mod growth;
 mod memory_reset;
 
 mod contest;
+
+mod search_recall;

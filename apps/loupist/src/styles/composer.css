@@ -1,0 +1,258 @@
+/* Composer (docs/ui/chat-composer.md): a compact pill, one row that grows with the text.
+   + at the leading edge, the message, a quiet model label, then the accent Send tile.
+   The shell keeps the reading column's width (native-layout.mjs measures `.composer-shell`). */
+.composer-shell { position: relative; flex: 0 0 auto; width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); margin: 0 auto var(--gg-space-2); container: composer / inline-size; }
+.composer { width: 100%; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.composer [data-slot="input-group"] {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  height: auto;
+  padding: 5px;
+  border: 1px solid var(--gg-color-border-strong);
+  border-radius: var(--gg-radius-xl);
+  background: var(--gg-color-bg-raised);
+  box-shadow: var(--gg-shadow-card);
+  transition: border-color var(--gg-motion-fast) var(--gg-ease-out);
+}
+/* Calm focus: the edge takes the accent ink, without a second contour from the textarea. */
+.composer .composer-prompt textarea:focus-visible { outline: none !important; }
+.composer [data-slot="input-group"]:has(.composer-prompt textarea:focus-visible) { border-color: var(--gg-color-accent-ink); box-shadow: var(--gg-shadow-card); }
+@media (forced-colors: active) {
+  .composer [data-slot="input-group"]:has(.composer-prompt textarea:focus-visible) { outline: 2px solid CanvasText; outline-offset: -2px; }
+}
+.composer-running [data-slot="input-group"],
+.composer-private [data-slot="input-group"] { border-color: var(--gg-color-border-strong); }
+
+/* The row: everything sits on the last line of the text, so a long message grows upward. */
+.composer .composer-footer {
+  order: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: var(--gg-space-1);
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  cursor: text;
+}
+/* The trailing group never shrinks: the model label caps its own width and ellipsizes. */
+.composer-tools { display: flex; flex: 0 0 auto; flex-wrap: nowrap; align-items: flex-end; gap: var(--gg-space-1); }
+.composer-footer > button,
+.composer-tools > button { flex: none; }
+
+/* Round 36 px controls: + and the Send/Stop tile. */
+.composer .composer-add-trigger,
+.composer .composer-tile,
+.composer .composer-queue-action,
+.composer .composer-steer-action {
+  width: var(--gg-size-control-lg);
+  height: var(--gg-size-control-lg);
+  padding: 0;
+  border-radius: var(--gg-radius-full);
+}
+.composer .composer-add-trigger { color: var(--gg-color-text-secondary); background: transparent; }
+.composer .composer-add-trigger:hover { color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); }
+.composer .composer-add-trigger svg { width: 18px; height: 18px; }
+
+/* The message. The highlight layer under the textarea must keep the same box and type. */
+.composer-prompt { position: relative; flex: 1 1 0; width: auto; min-width: 0; align-self: stretch; display: flex; align-items: flex-end; }
+.composer-prompt-highlight,
+.composer .composer-prompt textarea {
+  margin: 0;
+  font: inherit;
+  font-size: 15px;
+  line-height: 22px;
+  letter-spacing: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+.composer .composer-prompt textarea {
+  position: relative;
+  z-index: var(--gg-z-sticky);
+  width: 100%;
+  min-height: var(--gg-size-control-lg);
+  /* ChatComposer sets the height from the text (WKWebView lacks field-sizing); past this cap it scrolls. */
+  field-sizing: fixed;
+  max-height: min(200px, 30dvh);
+  overflow-y: auto;
+  padding: 7px 6px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  box-shadow: none;
+  color: transparent;
+  caret-color: var(--gg-color-text-primary);
+  -webkit-text-fill-color: transparent;
+}
+.composer-prompt-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 7px calc(6px + var(--composer-scrollbar, 0px)) 7px 6px;
+  color: var(--gg-color-text-primary);
+  pointer-events: none;
+  user-select: none;
+  scrollbar-width: none;
+}
+.composer-prompt-highlight::-webkit-scrollbar { display: none; }
+.composer .composer-prompt textarea::placeholder {
+  color: var(--gg-color-text-tertiary);
+  -webkit-text-fill-color: var(--gg-color-text-tertiary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.composer .composer-prompt textarea::selection { color: transparent; background: var(--gg-color-accent-soft); }
+/* A selection made in the thread can reach past the composer; WebKit then fills the whole textarea with the colour
+   above. Until it has focus the box takes no part in a page selection; a click focuses it before it selects. */
+.app-shell .composer .composer-prompt textarea:not(:focus) { -webkit-user-select: none; user-select: none; }
+.composer-prompt.is-composing textarea { color: var(--gg-color-text-primary); -webkit-text-fill-color: var(--gg-color-text-primary); }
+.composer-prompt.is-composing .composer-prompt-highlight { visibility: hidden; }
+.composer-prompt-highlight [data-mention="skill"],
+.composer-assist [data-mention="skill"] { color: var(--gg-color-text-primary); }
+.composer-prompt-highlight [data-mention="connection"],
+.composer-assist [data-mention="connection"] { color: var(--gg-color-focus); }
+
+/* The model: a quiet label ("Auto"), never a filled control. */
+.composer .composer-model-menu {
+  min-width: 0;
+  max-width: min(220px, 34cqi);
+  height: var(--gg-size-control-lg);
+  gap: 3px;
+  padding: 0 var(--gg-space-2);
+  border-radius: var(--gg-radius-full);
+  background: transparent;
+  color: var(--gg-color-text-tertiary);
+  font-size: var(--gg-text-meta);
+  font-weight: var(--gg-weight-regular);
+}
+.composer .composer-model-menu:hover,
+.composer .composer-model-menu[data-state="open"] { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.composer .composer-model-menu > svg { flex: none; width: 12px; height: 12px; }
+.composer-model-menu > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The reasoning level reads apart from the model ("Auto · Medium", not "Auto Medium"). */
+.composer-model-menu > .composer-thinking-level { flex: none; }
+.composer-model-menu > .composer-thinking-level::before { content: "· "; }
+/* A chosen model is named the same quiet way as Auto. */
+.composer-model-menu > .composer-model-chip { padding: 0; background: transparent; font-size: inherit; }
+/* Without an AI account, Connect takes the send slot as the one filled button. */
+.composer .composer-tools > .composer-model-menu:not([aria-haspopup]) {
+  max-width: none;
+  padding-inline: var(--gg-space-4);
+  background: var(--gg-color-accent);
+  color: var(--gg-color-text-on-accent);
+  font-weight: var(--gg-weight-medium);
+}
+.composer .composer-tools > .composer-model-menu:not([aria-haspopup]):hover { background: var(--gg-color-accent-hover); color: var(--gg-color-text-on-accent); }
+.composer-model-menu-panel {
+  width: 340px;
+  min-width: 280px;
+  max-width: calc(100vw - var(--gg-space-6));
+  max-height: min(640px, var(--radix-dropdown-menu-content-available-height));
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
+}
+.model-menu-advanced { display: flex; justify-content: space-between; }
+.model-menu-advanced[aria-expanded="true"] > svg { transform: rotate(180deg); }
+
+/* Send and Stop are one round tile at the trailing edge: the same button, its two icons cross-fading in place. */
+.composer-run-actions { display: inline-flex; flex: 0 0 auto; flex-wrap: nowrap; align-items: center; gap: var(--gg-space-1); }
+.composer-run-actions button { caret-color: transparent; }
+.composer-run-actions svg { width: 18px; height: 18px; }
+.composer .composer-tile {
+  position: relative;
+  background: var(--gg-color-accent);
+  color: var(--gg-color-text-on-accent);
+  transition: background-color var(--gg-motion-fast) var(--gg-ease-out), color var(--gg-motion-fast) var(--gg-ease-out), opacity var(--gg-motion-fast) var(--gg-ease-out), box-shadow var(--gg-motion-fast) var(--gg-ease-out);
+}
+.composer .composer-tile:hover:not(:disabled) { background: var(--gg-color-accent-hover); color: var(--gg-color-text-on-accent); }
+/* An empty message keeps the accent tile (the prototype); it only ignores presses. */
+.composer .composer-submit:disabled { opacity: 1; cursor: default; }
+.composer-tile-icon { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; transition: opacity var(--gg-motion-fast) var(--gg-ease-out), transform var(--gg-motion-fast) var(--gg-ease-out); }
+.composer-tile-icon > svg { width: 18px; height: 18px; }
+.composer-tile-icon[data-icon="stop"] > svg { width: 14px; height: 14px; fill: currentColor; }
+.composer-tile[data-state="send"] > [data-icon="stop"],
+.composer-tile[data-state="stop"] > [data-icon="send"] { opacity: 0; transform: scale(0.8); }
+/* While a reply runs the tile is Stop, in ink rather than accent. */
+.composer .composer-stop-action,
+.composer .composer-stop-action:hover:not(:disabled) { background: var(--gg-color-text-primary); color: var(--gg-color-bg-raised); }
+.composer-run-actions > :not(.composer-tile) { animation: turn-fade-in var(--gg-motion-fast) var(--gg-ease-out) both; }
+/* After a press the tile dims and ignores presses until the host confirms the stop. */
+.composer-stopping .composer-stop-action { opacity: 0.55; pointer-events: none; }
+/* Guide and Send next, offered while a reply runs and the message has text. */
+.composer .composer-steer-action { color: var(--gg-color-text-secondary); background: transparent; }
+.composer .composer-steer-action:hover:not(:disabled) { color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); }
+.composer .composer-queue-action,
+.composer .composer-queue-action:hover { color: var(--gg-color-text-on-accent); background: var(--gg-color-accent); }
+/* Once Send next is the primary control, Stop steps back to an outline beside it. */
+.composer .composer-run-actions:has(.composer-queue-action) .composer-stop-action {
+  color: var(--gg-color-text-primary);
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--gg-color-border-strong);
+}
+.composer .composer-run-actions:has(.composer-queue-action) .composer-stop-action:hover { color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); }
+
+/* Inside the pill: attachments and guidance above the row; private chat and modes under it, aligned with the text. */
+.composer-error { margin-bottom: var(--gg-space-2); max-height: 120px; overflow: auto; }
+.composer .inline-error { margin-bottom: 7px; }
+.composer .composer-attachments { padding: 5px 6px 6px; }
+.composer-guidance {
+  margin: var(--gg-space-1) var(--gg-space-2) var(--gg-space-1);
+  padding: var(--gg-space-1) var(--gg-space-2);
+  border-radius: var(--gg-radius-sm);
+  font-size: var(--gg-text-meta);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.composer-guidance[data-state="pending"] { background: var(--gg-color-warning-soft); color: var(--gg-color-text-primary); }
+.composer-guidance[data-state="admitted"] { background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); }
+.composer-private-status { align-self: flex-start; max-width: 100%; padding: 2px var(--gg-space-1) var(--gg-space-1) calc(var(--gg-size-control-lg) + var(--gg-space-1)); }
+.composer-private-chip { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-height: 24px; padding: 0 var(--gg-space-1) 0 var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.composer-private-chip > svg { width: 12px; height: 12px; flex: none; }
+.composer-private-chip button { position: relative; display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: var(--gg-radius-full); background: transparent; color: inherit; cursor: pointer; }
+.composer-private-chip button::after { content: ""; position: absolute; inset: -4px; }
+.composer-private-chip button:hover { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
+.composer-private-chip button svg { width: 12px; height: 12px; }
+.composer-private-item { align-items: flex-start; }
+.composer-private-item > svg { margin-top: 2px; }
+.composer-private-item-copy { display: grid; min-width: 0; }
+.composer-private-item-copy small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); white-space: normal; }
+.composer-add-menu { width: 270px; border: 1px solid var(--gg-color-border-default); }
+
+.composer-chip-tray { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; margin: 0; padding: 2px var(--gg-space-1) var(--gg-space-1) calc(var(--gg-size-control-lg) + var(--gg-space-1)); list-style: none; }
+.message-mention { display: inline-flex; align-items: center; gap: var(--gg-space-1); max-width: 100%; margin: 0 2px; border-radius: var(--gg-radius-full); padding: 1px var(--gg-space-2); background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); }
+.composer-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: var(--gg-space-6); padding: 0 2px 0 var(--gg-space-2); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); }
+.composer-chip > svg { width: var(--gg-space-3); height: var(--gg-space-3); flex: none; color: var(--gg-color-text-secondary); }
+.composer-chip[data-kind="connection"] > svg { color: var(--gg-color-focus); }
+.composer-chip[data-kind="skill"] > svg { color: var(--gg-color-text-primary); }
+.composer-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-chip small { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-regular); white-space: nowrap; }
+.composer-chip[data-kind="context"] > svg { color: var(--gg-color-text-secondary); }
+.composer-chip button { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--gg-radius-full); background: transparent; color: var(--gg-color-text-secondary); }
+.composer-chip button svg { width: var(--gg-space-3); height: var(--gg-space-3); }
+.composer-chip button:hover { color: var(--gg-color-text-primary); background: var(--gg-color-bg-selected); }
+.composer-chip[data-kind="quote"] > span { font-style: italic; }
+.composer-chip-more { height: var(--gg-space-6); padding: 0 var(--gg-space-2); border: 1px dashed var(--gg-color-border-default); border-radius: var(--gg-radius-full); background: transparent; color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
+.composer-chip-more:hover { color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); }
+
+/* Under the row: the run help while a reply runs, then the one-line notice under the pill. */
+.composer-run-help { margin: 0; padding: var(--gg-space-1) var(--gg-space-2) 2px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: 1.5; }
+.composer-disclosure { display: flex; align-items: center; justify-content: center; min-height: var(--gg-space-5); margin: 6px 0 0; text-align: center; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
+
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@container composer (max-width: 420px) {
+  .composer .composer-model-menu { max-width: 96px; }
+}
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@container chat-reading (max-width: 760px) {
+  .composer-shell { margin-bottom: var(--gg-space-3); }
+}

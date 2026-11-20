@@ -1,5 +1,5 @@
 /** Tool evidence classification shared by deterministic checks and reports. */
-import { canonicalJson, toolCalls, skillReadAssertion } from './eval-contract.mjs';
+import { isRecord, canonicalJson, toolCalls, skillReadAssertion } from './eval-contract.mjs';
 import catalog from '../../agent/tool-catalog.json' with { type: 'json' };
 const INVALID_CODES = new Set(['malformed_request', 'method_denied', 'tool_not_found', 'tool_validation_failed']);
 const INVALID_MESSAGE = /Tool (?:"[^"]+"|\S+) not found|Validation failed for tool "[^"]+":/u;
@@ -74,6 +74,21 @@ export function skillReadEvidence(assertion, calls) {
     unknown = true;
   }
   return { pass: unknown ? null : false, detail: unknown ? 'Skill read evidence unavailable' : `no successful read of skills/${id}/SKILL.md` };
+}
+
+// Real Pi traces wrap the host JSON in details or a JSON text block. Scripted traces use it directly.
+export function hostResult(result) {
+  if (!isRecord(result) || result.truncated) return null;
+  if (isRecord(result.details) && Object.keys(result.details).length) return result.details;
+  if (!Array.isArray(result.content)) return result;
+  const [block] = result.content;
+  if (block?.type !== 'text') return null;
+  try {
+    const parsed = JSON.parse(block.text);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export function comparableArgs(args) {

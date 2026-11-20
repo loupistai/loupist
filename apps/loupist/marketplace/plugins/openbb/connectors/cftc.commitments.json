@@ -1,11 +1,11 @@
 {
   "id": "cftc.commitments",
   "name": "CFTC",
-  "summary": "Commitments of Traders and public market reports; an app token raises API limits.",
+  "summary": "Search Commitments of Traders reports without an account. To raise the shared request limit, create an optional app token in your Socrata profile.",
   "publisher": "Loupist",
   "data_authority": "U.S. Commodity Futures Trading Commission",
   "kind": "data_source",
-  "free_state": "free_account",
+  "free_state": "keyless",
   "trust": "first_party",
   "runtime": {
     "kind": "mcp",
@@ -42,7 +42,7 @@
     "Historical"
   ],
   "attribution": "CFTC",
-  "terms_url": "https://publicreporting.cftc.gov/",
+  "terms_url": "https://dev.socrata.com/docs/app-tokens",
   "permissions": {
     "network_hosts": [
       "publicreporting.cftc.gov"
@@ -59,10 +59,10 @@
         "kind": "api_key",
         "options": [],
         "label": "CFTC app token",
-        "required": true,
+        "required": false,
         "min_length": 8,
         "max_length": 512,
-        "help_url": "https://dev.socrata.com/foundry/publicreporting.cftc.gov"
+        "help_url": "https://publicreporting.cftc.gov/signup"
       }
     ]
   }

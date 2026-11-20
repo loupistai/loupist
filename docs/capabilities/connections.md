@@ -5,16 +5,16 @@ A connection's secret stays in Rust. Enabling it is per Loupist, and a custom se
 ## Connections and credentials
 
 The official catalog is `apps/loupist/marketplace/marketplace.json` plus its
-`plugins/<name>/` folders. Settings → Connections configures those bundled services
-and the user's own [custom connections](#custom-connections). The Loupist settings
-sheet controls each Loupist's enabled bindings. Open it from the Loupist header or
-Settings → Loupists. "Choose which Loupists can use them" on the Connections page
-opens the current Loupist's settings at Skills & connections. See
-[the Connections page](#the-connections-page).
+`plugins/<name>/` folders. Settings → Data connections configures those bundled services
+and the user's own [custom connections](#custom-connections). Each Loupist's settings
+control which connections it can use. Open those settings from the sidebar's Loupist
+switcher or Settings → Loupists. **Loupist access** on the Data connections page
+opens the current Loupist’s **Skills & connections** section at its connections list. See
+[the Data connections page](#the-data-connections-page).
 
 Connection details separate shared setup, credentials and provider context,
 including for keyless services. Readiness/access/search filters help locate entries.
-Model-provider sign-ins and keys are managed in Models & providers;
+Manage model-provider sign-ins and keys in Settings → AI accounts.
 [Shared providers](../runtime/providers.md#shared-providers-and-world-processing) owns which
 providers sign in and which take a key only (OpenRouter is key-only). Rust opens a
 provider's key and usage pages from fixed addresses (`provider_open_console`,
@@ -34,8 +34,8 @@ the connection's status (so listing connections, Bot, Following, asset pages and
 authority read nothing more) or a refusal. A refused key is `locked`: its connection
 alone shows "Locked until you allow access in macOS" with the one-sentence reason and
 **Try again** (`marketplace_credential_unlock`, which asks macOS once more); passive
-callers, tool calls included, are refused without asking again, the list and every
-other connection keep loading, and Watching names the locked connection. Saving, a
+callers, tool calls included, are refused without asking again. The list and every
+other connection keep loading. Saving, a
 check the user starts and Try again set a remembered refusal aside. Custom
 connections and the GitHub sharing token use the same gate and session refusal; the
 GitHub account in Settings shows the login recorded at sign-in without reading the
@@ -71,13 +71,13 @@ dialog, never in the conversation, and the connection works from the next messag
 
 ## Custom connections
 
-Users can add their own MCP data sources under Settings → Connections → Your connections.
+In Settings → Data connections, expand **Add your own connection (advanced)** and choose **Add a connection**.
+
 - **Adding:** by URL (Streamable HTTP; HTTPS, or loopback for local servers), by pasting `mcpServers` JSON, or, under
   Advanced, as a local command with a pinned package version. Nothing runs until the user confirms an entry, and the
   full command line is shown first. Confirming from Add enables the Loupist that opened the dialog, then tool review
-  records Allow or Don't allow. Done closes the dialog. Confirming from the connection detail does not enable a Loupist. The detail sheet covers the right side of Connections, and the page behind it wraps into the visible strip so a line is not sliced.
-  The detail switch still chooses which Loupists may call the connection. A new connection keeps “Don't save results to
-  Memory” on until that switch is turned off.
+  records Allow or Don't allow. Done closes the dialog. Confirming from the connection detail does not enable a Loupist. The detail sheet covers the right side of Data connections, and the page behind it wraps into the visible strip so a line is not sliced.
+  The access switch controls whether the selected Loupist can use this connection.
 - **Sign-in:** MCP authorization: protected-resource and authorization-server discovery, Client ID Metadata Documents
   when the product client URL is configured (otherwise Dynamic Client Registration or a user-supplied client ID),
   PKCE, the `resource` parameter, exact issuer validation, refresh, and step-up. Tokens, secrets, headers and env
@@ -107,8 +107,9 @@ Users can add their own MCP data sources under Settings → Connections → Your
 - **Outbound block:** after a custom tool result enters a turn, Rust marks the turn tainted, and outbound-capable
   tools (web, browser, other connections, every native data read that reaches its provider, keyless World Bank and
   DefiLlama included, and schedule changes) are refused for the rest of that turn. `run_python` stays allowed.
-- **Memory:** "Don't save results to Memory" is on by default per connection. When it is on and the connection
-  taints a turn, that turn writes no Memory; otherwise Sources and Map nodes carry their connection origin.
+- **Memory.** Each new connection starts with **Save results to Memory** off. When a result from that connection
+  enters a turn, the host blocks Memory writes for that turn. Turning the switch on allows saves when Chat’s
+  Memory settings permit them. Saved Sources and Map nodes carry their connection origin.
   A refused save names that connection policy as its cause, even when Chat saving is also off; it never suggests
   enabling saving to bypass the connection's choice. Tool refusals distinguish a declined approval card, an
   unanswered card and missing standing approval in an unattended run. Outside-text pauses invite the user to ask
@@ -116,11 +117,24 @@ Users can add their own MCP data sources under Settings → Connections → Your
 - **Unattended runs:** briefings and scheduled runs may call only Always-approved read-only custom tools.
   Custom-enabled turns start a cold Pi session.
 
-## The Connections page
+## The Data connections page
 
-Available connections come first, then Your connections. With no custom connection,
-Your connections is a heading, one line and "+ Add a connection"; its Loupist picker
-appears once a connection exists. The search box matches only what a card shows (name,
+The access label and setup guidance describe the provider’s signup requirements.
+Korea Investment and Tradier require brokerage accounts. BizToc’s free Basic
+tier requires a payment card. Other providers can restrict data by plan even
+after issuing a free key. The dedicated CFTC connection can search and read
+reports anonymously. Saving and verifying a Socrata app token raises the rate
+limit for that grant. The BLS series connection requires a registered key
+although the public API permits 25 anonymous queries per day.
+
+Alpha Vantage verification and the default daily history read request the latest
+100 unadjusted daily prices. Explicitly adjusted prices use the provider’s
+premium feed. A plan refusal leaves a working credential available.
+
+Available connections come first, then "Add your own connection (advanced)", a disclosure
+that stays closed until the user has a connection of their own and then opens on its rows.
+With none it holds one line and "Add a connection"; its Loupist picker appears once a
+connection exists. The search box matches only what a card shows (name,
 summary, access label and markets), never plugin or provider ids, so the runtime that
 serves an entry stays invisible.
 
@@ -141,15 +155,31 @@ entry the user never set up is Not connected. The Needs attention filter and its
 use that flag only. A keyless entry that still asks for a contact email (SEC EDGAR) is
 labelled "Contact email only" instead of "No API key required".
 
+The page reads the current Loupist's bindings (`loupist_capability_list`) with the
+catalog. A Ready card whose connection is off for that Loupist adds "Off for {Loupist}",
+since the asset page, Following and Chat send the user here with "off for this Loupist".
+Its dialog says so beside the status ("On for {Loupist}" when on) and offers "Turn on for
+{Loupist}" (`loupist_capability_enable`); "Loupist access" in the footer, for every
+Loupist, appears once the connection is set up, because finishing setup turns it on for
+all of them.
+
 Within each group, ready entries come first, then entries that need no setup (the keyless
 Market data platform leads Market data), then localized display name. Loupist settings
 uses the same comparator, translates names, summaries and group labels with the same
 catalog, and the two pages agree. Group headings are h3 and card titles h4. English
-connector copy is looked up by exact string in the `catalog` namespace, so
-`connectionCopy.test.ts` fails when a bundled summary or name has no catalog entry.
+connector copy is looked up by exact string in the `catalog` namespace, via
+`src/lib/connectionCopy.ts`, so `connectionCopy.test.ts` fails when a bundled
+summary or name has no catalog entry.
 
 The setup dialog hides KRX service ids and shows a localized sentence for a rejected or
-unavailable key instead of the raw host error. Done, Close, Escape and the dialog's
+unavailable key instead of the raw host error: KRX's rejection also names its per-market
+approval, and an unchecked key says so with "Verify again" (offline, it says the Mac is
+offline). With a saved key, nothing typed and settings unchanged, the submit button reads
+"Verify again", which is what it does. A key not saved yet has no status line; the optional
+OpenFIGI key says what works without it. A result and the progress line sit right under
+the fields, and the title stays as the dialog opened even when a failed check leaves the key
+saved. When the control used goes away or is disabled
+(saving, Turn on, Delete), focus moves to the result. Done, Close, Escape and the dialog's
 other exits ask before discarding a key that is typed but not saved.
 
 ## Code

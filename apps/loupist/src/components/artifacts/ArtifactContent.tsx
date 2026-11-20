@@ -28,6 +28,8 @@ type Props = {
   onAsk?: (artifact: ChatArtifactRef) => void;
   askDisabled?: boolean;
   onExport?: (request: { suggestedName: string; bytes: number[]; kind: "csv" | "md" | "png" }) => Promise<string | null>;
+  /** The Loupist the shown work belongs to: a grid's rows open its asset pages outside a chat. */
+  loupistId?: string;
   /** The panel status row's slot: the view switch and actions join that row instead of adding one (chat design change 24). */
   toolbarTarget?: HTMLElement | null;
 };
@@ -60,6 +62,7 @@ export function ArtifactContent({
   askDisabled,
   onExport,
   toolbarTarget,
+  loupistId,
 }: Props) {
   useTranslation("chat");
   const [mode, setMode] = useState<"preview" | "source" | "data">("preview");
@@ -90,7 +93,7 @@ export function ArtifactContent({
     return <div className="workspace-artifact-view workspace-grid-view">
       {grid.layout === "conflict"
         ? <ConflictCard title={view.artifact.title} conflict={grid} evidenceRefs={evidenceRefs} />
-        : <GridCard title={view.artifact.title} grid={grid} evidenceRefs={evidenceRefs} onExport={onExport}
+        : <GridCard title={view.artifact.title} grid={grid} evidenceRefs={evidenceRefs} onExport={onExport} loupistId={loupistId}
           onAsk={onAsk ? () => onAsk(chatArtifactRef(view)) : undefined} askDisabled={askDisabled} />}
     </div>;
   }

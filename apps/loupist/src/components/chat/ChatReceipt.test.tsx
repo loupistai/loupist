@@ -24,7 +24,7 @@ it("lists what the answer learned, put on the map and used in a fixed order, eac
     saved: [{ kind: "Source", items: [saved("Source", "s")] }],
   });
   const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
-  expect(receipt).toHaveTextContent("Learned 3·3 names added to the map·1 relationship updated·1 idea·Used 2 pages·Saved 1 source");
+  expect(receipt).toHaveTextContent("Learned 3 things·3 names added to the map·1 relationship updated·1 idea·Used 2 pages·Saved 1 source");
   const user = userEvent.setup();
   await user.click(within(receipt).getByRole("button", { name: /Show 3 new on the map/ }));
   await user.click(within(receipt).getByRole("button", { name: "1 relationship updated on the map" }));
@@ -33,7 +33,7 @@ it("lists what the answer learned, put on the map and used in a fixed order, eac
   expect(used).toHaveAttribute("aria-expanded", "false");
   await user.click(used);
   expect(handlers.onToggleUsed).toHaveBeenCalled();
-  await user.click(within(receipt).getByRole("button", { name: "Learned 3" }));
+  await user.click(within(receipt).getByRole("button", { name: "Learned 3 things" }));
   await user.click(within(receipt).getByRole("button", { name: "1 idea" }));
   expect(handlers.onToggleLearned).toHaveBeenCalledTimes(2);
 });
@@ -42,9 +42,16 @@ it("leads with the principles the answer used and opens them with the used list"
   const principle = { recordId: "p", title: "Cash before profit" };
   const handlers = renderReceipt({ usedPrinciples: [principle], usedPages: [{ ...principle, kind: "principle" }], saved: [{ kind: "Source", items: [saved("Source", "s")] }] });
   const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
-  expect(receipt).toHaveTextContent(/^·Used your principle·Saved 1 source$/);
-  await userEvent.setup().click(within(receipt).getByRole("button", { name: "Used your principle" }));
+  expect(receipt).toHaveTextContent(/^·Read your principle·Saved 1 source$/);
+  await userEvent.setup().click(within(receipt).getByRole("button", { name: "Read your principle" }));
   expect(handlers.onToggleUsed).toHaveBeenCalled();
+});
+
+it("counts the pages beside the principles once: a perspective with a principle is one more page", () => {
+  const principle = { recordId: "p", title: "Cash before profit" };
+  renderReceipt({ usedPrinciples: [principle], usedPages: [{ ...principle, kind: "principle" }, { recordId: "o", title: "Evidence before conviction", kind: "perspective" }] });
+  const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
+  expect(receipt).toHaveTextContent(/^·Read your principle·Used 1 page$/);
 });
 
 it("says nothing new was saved only when the turn could save", () => {
@@ -79,6 +86,18 @@ it("says a kind the answer asked for was not added when the map gained that name
   expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Process step: not added to the map");
 });
 
+it("reports a skipped Journal save beside the completed setup", () => {
+  const message = { id: "answer", role: "assistant", content: "Done.", created_at: "2026-11-07T00:00:00Z", status: "complete",
+    memory_update: { status: "applied", commitId: "answer", changes: [],
+      skippedKinds: [{ name: "journal_save", label: "Journal" }],
+      setup: [{ change: "followed", symbol: "STAY" }] } } as unknown as import("../../types").ChatMessage;
+  const receipt = chatReceipt(message);
+  render(<ChatReceipt receipt={receipt} showNothingNew listId="list" listExpanded={false} usedListId="used" usedExpanded={false} onToggleUsed={vi.fn()} onSaved={vi.fn()} {...panels} />);
+  const line = screen.getByRole("navigation", { name: "What this answer used and saved" });
+  expect(line).toHaveTextContent("Following STAY");
+  expect(line).toHaveTextContent("Journal entry not saved");
+});
+
 it("says what a setup reply now follows, its new focus and what the map now also tracks, in the reader's language", async () => {
   // The memory update as Rust commits it for a Bot reply that called loupist_setup.
   const message = { id: "answer", role: "assistant", content: "Done.", created_at: "2026-11-07T00:00:00Z", status: "complete",
@@ -98,7 +117,7 @@ it("says what a setup reply now follows, its new focus and what the map now also
   expect(line).not.toHaveTextContent("Nothing new saved");
   await act(async () => { await i18n.changeLanguage("ko"); });
   try {
-    expect(line).toHaveTextContent("·Nvidia 관심 자산에 추가·000660 관심 자산에 추가·AAPL 관심 자산에서 뺌·리서치 주제 바꿈·이제 지도가 공정 노드, Fab도 추적해요");
+    expect(line).toHaveTextContent("·Nvidia 관심 자산에 추가·000660 관심 자산에 추가·AAPL 관심 자산에서 제외·리서치 주제 변경·이제 지도가 공정 노드, Fab도 추적합니다");
   } finally {
     await act(async () => { await i18n.changeLanguage("en"); });
   }

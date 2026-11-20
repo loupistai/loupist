@@ -22,10 +22,10 @@ export type ShareSections = Record<ShareSectionId, boolean>;
 export type ShareScope = { kind: "loupist" } | { kind: "item"; recordId: string };
 
 /**
- * credential and account block until left out; holding blocks; personal warns
- * and allows "It's fine".
+ * credential and account block until left out; personal warns and allows
+ * "It's fine".
  */
-export type ShareFindingClass = "credential" | "account" | "holding" | "personal";
+export type ShareFindingClass = "credential" | "account" | "personal";
 export type ShareItemKind = "profile" | "perspective" | "method" | "principle" | "entity" | "claim" | "source";
 
 export interface ShareFinding {
@@ -37,8 +37,6 @@ export interface ShareFinding {
   itemKind: ShareItemKind;
   /** The record's own label (a method title, a principle statement, a name). Never the matched text. */
   itemLabel: string;
-  /** `holding` only: the held symbol that appears near its quantity, value or cost. */
-  symbol?: string;
   blocking: boolean;
 }
 

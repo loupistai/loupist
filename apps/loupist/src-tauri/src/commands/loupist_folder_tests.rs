@@ -83,6 +83,841 @@ fn copy_folder(source: &Path, destination: &Path) {
     }
 }
 
+#[cfg(unix)]
+async fn remounted_root_fixture() -> (
+    tempfile::TempDir,
+    std::path::PathBuf,
+    crate::domain::LoupistProfile,
+    crate::domain::LoupistProfile,
+) {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("research");
+    fs::create_dir(&root).unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let summary = create_folder_loupist(&state, &root).await.unwrap();
+    let current = state.store.get_loupist(&summary.id).unwrap().unwrap();
+    drop(state);
+    let mut recorded = current.clone();
+    recorded.root_filesystem_identity.as_mut().unwrap().device ^= 1;
+    recorded
+        .runtime_filesystem_identity
+        .as_mut()
+        .unwrap()
+        .device ^= 1;
+    write_remount_profile(temp.path(), &root, &recorded);
+    (temp, root, current, recorded)
+}
+
+#[cfg(unix)]
+fn write_remount_profile(temp: &Path, root: &Path, recorded: &crate::domain::LoupistProfile) {
+    for database in [
+        temp.join("app/catalog.sqlite3"),
+        root.join(".loupist/loupist.sqlite3"),
+    ] {
+        rusqlite::Connection::open(database)
+            .unwrap()
+            .execute(
+                "UPDATE loupist_profiles SET root_device=?1, data_json=?2, root_inode=?4, updated_at_ms=?5 WHERE id=?3",
+                rusqlite::params![
+                    recorded
+                        .root_filesystem_identity
+                        .as_ref()
+                        .unwrap()
+                        .device
+                        .to_string(),
+                    serde_json::to_string(&recorded).unwrap(),
+                    recorded.id,
+                    recorded.root_filesystem_identity.as_ref().unwrap().inode.to_string(),
+                    recorded.updated_at_ms,
+                ],
+            )
+            .unwrap();
+    }
+}
+
+#[cfg(unix)]
+fn assert_recorded_identity(database: &Path, expected: &crate::domain::LoupistProfile) {
+    let connection = rusqlite::Connection::open(database).unwrap();
+    let (device, inode, json): (String, String, String) = connection
+        .query_row(
+            "SELECT root_device, root_inode, data_json FROM loupist_profiles WHERE id=?1",
+            [&expected.id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    let profile: crate::domain::LoupistProfile = serde_json::from_str(&json).unwrap();
+    let identity = expected.root_filesystem_identity.as_ref().unwrap();
+    assert_eq!(device, identity.device.to_string());
+    assert_eq!(inode, identity.inode.to_string());
+    assert_eq!(
+        profile.root_filesystem_identity,
+        expected.root_filesystem_identity
+    );
+    assert_eq!(
+        profile.runtime_filesystem_identity,
+        expected.runtime_filesystem_identity
+    );
+    let journal: String = connection
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        journal,
+        if database.file_name().unwrap() == "catalog.sqlite3" {
+            "wal"
+        } else {
+            "delete"
+        }
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_opens_without_unavailable_state_and_persists_both_identities() {
+    let (temp, root, current, _) = remounted_root_fixture().await;
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let listed = list_available_loupists(&state).await.unwrap();
+    assert_eq!(
+        listed[0].availability,
+        crate::app::LoupistAvailability::Available
+    );
+    let profile = state.store.get_loupist(&current.id).unwrap().unwrap();
+    assert!(crate::fs::loupist_root::profile_workspace(&profile).is_ok());
+    assert!(state.store.lock_loupist(&current.id).is_ok());
+    drop(state);
+    for database in [
+        temp.path().join("app/catalog.sqlite3"),
+        root.join(".loupist/loupist.sqlite3"),
+    ] {
+        assert_recorded_identity(&database, &current);
+    }
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    assert_eq!(
+        list_available_loupists(&state).await.unwrap()[0].availability,
+        crate::app::LoupistAvailability::Available
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_direct_read_recovers_before_listing() {
+    let (temp, root, current, _) = remounted_root_fixture().await;
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let profile = state.store.get_loupist(&current.id).unwrap().unwrap();
+    assert_eq!(
+        profile.root_filesystem_identity,
+        current.root_filesystem_identity
+    );
+    assert_eq!(
+        profile.runtime_filesystem_identity,
+        current.runtime_filesystem_identity
+    );
+    drop(state);
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &current);
+    assert_recorded_identity(&root.join(".loupist/loupist.sqlite3"), &current);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_concurrent_readers_observe_the_recovered_binding() {
+    let (temp, _, current, _) = remounted_root_fixture().await;
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
+    let readers: Vec<_> = (0..4)
+        .map(|_| {
+            let store = state.store.clone();
+            let id = current.id.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                store.get_loupist(&id).unwrap().unwrap()
+            })
+        })
+        .collect();
+    for reader in readers {
+        let profile = reader.join().unwrap();
+        assert_eq!(
+            profile.root_filesystem_identity,
+            current.root_filesystem_identity
+        );
+        assert_eq!(
+            profile.runtime_filesystem_identity,
+            current.runtime_filesystem_identity
+        );
+    }
+}
+
+#[cfg(unix)]
+async fn assert_remounted_root_refused(case: &str) {
+    let (temp, root, _, mut recorded) = remounted_root_fixture().await;
+    match case {
+        "different_inode" => {
+            // Keep creation time and all other evidence valid to isolate the
+            // workspace inode guard from the birth-time guard.
+            recorded.root_filesystem_identity.as_mut().unwrap().inode ^= 1;
+            write_remount_profile(temp.path(), &root, &recorded);
+        }
+        "missing_marker" => fs::remove_file(root.join(".loupist/loupist.sqlite3")).unwrap(),
+        "foreign_marker" => {
+            let foreign = temp.path().join("foreign");
+            fs::create_dir(&foreign).unwrap();
+            let other_state = AppState::for_folder_test(temp.path().join("other-app"));
+            create_folder_loupist(&other_state, &foreign).await.unwrap();
+            drop(other_state);
+            fs::remove_dir_all(root.join(".loupist")).unwrap();
+            copy_folder(&foreign.join(".loupist"), &root.join(".loupist"));
+        }
+        "symlink" => {
+            let moved = temp.path().join("original");
+            fs::rename(&root, &moved).unwrap();
+            std::os::unix::fs::symlink(&moved, &root).unwrap();
+        }
+        "data_symlink" => {
+            let moved = temp.path().join("data");
+            fs::rename(root.join(".loupist"), &moved).unwrap();
+            std::os::unix::fs::symlink(&moved, root.join(".loupist")).unwrap();
+        }
+        "database_symlink" => {
+            let moved = temp.path().join("database.sqlite3");
+            fs::rename(root.join(".loupist/loupist.sqlite3"), &moved).unwrap();
+            std::os::unix::fs::symlink(&moved, root.join(".loupist/loupist.sqlite3")).unwrap();
+        }
+        "not_directory" => {
+            fs::rename(&root, temp.path().join("original")).unwrap();
+            fs::write(&root, "not a directory").unwrap();
+        }
+        "missing_path" => fs::rename(&root, temp.path().join("original")).unwrap(),
+        "runtime_inode" => {
+            recorded.runtime_filesystem_identity.as_mut().unwrap().inode ^= 1;
+            write_remount_profile(temp.path(), &root, &recorded);
+        }
+        "rollback" => {
+            rusqlite::Connection::open(root.join(".loupist/loupist.sqlite3"))
+                .unwrap()
+                .execute_batch("CREATE TRIGGER refuse_identity_update BEFORE UPDATE ON loupist_profiles BEGIN SELECT RAISE(ABORT, 'fixture identity write rejected'); END;")
+                .unwrap();
+        }
+        _ => unreachable!(),
+    }
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    assert_eq!(
+        list_available_loupists(&state).await.unwrap()[0].availability,
+        crate::app::LoupistAvailability::WorkspaceUnavailable,
+        "{case}"
+    );
+    drop(state);
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    if case == "rollback" {
+        assert_recorded_identity(&root.join(".loupist/loupist.sqlite3"), &recorded);
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_rejects_different_inode() {
+    assert_remounted_root_refused("different_inode").await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_rejects_missing_marker() {
+    assert_remounted_root_refused("missing_marker").await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_rejects_foreign_marker() {
+    assert_remounted_root_refused("foreign_marker").await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_rejects_symlink() {
+    assert_remounted_root_refused("symlink").await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_rejects_data_directory_symlink() {
+    assert_remounted_root_refused("data_symlink").await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_rejects_database_symlink() {
+    assert_remounted_root_refused("database_symlink").await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_rejects_non_directory() {
+    assert_remounted_root_refused("not_directory").await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_rejects_missing_path() {
+    assert_remounted_root_refused("missing_path").await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_rejects_runtime_substitution() {
+    assert_remounted_root_refused("runtime_inode").await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remounted_root_rolls_back_both_databases_on_write_failure() {
+    assert_remounted_root_refused("rollback").await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_recreated_workspace_at_reused_inode_is_refused() {
+    let (temp, root, _, mut recorded) = remounted_root_fixture().await;
+    let data = temp.path().join("saved-data");
+    fs::rename(root.join(".loupist"), &data).unwrap();
+    fs::remove_dir(&root).unwrap();
+    fs::create_dir(&root).unwrap();
+    fs::rename(data, root.join(".loupist")).unwrap();
+    let actual = crate::fs::loupist_root::BoundLoupistRoot::open_unbound(root.clone())
+        .unwrap()
+        .identity()
+        .unwrap();
+    let saved = recorded.root_filesystem_identity.as_mut().unwrap();
+    // Force the historical inode to equal the recreated directory's inode,
+    // independently of the filesystem allocator, retaining its older birth.
+    saved.inode = actual.inode;
+    saved.birth_time.as_mut().unwrap().seconds -= 1;
+    write_remount_profile(temp.path(), &root, &recorded);
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    assert_eq!(
+        state.store.get_loupist(&recorded.id).unwrap().unwrap(),
+        recorded
+    );
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    assert_recorded_identity(&root.join(".loupist/loupist.sqlite3"), &recorded);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_recreated_runtime_at_reused_inode_is_refused() {
+    let (temp, root, _, mut recorded) = remounted_root_fixture().await;
+    let runtime = temp.path().join("app/loupists").join(&recorded.id);
+    fs::remove_dir_all(&runtime).unwrap();
+    fs::create_dir(&runtime).unwrap();
+    fs::write(runtime.join("foreign-content"), "must remain untouched").unwrap();
+    let actual = crate::fs::loupist_root::BoundLoupistRoot::open_unbound(runtime.clone())
+        .unwrap()
+        .identity()
+        .unwrap();
+    let saved = recorded.runtime_filesystem_identity.as_mut().unwrap();
+    saved.inode = actual.inode;
+    saved.birth_time.as_mut().unwrap().seconds -= 1;
+    write_remount_profile(temp.path(), &root, &recorded);
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    assert_eq!(
+        state.store.get_loupist(&recorded.id).unwrap().unwrap(),
+        recorded
+    );
+    assert_eq!(
+        fs::read_to_string(runtime.join("foreign-content")).unwrap(),
+        "must remain untouched"
+    );
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    assert_recorded_identity(&root.join(".loupist/loupist.sqlite3"), &recorded);
+}
+
+#[cfg(unix)]
+async fn remount_security_birth_refused(runtime: bool, missing: bool) {
+    let (temp, root, _, mut recorded) = remounted_root_fixture().await;
+    let saved = if runtime {
+        recorded.runtime_filesystem_identity.as_mut()
+    } else {
+        recorded.root_filesystem_identity.as_mut()
+    }
+    .unwrap();
+    let inode = saved.inode;
+    let mut future = saved.birth_time.unwrap();
+    future.seconds = recorded.updated_at_ms / 1000 + 10;
+    saved.birth_time = None;
+    write_remount_profile(temp.path(), &root, &recorded);
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    crate::fs::filesystem_identity::with_birth_time(inode, (!missing).then_some(future), || {
+        assert_eq!(
+            state.store.get_loupist(&recorded.id).unwrap().unwrap(),
+            recorded
+        );
+    });
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    assert_recorded_identity(&root.join(".loupist/loupist.sqlite3"), &recorded);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_workspace_newer_than_legacy_binding_is_refused() {
+    remount_security_birth_refused(false, false).await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_runtime_newer_than_legacy_binding_is_refused() {
+    remount_security_birth_refused(true, false).await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_workspace_without_birth_time_is_refused() {
+    remount_security_birth_refused(false, true).await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_runtime_without_birth_time_is_refused() {
+    remount_security_birth_refused(true, true).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_legacy_owner_recovers_and_next_open_checks_saved_birth() {
+    let (temp, root, current, mut recorded) = remounted_root_fixture().await;
+    recorded
+        .root_filesystem_identity
+        .as_mut()
+        .unwrap()
+        .birth_time = None;
+    recorded
+        .runtime_filesystem_identity
+        .as_mut()
+        .unwrap()
+        .birth_time = None;
+    // Make the precision boundary explicit: both directories predate this
+    // legacy row's identity write by at least one second.
+    recorded.updated_at_ms += 1000;
+    write_remount_profile(temp.path(), &root, &recorded);
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    assert_eq!(
+        list_available_loupists(&state).await.unwrap()[0].availability,
+        crate::app::LoupistAvailability::Available
+    );
+    drop(state);
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &current);
+    assert_recorded_identity(&root.join(".loupist/loupist.sqlite3"), &current);
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let binding = current.root_filesystem_identity.as_ref().unwrap();
+    let mut foreign_birth = binding.birth_time.unwrap();
+    foreign_birth.seconds += 1;
+    crate::fs::filesystem_identity::with_birth_time(binding.inode, Some(foreign_birth), || {
+        let profile = state.store.get_loupist(&current.id).unwrap().unwrap();
+        assert!(crate::fs::loupist_root::profile_workspace(&profile).is_err());
+    });
+    assert_eq!(
+        list_available_loupists(&state).await.unwrap()[0].availability,
+        crate::app::LoupistAvailability::Available
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_manual_reconnect_compares_pre_recovery_runtime_binding() {
+    let (temp, root, _, recorded) = remounted_root_fixture().await;
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let error = reconnect_loupist_inner(
+        &state,
+        &LoupistReconnectRequest {
+            loupist_id: recorded.id.clone(),
+            workspace_path: root.to_string_lossy().into_owned(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.message, "Loupist private runtime folder changed");
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+}
+
+#[cfg(unix)]
+fn insert_rejected_research(database: &Path, loupist: &str, digest: bool) {
+    let connection = rusqlite::Connection::open(database).unwrap();
+    // In the foreign-owner case the body digest is correct, so the ownership
+    // check is independently necessary. In the digest case ownership is right.
+    connection.execute(
+        "INSERT INTO knowledge_research_records(research_id,loupist_id,body_json,record_digest,created_at_ms) VALUES('injected',?1,'{}',?2,1)",
+        rusqlite::params![if digest { loupist } else { "foreign-loupist" },
+            if digest { "not-a-digest" } else { "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a" }],
+    ).unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_database_replaced_after_admission_commits_neither_file() {
+    let (temp, root, _, recorded) = remounted_root_fixture().await;
+    let database = root.join(".loupist/loupist.sqlite3");
+    let replacement = temp.path().join("rejected.sqlite3");
+    fs::copy(&database, &replacement).unwrap();
+    insert_rejected_research(&replacement, &recorded.id, true);
+    let rejected_dir = temp.path().join("rejected");
+    fs::create_dir(&rejected_dir).unwrap();
+    fs::copy(&replacement, rejected_dir.join("loupist.sqlite3")).unwrap();
+    assert!(crate::knowledge::validate_folder(&rejected_dir).is_err());
+    let replaced = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = replaced.clone();
+    let swap_path = database.clone();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    crate::store::with_after_admission(
+        move || {
+            use std::os::unix::fs::MetadataExt;
+            let admitted_inode = fs::metadata(&swap_path).unwrap().ino();
+            fs::remove_file(&swap_path).unwrap();
+            fs::copy(replacement, &swap_path).unwrap();
+            // Holding both the original descriptor and SQLite connection keeps its
+            // inode allocated: the attack cannot recycle that inode for this file.
+            assert_ne!(admitted_inode, fs::metadata(&swap_path).unwrap().ino());
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        },
+        || {
+            assert_eq!(
+                state.store.get_loupist(&recorded.id).unwrap().unwrap(),
+                recorded
+            );
+        },
+    );
+    assert!(replaced.load(std::sync::atomic::Ordering::SeqCst));
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    assert_recorded_identity(&database, &recorded);
+}
+
+#[cfg(unix)]
+async fn remount_security_transaction_revalidates(digest: bool) {
+    let (temp, root, _, recorded) = remounted_root_fixture().await;
+    let database = root.join(".loupist/loupist.sqlite3");
+    let write_path = database.clone();
+    let id = recorded.id.clone();
+    let mutated = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = mutated.clone();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    crate::store::with_after_admission(
+        move || {
+            insert_rejected_research(&write_path, &id, digest);
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        },
+        || {
+            assert_eq!(
+                state.store.get_loupist(&recorded.id).unwrap().unwrap(),
+                recorded
+            );
+        },
+    );
+    assert!(mutated.load(std::sync::atomic::Ordering::SeqCst));
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    assert_recorded_identity(&database, &recorded);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_transaction_rechecks_digest_after_admission() {
+    remount_security_transaction_revalidates(true).await;
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_transaction_rechecks_foreign_owner_after_admission() {
+    remount_security_transaction_revalidates(false).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn remount_security_transaction_rechecks_rows_written_by_profile_trigger() {
+    let (temp, root, _, recorded) = remounted_root_fixture().await;
+    let database = root.join(".loupist/loupist.sqlite3");
+    rusqlite::Connection::open(&database).unwrap().execute_batch(
+        "CREATE TRIGGER inject_rejected_research AFTER UPDATE ON loupist_profiles BEGIN
+         INSERT INTO knowledge_research_records(research_id,loupist_id,body_json,record_digest,created_at_ms)
+         VALUES('trigger-injected',NEW.id,'{}','not-a-digest',1); END;"
+    ).unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    assert_eq!(
+        state.store.get_loupist(&recorded.id).unwrap().unwrap(),
+        recorded
+    );
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    assert_recorded_identity(&database, &recorded);
+    let injected: i64 = rusqlite::Connection::open(&database)
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM knowledge_research_records WHERE research_id='trigger-injected'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(injected, 0);
+}
+
+#[cfg(unix)]
+async fn rereview_invalid_birth(seconds: i64, stored: bool, runtime: bool) {
+    let (temp, root, _, mut recorded) = remounted_root_fixture().await;
+    let invalid = crate::domain::FilesystemBirthTime {
+        seconds,
+        nanoseconds: 0,
+    };
+    let identity = if runtime {
+        recorded.runtime_filesystem_identity.as_mut()
+    } else {
+        recorded.root_filesystem_identity.as_mut()
+    }
+    .unwrap();
+    let inode = identity.inode;
+    identity.birth_time = stored.then_some(invalid);
+    write_remount_profile(temp.path(), &root, &recorded);
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    crate::fs::filesystem_identity::with_birth_time(inode, Some(invalid), || {
+        assert_eq!(
+            state.store.get_loupist(&recorded.id).unwrap().unwrap(),
+            recorded
+        );
+    });
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    assert_recorded_identity(&root.join(".loupist/loupist.sqlite3"), &recorded);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_workspace_legacy_zero_birth_is_refused() {
+    rereview_invalid_birth(0, false, false).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_workspace_legacy_negative_birth_is_refused() {
+    rereview_invalid_birth(-1, false, false).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_workspace_saved_zero_birth_is_refused() {
+    rereview_invalid_birth(0, true, false).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_workspace_saved_negative_birth_is_refused() {
+    rereview_invalid_birth(-1, true, false).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_runtime_legacy_zero_birth_is_refused() {
+    rereview_invalid_birth(0, false, true).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_runtime_legacy_negative_birth_is_refused() {
+    rereview_invalid_birth(-1, false, true).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_runtime_saved_zero_birth_is_refused() {
+    rereview_invalid_birth(0, true, true).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_runtime_saved_negative_birth_is_refused() {
+    rereview_invalid_birth(-1, true, true).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_workspace_creation_cutoff_survives_a_later_profile_update() {
+    let (temp, root, _, mut recorded) = remounted_root_fixture().await;
+    let saved = recorded.root_filesystem_identity.as_mut().unwrap();
+    let inode = saved.inode;
+    saved.birth_time = None;
+    let substitute = crate::domain::FilesystemBirthTime {
+        seconds: recorded.created_at_ms / 1000 + 10,
+        nanoseconds: 0,
+    };
+    recorded.updated_at_ms += 3_600_000;
+    write_remount_profile(temp.path(), &root, &recorded);
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    crate::fs::filesystem_identity::with_birth_time(inode, Some(substitute), || {
+        assert_eq!(
+            state.store.get_loupist(&recorded.id).unwrap().unwrap(),
+            recorded
+        );
+    });
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    assert_recorded_identity(&root.join(".loupist/loupist.sqlite3"), &recorded);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_owner_november_13_birth_precedes_database_creation_and_catalog_update() {
+    let (temp, root, mut current, mut recorded) = remounted_root_fixture().await;
+    let parse = |time: &str| {
+        chrono::DateTime::parse_from_rfc3339(time)
+            .unwrap()
+            .timestamp_millis()
+    };
+    let root_ms = parse("2026-11-13T11:49:30+09:00");
+    let creation_ms = parse("2026-11-13T11:49:33+09:00");
+    // A legitimate private runtime can be allocated after profile creation.
+    let runtime_ms = parse("2026-11-13T11:49:34+09:00");
+    recorded.created_at_ms = creation_ms;
+    recorded.updated_at_ms = parse("2026-11-13T12:19:00+09:00");
+    recorded
+        .root_filesystem_identity
+        .as_mut()
+        .unwrap()
+        .birth_time = None;
+    recorded
+        .runtime_filesystem_identity
+        .as_mut()
+        .unwrap()
+        .birth_time = None;
+    write_remount_profile(temp.path(), &root, &recorded);
+    let mut local = recorded.clone();
+    local.updated_at_ms = creation_ms;
+    rusqlite::Connection::open(root.join(".loupist/loupist.sqlite3"))
+        .unwrap()
+        .execute(
+            "UPDATE loupist_profiles SET updated_at_ms=?1,data_json=?2 WHERE id=?3",
+            rusqlite::params![
+                local.updated_at_ms,
+                serde_json::to_string(&local).unwrap(),
+                local.id
+            ],
+        )
+        .unwrap();
+    let root_birth = crate::domain::FilesystemBirthTime {
+        seconds: root_ms / 1000,
+        nanoseconds: 0,
+    };
+    let runtime_birth = crate::domain::FilesystemBirthTime {
+        seconds: runtime_ms / 1000,
+        nanoseconds: 0,
+    };
+    let root_id = current.root_filesystem_identity.as_mut().unwrap();
+    root_id.birth_time = Some(root_birth);
+    let root_inode = root_id.inode;
+    let runtime_id = current.runtime_filesystem_identity.as_mut().unwrap();
+    runtime_id.birth_time = Some(runtime_birth);
+    let runtime_inode = runtime_id.inode;
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    crate::fs::filesystem_identity::with_birth_time(root_inode, Some(root_birth), || {
+        crate::fs::filesystem_identity::with_birth_time(runtime_inode, Some(runtime_birth), || {
+            let recovered = state.store.get_loupist(&recorded.id).unwrap().unwrap();
+            assert!(crate::fs::loupist_root::profile_workspace(&recovered).is_ok());
+            assert!(state.store.lock_loupist(&recorded.id).is_ok());
+            assert_eq!(recovered.created_at_ms, creation_ms);
+        });
+    });
+    drop(state);
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &current);
+    assert_recorded_identity(&root.join(".loupist/loupist.sqlite3"), &current);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_unknown_creation_time_retains_the_catalog_cutoff() {
+    let (temp, root, current, mut recorded) = remounted_root_fixture().await;
+    recorded
+        .root_filesystem_identity
+        .as_mut()
+        .unwrap()
+        .birth_time = None;
+    recorded.created_at_ms = 0;
+    recorded.updated_at_ms += 1000;
+    write_remount_profile(temp.path(), &root, &recorded);
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let recovered = state.store.get_loupist(&recorded.id).unwrap().unwrap();
+    assert_eq!(
+        recovered.root_filesystem_identity,
+        current.root_filesystem_identity
+    );
+    drop(state);
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &current);
+    assert_recorded_identity(&root.join(".loupist/loupist.sqlite3"), &current);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_database_replaced_after_writes_before_commit_is_refused() {
+    let (temp, root, _, recorded) = remounted_root_fixture().await;
+    let database = root.join(".loupist/loupist.sqlite3");
+    let replacement = temp.path().join("replacement.sqlite3");
+    fs::copy(&database, &replacement).unwrap();
+    insert_rejected_research(&replacement, &recorded.id, true);
+    let swap_path = database.clone();
+    let displaced = temp.path().join("admitted.sqlite3");
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    let fired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = fired.clone();
+    crate::store::with_before_commit(
+        move || {
+            fs::rename(&swap_path, displaced).unwrap();
+            fs::copy(replacement, &swap_path).unwrap();
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        },
+        || {
+            assert_eq!(
+                state.store.get_loupist(&recorded.id).unwrap().unwrap(),
+                recorded
+            );
+        },
+    );
+    assert!(fired.load(std::sync::atomic::Ordering::SeqCst));
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    assert_recorded_identity(&database, &recorded);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_post_write_validation_rejects_foreign_owner_written_by_profile_trigger() {
+    let (temp, root, _, recorded) = remounted_root_fixture().await;
+    let database = root.join(".loupist/loupist.sqlite3");
+    rusqlite::Connection::open(&database).unwrap().execute_batch(
+        "CREATE TRIGGER inject_foreign_owner AFTER UPDATE ON loupist_profiles BEGIN
+         INSERT INTO knowledge_research_records(research_id,loupist_id,body_json,record_digest,created_at_ms)
+         VALUES('foreign-trigger','foreign-loupist','{}','44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',1); END;"
+    ).unwrap();
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    assert_eq!(
+        state.store.get_loupist(&recorded.id).unwrap().unwrap(),
+        recorded
+    );
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    assert_recorded_identity(&database, &recorded);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rereview_folder_cannot_advance_creation_time_past_the_catalog_original() {
+    let (temp, root, _, mut recorded) = remounted_root_fixture().await;
+    recorded
+        .root_filesystem_identity
+        .as_mut()
+        .unwrap()
+        .birth_time = None;
+    recorded.updated_at_ms += 3_600_000;
+    write_remount_profile(temp.path(), &root, &recorded);
+    let mut forged = recorded.clone();
+    forged.created_at_ms += 20_000;
+    let database = root.join(".loupist/loupist.sqlite3");
+    rusqlite::Connection::open(&database)
+        .unwrap()
+        .execute(
+            "UPDATE loupist_profiles SET data_json=?1 WHERE id=?2",
+            rusqlite::params![serde_json::to_string(&forged).unwrap(), recorded.id],
+        )
+        .unwrap();
+    let substitute = crate::domain::FilesystemBirthTime {
+        seconds: recorded.created_at_ms / 1000 + 10,
+        nanoseconds: 0,
+    };
+    let state = AppState::for_folder_test(temp.path().join("app"));
+    crate::fs::filesystem_identity::with_birth_time(
+        recorded.root_filesystem_identity.as_ref().unwrap().inode,
+        Some(substitute),
+        || {
+            assert_eq!(
+                state.store.get_loupist(&recorded.id).unwrap().unwrap(),
+                recorded
+            );
+        },
+    );
+    assert_recorded_identity(&temp.path().join("app/catalog.sqlite3"), &recorded);
+    assert_recorded_identity(&database, &recorded);
+}
+
 #[tokio::test]
 async fn checked_in_configuration_can_initialize_a_loupist_without_losing_resources() {
     let temp = tempfile::tempdir().unwrap();
@@ -285,7 +1120,11 @@ async fn folder_copy_reopens_chat_source_lens_and_paused_tasks_without_app_data(
         .dataset(&b.id, &dataset.dataset_id, dataset.revision)
         .is_err());
     let saved_records = record_count(&state, &a.id).await;
-    assert_eq!(record_count(&state, &b.id).await, 1);
+    assert_eq!(
+        record_count(&state, &b.id).await,
+        0,
+        "a focus files no Lens page"
+    );
     let catalog = state.store.lock().unwrap();
     assert_eq!(
         catalog
@@ -634,75 +1473,6 @@ async fn deletion_recovery_preserves_files_when_canonical_database_is_unavailabl
     }
 }
 
-/// Pre-1.0 folders are never migrated: a database an earlier build made is
-/// refused with a typed state on every path (listing, storage, reopening), and
-/// a fresh folder keeps working with asset pages.
-#[tokio::test]
-async fn a_folder_made_by_an_earlier_build_is_refused_with_a_typed_state() {
-    use crate::app::LoupistAvailability;
-    let temp = tempfile::tempdir().unwrap();
-    let fresh = temp.path().join("fresh");
-    let old = temp.path().join("old");
-    fs::create_dir(&fresh).unwrap();
-    fs::create_dir(&old).unwrap();
-    let state = AppState::for_folder_test(temp.path().join("app"));
-    let current = create_folder_loupist(&state, &fresh).await.unwrap();
-    let earlier = create_folder_loupist(&state, &old).await.unwrap();
-    state.close_for_restart_test();
-    // Rewrite one folder as the previous build left it: Memory schema 1 and no
-    // asset page tables.
-    {
-        let connection = rusqlite::Connection::open(old.join(".loupist/loupist.sqlite3")).unwrap();
-        connection
-            .execute_batch(
-                "DROP TABLE knowledge_asset_pages; DROP TABLE knowledge_asset_observations;
-                 DROP TABLE knowledge_asset_moves; DROP TABLE knowledge_asset_section_deltas;
-                 UPDATE knowledge_schema SET version = 1;",
-            )
-            .unwrap();
-    }
-    let state = AppState::for_folder_test(temp.path().join("app"));
-    let listed = list_available_loupists(&state).await.unwrap();
-    let availability = |id: &str| {
-        listed
-            .iter()
-            .find(|summary| summary.id == id)
-            .unwrap()
-            .availability
-    };
-    assert_eq!(availability(&current.id), LoupistAvailability::Available);
-    assert_eq!(
-        availability(&earlier.id),
-        LoupistAvailability::EarlierVersion
-    );
-    assert_eq!(
-        serde_json::to_value(availability(&earlier.id)).unwrap(),
-        serde_json::json!({"status": "earlier_version"})
-    );
-    assert!(matches!(
-        state.store.lock_loupist(&earlier.id),
-        Err(crate::store::StoreError::EarlierVersion)
-    ));
-    // Asset work, turns and briefings all bind storage first, so none half-works.
-    let refused =
-        crate::commands::assets::with_assets(&state, &earlier.id, true, |_| Ok(())).unwrap_err();
-    assert_eq!(refused.code, "loupist_earlier_version");
-    let identity = crate::knowledge::assets::AssetIdentity {
-        symbol: "MORR".into(),
-        market: "NASDAQ".into(),
-        name: "Morrow Components".into(),
-    };
-    crate::commands::assets::with_assets(&state, &current.id, true, |tx| {
-        crate::knowledge::assets::ensure_page(tx, &current.id, &identity, None, 1)
-    })
-    .unwrap();
-    // Reopening the earlier folder elsewhere is refused the same way.
-    delete_loupist_inner(&state, &earlier.id).await.unwrap();
-    let reopened = create_folder_loupist(&state, &old).await.unwrap_err();
-    assert_eq!(reopened.code, "loupist_earlier_version");
-    assert!(reopened.message.contains("earlier version"));
-}
-
 fn folder_database(folder: &Path) -> std::path::PathBuf {
     folder.join(".loupist/loupist.sqlite3")
 }
@@ -910,16 +1680,16 @@ async fn a_scan_skips_one_broken_folder_and_returns_the_healthy_ones() {
     state.close_for_restart_test();
     rusqlite::Connection::open(folder_database(&roots[1]))
         .unwrap()
-        .execute_batch("DROP TABLE knowledge_watch_state;")
+        .execute_batch("DROP TABLE knowledge_saved_price_reads;")
         .unwrap();
 
     let state = AppState::for_folder_test(temp.path().join("app"));
     let scan = |_: &str, connection: &mut rusqlite::Connection| {
-        Ok(
-            connection.query_row("SELECT COUNT(*) FROM knowledge_watch_state", [], |row| {
-                row.get::<_, i64>(0)
-            })?,
-        )
+        Ok(connection.query_row(
+            "SELECT COUNT(*) FROM knowledge_saved_price_reads",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?)
     };
     assert_eq!(
         state.store.for_each_readable_database(scan).unwrap(),

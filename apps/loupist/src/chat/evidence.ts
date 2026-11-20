@@ -1,7 +1,9 @@
+import { coverageLabel } from "../knowledge/presentation";
 import i18n from "@/i18n";
 import type { ChatEvidenceRef } from "../types";
 import { parseCredentialFreeHttpUrl } from "../lib/credentialFreeUrl";
 import { displayHost } from "../lib/displayHost";
+import { providerName } from "../lib/marketProviderName";
 import { operationName } from "./numberText";
 
 const t = i18n.getFixedT(null, "chat");
@@ -83,8 +85,16 @@ export function executionEvidenceType(evidence: ChatEvidenceRef): "dataset" | "a
   return "tool";
 }
 
+/**
+ * Material the user pasted into a Chat: captured in this reply, or read back
+ * from a user-provided Source. Rust marks both; a stated link is not checked.
+ */
+export const isUserProvided = (evidence: ChatEvidenceRef) => evidence.kind === "user_provided" || evidence.user_provided === true;
+
 /** A URL fallback is a locator, not a document title. Keep its filename readable. */
 export function evidenceTitle(evidence: ChatEvidenceRef): string {
+  // A capture has no title of its own until it is saved; it is the text the user pasted.
+  if (evidence.kind === "user_provided" && evidence.title === evidence.tool_name.replaceAll("_", " ")) return t("evidence.pastedText");
   const memoryTitles: Record<string, string> = { world_read: t("workspaceEvidence.kind.world"), world_search: t("evidence.worldSearch"), lens_read: t("workspaceEvidence.kind.lens"), lens_search: t("evidence.lensSearch") };
   if (evidence.title === evidence.tool_name.replaceAll("_", " ") && memoryTitles[evidence.tool_name]) return memoryTitles[evidence.tool_name];
   // A calculation's reader title is the host's operation name; show it in plain words ("Reverse DCF grid" is jargon).
@@ -117,13 +127,14 @@ export function evidenceExcerptParts(evidence: ChatEvidenceRef) {
 
 /** Keep passage coverage useful without exposing storage offsets. */
 export const evidenceCoverage = (coverage: string) => /^(?:Host-selected literal passage; )?UTF-8 bytes /.test(coverage)
-  ? t("evidence.selectedPassageFromTheRetrievedDocument") : coverage;
+  ? t("evidence.selectedPassageFromTheRetrievedDocument") : coverageLabel(coverage);
 
 const kinds = (): Record<ChatEvidenceRef["kind"], { label: string; description: string }> => ({
   original: { label: t("evidence.retrievedSource"), description: t("evidence.contentReturnedByTheSourceWhenThisAnswerWas") },
   discovery: { label: t("evidence.searchResult"), description: t("evidence.aSearchPreviewTheFullSourceWasNotRead") },
   derived: { label: t("evidence.calculatedResult"), description: t("evidence.outputProducedFromOtherDataCheckItsInputsAnd") },
   local_file: { label: t("evidence.workspaceFile"), description: t("evidence.aSavedCopyOfLocalFileContentReadDuring") },
+  user_provided: { label: t("evidence.userProvided"), description: t("evidence.userProvidedDescription") },
   saved_context: { label: t("evidence.savedResearch"), description: t("evidence.researchThisLoupistAlreadyHadRetrievedForThisReply") },
 });
 
@@ -136,19 +147,28 @@ function evidenceSubjectKey(evidence: ChatEvidenceRef) {
   return `id:${evidence.id}`;
 }
 
+const isMarketDataRead = (tool: string) => tool === "asset_page_read" || /^mcp__openbb__/u.test(tool) || tool === "krx_daily_quote";
+
 export function sourceIdentityLabel(evidence: ChatEvidenceRef) {
-  if (evidence.tool_name.startsWith("world")) return "World";
-  if (evidence.tool_name.startsWith("lens")) return "Lens";
+  // Before the Map: a number checked against pasted text names who handed it over.
+  if (isUserProvided(evidence)) return t("evidence.userProvided");
+  if (evidence.tool_name.startsWith("world")) return t("evidence.map");
+  if (evidence.tool_name.startsWith("lens")) return t("evidence.lens");
   if (evidence.kind === "local_file") return t("evidence.files");
   if (evidence.kind === "saved_context") return t("evidence.memory");
   const host = displayHost(evidence.url);
   if (host) return host;
-  if (evidence.provider) return evidence.provider;
+  // A provider by name; a runtime id nobody named falls through to what the read is.
+  const provider = providerName(evidence.provider);
+  if (provider) return provider;
+  // A host market-data read (an asset page, a bundled market-data tool) is not the web.
+  if (isMarketDataRead(evidence.tool_name)) return t("evidence.marketData");
   if (evidence.tool_name.startsWith("web") || evidence.kind === "original" || evidence.kind === "discovery") return t("evidence.web");
   return evidencePresentation(evidence).label;
 }
 
 export function evidencePresentation(evidence: ChatEvidenceRef) {
+  if (evidence.user_provided) return kinds().user_provided;
   if (evidence.tool_name === "dataset_import") return { label: t("evidence.localDataset"), description: t("evidence.dataImportedFromAWorkspaceFileItsContentsHave") };
   if (evidence.tool_name === "dataset_query") return { label: t("evidence.selectedData"), description: t("evidence.rowsOrValuesSelectedFromASavedDatasetFor") };
   if (evidence.tool_name === "dataset_describe") return { label: t("evidence.datasetSummary"), description: t("evidence.structureAndCoverageOfASavedDatasetInspectedFor") };
@@ -156,5 +176,6 @@ export function evidencePresentation(evidence: ChatEvidenceRef) {
     label: executionEvidenceType(evidence) === "artifact" ? t("evidence.documentData") : executionEvidenceType(evidence) === "dataset" ? t("evidence.datasetResult") : t("evidence.toolResult"),
     description: t("evidence.aSavedAnalysisResultThisIsNotAnOriginal"),
   };
-  return kinds()[evidence.kind];
+  const labels = kinds();
+  return Object.hasOwn(labels, evidence.kind) ? labels[evidence.kind] : { label: i18n.t("knowledge:presentation.unspecified"), description: "" };
 }

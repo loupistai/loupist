@@ -1,13 +1,13 @@
 {
   "name": "koreainvestment",
   "version": "1.0.0",
-  "description": "Read-only Korean and overseas market and account endpoints. Order placement is not included.",
+  "description": "Read-only quotes, order books, price history and investor flows for Korean stocks, overseas quotes and account balances. Order placement is not included.",
   "author": {
     "name": "Korea Investment & Securities"
   },
   "interface": {
     "displayName": "Korea Investment",
-    "shortDescription": "Read-only Korean and overseas market and account endpoints. Order placement is not included.",
+    "shortDescription": "Read-only quotes, order books, price history and investor flows for Korean stocks, overseas quotes and account balances. Order placement is not included.",
     "category": "Data",
     "capabilities": [
       "Read"

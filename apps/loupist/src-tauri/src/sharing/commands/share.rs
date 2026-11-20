@@ -13,7 +13,7 @@ use crate::sharing::export::{
 };
 use crate::sharing::github;
 use crate::sharing::pack::{self, Files, License};
-use crate::sharing::scan::{HeldPosition, PrivateContext};
+use crate::sharing::scan::PrivateContext;
 use crate::sharing::store::{self, Identity, ImportRow};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -171,54 +171,19 @@ fn private_context_with_credentials(
         .secrets
         .extend(connections().map_err(credential_scan_unavailable)?);
     let catalog = crate::marketplace::bundled_catalog().map_err(internal)?;
-    for entry in catalog
-        .entries
-        .iter()
-        .filter(|entry| !entry.runtime.credential_mapping.is_empty())
-    {
+    for entry in &catalog.entries {
         if let Some(bundle) = get(&environment, &entry.id).map_err(credential_scan_unavailable)? {
-            for field in entry.runtime.credential_mapping.keys() {
-                if let Some(value) = bundle.get(field).filter(|value| !value.is_empty()) {
-                    context.secrets.push(value.to_owned());
-                }
-            }
+            context.secrets.extend(
+                bundle
+                    .stored_values_for_sharing()
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned),
+            );
             if let Some(account) = bundle.get("account_number") {
                 context.accounts.push(account.to_owned());
             }
         }
     }
-    let connection = state.store.lock().map_err(internal)?;
-    let mut positions = connection
-        .prepare(&format!(
-            "SELECT p.symbol, p.display_name, p.quantity, p.cost_basis, p.market_value
-         FROM user_holdings_positions p JOIN ({}) s ON s.snapshot_id = p.snapshot_id",
-            crate::store::user_context::LATEST_SNAPSHOTS
-        ))
-        .map_err(internal)?;
-    let rows = positions
-        .query_map([], |row| {
-            Ok(HeldPosition {
-                symbol: row.get(0)?,
-                names: row.get::<_, Option<String>>(1)?.into_iter().collect(),
-                amounts: [row.get::<_, Option<String>>(2)?, row.get(3)?, row.get(4)?]
-                    .into_iter()
-                    .flatten()
-                    .collect(),
-            })
-        })
-        .map_err(internal)?;
-    context.holdings = rows.collect::<rusqlite::Result<_>>().map_err(internal)?;
-    // Wallet addresses are as private as account numbers.
-    let mut addresses = connection
-        .prepare("SELECT address FROM user_wallet_addresses")
-        .map_err(internal)?;
-    context.accounts.extend(
-        addresses
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(internal)?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(internal)?,
-    );
     context.personal = personal_names();
     Ok(context)
 }
@@ -345,6 +310,18 @@ mod credential_scan_tests {
             assert_eq!(flagged, key.len() >= 4, "{key}");
             assert!(scan_private(&format!("x{key}y"), &context).is_empty());
         }
+    }
+
+    #[test]
+    fn saved_openfigi_key_reaches_the_share_scan_as_soon_as_it_is_active() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_folder_test(root.path().to_path_buf());
+        let key = "openfigi-test-key";
+        crate::finance_credentials::save_lookup_key(&state.credential_environment, key).unwrap();
+        let context = private_context(&state).unwrap();
+        assert!(scan_private(&format!("Saved key: {key}"), &context)
+            .iter()
+            .any(|hit| hit.class == PrivateClass::Credential));
     }
 
     #[test]

@@ -58,15 +58,15 @@ use tokio::{
 #[cfg(not(debug_assertions))]
 use std::sync::OnceLock;
 
-pub const PI_VERSION: &str = "1.5.0";
+pub const PI_VERSION: &str = "1.5.2";
 pub(crate) const PI_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const LOUPIST_SYSTEM_PROMPT: &str = include_str!("../../agent/SYSTEM.md");
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub const PI_DARWIN_ARM64_ARCHIVE_SHA256: &str =
-    "a9bf0d82d58d2a7d337f4ae4171b5fc9ebffe42509527a831364c4b65adf2cdf";
+    "56b5e194d485ced555667b8ba3276157a8272e9ecde9e001e428af80985bdd9b";
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub const PI_WINDOWS_X64_ARCHIVE_SHA256: &str =
-    "12d58a70e80b16ba9f764950b7a42bdeb07959495c0db68396cf2988c0b71af3";
+    "e6adb8cb8c84eca14391ad24b363de9d2be98a89ca3ba3fdee1fa4de32b7f2e8";
 const MAX_RPC_FRAME_BYTES: usize = 8 * 1024 * 1024;
 const PI_EVENT_BUFFER_CAPACITY: usize = 1_024;
 const MAX_HOST_CONTEXT_BYTES: usize = 64 * 1024;
@@ -814,6 +814,9 @@ impl PiSupportLaunchConfig {
             "--no-prompt-templates".into(),
             "--no-themes".into(),
             "--no-context-files".into(),
+            // Personalized catalogs can still rotate saved OAuth tokens.
+            // Support refreshes public catalogs explicitly during discovery.
+            "--offline".into(),
             "--provider".into(),
             SUPPORT_BOOTSTRAP.provider.into(),
             "--model".into(),
@@ -961,7 +964,7 @@ fn collect_pi_runtime_tree(
     entries: &mut usize,
     bytes: &mut u64,
     records: &mut Vec<(String, u8, u64, [u8; 32])>,
-    handles: &mut Vec<File>,
+    _windows_handles: &mut Vec<File>,
 ) -> Result<(), PiError> {
     const MAX_ENTRIES: usize = 20_000;
     const MAX_DEPTH: usize = 64;
@@ -970,7 +973,8 @@ fn collect_pi_runtime_tree(
         return Err(PiError::UntrustedRuntime);
     }
     #[cfg(windows)]
-    handles.push(open_directory_no_reparse(directory).map_err(|_| PiError::UntrustedRuntime)?);
+    _windows_handles
+        .push(open_directory_no_reparse(directory).map_err(|_| PiError::UntrustedRuntime)?);
     for entry in std::fs::read_dir(directory)? {
         let entry = entry?;
         *entries += 1;
@@ -992,7 +996,15 @@ fn collect_pi_runtime_tree(
             .replace(std::path::MAIN_SEPARATOR, "/");
         if metadata.is_dir() {
             records.push((relative, b'd', 0, [0; 32]));
-            collect_pi_runtime_tree(root, &path, depth + 1, entries, bytes, records, handles)?;
+            collect_pi_runtime_tree(
+                root,
+                &path,
+                depth + 1,
+                entries,
+                bytes,
+                records,
+                _windows_handles,
+            )?;
         } else if metadata.is_file() {
             *bytes = bytes.saturating_add(metadata.len());
             if *bytes > MAX_BYTES {
@@ -1024,7 +1036,7 @@ fn collect_pi_runtime_tree(
             }
             records.push((relative, b'f', total, digest.finalize().into()));
             #[cfg(windows)]
-            handles.push(file);
+            _windows_handles.push(file);
         } else {
             return Err(PiError::UntrustedRuntime);
         }

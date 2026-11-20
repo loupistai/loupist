@@ -14,7 +14,7 @@ import "@/styles/connect.css";
  * saves, not a Pi provider). These maps hold only each row's localized copy; a
  * sign-in without its own strings shows the catalog's sign-in label.
  */
-export const SIGN_IN_LABEL = { openai: "wizard.chatgpt", xai: "wizard.xai" } as const;
+export const SIGN_IN_LABEL = { openai: "wizard.chatgpt", xai: "wizard.supergrok" } as const;
 const SIGN_IN_LABELS: Partial<Record<string, (typeof SIGN_IN_LABEL)[keyof typeof SIGN_IN_LABEL]>> = SIGN_IN_LABEL;
 const SIGN_IN_NOTE: Partial<Record<string, "wizard.chatgptNote">> = { openai: "wizard.chatgptNote" };
 const KEY_NOTE: Partial<Record<string, "wizard.upstageNote" | "wizard.openrouterNote">> = { upstage: "wizard.upstageNote", openrouter: "wizard.openrouterNote" };

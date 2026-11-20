@@ -46,6 +46,7 @@ it("buffers replay before the watch acknowledgement, joins the existing Chat str
   expect(callbacks.onArtifact).not.toHaveBeenCalled();
   expect(original.messages.map(fromLoupistUIMessage).at(-1)?.evidence_refs).toEqual([evidenceFixture()]);
   expect(callbacks.onAttachedThread).toHaveBeenCalledWith(baseline());
+  expect(callbacks.onMessages).toHaveBeenCalledWith("loupist-quality", "scheduled-chat", expect.any(Array), true);
   expect(send).not.toHaveBeenCalled();
   registry.dispose();
 });

@@ -78,7 +78,7 @@
    971px is that pair plus the page padding. The pane, not the window, is the measure, so a docked panel counts. */
 /* Side by side, the reader starts level with the list: no empty toolbar row (Back is hidden) and no top inset. */
 .page-reader-toolbar:has(> .memory-reader-back:only-child) { display: none; }
-.workspace-lens-content .memory-page-body > .memory-reader.is-lens { padding-top: 0; }
+.lens-page .memory-page-body > .memory-reader.is-lens { padding-top: 0; }
 @container memory-pane (max-width: 971px) {
   .memory-page { padding: var(--gg-space-3) var(--gg-space-4) var(--gg-space-6); }
   .memory-page-body, .memory-page-body[data-segment="history"] { grid-template-columns: minmax(0, 1fr); }

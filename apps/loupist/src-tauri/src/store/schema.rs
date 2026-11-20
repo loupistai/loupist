@@ -16,7 +16,7 @@ use crate::fs::artifact_trust::{
 // formats are refused with a typed state, and newer ones are left untouched.
 // The SQLite application id distinguishes Loupist files from unrelated
 // databases and discarded development formats.
-pub(crate) const STORE_SCHEMA_VERSION: i64 = 6;
+pub(crate) const STORE_SCHEMA_VERSION: i64 = 12;
 pub(crate) const STORE_APPLICATION_ID: i64 = 0x4755_5255; // "GURU": the id stored in every existing database, kept as is
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -141,9 +141,12 @@ impl SqliteStore {
         if version == 0 {
             Self::initialize_schema(&connection)?;
         }
+        if !folder {
+            // Each Loupist's follows live in the catalog alone.
+            connection.execute_batch(super::user_context::FOLLOWS_DDL)?;
+        }
         Ok(Self {
             connection: Mutex::new(connection),
-            user_context_previews: Mutex::new(std::collections::HashMap::new()),
             database_path,
             folder_catalog: false,
             folders: Mutex::new(std::collections::HashMap::new()),
@@ -154,36 +157,6 @@ impl SqliteStore {
         connection.execute_batch(
             r#"
             BEGIN IMMEDIATE;
-            CREATE TABLE user_watchlist (
-                symbol TEXT NOT NULL, market TEXT NOT NULL, display_name TEXT,
-                added_at_ms INTEGER NOT NULL, PRIMARY KEY(symbol, market)
-            ) STRICT;
-            -- Read-only public addresses; balances live only in their wallet snapshots.
-            CREATE TABLE user_wallet_addresses (
-                id TEXT PRIMARY KEY NOT NULL,
-                family TEXT NOT NULL,
-                address TEXT NOT NULL,
-                name TEXT,
-                added_at_ms INTEGER NOT NULL,
-                last_read_at_ms INTEGER,
-                last_good_read_at_ms INTEGER,
-                status TEXT NOT NULL,
-                unlisted_count INTEGER NOT NULL DEFAULT 0 CHECK(unlisted_count >= 0),
-                UNIQUE(family, address)
-            ) STRICT;
-            CREATE TABLE user_holdings_snapshots (
-                snapshot_id TEXT PRIMARY KEY NOT NULL,
-                source TEXT NOT NULL,
-                wallet_id TEXT REFERENCES user_wallet_addresses(id) ON DELETE CASCADE,
-                imported_at_ms INTEGER NOT NULL, currency TEXT NOT NULL, note TEXT,
-                CHECK((source = 'wallet') = (wallet_id IS NOT NULL))
-            ) STRICT;
-            CREATE TABLE user_holdings_positions (
-                snapshot_id TEXT NOT NULL REFERENCES user_holdings_snapshots(snapshot_id) ON DELETE CASCADE,
-                symbol TEXT NOT NULL, market TEXT NOT NULL, display_name TEXT,
-                quantity TEXT NOT NULL, cost_basis TEXT, market_value TEXT, currency TEXT NOT NULL,
-                PRIMARY KEY(snapshot_id, symbol, market)
-            ) STRICT;
             CREATE TABLE app_settings (
                 id TEXT PRIMARY KEY NOT NULL,
                 data_json TEXT NOT NULL
@@ -247,6 +220,7 @@ impl SqliteStore {
                 ON chat_artifacts(chat_session_id, updated_at_ms DESC);
             "#,
         )?;
+        connection.execute_batch(super::user_context::DDL)?;
         connection.execute_batch(&crate::knowledge::embedded_ddl())?;
         connection.execute_batch(
             "CREATE INDEX knowledge_spans_by_id ON knowledge_source_spans(span_id, record_id);

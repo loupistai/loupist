@@ -9,6 +9,7 @@ use super::{ChatEvidenceMatch, DomainError};
 /// Checked number links per message; later links render as numbered citations.
 pub const MAX_NUMBER_CHECKS: usize = 200;
 const MAX_CHECK_TEXT_BYTES: usize = 256;
+pub const MAX_NUMBER_CHECK_CONTEXT_CHARS: usize = 240;
 const MAX_FORMULA_LINES: usize = 8;
 const MAX_CALC_INPUTS: usize = 12;
 const MAX_ROW_FIELDS: usize = 4;
@@ -129,6 +130,10 @@ pub struct NumberCheckInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub status: Option<NumberCheckStatus>,
+    /// Whether a conversion uses the amount currency declared in the request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub currency_basis: Option<String>,
 }
 
 /// What the calculated popover shows, copied from the host's own result.
@@ -146,6 +151,16 @@ pub struct NumberCheckCalc {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub grid: Option<[u32; 2]>,
+}
+
+/// A bounded part of the retained content that held a fallback passage match.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct NumberCheckContext {
+    pub text: String,
+    /// End-exclusive UTF-8 byte offsets of the matched number inside `text`.
+    pub start: usize,
+    pub end: usize,
 }
 
 /// One number link in an answer, checked against the evidence it links.
@@ -174,6 +189,10 @@ pub struct NumberCheck {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub span: Option<ChatEvidenceMatch>,
+    /// The fallback match in retained content when the excerpt has no span.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub context: Option<NumberCheckContext>,
     /// Up to four fields of the matched data row.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<NumberCheckField>,
@@ -225,198 +244,6 @@ pub struct AsOfReport {
     pub left_out: AsOfLeftOut,
 }
 
-/// Grid cards per message (finance-korea-retail-disagreement.md §2.2).
-pub const MAX_SENSITIVITY_CARDS: usize = 8;
-const MAX_GRID_AXIS: usize = 9;
-const MAX_SUBJECT_BYTES: usize = 240;
-
-/// The past growth a reverse-DCF grid is read against (usually a CAGR).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-pub struct SensitivityReference {
-    pub value_pct: f64,
-    /// The period it covers, as the calculation was labelled ("FY2020–FY2025").
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub label: Option<String>,
-    /// The years it spans, from a cited `cagr` result.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub years: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub evidence_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub status: Option<NumberCheckStatus>,
-}
-
-/// The price a reverse-DCF grid solves for, with its date and source.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-pub struct SensitivityPrice {
-    pub value: f64,
-    pub display: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub currency: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub date: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub evidence_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub status: Option<NumberCheckStatus>,
-}
-
-/// One grid input (cash flow, shares, net debt, growth) and its source.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-pub struct SensitivityInput {
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub label: Option<String>,
-    pub display: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub evidence_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub status: Option<NumberCheckStatus>,
-}
-
-/// A `dcf_grid` or `reverse_dcf` result as the host computed it; never one
-/// point value. Rows are discount rates, columns long-run growth rates.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-pub struct SensitivityGrid {
-    pub operation: String,
-    pub row_values: Vec<f64>,
-    pub column_values: Vec<f64>,
-    pub values: Vec<Vec<Option<f64>>>,
-    pub unit: String,
-    pub forecast_years: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub reference: Option<SensitivityReference>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub above_reference: Option<Vec<Vec<bool>>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub price: Option<SensitivityPrice>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub amount_unit: Option<String>,
-    #[serde(default)]
-    pub inputs: Vec<SensitivityInput>,
-    #[serde(default)]
-    pub formulas: Vec<String>,
-}
-
-// Every number is finite (the calculation refuses anything else).
-impl Eq for SensitivityGrid {}
-
-/// A paragraph that is only a link to a grid result, shown as a card.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-pub struct SensitivityCard {
-    #[serde(flatten)]
-    pub grid: SensitivityGrid,
-    pub link_index: u32,
-    pub evidence_id: String,
-    pub subject: String,
-}
-
-impl SensitivityGrid {
-    pub fn valid(&self) -> bool {
-        let (rows, columns) = (self.row_values.len(), self.column_values.len());
-        let shaped = |cells: usize| cells == columns;
-        let finite = |value: &f64| value.is_finite();
-        matches!(self.operation.as_str(), "reverse_dcf" | "dcf_grid")
-            && (1..=MAX_GRID_AXIS).contains(&rows)
-            && (1..=MAX_GRID_AXIS).contains(&columns)
-            && self.values.len() == rows
-            && self.values.iter().all(|row| shaped(row.len()))
-            && self
-                .values
-                .iter()
-                .flatten()
-                .flatten()
-                .chain(&self.row_values)
-                .chain(&self.column_values)
-                .all(finite)
-            && self.above_reference.as_ref().is_none_or(|above| {
-                above.len() == rows && above.iter().all(|row| shaped(row.len()))
-            })
-            && bounded(&self.unit, 64)
-            && (1..=30).contains(&self.forecast_years)
-            && self.reference.as_ref().is_none_or(|reference| {
-                reference.value_pct.is_finite()
-                    && reference
-                        .label
-                        .as_deref()
-                        .is_none_or(|label| bounded(label, 128))
-                    && reference
-                        .evidence_id
-                        .as_deref()
-                        .is_none_or(|id| bounded(id, 128))
-            })
-            && self.price.as_ref().is_none_or(|price| {
-                price.value.is_finite()
-                    && bounded(&price.display, 64)
-                    && price
-                        .currency
-                        .as_deref()
-                        .is_none_or(|code| bounded(code, 8))
-                    && price.date.as_deref().is_none_or(valid_as_of)
-                    && price
-                        .evidence_id
-                        .as_deref()
-                        .is_none_or(|id| bounded(id, 128))
-            })
-            && self
-                .amount_unit
-                .as_deref()
-                .is_none_or(|unit| bounded(unit, 64))
-            && self.inputs.len() <= MAX_CALC_INPUTS
-            && self.inputs.iter().all(|input| {
-                bounded(&input.name, 128)
-                    && bounded(&input.display, 128)
-                    && input
-                        .label
-                        .as_deref()
-                        .is_none_or(|label| bounded(label, 128))
-                    && input
-                        .evidence_id
-                        .as_deref()
-                        .is_none_or(|id| bounded(id, 128))
-            })
-            && self.formulas.len() <= MAX_FORMULA_LINES
-            && self.formulas.iter().all(|line| bounded(line, 2048))
-    }
-}
-
-pub(crate) fn validate_sensitivity_cards(cards: &[SensitivityCard]) -> Result<(), DomainError> {
-    let invalid = cards.len() > MAX_SENSITIVITY_CARDS
-        || cards.iter().any(|card| {
-            !card.grid.valid()
-                || !bounded(&card.evidence_id, 128)
-                || card.evidence_id.is_empty()
-                || card.subject.trim().is_empty()
-                || !bounded(&card.subject, MAX_SUBJECT_BYTES)
-        });
-    if invalid {
-        return Err(DomainError::Invalid(
-            "sensitivity cards exceed their bounds",
-        ));
-    }
-    Ok(())
-}
-
 fn bounded(text: &str, maximum: usize) -> bool {
     text.len() <= maximum && !text.contains('\0')
 }
@@ -444,6 +271,11 @@ pub(crate) fn validate_number_checks(checks: &[NumberCheck]) -> Result<(), Domai
                     .span
                     .as_ref()
                     .is_some_and(|span| span.start >= span.end)
+                || check.context.as_ref().is_some_and(|context| {
+                    context.text.chars().count() > MAX_NUMBER_CHECK_CONTEXT_CHARS
+                        || context.start >= context.end
+                        || context.text.get(context.start..context.end).is_none()
+                })
                 || check.fields.len() > MAX_ROW_FIELDS
                 || check.fields.iter().any(|field| {
                     !bounded(&field.key, 128) || !bounded(&field.value, MAX_CHECK_TEXT_BYTES)
@@ -458,6 +290,10 @@ pub(crate) fn validate_number_checks(checks: &[NumberCheck]) -> Result<(), Domai
                                 || !bounded(&input.label, 128)
                                 || !bounded(&input.display, 128)
                                 || !input.unit.valid()
+                                || input
+                                    .currency_basis
+                                    .as_deref()
+                                    .is_some_and(|basis| !bounded(basis, 128))
                         })
                 })
         });
@@ -503,6 +339,9 @@ pub fn bounded_calc(mut calc: NumberCheckCalc) -> NumberCheckCalc {
         input.name = clip(&input.name, 128);
         input.label = clip(&input.label, 128);
         input.display = clip(&input.display, 128);
+        if let Some(basis) = &mut input.currency_basis {
+            *basis = clip(basis, 128);
+        }
         if let Some(text) = &mut input.unit.text {
             *text = clip(text, 128);
         }
@@ -530,4 +369,67 @@ pub fn clip(text: &str, maximum: usize) -> String {
         end -= 1;
     }
     text[..end].replace('\0', "")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn number_check_context_bounds_characters_and_utf8_byte_offsets() {
+        let mut check: NumberCheck = serde_json::from_value(serde_json::json!({
+            "link_index":0, "text":"4,523", "evidence_id":"ev_page", "kind":"passage", "status":"matched"
+        })).unwrap();
+        assert!(check.context.is_none());
+        let valid = NumberCheckContext {
+            text: "한".repeat(240),
+            start: 3,
+            end: 6,
+        };
+        check.context = Some(valid.clone());
+        assert!(validate_number_checks(std::slice::from_ref(&check)).is_ok());
+        for context in [
+            NumberCheckContext {
+                text: "a".repeat(241),
+                start: 0,
+                end: 1,
+            },
+            NumberCheckContext {
+                text: "한".repeat(241),
+                start: 0,
+                end: 3,
+            },
+            NumberCheckContext {
+                start: 1,
+                ..valid.clone()
+            },
+            NumberCheckContext {
+                end: 5,
+                ..valid.clone()
+            },
+            NumberCheckContext {
+                start: 6,
+                end: 3,
+                ..valid.clone()
+            },
+            NumberCheckContext {
+                start: 3,
+                end: 3,
+                ..valid.clone()
+            },
+            NumberCheckContext { end: 721, ..valid },
+            NumberCheckContext {
+                text: String::new(),
+                start: 0,
+                end: 0,
+            },
+        ] {
+            check.context = Some(context);
+            assert!(
+                validate_number_checks(std::slice::from_ref(&check)).is_err(),
+                "{:?}",
+                check.context
+            );
+        }
+    }
 }

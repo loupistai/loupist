@@ -1,5 +1,6 @@
 //! Journal tool input conversion. Canonical check/review rules live in knowledge::journal.
 use super::*;
+use crate::knowledge::assets::ThesisRole;
 
 pub(super) fn journal_argument_error(error: crate::knowledge::KnowledgeError) -> BrokerError {
     match error {
@@ -10,10 +11,12 @@ pub(super) fn journal_argument_error(error: crate::knowledge::KnowledgeError) ->
         error => knowledge_error(error),
     }
 }
+pub(super) type ThesisInput = (String, ThesisRole);
+
 pub(super) fn parse_research_journal(
     value: &Value,
     at_ms: i64,
-) -> Result<StagedResearchJournal, BrokerError> {
+) -> Result<(StagedResearchJournal, Option<ThesisInput>), BrokerError> {
     let object = exact_object(
         value,
         &["judgment"],
@@ -27,8 +30,9 @@ pub(super) fn parse_research_journal(
             "lensReads",
         ],
     )?;
+    let thesis = parse_thesis_target(object.get("thesis"))?;
     let journal = StagedResearchJournal {
-        thesis: parse_thesis_target(object.get("thesis"))?,
+        thesis: None,
         at_ms,
         judgment: bounded_text(object.get("judgment"), 1, 1000)?,
         reasoning: optional_bounded_text(object.get("reasoning"), 0, 2000)?.unwrap_or_default(),
@@ -46,17 +50,9 @@ pub(super) fn parse_research_journal(
         world_reads: optional_unique_strings(object.get("worldReads"), 8, 128)?,
         lens_reads: optional_unique_strings(object.get("lensReads"), 8, 128)?,
     };
-    crate::knowledge::journal::validate_fields(
-        &journal.judgment,
-        &journal.reasoning,
-        &journal.entities,
-        journal.check.as_ref(),
-        journal.thesis.as_ref().map(|(thesis, _)| thesis),
-    )
-    .map_err(journal_argument_error)?;
     // A reason or line is the user's own words about an asset they follow; the
     // asset page is its context, so it needs no separate Memory read.
-    if journal.thesis.is_none()
+    if thesis.is_none()
         && journal.source_reads.is_empty()
         && journal.world_reads.is_empty()
         && journal.lens_reads.is_empty()
@@ -66,40 +62,20 @@ pub(super) fn parse_research_journal(
             "at least one acknowledged sourceReads, worldReads or lensReads reference",
         ));
     }
-    Ok(journal)
+    Ok((journal, thesis))
 }
 
-/// `thesis: {symbol, market, role}` names the asset page the entry belongs to.
-/// The page is keyed by symbol and market and is created with the turn if new.
-fn parse_thesis_target(
-    value: Option<&Value>,
-) -> Result<
-    Option<(
-        crate::knowledge::assets::JournalThesis,
-        crate::knowledge::assets::AssetIdentity,
-    )>,
-    BrokerError,
-> {
+/// `thesis: {asset, role}` names the page through an id, ticker or name.
+fn parse_thesis_target(value: Option<&Value>) -> Result<Option<ThesisInput>, BrokerError> {
     let Some(value) = value.filter(|value| !value.is_null()) else {
         return Ok(None);
     };
-    let object = exact_object(value, &["symbol", "market", "role"], &[])?;
-    let symbol = bounded_text(object.get("symbol"), 1, 64)?;
-    let market = bounded_text(object.get("market"), 1, 32)?;
+    let object = exact_object(value, &["asset", "role"], &[])?;
+    let asset = bounded_text(object.get("asset"), 1, 256)?;
     let role = match object.get("role").and_then(Value::as_str) {
-        Some("reason") => crate::knowledge::assets::ThesisRole::Reason,
-        Some("line") => crate::knowledge::assets::ThesisRole::Line,
+        Some("reason") => ThesisRole::Reason,
+        Some("line") => ThesisRole::Line,
         _ => return Err(BrokerError::invalid("thesis.role", "reason or line")),
     };
-    Ok(Some((
-        crate::knowledge::assets::JournalThesis {
-            asset_id: crate::knowledge::assets::asset_id(&symbol, &market),
-            role,
-        },
-        crate::knowledge::assets::AssetIdentity {
-            name: symbol.clone(),
-            symbol,
-            market,
-        },
-    )))
+    Ok(Some((asset, role)))
 }

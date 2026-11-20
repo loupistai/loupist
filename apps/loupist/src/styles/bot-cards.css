@@ -1,0 +1,65 @@
+/* Host posts in a Bot message (area E): the card language the briefing, alert, watch,
+   results, link, vocabulary and delivery posts share. One raised surface with a
+   hairline; in light a soft shadow, in dark none (--gg-shadow-card is flat there). Price
+   colours appear only through the market primitives. */
+
+.bot-card {
+  display: flex; flex-direction: column; gap: var(--gg-space-3); min-width: 0;
+  padding: 14px var(--gg-space-4) 10px;
+  border: 1px solid var(--gg-color-border-subtle); border-radius: calc(var(--gg-radius-lg) + 2px);
+  background: var(--gg-color-bg-raised); box-shadow: var(--gg-shadow-card);
+  color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body);
+  animation: bot-card-rise 320ms var(--gg-ease-out) both;
+}
+/* An alert is the one card that interrupts: its hairline wears the accent. */
+.bot-card[data-tone="alert"] { border-color: var(--gg-color-accent-line); }
+.bot-card p { margin: 0; }
+.bot-card h3 { margin: 0; font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); font-weight: var(--gg-weight-strong); }
+@keyframes bot-card-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.bot-card-head { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 0; flex-wrap: wrap; }
+.bot-card-head > small { margin-inline-start: auto; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.bot-card-kicker { display: flex; align-items: center; gap: var(--gg-space-2); flex-wrap: wrap; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+/* A long task title wraps inside its tag rather than running out of the card. */
+.bot-card-tag {
+  flex: 0 1 auto; display: inline-flex; align-items: center; min-width: 0; min-height: 20px; padding: 3px 7px; border-radius: var(--gg-radius-xs);
+  background: var(--gg-color-accent-soft); color: var(--gg-color-accent-ink);
+  font-size: var(--gg-text-caption); font-weight: var(--gg-weight-strong); line-height: 1.2; overflow-wrap: anywhere;
+}
+.bot-card-tag[data-tone="neutral"] { background: var(--gg-color-bg-sunken); color: var(--gg-color-text-secondary); }
+.bot-card-tag[data-tone="warning"] { background: var(--gg-color-warning-soft); color: var(--gg-color-warning); }
+.bot-card-body { color: var(--gg-color-text-secondary); }
+.bot-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); }
+.bot-card-actions [data-slot="button"] { gap: var(--gg-space-2); }
+
+.bot-card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: var(--gg-space-2); border-top: 1px solid var(--gg-color-border-subtle); }
+/* A card that is only its foot (a hand-off with nothing to preview) has no rule above it. */
+.bot-card > .bot-card-foot:first-child { padding-top: 0; border-top: 0; }
+.bot-card-spacer { flex: 1; }
+
+/* A control waiting on the host stays focusable (aria-disabled) but reads as unavailable. */
+.thread-delivery-source .morning-link[aria-disabled="true"] { cursor: default; color: var(--gg-color-text-tertiary); text-decoration: none; }
+.bot-card-actions [aria-disabled="true"] { cursor: default; opacity: 0.6; }
+
+.bot-card .thread-delivery-text { margin: 0; color: var(--gg-color-text-primary); }
+.bot-card-foot .thread-delivery-source { margin: 0; }
+
+/* "a · b · c" (MetaLine in components/chat/BotPost.tsx): every item carries its "·" in front,
+   and the row starts one separator to the left of a clipping box, so the "·" of whichever item
+   begins a line is cut off. The line wraps only between items and neither ends nor starts on a
+   separator. The 4 px padding keeps a focused button's ring inside the clip. */
+.bot-meta.bot-meta { display: block; overflow: hidden; margin: -4px; padding: 4px; }
+.bot-card-foot > .bot-meta { flex: 1 1 auto; min-width: 0; }
+.bot-meta-items { display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 2px; margin-inline-start: -20px; }
+.bot-meta-item { display: inline-flex; align-items: baseline; min-width: 0; }
+.bot-meta-sep { flex: none; width: 20px; text-align: center; }
+
+/* A post that informs and asks for nothing reads as one quiet line, not a card. */
+.bot-quiet-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gg-space-1) var(--gg-space-3); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-body); }
+.bot-quiet-action { padding: 0; border: 0; background: transparent; color: var(--gg-color-text-tertiary); font: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
+.bot-quiet-action:hover { color: var(--gg-color-text-primary); text-decoration-color: currentColor; }
+.bot-quiet-action:is(:disabled, [aria-disabled="true"]) { cursor: default; opacity: 0.6; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bot-card { animation: none; }
+}

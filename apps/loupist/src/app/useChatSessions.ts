@@ -92,14 +92,15 @@ export function useChatSessions(bridge: LoupistBridge) {
   );
 
   const updateChatMessages = useCallback(
-    (loupistId: string, threadId: string, messages: ChatThread["messages"]) => {
+    (loupistId: string, threadId: string, messages: ChatThread["messages"], preserveRecency?: boolean) => {
       if (messages.at(-1)?.memory_update) {
         handlersRef.current?.onMemoryChanged?.(loupistId);
         void handlersRef.current
           ?.refreshLoupistAvailability(loupistId)
           .catch(() => undefined);
       }
-      const updatedAt = messages.at(-1)?.created_at;
+      // Scheduled recency comes from the host once it has settled delivery.
+      const updatedAt = preserveRecency ? undefined : messages.at(-1)?.created_at;
       setThreadsForLoupist(loupistId, (current) =>
         current.map((thread) =>
           thread.id === threadId
@@ -107,6 +108,7 @@ export function useChatSessions(bridge: LoupistBridge) {
                 ...thread,
                 messages,
                 updated_at: updatedAt ?? thread.updated_at,
+                hide_from_recent: updatedAt && thread.id.startsWith("scheduled-chat-") ? false : thread.hide_from_recent,
               }
             : thread,
         ),

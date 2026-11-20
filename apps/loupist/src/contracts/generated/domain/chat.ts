@@ -2,10 +2,9 @@
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
 import type { CalcOperation } from "../calculations";
-import type { HandoffStatus } from "../chat/handoff";
+import type { HandoffStatus, HandoffStopReason } from "../chat/handoff";
 import type { DatasetRef } from "../datasets";
 import type { KnowledgeReference } from "../domain/memory";
-import type { JsonValue } from "../external";
 import type { LearnedDigest } from "../knowledge/lens";
 import type { RunStatus, Schedule, TaskKind } from "../scheduled_tasks/types";
 
@@ -18,7 +17,13 @@ export type ChatEvidenceDelivery = {
 
 export type ChatEvidenceDeliveryCoverage = "bounded_sample";
 
-export type ChatEvidenceKind = "original" | "discovery" | "derived" | "local_file" | "saved_context";
+export type ChatEvidenceKind =
+  | "original"
+  | "discovery"
+  | "derived"
+  | "local_file"
+  | "user_provided"
+  | "saved_context";
 
 /**
  * End-exclusive UTF-8 byte offsets into the retained excerpt, supplied only
@@ -38,6 +43,11 @@ export type ChatEvidenceRef = {
   url?: string,
   provider?: string,
   tool_name: string,
+  /**
+   * The read returned a user-provided Source (`SourceClass::UserProvided`):
+   * material the user pasted earlier, kept as given and never verified.
+   */
+  user_provided?: boolean,
   /** For a `calculate` result: its operation, the stable id it is worded by. */
   calc_operation?: CalcOperation,
   read_ref?: string,
@@ -94,6 +104,11 @@ export type ChatMessageStatus = "complete" | "aborted" | "error";
 export type ChatPerformance = {
   setupMs: number,
   firstTextMs?: number,
+  /**
+   * First text delta of the final stopping assistant message, from turn start.
+   * Absent when that message did not stream text.
+   */
+  answerTextMs?: number,
   generationMs: number,
   /** Elapsed time through preparation of the canonical completion snapshot. */
   totalMs: number,
@@ -123,10 +138,12 @@ export type ChatToolRefusalReason =
 
 export type FiledOutcome = { opId: string, outcome: string, key?: string };
 
+export type HandoffAction = { "kind": "link", connectionId: string };
+
 /**
  * One crossed line on an asset page, posted once into the home Thread. Built
  * only from the page and its move: names, the user's claim and the observed
- * value, never holdings quantities.
+ * value.
  */
 export type HomeAlert = {
   asset_id: string,
@@ -162,28 +179,16 @@ export type HomeDelivery = {
 };
 
 /**
- * A results message: "{name} reported {period} results." with the two most
- * material measures, or a before-capture that failed (Try again).
+ * Bot's post for a research session it handed off, once that session finished,
+ * failed or stopped. A session at work posts nothing.
  */
-export type HomeEarnings = {
-  asset_id: string,
-  event_id: string,
-  name: string,
-  symbol: string,
-  market: string,
-  period: string,
-  /** `reported` or `failed`. */
-  outcome: string,
-  side?: string,
-  /** The card's measure rows (`MeasureView`), at most two. */
-  measures: Array<JsonValue>,
-};
-
 export type HomeHandoff = {
   handoffId: string,
   chatId: string,
   title: string,
+  connectionId?: string,
   status: HandoffStatus,
+  stopReason?: HandoffStopReason,
   learned?: LearnedDigest,
 };
 
@@ -204,13 +209,6 @@ export type HomeVocabulary = {
   labelsKo?: Array<string>,
 };
 
-/**
- * Watcher alerts in one host message: at most five, then "+{more} more".
- * Events are the stored `WatchEventView`s (names and dated facts, never
- * holdings); kept as JSON so the message stays a plain record.
- */
-export type HomeWatch = { event_ids: Array<string>, events: Array<JsonValue>, more: number };
-
 export type MapKind = { name: string, label: string, labelKo?: string };
 
 export type MemoryUpdateChange = {
@@ -225,6 +223,8 @@ export type MemoryUpdateChange = {
   basis: string,
   futureUse: string,
   outcomes?: Array<FiledOutcome>,
+  /** A Source the user pasted into the Chat (`SourceClass::UserProvided`). */
+  userProvided?: boolean,
 };
 
 export type MemoryUpdateResult = {
@@ -241,6 +241,14 @@ export type MemoryUpdateResult = {
 };
 
 export type MemoryUpdateStatus = "applied" | "no_change";
+
+/** Which run of which scheduled task sent a request into its Chat. */
+export type ScheduledTurn = {
+  task_id: string,
+  run_id: string,
+  task_title: string,
+  task_kind: TaskKind,
+};
 
 /** One applied `loupist_setup` change. A market the user did not give is `None`. */
 export type SetupChange =

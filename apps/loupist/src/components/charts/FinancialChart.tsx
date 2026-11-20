@@ -116,7 +116,7 @@ export default function FinancialChart({ chart, dataset, onAskRange, compact = f
   const history = useRef<OverlayCreate[][]>([]);
   const [historySize, setHistorySize] = useState(0);
   const [editable, setEditable] = useState(false);
-  const [color, setColor] = useState(() => colors.info);
+  const [color, setColor] = useState(() => colors.accent);
   const [rangeStart, setRangeStart] = useState(0);
   const [rangeEnd, setRangeEnd] = useState(Math.max(0, dataset.rows.length - 1));
   const chartStyles = (): DeepPartial<Styles> => ({

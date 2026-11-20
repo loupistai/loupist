@@ -9,9 +9,9 @@ are Journal entries tagged `thesis {assetId, role: reason | line}`. A line needs
 check whose `byDate` is optional. An undated line is never due: Journal reviews, due
 pointers, the morning message and Needs attention skip it, and its reading lives on
 the asset page. The page's form writes through `journal_create`/`journal_update` on
-an existing page. Chat's `journal_save` names the page by
-`thesis {symbol, market, role}`, needs no Source, World or Lens read, and creates the
-page with the turn. Archiving an entry removes it from the thesis.
+an existing page. Chat's `journal_save` resolves `thesis {asset, role}` by handle,
+ticker or name using the [host resolution order](asset-pages.md#open-and-match-an-asset).
+It needs no Source, World or Lens read and creates a missing page with the reply. Archiving an entry removes it from the thesis.
 
 The read is the Loupist's view, stored on the page and never in the Journal:
 Holding up → Weakening → Challenged → Broken (stored as `holding`, so it never reads

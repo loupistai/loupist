@@ -60,7 +60,11 @@ describe("Loupist · Chat composer", () => {
       await waitFor(() => expect(chatSteer).toHaveBeenCalledWith(expect.objectContaining({ prompt: "Focus on downside risk", thread_id: "thread-margin" })));
       expect(composer()).toHaveValue("");
       // Guidance waits inside the running reply's timeline until it applies.
-      expect(within(screen.getByLabelText("Conversation")).getByText(/Focus on downside risk/)).toHaveClass("chat-guiding-row");
+      const guidingRow = within(screen.getByLabelText("Conversation")).getByText(/Focus on downside risk/);
+      expect(guidingRow).toHaveClass("chat-guiding-row");
+      // Said once: the conversation log adds the row, and no status region repeats the guidance.
+      expect(screen.getByRole("log", { name: "Conversation" })).toContainElement(guidingRow);
+      await waitFor(() => expect(screen.queryAllByRole("status").filter((region) => /downside risk|Guidance sent/.test(region.textContent ?? ""))).toEqual([]));
 
       await user.type(composer(), "Queue this next");
       await user.click(screen.getByRole("button", { name: "Send next" }));
@@ -134,6 +138,10 @@ describe("Loupist · Chat composer", () => {
     expect(await screen.findByText("Response stopped. Queued messages were kept.")).toBeVisible();
     expect(within(screen.getByLabelText("Pending chat instructions")).getByText("Ask this after the current turn")).toBeVisible();
     expect(chatSend).toHaveBeenCalledTimes(1);
+    // The kept message is one press away, not behind its row's menu.
+    await user.click(screen.getByRole("button", { name: "Send next now" }));
+    await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(2));
+    expect(chatSend.mock.calls[1][0]).toMatchObject({ prompt: "Ask this after the current turn" });
   });
 
   it("adds Skills and connections from the picker and sends the mentioned connection", async () => {

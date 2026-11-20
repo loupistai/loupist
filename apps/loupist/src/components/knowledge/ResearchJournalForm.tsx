@@ -1,4 +1,5 @@
-import { useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { focusForKeyboard } from "../../lib/inputModality";
 import type { LoupistBridge, JournalCheck, JournalRecord } from "../../types";
 import { useTranslation } from "../../i18n";
 import { AppDateField } from "../ui/app-date-field";
@@ -24,6 +25,16 @@ export function ResearchJournalForm({ bridge, loupistId, entry, checkOpen = fals
   const [byDate, setByDate] = useState(entry?.check?.byDate ?? "");
   const [confidence, setConfidence] = useState(entry?.check?.confidence === undefined ? "" : String(entry.check.confidence));
   const [busy, setBusy] = useState(false);
+  // Adding a check replaces its button with the fields, and removing it does the reverse: focus follows.
+  const checkFocus = useRef<"fields" | "toggle" | null>(null);
+  const claimRef = useRef<HTMLInputElement>(null);
+  const checkToggleRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const target = checkFocus.current;
+    checkFocus.current = null;
+    if (target === "fields") claimRef.current?.focus();
+    else if (target === "toggle") focusForKeyboard(checkToggleRef.current);
+  }, [hasCheck]);
   const [error, setError] = useState(false);
   const frozen = Boolean(entry?.outcome);
   // A line on an asset page may stand without a date.
@@ -44,11 +55,11 @@ export function ResearchJournalForm({ bridge, loupistId, entry, checkOpen = fals
     <Textarea id={`${id}-judgment`} value={judgment} onChange={e => setJudgment(e.target.value)} maxLength={1000} rows={3} required autoFocus />
     <label htmlFor={`${id}-reasoning`}>{t("journal.reasoning")}</label>
     <Textarea id={`${id}-reasoning`} value={reasoning} onChange={e => setReasoning(e.target.value)} maxLength={2000} rows={3} />
-    {!hasCheck ? <Button type="button" variant="ghost" className="journal-check-toggle" aria-expanded={false} aria-controls={`${id}-check`} disabled={frozen} onClick={() => setHasCheck(true)}>{t("journal.addCheck")}</Button> : null}
+    {!hasCheck ? <Button ref={checkToggleRef} type="button" variant="ghost" className="journal-check-toggle" disabled={frozen} onClick={() => { checkFocus.current = "fields"; setHasCheck(true); }}>{t("journal.addCheck")}</Button> : null}
     {hasCheck ? <fieldset id={`${id}-check`} className="journal-check-fields" disabled={frozen}>
       <legend>{t("journal.check")}</legend>
       <div className="journal-check-body">
-      <label htmlFor={`${id}-claim`}>{t("journal.claim")}</label><Input id={`${id}-claim`} value={claim} onChange={e => setClaim(e.target.value)} maxLength={2000} required />
+      <label htmlFor={`${id}-claim`}>{t("journal.claim")}</label><Input ref={claimRef} id={`${id}-claim`} value={claim} onChange={e => setClaim(e.target.value)} maxLength={2000} required />
       <label htmlFor={`${id}-metric`}>{t("journal.metric")}</label><Input id={`${id}-metric`} value={metric} onChange={e => setMetric(e.target.value)} maxLength={200} required />
       <div className="journal-form-grid">
         <label>{t("journal.direction")}<NativeSelect value={direction} onChange={e => setDirection(e.target.value as JournalCheck["direction"])}><option value="above">{t("journal.above")}</option><option value="below">{t("journal.below")}</option></NativeSelect></label>
@@ -57,7 +68,7 @@ export function ResearchJournalForm({ bridge, loupistId, entry, checkOpen = fals
         <div className="journal-date"><span>{t("journal.byDate")}</span><AppDateField aria-label={t("journal.byDate")} value={byDate} onChange={setByDate} required={!undatedLine} /></div>
       </div>
       <label htmlFor={`${id}-confidence`}>{t("journal.confidence")}</label><NativeSelect id={`${id}-confidence`} value={confidence} onChange={e => setConfidence(e.target.value)}><option value="">{t("journal.notSure")}</option>{Array.from({ length: 9 }, (_, index) => (index + 1) * 10).map(value => <option key={value} value={value}>{t("journal.confidenceOption", { value })}</option>)}</NativeSelect>
-      <Button type="button" variant="link" className="journal-check-remove" disabled={frozen} onClick={() => setHasCheck(false)}>{t("journal.removeCheck")}</Button>
+      <Button type="button" variant="link" className="journal-check-remove" disabled={frozen} onClick={() => { checkFocus.current = "toggle"; setHasCheck(false); }}>{t("journal.removeCheck")}</Button>
       </div>
     </fieldset> : null}
     <p className="journal-caption">{t("journal.caption")}</p>

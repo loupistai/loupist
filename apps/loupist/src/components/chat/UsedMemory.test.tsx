@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import type { ChatMessage } from "../../types";
 import { ChatSetAsideProvider } from "../../chat/chatSetAside";
 import { MessageMemoryRow } from "./MessageMemoryRow";
-import i18n from "@/i18n";
 
 const answer = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
   id: "answer-1", role: "assistant", status: "complete", created_at: "2026-10-28T00:00:00Z",
@@ -29,8 +28,11 @@ it("quotes a used principle and sets it aside for this chat until Undo", async (
   const user = userEvent.setup();
   const toggle = vi.fn(async () => {});
   render(<Harness messages={[answer()]} toggle={toggle} />);
-  await user.click(screen.getByRole("button", { name: "Used your principle" }));
-  const panel = screen.getByText("Used · Principle").closest("li")!;
+  expect(screen.getByTestId("memory-row")).toHaveAttribute("data-expanded", "false");
+  await user.click(screen.getByRole("button", { name: "Read your principle" }));
+  // An open list takes the footer's whole width, under Sources, not beside it.
+  expect(screen.getByTestId("memory-row")).toHaveAttribute("data-expanded", "true");
+  const panel = screen.getByText("Read · Principle").closest("li")!;
   expect(within(panel).getByText("Check cash flow before profit")).toBeVisible();
   await user.click(within(panel).getByRole("button", { name: "Not this time" }));
   expect(toggle).toHaveBeenCalledWith("principle-cash", true);
@@ -62,14 +64,15 @@ it("labels a deleted receipt target without offering edit or archive actions", a
   expect(screen.queryByRole("button", { name: "Archive" })).toBeNull();
 });
 
-it("shows the default perspective under its interface-language name", async () => {
-  await i18n.changeLanguage("ko");
-  try {
-    render(<Harness toggle={vi.fn()} messages={[answer({ lens_receipts: [{ recordId: "perspective-default", revisionId: "rev", kind: "perspective", title: "Outlook", delivery: "context", revisionDigest: "digest" }] })]} />);
-    await userEvent.click(screen.getByRole("button", { name: "페이지 1개 사용" }));
-    const panel = screen.getByText("사용함 · 관점").closest("li")!;
-    expect(within(panel).getByRole("blockquote")).toHaveTextContent(/^관점$/);
-  } finally {
-    await i18n.changeLanguage("en");
-  }
+it("says a method archived from the used list was archived", async () => {
+  const { MockLoupistBridge } = await import("../../bridge/mockBridge");
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  vi.spyOn(bridge, "knowledgeCatalog").mockResolvedValue({ loupistId: "loupist-quality", lenses: [{ recordId: "method-1" } as never], sources: [], worlds: [] });
+  const archive = vi.spyOn(bridge, "knowledgeLensArchive").mockResolvedValue(undefined as never);
+  const user = userEvent.setup();
+  render(<MessageMemoryRow bridge={bridge} loupistId="loupist-quality" message={answer({ lens_receipts: [{ recordId: "method-1", revisionId: "rev", kind: "method", title: "Test capacity costs", delivery: "exact_read", revisionDigest: "digest" }] })} />);
+  await user.click(screen.getByRole("button", { name: "Used 1 page" }));
+  await user.click(await screen.findByRole("button", { name: "Archive" }));
+  expect(archive).toHaveBeenCalledWith({ loupistId: "loupist-quality", recordId: "method-1", archived: true });
+  expect(await screen.findByRole("status")).toHaveTextContent("Archived");
 });

@@ -6,7 +6,7 @@ file, so a rejection below comes from the rule being tested, not from damage.
 
 | Folder | What it tries | Expected |
 | --- | --- | --- |
-| `injected-method` | A method that says to ignore the rules and `curl` holdings to a URL template; an entity summary asking for the system prompt | Method flagged instruction, tool, link; the summary stays World data |
+| `injected-method` | A method that says to ignore the rules and `curl` Lens text to a URL template; an entity summary asking for the system prompt | Method flagged instruction, tool, link; the summary stays World data |
 | `trade-authority-principle` | A principle claiming the user authorized orders | Flagged instruction |
 | `zero-width` | Zero-width and bidi characters in a method | Stripped and flagged hidden |
 | `schedule-method` | A method asking to edit `AGENTS.md` and create a schedule | Flagged tool |

@@ -1,7 +1,8 @@
 import { addedMapItems, chatMapData, stepEntityIds } from "./chatMapData";
 import type { GrowthEvent, KnowledgeMap } from "../contracts/knowledge";
 import type { ChatMessage } from "../types";
-const map = { nodes: ['a', 'b', 'c', 'd', 'unrelated'].map(id => ({ id, label: id, kind: 'entity', degree: 1, watched: false, held: false })), edges: [{ id: 'ab', kind: 'claim', source: 'a', target: 'b' }, { id: 'bc', kind: 'claim', source: 'b', target: 'c' }, { id: 'cd', kind: 'claim', source: 'c', target: 'd' }], worldRevisionId: 'rev' } as KnowledgeMap;
+import { chatReceipt } from "./receipt";
+const map = { nodes: ['a', 'b', 'c', 'd', 'unrelated'].map(id => ({ id, label: id, kind: 'entity', degree: 1, watched: false })), edges: [{ id: 'ab', kind: 'claim', source: 'a', target: 'b' }, { id: 'bc', kind: 'claim', source: 'b', target: 'c' }, { id: 'cd', kind: 'claim', source: 'c', target: 'd' }], worldRevisionId: 'rev' } as KnowledgeMap;
 const event = (subjectId: string, kind: GrowthEvent['kind'] = 'entity_added', chat = 'chat'): GrowthEvent => ({ eventId: `${chat}:${kind}:${subjectId}`, loupistId: 'loupist', atMs: 1, kind, subjectId, originChatId: chat, originMessageId: 'answer', recordId: 'world', actor: 'loupist', summary: '', beforeSummary: null, afterSummary: null });
 const answer: ChatMessage = { id: 'answer', role: 'assistant', content: '', created_at: '2026-10-28', status: 'complete' };
 it('includes only this chat and exactly one hop, excluding another chat and two-hop neighbors', () => {
@@ -21,6 +22,16 @@ it('deduplicates new items and highlights both endpoints of projected claims', (
   const additions = addedMapItems(projected, [event('a'), event('a'), event('hyper', 'claim_added'), event('b', 'claim_disputed')]);
   expect(additions.count).toBe(2);
   expect([...additions.highlightIds]).toEqual(['a', 'd']);
+});
+it('marks a name with a value reported about itself but counts it as no relationship', () => {
+  const reported = { ...map, edges: [...map.edges, { id: 'reports-a', kind: 'claim' as const, relation: 'REPORTS', source: 'a', target: 'a' }] };
+  const only = addedMapItems(reported, [event('reports-a', 'claim_added')]);
+  expect([...only.edgeIds]).toEqual([]);
+  expect([...only.highlightIds]).toEqual(['a']);
+  expect(chatReceipt(answer, only).relationships).toBe(0);
+  const both = addedMapItems(reported, [event('reports-a', 'claim_added'), event('ab', 'claim_added')]);
+  expect([...both.edgeIds]).toEqual(['ab']);
+  expect(chatReceipt(answer, both).relationships).toBe(1);
 });
 it('seeds names the host attributed to a step and lists them once in step order', () => {
   const running: ChatMessage = { ...answer, status: 'streaming', progress: { startedAtMs: 1, items: [

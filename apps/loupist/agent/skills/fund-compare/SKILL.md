@@ -19,11 +19,9 @@ connection; activate them if they are not active. Then:
 3. Cost, size and age: compare them plainly; a fee difference compounds.
 
 Korean-listed (KRX) ETFs: the connections give prices only, so compare price
-returns from `krx_daily_quote` and leave holdings, overlap and cost as empty
-`not_checked` cells. Never fill them from memory.
+returns from `krx_daily_quote` and say holdings, overlap and cost were not
+checked. Never fill them from memory.
 
-Publish one `grid_publish` table: one row per fund; columns for cost, size,
-start date, overlap and return, each with its period. Read
-[fund checks](references/fund-checks.md) for index, currency, tracking and
-leveraged-product differences. End with what really differs and which trade-off
+Read [fund checks](references/fund-checks.md) for index, currency, tracking and
+leveraged-product differences. Say what differs and which trade-off
 matters for the purpose the user stated, without asking about their finances.

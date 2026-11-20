@@ -16,28 +16,28 @@ A Loupist is a research companion for what you invest in: it watches the assets 
 
 ---
 
-A Loupist carries research across conversations. It reads primary filings, runs the valuation math itself, challenges its prior views, and turns each piece of research into knowledge it uses again — in later companies, later markets, and later reviews.
+A Loupist carries research across conversations. It reads primary filings, runs the valuation math itself, challenges its prior views, and can use what it learned about one company when it researches another.
 
-Each Loupist works in its own local folder, created by the app or opened from one you already have. Reports, code and data stay in that folder; `.loupist/` keeps its conversations and Memory with retained source bytes and immutable revisions. Close the app and copy the whole folder, including `.loupist/`, to preserve or move a Loupist. Lens pages contain Markdown. The app runs on your machine with a supported provider API key or account sign-in. There is no Loupist account or sync.
+Each Loupist works in its own local folder, created by the app or opened from one you already have. Reports, code and data stay in that folder. Quit the app and copy the whole folder, including `.loupist/`, to take its conversations, Memory and retained originals with you. Each Loupist’s followed list stays in the app catalog on that Mac. The app runs on your machine with a supported provider API key or account sign-in. There is no Loupist account or sync.
 
 ## Teach a principle, see it applied
 
-**Day 1** — *"Check whether capacity costs are temporary before trusting margin recovery."* Save a principle and apply it to dated company reports. The Map connects retained Sources to entities, claims, principles and methods. With Map building and method learning enabled, repeated evidence can produce a reusable method; the review can also defer when the evidence is insufficient.
+**Day 1** — *"Check whether capacity costs are temporary before trusting margin recovery."* Save a principle and apply it to dated company reports. The Map connects retained Sources to entities, claims, principles and methods. With Map building and method learning enabled, findings from separate research sessions about different companies can support a reusable method. The review can defer when the evidence is insufficient.
 
-**Later** — *"Compare these companies’ margin recoveries."* In a new research session, the Loupist can apply the saved principle and relevant learned method. Open Lens beside Chat to inspect a revised method’s dated Then / Now summaries and evidence.
+**Later** — *"Compare these companies’ margin recoveries."* In a new research session, the Loupist can apply the saved principle and relevant learned method. Open Lens from the sidebar to inspect a revised method’s dated Then / Now summaries and evidence.
 
-Follow companies or import holdings as research context, receive dated briefings in Bot, inspect their runs in Schedule, and keep your own judgments and later checks in a Journal.
+Ask Bot to hand a question to a research session. Its result comes back to Bot when the session ends. Scheduled briefings arrive there too, with the run history in Schedule.
 
 ## What makes it a Loupist
 
-- **It carries lessons forward.** Ordinary research can retain Sources and refine research methods. A later relevant turn reads those revisions; historical inputs remain available in private research records.
+- **It carries lessons forward.** Ordinary research can retain Sources and refine research methods. A later session can use those revisions. The original evidence stays with the saved research.
 - **Primary filings, two markets, one conversation.** OpenBB brings SEC EDGAR, FRED, keyless market data, and configured data vendors into the same chat as native OpenDART, World Bank, KRX, and the Korea Investment read catalog. Credentials are stored locally; requests go to the selected providers.
 - **Its own math.** Pi's native file tools let the Loupist read and edit files in that folder. `run_python` runs numerical code in a pinned offline Python runtime with no shell and no network. Research scripts and results stay in that folder, and charts can preserve exact data revisions.
-- **Records you own.** A Loupist folder preserves its research sessions, retained originals and referenced tool activity. Open a copied folder to restore that Loupist. Each Loupist owns its Sources, Map, Lens, notes and private judgments. Tool results appear in Chat progress; files, charts, documents and saved Memory open beside the conversation. Removing a Loupist unregisters it; its folder, conversations and Memory remain available to reopen.
+- **Records you own.** A Loupist folder preserves its research sessions, retained originals and referenced tool activity. Opening a copy on another Mac restores its asset pages, Sources, Map, Lens, notes and private judgments. Following starts empty there. Inspect tool results in Chat and open a file, chart or document from the answer. Removing a Loupist from the app leaves its folder available to reopen.
 
 ## How a Loupist remembers
 
-The sidebar shows **Bot · Following · Map · Lens · Schedule**, with Settings below. Map and Lens open beside Chat; the header also opens Chat materials. Map opens the Library, with **Sources · Journal · Notes** tabs. Lens holds principles, perspectives, methods, topics and ideas. Briefings and scheduled research run while the app is open or in the menu bar. Memory is the umbrella name for everything a Loupist keeps. A quality-compounder Loupist and a deep-value Loupist keep their own sources, knowledge, and perspective.
+The sidebar shows **Bot · Following · Map · Lens · Schedule**, with Settings below. Map and Lens each open as a full page. Activity in the chat header shows what the session used. Map opens the Library, with **Sources · Journal · Notes** tabs. Lens holds principles, perspectives, methods, topics and ideas. Briefings and scheduled research run while the app is open or in the menu bar. Memory is the research a Loupist can draw on in later conversations. A quality-compounder Loupist and a deep-value Loupist keep their own sources, knowledge, and perspective.
 
 | Kind | What it holds |
 | --- | --- |
@@ -62,7 +62,7 @@ Download [Loupist for macOS 13+ on Apple Silicon (Beta)](https://github.com/loup
 - Rust owns Loupist isolation, persistence, and Memory writes.
 - Native file tools are restricted to admitted workspace, scratch, attachment and bounded global-instruction paths, plus read-only bundled Skills; private app data and credentials are refused. `run_python` is the only agent code execution tool. It has no shell, network or host environment, and it stays allowed after third-party text. See [Native tool permissions](docs/runtime/permissions.md).
 - Model, market-data and Python workers run behind Rust authority; Map building runs inside the app. The host owns their process lifetimes and allowed operations.
-- Memory stays in local Loupist folders. Your AI provider receives messages and the Sources and saved notes used by answers or background reading; data providers receive requested names, tickers and wallet addresses. Holdings quantities and values are kept local.
+- Memory stays in local Loupist folders. Your AI provider receives messages and the Sources and saved notes used by answers or background reading; data providers receive the names and tickers you follow or ask about. The app keeps a list of assets you follow. A position you mention in a message goes to your AI provider like the rest of that message.
 - AI sign-ins and keys are stored in private app storage; Data connection secrets use the macOS Keychain. Saving an AI key uses private process input, not a process environment. Workspace instructions and Skill entrypoints enter through a bounded, hash-checked snapshot.
 
 ## Development

@@ -3,17 +3,20 @@ import { useMemo, useRef, useState } from "react";
 import { ListIcon } from "lucide-react";
 import { answerOutline } from "../../chat/outline";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { useConversationScroll } from "../ai-elements/conversation";
 
 const t = i18n.getFixedT(null, "chat");
 
 /**
- * "Outline" for a long answer (chat spec X16; chat design change 18): a small trigger at
- * the end of the answer's meta row, so it is on the first line, opening its H2/H3
- * headings as links that scroll to and focus the heading in the rendered answer.
+ * "Outline" for a long answer (chat spec X16; chat design change 18): a small trigger in
+ * the answer's meta row, after its time, so it is on the first line, opening its H2/H3
+ * headings as links that scroll to and focus the heading in the rendered answer. The list
+ * opens from the trigger toward the answer, never over the sidebar.
  */
 export function AnswerOutline({ messageId, markdown }: { messageId: string; markdown: string }) {
   useTranslation("chat");
   const [open, setOpen] = useState(false);
+  const conversation = useConversationScroll();
   const jumped = useRef(false);
   const rows = useMemo(() => answerOutline(markdown), [markdown]);
   if (!rows.length) return null;
@@ -28,6 +31,8 @@ export function AnswerOutline({ messageId, markdown }: { messageId: string; mark
     jumped.current = Boolean(heading);
     setOpen(false);
     if (!heading) return;
+    // The thread stays at the heading: a chat opened at its end no longer returns there when it grows.
+    conversation?.holdScrollPosition();
     heading.setAttribute("tabindex", "-1");
     heading.scrollIntoView({ block: "start", behavior: "smooth" });
     heading.focus({ preventScroll: true });
@@ -37,7 +42,7 @@ export function AnswerOutline({ messageId, markdown }: { messageId: string; mark
       <button type="button" className="answer-outline-trigger" data-answer-outline><ListIcon aria-hidden="true" />{t("chatOutline.title")}</button>
     </PopoverTrigger>
     {/* Choosing a heading moves focus there; Escape still returns focus to the trigger. */}
-    <PopoverContent className="answer-outline" align="end" aria-label={t("chatOutline.title")} onCloseAutoFocus={(event) => { if (jumped.current) event.preventDefault(); jumped.current = false; }}>
+    <PopoverContent className="answer-outline" align="start" collisionPadding={8} aria-label={t("chatOutline.title")} onCloseAutoFocus={(event) => { if (jumped.current) event.preventDefault(); jumped.current = false; }}>
       <ol>
         {rows.map((row, index) => <li key={`${index}:${row.text}`} data-level={row.level}>
           <button type="button" onClick={() => jump(index)}>{row.text}</button>

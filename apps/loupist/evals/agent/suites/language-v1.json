@@ -1,0 +1,406 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "language",
+  "version": 1,
+  "description": "Answer language across Korean and English appearances in the Bot and research sessions. Seeded Source summaries must cite the exact evidence. LG-004 also checks application of a saved dividend rule.",
+  "scenarios": [
+    {
+      "id": "LG-001",
+      "title": "An English term question and its follow-up under a Korean interface, in the Bot",
+      "split": "capability",
+      "tags": [
+        "answer-language",
+        "bot"
+      ],
+      "language": "ko",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What does free cash flow mean?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "How is that different from net income?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LG-002",
+      "title": "An English request for a paused schedule under a Korean interface, in the Bot",
+      "split": "capability",
+      "tags": [
+        "answer-language",
+        "bot",
+        "scheduling"
+      ],
+      "language": "ko",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Create a paused schedule titled Harbor review that summarizes harbor.md every 120 minutes and continues in its own dedicated conversation. Do not run the work now.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity",
+                    "id": "schedules"
+                  },
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 1,
+                    "tasks": [
+                      {
+                        "title": "Harbor review",
+                        "status": "paused",
+                        "target": {
+                          "kind": "dedicated_chat"
+                        },
+                        "prompt_includes": [
+                          "harbor.md"
+                        ]
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LG-003",
+      "title": "An English summary of an English Source under a Korean interface, in a research session",
+      "split": "capability",
+      "tags": [
+        "answer-language",
+        "research-session"
+      ],
+      "language": "ko",
+      "connections": [],
+      "seed": {
+        "sources": [
+          {
+            "title": "Alder Rail quarterly note",
+            "origin": "https://fictional.example/alder-rail-q3",
+            "text": "Fictional note dated 2026-10-08: Alder Rail carried 18 million passengers in the third quarter of 2026, up from 16 million a year earlier, and its operating margin was 12 percent. Management expects two new trains to arrive in the first half of 2027."
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Summarize the Alder Rail quarterly note in my Sources.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "18",
+                      "1,800만",
+                      "1800만"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_source_span",
+                    "source_origin": "https://fictional.example/alder-rail-q3",
+                    "allow_plain_count": true,
+                    "figure_pattern": "(?<![\\d.,−-])(?:18\\s+million\\b|18,?000,?000|1,?800\\s*만)(?:\\s*(?:(?:third[- ]quarter\\s+|Q3\\s+)?(?:passengers?|riders?)\\b|명)|$)",
+                    "metric": "retrieval"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "interface_labels",
+                    "metric": "efficiency"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "alder-ridership",
+                    "criterion": "Explain the quarterly note in English and attribute the 18 million third-quarter passengers to Alder Rail and its note. A bare figure, a different quantity or issuer, a refusal, or a paragraph of explanation in another language fails.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "clock": "2026-11-18T09:00:00+09:00"
+    },
+    {
+      "id": "LG-004",
+      "title": "An English question that brings in a seeded principle under a Korean interface, in a research session",
+      "split": "capability",
+      "tags": [
+        "answer-language",
+        "research-session",
+        "principle-check"
+      ],
+      "language": "ko",
+      "connections": [],
+      "seed": {
+        "principles": [
+          "A dividend is safe only when free cash flow covers it."
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Fictional Westbrook Mills paid dividends of 42 million credits and generated free cash flow of 30 million credits in the year to September 2026. Is its dividend covered?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "lens:rec_"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "dividend-coverage",
+                    "criterion": "Apply the linked saved free-cash-flow rule to Westbrook Mills for the year to September 2026. State that 30 million credits of free cash flow fall short of 42 million credits of dividends, so the dividend was not covered. Link any additional evidence used.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LG-005",
+      "title": "A Korean term question under an English interface, in the Bot",
+      "split": "capability",
+      "tags": [
+        "answer-language",
+        "bot"
+      ],
+      "language": "en",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "잉여현금흐름이 무슨 뜻인가요?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LG-006",
+      "title": "A Korean summary of a Korean Source under an English interface, in a research session",
+      "split": "capability",
+      "tags": [
+        "answer-language",
+        "research-session"
+      ],
+      "language": "en",
+      "connections": [],
+      "seed": {
+        "sources": [
+          {
+            "title": "한결해운 분기 메모",
+            "origin": "https://fictional.example/hangyeol-q3",
+            "text": "가상 메모, 2026-10-08 작성: 한결해운은 2026년 3분기에 화물 1,800만 톤을 운송해 1년 전 같은 분기의 1,600만 톤보다 늘었고, 영업이익률은 12%였다. 경영진은 신규 선박 두 척을 2027년 상반기에 인도받을 예정이라고 밝혔다."
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "제 자료에 있는 한결해운 분기 메모를 요약해 주세요.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "1,800",
+                      "1800",
+                      "18 million"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_source_span",
+                    "source_origin": "https://fictional.example/hangyeol-q3",
+                    "figure_pattern": "(?<![\\d.,−-])(?:1,?800\\s*만|18\\s+million\\b|18,000,000|18000000)\\s*(?:톤|(?:metric\\s+)?ton(?:ne)?s\\b|$)",
+                    "metric": "retrieval"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LG-007",
+      "title": "Control: a Korean term question under a Korean interface, in the Bot",
+      "split": "capability",
+      "tags": [
+        "answer-language",
+        "bot",
+        "control"
+      ],
+      "language": "ko",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "영업이익률이 무슨 뜻인가요?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LG-008",
+      "title": "Control: an English term question under an English interface, in the Bot",
+      "split": "capability",
+      "tags": [
+        "answer-language",
+        "bot",
+        "control"
+      ],
+      "language": "en",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What does operating margin mean?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

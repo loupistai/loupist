@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatEvidenceRef, MemoryRef } from "../types";
 import { evidenceFixture } from "../test/evidenceFixtures";
-import { destinationIcon, evidenceTarget, externalUrl, hostSourceDestination, wantsExternal, type ChatDestination } from "./navigation";
+import { destinationIcon, evidenceTarget, externalUrl, hostSourceDestination, savedAssetTarget, wantsExternal, type ChatDestination } from "./navigation";
 import { tabShortcut } from "../app/shortcuts";
 
 const web = evidenceFixture({ id: "ev_web", tool_name: "web_fetch", url: "https://example.com/report" });
@@ -36,7 +36,7 @@ describe("evidenceTarget", () => {
   });
 
   it("names the asset and the Memory location it opens", () => {
-    expect(evidenceTarget(assetRead, [], "loupist-1")).toEqual({ kind: "asset", target: { loupistId: "loupist-1", assetId: "NASDAQ:AAPL" } });
+    expect(evidenceTarget(assetRead, [], "loupist-1")).toEqual({ kind: "asset", target: { loupistId: "loupist-1", assetId: "NASDAQ:AAPL", name: "Apple" } });
     expect(evidenceTarget(lensRead, [lensMemory], "loupist-1")).toMatchObject({ kind: "memory", title: "Moats", location: { loupistId: "loupist-1", surface: "lens", recordId: "lens-1" } });
   });
 });
@@ -48,6 +48,38 @@ describe("hostSourceDestination", () => {
   });
   it("opens the asset page for a source with no page", () => {
     expect(hostSourceDestination(derived, asset)).toEqual({ kind: "asset", target: asset });
+  });
+  it("opens only the evidence when a saved post has no page to fall back to", () => {
+    expect(hostSourceDestination(filing, null)).toEqual({ kind: "evidence", evidence: filing });
+  });
+});
+
+describe("saved asset references", () => {
+  it("opens an asset page read by its id and name, from a whole excerpt or a bounded one", () => {
+    const whole = evidenceFixture({ kind: "saved_context", tool_name: "asset_page_read", url: undefined,
+      excerpt: JSON.stringify({ asOf: null, assetId: "ast_h", class: "equity", market: "NYSE", name: "Alpha Inc.", rows: [{ facts: { symbol: "NOPE" } }], symbol: "QRS" }, null, 2) });
+    expect(evidenceTarget(whole, [], "l")).toEqual({ kind: "asset", target: { loupistId: "l", assetId: "ast_h", name: "Alpha Inc." } });
+    const bounded = evidenceFixture({ kind: "saved_context", tool_name: "asset_page_read", url: undefined, excerpt_truncated: true,
+      excerpt: '{\n  "assetId": "ast_h",\n  "name": "Alpha Inc.",\n  "rows": [\n    {\n      "symbol": "NOPE"\n    }\n  ],\n  "symbol": "QRS",\n  "market": "NYSE",\n  "reasons": [\n    {"text": "cut' });
+    expect(evidenceTarget(bounded, [], "l")).toEqual({ kind: "asset", target: { loupistId: "l", assetId: "ast_h", name: "Alpha Inc." } });
+    // A read without an id opens by its reference ticker, an older receipt's `symbol` included.
+    const byTicker = evidenceFixture({ kind: "saved_context", tool_name: "asset_page_read", url: undefined,
+      excerpt: JSON.stringify({ name: "Alpha Inc.", reference: { ticker: "NOPE" }, ticker: "QRS" }, null, 2) });
+    expect(evidenceTarget(byTicker, [], "l")).toEqual({ kind: "asset", target: { loupistId: "l", ticker: "QRS", name: "Alpha Inc." } });
+    const page = evidenceFixture({ kind: "saved_context", tool_name: "asset_page_read", url: undefined,
+      excerpt: JSON.stringify({ asset: { assetId: "ast_h", name: "Alpha Inc.", reference: { ticker: "QRS" } } }) });
+    expect(evidenceTarget(page, [], "l")).toEqual({ kind: "asset", target: { loupistId: "l", assetId: "ast_h", name: "Alpha Inc." } });
+    const older = evidenceFixture({ kind: "saved_context", tool_name: "asset_page_read", url: undefined, excerpt: JSON.stringify({ symbol: "QRS", market: "NYSE" }) });
+    expect(evidenceTarget(older, [], "l")).toEqual({ kind: "asset", target: { loupistId: "l", ticker: "QRS" } });
+  });
+  it("opens a saved reference by its id, else by its ticker, at the section it names", () => {
+    expect(savedAssetTarget("l", { assetId: "ast_h", ticker: "QRS", name: "Alpha Inc." }, { section: "history" }))
+      .toEqual({ loupistId: "l", assetId: "ast_h", name: "Alpha Inc.", section: "history" });
+    expect(savedAssetTarget("l", { ticker: "QRS" })).toEqual({ loupistId: "l", ticker: "QRS" });
+  });
+  it("has no target without an id or a ticker", () => {
+    expect(savedAssetTarget("l", { ticker: " " })).toBeNull();
+    expect(savedAssetTarget("l", { name: "Alpha Inc." })).toBeNull();
   });
 });
 

@@ -16,15 +16,16 @@ export function measureShellLayout() {
     .flatMap(element => {
       const bounds = box(element);
       return bounds ? [{ bounds, mobile: element.dataset.mobile === "true",
-        railButtons: element.closest('[data-collapsible="icon"]') ? [...element.querySelectorAll('.navigation-search,[data-testid=loupist-chat-row][data-home] button[data-testid=loupist-chat-button],[data-sidebar-place] button,[data-testid=navigation-new],#main-tab-settings')].map(box).filter(Boolean) : [],
-        footer: box(element.querySelector('[data-slot="sidebar-footer"]')) }] : [];
+        railButtons: element.closest('[data-collapsible="icon"]') ? [...element.querySelectorAll('[data-testid=loupist-header-identity],.navigation-search,[data-testid=loupist-chat-row][data-home] button[data-testid=loupist-chat-button],[data-sidebar-place] button,[data-testid=navigation-new],#main-tab-settings')].map(box).filter(Boolean) : [],
+        footer: box(element.querySelector('[data-slot="sidebar-footer"]')),
+        resizeHandle: box(element.querySelector("[data-sidebar-resize]")) }] : [];
     });
   const content = document.querySelector(".conversation-content");
   return {
     viewport: { x: 0, y: 0, right: innerWidth, bottom: innerHeight, width: innerWidth, height: innerHeight },
-    shell, titlebar: rect(".app-titlebar"), body: rect(".app-body"), frame: rect(".app-frame"), navigation,
-    headerControls: [...document.querySelectorAll(".app-titlebar button:not([data-testid=loupist-header-identity]), .loupist-header-profiles")].map(box).filter(Boolean),
-    activeProfile: rect('[data-testid=loupist-header-identity][aria-pressed="true"]'), profiles: rect(".loupist-header-profiles"),
+    shell, header: rect(".app-header"), body: rect(".app-body"), frame: rect(".app-frame"), navigation,
+    headerControls: [...document.querySelectorAll(".app-header button")].map(box).filter(Boolean),
+    identity: rect("[data-testid=loupist-header-identity]"),
     composer: rect(".composer-shell"),
     heading: rect(".workspace-heading"),
     titleColumn: rect(".workspace-chat-title"), readingColumn: box(content),
@@ -43,25 +44,30 @@ export function assertShellLayout(layout, { label = "shell", tolerance = 1.5 } =
   const near = (a, b) => Math.abs(a - b) <= tolerance;
   const within = (child, parent) => child && parent && child.x >= parent.x - tolerance
     && child.right <= parent.right + tolerance && child.y >= parent.y - tolerance && child.bottom <= parent.bottom + tolerance;
-  const { viewport, shell, titlebar, body, frame } = layout;
+  const { viewport, shell, header, body, frame } = layout;
   check(within(shell, viewport) && near(shell.bottom, viewport.bottom), "shell escapes the viewport", { shell, viewport });
-  check(within(titlebar, shell) && within(body, shell) && within(frame, body), "shell regions are clipped", { titlebar, body, frame });
-  check(near(titlebar.bottom, body.y) && near(body.bottom, frame.bottom) && near(frame.bottom, viewport.bottom),
-    "titlebar and body do not share the available height", { titlebar, body, frame, viewport });
+  check(within(body, shell) && within(frame, body), "shell regions are clipped", { body, frame });
+  // No title bar row: the sidebar and the page column both run the full height of the window.
+  check(near(body.y, shell.y) && near(frame.y, body.y) && near(body.bottom, frame.bottom) && near(frame.bottom, viewport.bottom),
+    "body and page column do not take the full height", { body, frame, viewport });
+  if (header) check(within(header, frame) && near(header.y, frame.y), "page header is not the first row of the page column", { header, frame });
   if (viewport.width >= 900) check(layout.navigation.length === 1, "desktop navigation is missing", layout.navigation);
   for (const navigation of layout.navigation) {
     check(within(navigation.bounds, navigation.mobile ? viewport : body), "navigation escapes its region", navigation);
     if (!navigation.mobile) check(near(navigation.bounds.y, body.y) && near(navigation.bounds.bottom, body.bottom),
-      "sidebar does not follow the body height", { navigation, body });
+      "sidebar does not run the full height", { navigation, body });
     for (const item of navigation.railButtons) {
       check(within(item, navigation.bounds) && near((item.x + item.right) / 2, (navigation.bounds.x + navigation.bounds.right) / 2),
         "collapsed sidebar control is off-center", { item, rail: navigation.bounds });
     }
     if (navigation.footer) check(within(navigation.footer, navigation.bounds), "navigation footer is clipped", navigation);
+    // The sidebar's width is the user's; its resize handle always sits on its right edge, inside it.
+    if (navigation.resizeHandle) check(within(navigation.resizeHandle, navigation.bounds) && near(navigation.resizeHandle.right, navigation.bounds.right),
+      "sidebar resize handle is not on the sidebar's right edge", { handle: navigation.resizeHandle, sidebar: navigation.bounds });
   }
-  for (const control of layout.headerControls) check(within(control, titlebar), "titlebar control is clipped", { control, titlebar });
-  if (layout.activeProfile) check(within(layout.activeProfile, layout.profiles),
-    "selected profile is clipped in the header strip", { active: layout.activeProfile, strip: layout.profiles });
+  for (const control of layout.headerControls) check(within(control, header), "page header control is clipped", { control, header });
+  const sidebar = layout.navigation.find(item => !item.mobile);
+  if (layout.identity && sidebar) check(within(layout.identity, sidebar.bounds), "Loupist identity is clipped in the sidebar", { identity: layout.identity, sidebar: sidebar.bounds });
   if (layout.composer) check(within(layout.composer, frame), "composer is clipped below the frame", { composer: layout.composer, frame });
   if (layout.titleColumn && layout.readingColumn) {
     check(near(layout.titleColumn.x, layout.readingColumn.x) && near(layout.titleColumn.right, layout.readingColumn.right),

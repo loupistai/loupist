@@ -17,6 +17,26 @@ fn summary_is_first_prose_paragraph_without_markdown() {
     assert_eq!(summary("**Only a label**"), "Only a label");
 }
 #[test]
+fn summary_skips_tables_and_loose_lists_and_preserves_first_prose() {
+    assert_eq!(
+        summary("# Heading\n\n| Quarter | Sales |\n| --- | --- |\n| Q3 | 42 |\n\n- List item\n\n  Another list paragraph\n\n첫 *문장*입니다.\n\nLater."),
+        "첫 문장입니다."
+    );
+    assert_eq!(
+        summary("| Quarter | Sales |\n| --- | --- |\n| Q3 | 42 |"),
+        ""
+    );
+    assert_eq!(
+        summary(
+            "First paragraph.
+
+Later."
+        ),
+        "First paragraph."
+    );
+}
+
+#[test]
 fn journal_hook_is_empty_and_unattended_native_tools_are_denied() {
     for name in [
         "read",
@@ -29,6 +49,7 @@ fn journal_hook_is_empty_and_unattended_native_tools_are_denied() {
         "principle_save",
         "loupist_setup",
         "ask_user",
+        "interface_labels",
         "capability_list",
         "skills_list",
         "skills_read",
@@ -39,7 +60,6 @@ fn journal_hook_is_empty_and_unattended_native_tools_are_denied() {
         "world_read",
         "source_save",
         "web_search",
-        "plan_update",
         "lens_file",
         "run_python",
         "capability_load",
@@ -63,152 +83,6 @@ fn state_fixture() -> (tempfile::TempDir, AppState, String) {
     state.store.create_loupist(&loupist).unwrap();
     crate::knowledge::KnowledgeStore::for_loupist(state.store.clone(), &loupist.id).unwrap();
     (root, state, loupist.id)
-}
-
-#[test]
-fn prompt_uses_only_symbols_and_bounded_relevant_growth_since_previous_run() {
-    use crate::store::user_context::{HoldingsPosition, HoldingsSource};
-    let (_root, state, loupist) = state_fixture();
-    std::fs::write(
-        state.artifacts.app_data_dir.join("config.toml"),
-        "[appearance]\nlanguage = 'ko'\n",
-    )
-    .unwrap();
-    state
-        .store
-        .watchlist_add(
-            "AAA",
-            "NASDAQ",
-            Some("Watchlist display text must not become instructions"),
-        )
-        .unwrap();
-    state
-        .store
-        .save_holdings_snapshot(
-            HoldingsSource::Csv,
-            vec![HoldingsPosition {
-                symbol: "BBB".into(),
-                market: "NYSE".into(),
-                display_name: None,
-                quantity: "123456789".into(),
-                cost_basis: Some("998877".into()),
-                market_value: Some("11223344".into()),
-                currency: "USD".into(),
-            }],
-        )
-        .unwrap();
-    {
-        let connection = state.store.lock_loupist(&loupist).unwrap();
-        for index in 0..80 {
-            connection.execute("INSERT INTO knowledge_growth_events(event_id,loupist_id,at_ms,kind,actor,summary) VALUES(?1,?2,?3,?4,'user',?5)",rusqlite::params![format!("event-{index}"),loupist,index+10,if index%2==0 {"claim_added"}else{"source_retained"},format!("Change {index}")]).unwrap();
-        }
-        connection.execute("INSERT INTO knowledge_growth_events(event_id,loupist_id,at_ms,kind,actor,summary) VALUES('ignored',?1,99,'entity_added','user','Ignored entity')",[&loupist]).unwrap();
-        // The user's own "What you follow" Source is not news.
-        connection.execute("INSERT INTO knowledge_records(record_id,kind,owner_loupist_id,title,created_at_ms) VALUES('rec_followed','source',?1,'What you follow',95)",[&loupist]).unwrap();
-        connection.execute("INSERT INTO knowledge_sources(record_id,source_id,title,source_class,origin_locator,provider_identity,updated_at_ms) VALUES('rec_followed','src_followed','What you follow','user_statement','Your watchlist and holdings',?1,95)",[crate::knowledge::FOLLOWED_PROVIDER]).unwrap();
-        connection.execute("INSERT INTO knowledge_growth_events(event_id,loupist_id,at_ms,kind,record_id,actor,summary) VALUES('followed',?1,95,'source_retained','rec_followed','user','What you follow')",[&loupist]).unwrap();
-    }
-    let (prompt, context) = build_prompt(&state, &loupist, Some(20), 100).unwrap();
-    let data: serde_json::Value =
-        serde_json::from_str(prompt.strip_prefix(PROMPT).unwrap().trim()).unwrap();
-    assert!(data.get("watchlist").is_none());
-    assert!(data.get("holdings").is_none());
-    assert_eq!(context.symbols, vec!["AAA", "BBB"]);
-    assert_eq!(context.new_facts, 40);
-    assert_eq!(data["worldGrowth"].as_array().unwrap().len(), 40);
-    assert!(data["worldGrowth"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|item| item["atMs"].as_i64().unwrap() > 20));
-    assert_eq!(data["timeSincePreviousBriefingMs"], 80);
-    assert_eq!(data["appLanguage"], "ko");
-    for excluded in [
-        "123456789",
-        "998877",
-        "11223344",
-        "display text",
-        "Ignored entity",
-        "What you follow",
-    ] {
-        assert!(!prompt.contains(excluded));
-    }
-}
-
-#[test]
-fn briefing_prompt_marks_crypto_and_wallet_holdings_without_quantities_or_addresses() {
-    let (_root, state, loupist) = state_fixture();
-    let preview = state
-        .store
-        .preview_crypto_bytes(b"asset,balance\nXXBT,0.4271\n")
-        .unwrap();
-    state
-        .store
-        .holdings_commit_csv(&preview.preview_id)
-        .unwrap();
-    let address = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
-    let wallet = state.store.wallet_add(address, None).unwrap();
-    state
-        .store
-        .wallet_save_read(
-            &wallet.id,
-            crate::store::user_context::wallets::WalletRead {
-                balances: vec![("SOL".into(), "41.0700001".into())],
-                unlisted: 0,
-            },
-        )
-        .unwrap();
-    let (prompt, context) = build_prompt(&state, &loupist, None, 100).unwrap();
-    let data: serde_json::Value =
-        serde_json::from_str(prompt.strip_prefix(PROMPT).unwrap().trim()).unwrap();
-    assert!(data.get("holdings").is_none());
-    assert_eq!(context.symbols, vec!["BTC", "SOL"]);
-    for excluded in ["0.4271", "41.0700001", address, "9WzDXw"] {
-        assert!(!prompt.contains(excluded), "{excluded}");
-        assert!(
-            !serde_json::to_string(&context).unwrap().contains(excluded),
-            "{excluded}"
-        );
-    }
-}
-
-#[test]
-fn briefing_definition_and_followed_companies_respect_context_bounds() {
-    let (_root, state, loupist) = state_fixture();
-    let instructions = "한😀".repeat(2_000);
-    state
-        .store
-        .update_loupist_profile(
-            &loupist,
-            crate::store::LoupistProfileEdit {
-                instructions: Some(&instructions),
-                ..Default::default()
-            },
-            2,
-        )
-        .unwrap();
-    for index in (0..75).rev() {
-        state
-            .store
-            .watchlist_add(&format!("F{index:02}"), "NYSE", None)
-            .unwrap();
-    }
-    let (prompt, context) = build_prompt(&state, &loupist, None, 100).unwrap();
-    let data: serde_json::Value =
-        serde_json::from_str(prompt.strip_prefix(PROMPT).unwrap().trim()).unwrap();
-    for key in [
-        "Instructions from the user for this Loupist",
-        "Loupist tone",
-        "followedCompaniesHint",
-        "watchlist",
-        "holdings",
-        "principles",
-    ] {
-        assert!(data.get(key).is_none(), "{key}");
-    }
-    assert_eq!(context.symbols.len(), 60);
-    assert_eq!(context.symbols.first().unwrap(), "F00");
-    assert_eq!(context.symbols.last().unwrap(), "F59");
 }
 
 #[test]
@@ -307,7 +181,7 @@ fn notification_effects_include_loupist_status_summary_and_navigation_target() {
         briefing_context: None,
         kind: crate::scheduled_tasks::types::TaskKind::Briefing,
         read_at_ms: None,
-        summary_items: Vec::new(),
+        quiet: false,
         summary: "First line\nSecond line".into(),
         message_id: Some("message-a".into()),
         skipped_tools: vec![],
@@ -335,7 +209,6 @@ fn notification_effects_include_loupist_status_summary_and_navigation_target() {
     for (kind, title) in [
         (TaskKind::Briefing, "briefing"),
         (TaskKind::Custom, "Weekly research"),
-        (TaskKind::Earnings, "Results before and after"),
     ] {
         for (status, error, suffix) in [
             (RunStatus::Succeeded, None, "ready"),
@@ -410,135 +283,6 @@ fn tray_actions_focus_select_quit_and_residency_controls_close() {
 }
 
 #[test]
-fn briefing_context_is_persisted_on_the_run_and_projected_in_the_inbox() {
-    let (_root, state, loupist) = state_fixture();
-    state.store.watchlist_add("NVDA", "NASDAQ", None).unwrap();
-    let task = commands::settings_set(
-        &state,
-        commands::SettingsRequest {
-            loupist_id: loupist.clone(),
-            enabled: true,
-            schedule: None,
-        },
-    )
-    .unwrap()
-    .task
-    .unwrap();
-    let now = chrono::Utc::now().timestamp_millis();
-    let (claim, ()) = state
-        .store
-        .scheduled_task_claim_with(&loupist, &task.id, now, true, |_| Ok(()))
-        .unwrap()
-        .unwrap();
-    let (_, context) = build_prompt(&state, &loupist, None, now).unwrap();
-    state
-        .store
-        .scheduled_run_briefing_context(&loupist, &claim.run.run_id, context.clone())
-        .unwrap();
-    state
-        .store
-        .scheduled_task_finish(
-            &loupist,
-            &claim.run.run_id,
-            crate::scheduled_tasks::types::RunStatus::Succeeded,
-            None,
-            now + 1,
-        )
-        .unwrap();
-    let run = state
-        .store
-        .scheduled_task_runs(&loupist, &task.id)
-        .unwrap()
-        .remove(0);
-    assert_eq!(run.briefing_context, Some(context.clone()));
-    let inbox = commands::InboxItem::from(run);
-    assert_eq!(inbox.briefing_context, Some(context));
-    assert_eq!(inbox.briefing_context.unwrap().symbols, vec!["NVDA"]);
-}
-
-#[test]
-fn disputed_context_filters_growth_window_and_one_hop_then_caps_at_twenty() {
-    let (_root, state, loupist) = state_fixture();
-    state.store.watchlist_add("FOLLOW", "NASDAQ", None).unwrap();
-    let make_claim = |id: &str, source: &str, target: &str, status: &str| {
-        serde_json::json!({
-            "id":id,"proposition":"capacity report","attribution":"report","relation":"SUPPLIES",
-            "endpoints":[{"nodeId":source,"role":"subject"},{"nodeId":target,"role":"object"}],
-            "qualifiers":[],"evidence":[],"status":status
-        })
-    };
-    let mut claims = vec![
-        make_claim("link", "n00", "n01", "active"),
-        make_claim("neighbor", "n01", "n02", "disputed"),
-        make_claim("too-far", "n02", "n03", "disputed"),
-        make_claim("old", "n00", "n04", "disputed"),
-        make_claim("future", "n00", "n05", "disputed"),
-        make_claim("resolved", "n00", "n06", "active"),
-    ];
-    for index in 7..35 {
-        claims.push(make_claim(
-            &format!("extra-{index}"),
-            "n01",
-            &format!("n{index:02}"),
-            "disputed",
-        ));
-    }
-    let snapshot = |claims: &[serde_json::Value]| {
-        serde_json::json!({
-            "annotations":[],
-            "nodes":(0..35).map(|index|serde_json::json!({"id":format!("n{index:02}"),"name":format!("Company {index}"),"aliases":if index==0 {vec!["FOLLOW"]}else{vec![]},"description":"","kind":"company","sourceRole":"entity","properties":{}})).collect::<Vec<_>>(), "claims":claims
-        })
-    };
-    {
-        let db = state.store.lock_loupist(&loupist).unwrap();
-        db.execute(
-            "INSERT INTO knowledge_records VALUES ('world','world',?1,'World',1)",
-            [&loupist],
-        )
-        .unwrap();
-        db.execute("INSERT INTO knowledge_record_revisions VALUES ('revision','world','digest','{}','[]',1)",[]).unwrap();
-        db.execute(
-            "INSERT INTO knowledge_record_heads VALUES ('world','revision')",
-            [],
-        )
-        .unwrap();
-        db.execute("INSERT INTO knowledge_world_snapshots VALUES ('snapshot','world','revision','digest',?1,1)",[snapshot(&claims).to_string()]).unwrap();
-        for (id, at, kind) in [
-            ("neighbor", 50, "claim_disputed"),
-            ("too-far", 50, "claim_disputed"),
-            ("old", 20, "claim_disputed"),
-            ("future", 101, "claim_disputed"),
-            ("resolved", 50, "claim_added"),
-        ] {
-            db.execute("INSERT INTO knowledge_growth_events(event_id,loupist_id,at_ms,kind,record_id,subject_id,actor,summary) VALUES (?1,?2,?3,?4,'world',?1,'processing','changed')",rusqlite::params![id,loupist,at,kind]).unwrap();
-        }
-    }
-    let (_, context) = build_prompt(&state, &loupist, Some(20), 100).unwrap();
-    assert_eq!(context.disputed_entity_ids, vec!["n01", "n02"]);
-    {
-        let db = state.store.lock_loupist(&loupist).unwrap();
-        for index in 7..35 {
-            let id = format!("extra-{index}");
-            db.execute("INSERT INTO knowledge_growth_events(event_id,loupist_id,at_ms,kind,record_id,subject_id,actor,summary) VALUES (?1,?2,100,'claim_added','world',?1,'processing','changed')",rusqlite::params![id,loupist]).unwrap();
-        }
-    }
-    let (_, context) = build_prompt(&state, &loupist, Some(20), 100).unwrap();
-    assert_eq!(context.disputed_entity_ids.len(), 20);
-    assert_eq!(
-        context
-            .disputed_entity_ids
-            .iter()
-            .collect::<std::collections::BTreeSet<_>>()
-            .len(),
-        20
-    );
-    assert!(!context
-        .disputed_entity_ids
-        .iter()
-        .any(|id| ["n03", "n04", "n05", "n06"].contains(&id.as_str())));
-}
-
-#[test]
 fn opt_in_uses_the_model_a_new_chat_would_not_the_raw_catalog_order() {
     let (_root, state, loupist) = state_fixture();
     let model = |provider: &str, name: &str| crate::providers::catalog::ConfiguredModel {
@@ -597,24 +341,6 @@ fn opt_in_uses_the_model_a_new_chat_would_not_the_raw_catalog_order() {
 }
 
 #[test]
-fn shared_principles_are_not_duplicated_in_the_briefing_json() {
-    let (_root, state, loupist_id) = state_fixture();
-    let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../evals/sharing/trade-authority-principle");
-    crate::sharing::commands::add::seed_shared_pack(&state, &loupist_id, &folder).unwrap();
-    let (prompt, _) = super::build_prompt(
-        &state,
-        &loupist_id,
-        None,
-        chrono::Utc::now().timestamp_millis(),
-    )
-    .unwrap();
-    let data: serde_json::Value =
-        serde_json::from_str(prompt.strip_prefix(PROMPT).unwrap().trim()).unwrap();
-    assert!(data.get("principles").is_none());
-}
-
-#[test]
 fn briefing_settings_take_an_exact_schedule_while_saved_schedules_read_leniently() {
     use crate::scheduled_tasks::types::Schedule;
     use serde_json::json;
@@ -654,6 +380,54 @@ fn briefing_settings_take_an_exact_schedule_while_saved_schedules_read_leniently
     let off: commands::SettingsRequest =
         serde_json::from_value(json!({ "loupistId": "loupist-a", "enabled": false })).unwrap();
     assert!(off.schedule.is_none());
+}
+
+#[test]
+fn resuming_a_briefing_or_custom_task_enables_the_automatic_resident_setting() {
+    for custom in [false, true] {
+        let (fixture, mut state, loupist) = state_fixture();
+        let path = fixture.path().to_path_buf();
+        // Status admission checks the runtime configuration without starting Pi.
+        std::sync::Arc::make_mut(&mut state.artifacts).pi = Some(crate::app::PiArtifacts {
+            executable: path.clone(),
+            runtime_dir: path.clone(),
+            extension: path.clone(),
+            provider_extension: path.clone(),
+            system_prompt: path,
+            provider: String::new(),
+            model: String::new(),
+            thinking_level: String::new(),
+            run_options: Default::default(),
+            provider_credential: None,
+        });
+        let root = &state.artifacts.app_data_dir;
+        let task = commands::settings_set(
+            &state,
+            commands::SettingsRequest {
+                loupist_id: loupist.clone(),
+                enabled: false,
+                schedule: Some(commands::settings_get(&state, &loupist).unwrap().schedule),
+            },
+        )
+        .unwrap()
+        .task
+        .unwrap();
+        let task = if custom {
+            crate::scheduled_tasks::service::create(&state, &loupist, task.draft(), None).unwrap()
+        } else {
+            task
+        };
+        assert!(!desktop::read_settings(root).unwrap().keep_running);
+        crate::scheduled_tasks::service::set_status(
+            &state,
+            &loupist,
+            &task.id,
+            task.revision,
+            crate::scheduled_tasks::types::TaskStatus::Active,
+        )
+        .unwrap();
+        assert!(desktop::read_settings(root).unwrap().keep_running);
+    }
 }
 
 #[test]
@@ -714,109 +488,42 @@ fn old_resident_values_load_and_remain_the_users_choice() {
 }
 
 #[test]
-fn watching_only_activates_automatic_residency_without_an_explicit_choice() {
-    use crate::{
-        commands::watch::{update_setting, WatchSettingSetRequest},
-        knowledge::watch::WatchKind,
-    };
-    for choice in [None, Some(false), Some(true)] {
-        let (_root, state, loupist) = state_fixture();
-        if let Some(choice) = choice {
-            desktop::set_keep_running(&state, choice).unwrap();
-        }
-        state.store.watchlist_add("MORR", "NASDAQ", None).unwrap();
-        let page = crate::commands::watch::followed_pages(&state, &loupist)
-            .unwrap()
-            .pop()
-            .unwrap();
-        update_setting(
-            &state,
-            WatchSettingSetRequest {
-                loupist_id: loupist.clone(),
-                asset_id: page.asset_id.clone(),
-                kind: WatchKind::Filings,
-                enabled: false,
-                expected_revision: 1,
-            },
+fn a_scheduled_briefing_reads_only_its_own_loupists_follows() {
+    let (_root, state, loupist) = state_fixture();
+    state
+        .store
+        .create_loupist(&crate::test_fixtures::loupist_profile("loupist-other"))
+        .unwrap();
+    state
+        .store
+        .seed_followed_listing(&loupist, "HANUL", "KRX", Some("Hanul Precision"))
+        .unwrap();
+    state
+        .store
+        .seed_followed_listing(
+            "loupist-other",
+            "MORROW",
+            "NASDAQ",
+            Some("Morrow Components"),
         )
         .unwrap();
-        assert_eq!(
-            desktop::read_settings(&state.artifacts.app_data_dir)
-                .unwrap()
-                .keep_running,
-            choice.unwrap_or(false)
-        );
-        let revision = crate::commands::assets::with_assets(&state, &loupist, false, |tx| {
-            Ok(crate::knowledge::watch::switches(tx, &loupist)?
-                .get(&page.asset_id)
-                .map_or(1, |switch| switch.revision))
-        })
-        .unwrap();
-        update_setting(
-            &state,
-            WatchSettingSetRequest {
-                loupist_id: loupist,
-                asset_id: page.asset_id,
-                kind: WatchKind::Filings,
-                enabled: true,
-                expected_revision: revision,
-            },
-        )
-        .unwrap();
-        let settings = desktop::read_settings(&state.artifacts.app_data_dir).unwrap();
-        assert_eq!(settings.keep_running, choice.unwrap_or(true));
-        assert_eq!(settings.keep_running_choice, choice);
-        assert!(!settings.notification_permission_asked);
-    }
+    let (prompt, context) = build_prompt(&state, &loupist, None, 1_800_000_000_000).unwrap();
+    assert_eq!(context.symbols, ["Hanul Precision"]);
+    assert!(prompt.contains("Hanul Precision"));
+    assert!(!prompt.contains("Morrow"));
 }
 
 #[test]
-fn briefing_coverage_names_unchecked_assets_and_failed_or_missing_routes() {
-    use crate::knowledge::watch::{record_route, Route};
-    let (_root, state, loupist) = state_fixture();
-    state.store.watchlist_add("MORR", "NASDAQ", None).unwrap();
-    let page = crate::commands::watch::followed_pages(&state, &loupist)
-        .unwrap()
-        .pop()
-        .unwrap();
-    crate::commands::assets::with_assets(&state, &loupist, true, |tx| {
-        record_route(
-            tx,
-            &loupist,
-            &page.asset_id,
-            Route::Filings,
-            "failed",
-            "sec.edgar",
-            100,
-        )?;
-        record_route(
-            tx,
-            &loupist,
-            &page.asset_id,
-            Route::Insiders,
-            "needs_connection",
-            "fmp.market-data",
-            100,
-        )?;
-        record_route(
-            tx,
-            &loupist,
-            &page.asset_id,
-            Route::Calendar,
-            "ok",
-            "openbb",
-            100,
-        )
-    })
-    .unwrap();
-    let (prompt, _) = build_prompt(&state, &loupist, None, 1_000_000).unwrap();
-    let data: serde_json::Value =
-        serde_json::from_str(prompt.strip_prefix(PROMPT).unwrap().trim()).unwrap();
-    assert_eq!(data["coverage"]["notChecked"][0]["symbol"], "MORR");
-    let routes = data["coverage"]["routes"].as_array().unwrap();
-    assert_eq!(routes.len(), 2);
-    assert!(routes.iter().all(|route| route["status"] != "ok"));
-    assert!(routes
-        .iter()
-        .any(|route| route["status"] == "needs_connection"));
+fn research_titles_and_delivered_summaries_mark_omitted_text() {
+    assert_eq!(
+        crate::commands::fallback_chat_title(
+            "Use only the retained QA Field Notes source about Deere"
+        ),
+        "Use only the retained QA Field Notes…"
+    );
+    let first = "research ".repeat(30);
+    assert_eq!(
+        summary(&format!("{first}income statement")),
+        format!("{}income…", first)
+    );
 }

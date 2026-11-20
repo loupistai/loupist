@@ -53,7 +53,7 @@ export function ConnectStep({ bridge, catalog, onCatalogChange, connected, onCon
   const signIn = (provider: string) => void flow.start(provider);
   const locked = flow.busy || Boolean(connected);
   return <>
-    <h1>{t("wizard.connectTitle")}</h1>
+    <h1 tabIndex={-1}>{t("wizard.connectTitle")}</h1>
     <p>{t("wizard.connectBody")}</p>
     {connected ? <div className="onboarding-success" role="status"><CheckCircleIcon aria-hidden="true" />{t("wizard.connected", { provider: connected })}</div>
       : flow.state.phase === "waiting" ? <SignInFlow flow={flow} />
@@ -77,7 +77,6 @@ export function ConnectStep({ bridge, catalog, onCatalogChange, connected, onCon
         onLocal: () => setSheet({ kind: "local" }),
         onCustom: () => setSheet({ kind: "custom" }),
       }} />
-      <p className="connect-meta connect-key-stays">{t("wizard.keyStays")}</p>
     </Disclosure>
     <ConnectSheet target={sheet} catalog={catalog} bridge={bridge} onCatalogChange={onCatalogChange}
       onConnected={(_provider, label) => onConnected(label)} onClose={() => setSheet(null)} />

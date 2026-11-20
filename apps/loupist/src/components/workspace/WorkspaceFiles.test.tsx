@@ -14,6 +14,11 @@ it("opens a generated chart in the reader and offers recovery for corrupt images
   render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="returns.png" onNavigate={vi.fn()} onAsk={vi.fn()} />);
   const chart = await screen.findByRole("img", { name: "returns.png" });
   expect(chart).toHaveAttribute("src", image.image_data_url);
+  // The size button names what it will do; it is not also a pressed toggle, which would read "Fit to panel, pressed".
+  const size = screen.getByRole("button", { name: "Actual size" });
+  expect(size).not.toHaveAttribute("aria-pressed");
+  fireEvent.click(size);
+  expect(screen.getByRole("button", { name: "Fit to panel" })).not.toHaveAttribute("aria-pressed");
   fireEvent.error(chart);
   expect(screen.getByRole("status")).toHaveTextContent("Could not display this image");
   await userEvent.setup().click(screen.getByRole("button", { name: "Open in file manager" }));
@@ -27,6 +32,33 @@ it.each(["https://example.com/chart.png", "data:image/svg+xml;base64,PHN2Zz4=", 
   await screen.findByText(/No text preview/);
   expect(screen.queryByRole("img")).not.toBeInTheDocument();
 });
+it("previews an SVG output only as an image resource, with its source one toggle away", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const content = `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(2)</script><image href="https://example.com/x.png"/><rect id="bar" width="4" height="9"/></svg>`;
+  vi.spyOn(bridge, "workspaceRead").mockResolvedValue({ ...file, path: "outputs/chart.svg", content, media_type: "image/svg+xml", size_bytes: content.length });
+  const view = render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="outputs/chart.svg" onNavigate={vi.fn()} onAsk={vi.fn()} />);
+  const chart = await screen.findByRole("img", { name: "chart.svg" });
+  expect(chart.tagName).toBe("IMG");
+  expect(chart).toHaveAttribute("src", `data:image/svg+xml;charset=utf-8,${encodeURIComponent(content)}`);
+  expect(screen.getByRole("button", { name: "Preview" })).toHaveAttribute("aria-pressed", "true");
+  // The markup is never part of the page: no SVG element, script, iframe or object.
+  expect(view.container.querySelector("svg rect, script, iframe, object, embed, #bar")).toBeNull();
+  expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Source" }));
+  expect(screen.queryByRole("img", { name: "chart.svg" })).not.toBeInTheDocument();
+  expect(view.container.querySelector(".reader-source code")).toHaveTextContent("<script>alert(2)</script>");
+  expect(view.container.querySelector("script, #bar")).toBeNull();
+});
+
+it("shows a truncated SVG as source, never a drawn prefix", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  vi.spyOn(bridge, "workspaceRead").mockResolvedValue({ ...file, path: "big.svg", content: "<svg xmlns=\"http://www.w3.org/2000/svg\">", content_sha256: null, truncated: true, size_bytes: 400_000 });
+  const view = render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="big.svg" onNavigate={vi.fn()} onAsk={vi.fn()} />);
+  await waitFor(() => expect(view.container.querySelector(".reader-source code")).toHaveTextContent("<svg"));
+  expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Preview" })).not.toBeInTheDocument();
+});
+
 it("opens directory entries and asks only through explicit action", async () => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -99,4 +131,20 @@ it("omits an incomplete record from a truncated table and lets the source remain
   expect(screen.getByText(/unfinished final record is omitted/)).toBeVisible();
   await userEvent.setup().click(screen.getByRole("button", { name: "Source" }));
   expect(view.container.querySelector("pre code")?.textContent).toBe(content);
+});
+
+it("shows an empty folder's next step without a filter for nothing", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const list = vi.spyOn(bridge, "workspaceList").mockResolvedValue({ path: "", truncated: false, entries: [] });
+  render(<WorkspaceFiles bridge={bridge} loupistId="loupist" rootPath="/research" path="" onNavigate={vi.fn()} onAsk={vi.fn()} />);
+  expect(await screen.findByText("This folder is empty.")).toBeVisible();
+  expect(screen.getByText("Research files saved in this workspace will appear here.")).toBeVisible();
+  expect(screen.queryByRole("textbox", { name: "Filter files" })).toBeNull();
+  // Icon-only controls carry their name as a tooltip; the reveal tooltip also names the folder.
+  expect(screen.getByRole("button", { name: "Refresh files" })).toHaveAttribute("title", "Refresh files");
+  expect(screen.getByRole("button", { name: "Show in file manager" })).toHaveAttribute("title", "Show in file manager · /research");
+  list.mockResolvedValue({ path: "", truncated: false, entries: [{ kind: "file", name: "notes.md", path: "notes.md", size_bytes: 12 }] });
+  await user.click(screen.getByRole("button", { name: "Refresh files" }));
+  expect(await screen.findByRole("textbox", { name: "Filter files" })).toBeVisible();
 });

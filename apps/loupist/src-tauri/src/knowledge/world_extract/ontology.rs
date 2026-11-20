@@ -8,7 +8,6 @@
 
 use serde_json::Value;
 
-use super::super::assets::AssetClass;
 use super::super::world_schema::WorldExtension;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,10 +58,6 @@ const METRIC: &str = concat!(
 pub(crate) const ORIGINAL_NAME: &str = "The name exactly as written in a non-English source. Null when the source writes the name in English.";
 
 pub(crate) fn core_entity_types() -> Vec<EntityType> {
-    let asset_class_field = format!(
-        "One of {}, when the source makes the class clear. Otherwise null.",
-        AssetClass::ALL.map(AssetClass::as_str).join(", ")
-    );
     let entity = |name: &str, doc: &str, fields: &[(&str, &str)]| EntityType {
         name: name.into(),
         doc: doc.into(),
@@ -93,7 +88,7 @@ pub(crate) fn core_entity_types() -> Vec<EntityType> {
             &[
                 ("symbol", "Trading symbol or code exactly as the source writes it, such as SPY or USD/KRW. Null unless the source states it."),
                 ("identifier", "ISIN, CUSIP or another code the source states. Null unless the source states it."),
-                ("asset_class", &asset_class_field),
+                ("asset_class", "One of equity, crypto, fund, commodity, rates_fx, real_asset, prediction, private, when the source makes the class clear. Otherwise null."),
                 ("instrument", "One of index, bond, etf, token, pair, property, deal or other, when the source makes the form clear. Otherwise null."),
                 ("original_name", "The instrument's name exactly as written in a non-English source, such as 코스피. Null when the source writes the name in English."),
             ],

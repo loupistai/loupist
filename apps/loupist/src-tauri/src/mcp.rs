@@ -51,7 +51,12 @@ const MAX_TOOL_INVENTORY_BYTES: usize = 8 * 1024 * 1024;
 const MAX_CURSOR_BYTES: usize = 512;
 const MAX_TOOL_NAME_BYTES: usize = 128;
 const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+/// A user-confirmed custom server answers `initialize` within this bound.
+const CUSTOM_STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+/// The bundled market-data runtime imports its provider packages before it
+/// answers `initialize`: 21-34 s at load 34-51 and 39-50 s at load 100-115 on
+/// an 8-core Apple Silicon Mac. This bound leaves more than twice the slowest.
+pub(crate) const BUNDLED_STARTUP_TIMEOUT: Duration = Duration::from_secs(120);
 const LIST_TIMEOUT: Duration = Duration::from_secs(15);
 #[cfg(unix)]
 const PROCESS_IDENTITY_SETTLE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -510,6 +515,8 @@ pub enum McpError {
     VersionMismatch,
     #[error("MCP request timed out")]
     Timeout,
+    #[error("MCP server did not finish starting")]
+    StartupTimeout,
     #[error("MCP server rejected the request: {0}")]
     Remote(String),
     #[error("MCP server stopped")]
@@ -704,7 +711,7 @@ pub struct McpSession {
 
 impl McpSession {
     pub async fn spawn(config: McpLaunchConfig) -> Result<(Self, Vec<McpTool>), McpError> {
-        Self::spawn_inner(config, true).await
+        Self::spawn_inner(config, true, BUNDLED_STARTUP_TIMEOUT).await
     }
 
     /// Only the custom-connection host may launch a user-confirmed command.
@@ -712,12 +719,22 @@ impl McpSession {
     pub(crate) async fn spawn_custom(
         config: McpLaunchConfig,
     ) -> Result<(Self, Vec<McpTool>), McpError> {
-        Self::spawn_inner(config, false).await
+        Self::spawn_inner(config, false, CUSTOM_STARTUP_TIMEOUT).await
+    }
+
+    /// A bundled start with an injected startup bound, for tests.
+    #[cfg(test)]
+    pub(crate) async fn spawn_with_startup_timeout(
+        config: McpLaunchConfig,
+        startup_timeout: Duration,
+    ) -> Result<(Self, Vec<McpTool>), McpError> {
+        Self::spawn_inner(config, true, startup_timeout).await
     }
 
     async fn spawn_inner(
         config: McpLaunchConfig,
         bundled: bool,
+        startup_timeout: Duration,
     ) -> Result<(Self, Vec<McpTool>), McpError> {
         if !config.executable.is_file() {
             return Err(McpError::MissingExecutable);
@@ -835,7 +852,7 @@ impl McpSession {
                     "capabilities": {},
                     "clientInfo": { "name": "Loupist", "version": env!("CARGO_PKG_VERSION") }
                 }),
-                STARTUP_TIMEOUT,
+                startup_timeout,
             )
             .await;
         match initialized {
@@ -846,7 +863,10 @@ impl McpSession {
             }
             Err(error) => {
                 let _ = session.shutdown(Duration::from_secs(1)).await;
-                return Err(error);
+                return Err(match error {
+                    McpError::Timeout => McpError::StartupTimeout,
+                    error => error,
+                });
             }
         }
         session
@@ -1808,6 +1828,9 @@ while IFS= read -r line; do
     *'"type":"loupist.bootstrap"'*)
       ;;
     *'"method":"initialize"'*)
+      if [ "$MCP_TEST_MODE" = "silent_initialize" ]; then
+        continue
+      fi
       id=${line#*\"id\":\"}; id=${id%%\"*}
       printf '{"jsonrpc":"2.0","id":"server-ping","method":"ping","params":{}}\n'
       printf '{"jsonrpc":"2.0","id":"%s","result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"Loupist MCP test server","version":"1"}}}\n' "$id"
@@ -1944,6 +1967,242 @@ done
         }
         assert_eq!(pool.idle_count().await, 0);
         assert!(pool.acquire(&key).await.is_none());
+    }
+
+    #[cfg(unix)]
+    fn pool_fixture_key(loupist_id: &str) -> crate::mcp::pool::McpPoolKey {
+        crate::mcp::pool::McpPoolKey {
+            loupist_id: loupist_id.into(),
+            server_id: "mock".into(),
+            authority_fingerprint: "fixture-authority".into(),
+        }
+    }
+
+    #[cfg(unix)]
+    fn pooled_mock(session: McpSession, tools: Vec<McpTool>) -> crate::mcp::pool::TurnMcpServer {
+        crate::mcp::pool::TurnMcpServer {
+            control_tool_names: tools.iter().map(|tool| tool.name.clone()).collect(),
+            tools: tools
+                .into_iter()
+                .map(|tool| (tool.name.clone(), tool))
+                .collect(),
+            session,
+            enabled_provider_ids: BTreeSet::new(),
+            providerless_tool_policy: ProviderlessToolPolicy::default(),
+            provider_receipt_pointer: "/structuredContent/provider".into(),
+            sensitive_values: Vec::new(),
+            pool_key: None,
+            scratch_dir: None,
+        }
+    }
+
+    /// A start the test releases with `gate`; it counts how many starts ran.
+    #[cfg(unix)]
+    fn counted_start(
+        temporary: &tempfile::TempDir,
+        name: &str,
+        starts: Arc<std::sync::atomic::AtomicUsize>,
+        gate: Option<oneshot::Receiver<()>>,
+    ) -> impl std::future::Future<Output = crate::mcp::pool::McpStartResult> + Send + 'static {
+        let (config, _, _) = mock_mcp_config(temporary, name);
+        async move {
+            if let Some(gate) = gate {
+                let _ = gate.await;
+            }
+            starts.fetch_add(1, Ordering::SeqCst);
+            let (session, tools) = McpSession::spawn(config).await.map_err(|error| {
+                crate::broker::BrokerError::Execution(format!("fixture start failed: {error}"))
+            })?;
+            Ok(pooled_mock(session, tools))
+        }
+    }
+
+    #[cfg(unix)]
+    async fn no_second_start() -> crate::mcp::pool::McpStartResult {
+        panic!("a turn started a second process instead of reusing the first")
+    }
+
+    #[cfg(unix)]
+    async fn wait_for(mut condition: impl FnMut() -> bool) {
+        timeout(Duration::from_secs(5), async {
+            while !condition() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("condition did not hold in time");
+    }
+
+    #[cfg(unix)]
+    async fn wait_for_pool(pool: &crate::mcp::pool::McpProcessPool, starting: usize, fresh: usize) {
+        timeout(Duration::from_secs(5), async {
+            while pool.starting_count().await != starting || pool.fresh_count().await != fresh {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("pool did not reach the expected starts");
+    }
+
+    #[cfg(unix)]
+    fn leases_cleared(root: &Path) -> bool {
+        !fs::read_dir(root.join("leases"))
+            .unwrap()
+            .flatten()
+            .any(|entry| entry.file_name().to_string_lossy().starts_with("lease-"))
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_runtime_that_never_answers_initialize_fails_as_a_startup_timeout_and_stops() {
+        let _process_lock = MCP_PROCESS_TEST_LOCK.lock().await;
+        let root = tempfile::tempdir().unwrap();
+        let (config, transcript, _) = mock_mcp_config(&root, "silent_initialize");
+        let error = McpSession::spawn_with_startup_timeout(config, Duration::from_millis(300))
+            .await
+            .err()
+            .expect("a silent runtime must not start");
+        assert!(matches!(error, McpError::StartupTimeout), "{error}");
+        assert!(fs::read_to_string(&transcript)
+            .unwrap()
+            .contains("\"method\":\"initialize\""));
+        wait_for(|| leases_cleared(root.path())).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_turn_waits_for_the_start_under_way_and_any_loupist_may_lease_it_once() {
+        use crate::mcp::pool::McpProcessPool;
+
+        let _process_lock = MCP_PROCESS_TEST_LOCK.lock().await;
+        let root = tempfile::tempdir().unwrap();
+        let pool = McpProcessPool::prepare(root.path().join("pool")).unwrap();
+        let starts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (release, gate) = oneshot::channel();
+        // The app-start prewarm is still starting when a question arrives.
+        assert!(
+            pool.prewarm(
+                &pool_fixture_key("loupist-a"),
+                counted_start(&root, "prewarm", starts.clone(), Some(gate)),
+            )
+            .await
+        );
+        assert!(
+            !pool
+                .prewarm(
+                    &pool_fixture_key("loupist-b"),
+                    counted_start(&root, "second-prewarm", starts.clone(), None),
+                )
+                .await,
+            "one start per authority"
+        );
+        // A process that served no turn may go to another Loupist with the same authority.
+        let turn = tokio::spawn({
+            let pool = pool.clone();
+            async move {
+                pool.lease_fresh(&pool_fixture_key("loupist-b"), no_second_start())
+                    .await
+            }
+        });
+        sleep(Duration::from_millis(50)).await;
+        assert!(!turn.is_finished(), "the turn waits for the start");
+        assert_eq!(pool.starting_count().await, 1);
+        release.send(()).unwrap();
+        let mut server = timeout(Duration::from_secs(5), turn)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(starts.load(Ordering::SeqCst), 1);
+        assert_eq!(pool.starting_count().await, 0);
+        assert_eq!(pool.fresh_count().await, 0);
+
+        // Once a turn used it, the process belongs to that Loupist only.
+        server.pool_key = Some(pool_fixture_key("loupist-b"));
+        pool.release(server).await;
+        assert!(pool.acquire(&pool_fixture_key("loupist-a")).await.is_none());
+        let leased = pool
+            .acquire(&pool_fixture_key("loupist-b"))
+            .await
+            .expect("the Loupist's next turn reuses its process");
+        leased.discard().await;
+        pool.shutdown().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_start_its_turn_stopped_waiting_for_serves_the_next_turn() {
+        use crate::mcp::pool::McpProcessPool;
+
+        let _process_lock = MCP_PROCESS_TEST_LOCK.lock().await;
+        let root = tempfile::tempdir().unwrap();
+        let pool = McpProcessPool::prepare(root.path().join("pool")).unwrap();
+        let starts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (release, gate) = oneshot::channel();
+        let first = tokio::spawn({
+            let pool = pool.clone();
+            let start = counted_start(&root, "abandoned", starts.clone(), Some(gate));
+            async move {
+                pool.lease_fresh(&pool_fixture_key("loupist-a"), start)
+                    .await
+            }
+        });
+        wait_for_pool(&pool, 1, 0).await;
+        // The user stops the question while the runtime is still starting.
+        first.abort();
+        assert!(matches!(first.await, Err(error) if error.is_cancelled()));
+        release.send(()).unwrap();
+        wait_for_pool(&pool, 0, 1).await;
+        let server = pool
+            .lease_fresh(&pool_fixture_key("loupist-a"), no_second_start())
+            .await
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(starts.load(Ordering::SeqCst), 1);
+        server.discard().await;
+        pool.shutdown().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pool_shutdown_stops_a_start_under_way_and_fails_its_waiting_turn() {
+        use crate::mcp::pool::McpProcessPool;
+
+        let _process_lock = MCP_PROCESS_TEST_LOCK.lock().await;
+        let root = tempfile::tempdir().unwrap();
+        let pool = McpProcessPool::prepare(root.path().join("pool")).unwrap();
+        let (config, transcript, _) = mock_mcp_config(&root, "silent_initialize");
+        assert!(
+            pool.prewarm(&pool_fixture_key("loupist-a"), async move {
+                let (session, tools) = McpSession::spawn(config).await.map_err(|error| {
+                    crate::broker::BrokerError::Execution(format!("fixture start failed: {error}"))
+                })?;
+                Ok(pooled_mock(session, tools))
+            })
+            .await
+        );
+        let waiting = tokio::spawn({
+            let pool = pool.clone();
+            async move {
+                pool.lease_fresh(&pool_fixture_key("loupist-a"), no_second_start())
+                    .await
+            }
+        });
+        // The runtime is up and has not answered `initialize`.
+        wait_for(|| {
+            fs::read_to_string(&transcript)
+                .is_ok_and(|text| text.contains("\"method\":\"initialize\""))
+        })
+        .await;
+        timeout(Duration::from_secs(5), pool.shutdown())
+            .await
+            .expect("shutdown does not wait out the startup bound");
+        assert!(timeout(Duration::from_secs(5), waiting)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err());
+        assert_eq!(pool.starting_count().await, 0);
+        wait_for(|| leases_cleared(root.path())).await;
     }
 
     fn tool() -> McpTool {

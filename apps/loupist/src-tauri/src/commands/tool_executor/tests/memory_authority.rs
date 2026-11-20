@@ -464,9 +464,7 @@ async fn misrouted_note_references_name_the_right_field_without_echoing_model_te
     let executor = executor_for(&state, capture.clone());
     let policy = policy(true, true);
     let result_ref = captured_file(&executor, "source.txt", "value 42").await;
-    let lens = crate::commands::knowledge::ensure_perspective(&state, "loupist-a", "Base")
-        .unwrap()
-        .unwrap();
+    let lens = crate::commands::knowledge::file_test_perspective(&state, "loupist-a", "Base");
     let lens_read = executor
         .lens_read(&policy, json!({"recordId": lens}), "lens")
         .await
@@ -648,9 +646,7 @@ async fn journal_world_links_and_checks_are_refused_before_a_save_slot_is_reserv
     let capture = bound_capture(Some("user-message"), "chat-a");
     let executor = executor_for(&state, capture.clone());
     let turn = policy(true, true);
-    let lens = crate::commands::knowledge::ensure_perspective(&state, "loupist-a", "Base")
-        .unwrap()
-        .unwrap();
+    let lens = crate::commands::knowledge::file_test_perspective(&state, "loupist-a", "Base");
     let read = executor
         .lens_read(&turn, json!({"recordId":lens}), "lens")
         .await
@@ -722,9 +718,9 @@ async fn journal_world_links_and_checks_are_refused_before_a_save_slot_is_reserv
         .is_some());
 }
 
-fn thesis_request(symbol: &str, role: &str) -> Value {
-    let mut request = json!({"judgment":format!("My {role} for {symbol}"),
-        "thesis":{"symbol":symbol,"market":"NASDAQ","role":role}});
+fn thesis_request(asset: &str, role: &str) -> Value {
+    let mut request = json!({"judgment":format!("My {role} for {asset}"),
+        "thesis":{"asset":asset,"role":role}});
     if role == "line" {
         request["check"] = json!({"claim":"Operating margin below 8%", "metric":"operating margin", "direction":"below", "threshold":8, "unit":"%"});
     }
@@ -732,10 +728,80 @@ fn thesis_request(symbol: &str, role: &str) -> Value {
 }
 
 #[tokio::test]
+async fn thesis_accepts_an_asset_id_or_a_unique_ticker() {
+    use crate::knowledge::assets;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    state
+        .store
+        .seed_followed_listing("loupist-a", "SAME", "NASDAQ", None)
+        .unwrap();
+    let nyse = state
+        .store
+        .seed_followed_listing("loupist-a", "SAME", "NYSE", None)
+        .unwrap();
+    let unknown = state
+        .store
+        .seed_followed_listing("loupist-a", "MARKETLESS", "UNKNOWN", None)
+        .unwrap();
+    for (index, (query, expected)) in [
+        (nyse.asset_id.clone(), nyse.asset_id),
+        ("MARKETLESS".to_owned(), unknown.asset_id),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let executor = executor_for(&state, bound_capture(Some("user"), "chat-a"));
+        executor
+            .stage_journal(
+                &policy(true, true),
+                thesis_request(&query, "reason"),
+                "reason",
+                false,
+            )
+            .await
+            .unwrap();
+        executor.capture.commit_delivery("reason").await;
+        persist_turn(
+            &state,
+            "chat-a",
+            &format!("qualified-{index}"),
+            &executor.capture,
+        )
+        .await;
+        crate::commands::assets::with_assets(&state, "loupist-a", false, |tx| {
+            assert!(assets::get_page(tx, "loupist-a", &expected)?.is_some());
+            Ok(())
+        })
+        .unwrap();
+    }
+    let executor = executor_for(&state, bound_capture(Some("user"), "chat-a"));
+    for query in ["SAME:NYSE", "MARKETLESS:NYSE", "MARKETLESS:UNKNOWN"] {
+        let error = executor
+            .stage_journal(
+                &policy(true, true),
+                thesis_request(query, "reason"),
+                "refused",
+                false,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "thesis.asset: No asset matches.");
+    }
+    assert!(executor.capture.journal_delivery.lock().await.is_empty());
+}
+
+#[tokio::test]
 async fn thesis_pair_reserves_only_one_reason_and_one_checked_line_for_the_same_asset() {
     for roles in [["reason", "line"], ["line", "reason"]] {
         let temporary = tempfile::tempdir().unwrap();
         let state = seeded_state(&temporary);
+        for symbol in ["NVDA", "AMD"] {
+            state
+                .store
+                .seed_followed_listing("loupist-a", symbol, "NASDAQ", None)
+                .unwrap();
+        }
         let executor = executor_for(&state, bound_capture(Some("user"), "chat-a"));
         let policy = policy(true, true);
         let first = executor
@@ -786,6 +852,12 @@ async fn thesis_pair_reserves_only_one_reason_and_one_checked_line_for_the_same_
 async fn discarded_thesis_deliveries_release_their_slots_and_save_nothing() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
+    for symbol in ["NVDA", "AMD"] {
+        state
+            .store
+            .seed_followed_listing("loupist-a", symbol, "NASDAQ", None)
+            .unwrap();
+    }
     let executor = executor_for(&state, bound_capture(Some("user"), "chat-a"));
     let policy = policy(true, true);
     executor

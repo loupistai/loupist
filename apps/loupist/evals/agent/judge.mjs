@@ -4,14 +4,17 @@ import { mkdir, readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { scheduledDeliveryEvidence } from './scheduled-evidence.mjs';
+import { visibleLabels } from './label-evidence.mjs';
 import { trailingJsonObject } from './grade.mjs';
 import { locateTurn, canonicalJson, turnIdentity, turnFields, validateSuite, validateTraceRecord,
-  toolCalls, memoryCommits, answerEvidence, isRecord } from './eval-contract.mjs';
+  toolCalls, memoryCommits, answerEvidence, isRecord, visibleLabelsAssertion } from './eval-contract.mjs';
 
 export const PROMPT_VERSION = 'agent-judge/3';
 export const DEFAULT_JUDGE_MODEL = 'grok-4.7';
+export const DEFAULT_CLAUDE_JUDGE_MODEL = 'claude-opus-5-5';
 export const DEFAULT_REASONING_EFFORT = 'medium';
-export const SAVE_PRECISION_CRITERION = 'The committed memory item belongs in this Loupist\'s Memory for later work and is filed in a fitting kind: a user-stated research rule in a principle; a way of checking the user taught, corrected or asked to keep in a method Lens page; dated company, asset or sector facts and what explains them, drawn from material read this turn, in a subject Lens page about that company or theme with a source in its basis (page_kind subject, page_basis including span or claim); an unverified thesis with what would break it in an idea page; facts the user stated or this Chat\'s progress in a note; an acquired original in a Source; a judgment the user explicitly stated for the record in a Journal entry, including an analytical research assessment without a trade action. Fail chatter, a one-off assumption the user said not to keep, a superseded value kept as current, a method page the user did not ask for, created from the assistant\'s own analysis, general knowledge or a single company\'s case, company facts written into a method or perspective page, a subject page whose facts cite no source, a Journal entry when the user asked only for research without stating their own judgment for the record, or a Journal entry holding a stance the assistant originated rather than the user.';
+export const SAVE_PRECISION_CRITERION = 'The committed memory item belongs in this Loupist\'s Memory for later work and is filed in a fitting kind: a user-stated research rule in a principle; a way of checking the user taught, corrected or asked to keep in a method Lens page; dated company, asset or sector facts and what explains them, drawn from material read this turn, in a subject Lens page about that company or theme with a source in its basis (page_kind subject, page_basis including span or claim); an unverified thesis with what would break it in an idea page; facts the user stated or this Chat\'s progress in a note; an acquired original in a Source, including original material the user pasted into the Chat (a filing excerpt, article, notice or table) kept as a user_provided Source; a judgment the user explicitly stated for the record in a Journal entry, including an analytical research assessment without a trade action. Fail chatter, a one-off assumption the user said not to keep, a superseded value kept as current, a method page the user did not ask for, created from the assistant\'s own analysis, general knowledge or a single company\'s case, company facts written into a method or perspective page, a subject page whose facts cite no source, a Journal entry when the user asked only for research without stating their own judgment for the record, or a Journal entry holding a stance the assistant originated rather than the user.';
 /** Provider routing prefixes do not establish the underlying model family. */
 export function modelFamily(id) {
   const model = typeof id === 'string' ? id.trim().toLowerCase().split('/').at(-1) : '';
@@ -149,6 +152,20 @@ export function buildJudgeInput(suite, item, traces) {
     prior_sessions: priorSessions(suite, traces, item.trace),
     criterion: item.criterion,
   };
+  const { scenario, turn } = locateTurn(suite, item.trace);
+  const labelKeys = (turn?.expect?.answer ?? []).filter(check => check.assert === 'visible_labels')
+    .flatMap(check => visibleLabelsAssertion(check, scenario));
+  const labels = visibleLabels(item.trace.resolved_appearance);
+  if (labelKeys.length && labelKeys.every(key => Object.hasOwn(labels, key))) {
+    input.screen_labels = Object.fromEntries(labelKeys.map(key => [key, labels[key]]));
+  }
+  if (turn?.scheduled && scheduledDeliveryEvidence(item.trace, scenario, turn, traces).pass === true) {
+    input.answer = item.trace.session_answer.content;
+    input.bot_preview = answer;
+  }
+  if (turn?.expect?.trace?.some(check => check.assert === 'scheduled_tasks') && Array.isArray(item.trace.scheduled_tasks)) {
+    input.saved_tasks = item.trace.scheduled_tasks.map(({ title, prompt, status }) => ({ title, prompt, status }));
+  }
   if (item.memory_item) input.memory_item = item.memory_item;
   const pages = storedLensPages(item.trace);
   if (pages) input.lens_pages_after_turn = pages;
@@ -175,6 +192,12 @@ export function renderJudgePrompt(input) {
     'pass is true only when the criterion is clearly met. The reason must cite observable evidence.',
     'Tool names or claimed saves alone do not prove successful results. Null, redacted, or truncated evidence cannot establish the missing facts.',
     'Do not use tools, web search, or outside knowledge. No hidden outcomes are included.',
+    ...(Object.hasOwn(input, 'bot_preview') ? [
+      'The answer is the full scheduled session reply. The bot_preview is the delivered excerpt.',
+    ] : []),
+    ...(Object.hasOwn(input, 'screen_labels') ? [
+      'The screen_labels are the actual labels in this turn’s resolved appearance. Compare the answer with these exact labels. Correct directions can pass when no tool call was made.',
+    ] : []),
     '',
     `Criterion: ${input.criterion}`,
     '',
@@ -243,9 +266,10 @@ export async function judgeAll({ suite, traces, model = DEFAULT_JUDGE_MODEL, cac
   return results;
 }
 
-function runProcess(command, args, { cwd }) {
+/** `env` defaults to this process's environment; `input`, when given, is written to stdin. */
+function runProcess(command, args, { cwd, env, input }) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { cwd, env, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8');
@@ -253,9 +277,11 @@ function runProcess(command, args, { cwd }) {
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', reject);
+    // A child that exits before reading stdin is reported by its exit code below.
+    if (input !== undefined) child.stdin.on('error', () => {}).end(input);
     child.on('close', (code) => {
       if (code === 0) resolve(stdout);
-      else reject(new Error(`${command} exited ${code}: ${stderr.trim().slice(0, 400)}`));
+      else reject(Object.assign(new Error(`${command} exited ${code}: ${stderr.trim().slice(0, 400)}`), { stdout }));
     });
   });
 }
@@ -294,6 +320,89 @@ export function codexBackend({ model = 'gpt-6-astra', reasoningEffort = DEFAULT_
         await writeFile(schemaPath, JSON.stringify(JUDGE_SCHEMA));
         await run(command, codexJudgeArgs({ prompt, model, cwd, schemaPath, outputPath, reasoningEffort: controls.reasoningEffort ?? reasoningEffort }), { cwd });
         return parseJudgeResult(await readFile(outputPath, 'utf8'));
+      } finally {
+        await rm(cwd, { recursive: true, force: true });
+      }
+    },
+  };
+}
+
+/**
+ * Arguments for a headless `claude -p` judge call on the Claude subscription login. The
+ * prompt carries untrusted trace text, so the call must have no tools and load no context:
+ * - `--tools ""` removes every built-in tool: Bash and other code runners, file read, edit
+ *   and search, web fetch and search, subagents, Skill and EndConversation.
+ * - `--strict-mcp-config`, with no `--mcp-config`, connects no MCP server from `.mcp.json`,
+ *   `~/.claude.json`, plugins or claude.ai connectors; `--disallowedTools mcp__*` denies any
+ *   MCP tool that a managed policy still adds.
+ * - `--safe-mode` loads no CLAUDE.md, auto memory, skills, plugins, hooks, MCP servers,
+ *   custom agents or output styles, and keeps the subscription login (`--bare` would
+ *   require an API key).
+ * - `--setting-sources ""` reads no user, project or local settings file, so none of their
+ *   permission rules, hooks, env, model or `apiKeyHelper` apply.
+ * - `--disable-slash-commands` keeps skills and commands out of the context and stops a
+ *   leading `/name` from expanding.
+ * - `--no-session-persistence` writes no transcript to resume.
+ * - `--max-turns 1` allows one model turn. `--json-schema` adds the CLI's own
+ *   StructuredOutput tool, the only tool left: a valid call ends that turn, and an invalid
+ *   call or a text answer has no second turn to retry in, so the item fails.
+ * The prompt goes on stdin, so a variadic flag such as `--tools` cannot take it as a value
+ * and it stays out of the process list.
+ */
+export function claudeJudgeArgs({ model = DEFAULT_CLAUDE_JUDGE_MODEL, reasoningEffort = DEFAULT_REASONING_EFFORT } = {}) {
+  const args = ['-p', '--model', model];
+  if (reasoningEffort) args.push('--effort', reasoningEffort);
+  args.push('--tools', '', '--strict-mcp-config', '--disallowedTools', 'mcp__*', '--safe-mode',
+    '--setting-sources', '', '--disable-slash-commands', '--no-session-persistence', '--max-turns', '1',
+    '--output-format', 'json', '--json-schema', JSON.stringify(JUDGE_SCHEMA));
+  return args;
+}
+
+/**
+ * The child keeps the subscription login (`CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN`) and
+ * drops every `ANTHROPIC_*` variable (API keys, profiles, federation, custom headers, base URLs
+ * and other providers' keys, any of which can outrank or redirect the subscription login) and
+ * what a parent Claude Code session exports: its session ID and messaging socket,
+ * `CLAUDE_CODE_SIMPLE` (bare mode, API key only) or a provider switch.
+ */
+export function claudeJudgeEnv(env = process.env) {
+  return Object.fromEntries(Object.entries(env).filter(([name]) =>
+    !/^(?:ANTHROPIC_.+|CLAUDECODE|CLAUDE_(?!CODE_OAUTH_TOKEN$|CONFIG_DIR$).+)$/u.test(name)));
+}
+
+/** Only a successful, unrefused result with a schema-valid structured verdict counts. */
+export function parseClaudeJudgeStdout(stdout) {
+  const result = parseJsonText(stdout);
+  if (!isRecord(result) || result.type !== 'result') throw new Error('claude judge output is not a result message');
+  if (result.stop_reason === 'refusal') throw new Error('claude judge refused the request');
+  if (result.subtype !== 'success' || result.is_error !== false) {
+    const detail = Array.isArray(result.errors) && result.errors.length ? result.errors.join('; ') : String(result.result ?? '');
+    throw new Error(`claude judge failed (${result.subtype ?? 'unknown'}): ${detail.slice(0, 400)}`);
+  }
+  if (!isRecord(result.structured_output)) throw new Error('claude judge returned no structured verdict');
+  return parseJudgeResult(result.structured_output);
+}
+
+/** A tool-free `claude -p` judge, for agents outside the Anthropic family. Every call runs in its own new directory. */
+export function claudeBackend({ model = DEFAULT_CLAUDE_JUDGE_MODEL, reasoningEffort = DEFAULT_REASONING_EFFORT, command = 'claude', run = runProcess, env = process.env } = {}) {
+  return {
+    model,
+    async judge(prompt, controls = {}) {
+      const cwd = await mkdtemp(join(tmpdir(), 'agent-judge-claude-'));
+      try {
+        const args = claudeJudgeArgs({ model, reasoningEffort: controls.reasoningEffort ?? reasoningEffort });
+        let stdout;
+        try {
+          stdout = await run(command, args, { cwd, env: claudeJudgeEnv(env), input: prompt });
+        } catch (error) {
+          // A failed run prints its result on stdout; name that failure. A nonzero exit is never a verdict.
+          let detail = '';
+          if (typeof error?.stdout === 'string' && error.stdout.trim()) {
+            try { parseClaudeJudgeStdout(error.stdout); } catch (parseError) { detail = ` (${parseError.message})`; }
+          }
+          throw detail ? new Error(`${error.message}${detail}`, { cause: error }) : error;
+        }
+        return parseClaudeJudgeStdout(stdout);
       } finally {
         await rm(cwd, { recursive: true, force: true });
       }

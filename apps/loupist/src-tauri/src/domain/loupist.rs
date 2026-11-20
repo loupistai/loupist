@@ -10,6 +10,28 @@ use crate::providers::catalog::valid_model_profile_id;
 pub struct RootFilesystemIdentity {
     pub device: u64,
     pub inode: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub birth_time: Option<FilesystemBirthTime>,
+}
+
+/// Exact filesystem creation time, independent of mount-local device numbers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilesystemBirthTime {
+    pub seconds: i64,
+    pub nanoseconds: u32,
+}
+
+impl RootFilesystemIdentity {
+    /// Legacy bindings have no creation time; a saved creation time is mandatory
+    /// evidence when present, including for ordinary access and deletion.
+    pub(crate) fn matches_binding(&self, expected: &Self) -> bool {
+        self.device == expected.device
+            && self.inode == expected.inode
+            && expected
+                .birth_time
+                .is_none_or(|birth| self.birth_time == Some(birth))
+    }
 }
 
 /// How a Loupist talks. Presentation only: it never changes evidence requirements.
@@ -82,7 +104,7 @@ impl LoupistTemplate {
     /// onboarding copy); Custom has none.
     pub fn default_focus(self) -> Option<&'static str> {
         match self {
-            Self::Portfolio => Some("Companies I hold and follow"),
+            Self::Portfolio => Some("Companies I follow"),
             Self::Semiconductors => Some("Chips, memory, foundries and equipment"),
             Self::Dividends => Some("Dividend payers and payout safety"),
             Self::Technology => Some("Large US technology companies"),
@@ -95,18 +117,6 @@ impl LoupistTemplate {
                 Some("Property, infrastructure and land: owners, tenants and financing")
             }
             Self::Custom => None,
-        }
-    }
-
-    /// The asset class an asset-class template is made for.
-    pub fn asset_class(self) -> Option<crate::knowledge::assets::AssetClass> {
-        use crate::knowledge::assets::AssetClass;
-        match self {
-            Self::Crypto => Some(AssetClass::Crypto),
-            Self::Macro => Some(AssetClass::RatesFx),
-            Self::Commodities => Some(AssetClass::Commodity),
-            Self::RealAssets => Some(AssetClass::RealAsset),
-            _ => None,
         }
     }
 }
@@ -272,9 +282,7 @@ pub fn default_loupist_capability_bindings(
         .entries
         .into_iter()
         .map(|entry| {
-            // A host-only connection (wallet reads) is turned on when first used.
             let enabled = entry.free_state == crate::marketplace::MarketplaceFreeState::Keyless
-                && entry.id != crate::finance_data::onchain::ONCHAIN_SOURCE_ID
                 && entry.setup.as_ref().is_none_or(|setup| {
                     setup.config_fields.iter().all(|field| !field.required)
                         && setup.credential_fields.iter().all(|field| !field.required)

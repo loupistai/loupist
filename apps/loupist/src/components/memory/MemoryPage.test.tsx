@@ -28,7 +28,7 @@ it("opens on Pages with your principles grouped in, shows where one was used, an
   expect(within(tabs).getByRole("tab", { name: /Pages/ })).toHaveAttribute("aria-selected", "true");
   // Lens is Pages and History; what you follow lives on the Following page.
   expect(within(tabs).getAllByRole("tab").map(tab => tab.textContent)).toEqual([expect.stringMatching(/^Pages/), expect.stringMatching(/^History/)]);
-  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Principle, Used 4 times/ }));
+  await user.click(await within(page).findByRole("button", { name: /Prefer companies that publish segment margins.*Principle, Read in 4 answers/ }));
   const reader = within(page).getByRole("complementary", { name: /Prefer companies that publish segment margins/ });
   await user.click(within(reader).getByRole("button", { name: "Hanul margin review" }));
   expect(handlers.onOpenChat).toHaveBeenCalledWith("chat-margin");
@@ -77,7 +77,7 @@ it("opens straight on an item from a receipt or a saved chip", async () => {
   expect(within(reader).getByText(/You said “Not helpful”/)).toBeVisible();
 });
 
-it("pauses and resumes a principle and a method through the host", async () => {
+it("pauses and resumes a principle and a method in answers through the host, saying what it pauses", async () => {
   let principleId = "";
   const { bridge, loupist, view, user } = await fixture(async (bridge, loupist) => {
     principleId = (await bridge.principleCreate({ loupistId: loupist.id, statement: "Check cash before profit.", origin: "settings" })).recordId;
@@ -85,16 +85,17 @@ it("pauses and resumes a principle and a method through the host", async () => {
   const pause = vi.spyOn(bridge, "knowledgeLensPause");
   render(view(principleId));
   const rule = await screen.findByRole("complementary", { name: "Check cash before profit." });
-  await user.click(within(rule).getByRole("button", { name: "Pause" }));
-  await user.click(await within(rule).findByRole("button", { name: "Resume" }));
+  await user.click(within(rule).getByRole("button", { name: "Pause in answers" }));
+  expect(await within(rule).findByText("Paused items stay here but are left out of future answers.")).toBeVisible();
+  await user.click(await within(rule).findByRole("button", { name: "Resume in answers" }));
   await waitFor(() => expect(pause).toHaveBeenLastCalledWith({ loupistId: loupist.id, recordId: principleId, paused: false }));
   const catalog = await bridge.knowledgeCatalog({ loupistId: loupist.id });
   const method = catalog.lenses.find(item => item.lensKind === "method")!;
   await user.click(await screen.findByRole("button", { name: new RegExp(method.title) }));
   const reader = await screen.findByRole("complementary", { name: method.title });
-  await user.click(within(reader).getByRole("button", { name: "Pause" }));
+  await user.click(within(reader).getByRole("button", { name: "Pause in answers" }));
   expect(pause).toHaveBeenLastCalledWith({ loupistId: loupist.id, recordId: method.recordId, paused: true });
-  await user.click(await within(reader).findByRole("button", { name: "Resume" }));
+  await user.click(await within(reader).findByRole("button", { name: "Resume in answers" }));
   await waitFor(() => expect(pause).toHaveBeenLastCalledWith({ loupistId: loupist.id, recordId: method.recordId, paused: false }));
 });
 
@@ -208,6 +209,8 @@ it("offers + Add principle on an empty Lens and opens the principle it saves", a
   render(view());
   const page = await screen.findByRole("region", { name: /What .* knows/ });
   await within(page).findByText(/Nothing here yet/);
+  // Nothing to search yet.
+  expect(within(page).queryByRole("searchbox")).toBeNull();
   await user.click(within(page).getByRole("button", { name: "+ Add principle" }));
   await user.type(within(page).getByRole("textbox", { name: "Statement" }), "Check capacity costs before trusting a margin recovery.");
   await user.click(within(page).getByRole("button", { name: "Save" }));

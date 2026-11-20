@@ -29,7 +29,7 @@ describe("Loupist · Connections", () => {
     const loupist = await bridge.loupistCreate({ name: "Global research" });
     const bindings = await bridge.loupistCapabilityList(loupist.id);
     expect(bindings.filter((binding) => binding.enabled).map((binding) => binding.entry_id).sort()).toEqual([
-      "community.web-research", "defillama.tvl", "openbb.platform", "world-bank.indicators",
+      "cftc.commitments", "community.web-research", "defillama.tvl", "openbb.platform", "openfigi.lookup", "world-bank.indicators",
     ]);
     await openApp(bridge);
     const user = userEvent.setup();
@@ -43,7 +43,7 @@ describe("Loupist · Connections", () => {
     const user = userEvent.setup();
     await openApp();
     await user.click(await mainTab(/Connections/));
-    const search = screen.getByRole("searchbox", { name: "Search connections" });
+    const search = await screen.findByRole("searchbox", { name: "Search connections" });
     await user.type(search, "Korean");
     expect(screen.getByRole("heading", { name: "OpenDART" })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "SEC EDGAR" })).toBeNull();
@@ -64,7 +64,7 @@ describe("Loupist · Connections", () => {
     await screen.findByRole("heading", { name: "Market data platform" });
     const openbb = within(card("Market data platform"));
     expect(openbb.getByText("Connection unavailable")).toBeVisible();
-    await user.click(openbb.getByRole("button", { name: "Details Market data platform" }));
+    await user.click(openbb.getByRole("button", { name: "Market data platform details" }));
     const dialog = screen.getByRole("dialog", { name: "Market data platform" });
     expect(within(dialog).getByText(/Update or reinstall/)).toBeVisible();
     expect(within(dialog).queryByRole("button", { name: /Save/ })).not.toBeInTheDocument();
@@ -77,7 +77,7 @@ describe("Loupist · Connections", () => {
     const enable = vi.spyOn(bridge, "loupistCapabilityEnable");
     const disable = vi.spyOn(bridge, "loupistCapabilityDisable");
     await user.click(await mainTab(/Connections/));
-    await user.click(await screen.findByRole("button", { name: "Settings Web Research" }));
+    await user.click(await screen.findByRole("button", { name: "Web Research settings" }));
     const dialog = screen.getByRole("dialog", { name: "Web Research settings" });
     await user.click(within(dialog).getByRole("combobox", { name: "Search provider" }));
     await user.click(screen.getByRole("option", { name: "Model search only" }));
@@ -93,7 +93,7 @@ describe("Loupist · Connections", () => {
     const bridge = await openApp();
     await bridge.marketplaceConnectorConfigure({ entry_id: "koreainvestment.market-data", config: { environment: "demo" } });
     await user.click(await mainTab(/Connections/));
-    expect(await screen.findByRole("button", { name: "Continue setup Korea Investment Open Trading API" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Continue setting up Korea Investment Open Trading API" })).toBeVisible();
   });
 
   it("enables every Loupist when setup first makes a connection ready", async () => {
@@ -148,7 +148,36 @@ describe("Loupist · Connections", () => {
     await user.keyboard("{Escape}");
     expect(confirmation).toBeVisible();
     await act(async () => releaseDelete());
-    expect(await within(dialog).findByText("Not stored")).toBeVisible();
+    // The Delete button is gone with the key: focus lands on the result, not the page.
+    const deleted = await within(dialog).findByRole("status");
+    expect(deleted).toHaveTextContent("Credentials deleted");
+    await waitFor(() => expect(deleted).toHaveFocus());
+    expect(within(dialog).queryByRole("button", { name: "Delete saved credentials" })).toBeNull();
+    expect(within(dialog).getByLabelText("OpenDART API key")).toHaveAttribute("placeholder", "Enter OpenDART API key");
+  });
+
+  it("says on a ready card and in its dialog when it is off for this Loupist, and turns it on there", async () => {
+    const user = userEvent.setup();
+    const bridge = await openApp();
+    await bridge.loupistCapabilityDisable({ loupist_id: "loupist-quality", entry_id: "openfigi.lookup" });
+    const enable = vi.spyOn(bridge, "loupistCapabilityEnable");
+    await user.click(await mainTab(/Connections/));
+    const lookup = within((await screen.findByRole("heading", { name: "Asset lookup" })).closest("article")!);
+    expect(lookup.getByText("Ready")).toBeVisible();
+    expect(lookup.getByText("Off for Quality Compounder")).toBeVisible();
+    expect(within(card("Market data platform")).queryByText(/^Off for/)).toBeNull();
+
+    await user.click(lookup.getByRole("button", { name: "Manage Asset lookup" }));
+    const dialog = screen.getByRole("dialog", { name: "Manage Asset lookup" });
+    expect(within(dialog).getByText("Asset lookup is set up but off for Quality Compounder. Turn it on so Quality Compounder can use it.")).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "Turn on for Quality Compounder" }));
+    expect(enable).toHaveBeenCalledWith({ loupist_id: "loupist-quality", entry_id: "openfigi.lookup" });
+    const result = await within(dialog).findByRole("status");
+    expect(result).toHaveTextContent("Turned on for Quality Compounder");
+    // The button that was pressed is gone: focus is on what happened.
+    await waitFor(() => expect(result).toHaveFocus());
+    expect(within(dialog).getByText("On for Quality Compounder")).toBeVisible();
+    expect(await enabledFor(bridge, "openfigi.lookup")).toMatchObject({ enabled: true });
   });
 
   it("stages required KIS credentials and optional profile values without exposing saved values", async () => {

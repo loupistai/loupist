@@ -19,7 +19,7 @@ with the market needs little company explanation.
 
 ## Kinds of reasons
 
-Results or a preliminary release, guidance, capital raises (유상증자, convertible
+Results or a preliminary release, guidance, capital raises (rights offerings, convertible
 bonds), buybacks, ownership reports, index changes, regulatory decisions,
 sector news and macro data. Some moves are mechanical: on an ex-dividend date
 the price drops by about the dividend, and splits or bonus issues change the

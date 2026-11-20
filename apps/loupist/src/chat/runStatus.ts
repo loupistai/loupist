@@ -64,6 +64,12 @@ export const clockLabel = (milliseconds: number) => {
   return `${formatNumber(minutes)}:${formatNumber(seconds, { minimumIntegerDigits: 2, useGrouping: false })}`;
 };
 
+/** Bot's elapsed time, in words: "4s", "1m 12s". */
+export const elapsedLabel = (milliseconds: number) => {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
+  return seconds < 60 ? t("bot.seconds", { s: formatNumber(seconds) }) : t("bot.minutes", { m: formatNumber(Math.floor(seconds / 60)), s: formatNumber(seconds % 60) });
+};
+
 /** A one-second clock while `running`; frozen otherwise. */
 export function useNow(running: boolean) {
   const [now, setNow] = useState(() => Date.now());

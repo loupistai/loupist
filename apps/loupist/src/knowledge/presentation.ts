@@ -1,6 +1,6 @@
 import i18n from "../i18n";
 import { formatDate, formatDateTime, formatNumber } from "../i18n/format";
-import type { ClaimStatus, TimePoint } from "../contracts/knowledge";
+import type { ClaimStatus, Coverage, TimePoint } from "../contracts/knowledge";
 
 /** Preserve source precision and avoid shifting a date-only value across time zones. */
 export function dateValue(value: string): string {
@@ -42,8 +42,32 @@ export function spanSelectorLabel(selector: string): string {
   return match ? lines(Number(match[1]), Number(match[2])) : "";
 }
 
-export const claimStatusLabel = (status: ClaimStatus) => ({
+export const claimStatusLabel = (status: ClaimStatus) => metadataLabel({
   active: i18n.t("knowledge:presentation.active"),
   disputed: i18n.t("knowledge:presentation.disputed"),
   withdrawn: i18n.t("knowledge:presentation.withdrawn"),
-})[status];
+}, status);
+
+/** Newer hosts can return metadata values a reader has no label for yet. */
+export function metadataLabel(labels: Record<string, string>, value: string): string {
+  return Object.hasOwn(labels, value) ? labels[value]! : i18n.t("knowledge:presentation.unspecified");
+}
+
+export function coverageLabel(value: string): string {
+  const sourceCoverage = {
+    included_full: i18n.t("knowledge:sourceWorkspace.fullDocument"),
+    included_excerpt: i18n.t("knowledge:sourceWorkspace.excerpt"),
+    upstream_truncated: i18n.t("knowledge:sourceWorkspace.incompleteSourceText"),
+    metadata_only: i18n.t("knowledge:sourceWorkspace.sourceDetailsOnly"),
+    omitted: i18n.t("knowledge:sourceWorkspace.contentNotSaved"),
+  } satisfies Record<Coverage, string>;
+  return metadataLabel({
+    ...sourceCoverage,
+    complete: i18n.t("knowledge:presentation.fullResult"),
+    bounded_sample: i18n.t("knowledge:presentation.limitedSample"),
+    untrusted_web: i18n.t("knowledge:presentation.unverifiedWeb"),
+    snippet: i18n.t("knowledge:sourceWorkspace.excerpt"),
+    live_generation: i18n.t("knowledge:presentation.currentMap"),
+    sealed_snapshot: i18n.t("knowledge:presentation.savedSnapshot"),
+  }, value);
+}

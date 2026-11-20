@@ -74,6 +74,7 @@ fn policy(use_memory: bool, propose_memory_updates: bool) -> ToolPolicy {
         propose_memory_updates,
         memory_proposal_budget: u8::from(propose_memory_updates),
         as_of: None,
+        display_currency: None,
     }
 }
 
@@ -132,7 +133,15 @@ async fn captured_file(executor: &AppToolExecutor, name: &str, contents: &str) -
 async fn persist_turn(state: &AppState, chat_id: &str, turn_id: &str, capture: &ToolCapture) {
     let sources = capture.staged_sources.lock().await.clone();
     let reads = capture.staged_reads.lock().await.clone();
-    let research = capture.staged_research.lock().await.clone();
+    let mut research = capture.staged_research.lock().await.clone();
+    if let Some(research) = &mut research {
+        assert!(!crate::commands::tool_executor::finish_setup_theses(
+            &state.store,
+            "loupist-a",
+            research,
+        )
+        .unwrap());
+    }
     let blobs = crate::commands::knowledge::knowledge_blobs(state).unwrap();
     let mut connection = state.store.lock().unwrap();
     let tx = connection.transaction().unwrap();
@@ -268,6 +277,7 @@ mod knowledge_seam;
 mod lens_file;
 mod memory_as_of;
 mod memory_authority;
+mod pasted;
 mod question;
 mod scope_and_artifacts;
 mod shared_delivery;
@@ -321,43 +331,6 @@ fn world_reads_report_their_delivered_names_once_and_in_order() {
         delivered_world_node_ids(&[read(world(&format!("[{many}]")))]).len(),
         crate::chat::progress::MAX_PROGRESS_ENTITY_IDS
     );
-}
-
-#[tokio::test]
-async fn plan_updates_return_a_short_receipt_or_the_field_to_fix() {
-    let temporary = tempfile::tempdir().unwrap();
-    let state = seeded_state(&temporary);
-    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
-    let policy = policy(false, false);
-    let receipt = executor
-        .execute(
-            &policy,
-            ToolMethod::PlanUpdate,
-            json!({"items": [
-                {"id": "filings", "label": "Read the filings", "status": "active"},
-                {"id": "prices", "label": "Compare prices", "status": "pending"},
-            ]}),
-        )
-        .await
-        .unwrap();
-    assert_eq!(receipt, json!({"status": "plan_updated", "items": 2}));
-    // The plan is presentation only; it never becomes citable evidence.
-    assert!(executor.capture.run_results.lock().await.results.is_empty());
-    let refused = executor
-        .execute(
-            &policy,
-            ToolMethod::PlanUpdate,
-            json!({"items": [
-                {"id": "a", "label": "One", "status": "active"},
-                {"id": "b", "label": "Two", "status": "active"},
-            ]}),
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        refused,
-        BrokerError::InvalidArguments { ref field, .. } if field == "items"
-    ));
 }
 
 #[tokio::test]

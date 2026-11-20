@@ -25,7 +25,7 @@ export type SignInState =
 
 export type SignInBridge = Pick<LoupistBridge, "providerConnect" | "providerConnectCancel" | "providerConnectOpenBrowser" | "providerConnectSubmitCode">;
 
-const FAILURES: ReadonlySet<string> = new Set<ProviderConnectFailure>(["plan_permission_declined", "plan_not_eligible", "port_in_use", "timed_out", "browser_failed", "offline", "denied", "other"]);
+const FAILURES: ReadonlySet<string> = new Set<ProviderConnectFailure>(["chatgpt_connection_rejected", "plan_permission_declined", "plan_not_eligible", "port_in_use", "timed_out", "browser_failed", "offline", "denied", "other"]);
 
 const errorText = (cause: unknown) => cause instanceof Error ? cause.message
   : cause && typeof cause === "object" && "message" in cause && typeof cause.message === "string" ? cause.message

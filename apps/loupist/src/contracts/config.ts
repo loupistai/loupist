@@ -1,11 +1,13 @@
 import type * as Wire from "./generated";
 export type LanguagePreference = "system" | "en" | "ko";
+/** Which colour means a rising price; auto follows the interface language. */
+export type PriceColorsPreference = "auto" | "red-up" | "green-up";
 export type ConfigScope = Wire.ConfigScope;
 export type ConfigSource = "default" | "global" | "project";
 
 /** TOML keys intentionally retain their spelling at the file/bridge boundary. */
 export type ConfigDocument = {
-  appearance?: { theme?: "light" | "dark" | "system"; language?: LanguagePreference };
+  appearance?: { theme?: "light" | "dark" | "system"; language?: LanguagePreference; price_colors?: PriceColorsPreference; display_currency?: string };
   models?: { hidden_model_profile_ids?: string[] };
   connectors?: Record<string, Record<string, string>>;
   chat?: { model_profile_id?: string; thinking_level?: string; run_options?: Record<string, string>; use_memory?: boolean; update_memory?: boolean };
@@ -17,7 +19,7 @@ export type ConfigDocument = {
 };
 
 export type EffectiveConfig = {
-  appearance: { theme: "light" | "dark" | "system"; language: LanguagePreference };
+  appearance: { theme: "light" | "dark" | "system"; language: LanguagePreference; price_colors: PriceColorsPreference; display_currency?: string };
   models: { hidden_model_profile_ids: string[] };
   connectors: Record<string, Record<string, string>>;
   chat: { model_profile_id: string | null; thinking_level: string | null; run_options: Record<string, string>; use_memory: boolean; update_memory: boolean };
@@ -39,3 +41,8 @@ export type ConfigSnapshot = {
   diagnostics: ConfigDiagnostic[];
 };
 export type ConfigUpdateRequest = { scope: ConfigScope; expectedRevision: string; set: ConfigDocument; unset: string[][] };
+
+export type FxDisplayRequest = Wire.FxDisplayRequest;
+export type FxDisplay = Wire.FxDisplay;
+export type FxUnavailableReason = Wire.FxUnavailableReason;
+export type FxChanged = Wire.FxChangedEvent;

@@ -48,6 +48,11 @@ analytics Tools and maps direct provider Tools to their one implicit provider.
 Unknown providerless routes are omitted. For example, the `imf_utils` surface is
 not discoverable unless the Loupist has enabled the `imf` provider.
 
+When a generated OpenAPI output schema exceeds the host's 64 KiB limit, the
+wrapper advertises a generic object schema and preserves FastMCP's result
+wrapping. OpenAPI input schemas, structured results and provider receipts keep
+their original shape.
+
 The source manifest names the executable `loupist-openbb`. Windows is not
 supported in this release.
 

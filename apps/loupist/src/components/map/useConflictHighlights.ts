@@ -25,7 +25,7 @@ export function useConflictHighlights(bridge: LoupistBridge, location: Knowledge
     const nodes = new Map(base.nodes.map(node => [node.id, node]));
     const edges = new Map(base.edges.map(edge => [edge.id, edge]));
     for (const graph of result.graphs) {
-      for (const node of graph.nodes) if (ids.includes(node.id) && !nodes.has(node.id)) nodes.set(node.id, { id: node.id, label: node.name, kind: "entity", entityKind: node.kind, degree: graph.edges.filter(edge => edge.endpoints.some(end => end.nodeId === node.id)).length, watched: false, held: false });
+      for (const node of graph.nodes) if (ids.includes(node.id) && !nodes.has(node.id)) nodes.set(node.id, { id: node.id, label: node.name, kind: "entity", entityKind: node.kind, degree: graph.edges.filter(edge => edge.endpoints.some(end => end.nodeId === node.id)).length, watched: false });
       for (const { claim } of graph.edges) {
         const source = claim.endpoints[0]?.nodeId;
         if (!source || !nodes.has(source) || claim.status !== "disputed") continue;

@@ -1,7 +1,7 @@
 /** Preview scenarios, in the capture order `src/preview/scenarios.ts` assembles. */
 import { prepareFixture, PreviewBridge } from "../fixtures";
 import { MOCK_PACK_PREVIEW } from "../../bridge/mock/sharing";
-import { base, click, idle, navigate, openNavigation, select, selectPanel, until, type PreviewScenario } from "./kit";
+import { base, click, idle, navigate, newLoupist, select, selectPanel, until, type PreviewScenario } from "./kit";
 
 /** W19 sharing: Share sheet, link or file, review before adding, suggestions, origin and deep links. */
 export function sharingScenarios(): PreviewScenario[] {
@@ -17,16 +17,14 @@ export function sharingScenarios(): PreviewScenario[] {
   };
   const openLinkDialog = async () => {
     await until(() => select("textarea[data-chat-composer]"), "Chat did not initialize");
-    await openNavigation(".loupist-header-new");
-    await click(".loupist-header-new");
+    await newLoupist();
     await click("[data-loupist-shared-entry] [data-use-link-or-file]");
   };
   /** W19.6: "+ New Loupist" › Browse the Gallery, in a build with a community index. */
   const withIndex = (bridge: PreviewBridge) => { bridge.sharing.account = { ...bridge.sharing.account, indexConfigured: true }; };
   const openGallery = async () => {
     await until(() => select("textarea[data-chat-composer]"), "Chat did not initialize");
-    await openNavigation(".loupist-header-new");
-    await click(".loupist-header-new");
+    await newLoupist();
     await click("[data-loupist-shared-entry] [data-browse-gallery]");
     await until(() => select("[data-gallery]"), "The Gallery did not open");
   };
@@ -89,8 +87,7 @@ export function sharingScenarios(): PreviewScenario[] {
     }),
     sharing("Start from a shared Loupist", "new-loupist-shared-entry", () => select("[data-loupist-shared-entry]"), async () => {
       await until(() => select("textarea[data-chat-composer]"), "Chat did not initialize");
-      await openNavigation(".loupist-header-new");
-      await click(".loupist-header-new");
+      await newLoupist();
     }),
     sharing("Open a shared Loupist from a link or file", "pack-link-dialog", () => select("[data-pack-link-dialog] input"), openLinkDialog),
     sharing("Review before adding", "pack-review", () => select("[data-pack-review] .pack-review-sections"), openReview),

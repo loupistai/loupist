@@ -35,7 +35,7 @@ fn add(state: &AppState, producer: Producer, type_name: &str, en: &str, ko: &str
 }
 
 #[test]
-fn preset_and_review_changes_post_one_plain_language_card_and_chat_changes_do_not() {
+fn only_review_changes_post_one_plain_language_card() {
     let temporary = tempfile::tempdir().unwrap();
     let state = AppState::for_test(temporary.path().join("app"));
     seed_profile(
@@ -52,7 +52,7 @@ fn preset_and_review_changes_post_one_plain_language_card_and_chat_changes_do_no
     );
     add(&state, Producer::Chat, "Wafer", "Wafer", "웨이퍼", 20);
     add(&state, Producer::Review, "Fab", "Fab", "팹", 30);
-    assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 2);
+    assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 1);
     assert_eq!(
         deliver_finished_runs(&state, "loupist-a").unwrap(),
         0,
@@ -73,10 +73,10 @@ fn preset_and_review_changes_post_one_plain_language_card_and_chat_changes_do_no
             .iter()
             .map(|post| post.producer.as_str())
             .collect::<Vec<_>>(),
-        ["preset", "review"]
+        ["review"]
     );
-    assert_eq!(posts[0].labels, ["Process node"]);
-    assert_eq!(posts[0].labels_ko, ["공정 노드"]);
+    assert_eq!(posts[0].labels, ["Fab"]);
+    assert_eq!(posts[0].labels_ko, ["팹"]);
     assert!(posts
         .iter()
         .all(|post| post.labels.iter().all(|label| label != "ProcessNode")));
@@ -92,7 +92,7 @@ fn a_vocabulary_card_hidden_by_an_edit_is_already_posted() {
     );
     add(
         &state,
-        Producer::Preset,
+        Producer::Review,
         "ProcessNode",
         "Process node",
         "공정 노드",
@@ -119,4 +119,41 @@ fn a_vocabulary_card_hidden_by_an_edit_is_already_posted() {
     });
     state.store.replace_chat(&before, &edited).unwrap();
     assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 0);
+}
+
+#[tokio::test]
+async fn a_template_creation_keeps_its_preset_in_settings_without_a_bot_post() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    let loupist = crate::commands::loupist::create_managed_loupist(
+        &state,
+        LoupistCreateRequest {
+            name: "Semiconductors".into(),
+            focus: None,
+            avatar: None,
+            template: Some("semiconductors".into()),
+            tone: None,
+        },
+    )
+    .await
+    .unwrap();
+    fs::create_dir_all(loupist_config_directory(&state, &loupist.id).unwrap()).unwrap();
+    assert_eq!(deliver_finished_runs(&state, &loupist.id).unwrap(), 0);
+    let bot = state
+        .store
+        .get_chat(&home_thread_id(&loupist.id))
+        .unwrap()
+        .unwrap();
+    assert!(bot
+        .messages
+        .iter()
+        .all(|message| message.vocabulary.is_none()));
+    let changes = crate::commands::assets::with_assets(&state, &loupist.id, false, |tx| {
+        crate::knowledge::recent_changes(tx, &loupist.id, 20)
+    })
+    .unwrap();
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].producer, Producer::Preset);
+    assert!(changes[0].origin.is_none());
+    assert!(!crate::knowledge::added_labels(&changes[0]).is_empty());
 }

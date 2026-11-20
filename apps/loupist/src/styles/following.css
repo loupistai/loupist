@@ -1,0 +1,73 @@
+/* Following: the search field, its results and the followed list. */
+/* Following: one search field and one list in one column; the field stays pinned under the shell header. */
+.following-page { container: following-pane / inline-size; min-height: 100%; }
+.following-search, .following-body {
+  box-sizing: border-box; width: 100%; max-width: calc(var(--gg-size-chat-column) + 2 * var(--gg-space-7));
+  margin-inline: auto; padding-inline: var(--gg-space-7);
+}
+.following-search { position: sticky; top: 0; z-index: var(--gg-z-sticky); padding-block: var(--gg-space-6) var(--gg-space-3); background: var(--gg-color-bg-app); }
+.following-search .following-field { height: var(--gg-size-field); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
+.following-search .following-field .following-input { height: 100%; border: 0; border-radius: inherit; background: transparent; box-shadow: none; padding-inline: var(--gg-space-3); font-size: var(--gg-text-body); }
+/* One focus contour around the whole field, clear button included. */
+.following-search .following-field .following-input:focus-visible { outline: none !important; }
+.following-search .following-field:has(.following-input:focus-visible) { outline: 2px solid var(--gg-color-focus); outline-offset: -2px; }
+.following-field [data-slot="input-group-addon"] { padding-right: var(--gg-space-2); }
+.following-body { padding-bottom: var(--gg-space-7); }
+
+/* Rows: at least 56 high, a hairline between them; the name and listing are one button. */
+.following-list, .following-results { margin: 0; padding: 0; list-style: none; }
+.following-row, .following-option {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--gg-space-3); min-height: 56px;
+  padding: var(--gg-space-2) var(--gg-space-3); border-bottom: 1px solid var(--gg-color-border-subtle);
+}
+.following-open {
+  display: grid; flex: 1 1 0; min-width: 0; padding: 0; border: 0; border-radius: var(--gg-radius-xs);
+  background: none; color: inherit; font: inherit; text-align: start;
+}
+button.following-open { cursor: pointer; }
+/* A followed row opens its asset page: under the pointer it lights up as a result row does, so it reads as something to open. */
+.following-row:has(> button.following-open:hover) { background: var(--gg-color-bg-hover); }
+.following-names { display: grid; flex: 1 1 0; min-width: 0; }
+.following-name { overflow: hidden; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); line-height: var(--gg-leading-body); text-overflow: ellipsis; white-space: nowrap; }
+.following-identity { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); font-variant-numeric: tabular-nums; }
+.following-stop { flex: none; color: var(--gg-color-text-tertiary); }
+.following-row:is(:hover, :focus-within) .following-stop { color: var(--gg-color-text-primary); }
+.following-row[data-removing] .following-stop { cursor: progress; }
+.following-row-error { flex: 1 1 100%; margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.following-row-error [data-slot="button"] { height: auto; padding: 0; font-size: inherit; }
+
+/* Results: the active one is the hover color; a row that cannot be picked looks like text. */
+.following-option { cursor: pointer; }
+.following-option:hover, .following-option[aria-selected="true"] { background: var(--gg-color-bg-hover); }
+.following-option[aria-disabled="true"] { cursor: default; }
+.following-option[aria-disabled="true"]:hover { background: none; }
+.following-status { display: inline-flex; flex: none; align-items: center; gap: var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); white-space: nowrap; }
+.following-status[data-tone="negative"] { color: var(--gg-color-negative); }
+.following-retry { text-decoration: underline; }
+/* A result that can be followed says so where a followed one shows its status: muted at rest, primary when hovered or active. */
+.following-status[data-action] { font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); line-height: var(--gg-leading-control); }
+.following-option:is(:hover, [aria-selected="true"]):not([aria-disabled="true"]) .following-status[data-action] { color: var(--gg-color-text-primary); }
+.following-status [data-slot="spinner"], .following-line [data-slot="spinner"] { width: 12px; height: 12px; }
+
+/* "Search listings" and "Follow as typed": quieter than a result until hovered or active. */
+.following-option[data-kind="search"] { column-gap: var(--gg-space-2); }
+.following-option:is([data-kind="search"], [data-kind="typed"]) .following-name, .following-create-icon { color: var(--gg-color-text-secondary); }
+.following-option:is([data-kind="search"], [data-kind="typed"]):is(:hover, [aria-selected="true"]) :is(.following-name, .following-create-icon) { color: var(--gg-color-text-primary); }
+.following-create-icon { flex: none; }
+/* Where the listings came from, under them. */
+.following-note { color: var(--gg-color-text-tertiary); }
+
+/* One line under the results or the list: what is missing and the one thing to do about it. */
+.following-line {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); margin: 0; padding: var(--gg-space-3);
+  color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta);
+}
+.following-line.inline-error { color: var(--gg-color-negative); }
+.following-line-actions { display: inline-flex; flex-wrap: wrap; gap: var(--gg-space-2); }
+.following-empty { padding: var(--gg-space-5) var(--gg-space-3); }
+.following-empty h2 { margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); line-height: var(--gg-leading-body); }
+.following-empty p { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); }
+
+@container following-pane (max-width: 600px) {
+  .following-search, .following-body { padding-inline: var(--gg-space-4); }
+}

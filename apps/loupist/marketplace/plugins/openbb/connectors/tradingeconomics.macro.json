@@ -1,7 +1,7 @@
 {
   "id": "tradingeconomics.macro",
   "name": "Trading Economics",
-  "summary": "Global economic calendars, indicators, forecasts, and markets.",
+  "summary": "Global economic calendars, indicators, forecasts, and markets. Personal API access is paid. The trial requires a payment method and renews automatically.",
   "publisher": "Loupist",
   "data_authority": "Trading Economics",
   "kind": "data_source",
@@ -67,7 +67,7 @@
         "required": true,
         "min_length": 8,
         "max_length": 512,
-        "help_url": "https://tradingeconomics.com/api/"
+        "help_url": "https://tradingeconomics.com/api/pricing.aspx"
       }
     ]
   }

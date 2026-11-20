@@ -1,29 +1,28 @@
+/*
+ * The shell: a full-height sidebar beside the page column. The sidebar starts with the
+ * Loupist; each page starts with one 56 px header. On macOS the native window controls
+ * sit over the sidebar's first row (tauri.conf.json places them at x 12, y 22).
+ */
 .app-shell {
   display: flex;
   width: 100vw;
   height: 100vh;
   min-height: 0;
+  /* Clip, not hidden: a hidden overflow can still be scrolled by script (scrollIntoView),
+     which once slid the whole window up when a page overflowed. */
   overflow: hidden;
+  overflow: clip;
   flex-direction: column;
-  --gg-titlebar-height: 52px;
+  /* The row the native window controls use; zero where the platform draws its own title bar. */
+  --gg-titlebar-height: 0px;
+  --gg-header-height: 56px;
   background: var(--gg-color-bg-app);
   -webkit-user-select: none;
   user-select: none;
 }
 html[data-desktop-platform="macos"] .app-shell {
-  /* Twice the traffic-light center. tauri.conf.json places those buttons at y: 22. */
+  /* Twice the traffic-light center. */
   --gg-titlebar-height: 44px;
-}
-.app-titlebar {
-  display: flex;
-  align-items: stretch;
-  flex: none;
-  min-width: 0;
-  min-height: var(--gg-titlebar-height);
-  background: var(--gg-color-bg-app);
-  border-bottom: 1px solid var(--gg-color-border-subtle);
-  position: relative;
-  z-index: calc(var(--gg-z-sidebar) + 1);
 }
 .app-body {
   position: relative;
@@ -33,8 +32,11 @@ html[data-desktop-platform="macos"] .app-shell {
   min-height: 0;
   width: 100%;
 }
-/* Anchor the sidebar to the remaining body space, including when the titlebar grows. */
+/* The desktop sidebar shows from the window minimum (700 px), below the kit's 768 px default. */
+.app-body > [data-slot="sidebar"]:not([data-mobile="true"]) { display: block; }
+/* Anchor the sidebar to the body, so it runs the full height of the window. */
 .app-body [data-slot="sidebar-container"] {
+  display: flex;
   position: absolute;
   inset-block: 0;
   height: auto;
@@ -72,8 +74,23 @@ html[data-desktop-platform="macos"] .app-shell {
   user-select: none;
 }
 
+/* The announcer after the shell is no place for a drag past the composer to end. */
+[data-panel-announcement] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .app-shell :is(img, svg) {
   -webkit-user-drag: none;
+}
+
+/* A search field's clear control is the app's own button beside it. WebKit's cancel button would sit on top of it,
+   so the native cancel and decoration never draw; Escape still clears a search field. */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
 }
 
 .app-frame {
@@ -89,16 +106,39 @@ html[data-desktop-platform="macos"] .app-shell {
   background: var(--gg-color-bg-app);
 }
 
+/* Page header: who or what the page is, and at most two actions. */
 .app-header {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
+  flex: none;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
   gap: var(--gg-space-3);
-  padding: 0 var(--gg-space-4);
+  min-width: 0;
+  height: var(--gg-header-height);
+  padding: 0 var(--gg-space-5);
+  border-bottom: 1px solid var(--gg-color-border-subtle);
+  background: var(--gg-color-bg-app);
 }
+.app-header-space { flex: 1 1 auto; align-self: stretch; min-width: 0; }
+.app-header-back { flex: none; margin-left: calc(var(--gg-space-2) * -1); color: var(--gg-color-text-secondary); }
+.app-header-title { min-width: 0; overflow: hidden; color: var(--gg-color-text-primary); font-size: var(--gg-text-reading); font-weight: var(--gg-weight-strong); text-overflow: ellipsis; white-space: nowrap; }
+.app-header-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.app-header-who-text { display: grid; min-width: 0; line-height: 1.25; }
+.app-header-who-text strong { overflow: hidden; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); font-weight: var(--gg-weight-strong); text-overflow: ellipsis; white-space: nowrap; }
+.app-header-who-text small { overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); text-overflow: ellipsis; white-space: nowrap; }
+.app-header-who[data-busy] small { color: var(--gg-color-accent-ink); }
+/* Activity and the two splits read pressed while their sheet or split is open. */
+.app-header :is(.header-panel-toggle, .header-workspace-split) { flex: none; color: var(--gg-color-text-secondary); }
+.app-header :is(.header-panel-toggle, .header-workspace-split)[aria-pressed="true"] { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
+.app-header-sidebar-trigger { flex: none; margin-inline-start: calc(var(--gg-space-2) * -1); }
+/* Below the minimum window the sidebar is a drawer: the header clears the native controls itself. */
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-width: 639px) {
+  html[data-desktop-platform="macos"] .app-header { padding-inline-start: 80px; }
+  .app-header { gap: var(--gg-space-2); padding-inline-end: var(--gg-space-3); }
+}
+
+/* The Loupist's face: one size per place, set on the wrapper. */
+.loupist-header-avatar { display: inline-flex; position: relative; flex: none; }
 
 /* Reference-backed research workspace shell */
 .view-error {
@@ -131,6 +171,13 @@ html[data-desktop-platform="macos"] .app-shell {
 }
 .app-selection-error p { flex: 1; margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .app-selection-error button { flex-shrink: 0; }
+/* A failed Show file or Save a copy… reads on its own line under the notice. */
+.legacy-holdings-notice { flex-wrap: wrap; }
+/* A finished export is good news: the calm bar surface, not the warning tint the failed state keeps. */
+.app-selection-error[data-legacy-holdings="exported"] { background: var(--gg-color-bg-sunken); }
+.app-selection-error .legacy-holdings-notice-error { flex: 1 0 100%; color: var(--gg-color-negative); }
+/* While Show file or Save a copy… runs on either surface, its actions read as busy. */
+.legacy-holdings-action[aria-disabled="true"] { cursor: default; opacity: .5; }
 
 /*
  * Radix dialogs portal to body, so their default 50% anchor targets the full
@@ -142,12 +189,11 @@ html[data-desktop-platform="macos"] .app-shell {
       [data-slot="sidebar"][data-state="expanded"][data-side="left"]
     )
     [data-slot="dialog-content"] {
-    left: calc(50% + calc(var(--gg-size-sidebar) / 2));
-    --dialog-available-width: calc(100vw - var(--gg-size-sidebar) - var(--gg-space-7));
+    left: calc(50% + calc(var(--loupist-sidebar-width, var(--gg-size-sidebar)) / 2));
+    --dialog-available-width: calc(100vw - var(--loupist-sidebar-width, var(--gg-size-sidebar)) - var(--gg-space-7));
     transition: left var(--gg-motion-normal) var(--gg-ease-out);
   }
 }
-
 .app-brand {
   display: flex;
   align-items: center;
@@ -170,59 +216,6 @@ html[data-desktop-platform="macos"] .app-shell {
   gap: 7px;
   padding: 10px;
 }
-
-.macos-titlebar-controls {
-  display: none;
-}
-
-/* token-exception: breakpoint; vars unsupported in query conditions */
-
-@media (min-width: 900px) {
-  html[data-desktop-platform="macos"] .macos-titlebar-controls {
-    position: static;
-    z-index: auto;
-    display: flex;
-    flex: none;
-    align-items: center;
-    width: auto;
-    height: auto;
-    padding: 0 var(--gg-space-2);
-    pointer-events: none;
-  }
-
-  html[data-desktop-platform="macos"] .macos-titlebar-sidebar-trigger {
-    pointer-events: auto;
-  }
-
-  html[data-desktop-platform="macos"] .app-titlebar {
-    padding-left: 78px;
-  }
-
-  html[data-desktop-platform="macos"] .app-header-sidebar-trigger {
-    display: none;
-  }
-
-  html[data-desktop-platform="macos"] .app-navigation [data-slot="sidebar-header"] {
-    min-height: 0;
-    justify-content: flex-start;
-    padding: var(--gg-space-3);
-  }
-}
-
-/* Native window controls remain present when navigation becomes a drawer. */
-/* token-exception: breakpoint; vars unsupported in query conditions */
-@media (max-width: 899px) {
-  html[data-desktop-platform="macos"] .app-titlebar {
-    padding-left: calc(var(--gg-space-8) * 2);
-  }
-
-  html[data-desktop-platform="macos"]
-    [data-slot="sidebar"][data-mobile="true"]
-    [data-slot="sidebar-header"] {
-    padding-top: calc(var(--gg-space-9) + var(--gg-space-3));
-  }
-}
-
 [data-slot="sidebar-content"] > [data-slot="sidebar-group"] {
   padding-block: var(--gg-space-2);
 }
@@ -242,6 +235,29 @@ html[data-desktop-platform="macos"] .app-shell {
 .app-panel[hidden] {
   display: none;
 }
+
+/* Map and Lens are full pages: each fills the stage under the page header and scrolls inside itself. */
+.map-page,
+.lens-page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+.map-page > .memory-workspace { flex: 1; min-height: 0; }
+.lens-page { container: memory-pane / inline-size; }
+.lens-page > .memory-page { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.lens-page .memory-page-body { flex: 1 1 auto; min-height: 0; overflow: auto; scroll-padding-block: var(--gg-space-4); }
+.lens-page .memory-page-body:is([data-segment="pages"], [data-segment="history"]) { grid-template-rows: minmax(0, 1fr); align-items: stretch; overflow: hidden; }
+.lens-page .memory-page-list { min-height: 0; overflow: auto; scroll-padding-block: var(--gg-space-4); }
+.lens-page .memory-page-body > .memory-history { min-height: 0; overflow: auto; }
+/* Only the compact page replaces the list with a reader. A wide page keeps two
+   independently scrolling columns, even with many rules or methods. */
+@container memory-pane (max-width: 971px) {
+  .lens-page .memory-page[data-reader-open] .memory-page-body { overflow: hidden; display: flex; flex-direction: column; align-items: stretch; }
+}
+.lens-page .memory-reader.is-lens { flex: 1 1 auto; align-self: stretch; width: 100%; min-height: 0; height: auto; overflow: auto; scroll-padding-block: var(--gg-space-4); padding: var(--gg-space-2) var(--gg-space-5) var(--gg-space-8); border: 0; border-radius: 0; background: transparent; container: memory-reader / inline-size; }
+.lens-page .memory-page[data-reader-open] .memory-reader:not(.is-lens) { flex: 1 1 auto; align-self: stretch; width: 100%; min-height: 0; overflow: auto; scroll-padding-block: var(--gg-space-4); }
 
 .app-loading,
 .fatal-error {
@@ -289,49 +305,12 @@ html[data-desktop-platform="macos"] .app-shell {
   margin-top: var(--gg-space-6);
 }
 
-/* Loupist shell */
-[data-slot="sidebar-wrapper"] { --sidebar-width: var(--gg-size-sidebar) !important; --sidebar-width-icon: var(--gg-space-10) !important; }
-/* Profiles stay in one row. Overflow belongs to their strip, leaving creation and header tools reachable. */
-.loupist-header-selector { display: flex; flex: 0 1 auto; align-items: center; min-width: 0; gap: var(--gg-space-1); }
-.loupist-header-profiles { display: flex; align-items: center; min-width: 0; gap: var(--gg-space-1); overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; padding: 3px; }
-.loupist-header-identity { display: flex; flex: 0 0 auto; align-items: center; gap: var(--gg-space-2); min-width: 0; max-width: 240px; height: 34px; padding: 3px var(--gg-space-2); border: 1px solid transparent; border-radius: var(--gg-radius-md); text-align: left; color: var(--gg-color-text-secondary); }
-.loupist-header-identity:hover { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
-.loupist-header-identity[aria-pressed="true"] { border-color: var(--gg-color-border-subtle); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); }
-.loupist-header-identity:focus-visible { outline: 2px solid var(--gg-color-accent); outline-offset: 1px; }
-.loupist-header-identity .loupist-avatar { width: 26px; height: 26px; flex-basis: 26px; }
-.loupist-header-avatar { display: inline-flex; position: relative; flex: none; }
-.loupist-run-indicator {
-  position: absolute;
-  inset: -2px;
-  border: 2px solid var(--gg-color-accent);
-  border-inline-start-color: transparent;
-  border-bottom-color: transparent;
-  border-radius: 50%;
-  pointer-events: none;
-}
-/* Still, never spinning: while a reply runs, its live line's sheen is the one thing that loops. */
-@media (forced-colors: active) {
-  .loupist-run-indicator { border-color: Highlight transparent transparent Highlight; }
-}
-.loupist-header-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
-.loupist-header-new, .app-header [data-header-loupist-settings] { flex: none; }
-.loupist-header-identity .shell-unread { flex: none; }
-/* Market status sits in the free space before the panel tools and yields when that space runs out. */
-.header-market-slot { display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; min-width: 0; }
-.market-status { display: flex; align-items: center; justify-content: flex-end; gap: var(--gg-space-2); min-width: 0; max-width: 100%; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); white-space: nowrap; overflow: hidden; }
-.market-status > span { overflow: hidden; text-overflow: ellipsis; }
-.market-status > span + span::before { content: "·"; margin-right: var(--gg-space-2); color: var(--gg-color-text-tertiary); }
-.market-status > [data-state="open"], .market-status > [data-state="always"] { color: var(--gg-color-text-primary); }
-@media (max-width: 1099px) {
-  .market-status, .header-market-slot { display: none; }
-  /* The status slot is empty, and six full names do not fit. Other profiles keep the avatar. The selected name stays within 240px and does not push those avatars off the row. */
-  .loupist-header-selector, .loupist-header-profiles { flex: 1 1 auto; }
-  .loupist-header-identity:not([aria-pressed="true"]) strong { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-  .loupist-header-identity:not([aria-pressed="true"]) { flex: 0 0 auto; max-width: none; padding-inline: var(--gg-space-1); }
-  .loupist-header-identity[aria-pressed="true"] { flex: 0 0 auto; width: auto; max-width: 240px; }
-}
-.app-header-sidebar-trigger { display: none; }
+
+/* The user's width (SidebarResizeHandle sets it on the root), held between the minimum and a third of the window as it changes. */
+[data-slot="sidebar-wrapper"] { --sidebar-width: clamp(208px, var(--loupist-sidebar-width, var(--gg-size-sidebar)), max(208px, min(420px, 33.333vw))) !important; --sidebar-width-icon: 76px !important; }
 .chat-tab-panel { position: relative; display: flex; min-width: 0; }
+.chat-tab-panel > .chat-layout { flex: 1 1 0; min-width: 0; width: 0; }
+
 .loupist-settings-body .agent-editor { display: flex; flex-direction: column; gap: var(--gg-space-5); }
 .loupist-settings-body h2 { font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); }
 .settings-loupists ul { list-style: none; padding: 0; }
@@ -339,44 +318,16 @@ html[data-desktop-platform="macos"] .app-shell {
 .settings-loupists li > div { flex: 1; min-width: 0; }
 .settings-loupists li p { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .settings-loupist-actions { display: flex; gap: var(--gg-space-2); }
-@media (max-width: 899px) {
-  .app-header-sidebar-trigger, html[data-desktop-platform="macos"] .app-header-sidebar-trigger { display: inline-flex; }
-  [data-mobile="true"][data-slot="sidebar"] { width: calc(var(--gg-size-sidebar) + var(--gg-space-7)); max-width: none; }
-  /* The navigation sheet covers the left side. The page wraps into the strip that stays visible. */
-  body:has([data-mobile="true"][data-slot="sidebar"]) :is(.app-titlebar, .app-stage) {
-    padding-inline-start: calc(var(--gg-size-sidebar) + var(--gg-space-7) + var(--gg-space-4));
-  }
-  /* The remaining header is short. The panel kind keeps its menu button, and the selected name stays inside the profile row. */
-  body:has([data-mobile="true"][data-slot="sidebar"]) .header-panel-toggle > span { display: none; }
-  body:has([data-mobile="true"][data-slot="sidebar"]) .loupist-header-identity[aria-pressed="true"] {
-    flex: 0 1 auto;
-    min-width: 0;
-    max-width: min(240px, 100%);
-  }
-  .app-header { gap: var(--gg-space-2); padding-inline: var(--gg-space-2); }
-}
-@media (max-width: 700px) {
-  .loupist-header-identity { gap: var(--gg-space-2); }
-}
-.chat-tab-panel > .chat-layout { flex: 1 1 0; min-width: 0; width: 0; }
-.app-titlebar .app-header,
-.app-titlebar .loupist-header-identity { align-items: center; }
-.app-titlebar .loupist-header-identity strong { font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); }
-.app-titlebar .loupist-avatar { width: var(--gg-size-control-sm); height: var(--gg-size-control-sm); flex-basis: var(--gg-size-control-sm); }
-
-@media (min-width: 900px) {
-  /* The macOS titlebar owns the sidebar toggle, so the sidebar does not keep an empty trigger row. */
-  html[data-desktop-platform="macos"] .navigation-toolbar,
-  html[data-desktop-platform="macos"] .app-header-sidebar-trigger { display: none; }
-}
-/* The narrow navigation sheet keeps the same rows; nothing in the header may force it wider than the drawer. */
-[data-mobile="true"][data-slot="sidebar"] [data-slot="sidebar-header"],
-[data-mobile="true"][data-slot="sidebar"] .navigation-command { max-width: 100%; }
 
 /* Command palette (X7): one search across chats, names, principles, briefings and actions. */
 .dialog-surface.command-palette { top: 96px; translate: -50% 0; padding: 0; gap: 0; border-radius: var(--gg-radius-lg); background: var(--gg-color-bg-raised); display: flex; flex-direction: column; max-height: min(560px, calc(100dvh - 128px)); overflow: hidden; }
 .command-palette-input { flex: none; width: 100%; height: 52px; padding: 0 var(--gg-space-5); border: 0; border-bottom: 1px solid var(--gg-color-border-subtle); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); outline: none; }
-.command-palette-input::-webkit-search-cancel-button { display: none; }
+/* The palette's field always has focus and the caret shows it; the app-wide ring, clipped by the
+   palette's edges, drew a stray accent line under it. */
+.command-palette-input:focus-visible { outline: none !important; }
+@media (forced-colors: active) {
+  .command-palette-input:focus-visible { outline: 2px solid CanvasText !important; outline-offset: -2px; }
+}
 .command-palette-list { flex: 1; min-height: 0; margin: 0; padding: var(--gg-space-2) 0; list-style: none; overflow: auto; }
 .command-palette-list ul { margin: 0; padding: 0; list-style: none; }
 .command-palette-group { margin: var(--gg-space-2) var(--gg-space-5) var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); }
@@ -388,24 +339,9 @@ html[data-desktop-platform="macos"] .app-shell {
 .command-palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .command-palette-row small { flex: none; max-width: 45%; overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); text-overflow: ellipsis; white-space: nowrap; }
 .command-palette-row[aria-selected="true"] small { color: var(--gg-color-text-secondary); }
-.command-palette-empty { padding: var(--gg-space-4) var(--gg-space-5); color: var(--gg-color-text-secondary); }
-
-.app-header .loupist-header-identity strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.header-workspace-controls { display:flex; flex:none; align-items:center; gap:var(--gg-space-1); }
-.header-workspace-controls .header-panel-toggle { max-width:180px; gap:var(--gg-space-2); }
-.header-workspace-controls .header-panel-toggle > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
-.header-panel-menu { min-width:260px; }
-.header-panel-kind { display:grid; gap:2px; min-width:0; padding-block:var(--gg-space-1); }
-.header-panel-kind > strong { font-size:var(--gg-text-control); font-weight:var(--gg-weight-medium); }
-.header-panel-kind > small { color:var(--gg-color-text-secondary); font-size:var(--gg-text-meta); line-height:var(--gg-leading-meta); }
-.header-workspace-divider { width:1px; height:18px; margin-inline:var(--gg-space-1); background:var(--gg-color-border-subtle); }
-.header-workspace-split[aria-pressed="true"] { color:var(--gg-color-text-primary); background:var(--gg-color-bg-selected); box-shadow:inset 0 0 0 1px var(--gg-color-border-subtle); }
-@media (max-width:600px) { .header-workspace-controls .header-panel-toggle { max-width:110px; padding-inline:var(--gg-space-2); } }
+.command-palette-empty { margin: 0; padding: var(--gg-space-4) var(--gg-space-5); color: var(--gg-color-text-secondary); }
+/* The status stays in the tree while results show, so its next message is announced. */
+.command-palette-empty:empty { padding: 0; }
 
 /* Following (route `following`): the page scrolls inside its stage panel; components/briefings/FollowingPage owns its layout. */
 .following-route { overflow-y: auto; background: var(--gg-color-bg-app); }

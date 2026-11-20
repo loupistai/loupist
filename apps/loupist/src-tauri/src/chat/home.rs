@@ -4,6 +4,7 @@
 
 use std::collections::HashSet;
 
+use rusqlite::params;
 use uuid::Uuid;
 
 use crate::{
@@ -15,6 +16,7 @@ use crate::{
     },
     runs::coordinator::{RunKind, RunTarget},
     scheduled_tasks::types::{Run, RunStatus},
+    store::StoreResult,
 };
 
 /// Stored title; the renderer shows the localized "Thread" label instead.
@@ -77,8 +79,14 @@ pub(crate) fn ensure_home_thread(
     }
 }
 
+/// A finished run is announced unless it was quiet or the user ended it
+/// (Stop, Quit). A run recovery found unfinished, after a crash, is announced
+/// as one that could not finish.
 fn deliverable(run: &Run, home: &ChatSession, delivered: &HashSet<String>) -> bool {
-    matches!(run.status, RunStatus::Succeeded | RunStatus::Failed)
+    (matches!(run.status, RunStatus::Succeeded | RunStatus::Failed)
+        || (run.status == RunStatus::Interrupted
+            && run.error.as_deref() == Some(crate::scheduled_tasks::UNEXPECTED_INTERRUPTION)))
+        && !(run.quiet && run.status == RunStatus::Succeeded)
         && run
             .finished_at_ms
             .is_some_and(|finished| finished >= home.created_at_ms)
@@ -87,8 +95,7 @@ fn deliverable(run: &Run, home: &ChatSession, delivered: &HashSet<String>) -> bo
 }
 
 /// The Thread message for one finished run: its first paragraph and where it
-/// came from. Built only from the run record and its task definition, never
-/// from holdings, so quantities and values cannot reach a proactive message.
+/// came from. Built from the run record and its task definition.
 pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessage, CommandError> {
     let task = state
         .store
@@ -146,13 +153,15 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
         }),
         as_of: None,
         number_checks: Vec::new(),
-        sensitivity_cards: Vec::new(),
         as_of_report: None,
         alert: None,
-        watch: None,
-        earnings: None,
+
         vocabulary: None,
         handoff: None,
+        research_session_id: None,
+        handoff_note: None,
+        handoff_action: None,
+        scheduled: None,
         link: None,
     })
 }
@@ -163,7 +172,7 @@ fn trim_number(value: f64) -> String {
 }
 
 /// The Thread message for a crossed line. Rust writes the facts; the renderer
-/// shows its own localized sentence. Never holdings, never quantities.
+/// shows its own localized sentence from the asset page's dated observation.
 pub(crate) fn alert_message(
     alert: &crate::knowledge::assets::LineAlert,
 ) -> Result<ChatMessage, CommandError> {
@@ -213,7 +222,6 @@ pub(crate) fn alert_message(
         delivery: None,
         as_of: None,
         number_checks: Vec::new(),
-        sensitivity_cards: Vec::new(),
         as_of_report: None,
         alert: Some(HomeAlert {
             asset_id: alert.asset_id.clone(),
@@ -230,10 +238,13 @@ pub(crate) fn alert_message(
                 .map(|evidence| evidence.title.clone())
                 .unwrap_or_default(),
         }),
-        watch: None,
-        earnings: None,
+
         vocabulary: None,
         handoff: None,
+        research_session_id: None,
+        handoff_note: None,
+        handoff_action: None,
+        scheduled: None,
         link: None,
     })
 }
@@ -276,240 +287,20 @@ pub(crate) fn host_message(
         delivery: None,
         as_of: None,
         number_checks: Vec::new(),
-        sensitivity_cards: Vec::new(),
         as_of_report: None,
         alert: None,
-        watch: None,
-        earnings: None,
+
         vocabulary: None,
         handoff: None,
+        research_session_id: None,
+        handoff_note: None,
+        handoff_action: None,
+        scheduled: None,
         link: None,
     })
 }
 
 /// One plain sentence per alert for Chat history (the renderer words its own).
-fn watch_sentence(event: &crate::knowledge::watch::WatchEventView) -> String {
-    use crate::knowledge::watch::WatchKind;
-    let facts = &event.facts;
-    let text = |key: &str| facts[key].as_str().unwrap_or_default().to_owned();
-    match event.kind {
-        WatchKind::Filings => format!(
-            "{} filed {} ({}, {}).",
-            event.name,
-            text("title"),
-            text("form"),
-            event.fact_date
-        ),
-        WatchKind::Results => format!(
-            "{} reports {} results on {}.",
-            event.name,
-            text("period"),
-            text("date")
-        ),
-        WatchKind::Insiders if facts["buyNotChecked"] == true => format!(
-            "{}: {} insider ownership reports between {} and {}.",
-            event.name,
-            facts["count"],
-            text("from"),
-            text("to")
-        ),
-        WatchKind::Insiders => format!(
-            "{}: {} insiders bought shares between {} and {}.",
-            event.name,
-            facts["count"],
-            text("from"),
-            text("to")
-        ),
-        WatchKind::Holders => format!(
-            "{}: a big holder filed {} ({}).",
-            event.name,
-            text("title"),
-            event.fact_date
-        ),
-        WatchKind::Flows => format!(
-            "{}: foreign and institution buying turned {} over 10 trading days (to {}).",
-            event.name,
-            if text("direction") == "out" {
-                "negative"
-            } else {
-                "positive"
-            },
-            text("to")
-        ),
-        WatchKind::Dividends => format!(
-            "{} dividend: record date {}.",
-            event.name,
-            facts["recordDate"].as_str().unwrap_or("not stated")
-        ),
-        WatchKind::CryptoMove | WatchKind::FuturesMove => {
-            let change = facts["change"].as_f64().unwrap_or_default();
-            format!(
-                "{} {} {:.1}% {} (to {}).",
-                event.name,
-                if change < 0.0 { "fell" } else { "rose" },
-                change.abs() * 100.0,
-                if facts["window"] == "day" {
-                    "in a day"
-                } else {
-                    "over 7 days"
-                },
-                text("to")
-            )
-        }
-        WatchKind::Drawdown => format!(
-            "{} is {:.1}% below its 90-day high of {} ({}).",
-            event.name,
-            facts["drawdown"].as_f64().unwrap_or_default().abs() * 100.0,
-            text("highDate"),
-            text("to")
-        ),
-        WatchKind::Depeg => format!(
-            "{} closed at {} on {}, off its $1 peg.",
-            event.name, facts["close"], event.fact_date
-        ),
-        WatchKind::Tvl => format!(
-            "{}: value locked on {} fell {:.1}% over 7 days (to {}).",
-            event.name,
-            text("target"),
-            facts["change"].as_f64().unwrap_or_default().abs() * 100.0,
-            text("to")
-        ),
-        WatchKind::Positioning => format!(
-            "{}: managed money turned net {} (CFTC, as of {}).",
-            event.name,
-            text("direction"),
-            text("to")
-        ),
-        WatchKind::OilInventory => match facts["change"].as_f64() {
-            Some(change) => format!(
-                "{}: U.S. commercial crude stocks {} {:.1} million barrels in the week to {} (EIA).",
-                event.name,
-                if change < 0.0 { "fell" } else { "rose" },
-                change.abs() / 1000.0,
-                text("to")
-            ),
-            None => format!(
-                "{}: new EIA weekly petroleum report (week to {}).",
-                event.name,
-                text("to")
-            ),
-        },
-    }
-}
-
-/// The Thread message for one batch of watcher alerts: five, then "+n more".
-pub(crate) fn watch_message(
-    events: &[crate::knowledge::watch::WatchEventView],
-    at_ms: i64,
-) -> Result<ChatMessage, CommandError> {
-    let shown: Vec<_> = events
-        .iter()
-        .take(crate::commands::watch::MESSAGE_EVENTS)
-        .collect();
-    let mut message = host_message(
-        "watch",
-        shown
-            .iter()
-            .map(|event| watch_sentence(event))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        at_ms,
-    )?;
-    message.watch = Some(crate::domain::HomeWatch {
-        event_ids: events.iter().map(|event| event.event_id.clone()).collect(),
-        events: shown
-            .iter()
-            .filter_map(|event| serde_json::to_value(event).ok())
-            .collect(),
-        more: events.len().saturating_sub(shown.len()),
-    });
-    Ok(message)
-}
-
-/// The Thread message for reported results (two measures) or a failed capture.
-pub(crate) fn earnings_message(
-    notice: &crate::knowledge::earnings::Notice,
-    snapshot: &crate::knowledge::earnings::SnapshotView,
-) -> Result<ChatMessage, CommandError> {
-    let reported = notice.outcome == "reported";
-    let content = if reported {
-        format!("{} reported {} results.", snapshot.name, snapshot.period)
-    } else {
-        format!(
-            "Couldn't capture expectations for {} before results.",
-            snapshot.name
-        )
-    };
-    let mut measures: Vec<&crate::knowledge::earnings::MeasureView> = snapshot
-        .measures
-        .iter()
-        .filter(|measure| !measure.guidance && !measure.reported.is_empty())
-        .collect();
-    // Rows with something to compare first.
-    measures.sort_by_key(|measure| measure.expected.is_empty());
-    let mut message = host_message("earnings", content, notice.at_ms)?;
-    message.earnings = Some(crate::domain::HomeEarnings {
-        asset_id: snapshot.asset_id.clone(),
-        event_id: snapshot.event_id.clone(),
-        name: snapshot.name.clone(),
-        symbol: snapshot.symbol.clone(),
-        market: snapshot.market.clone(),
-        period: snapshot.period.clone(),
-        outcome: notice.outcome.clone(),
-        side: notice.side.clone(),
-        measures: if reported {
-            measures
-                .into_iter()
-                .take(2)
-                .filter_map(|measure| serde_json::to_value(measure).ok())
-                .collect()
-        } else {
-            Vec::new()
-        },
-    });
-    Ok(message)
-}
-
-type HostNews = (
-    Vec<crate::knowledge::watch::WatchEventView>,
-    Vec<(
-        crate::knowledge::earnings::Notice,
-        crate::knowledge::earnings::SnapshotView,
-    )>,
-);
-
-/// Watcher alerts found and not delivered yet, and earnings notices owed.
-fn pending_host_news(state: &AppState, loupist_id: &str) -> Result<HostNews, CommandError> {
-    let (events, notices) = crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
-        let mut notices = Vec::new();
-        for notice in crate::knowledge::earnings::pending_notices(tx, loupist_id)? {
-            if let Some(event) =
-                crate::knowledge::earnings::get_event(tx, loupist_id, &notice.event_id)?
-            {
-                notices.push((notice, event.asset_id));
-            }
-        }
-        Ok((crate::knowledge::watch::pending(tx, loupist_id)?, notices))
-    })?;
-    let mut snapshots = Vec::new();
-    for (notice, asset_id) in notices {
-        match crate::commands::earnings::snapshot_for(
-            state,
-            loupist_id,
-            &asset_id,
-            Some(&notice.event_id),
-        ) {
-            Ok(Some(snapshot)) => snapshots.push((notice, snapshot)),
-            Ok(None) => {}
-            Err(error) => eprintln!(
-                "Earnings notice {} snapshot waits ({})",
-                notice.notice_id, error.code
-            ),
-        }
-    }
-    Ok((events, snapshots))
-}
-
 pub(crate) fn vocabulary_message(
     change: &crate::knowledge::SchemaChange,
 ) -> Result<ChatMessage, CommandError> {
@@ -583,12 +374,10 @@ fn pending_vocabulary(
     let mut changes = crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
         crate::knowledge::recent_changes(tx, loupist_id, 20)
     })?;
-    // A change a chat reply made is already on that reply's receipt.
+    // Creation presets stay in Settings; chat changes stay on their reply's receipt.
     changes.retain(|change| {
-        matches!(
-            change.producer,
-            crate::knowledge::Producer::Preset | crate::knowledge::Producer::Review
-        ) && change.origin.is_none()
+        change.producer == crate::knowledge::Producer::Review
+            && change.origin.is_none()
             && !posted.contains(change.change_id.as_str())
             && !crate::knowledge::added_labels(change).is_empty()
     });
@@ -624,10 +413,56 @@ fn pending_alerts(
     )
 }
 
-/// Posts every finished, undelivered scheduled run into the home Thread, oldest
-/// first. A reply running in the Thread owns it, so delivery waits: the next
-/// completion or workspace load delivers what is still pending. Every write
-/// tells the renderer, whichever caller ran the pass. Returns how many
+fn ensure_price_setup_replies(db: &rusqlite::Connection) -> StoreResult<()> {
+    db.execute_batch(
+        "CREATE TABLE IF NOT EXISTS bot_price_setup_replies (
+            loupist_id TEXT NOT NULL REFERENCES loupist_profiles(id) ON DELETE CASCADE,
+            run_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            finished_at_ms INTEGER NOT NULL,
+            PRIMARY KEY (loupist_id, run_id)
+        ) STRICT;",
+    )?;
+    Ok(())
+}
+
+pub(crate) fn queue_price_setup_reply(
+    state: &AppState,
+    loupist_id: &str,
+    run_id: &str,
+    content: &str,
+) -> Result<(), CommandError> {
+    {
+        let db = state.store.lock_loupist(loupist_id).map_err(map_store)?;
+        ensure_price_setup_replies(&db).map_err(map_store)?;
+        db.execute(
+            "INSERT OR IGNORE INTO bot_price_setup_replies VALUES (?1,?2,?3,?4)",
+            params![loupist_id, run_id, content, now_ms()],
+        )
+        .map_err(map_internal)?;
+    }
+    deliver_finished_runs(state, loupist_id)?;
+    Ok(())
+}
+
+fn pending_price_setup_replies(
+    state: &AppState,
+    loupist_id: &str,
+) -> StoreResult<Vec<(String, String, i64)>> {
+    let db = state.store.lock_loupist(loupist_id)?;
+    ensure_price_setup_replies(&db)?;
+    let mut select = db.prepare(
+        "SELECT run_id, content, finished_at_ms FROM bot_price_setup_replies WHERE loupist_id=?1",
+    )?;
+    let rows = select.query_map([loupist_id], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Posts pending deliveries into the home Thread, oldest first. A reply
+/// running in the Thread owns it, so delivery waits for the next completion
+/// or workspace load. Every write tells the renderer. Returns how many
 /// messages were posted or updated.
 pub(crate) fn deliver_finished_runs(
     state: &AppState,
@@ -652,9 +487,10 @@ pub(crate) fn deliver_finished_runs(
         .filter(|task| task.id.starts_with(HANDOFF_PREFIX))
         .collect::<Vec<_>>();
     let delivered = delivered_in(&home);
-    let (watch_events, notices) = pending_host_news(state, loupist_id)?;
     let research = super::handoff::for_delivery(state, loupist_id)?;
-    let research_changes = |chat: &ChatSession| -> Vec<(super::handoff::Handoff, Option<usize>)> {
+    let research_changes = |chat: &ChatSession,
+                            research: &[super::handoff::Handoff]|
+     -> Vec<(super::handoff::Handoff, Option<usize>)> {
         research
             .iter()
             .filter_map(|handoff| {
@@ -666,11 +502,11 @@ pub(crate) fn deliver_finished_runs(
                 });
                 match posted {
                     Some(index)
-                        if chat.messages[index]
-                            .handoff
-                            .as_ref()
-                            .map(|record| record.status)
-                            == Some(handoff.status) =>
+                        if chat.messages[index].handoff.as_ref().is_some_and(|record| {
+                            record.status == handoff.status
+                                && record.connection_id.as_deref() == handoff.link_connection_id()
+                                && record.stop_reason == handoff.stop_reason
+                        }) =>
                     {
                         None
                     }
@@ -699,12 +535,13 @@ pub(crate) fn deliver_finished_runs(
         && questions
             .iter()
             .all(|q| all_messages(&home).any(|m| m.id == q.receipt.task_id))
-        && research_changes(&home).is_empty()
+        && research_changes(&home, &research).is_empty()
         && pending_alerts(state, loupist_id, &home)?.is_empty()
         && pending_vocabulary(state, loupist_id, &home)?.is_empty()
         && pending_links(state, loupist_id)?.is_empty()
-        && watch_events.is_empty()
-        && notices.is_empty()
+        && pending_price_setup_replies(state, loupist_id)
+            .map_err(map_store)?
+            .is_empty()
     {
         return Ok(0);
     }
@@ -756,9 +593,16 @@ pub(crate) fn deliver_finished_runs(
     for run in &pending {
         posted.push(delivery_message(state, run)?);
     }
+    let price_setup_replies = pending_price_setup_replies(state, loupist_id).map_err(map_store)?;
+    for (_, content, at) in &price_setup_replies {
+        let mut message = host_message("price-setup-reply", content.clone(), *at)?;
+        message.host_composed = false;
+        posted.push(message);
+    }
     let mut chat = expected.clone();
     let mut changed = 0;
-    for (handoff, index) in research_changes(&expected) {
+    let research = super::handoff::for_delivery(state, loupist_id)?;
+    for (handoff, index) in research_changes(&expected, &research) {
         let message =
             super::handoff::message(state, &handoff, index.map(|i| &expected.messages[i]))?;
         match index {
@@ -783,17 +627,6 @@ pub(crate) fn deliver_finished_runs(
     for link in &links {
         posted.push(link_message(link, now_ms())?);
     }
-    let (watch_events, notices) = pending_host_news(state, loupist_id)?;
-    let watch_ids: Vec<String> = watch_events
-        .iter()
-        .map(|event| event.event_id.clone())
-        .collect();
-    if !watch_events.is_empty() {
-        posted.push(watch_message(&watch_events, now_ms())?);
-    }
-    for (notice, snapshot) in &notices {
-        posted.push(earnings_message(notice, snapshot)?);
-    }
     if posted.is_empty() && changed == 0 {
         return Ok(0);
     }
@@ -804,29 +637,23 @@ pub(crate) fn deliver_finished_runs(
     // read these messages through Chat history.
     chat.pi_session_cache = None;
     chat.updated_at_ms = now_ms().max(expected.updated_at_ms.saturating_add(1));
-    let notice_ids: Vec<String> = notices
-        .iter()
-        .map(|(notice, _)| notice.notice_id.clone())
-        .collect();
-    let has_marks = !watch_ids.is_empty() || !notice_ids.is_empty() || !link_ids.is_empty();
     let at = now_ms();
     state
         .store
         .replace_chat_with(&expected, &chat, |tx| {
-            let mark = || -> crate::knowledge::KnowledgeResult<()> {
-                crate::knowledge::watch::mark_delivered(tx, loupist_id, &watch_ids, "message", at)?;
-                crate::knowledge::earnings::mark_notices_posted(tx, loupist_id, &notice_ids, at)?;
+            for (run_id, _, _) in &price_setup_replies {
+                tx.execute(
+                    "DELETE FROM bot_price_setup_replies WHERE loupist_id=?1 AND run_id=?2",
+                    params![loupist_id, run_id],
+                )?;
+            }
+            if !link_ids.is_empty() {
                 crate::knowledge::connections_mark_shown(tx, loupist_id, &link_ids, at)
-            };
-            if has_marks {
-                mark().map_err(|error| crate::store::StoreError::Invalid(error.to_string()))?;
+                    .map_err(|error| crate::store::StoreError::Invalid(error.to_string()))?;
             }
             Ok(())
         })
         .map_err(map_store)?;
     crate::briefings::desktop::changed(loupist_id);
-    if has_marks {
-        crate::commands::watch::changed(loupist_id);
-    }
     Ok(count)
 }

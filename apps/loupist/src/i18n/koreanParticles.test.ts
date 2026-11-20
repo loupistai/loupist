@@ -50,5 +50,5 @@ it("keeps the pair when the sound is unknown and leaves other parentheses alone"
 it("resolves catalog strings after interpolation in Korean", async () => {
   await i18n.changeLanguage("ko");
   expect(i18n.t("assets:noThesis.body", { name: "Morrow Components" })).toMatch(/^Morrow Components를 왜 지켜보는지/u);
-  expect(i18n.t("chat:redLine.message", { name: "한울정밀", date: "9월 26일", claim: "고객 한 곳 매출 비중 25% 초과", value: "27.4%", factDate: "10월 26일" })).toMatch(/^한울정밀이 9월 26일에/u);
+  expect(i18n.t("chat:redLine.message", { name: "한울정밀", date: "9월 26일", claim: "고객 한 곳 매출 비중 25% 초과", value: "27.4%", factDate: "10월 26일" })).toMatch(/^9월 26일에 정한 기준선을 한울정밀이 넘었습니다/u);
 });

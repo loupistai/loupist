@@ -1,0 +1,161 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "research-probe",
+  "version": 1,
+  "description": "Opt-in cost probe of research-session work on fictional companies, with replayed OpenDART statements and one replayed article: a comparison of two followed companies' latest quarter, and a question about why one followed company's margin fell and whether it will last. It measures whole-turn time, model rounds, calls by tool and failed calls. Its checks read outcomes only (figures linked to their sources, a table whose cells match them, no repeated failed call, no false save claim) and name no step a change to the research protocol could remove. The rubric criteria are read by a person; the probe is not graded on facts beyond its checks.",
+  "scenarios": [
+    {
+      "id": "RP-001",
+      "title": "Two followed companies compared on their latest quarter in a research session",
+      "split": "capability",
+      "language": "en",
+      "clock": "2026-11-16T10:00:00+09:00",
+      "tags": [
+        "research-probe",
+        "needs-replay",
+        "opendart",
+        "comparison",
+        "followed-assets"
+      ],
+      "connections": [
+        "opendart"
+      ],
+      "seed": {
+        "watchlist": [
+          {
+            "name": "Solsup Foods",
+            "reference": {
+              "ticker": "990221",
+              "exchange": "KRX"
+            }
+          },
+          {
+            "name": "Hanbit Chem",
+            "reference": {
+              "ticker": "990777",
+              "exchange": "KRX"
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Compare Solsup Foods and Hanbit Chem on their latest quarter: revenue, operating profit, operating margin, and how each changed from the same quarter last year.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "grid_cells_linked",
+                    "metric": "connection_honesty",
+                    "when": "published"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "comparison-complete",
+                    "metric": "task_success",
+                    "criterion": "The visible answer compares both companies on their third quarter of 2026 (July to September, the consolidated quarterly reports filed on 13 and 12 November 2026) on all four things asked: revenue, operating income, operating margin, and the change from the third quarter of 2025, shown as both quarters' values or as the change itself. The replay gives Solsup Foods revenue KRW 126.4bn against 114.2bn (+10.7%), operating income KRW 12.0bn against 9.9bn (+21.2%), operating margin 9.5% against 8.7%; Hanbit Chem revenue KRW 67.5bn against 72.3bn (-6.6%), operating income KRW 5.2bn against 8.0bn (-35.0%), operating margin 7.7% against 11.1%. It passes when every one of these is on screen, in any rounding or scale words. It fails when a company, a measure or the year-earlier change is missing, when another quarter is presented as the latest, or when a figure differs. Correct extra figures, such as the change from the second quarter, do not affect it."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "replay": "replay/opendart-solsup-hanbit-q3.json",
+      "replay_needs": "dart_company_lookup and company names resolve Solsup Foods, 솔숲식품 or 990221 to 99022100 and Hanbit Chem, 한빛화학 or 990777 to 99077700, from T-052's directory. dart_financials on the consolidated basis answers q1, half_year and q3 of 2025 and 2026 and annual 2025 for both, with each company's company.json profile (December year-end, so every period is dated); quarterly income-statement lines carry the quarter and the year to date. The latest quarter is Q3 2026: Solsup revenue 126.4bn and operating income 12.0bn KRW (Q2 2026 120.3bn and 10.2bn, Q3 2025 114.2bn and 9.9bn), report filed 2026-11-13; Hanbit revenue 67.5bn and operating income 5.2bn KRW (Q2 2026 69.4bn and 6.3bn, Q3 2025 72.3bn and 8.0bn), filed 2026-11-12. Annual 2025 matches T-052 (Solsup 452.3bn and 38.1bn, Hanbit 286.5bn and 31.4bn). dart_filing_search for either company, unfiltered or periodic, returns those of its five periodic reports from Q3 2025 to Q3 2026 that fall inside the window, newest first (earlier reports are not listed); dart_filing_read answers each company's Q3 2026 and H1 2026 reports with their results paragraph. Other filing classes, other companies, the separate basis and annual 2026 answer no data. No results event is seeded, as in the owner's case, so a results capture is refused."
+    },
+    {
+      "id": "RP-002",
+      "title": "Why a followed company's margin fell in its latest quarter, with an article the user read and a fact the user heard",
+      "split": "capability",
+      "language": "ko",
+      "clock": "2026-11-16T10:00:00+09:00",
+      "tags": [
+        "research-probe",
+        "needs-replay",
+        "opendart",
+        "web-research",
+        "followed-assets",
+        "user-stated-fact"
+      ],
+      "connections": [
+        "opendart",
+        "web-research"
+      ],
+      "seed": {
+        "watchlist": [
+          {
+            "name": "한빛화학",
+            "reference": {
+              "ticker": "990777",
+              "exchange": "KRX"
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "한빛화학 3분기 실적이 나왔는데 영업이익률이 많이 떨어졌네요. 왜 그런지, 일시적인 건지 알고 싶습니다. 이 기사를 읽었습니다: https://fictional.example/news/hanbit-chem-q3-2026 그리고 지난주 회사 IR 담당자와 통화했는데, 여수공장 정기보수는 10월 말에 끝났다고 했습니다.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cause-and-duration",
+                    "metric": "task_success",
+                    "criterion": "The answer explains why Hanbit Chem's operating margin fell to 7.7% in the third quarter of 2026 (operating income KRW 5.2bn on revenue KRW 67.5bn), against 9.1% in the second quarter and 11.1% a year earlier, from what the sources say: the quarterly report puts the Yeosu plant's scheduled maintenance at 38 days of the quarter and says higher feedstock costs were not fully passed on; the article the user linked adds about 9% lower sales volume than in the second quarter, a one-off maintenance cost of about KRW 1.4bn, and a spread of USD 212 a tonne against USD 248. It passes when it explains the fall by the shutdown and the narrower spread and separates what should pass once the plant runs again (the shutdown and the one-off cost) from what may last (the spread, which the company expects to stay weak for a while). It fails when it calls the whole fall temporary or lasting without that split, presents the company's fourth-quarter expectation as a result, or states a cause or figure the sources do not support."
+                  },
+                  {
+                    "id": "user-fact-kept",
+                    "metric": "save_recall",
+                    "criterion": "The user relayed that Hanbit Chem's investor-relations contact told them on a call last week that the Yeosu plant's scheduled maintenance ended at the end of October; neither the filing nor the article says it has ended. It passes when, after the turn, a committed note (memory_commits) or a Lens section (lens_pages_after_turn) records that statement as the user's report of the call. It fails when nothing kept records it, or when it is kept as a fact from the filing or the article."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "replay": "replay/web-hanbit-q3-margin.json",
+      "replay_needs": "dart_company_lookup and company names resolve 한빛화학, Hanbit Chem or 990777 to 99077700, from T-052's directory. dart_financials on the consolidated basis answers q1, half_year and q3 of 2025 and 2026 and annual 2025, with the company.json profile (December year-end); quarterly income-statement lines carry the quarter and the year to date. Q3 2026: revenue 67.5bn, cost of sales 54.7bn, SG&A 7.6bn, operating income 5.2bn KRW (Q2 2026 69.4bn and 6.3bn, Q3 2025 72.3bn and 8.0bn), filed 2026-11-12. dart_filing_search, unfiltered or periodic, returns those of the five periodic reports from Q3 2025 to Q3 2026 that fall inside the window (earlier reports are not listed); dart_filing_read of the Q3 2026 report (20261112990777) says the Yeosu plant began scheduled maintenance on 2026-08-24, stood 38 days of the quarter, was still under maintenance on 2026-09-30 with completion targeted for the end of October, and that feedstock costs were not fully passed on; the H1 2026 report is answered too. web_fetch of the article URL in the user turn returns a page dated 2026-11-13 that adds, from the results call, sales volume about 9% below Q2, a one-off maintenance cost of about 1.4bn KRW (약 14억원), a spread of 212 against 248 USD a tonne, spreads expected to stay weak for a while, and an expected Q4 utilization above 90%. Searches return nothing; other classes, the separate basis and annual 2026 answer no data. No results event is seeded, so a results capture is refused."
+    }
+  ]
+}

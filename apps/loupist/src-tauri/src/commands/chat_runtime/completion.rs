@@ -23,6 +23,7 @@ pub(super) struct CompletedTurn<'a> {
     pub chat_started_at: Instant,
     pub setup_ms: u64,
     pub first_text_ms: Option<u64>,
+    pub answer_text_ms: Option<u64>,
     pub generation_ms: Option<u64>,
     pub resumed: bool,
     pub token_usage: AssistantTokenUsage,
@@ -64,6 +65,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         chat_started_at,
         setup_ms,
         first_text_ms,
+        answer_text_ms,
         generation_ms,
         resumed,
         token_usage,
@@ -103,6 +105,13 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         .into_values()
         .take(256)
         .collect::<Vec<_>>();
+    let quiet_request = match capture.scheduled_run_id_for_commit() {
+        Some(run_id) if capture.has_data_for_quiet().await => Some(run_id),
+        _ => None,
+    };
+    if content.trim().is_empty() && quiet_request.is_some() {
+        content = crate::scheduled_tasks::QUIET_NO_REPORT.into();
+    }
     let host_composed = content.trim().is_empty();
     let has_staged_memory = task_update_memory
         && (!capture.staged_principles.lock().await.is_empty()
@@ -134,6 +143,9 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         let created_at_ms = now_ms();
         let progress_snapshot =
             finish_chat_progress(on_event, task_run_id, progress, created_at_ms, false);
+        content = crate::commands::tool_executor::number_checks::normalize_evidence_link_aliases(
+            &content,
+        );
         let evidence_refs = capture.evidence_refs.lock().await.clone();
         // Rust checks each number link against the evidence it names; the
         // answer's text cannot set a status (docs/analysis/number-checks.md#number-checks).
@@ -141,12 +153,6 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
             Vec::new()
         } else {
             capture.number_checks(&content, &evidence_refs).await
-        };
-        // A paragraph that only links a grid result shows that grid as a card.
-        let sensitivity_cards = if host_composed {
-            Vec::new()
-        } else {
-            capture.sensitivity_cards(&content, &evidence_refs).await
         };
         let as_of_report = capture.as_of_report(&on_event.tool_trace.snapshot());
         let artifact_commits = capture.artifacts.lock().await.clone();
@@ -193,13 +199,32 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         if task_update_memory {
             saved_reads.extend(capture.context_reads.lock().await.clone());
         }
-        let saved_research = if task_update_memory {
+        let mut saved_research = if task_update_memory {
             capture.staged_research.lock().await.clone()
         } else {
             None
         };
         let saved_principles = capture.staged_principles.lock().await.clone();
-        let staged_handoff = capture.staged_handoff.lock().await.clone();
+        let staged_handoff = capture
+            .staged_handoff
+            .lock()
+            .await
+            .clone()
+            .map(|mut staged| {
+                staged
+                    .run
+                    .model_profile_id
+                    .clone_from(&execution_model.profile_id);
+                staged
+                    .run
+                    .thinking_level
+                    .clone_from(&execution_model.thinking_level);
+                staged
+                    .run
+                    .run_options
+                    .clone_from(&execution_model.run_options);
+                staged
+            });
         // Only a Bot reply with saving on changes Bot memory; one that read
         // third-party text keeps its review batch for the next reply.
         let bot_memory = if task_update_memory
@@ -222,11 +247,6 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         let asset_work = task_update_memory && !capture.as_of_turn();
         let saved_theses = if asset_work {
             capture.staged_theses.lock().await.clone()
-        } else {
-            Vec::new()
-        };
-        let saved_earnings = if asset_work {
-            capture.staged_earnings.lock().await.clone()
         } else {
             Vec::new()
         };
@@ -255,18 +275,27 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                 )
             })
             .unwrap_or_default();
+        let skipped_journal = saved_research.as_mut().map_or(Ok(false), |research| {
+            crate::commands::tool_executor::finish_setup_theses(
+                &app_state.store,
+                task_loupist_id,
+                research,
+            )
+        });
         let unattended = capture.unattended_run_id.is_some();
-        let turn_observations = match asset_work
-            .then(|| crate::commands::assets::view_context(app_state).ok())
-            .flatten()
-        {
-            Some(context) => {
-                capture
-                    .turn_observations(&crate::commands::assets::followed(&context))
-                    .await
-            }
-            None => Vec::new(),
+        let mut price_reads = if asset_work {
+            capture.staged_price_reads.lock().await.clone()
+        } else {
+            Vec::new()
         };
+        // A concurrent follow may have claimed a listing under another ID.
+        // Save a price only for an ID that is now registered and this Loupist follows.
+        price_reads.retain(|(asset, _)| {
+            app_state
+                .store
+                .asset_by_id(task_loupist_id, &asset.asset_id)
+                .is_ok_and(|row| row.is_some_and(|row| row.followed_at_ms.is_some()))
+        });
         let mut turn_assets = crate::commands::assets::TurnAssets::default();
         let mut completion_performance = None;
         let finalized = memory_updates::apply_chat_memory_update_with_registered_finalize(
@@ -296,13 +325,15 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     replaced_model: on_event.replaced_model(),
                     as_of: capture.turn_as_of.clone(),
                     number_checks: number_checks.clone(),
-                    sensitivity_cards: sensitivity_cards.clone(),
                     as_of_report: as_of_report.clone(),
                     alert: None,
-                    watch: None,
-                    earnings: None,
+
                     vocabulary: None,
                     handoff: None,
+                    research_session_id: None,
+                    handoff_note: None,
+                    handoff_action: None,
+                    scheduled: None,
                     link: None,
                     id: message_id.clone(),
                     role: ChatRole::Assistant,
@@ -370,6 +401,14 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     task_loupist_id,
                 )?;
                 let persist = |transaction: &rusqlite::Transaction<'_>| {
+                    let skipped_journal = *skipped_journal
+                        .as_ref()
+                        .map_err(|error| crate::store::StoreError::Invalid(error.to_string()))?;
+                    let research = saved_research.as_ref().filter(|research| {
+                        !skipped_journal
+                            || research.journal.is_some()
+                            || research.working_note.is_some()
+                    });
                     let saved = crate::commands::knowledge::persist_saved_turn_sources(
                         transaction,
                         &blobs,
@@ -381,7 +420,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         task_update_memory,
                         &saved_sources,
                         &saved_reads,
-                        saved_research.as_ref(),
+                        research,
                     )
                     .map_err(|error| {
                         record_commit_failure(on_event, CommitStage::Research, error.code.as_str());
@@ -468,24 +507,18 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         &message_id,
                         created_at_ms,
                         &saved_theses,
-                        &turn_observations,
                     )
                     .map_err(|e| {
                         record_commit_failure(on_event, CommitStage::Assets, e.code());
                         crate::store::StoreError::Invalid(e.to_string())
                     })?;
-                    crate::commands::tool_executor::commit_earnings(
+                    crate::commands::tool_executor::commit_price_reads(
                         transaction,
                         task_loupist_id,
-                        &message_id,
                         created_at_ms,
-                        &saved_earnings,
-                        unattended,
+                        &price_reads,
                     )
-                    .map_err(|e| {
-                        record_commit_failure(on_event, CommitStage::Earnings, e.code());
-                        crate::store::StoreError::Invalid(e.to_string())
-                    })?;
+                    .map_err(|error| crate::store::StoreError::Invalid(error.to_string()))?;
                     let mut skipped_kinds = crate::commands::tool_executor::commit_vocabulary(
                         transaction,
                         task_loupist_id,
@@ -497,11 +530,17 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         record_commit_failure(on_event, CommitStage::Vocabulary, e.code());
                         crate::store::StoreError::Invalid(e.to_string())
                     })?;
+                    if skipped_journal {
+                        skipped_kinds.push(crate::domain::MapKind {
+                            name: crate::domain::SKIPPED_JOURNAL_SAVE.into(),
+                            label: "Journal".into(),
+                            label_ko: Some("저널".into()),
+                        });
+                    }
                     let mut setup = watchlist_changes.clone();
                     if let Some(staged) = &saved_setup {
                         let (changed, skipped) = crate::commands::tool_executor::commit_setup(
                             transaction,
-                            &blobs,
                             task_loupist_id,
                             thread_id,
                             created_at_ms,
@@ -519,11 +558,22 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         setup.extend(changed);
                         skipped_kinds.extend(skipped);
                     }
-                    if let Some(staged) = &staged_handoff {
-                        crate::chat::handoff::commit(
+                    let research_session_id = if let Some(staged) = &staged_handoff {
+                        let source_id =
+                            capture
+                                .principle_user_message_id
+                                .as_deref()
+                                .ok_or_else(|| {
+                                    crate::store::StoreError::Invalid(
+                                        "The original Bot request is unavailable".into(),
+                                    )
+                                })?;
+                        let handoff = crate::chat::handoff::commit_bot(
                             transaction,
                             task_loupist_id,
                             staged,
+                            (thread_id, source_id),
+                            &capture.turn_taint,
                             created_at_ms,
                         )
                         .map_err(|e| {
@@ -535,7 +585,10 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                             record_commit_failure(on_event, CommitStage::Handoff, code);
                             e
                         })?;
-                    }
+                        Some(handoff.chat_id)
+                    } else {
+                        None
+                    };
                     if host_composed && changes.is_empty() && setup.is_empty() {
                         on_event.set_failure_kind(ChatFailureKind::EmptyReply);
                         return Err(crate::store::StoreError::Invalid(
@@ -549,6 +602,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     let performance = ChatPerformanceDto {
                         setup_ms,
                         first_text_ms,
+                        answer_text_ms,
                         generation_ms: generation_ms.unwrap_or_else(|| {
                             elapsed_millis(chat_started_at).saturating_sub(setup_ms)
                         }),
@@ -574,6 +628,8 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         setup,
                         Some(performance),
                         turn_assets.trace_notes(elapsed_millis(chat_started_at)),
+                        quiet_request.map(|run_id| (run_id, expected.updated_at_ms)),
+                        research_session_id,
                     )?;
                     content = completed_message.content.clone();
                     Ok(())
@@ -606,6 +662,9 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         match finalized {
             Ok((title_applied, completed_message, performance)) => {
                 app_state.graph.wake();
+                if !price_reads.is_empty() || !saved_theses.is_empty() {
+                    crate::commands::assets::changed();
+                }
                 if turn_assets.crossed {
                     // The Thread announces a crossed line once; a busy Thread gets it later.
                     let _ = crate::chat::home::deliver_finished_runs(app_state, task_loupist_id);
@@ -619,18 +678,6 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     harness,
                     performance,
                 );
-                if asset_work {
-                    // Filing sections are compared after the commit with no lock
-                    // held; a comparison that cannot run leaves "not compared yet".
-                    if let Err(error) = crate::commands::assets::align_turn_filings(
-                        app_state,
-                        task_loupist_id,
-                        &message_id,
-                        created_at_ms,
-                    ) {
-                        eprintln!("Filing sections were not compared: {}", error.code);
-                    }
-                }
             }
             Err(error) => {
                 let recovered = completion_performance.as_ref().and_then(|performance| {

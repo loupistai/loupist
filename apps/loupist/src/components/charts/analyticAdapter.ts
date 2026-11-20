@@ -39,7 +39,7 @@ const analyticTheme = (theme: "light" | "dark"): ChartAssemblyInput["theme_spec"
         sequential: { stops: [colors.background, colors.series[0]] },
         diverging: { stops: [colors.down, colors.background, colors.up], neutral: colors.background },
       },
-      accent: colors.info,
+      accent: colors.accent,
     },
   };
 };

@@ -9,7 +9,7 @@ import { MapView } from "./MapView";
 vi.mock("./MapCanvas", () => ({ default: ({ nodes = [], highlightIds }: { nodes?: { id: string }[]; highlightIds?: ReadonlySet<string> }) => <div data-testid="map-canvas" data-ids={nodes.map((node) => node.id).sort().join(",")} data-highlight={[...(highlightIds ?? [])].join(",")} /> }));
 
 const NOW = Date.now();
-const entity = (id: string, label: string, extra: Partial<KnowledgeMapNode> = {}): KnowledgeMapNode => ({ id, label, kind: "entity", entityKind: "Organization", degree: 0, watched: false, held: false, ...extra });
+const entity = (id: string, label: string, extra: Partial<KnowledgeMapNode> = {}): KnowledgeMapNode => ({ id, label, kind: "entity", entityKind: "Organization", degree: 0, watched: false, ...extra });
 const claim = (source: string, target: string): KnowledgeMapEdge => ({ id: `claim-${source}-${target}`, kind: "claim", source, target, relation: "SUPPLIES", status: "active" });
 
 /** TSMC (watched) with three suppliers, each with one supplier of its own, plus 70 unrelated names. */
@@ -21,7 +21,7 @@ function localMap(): KnowledgeMap {
   for (let index = 1; index < 70; index++) edges.push(claim(`filler-${index - 1}`, `filler-${index}`));
   for (const edge of edges) for (const id of [edge.source, edge.target]) nodes.find((node) => node.id === id)!.degree++;
   const counts = Object.fromEntries(["entity", "lens_perspective", "lens_principle", "lens_method", "journal", "claim", "lens_link", "applies_to", "about"].map((kind) => [kind, { total: kind === "entity" ? nodes.length : kind === "claim" ? edges.length : 0, shown: kind === "entity" ? nodes.length : kind === "claim" ? edges.length : 0, truncated: false }])) as KnowledgeMap["counts"];
-  return { nodes, edges, counts, unmatchedHoldings: [], unmatchedWatchlist: [], worldRevisionId: "local-test", generatedAtMs: NOW };
+  return { nodes, edges, counts, unmatchedWatchlist: [], worldRevisionId: "local-test", generatedAtMs: NOW };
 }
 
 const growth = (kind: GrowthEvent["kind"], subjectId: string, atMs: number, summary = ""): GrowthEvent => ({ eventId: `${kind}:${subjectId}`, loupistId: "loupist-quality", atMs, kind, subjectId, recordId: "world", originChatId: null, originMessageId: null, actor: "loupist", summary, beforeSummary: null, afterSummary: null });
@@ -67,6 +67,8 @@ it("opens a large Map around the watched company at one hop and widens to two ho
 it("re-centers from the Around menu and when a search result lies outside the drawn names", async () => {
   const { user } = await setup();
   await user.click(screen.getByRole("button", { name: "Around TSMC" }));
+  // The followed names lead the Around menu under a heading that says only that.
+  expect(within(await screen.findByRole("region", { name: "Following" })).getByRole("button", { name: "TSMC" })).toBeVisible();
   await user.click(await screen.findByRole("button", { name: "Pick on the map…" }));
   expect(screen.getByText("Click a name on the map to center on it.")).toBeVisible();
   await user.keyboard("{Escape}");
@@ -76,6 +78,42 @@ it("re-centers from the Around menu and when a search result lies outside the dr
   expect(await screen.findByRole("button", { name: "Around Lonely Corp" })).toBeVisible();
   expect(drawn()).toEqual(["lonely"]);
   expect(screen.getByText("Lonely Corp has no relationships yet. Ask about it in Chat.")).toBeVisible();
+});
+
+it("centers Direct links on the open entity and on a search result already in view", async () => {
+  const { user } = await setup();
+  const search = async (name: string) => {
+    const field = screen.getByRole("combobox");
+    await user.clear(field);
+    await user.type(field, name);
+    await user.click(await screen.findByRole("option", { name: new RegExp(name) }));
+    expect(await screen.findByRole("heading", { name })).toBeVisible();
+  };
+  await user.click(screen.getByRole("button", { name: "All" }));
+  await search("Zeiss");
+  await user.click(screen.getByRole("button", { name: "Direct links" }));
+  expect(screen.getByRole("button", { name: "Around Zeiss" })).toBeVisible();
+  expect(drawn()).toEqual(["asml", "zeiss"]);
+  await search("ASML");
+  expect(screen.getByRole("button", { name: "Around ASML" })).toBeVisible();
+  expect(drawn()).toEqual(["asml", "tsmc", "zeiss"]);
+
+  await user.click(screen.getByRole("button", { name: "More actions" }));
+  await user.click(screen.getByRole("menuitemcheckbox", { name: "List view" }));
+  await user.click(within(screen.getByRole("table", { name: "List view" })).getByRole("button", { name: "TSMC" }));
+  expect(await screen.findByRole("heading", { name: "TSMC" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Around ASML" })).toBeVisible();
+});
+
+it("includes the searched anchor when a filter would hide it", async () => {
+  const { user } = await setup();
+  await user.click(screen.getByRole("button", { name: "Filter" }));
+  await user.click(screen.getByLabelText("Only what I follow"));
+  await user.keyboard("{Escape}");
+  await user.type(screen.getByRole("combobox"), "ASML");
+  await user.click(await screen.findByRole("option", { name: /ASML/ }));
+  expect(screen.getByRole("button", { name: "Around ASML" })).toBeVisible();
+  expect(drawn()).toEqual(["asml", "tsmc"]);
 });
 
 it("moves between neighbors, re-centers and steps back with the keyboard", async () => {

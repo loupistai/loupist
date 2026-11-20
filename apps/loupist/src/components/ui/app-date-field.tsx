@@ -34,11 +34,13 @@ type Props = {
   /** Standalone fields name the three menus as one group. A field already inside a named group leaves that name to its parent. */
   grouped?: boolean;
   onChange: (value: string) => void;
+  /** Whether some but not all of the three parts are chosen: `value` is then empty, but the field is not. */
+  onIncomplete?: (incomplete: boolean) => void;
   onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
 };
 
 /** Year, month and day in the app language. A native date input follows the operating system. */
-export function AppDateField({ id, value, min, max, required, disabled, className, autoFocus, grouped = true, onChange, onKeyDown, ...props }: Props) {
+export function AppDateField({ id, value, min, max, required, disabled, className, autoFocus, grouped = true, onChange, onIncomplete, onKeyDown, ...props }: Props) {
   const { t, i18n } = useTranslation("common");
   const language = languageOf(i18n.language);
   const parsed = parts(value);
@@ -76,10 +78,12 @@ export function AppDateField({ id, value, min, max, required, disabled, classNam
   const commit = (nextYear: number | "", nextMonth: number | "", nextDay: number | "") => {
     if (nextYear === "" || nextMonth === "" || nextDay === "") {
       setDraft({ year: nextYear, month: nextMonth, day: nextDay });
+      onIncomplete?.(nextYear !== "" || nextMonth !== "" || nextDay !== "");
       if (value) onChange("");
       return;
     }
     setDraft(null);
+    onIncomplete?.(false);
     let nextMonthClamped = nextMonth;
     let nextDayClamped = nextDay;
     if (nextYear === earliest.year) nextMonthClamped = Math.max(nextMonthClamped, earliest.month);

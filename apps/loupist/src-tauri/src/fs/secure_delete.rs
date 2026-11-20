@@ -405,28 +405,42 @@ impl SecureDeletionRoot {
         ))
     }
 
+    /// Retain a read-only runtime directory capability without creating it or
+    /// changing its permissions. Recovery keeps this generation alive to commit.
+    #[cfg(unix)]
+    pub(crate) fn pin_existing_directory(
+        &self,
+        relative: &Path,
+    ) -> Result<Option<PrivateDirectoryGuard>, CommandError> {
+        validate_relative_path(relative)?;
+        let name = relative
+            .file_name()
+            .ok_or_else(|| CommandError::internal("private directory has no name"))?;
+        let Some(parent) = self.open_parent_unix(relative)? else {
+            return Ok(None);
+        };
+        Ok(
+            open_directory_unix(&parent, name, self.device)?.map(|directory| {
+                PrivateDirectoryGuard {
+                    file: fs::File::from(directory),
+                }
+            }),
+        )
+    }
+
     pub fn directory_identity(
         &self,
         relative: &Path,
     ) -> Result<Option<RootFilesystemIdentity>, CommandError> {
         validate_relative_path(relative)?;
         #[cfg(unix)]
-        let name = relative
-            .file_name()
-            .ok_or_else(|| CommandError::internal("private directory has no name"))?;
-        #[cfg(unix)]
         {
-            let Some(parent) = self.open_parent_unix(relative)? else {
+            let Some(directory) = self.pin_existing_directory(relative)? else {
                 return Ok(None);
             };
-            let Some(directory) = open_directory_unix(&parent, name, self.device)? else {
-                return Ok(None);
-            };
-            let metadata = fstat(&directory).map_err(map_rustix)?;
-            Ok(Some(RootFilesystemIdentity {
-                device: metadata.st_dev as u64,
-                inode: metadata.st_ino as u64,
-            }))
+            Ok(Some(
+                crate::fs::filesystem_identity::of_file(directory.file()).map_err(map_io)?,
+            ))
         }
         #[cfg(windows)]
         {
@@ -590,8 +604,8 @@ fn open_expected_directory_unix(
     let Some(descriptor) = open_directory_unix(parent, name, root_device)? else {
         return Ok(None);
     };
-    let metadata = fstat(&descriptor).map_err(map_rustix)?;
-    if metadata.st_dev as u64 != expected.device || metadata.st_ino as u64 != expected.inode {
+    let actual = crate::fs::filesystem_identity::of_file(&descriptor).map_err(map_io)?;
+    if !actual.matches_binding(expected) {
         return Err(CommandError::conflict(
             "private storage identity changed before deletion",
         ));
@@ -605,8 +619,13 @@ fn verify_identity_unix(
     name: &OsStr,
     expected: &RootFilesystemIdentity,
 ) -> Result<(), CommandError> {
-    let metadata = statat(parent, name, AtFlags::SYMLINK_NOFOLLOW).map_err(map_rustix)?;
-    if metadata.st_dev as u64 != expected.device || metadata.st_ino as u64 != expected.inode {
+    let Some(descriptor) = open_directory_unix(parent, name, expected.device)? else {
+        return Err(CommandError::conflict(
+            "private storage directory disappeared during deletion",
+        ));
+    };
+    let actual = crate::fs::filesystem_identity::of_file(&descriptor).map_err(map_io)?;
+    if !actual.matches_binding(expected) {
         return Err(CommandError::conflict(
             "private storage identity changed during deletion",
         ));
@@ -703,6 +722,11 @@ fn remove_entry_unix(
         }
     }
     let file_type = FileType::from_raw_mode(metadata.st_mode);
+    if expected.is_some() && file_type != FileType::Directory {
+        return Err(CommandError::conflict(
+            "private storage directory was replaced before cleanup",
+        ));
+    }
     if file_type == FileType::Directory {
         // An app-owned cache may have crashed after changing its mode. Restore
         // only directory traversal bits, without following a replacement link.
@@ -725,6 +749,14 @@ fn remove_entry_unix(
             return Ok(());
         };
         let opened = fstat(&descriptor).map_err(map_rustix)?;
+        if let Some(saved) = expected {
+            let actual = crate::fs::filesystem_identity::of_file(&descriptor).map_err(map_io)?;
+            if !actual.matches_binding(saved) {
+                return Err(CommandError::conflict(
+                    "private storage creation time changed before cleanup",
+                ));
+            }
+        }
         if FileType::from_raw_mode(opened.st_mode) != FileType::Directory
             || opened.st_dev != metadata.st_dev
             || opened.st_ino != metadata.st_ino
@@ -771,7 +803,7 @@ fn verify_directory_identity_windows(
 ) -> Result<(), CommandError> {
     let handle = crate::fs::windows::open_directory_no_reparse(path).map_err(map_io)?;
     let observed = crate::fs::windows::filesystem_identity(&handle).map_err(map_io)?;
-    if &observed != expected {
+    if !observed.matches_binding(expected) {
         return Err(CommandError::conflict(
             "private storage identity changed during deletion",
         ));
@@ -836,6 +868,27 @@ fn map_io(error: std::io::Error) -> CommandError {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_a_saved_creation_time_mismatch_before_deleting_content() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = SecureDeletionRoot::open(&temporary.path().canonicalize().unwrap()).unwrap();
+        fs::create_dir(temporary.path().join("runtime")).unwrap();
+        fs::write(temporary.path().join("runtime/keep"), "foreign generation").unwrap();
+        let mut saved = root
+            .directory_identity(Path::new("runtime"))
+            .unwrap()
+            .unwrap();
+        saved.birth_time.as_mut().unwrap().seconds -= 1;
+        assert!(root
+            .remove_tree_expected(Path::new("runtime"), Some(&saved))
+            .is_err());
+        assert_eq!(
+            fs::read_to_string(temporary.path().join("runtime/keep")).unwrap(),
+            "foreign generation"
+        );
+    }
 
     #[test]
     fn removes_large_and_deep_trees_from_the_pinned_root() {

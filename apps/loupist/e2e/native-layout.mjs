@@ -9,7 +9,7 @@ import { assertShellLayout, measureShellLayout } from "./shell-layout.mjs";
 export const layoutWidths = [700, 800, 899, 900, 1061, 1280, 1680, 2560];
 export const layoutScenarios = [
   "shell-titlebar-grown", "chat-header-resuming",
-  "chat-rail-files", "chat-rail-compact", "chat-rail-bottom", "chat-chart-inline", "chat-chart-failed", "chat-grid-card", "chat-step-paused",
+  "activity-sheet", "activity-sheet-panel", "chat-chart-inline", "chat-chart-failed", "chat-grid-card", "chat-step-paused",
   "chat-all-chats", "chat-status-pill", "chat-status-pill-idle",
 ];
 
@@ -65,12 +65,16 @@ export function measureChatLayout() {
     url: location.href, platform: document.documentElement.dataset.desktopPlatform,
     viewport: { width: innerWidth, height: innerHeight }, documentOverflow: document.documentElement.scrollWidth - innerWidth,
     stage: rect(".app-stage"), main: rect(".chat-tab-panel"), chat: rect(".chat-workspace"), reading,
-    composer: rect(".composer-shell"), heading: rect(".workspace-heading"), rail: rect(".chat-rail"),
+    composer: rect(".composer-shell"), heading: rect(".workspace-heading"), sheet: rect(".activity-sheet"),
     chatBody: rect(".chat-body"), readingPane: rect(".chat-reading-pane"), messageViewport: rect(".message-scroll"),
-    railMode: document.querySelector(".chat-workspace")?.dataset.rail,
+    chatLayout: rect(".chat-layout"), sheetPlacement: document.querySelector(".activity-sheet")?.dataset.placement,
     statusPill: rect(".chat-status-pill"), scroll: scroll && { top: scroll.scrollTop, height: scroll.clientHeight, total: scroll.scrollHeight },
     panel: box(panel), panelPlacement: panel?.dataset.placement, panelOverlay: panel?.getAttribute("aria-modal") === "true",
     identity: rect("[data-testid=loupist-header-identity]"), sidebarTrigger: rect(".app-header-sidebar-trigger"),
+    sidebarState: document.querySelector('[data-slot="sidebar"][data-state]')?.dataset.state,
+    // Controls that would sit under the native window controls (macOS: the first 80 x 44 CSS px).
+    underWindowControls: [...document.querySelectorAll("button, [role=button], input, a[href]")].map(box)
+      .filter(item => item && item.x < 80 && item.y < 44),
     header: rect(".app-header"), cards, receipts, attachmentIcons,
   };
 }
@@ -89,7 +93,7 @@ export function assertChatLayout(layout, { scenario = "", label = scenario, tole
       { reading: layout.reading, composer: layout.composer });
   }
   check(near(layout.reading.center, layout.readingPane.center), "reading column is off its reserved space's center",
-    { reading: layout.reading, pane: layout.readingPane, rail: layout.rail });
+    { reading: layout.reading, pane: layout.readingPane, sheet: layout.sheet });
   check(layout.chat.overflow <= tolerance, "conversation overflows internally", layout.chat);
   if (layout.panel && layout.panelPlacement === "side" && layout.panelOverlay && layout.stage.width < 840) {
     check(near(layout.panel.x, layout.stage.x) && near(layout.panel.right, layout.stage.right),
@@ -98,29 +102,33 @@ export function assertChatLayout(layout, { scenario = "", label = scenario, tole
   if (layout.panel && layout.panelPlacement === "side" && !layout.panelOverlay) {
     check(layout.chat.width >= 420 - tolerance, "docked panel leaves less than 420 px for chat", layout.chat);
   }
-  if (["chat-rail-files", "chat-rail-compact", "chat-rail-bottom"].includes(scenario)) check(layout.rail, "chat context is missing");
-  if (layout.rail) {
-    check(within(layout.rail, layout.chatBody), "context rail escapes the chat body", { rail: layout.rail, body: layout.chatBody });
-    check(near(layout.rail.width, Math.min(300, layout.chat.width - 24)), "context rail is squeezed", layout.rail);
-    check(layout.chat.right - layout.rail.right <= 20 + tolerance && layout.rail.y - layout.chatBody.y >= 8 - tolerance && layout.rail.y - layout.chatBody.y <= 8 + tolerance,
-      "context rail is not inset at the top right of the chat body", { rail: layout.rail, body: layout.chatBody });
-    if (layout.heading) check(layout.rail.y >= layout.heading.bottom + 8 - tolerance,
-      "context rail overlaps the chat header", { rail: layout.rail, heading: layout.heading });
-    if (layout.railMode === "rail") {
-      check(layout.rail.x >= layout.reading.right + 12 - tolerance && layout.rail.x >= layout.composer.right + 12 - tolerance,
-        "context rail covers the conversation or composer", { rail: layout.rail, reading: layout.reading, composer: layout.composer });
+  if (scenario.startsWith("activity-sheet")) check(layout.sheet, "activity sheet is missing");
+  if (layout.sheet) {
+    // Docked, the sheet sits beside the chat and leaves it at least 420 px; it never covers the reading column or composer.
+    // Narrower, it overlays from the chat layout's right edge, under the page header, ending at the composer's top edge.
+    check(layout.sheet.width <= 372 + tolerance, "activity sheet is wider than 372 px", layout.sheet);
+    check(near(layout.sheet.right, layout.chatLayout.right) && near(layout.sheet.y, layout.chatLayout.y),
+      "activity sheet is not held to the right edge of the chat layout", { sheet: layout.sheet, layout: layout.chatLayout });
+    if (layout.header) check(layout.sheet.y >= layout.header.bottom - tolerance, "activity sheet covers the page header", { sheet: layout.sheet, header: layout.header });
+    if (layout.sheetPlacement === "docked") {
+      check(near(layout.sheet.bottom, layout.chatLayout.bottom), "docked activity sheet does not reach the chat layout's bottom edge",
+        { sheet: layout.sheet, layout: layout.chatLayout });
+      check(layout.chat.width >= 420 - tolerance, "docked activity sheet leaves less than 420 px for chat", layout.chat);
+      check(layout.sheet.x >= layout.chat.right - tolerance && layout.sheet.x >= layout.reading.right - tolerance && layout.sheet.x >= layout.composer.right - tolerance,
+        "docked activity sheet covers the conversation or composer", { sheet: layout.sheet, reading: layout.reading, composer: layout.composer });
     } else {
-      check(layout.rail.bottom + 8 <= layout.readingPane.y + tolerance,
-        "compact context covers the answer or composer", { rail: layout.rail, pane: layout.readingPane });
-      check(layout.messageViewport.height > 0, "compact context left no room for the transcript", layout);
+      check(layout.sheetPlacement === "overlay", "activity sheet has no placement", layout.sheetPlacement);
+      check(near(layout.sheet.bottom, layout.composer.y), "overlay activity sheet does not end at the composer's top edge",
+        { sheet: layout.sheet, composer: layout.composer });
+      check(layout.chatLayout.width - 372 - 420 < tolerance, "activity sheet overlays a chat wide enough to dock beside", { layout: layout.chatLayout });
     }
   }
-  if (layout.platform === "macos" && layout.viewport.width >= 768 && layout.viewport.width < 900) {
-    // Native traffic lights occupy the first 80 CSS px; the visible drawer toggle starts after them.
-    check(layout.sidebarTrigger && layout.sidebarTrigger.x >= 80 - tolerance,
+  if (layout.platform === "macos") {
+    // Native traffic lights sit over the sidebar's first row; nothing the user can press may sit under them.
+    check(!layout.underWindowControls?.length, "a control sits under the native window controls", layout.underWindowControls);
+    // The icon rail moves the sidebar toggle to the page header, after the rail.
+    if (layout.sidebarState === "collapsed") check(layout.sidebarTrigger && layout.sidebarTrigger.x >= 80 - tolerance,
       "sidebar toggle overlaps native window controls or is hidden", layout.sidebarTrigger);
-    check(layout.identity && layout.identity.x >= layout.sidebarTrigger.right - tolerance,
-      "Loupist identity overlaps the titlebar toggle", { identity: layout.identity, trigger: layout.sidebarTrigger });
   }
   for (const card of layout.cards) {
     check(card.bounds.x >= layout.reading.x - tolerance && card.bounds.right <= layout.reading.right + tolerance,
@@ -180,18 +188,22 @@ export async function openLayoutPreview(browser, devUrl, { scenario, locale = "e
 async function setShellState(browser, { navigation = true, panel = false }) {
   await browser.execute(({ navigation, panel }) => {
     const sidebar = document.querySelector('[data-slot="sidebar"][data-state]');
-    if (innerWidth >= 900 && sidebar && (sidebar.dataset.state === "expanded") !== navigation) {
+    if (innerWidth >= 640 && sidebar && (sidebar.dataset.state === "expanded") !== navigation) {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "b", metaKey: true, ctrlKey: !navigator.userAgent.includes("Mac"), bubbles: true }));
     }
     const workspace = document.querySelector(".workspace-panel");
     const open = workspace && !workspace.hidden && getComputedStyle(workspace).display !== "none";
-    if (Boolean(open) !== panel) (panel ? document.querySelector('[data-workspace-split="side"]') : document.querySelector("[data-workspace-close]"))?.click();
+    // ⌘\ opens the panel on its current kind (Chat materials in a fresh preview); the page header's button is the activity sheet's.
+    if (Boolean(open) !== panel) {
+      if (panel) window.dispatchEvent(new KeyboardEvent("keydown", { key: "\\", metaKey: navigator.userAgent.includes("Mac"), ctrlKey: !navigator.userAgent.includes("Mac"), bubbles: true }));
+      else document.querySelector("[data-workspace-close]")?.click();
+    }
   }, { navigation, panel });
   await browser.waitUntil(() => browser.execute(({ navigation, panel }) => {
     const sidebar = document.querySelector('[data-slot="sidebar"][data-state]');
     const workspace = document.querySelector(".workspace-panel");
     const open = Boolean(workspace && !workspace.hidden && getComputedStyle(workspace).display !== "none");
-    return open === panel && (innerWidth < 900 || (sidebar?.dataset.state === "expanded") === navigation);
+    return open === panel && (innerWidth < 640 || (sidebar?.dataset.state === "expanded") === navigation);
   }, { navigation, panel }), { timeout: 5_000, interval: 50, timeoutMsg: "Requested navigation/panel state did not settle" });
   await settle(browser);
 }
@@ -326,7 +338,7 @@ export async function runNativeLayoutRegression(browser, {
 
 async function main() {
   const [sessionPath, ...args] = process.argv.slice(2);
-  assert.ok(sessionPath, "usage: node native-layout.mjs <session.json> [--widths=700,800] [--scenarios=chat-rail-files] [--locales=en,ko] [--themes=dark] [--artifact-dir=PATH] [--prefix=NAME] [--no-panel-restoration]");
+  assert.ok(sessionPath, "usage: node native-layout.mjs <session.json> [--widths=700,800] [--scenarios=activity-sheet] [--locales=en,ko] [--themes=dark] [--artifact-dir=PATH] [--prefix=NAME] [--no-panel-restoration]");
   const options = {};
   for (const arg of args) {
     if (arg === "--no-panel-restoration") { options.panelRestoration = false; continue; }

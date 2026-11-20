@@ -33,7 +33,7 @@ const posted: ChatMessage[] = [
   {
     ...base, id: "delivery-1", content: "The morning note.",
     delivery: {
-      run_id: "run-1", task_id: "task-1", task_title: "Morning", task_kind: "briefing",
+      run_id: "run-1", task_id: "task-1", task_title: "Briefings", task_kind: "briefing",
       schedule: null, run_thread_id: "run-chat", status: "succeeded", finished_at_ms: 1_700_000_000_000,
     },
   },
@@ -58,10 +58,26 @@ it("shows the link, vocabulary and hand-off cards a host post carries in the con
   const seen = {
     lookInto: screen.queryByRole("button", { name: "Look into it" }) !== null,
     notUseful: screen.queryByRole("button", { name: "Not useful" }) !== null,
-    showPath: screen.queryByRole("button", { name: "Show this path on the map" }) !== null,
+    showPath: screen.queryByRole("button", { name: "Show on the map" }) !== null,
     undo: screen.queryByRole("button", { name: "Undo" }) !== null,
     open: screen.queryAllByRole("button", { name: "Open" }).length,
     researching: screen.queryByText("Researched: Hynix HBM supply") !== null,
   };
   expect(seen).toEqual({ lookInto: true, notUseful: true, showPath: true, undo: true, open: 2, researching: true });
+});
+
+it("sits each host post in Bot beside the Loupist's face and name, as an answer does", () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  renderWithOpen(<ChatConversation
+    bridge={bridge} home messages={posted} messageKeys={posted.map((message) => message.id)} loupistId="loupist-a" loupistName="Chip desk"
+    loupistAvatar="loupist-03" onSuggestion={vi.fn()} onReadAttachment={vi.fn()}
+  />);
+  for (const name of ["New link: Alpha and Gamma", "New on the map: Process node", "Research: Hynix HBM supply", "Result from Briefing"]) {
+    const post = screen.getByRole("article", { name });
+    // The face is identity, not a control: it is hidden from the accessibility tree and not focusable.
+    const face = post.querySelector(".bot-face")!;
+    expect(face).toHaveAttribute("aria-hidden", "true");
+    expect(face.querySelector("[data-avatar]")).toHaveAttribute("data-avatar", "loupist-03");
+    expect(post.querySelector(".bot-col .bot-who")).toHaveTextContent(/^Chip desk/);
+  }
 });

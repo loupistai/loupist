@@ -9,7 +9,6 @@ export type Finding = {
   itemKey: string,
   itemKind: ItemKind,
   itemLabel: string,
-  symbol?: string,
   blocking: boolean,
 };
 

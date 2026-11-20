@@ -17,7 +17,11 @@ A turn has three parts with one job each: the **ledger** (what was read), the
 **document** (notes, cards, questions and the answer, appended in the order they
 happen) and the **live line** (the one present-tense status, always the turn's last
 line). Nothing is inserted above what is on screen; the ledger and the live line change
-in place.
+in place. This is a research session's anatomy. In Bot the same turn view draws no ledger
+and no notes: the live line is one quiet line beside the Loupist's face without glyph,
+"+N" or chips, and the settled row is the figures-checked-and-sources line, copy and
+feedback ([Home Thread](home-thread.md)). The reveal, commit gate and anchored scroll are
+the same on both surfaces.
 
 Segments are prose, one ledger, cards, questions and approvals. A closed commentary
 item is a note, keyed by its id: text a tool call followed, drawn at the answer's size;
@@ -36,24 +40,33 @@ final text came another way) and any older commentary stay notes, wherever a
 removal leaves them.
 
 Every step of a turn is one **ledger** (`TurnLedger.tsx`), placed where the first step
-happened; later notes do not open a second one. `plan_update` and `ask_user` are not
-counted and have no row: the plan and the question stand for them. The ledger is one
-button: while the reply runs it says the step count ("10 steps", or "Plan 2 of 3 ·
-{item}") and gathers what the answer can cite as chips in arrival order (each site a
+happened; later notes do not open a second one. `ask_user` is not counted and has no
+row: the question stands for it; an earlier reply's stored plan step is not counted
+either and its plan stays in the expanded ledger. The ledger is one
+button: while the reply runs it says the step count ("10 steps") and gathers what the answer can cite as chips in arrival order (each site a
 step read, data series, saved notes, calculations; loading a research tool gets none; five, or three in a turn narrower
 than 560 px, then "+N"); when the turn settles the same line becomes the receipt
-("Worked 30s · 10 steps · 3 sources", "Stopped after 12s · …") and the chips fade out. A
+("Worked 30s · 10 steps · 3 sources", "Stopped after 12s · …") and the chips fade out. Its
+sources are the answer's numbered sources, the list the footer's Sources (n) and the
+activity sheet hold, whether or not a step's results name them, so the two never disagree. A
 failed attempt is said in words (" · 1 failed attempt"), never in red, and the ledger
-never opens by itself. Its timeline holds the sources read, consulted notes, the plan
-with its nested steps, every step and note in order (label, target, Failed or Stopped,
-and a duration of a second or more), and results. A plan or Memory reads with no step of
-their own place the ledger before the live answer, where it stays. A chart or table
+never opens by itself. Its timeline holds the sources read, consulted notes, every step
+and note in order (label, target, Failed or Stopped, and a duration of a second or
+more), and results. Memory reads with no step of their own place the ledger before the
+live answer, where it stays. A reply stored before the agent's `plan_update` tool was
+removed keeps its plan: the timeline still shows it with its nested steps, and its
+`plan_update` calls have no row. No new reply makes a plan. A chart or table
 card stands where its publish step started (`chartBlocks`/`gridBlocks` give each block
 its `stepId`), so a card made before the answer sits above it, live and after reload. A
 card fills as its publish call is delivered: Rust sends the staged content
 (`artifact_staged`, a `ChatArtifactView`, never stored) and the card draws it while the
 answer is written below, so nothing moves at commit, where only the stored reference
-(`artifact`) follows. A stopped or failed reply saved nothing, so its staged cards go. A failed publish
+(`artifact`) follows. A revision the reply makes of an artifact it already showed keeps
+its id and revision number and arrives as a second `artifact_staged` for that pair: the
+stream keeps one part per `id:revision`, so the same card draws the corrected content in
+place, and after the commit it reads the stored revision as any card does. A failed or
+refused revision leaves the earlier draft on screen, and its step says so in the activity
+sheet. A stopped or failed reply saved nothing, so its staged cards go. A failed publish
 the model then calls again (chart or table, under any title) leaves no card of its own:
 the retry's card stands for it and the ledger keeps the failed step. A
 card the stopped reply takes away, still preparing or already filled from its staged
@@ -65,10 +78,14 @@ an answer that says "the chart below" can be wrong until the prompt says otherwi
 question or approval is a block where it was asked, and settles into its one line in
 the same place; answering a question holds the turn at its height (`--turn-hold`) while
 the reply runs, so the shorter line never shrinks the scroll range and the page stays put.
-Context above the thread (the inline rail's rows, such as "Needs your answer" going on an
-answer or "Learned" arriving at commit) moves the thread's top edge; the scroll position
+Context above the thread (a notice or the working note arriving) moves the thread's top
+edge; the scroll position
 moves with that edge (`keepContentStill`, `conversation.tsx`), so the transcript stays
-where the reader sees it, while a thread kept at its end stays at its end. The card, the status pill and the ledger read the view alone; the pill
+where the reader sees it, while a thread kept at its end stays at its end. Behind the
+full-page Map or Lens the thread has no box (`display: none`): nothing is measured,
+reserved or moved then, a lazy page's Suspense fallback showing it again does not reopen
+it, and it shows where the reader left it; a question sent meanwhile goes to the top once
+it shows. The card, the status pill and the ledger read the view alone; the pill
 derives the cheaper `deriveTurnStatus`.
 
 The footer slot keeps one control's height from the first frame. While the reply runs it
@@ -78,9 +95,27 @@ is, first match: Stopping; Waiting for you (an amber dot, the only amber in a ru
 turn); the newest running step in the catalog's localized words, whatever the host
 wrote, or for a bundled market-data read, "Reading {what it reads}" in the interface
 language ("Reading income statements" / "손익계산서 읽는 중") (its target reads "Still working" after 15 s without host activity); Writing;
-Still working; Starting (no signal from the host yet); Thinking. A label stays at least
-600 ms and a finished step's label holds 800 ms, so quick steps never strobe and the gap
-between steps never flashes Thinking. The slot is the turn's only live region, spoken at
+between steps, the reply's last action, whichever came last: the latest note's last
+sentence (identifiers removed, split by `Intl.Segmenter` in the interface language, one
+line cut with an ellipsis, the whole sentence in the text; only what a reader of the
+note sees: a link shows its label and a reference definition is dropped, an HTML anchor
+shows its text, other tags go, and an autolink or bare URL shows only its host, so a
+link's target is never shown or announced) with the phase glyph, or the
+last finished batch with its step glyph. A batch is the trailing run of steps that
+finished well and called the same tool since the last note or the last step of another
+tool, in the step's own words, counted when there are several ("Read a web source ×10" /
+"웹 자료 읽음 ×10"); a failed or stopped step names nothing done and is passed over
+without ending the run. That line promises an accurate last action and
+the clock: it never turns into Still working, and a long model round leaves it as it
+is. A note is not said twice: in a reply that shows its notes on the page (a research
+session), the reply's own footer reads Thinking, then Still working, under the note
+instead of repeating its sentence; places that do not show the note keep the sentence
+(the status pill, and Bot's working line, since Bot hides notes while it works). A
+finished batch reads the same everywhere. With no note and no finished step: Still
+working (15 s without host activity); Starting (no signal from the host yet); Thinking.
+Bot's working line takes the same label. A label stays at least 600 ms and a finished step's label holds 800 ms before
+Thinking, a note or a batch, so quick steps never strobe and the gap between steps
+never flashes Thinking. The slot is the turn's only live region, spoken at
 most every 5 s, then the receipt once. When the turn settles the live line fades out and
 Sources (n), the receipt line, Copy and feedback fade in one after another in the same
 place. A stop is one quiet line ("Stopped · kept 6 steps" and Try again, no border); a
@@ -91,8 +126,8 @@ waits until the answer's last received word is shown, at most 400 ms after the h
 `completed`, and changes no wrapping and no position of anything already read. On
 older answers only Copy and feedback wait for hover; Sources and a failure stay visible.
 Copy takes every piece of prose the page shows, in page order: each note that stayed on
-the page, then the answer. A short note that gave its place is in the timeline only and
-is not copied.
+the page, then the answer, each as written, so indentation that makes code or a nested
+list survives. A short note that gave its place is in the timeline only and is not copied.
 
 The renderer draws the reply's shell (name, time and "Starting") as soon as the
 question is sent, 120 ms after the question rises in, without waiting for the host.
@@ -110,11 +145,15 @@ ledger or a disclosure never scrolls. "Jump to latest", End, or scrolling to the
 while the reply runs follows the end of the turn (18% of the remaining distance per
 frame, at least one whole pixel, since WKWebView drops smaller scroll steps) until any
 upward input. A chat opened with a reply in flight puts its latest
-question at the top and does not make room; a settled chat opens at its end. The pill
+question at the top and does not make room; a settled chat opens at its end and stays
+there while late content arrives, until the reader scrolls or a control in the thread
+takes them elsewhere (an outline heading, a receipt's or table's number to check) or
+pins something open in it (a number's popover by click, a citation card held open, a
+quote receipt); the page then stays where the reader is. The pill
 (`ChatStatusPill`) overlays the bottom of the thread, 12 px above the composer, only
 while the end of the turn is more than 12 px below the fold and the reader is not
-following: the live label and clock, "Waiting for you", or "Couldn't finish", then Jump
-to latest. A 32 px fade on the composer's edge says more is below. Neither takes the
+following: the live label and clock (a long label ends in an ellipsis; the clock always
+stays whole), "Waiting for you", or "Couldn't finish", then Jump to latest. A 32 px fade on the composer's edge says more is below. Neither takes the
 thread's height. Stop is the composer's trailing tile (Esc), never in the turn or the
 pill; after a press it dims and ignores presses until the host confirms.
 
@@ -142,13 +181,12 @@ Under reduced motion it reveals whole sentences or blocks at most four times a s
 `stableMarkdown` holds a heading until its line ends and a table whole until a line that
 is not a row follows it (a 100 px ruled placeholder stands in meanwhile, so rows never
 arrive one by one and columns never re-flow), plus an open link or evidence link, an
-open `$$` run and a marker that just opened. A paragraph that is only a link to a
-`reverse_dcf` or `dcf_grid` result (the one Rust makes a sensitivity card at the end) is
-held behind a ruled frame of the card's reserved height (408 px) from the moment its
-link closes, split exactly as the settled answer splits around its cards
-(`heldSensitivityParagraphs`); at commit the card fills that frame, keeping at least its
-height, so no text the reader saw moves or is replaced. If more text follows on that
-paragraph it is text again. A Mermaid fence is a 240 px ruled frame while the reply
+open `$$` run and a marker that just opened. A paragraph that is only one evidence link
+(to a calculation, a results read or any other result) is prose like any other: it
+streams as a citation in its own paragraph, stays in the same prose segment at commit
+and after a restart, and opens the evidence the answer cited; no card replaces it, so
+the answer is never split around one and the number checks keep the links Rust counted.
+A Mermaid fence is a 240 px ruled frame while the reply
 streams and until the diagram renderer has loaded; the diagram block keeps at least that
 height, and if the renderer fails the code shows. The rendered text therefore only grows;
 `streamingMarkdown.test.tsx` replays the live scenario one character at a time to hold
@@ -205,12 +243,13 @@ or the network couldn't be reached.
 ## Learned line
 
 Under every finished answer one line says what it learned, in this order:
-"Learned n · n names added to the map · n relationships · n ideas · Used n pages". Sources are
+"Read your principle · Learned n things · n names added to the map · n relationships · n ideas · Used n pages". Sources are
 not repeated here: the ledger's receipt says "n sources" and the footer's Sources (n)
 toggle opens the numbered list. Only the parts that are not zero appear. Learned counts the sections the answer added,
 replaced or retired, read by message id from `memory_learned`; ideas counts filed pages
-that are ideas. Used counts every Lens page the host delivered, so an Outlook (perspective)
-counts as well as principles, methods, topics and ideas. A private chat, where saving is
+that are ideas. The principles the host delivered lead the line; Used n pages counts every
+other Lens page it delivered (methods, topics, ideas and a perspective), so no
+page is counted twice, and both open the same quoted list. A private chat, where saving is
 off, shows no Learned part and does not ask Rust for one, and a running or failed answer
 shows no line.
 

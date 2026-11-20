@@ -207,18 +207,20 @@ export function ModelSettingsPanel({
     operationActiveRef.current = true;
     const operation = ++operationRef.current;
     const label = providerCardTitle(option);
+    // A custom endpoint and a leftover Disconnected card are removed; a working built-in account is disconnected.
+    const removal = Boolean(option.custom) || dismissing;
     setBusy("disconnect");
     setBusyProviderId(option.id);
     setError(null);
-    setStatus(dismissing ? null : i18n.t("settings:modelSettingsPanel.removingLabel", { label }));
+    setStatus(dismissing ? null : i18n.t(removal ? "settings:modelSettingsPanel.removingLabel" : "settings:modelSettingsPanel.disconnectingLabel", { label }));
     try {
       await (option.custom ? onRemoveCustomProvider(option.id) : onDisconnect(option.id));
       if (operation !== operationRef.current) return;
       setPendingDisconnect(null);
-      setStatus(dismissing ? null : i18n.t("settings:modelSettingsPanel.labelWasRemoved", { label }));
+      setStatus(dismissing ? null : i18n.t(removal ? "settings:modelSettingsPanel.labelWasRemoved" : "settings:modelSettingsPanel.labelWasDisconnected", { label }));
     } catch (cause) {
       if (operation !== operationRef.current) return;
-      setError(errorMessage(cause, i18n.t("settings:modelSettingsPanel.couldNotRemoveLabel", { label })));
+      setError(errorMessage(cause, i18n.t(removal ? "settings:modelSettingsPanel.couldNotRemoveLabel" : "settings:modelSettingsPanel.couldNotDisconnectLabel", { label })));
       setStatus(null);
     } finally {
       operationActiveRef.current = false;

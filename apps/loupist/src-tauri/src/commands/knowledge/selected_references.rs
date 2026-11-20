@@ -65,6 +65,82 @@ pub(in crate::commands) fn selected_reference_hints(
     Ok(Some(value))
 }
 
+/// Resolve host-authored hand-off pins against the current owned heads. The
+/// ordinary selected-reference path checks each resulting exact read again.
+pub(in crate::commands) fn resolve_handoff_pins(
+    state: &AppState,
+    loupist_id: &str,
+    pins: &[crate::chat::handoff::HandoffPin],
+) -> Result<Vec<crate::commands::ChatKnowledgePin>, CommandError> {
+    use crate::chat::handoff::HandoffPin;
+    if pins.is_empty() {
+        return Ok(Vec::new());
+    }
+    admit(state, loupist_id)?;
+    with_loupist_knowledge(state, loupist_id, |tx, blobs| {
+        let read = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
+        let worlds = if pins
+            .iter()
+            .any(|pin| matches!(pin, HandoffPin::World { .. }))
+        {
+            read.list_records(loupist_id)?
+                .into_iter()
+                .filter(|module| module.kind == RecordKind::World)
+                .filter_map(|record| {
+                    let revision = read
+                        .get_revision(loupist_id, record.revision_id.as_deref()?)
+                        .ok()?;
+                    let body = world_snapshot(&revision)?;
+                    Some((record, body))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        let mut resolved = Vec::new();
+        for pin in pins {
+            let (module, kind, object_id) = match pin {
+                HandoffPin::Lens { lens } => {
+                    let Some(module) = read
+                        .owned_record(loupist_id, lens)
+                        .ok()
+                        .filter(|module| module.kind == RecordKind::Lens)
+                    else {
+                        continue;
+                    };
+                    (module, "lens", lens)
+                }
+                HandoffPin::World { world } => {
+                    let mut matches = worlds
+                        .iter()
+                        .filter(|(_, body)| body.nodes.iter().any(|node| node.id == *world));
+                    let Some((module, _)) = matches.next().filter(|_| matches.next().is_none())
+                    else {
+                        continue;
+                    };
+                    (module.clone(), "world_node", world)
+                }
+            };
+            let Some(revision_id) = module.revision_id else {
+                continue;
+            };
+            let pin = crate::commands::ChatKnowledgePin {
+                kind: kind.into(),
+                record_id: Some(module.record_id),
+                revision_id: Some(revision_id),
+                object_id: object_id.clone(),
+                span_id: None,
+                label: String::new(),
+                selection: None,
+            };
+            if reference_pin_bounded(&pin) {
+                resolved.push(pin);
+            }
+        }
+        Ok(resolved)
+    })
+}
+
 pub(in crate::commands) fn attach_selected_references(
     envelope: &str,
     selected: Option<&serde_json::Value>,

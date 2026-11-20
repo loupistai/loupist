@@ -5,11 +5,11 @@ import { formatDate, formatNumber } from "@/i18n/format";
 import "@/styles/grid.css";
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon, ChevronDownIcon, EllipsisIcon } from "lucide-react";
 import { Popover } from "radix-ui";
-import { memo, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import type { AssetsGrid, ChatArtifactRef, ChatArtifactView, ChatEvidenceRef, ConflictGrid, GridEmptyCell, GridValueCell } from "../../types";
+import type { AssetsGrid, ChatArtifactRef, ChatArtifactView, ChatEvidenceRef, ConflictGrid, GridColumn, GridEmptyCell, GridRow, GridValueCell } from "../../types";
 import { sameBlock, type GridBlock } from "../../chat/chartBlocks";
 import { GRID_SCHEMA } from "../../contracts/chat";
 import { citationNumber } from "../../chat/numberChecks";
@@ -22,10 +22,24 @@ import { useChatExecution } from "./ChatExecutionContext";
 import { NumberChip } from "./NumberChip";
 import { CitationChip } from "./CitationChip";
 import { CitedNote } from "./CitedNote";
+import { citedPlainText } from "../../chat/citedText";
+import { CLOSE_DELAY_MS } from "./useEvidencePopover";
 import { useGo, useOpenProps } from "../navigation/Open";
+import { useConversationScroll } from "../ai-elements/conversation";
+import { savedAssetTarget } from "../../chat/navigation";
+import { useAssetPageOpener } from "../assets/assetOpener";
+import type { AssetPageTarget } from "../../contracts/assets";
 import { titledExport } from "../../lib/exportTitle";
 
 const t = i18n.getFixedT(null, "chat");
+
+/**
+ * The exchange-style identity Rust's `assets_grid` links a row by: a symbol and a market of ASCII
+ * letters, digits, period, underscore or hyphen. Such a row opens its asset page by symbol and
+ * market even when the stored row carries no id; a comparison label ("Peer median") does not.
+ */
+const LISTING_TOKEN = /^[A-Za-z0-9._-]+$/u;
+const isListing = (row: GridRow) => LISTING_TOKEN.test(row.symbol) && LISTING_TOKEN.test(row.market);
 
 /** Saves an export through the native dialog (Rust `export_save`); `null` when the user cancels. */
 export type GridExport = (request: { suggestedName: string; bytes: number[]; kind: "csv" | "md" }) => Promise<string | null>;
@@ -43,20 +57,41 @@ function ValueCell({ cell, decimals, asset, evidenceRefs, asOf }: { cell: GridVa
   return <NumberChip check={check} evidence={evidence} evidenceRefs={evidenceRefs} asOf={asOf} asset={asset}>{check.text}</NumberChip>;
 }
 
-/** An empty cell says why; with the run's note, hover or focus opens it. */
-function EmptyCell({ cell, spoken }: { cell: GridEmptyCell; spoken: string }) {
+/**
+ * An empty cell says why; with the run's note, hover or focus opens it. The note is the
+ * cell's description too, so a screen reader hears it on focus. The pointer may cross
+ * from the cell into the note (a citation in it stays reachable), as with a number chip.
+ */
+function EmptyCell({ cell, spoken, evidenceRefs }: { cell: GridEmptyCell; spoken: string; evidenceRefs: readonly ChatEvidenceRef[] }) {
   const [open, setOpen] = useState(false);
+  const timer = useRef<number | null>(null);
+  const noteId = useId();
+  useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
   const reason = emptyReason(cell.empty);
   if (!cell.note) return <span className="grid-card-empty"><span aria-hidden="true">{reason}</span><span className="sr-only">{spoken}</span></span>;
+  const schedule = (next: boolean, delay: number) => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => { timer.current = null; setOpen(next); }, delay);
+  };
+  const keep = () => { if (timer.current !== null) window.clearTimeout(timer.current); timer.current = null; };
+  const described = citedPlainText(cell.note, (id) => {
+    const evidence = evidenceRefs.find((item) => item.id === id);
+    return evidence ? sourceIdentityLabel(evidence) || evidenceTitle(evidence) : t("citedNote.source");
+  });
   return <Popover.Root open={open} onOpenChange={setOpen}>
     <Popover.Trigger asChild>
-      <button type="button" className="grid-card-empty" aria-label={spoken} data-empty={cell.empty}
-        onPointerEnter={() => setOpen(true)} onPointerLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}>
+      <button type="button" className="grid-card-empty" aria-label={spoken} aria-describedby={noteId} data-empty={cell.empty}
+        onPointerEnter={() => { keep(); setOpen(true); }} onPointerLeave={() => schedule(false, CLOSE_DELAY_MS)}
+        onFocus={() => { keep(); setOpen(true); }} onBlur={() => schedule(false, CLOSE_DELAY_MS)}
+        // Hover and focus already opened the note; the click that follows them must not toggle it shut.
+        onClick={(event) => { event.preventDefault(); keep(); setOpen(true); }}>
         {reason}
       </button>
     </Popover.Trigger>
+    <span id={noteId} hidden>{described}</span>
     <Popover.Portal>
-      <Popover.Content className="grid-card-note" side="top" align="start" sideOffset={4} onOpenAutoFocus={(event) => event.preventDefault()}><CitedNote text={cell.note} /></Popover.Content>
+      <Popover.Content className="grid-card-note" side="top" align="start" sideOffset={4} onOpenAutoFocus={(event) => event.preventDefault()}
+        onPointerEnter={keep} onPointerLeave={() => schedule(false, CLOSE_DELAY_MS)}><CitedNote text={cell.note} evidenceRefs={evidenceRefs} /></Popover.Content>
     </Popover.Portal>
   </Popover.Root>;
 }
@@ -129,41 +164,73 @@ export function columnFit(viewport: number, first: number, columns: number, scro
 /** A slash term ("Net debt/EBITDA") breaks only after its slash, never between its words. */
 export const headerLabel = (label: string) => (label.includes("/") ? label.replace(/ /gu, "\u00a0").replace(/\//gu, "/\u200b") : label);
 
-/** Marks the scrollable edges, sizes the columns and counts what is hidden past the right edge. */
-function useScrollEdges(columns: number) {
+/**
+ * The period and basis every measure shares, written once in the card's header;
+ * `null` when they differ, so each measure carries its own.
+ */
+export function sharedPeriod(grid: AssetsGrid): string | null {
+  const [first, ...rest] = grid.columns;
+  if (!first || rest.some((column) => column.period !== first.period || column.basis !== first.basis)) return null;
+  return [first.period, first.basis].filter(Boolean).join(" · ");
+}
+
+/**
+ * Marks the scrollable edges, sizes the columns and counts what is hidden past
+ * the right edge. A table with more measures than assets whose asset rows do not
+ * fit is `turned`: measures become its rows.
+ */
+function useScrollEdges(columns: number, assets: number, content: AssetsGrid) {
   const ref = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ start: false, end: false });
   const [fit, setFit] = useState<{ width?: number; hidden: number }>({ hidden: 0 });
+  const [turned, setTurned] = useState(false);
+  // What the asset-row layout's columns must hold, measured only while that layout is drawn.
+  const assetWidest = useRef<number | null>(null);
+  // New content is measured in asset rows again, in the same frame, before it is painted.
+  const [measured, setMeasured] = useState(content);
+  if (measured !== content) {
+    setMeasured(content);
+    setTurned(false);
+  }
   const update = () => {
     const node = ref.current;
     if (!node) return;
+    const drawnTurned = node.querySelector<HTMLElement>(".grid-card-table")?.dataset.rows === "measures";
     const first = node.querySelector<HTMLElement>(".grid-card-asset-head")?.offsetWidth ?? 0;
-    // A value or period line, with its cell's inline padding: what a column must hold without running over.
-    let widest = 0;
-    for (const line of node.querySelectorAll<HTMLElement>(".grid-card-value > *, .grid-card-period")) {
-      const cell = line.closest<HTMLElement>("td, th");
-      const style = cell ? getComputedStyle(cell) : null;
-      widest = Math.max(widest, line.offsetWidth + (style ? Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight) : 0));
+    if (!drawnTurned) {
+      // A value or period line, with its cell's inline padding: what a column must hold without running over.
+      let widest = 0;
+      for (const line of node.querySelectorAll<HTMLElement>(".grid-card-value > *, .grid-card-period")) {
+        const cell = line.closest<HTMLElement>("td, th");
+        const style = cell ? getComputedStyle(cell) : null;
+        const padding = style ? (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0) : 0;
+        widest = Math.max(widest, line.offsetWidth + padding);
+      }
+      assetWidest.current = widest;
     }
-    const next = columnFit(node.clientWidth, first, columns, node.scrollLeft, widest);
+    // The turn reads the width the asset rows need, never the turned table's own, so a resize cannot flip it back and forth.
+    const turn = columns > assets && assetWidest.current !== null && columnFit(node.clientWidth, first, columns, 0, assetWidest.current).hidden > 0;
+    setTurned(turn);
+    const next = turn || drawnTurned ? { width: undefined, hidden: 0 } : columnFit(node.clientWidth, first, columns, node.scrollLeft, assetWidest.current ?? 0);
     setFit((current) => (current.width === next.width && current.hidden === next.hidden ? current : next));
     const start = node.scrollLeft > 1;
     const end = node.scrollWidth - node.clientWidth - node.scrollLeft > 1;
     // Scroll and resize events arrive in bursts; an unchanged pair keeps the same state object.
     setEdges((current) => (current.start === start && current.end === end ? current : { start, end }));
   };
-  useEffect(() => {
+  // Measured before paint, so a table that turns is never drawn in asset rows first.
+  useLayoutEffect(() => {
     update();
     const node = ref.current;
     if (!node || typeof ResizeObserver === "undefined") return undefined;
     const observer = new ResizeObserver(update);
     observer.observe(node);
     return () => observer.disconnect();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `update` reads only refs; re-measure when the columns change.
-  }, [columns]);
-  // The table's width changes with the columns' width: look again once it has.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `update` reads only refs; re-measure when the fitted width changes.
-  useEffect(() => { update(); }, [fit.width]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `update` reads only refs; re-measure when the columns or rows change.
+  }, [columns, assets]);
+  // The table's width changes with the columns' width or the layout: look again once it has.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `update` reads only refs; re-measure when the fitted width, the layout or the content changes.
+  useLayoutEffect(() => { update(); }, [fit.width, turned, measured]);
   const more = () => {
     const node = ref.current;
     if (!node || !fit.width) return;
@@ -171,7 +238,7 @@ function useScrollEdges(columns: number) {
     const step = Math.max(1, Math.floor((node.clientWidth - (node.querySelector<HTMLElement>(".grid-card-asset-head")?.offsetWidth ?? 0)) / fit.width)) * fit.width;
     node.scrollBy?.({ left: step, behavior: reduced ? "auto" : "smooth" });
   };
-  return { ref, edges, fit, update, more };
+  return { ref, edges, fit, turned, update, more };
 }
 
 export type GridCardProps = {
@@ -183,6 +250,8 @@ export type GridCardProps = {
   askDisabled?: boolean;
   /** The table filled a frame the reader watched being prepared: its rows fade in a moment apart. */
   filled?: boolean;
+  /** The Loupist a detached table belongs to, where no chat scope names it (Work). */
+  loupistId?: string;
 };
 
 /**
@@ -190,17 +259,23 @@ export type GridCardProps = {
  * a number chip Rust checked, empty cells with their reason, sortable columns
  * and exports that keep each cell's source or formula.
  */
-export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabled, filled = false }: GridCardProps) {
+export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabled, filled = false, loupistId }: GridCardProps) {
   useTranslation("chat");
   const go = useGo();
+  const conversation = useConversationScroll();
   const scope = useChatExecution();
+  // In an answer the chat's opener; in Work, outside any chat, the shell's asset page opener.
+  const shellOpen = useAssetPageOpener();
+  const openAsset = go ? (target: AssetPageTarget) => go({ kind: "asset", target }) : shellOpen;
+  const rowLoupist = scope?.loupistId ?? loupistId;
   const [sort, setSort] = useState<GridSort>(null);
   const copyId = useId();
   const { state: copyState, copy: copyText } = useCopyFeedback(copyId);
   const copied = copyState === "copied";
   const [saveFailed, setSaveFailed] = useState<"csv" | "md" | null>(null);
   const card = useRef<HTMLElement>(null);
-  const scroll = useScrollEdges(grid.columns.length);
+  const scroll = useScrollEdges(grid.columns.length, grid.rows.length, grid);
+  const shared = useMemo(() => sharedPeriod(grid), [grid]);
   const names = useAssetNames(scope?.bridge, scope?.loupistId ?? "", Boolean(scope));
   const order = useMemo(() => sortedRows(grid, sort), [grid, sort]);
   const counts = useMemo(() => gridCounts(grid), [grid]);
@@ -221,17 +296,96 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
   const firstToCheck = () => {
     const chip = card.current?.querySelector<HTMLButtonElement>('[data-number-check="check"]');
     if (!chip) return;
+    // The thread stays at the number, not at its end.
+    conversation?.holdScrollPosition();
     const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     chip.scrollIntoView?.({ block: "center", inline: "center", behavior: reduced ? "auto" : "smooth" });
     chip.click();
   };
   const sortLabel = (column: number) => sort?.column !== column ? t("grid.sortNone") : sort.direction === "desc" ? t("grid.sortDesc") : t("grid.sortAsc");
+  // A measure's own period and basis, unless every measure shares them and the header says them once.
+  const periodLine = (column: GridColumn) => shared === null && (column.period || column.basis)
+    ? <span className="grid-card-period">{[column.period, column.basis].filter(Boolean).join(" · ")}</span> : null;
+  const assetName = (row: GridRow) => {
+    const label = names({ name: row.label, assetId: row.asset_id, symbol: row.symbol, market: row.market });
+    // By the stored id, else by its ticker when the row is exchange-style; a comparison label stays text.
+    const target = (row.asset_id || isListing(row)) && openAsset && rowLoupist
+      ? savedAssetTarget(rowLoupist, { assetId: row.asset_id, ticker: isListing(row) ? row.symbol : undefined, name: row.label }) : null;
+    return { label, name: <>
+      {target
+        ? <button type="button" className="grid-card-name" onClick={() => openAsset!(target)}>{label}</button>
+        : <span className="grid-card-name">{label}</span>}
+      <span className="grid-card-symbol">{row.symbol} · {row.market}</span>
+    </> };
+  };
+  const cellAt = (rowIndex: number, columnIndex: number, asset: string, key: string) => {
+    const row = grid.rows[rowIndex]!;
+    const column = grid.columns[columnIndex]!;
+    const cell = grid.cells[rowIndex]?.[columnIndex];
+    if (!cell) return <td key={key} />;
+    return isValueCell(cell)
+      ? <td key={key} className="grid-card-value gg-num" data-status={cell.check.status}><ValueCell cell={cell} decimals={decimals[columnIndex]} asset={row.symbol} evidenceRefs={evidenceRefs} asOf={grid.as_of} /></td>
+      : <td key={key} className="grid-card-empty-cell"><EmptyCell cell={cell} evidenceRefs={evidenceRefs} spoken={t("grid.emptySpoken", { asset, measure: column.label, reason: emptyReason(cell.empty) })} /></td>;
+  };
+  const assets = grid.rows.map(assetName);
+
+  // Measures as rows: each row names a measure, each column an asset. Not sortable.
+  const turnedTable = () => <table className="grid-card-table" data-rows="measures" style={{ "--grid-columns": grid.rows.length } as CSSProperties}>
+    <caption className="sr-only">{title}</caption>
+    <colgroup><col className="grid-card-asset-col" />{grid.rows.map((row) => <col key={`${row.symbol}:${row.market}`} />)}</colgroup>
+    <thead>
+      <tr>
+        <th scope="col" className="grid-card-asset-head">{t("grid.measure")}</th>
+        {grid.rows.map((row, rowIndex) => <th key={`${row.symbol}:${row.market}`} scope="col" className="grid-card-asset-column">{assets[rowIndex]!.name}</th>)}
+      </tr>
+    </thead>
+    <tbody>
+      {grid.columns.map((column, columnIndex) => <tr key={column.id}>
+        <th scope="row" className="grid-card-asset grid-card-measure-row">
+          <span className="grid-card-measure-label">{headerLabel(column.label)}</span>
+          {periodLine(column)}
+        </th>
+        {grid.rows.map((row, rowIndex) => cellAt(rowIndex, columnIndex, assets[rowIndex]!.label, `${row.symbol}:${row.market}`))}
+      </tr>)}
+    </tbody>
+  </table>;
+
+  const assetTable = () => <table className="grid-card-table" data-rows="assets" style={{ "--grid-columns": grid.columns.length, ...(scroll.fit.width ? { width: `calc(var(--grid-first) + ${grid.columns.length} * ${scroll.fit.width}px)` } : {}) } as CSSProperties}>
+    <caption className="sr-only">{title}</caption>
+    <colgroup><col className="grid-card-asset-col" />{grid.columns.map((column) => <col key={column.id} />)}</colgroup>
+    <thead>
+      <tr>
+        <th scope="col" className="grid-card-asset-head">{t("grid.asset")}</th>
+        {grid.columns.map((column, index) => {
+          const sorted = sort?.column === index ? sort.direction : null;
+          return <th key={column.id} scope="col" aria-sort={sorted === "desc" ? "descending" : sorted === "asc" ? "ascending" : "none"}>
+            <button type="button" className="grid-card-sort" onClick={() => setSort((current) => nextSort(current, index))} title={sortLabel(index)}>
+              <span className="grid-card-measure">
+                <span className="grid-card-measure-label">{headerLabel(column.label)}{sorted === "desc" ? <ArrowDownIcon aria-hidden="true" /> : sorted === "asc" ? <ArrowUpIcon aria-hidden="true" /> : null}</span>
+                {periodLine(column)}
+              </span>
+            </button>
+          </th>;
+        })}
+      </tr>
+    </thead>
+    <tbody>
+      {order.map((rowIndex) => {
+        const row = grid.rows[rowIndex]!;
+        return <tr key={`${row.symbol}:${row.market}`}>
+          <th scope="row" className="grid-card-asset">{assets[rowIndex]!.name}</th>
+          {grid.columns.map((column, columnIndex) => cellAt(rowIndex, columnIndex, assets[rowIndex]!.label, column.id))}
+        </tr>;
+      })}
+    </tbody>
+  </table>;
 
   return <section ref={card} className="grid-card" data-layout="assets" data-filled={filled || undefined} aria-label={t("grid.label", { title })}>
     <header className="grid-card-header">
       <div className="grid-card-heading">
         <h3 className="grid-card-title" title={title}>{title}</h3>
         {grid.subtitle ? <p className="grid-card-subtitle">{grid.subtitle}</p> : null}
+        {shared ? <p className="grid-card-subtitle grid-card-shared-period">{shared}</p> : null}
       </div>
       <CardActions onCopy={copy} copied={copied} onExport={onExport ? (kind) => void save(kind) : undefined}
         onAsk={onAsk} askDisabled={askDisabled} askLabel={t("chatBlock.askAbout", { title })} />
@@ -239,48 +393,7 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
     {saveFailed ? <p className="grid-card-error" role="alert">{t("grid.saveFailed")} <Button type="button" variant="link" size="sm" onClick={() => void save(saveFailed)}>{t("grid.retry")}</Button></p> : null}
     <div ref={scroll.ref} className="grid-card-scroll" role="region" tabIndex={0} aria-label={t("grid.scroll")}
       data-fade-start={scroll.edges.start || undefined} data-fade-end={scroll.edges.end || undefined} onScroll={scroll.update}>
-      <table className="grid-card-table" style={{ "--grid-columns": grid.columns.length, ...(scroll.fit.width ? { width: `calc(var(--grid-first) + ${grid.columns.length} * ${scroll.fit.width}px)` } : {}) } as CSSProperties}>
-        <caption className="sr-only">{title}</caption>
-        <colgroup><col className="grid-card-asset-col" />{grid.columns.map((column) => <col key={column.id} />)}</colgroup>
-        <thead>
-          <tr>
-            <th scope="col" className="grid-card-asset-head">{t("grid.asset")}</th>
-            {grid.columns.map((column, index) => {
-              const sorted = sort?.column === index ? sort.direction : null;
-              return <th key={column.id} scope="col" aria-sort={sorted === "desc" ? "descending" : sorted === "asc" ? "ascending" : "none"}>
-                <button type="button" className="grid-card-sort" onClick={() => setSort((current) => nextSort(current, index))} title={sortLabel(index)}>
-                  <span className="grid-card-measure">
-                    <span className="grid-card-measure-label">{headerLabel(column.label)}{sorted === "desc" ? <ArrowDownIcon aria-hidden="true" /> : sorted === "asc" ? <ArrowUpIcon aria-hidden="true" /> : null}</span>
-                    {column.period || column.basis ? <span className="grid-card-period">{[column.period, column.basis].filter(Boolean).join(" · ")}</span> : null}
-                  </span>
-                </button>
-              </th>;
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {order.map((rowIndex) => {
-            const row = grid.rows[rowIndex]!;
-            const linked = Boolean(row.asset_id && go && scope);
-            const label = names({ name: row.label, assetId: row.asset_id, symbol: row.symbol, market: row.market });
-            return <tr key={`${row.symbol}:${row.market}`}>
-              <th scope="row" className="grid-card-asset">
-                {linked
-                  ? <button type="button" className="grid-card-name" onClick={() => go!({ kind: "asset", target: { loupistId: scope!.loupistId, symbol: row.symbol, market: row.market, name: label } })}>{label}</button>
-                  : <span className="grid-card-name">{label}</span>}
-                <span className="grid-card-symbol">{row.symbol} · {row.market}</span>
-              </th>
-              {grid.columns.map((column, columnIndex) => {
-                const cell = grid.cells[rowIndex]?.[columnIndex];
-                if (!cell) return <td key={column.id} />;
-                return isValueCell(cell)
-                  ? <td key={column.id} className="grid-card-value gg-num" data-status={cell.check.status}><ValueCell cell={cell} decimals={decimals[columnIndex]} asset={row.symbol} evidenceRefs={evidenceRefs} asOf={grid.as_of} /></td>
-                  : <td key={column.id} className="grid-card-empty-cell"><EmptyCell cell={cell} spoken={t("grid.emptySpoken", { asset: label, measure: column.label, reason: emptyReason(cell.empty) })} /></td>;
-              })}
-            </tr>;
-          })}
-        </tbody>
-      </table>
+      {scroll.turned ? turnedTable() : assetTable()}
     </div>
     <div className="grid-card-foot">
       <p className="grid-card-caption">

@@ -16,7 +16,6 @@ impl AppToolExecutor {
         result: &Value,
     ) -> Result<Option<Returning>, BrokerError> {
         match method {
-            ToolMethod::ArtifactList => self.returning_artifact_titles(result),
             ToolMethod::RunResultsList => {
                 // The registry stores warnings before presentation delimiters.
                 // Listing receipts must not promote provider prose to host advice.
@@ -54,41 +53,20 @@ impl AppToolExecutor {
                     ),
                 ]))))
             }
-            ToolMethod::ChartQuery | ToolMethod::ArtifactRead => {
-                self.returning_artifact(method, result)
-            }
-            ToolMethod::AssetPageRead => {
-                let mut fields = ["rows", "watchAlerts"]
-                    .into_iter()
-                    .filter(|key| {
-                        result
-                            .get(*key)
-                            .and_then(Value::as_array)
-                            .is_some_and(|rows| !rows.is_empty())
-                    })
-                    .map(|key| (format!("/{key}"), "asset watch observations".to_owned()))
-                    .collect::<BTreeMap<_, _>>();
-                for (index, entry) in result
-                    .get("results")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .enumerate()
-                {
-                    for key in ["callTone", "measures", "filedSoFar", "revisions"] {
-                        if entry.get(key).is_some_and(|value| match value {
-                            Value::String(text) => !text.is_empty(),
-                            Value::Array(items) => !items.is_empty(),
-                            _ => false,
-                        }) {
-                            fields.insert(
-                                format!("/results/{index}/{key}"),
-                                "saved results observations".into(),
-                            );
-                        }
-                    }
+            ToolMethod::ChatHistory if result.get("finished_at_ms").is_some() => {
+                let mut fields = BTreeMap::from([
+                    ("/content".into(), "saved hand-off answer".into()),
+                    ("/title".into(), "saved hand-off title".into()),
+                ]);
+                if let Some(guidance) = result.get("user_guidance").and_then(Value::as_array) {
+                    fields.extend((0..guidance.len()).map(|index| {
+                        (
+                            format!("/user_guidance/{index}/content"),
+                            "saved hand-off user guidance".into(),
+                        )
+                    }));
                 }
-                Ok((!fields.is_empty()).then_some(Returning::Fields(fields)))
+                Ok(Some(Returning::Fields(fields)))
             }
             ToolMethod::ConversationMemory | ToolMethod::ChatHistory => {
                 self.returning_messages(method, result)
@@ -225,7 +203,11 @@ impl AppToolExecutor {
         )
     }
 
-    fn returning_artifact_titles(&self, result: &Value) -> Result<Option<Returning>, BrokerError> {
+    pub(super) async fn returning_artifact_titles(
+        &self,
+        policy: &ToolPolicy,
+        result: &Value,
+    ) -> Result<Option<Returning>, BrokerError> {
         let mut fields = BTreeMap::new();
         // Every item normally belongs to one Chat; load that transcript once.
         let mut messages: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -238,14 +220,15 @@ impl AppToolExecutor {
             let Some(id) = entry["artifact_id"].as_str() else {
                 continue;
             };
-            let Some(artifact) = self
-                .state
-                .store
-                .get_chat_artifact(id)
-                .map_err(store_error)?
-            else {
+            let resolved = self.current_artifact(policy, id, None).await?;
+            let artifact = resolved.artifact;
+            if resolved.is_draft && self.capture.turn_taint.has_untrusted_content() {
+                fields.insert(
+                    format!("/artifacts/{index}/title"),
+                    "saved artifact from third-party text".into(),
+                );
                 continue;
-            };
+            }
             if let std::collections::btree_map::Entry::Vacant(slot) =
                 messages.entry(artifact.chat_session_id.clone())
             {
@@ -263,14 +246,7 @@ impl AppToolExecutor {
                     .collect();
                 slot.insert(untrusted);
             }
-            let Some(revision) = self
-                .state
-                .store
-                .get_chat_artifact_current(id)
-                .map_err(store_error)?
-            else {
-                continue;
-            };
+            let revision = resolved.revision;
             if messages[&artifact.chat_session_id].contains(&revision.source_message_id) {
                 fields.insert(
                     format!("/artifacts/{index}/title"),
@@ -281,11 +257,27 @@ impl AppToolExecutor {
         Ok((!fields.is_empty()).then_some(Returning::Fields(fields)))
     }
 
-    fn returning_artifact(
+    pub(super) async fn returning_artifact(
         &self,
+        policy: &ToolPolicy,
         method: ToolMethod,
         result: &Value,
     ) -> Result<Option<Returning>, BrokerError> {
+        let artifact_id = result
+            .get("artifact_id")
+            .or_else(|| result.pointer("/artifact/artifact_id"))
+            .or_else(|| result.pointer("/artifact/id"))
+            .and_then(Value::as_str)
+            .ok_or(BrokerError::Malformed)?;
+        let revision_id = result
+            .get("revision")
+            .and_then(Value::as_u64)
+            .or_else(|| result.pointer("/artifact/revision").and_then(Value::as_u64))
+            .or_else(|| result.pointer("/revision/revision").and_then(Value::as_u64))
+            .and_then(|revision| u32::try_from(revision).ok());
+        let resolved = self
+            .current_artifact(policy, artifact_id, revision_id)
+            .await?;
         let dataset_id = if method == ToolMethod::ChartQuery {
             result.get("dataset_id")
         } else {
@@ -294,11 +286,10 @@ impl AppToolExecutor {
         .and_then(Value::as_str);
         let mut untrusted = false;
         if let Some(id) = dataset_id {
-            let dataset = self
-                .state
-                .store
-                .get_chart_dataset(id)
-                .map_err(store_error)?
+            let dataset = resolved
+                .chart_dataset
+                .as_ref()
+                .filter(|dataset| dataset.id == id)
                 .ok_or(BrokerError::Malformed)?;
             if let crate::chat::chart::ChartDatasetLineage::FromDataset {
                 dataset_id,
@@ -315,31 +306,14 @@ impl AppToolExecutor {
                     .is_ok_and(|metadata| retained_trusted(&metadata));
             }
         }
-        let artifact_id = result
-            .get("artifact_id")
-            .or_else(|| result.pointer("/artifact/artifact_id"))
-            .or_else(|| result.pointer("/artifact/id"))
-            .and_then(Value::as_str);
-        if let Some(id) = artifact_id {
-            if let Some(artifact) = self
-                .state
-                .store
-                .get_chat_artifact(id)
-                .map_err(store_error)?
-            {
-                if let Some(revision) = self
-                    .state
-                    .store
-                    .get_chat_artifact_current(id)
-                    .map_err(store_error)?
-                {
-                    untrusted |= self.message_untrusted(
-                        &artifact.chat_session_id,
-                        &revision.source_message_id,
-                    )?;
-                }
-            }
-        }
+        untrusted |= if resolved.is_draft {
+            self.capture.turn_taint.has_untrusted_content()
+        } else {
+            self.message_untrusted(
+                &resolved.artifact.chat_session_id,
+                &resolved.revision.source_message_id,
+            )?
+        };
         if !untrusted {
             return Ok(None);
         }

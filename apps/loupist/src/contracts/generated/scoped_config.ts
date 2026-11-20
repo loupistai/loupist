@@ -1,7 +1,12 @@
 // Generated from Rust by ts-rs; do not edit. Regenerate with:
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
-export type AppearanceConfig = { theme?: string, language?: string };
+export type AppearanceConfig = {
+  theme?: string,
+  language?: string,
+  price_colors?: string,
+  display_currency?: string,
+};
 
 export type ChatConfig = {
   model_profile_id?: string,
@@ -85,7 +90,13 @@ export type PiRetryConfig = {
   max_agent_delay_ms: number,
 };
 
-export type ResolvedAppearanceConfig = { theme: string, language: string };
+export type ResolvedAppearanceConfig = {
+  theme: string,
+  language: string,
+  /** Which colour means a rising price: `auto` follows the interface language. */
+  price_colors: string,
+  display_currency?: string,
+};
 
 export type ResolvedChatConfig = {
   model_profile_id: string | null,

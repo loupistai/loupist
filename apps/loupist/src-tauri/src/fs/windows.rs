@@ -283,6 +283,7 @@ pub(crate) fn filesystem_identity(file: &File) -> io::Result<RootFilesystemIdent
     // SAFETY: a successful call initialized the complete structure.
     let information = unsafe { information.assume_init() };
     Ok(RootFilesystemIdentity {
+        birth_time: None,
         // On Windows these cross-platform fields carry the volume serial and
         // the 64-bit file index respectively.
         device: information.volume_serial_number as u64,

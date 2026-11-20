@@ -123,13 +123,13 @@ pub fn target_summary(arguments: &Value) -> Option<String> {
         if text.is_empty() || text.contains(['\n', '\0']) {
             continue;
         }
-        parts.push(text.chars().take(MAX_PART_CHARS).collect::<String>());
+        parts.push(crate::util::shorten(&text, MAX_PART_CHARS));
         if parts.len() == MAX_TARGET_PARTS {
             break;
         }
     }
     let joined = parts.join(" · ");
-    (!joined.is_empty()).then(|| joined.chars().take(MAX_TARGET_CHARS).collect())
+    (!joined.is_empty()).then(|| crate::util::shorten(&joined, MAX_TARGET_CHARS))
 }
 
 struct Pending {

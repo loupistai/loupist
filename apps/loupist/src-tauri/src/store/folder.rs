@@ -133,6 +133,95 @@ impl SqliteStore {
         }
         Ok(StoreConnection::Folder(folders, loupist_id.to_owned()))
     }
+    fn attached_identity<T, E>(
+        &self,
+        root: &BoundLoupistRoot,
+        identity: Option<&crate::domain::RootFilesystemIdentity>,
+        map: impl Fn(StoreError) -> E + Copy,
+        body: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let mut catalog = self.lock().map_err(map)?;
+        let data_dir = root.path();
+        let database = data_dir.join("loupist.sqlite3");
+        let mut uri = tauri::Url::from_file_path(&database).map_err(|_| {
+            map(StoreError::Conflict(
+                "Loupist folder database path is invalid",
+            ))
+        })?;
+        uri.set_query(Some("mode=rw"));
+        #[cfg(unix)]
+        let held = {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                .open(&database)
+                .map_err(|error| map(invalid(error)))?
+        };
+        let verify = |conn: &Connection| {
+            let reopened = BoundLoupistRoot::open_unbound(data_dir.to_owned())
+                .map_err(|error| map(invalid(error)))?;
+            if reopened.identity() != root.identity()
+                || database_identity(&database).map_err(map)?.as_ref() != identity
+            {
+                return Err(map(StoreError::Conflict(
+                    "Loupist data folder changed during identity write",
+                )));
+            }
+            #[cfg(unix)]
+            super::root_identity::verify_database(conn, c"asset_folder", &held, &database)
+                .map_err(map)?;
+            #[cfg(not(unix))]
+            let _ = conn;
+            Ok(())
+        };
+        let catalog_mode: String = catalog
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .map_err(|error| map(StoreError::from(error)))?;
+        let result = (|| {
+            catalog
+                .execute("ATTACH DATABASE ?1 AS asset_folder", [uri.as_str()])
+                .map_err(|error| map(StoreError::from(error)))?;
+            let result = (|| {
+                verify(&catalog)?;
+                for schema in ["main", "asset_folder"] {
+                    let mode: String = catalog
+                        .pragma_update_and_check(Some(schema), "journal_mode", "DELETE", |r| {
+                            r.get(0)
+                        })
+                        .map_err(|error| map(StoreError::from(error)))?;
+                    if mode != "delete" {
+                        return Err(map(StoreError::Conflict(
+                            "Asset identity writes require rollback journals",
+                        )));
+                    }
+                }
+                catalog
+                    .execute_batch(
+                        "PRAGMA main.synchronous=FULL; PRAGMA asset_folder.synchronous=FULL;",
+                    )
+                    .map_err(|error| map(StoreError::from(error)))?;
+                let tx = catalog
+                    .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                    .map_err(|error| map(StoreError::from(error)))?;
+                let value = body(&tx)?;
+                #[cfg(all(test, unix))]
+                super::root_identity::run_before_commit_hook();
+                verify(&tx)?;
+                tx.commit().map_err(|error| map(StoreError::from(error)))?;
+                Ok(value)
+            })();
+            if let Err(error) = catalog.execute_batch("DETACH DATABASE asset_folder") {
+                eprintln!("could not detach folder from asset correction connection: {error}");
+            }
+            result
+        })();
+        if let Err(error) = catalog.pragma_update(None, "journal_mode", catalog_mode) {
+            eprintln!("could not restore SQLite journal mode after asset correction: {error}");
+        }
+        result
+    }
+
     pub(crate) fn lock_record(&self, table: &str, id: &str) -> StoreResult<StoreConnection<'_>> {
         if !self.folder_catalog {
             return self.lock();
@@ -351,7 +440,7 @@ impl SqliteStore {
         if expected.id != updated.id || updated.updated_at_ms <= expected.updated_at_ms {
             return Err(invalid("workspace reconnection is invalid"));
         }
-        if self.get_loupist(&expected.id)?.as_ref() != Some(expected) {
+        if self.get_loupist_recorded(&expected.id)?.as_ref() != Some(expected) {
             return Err(StoreError::Conflict("Loupist changed before reconnection"));
         }
         if self.list_loupists()?.iter().any(|p| {
@@ -370,34 +459,75 @@ impl SqliteStore {
                 "Choose this Loupist's original or copied folder",
             ));
         }
-        self.folders
-            .lock()
-            .map_err(|_| StoreError::LockPoisoned)?
-            .remove(&updated.id);
-        self.register_existing_folder(updated)
+        self.register_folder(updated, Some(expected))
     }
+
     pub(crate) fn register_existing_folder(&self, profile: &LoupistProfile) -> StoreResult<()> {
-        // Admission checks precede changes to the copied folder.
+        self.register_folder(profile, None)
+    }
+
+    fn register_folder(
+        &self,
+        profile: &LoupistProfile,
+        expected: Option<&LoupistProfile>,
+    ) -> StoreResult<()> {
         let root = profile_workspace(profile).map_err(invalid)?;
         let dir = root.path().join(".loupist");
-        let _lock = crate::app::AppInstanceLock::acquire(&dir).map_err(invalid)?;
-        write_project_gitignore(&dir)?;
-        let local = Self::open_folder(dir.join("loupist.sqlite3"))?;
-        local.save_loupist(profile)?;
-        {
-            let mut connection = local.lock()?;
-            let transaction = connection.transaction()?;
-            crate::scheduled_tasks::store::pause_copied_tasks(&transaction)?;
-            drop_pi_session_caches(&transaction, None)?;
-            let mut settings =
-                crate::knowledge::load_settings(&transaction, &profile.id).map_err(invalid)?;
-            settings.paused = true;
-            crate::knowledge::store_settings(&transaction, &profile.id, &settings)
-                .map_err(invalid)?;
-            crate::knowledge::recover_interrupted_jobs(&transaction).map_err(invalid)?;
-            transaction.commit()?;
+        let data_root = BoundLoupistRoot::open_unbound(dir.clone()).map_err(invalid)?;
+        let mut folders = self.folders.lock().map_err(|_| StoreError::LockPoisoned)?;
+        let already_locked = folders
+            .get(&profile.id)
+            .is_some_and(|opened| opened.root.identity() == data_root.identity());
+        let _lock = if already_locked {
+            None
+        } else {
+            Some(crate::app::AppInstanceLock::acquire(&dir).map_err(invalid)?)
+        };
+        let database = dir.join("loupist.sqlite3");
+        let identity = database_identity(&database)?;
+        validate_folder(&dir)?;
+        let local = Self::open_folder(&database)?;
+        // The retained connection and attached write must identify the same
+        // file admitted above. The transaction rereads all cards in that file.
+        if identity != database_identity(&database)? {
+            return Err(StoreError::Conflict(
+                "Loupist database changed while opening",
+            ));
         }
-        self.refresh_folder_registration(profile)
+        self.attached_identity(&data_root, identity.as_ref(), |error| error, |tx| {
+            let old = super::load_json_by_id::<LoupistProfile>(tx, "main.loupist_profiles", &profile.id)?;
+            if old.as_ref() != expected {
+                return Err(StoreError::Conflict("Loupist changed before registration"));
+            }
+            let stored: String = tx.query_row(
+                "SELECT id FROM asset_folder.loupist_profiles WHERE (SELECT count(*) FROM asset_folder.loupist_profiles)=1", [], |row| row.get(0)
+            )?;
+            if stored != profile.id {
+                return Err(StoreError::Conflict("Choose this Loupist's original or copied folder"));
+            }
+            let (device, inode) = root_identity_columns(profile);
+            let data = to_json(profile)?;
+            map_loupist_profile_write(tx.execute(
+                "UPDATE asset_folder.loupist_profiles SET workspace_root=?2,updated_at_ms=?3,
+                 root_device=?4,root_inode=?5,data_json=?6 WHERE id=?1",
+                params![profile.id,profile.workspace_root,profile.updated_at_ms,device,inode,data]))?;
+            map_loupist_profile_write(tx.execute(
+                "INSERT INTO main.loupist_profiles(id,workspace_root,updated_at_ms,root_device,root_inode,data_json)
+                 VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET workspace_root=excluded.workspace_root,
+                 updated_at_ms=excluded.updated_at_ms, root_device=excluded.root_device,
+                 root_inode=excluded.root_inode,data_json=excluded.data_json",
+                params![profile.id,profile.workspace_root,profile.updated_at_ms,device,inode,data]))?;
+            crate::scheduled_tasks::store::pause_copied_tasks(tx, "asset_folder")?;
+            drop_pi_session_caches_in(tx, None, "asset_folder")?;
+            crate::knowledge::pause_copied_processing(tx, &profile.id, "asset_folder").map_err(invalid)?;
+            Ok(())
+        })?;
+        drop(local);
+        folders.remove(&profile.id);
+        if let Err(error) = write_project_gitignore(&dir) {
+            eprintln!("could not update copied folder's gitignore: {error}");
+        }
+        Ok(())
     }
 }
 
@@ -406,13 +536,22 @@ impl SqliteStore {
 /// place with a `null` value, as `ChatSession` writes it: a Chat's
 /// compare-and-swap compares the stored text with the re-encoded Chat, so
 /// removing the key would leave every Chat unwritable.
+#[cfg(test)]
 pub(crate) fn drop_pi_session_caches(
     connection: &Connection,
     loupist_id: Option<&str>,
 ) -> StoreResult<()> {
+    drop_pi_session_caches_in(connection, loupist_id, "main")
+}
+
+fn drop_pi_session_caches_in(
+    connection: &Connection,
+    loupist_id: Option<&str>,
+    schema: &str,
+) -> StoreResult<()> {
     connection.execute(
-        "UPDATE chat_sessions SET data_json = json_replace(data_json, '$.piSessionCache', NULL)
-         WHERE ?1 IS NULL OR loupist_id = ?1",
+        &format!("UPDATE {schema}.chat_sessions SET data_json = json_replace(data_json, '$.piSessionCache', NULL)
+         WHERE ?1 IS NULL OR loupist_id = ?1"),
         [loupist_id],
     )?;
     Ok(())
@@ -488,11 +627,15 @@ fn database_identity(path: &Path) -> StoreResult<Option<crate::domain::RootFiles
     }
     #[cfg(unix)]
     {
-        use std::os::unix::fs::MetadataExt;
-        Ok(Some(crate::domain::RootFilesystemIdentity {
-            device: metadata.dev(),
-            inode: metadata.ino(),
-        }))
+        use std::os::unix::fs::OpenOptionsExt;
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(path)
+            .map_err(invalid)?;
+        Ok(Some(
+            crate::fs::filesystem_identity::of_file(&file).map_err(invalid)?,
+        ))
     }
     #[cfg(windows)]
     {

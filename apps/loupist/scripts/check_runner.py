@@ -150,6 +150,11 @@ def python_runtime_step(name, flag):
     return step(name, [sys.executable, APP / "scripts/stage_python_runtime.py", flag])
 
 
+def embed_assets_step(name, flag):
+    """The pinned embedding model the Rust tests and the recall floors load."""
+    return step(name, [sys.executable, APP / "scripts/stage-embed-assets.py", flag])
+
+
 # The Python worker admits one run at a time, so these tests form one serial
 # chain that outlasts every other test. They run beside the headless eval
 # contracts, in the same build, instead of extending the all-target test step.
@@ -161,6 +166,7 @@ PYTHON_SANDBOX_TESTS = ("python_run::tests::",)
 def rust_plan(install=False):
     skipped = " ".join(f"--skip {name}" for name in PYTHON_SANDBOX_TESTS)
     steps = [
+        embed_assets_step("embed-assets-verify", "--verify"),
         step("format", cargo("fmt -- --check")),
         step("clippy", cargo("clippy --locked --all-targets -- -D warnings")),
         # The native E2E build compiles feature-gated fixtures that the default build skips.
@@ -186,6 +192,7 @@ def rust_plan(install=False):
     ]
     if install:
         steps.insert(0, python_runtime_step("install-python-runtime", "--ensure"))
+        steps.insert(1, embed_assets_step("install-embed-assets", "--ensure"))
     return steps
 
 
@@ -304,6 +311,7 @@ def setup_steps(scope, steps):
         return [
             step("install-cargo", cargo("fetch --locked")),
             python_runtime_step("install-python-runtime", "--ensure"),
+            embed_assets_step("install-embed-assets", "--ensure"),
         ]
     return [
         s

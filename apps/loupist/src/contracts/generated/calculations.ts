@@ -21,4 +21,5 @@ export type CalcOperation =
   | "sum"
   | "holdings_overlap"
   | "goal_grid"
-  | "dca_history";
+  | "dca_history"
+  | "convert";

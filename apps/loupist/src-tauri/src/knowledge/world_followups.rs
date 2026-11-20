@@ -5,13 +5,11 @@ use super::error::{KnowledgeError, KnowledgeResult};
 use super::identity::{resolve_followed, IdentityMatch};
 use super::model::{mint_id, validate_token, ClaimStatus, WorldSnapshotBody};
 use crate::store::user_context::MapContextItem;
-use rusqlite::{params, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
-pub const SHOWN_PER_DAY: usize = 3;
 #[cfg(test)]
 const LIST_LIMIT: usize = 200;
-const DAY_MS: i64 = 86_400_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -255,7 +253,7 @@ fn view_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConnectionView> {
             .unwrap_or_default(),
         path: path.hops,
         score: row.get(5)?,
-        status: ConnectionStatus::parse(&status).unwrap_or(ConnectionStatus::New),
+        status: ConnectionStatus::parse(&status).ok_or_else(|| rusqlite::Error::InvalidQuery)?,
         created_at_ms: row.get(7)?,
     })
 }
@@ -273,7 +271,25 @@ pub(super) fn list(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Ve
     rows.collect::<Result<_, _>>().map_err(Into::into)
 }
 
-pub(super) fn set_status(
+pub(crate) fn connection_in_loupist(
+    connection: &Connection,
+    loupist_id: &str,
+    connection_id: &str,
+) -> KnowledgeResult<Option<ConnectionView>> {
+    validate_token(connection_id, 128, "connection id is invalid")?;
+    Ok(connection
+        .query_row(
+            &format!(
+                "SELECT {COLUMNS} FROM knowledge_connections
+                      WHERE loupist_id = ?1 AND connection_id = ?2"
+            ),
+            params![loupist_id, connection_id],
+            view_from_row,
+        )
+        .optional()?)
+}
+
+pub(crate) fn set_status(
     tx: &Transaction<'_>,
     loupist_id: &str,
     connection_id: &str,
@@ -289,37 +305,19 @@ pub(super) fn set_status(
     if changed == 0 {
         return Err(KnowledgeError::NotFound);
     }
-    tx.query_row(
-        &format!("SELECT {COLUMNS} FROM knowledge_connections WHERE connection_id = ?1"),
-        [connection_id],
-        view_from_row,
-    )
-    .optional()?
-    .ok_or(KnowledgeError::NotFound)
+    connection_in_loupist(tx, loupist_id, connection_id)?.ok_or(KnowledgeError::NotFound)
 }
 
+/// Bot delivery is disabled until the caller can prove current personal relevance.
+/// The Map keeps every detected relation. This transaction has no app-level
+/// following/holdings snapshot, and recorded paths alone cannot establish that
+/// both ends are followed or that the far end is a dated event.
 pub(crate) fn to_show(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    at_ms: i64,
+    _tx: &Transaction<'_>,
+    _loupist_id: &str,
+    _at_ms: i64,
 ) -> KnowledgeResult<Vec<ConnectionView>> {
-    let day_start = at_ms - at_ms.rem_euclid(DAY_MS);
-    let shown_today: i64 = tx.query_row(
-        "SELECT COUNT(*) FROM knowledge_connections
-         WHERE loupist_id = ?1 AND shown_at_ms >= ?2",
-        params![loupist_id, day_start],
-        |row| row.get(0),
-    )?;
-    let allowance = (SHOWN_PER_DAY as i64 - shown_today).max(0);
-    if allowance == 0 {
-        return Ok(Vec::new());
-    }
-    let mut statement = tx.prepare(&format!(
-        "SELECT {COLUMNS} FROM knowledge_connections WHERE loupist_id = ?1 AND status = 'new'
-         ORDER BY score DESC, created_at_ms, connection_id LIMIT ?2"
-    ))?;
-    let rows = statement.query_map(params![loupist_id, allowance], view_from_row)?;
-    rows.collect::<Result<_, _>>().map_err(Into::into)
+    Ok(Vec::new())
 }
 
 pub(crate) fn mark_shown(
@@ -409,6 +407,7 @@ mod tests {
 
     fn item(symbol: &str, market: &str) -> MapContextItem {
         MapContextItem {
+            asset_id: crate::knowledge::assets::asset_id(symbol, market),
             symbol: symbol.into(),
             market: market.into(),
             display_name: None,
@@ -572,113 +571,27 @@ mod tests {
     }
 
     #[test]
-    fn the_day_allowance_keeps_the_fourth_link_new() {
+    fn extracted_profile_relations_stay_on_the_map_without_bot_posts() {
         let (_directory, store) = open_store();
         let record = world(&store);
         let mut nodes = base_nodes();
         let mut claims = vec![claim("c1", "a", "b")];
-        for far in ["c", "d", "e", "f"] {
-            nodes.push(node(far, far, "Technology", None));
-            claims.push(claim(&format!("c-{far}"), "b", far));
+        for far in ["Quadro GPUs", "NVIDIA RTX GPUs", "Autonomous vehicles"] {
+            let id = far.replace(' ', "-");
+            nodes.push(node(&id, far, "Product", None));
+            claims.push(claim(&format!("c-{id}"), "b", &id));
         }
         seal(&store, &record, nodes, claims, &[item("A", "KRX")], 10);
-        assert_eq!(connections(&store).len(), 4);
-        let shown = store
-            .transact(|write| {
-                let shown = to_show(write.tx, LOUPIST, 20)?;
-                let ids: Vec<String> = shown
-                    .iter()
-                    .map(|link| link.connection_id.clone())
-                    .collect();
-                mark_shown(write.tx, LOUPIST, &ids, 20)?;
-                Ok(shown)
-            })
-            .unwrap();
-        assert_eq!(shown.len(), SHOWN_PER_DAY);
-        assert!(store
-            .transact(|write| to_show(write.tx, LOUPIST, 30))
-            .unwrap()
-            .is_empty());
-        let statuses: Vec<ConnectionStatus> = connections(&store)
-            .into_iter()
-            .map(|link| link.status)
-            .collect();
-        assert_eq!(
-            statuses
-                .iter()
-                .filter(|s| **s == ConnectionStatus::New)
-                .count(),
-            1
-        );
-        let next_day = store
-            .transact(|write| to_show(write.tx, LOUPIST, 20 + DAY_MS))
-            .unwrap();
-        assert_eq!(next_day.len(), 1);
-        let opened = store
-            .transact(|write| {
-                write.connection_set_status(
-                    LOUPIST,
-                    &next_day[0].connection_id,
-                    ConnectionStatus::Opened,
-                    40,
-                )
-            })
-            .unwrap();
-        assert_eq!(opened.status, ConnectionStatus::Opened);
-        assert!(matches!(
-            store.transact(|write| write.connection_set_status(
-                LOUPIST,
-                "con_missing",
-                ConnectionStatus::Dismissed,
-                41
-            )),
-            Err(KnowledgeError::NotFound)
-        ));
-    }
-
-    #[test]
-    fn opening_or_dismissing_yesterdays_links_leaves_todays_allowance() {
-        let (_directory, store) = open_store();
-        let record = world(&store);
-        let mut nodes = base_nodes();
-        let mut claims = vec![claim("c1", "a", "b")];
-        for far in ["c", "d", "e", "f"] {
-            nodes.push(node(far, far, "Technology", None));
-            claims.push(claim(&format!("c-{far}"), "b", far));
+        assert_eq!(connections(&store).len(), 3, "Map discovery is retained");
+        for at in [20, 86_400_020] {
+            assert!(store
+                .read(|read| to_show(read.tx, LOUPIST, at))
+                .unwrap()
+                .is_empty());
         }
-        seal(&store, &record, nodes, claims, &[item("A", "KRX")], 10);
-        let yesterday = store
-            .transact(|write| {
-                let shown = to_show(write.tx, LOUPIST, 20)?;
-                let ids: Vec<String> = shown
-                    .iter()
-                    .map(|link| link.connection_id.clone())
-                    .collect();
-                mark_shown(write.tx, LOUPIST, &ids, 20)?;
-                Ok(shown)
-            })
-            .unwrap();
-        assert_eq!(yesterday.len(), SHOWN_PER_DAY);
-        let today = 20 + DAY_MS;
-        for (link, status) in yesterday.iter().zip([
-            ConnectionStatus::Dismissed,
-            ConnectionStatus::Opened,
-            ConnectionStatus::Dismissed,
-        ]) {
-            store
-                .transact(|write| {
-                    write.connection_set_status(LOUPIST, &link.connection_id, status, today)
-                })
-                .unwrap();
-        }
-        let shown_today = store
-            .transact(|write| to_show(write.tx, LOUPIST, today + 1))
-            .unwrap();
-        assert_eq!(
-            shown_today.len(),
-            1,
-            "nothing was shown today, so the fourth link is"
-        );
+        assert!(connections(&store)
+            .iter()
+            .all(|link| link.status == ConnectionStatus::New));
     }
 
     #[test]

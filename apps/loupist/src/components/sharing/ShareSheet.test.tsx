@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
+import type { ShareFinding, ShareFindingClass } from "../../contracts/sharing";
 import { ShareSheet } from "./ShareSheet";
 
 async function fixture(configure?: (bridge: MockLoupistBridge) => void) {
@@ -49,6 +50,24 @@ it("keeps every output disabled until a blocking finding is left out, and offers
     sections: { profile: true, perspective: true, methods: true, principles: false, map: true },
   }));
   expect(await within(dialog).findByText("Saved to /Users/kimj/Desktop/quality-compounder")).toBeVisible();
+});
+
+it("blocks a credential finding until it is left out, with no It's fine", async () => {
+  const credential: ShareFinding = { id: "f-key", class: "credential", itemKey: "m-api", itemKind: "method", itemLabel: "Pull filings", blocking: true };
+  const { dialog, user } = await fixture(bridge => bridge.sharing.setFindings([credential]));
+  const findings = within(dialog).getByRole("region", { name: "Check before sharing (1)" });
+  const row = within(findings).getByText(/looks like a password or API key/).closest("li")!;
+  expect(row).toHaveTextContent("Method “Pull filings” contains what looks like a password or API key.");
+  expect(within(row).queryByRole("button", { name: "It's fine" })).toBeNull();
+  expect(within(dialog).getByRole("button", { name: "Save as ZIP" })).toBeDisabled();
+  await user.click(within(row).getByRole("button", { name: "Leave it out" }));
+  expect(within(dialog).getByRole("button", { name: "Save as ZIP" })).toBeEnabled();
+});
+
+it("has no finding class for holdings, which the app no longer keeps", () => {
+  // @ts-expect-error Holdings left the app; the sharing check has no holding class.
+  const holding: ShareFindingClass = "holding";
+  expect(holding).toBe("holding");
 });
 
 it("replaces Publish with the not-available note when this build has no GitHub client", async () => {

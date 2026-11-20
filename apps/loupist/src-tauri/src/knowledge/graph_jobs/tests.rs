@@ -267,6 +267,115 @@ pub(super) fn world_artifact(spans: &[&str]) -> String {
 }
 
 #[test]
+fn publication_drops_a_relationship_whose_ends_are_one_entity_and_keeps_reported_values() {
+    let node = |id: &str, name: &str, kind: &str, aliases: &[&str]| {
+        json!({
+            "adapter_id": id, "name": name, "aliases": aliases, "description": "",
+            "kind": kind, "source_role": "source", "properties": {}
+        })
+    };
+    let (pair, bitcoin, strategy) = (
+        "nod_krwbtc000000000000000000000000",
+        "nod_bitcoin00000000000000000000000",
+        "nod_strategy0000000000000000000000",
+    );
+    let farside = "Farside Investors — US spot bitcoin ETF daily net flows";
+    let mut index = 0;
+    let mut claim = |relation: &str, source: &str, target: &str, proposition: &str| {
+        index += 1;
+        json!({
+            "adapter_id": format!("clm_{index:032}"), "proposition": proposition, "attribution": farside,
+            "relation": relation,
+            "endpoints": [{"node_id": source, "role": "source"}, {"node_id": target, "role": "target"}],
+            "qualifiers": [], "evidence": [{"span_id": "spn_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "role": "extracted_from", "attribution": farside}],
+            "status": "active", "recorded_at_ms": T,
+            "publication_time": {"precision": "unknown", "value": null, "approximate": false},
+            "effective_time": null, "valid_at": null, "invalid_at": null, "expired_at": null
+        })
+    };
+    // One Farside table: a reported net flow per trading day on each subject, which are distinct
+    // facts, and relationships the extractor drew between names that are one asset.
+    let mut claims: Vec<Value> = (1..=6)
+        .map(|day| claim("REPORTS", pair, pair, &format!("US spot bitcoin ETFs reported net inflows of USD {day}00 million on 2026-11-{day:02}.")))
+        .collect();
+    claims.push(claim(
+        "REPORTS",
+        bitcoin,
+        bitcoin,
+        "US spot bitcoin ETFs reported net inflows of USD 750 million on 2026-11-07.",
+    ));
+    claims.push(claim(
+        "REPORTS",
+        pair,
+        bitcoin,
+        "KRW-BTC reported a 1.2% kimchi premium over Bitcoin on 2026-11-07.",
+    ));
+    claims.push(claim("TRACKS", pair, bitcoin, "KRW-BTC tracks Bitcoin."));
+    claims.push(claim(
+        "PART_OF",
+        bitcoin,
+        pair,
+        "Bitcoin is part of KRW-BTC.",
+    ));
+    claims.push(claim(
+        "AFFECTS",
+        bitcoin,
+        bitcoin,
+        "Bitcoin ETF flows affect Bitcoin.",
+    ));
+    claims.push(claim("OWNS", strategy, bitcoin, "Strategy owns Bitcoin."));
+    let nodes = [
+        node(pair, "KRW-BTC", "Asset", &[]),
+        node(
+            bitcoin,
+            "Bitcoin (BTC:CRYPTO)",
+            "Asset",
+            &["BTC", "krw-btc"],
+        ),
+        node(
+            strategy,
+            "Strategy",
+            "Organization",
+            &["BTC Treasury Strategy"],
+        ),
+    ];
+    let artifact =
+        json!({"format": "loupist.world_graph_snapshot", "nodes": nodes, "claims": claims})
+            .to_string();
+    let previous: Vec<crate::knowledge::GraphNode> = nodes
+        .iter()
+        .map(|node| crate::knowledge::worker::adapt_worker_node(node).unwrap())
+        .collect();
+    let (_, published, _) = project_worker_artifact(&artifact, &previous).unwrap();
+    let relations: Vec<(&str, &str, &str)> = published
+        .iter()
+        .map(|claim| {
+            (
+                claim.relation.as_str(),
+                claim.endpoints[0].node_id.as_str(),
+                claim.endpoints[1].node_id.as_str(),
+            )
+        })
+        .collect();
+    // Every reported value stays, on its subject; "KRW-BTC" and the Bitcoin node aliased
+    // "krw-btc" are one asset, so no relationship between them, or of either with itself, is published.
+    assert_eq!(
+        relations
+            .iter()
+            .filter(|(relation, ..)| *relation == "REPORTS")
+            .count(),
+        8
+    );
+    assert_eq!(
+        relations
+            .iter()
+            .filter(|(relation, ..)| *relation != "REPORTS")
+            .collect::<Vec<_>>(),
+        [&("OWNS", strategy, bitcoin)]
+    );
+}
+
+#[test]
 fn per_loupist_preferences_and_deletion_do_not_affect_other_loupists() {
     let store = crate::store::SqliteStore::open_in_memory().unwrap();
     let mut connection = store.lock().unwrap();
@@ -1125,6 +1234,7 @@ fn processed_chat_source_stamps_world_growth_and_a_map_source_does_not() {
                     material: source_request(loupist, "", b"Ada directed the engine.").material,
                 },
                 "message-a",
+                None,
             )
         })
         .unwrap();

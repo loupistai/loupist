@@ -267,6 +267,12 @@ pub(crate) fn add_episode(input: Input<'_>, bridge: &mut Bridge<'_>) -> StopResu
             edge.target = mapped.clone();
         }
     }
+    // Resolution can merge both ends into one node ("KRW-BTC" into Bitcoin): that is no
+    // relationship either, and resolving it would spend calls on a claim publication drops.
+    extracted_edges.retain(|index| {
+        let edge = &run.edges[*index];
+        edge.source != edge.target || edge.name == "REPORTS"
+    });
     let decisions = run.plan_edge_resolution(&mut extracted_edges)?;
     let attributes = run.plan_attributes(&resolved);
     let mut calls = Vec::new();

@@ -2,9 +2,8 @@
 import { prepareFixture, PreviewBridge } from "../fixtures";
 import { rememberScope } from "../../components/map/mapVisit";
 import type { GrowthEvent, KnowledgeMapNode } from "../../contracts/knowledge";
-import { workspaceOverlayMedia } from "../../components/workspace/useWorkspacePanelResize";
 import { MIN_VISIT_MS, recordVisit } from "../../app/loupistVisit";
-import { base, click, clickMapAction, enterMap, localViewMap, mapCanvas, navigate, pressMenu, rememberPreviewMap, select, until, type PreviewScenario } from "./kit";
+import { base, click, clickMapAction, enterMap, localViewMap, mapCanvas, navigate, pressMenu, rememberPreviewMap, select, selectPanel, until, type PreviewScenario } from "./kit";
 
 /** Last visit two days ago and five changes since: two names, a relationship, conflicting evidence and a learned method. */
 function whatsNewFixture(bridge: PreviewBridge, withChanges: boolean) {
@@ -21,6 +20,51 @@ function whatsNewFixture(bridge: PreviewBridge, withChanges: boolean) {
     event(5, "claim_disputed", "map-claim-08", now - 20 * 60_000, "TSMC packaging capacity reserved for SK hynix HBM (54% vs 48%)"),
   ] : [];
   bridge.knowledgeGrowthEvents = async request => ({ events: events.filter(item => request.sinceMs === undefined || item.atMs >= request.sinceMs), nextCursor: null });
+}
+
+/**
+ * The reported shape: one Source's table read as six values reported about NVIDIA. Each is a
+ * claim naming NVIDIA in both roles, and the reply's other changes ride along.
+ */
+function reportedValuesFixture(bridge: PreviewBridge) {
+  whatsNewFixture(bridge, true);
+  const read = bridge.knowledgeMap.bind(bridge), changes = bridge.knowledgeGrowthEvents.bind(bridge);
+  const ids = Array.from({ length: 6 }, (_, index) => `map-reported-${index + 1}`);
+  bridge.knowledgeMap = async request => {
+    const map = await read(request);
+    map.edges.push(...ids.map(id => ({ id, kind: "claim" as const, source: "map-entity-03", target: "map-entity-03", relation: "REPORTS", status: "active" as const })));
+    return map;
+  };
+  const atMs = Date.now() - 40 * 60_000;
+  bridge.knowledgeGrowthEvents = async request => {
+    const page = await changes(request);
+    const reported = ids.map((id, index): GrowthEvent => ({ eventId: `reported-${index}`, loupistId: "loupist-quality", atMs, kind: "claim_added", subjectId: id, recordId: "map-world", originChatId: null, originMessageId: "preview-answer", actor: "loupist", summary: `NVIDIA reported data center revenue for week ${index + 1}`, beforeSummary: null, afterSummary: null }));
+    return { ...page, events: [...page.events, ...reported.filter(item => request.sinceMs === undefined || item.atMs >= request.sinceMs)] };
+  };
+}
+
+/**
+ * A chat whose answer named TSMC opens the full Map on it while the Map is still updating:
+ * every later read adds three names beside TSMC under a new revision.
+ */
+function mapFromChatFixture(bridge: PreviewBridge) {
+  localViewMap(bridge);
+  rememberPreviewMap({ scope: "1" });
+  const read = bridge.knowledgeMap.bind(bridge);
+  let reads = 0;
+  bridge.knowledgeMap = async request => {
+    const map = await read(request);
+    const added = Math.min(reads++, 6) * 3;
+    for (let index = 0; index < added; index++) {
+      const id = `local-new-${index}`;
+      map.nodes.push({ id, label: `New supplier ${index + 1}`, kind: "entity", entityKind: "Organization", degree: 1, watched: false, firstSeenAtMs: Date.now() });
+      map.edges.push({ id: `local-claim-${id}`, kind: "claim", source: id, target: "local-tsmc", relation: "SUPPLIES", status: "active" });
+      map.nodes.find(node => node.id === "local-tsmc")!.degree++;
+    }
+    map.worldRevisionId = `local-view-preview-${added}`;
+    return map;
+  };
+  bridge.knowledgeGrowthEvents = async () => ({ events: ["local-tsmc", "local-ring-6", "local-ring-5"].map((subjectId, index): GrowthEvent => ({ eventId: `map-from-chat-${index}`, loupistId: "loupist-quality", originChatId: "preview-chat", originMessageId: "preview-answer", atMs: Date.now() - 60_000, kind: "entity_added", subjectId, recordId: "preview-world", actor: "loupist", summary: "", beforeSummary: null, afterSummary: null })), nextCursor: null });
 }
 
 /** On a first visit the key strip is open at every size. */
@@ -106,7 +150,7 @@ export const mapScenarios: PreviewScenario[] = [
           map.counts.lens_perspective.total = map.counts.lens_perspective.shown = map.nodes.length;
         }
         if (id === "map-1000") {
-          map.nodes = Array.from({ length: 1000 }, (_, i) => ({ id: `synthetic-${i}`, kind: "entity" as const, label: `Research ${String(i + 1).padStart(4, "0")}`, entityKind: ["Organization", "Product", "Person", "Event", "Entity"][i % 5], degree: 0, watched: i < 3, held: i === 3, firstSeenAtMs: Date.UTC(2026, 9, 1 + i % 28) }));
+          map.nodes = Array.from({ length: 1000 }, (_, i) => ({ id: `synthetic-${i}`, kind: "entity" as const, label: `Research ${String(i + 1).padStart(4, "0")}`, entityKind: ["Organization", "Product", "Person", "Event", "Entity"][i % 5], degree: 0, watched: i < 4, firstSeenAtMs: Date.UTC(2026, 9, 1 + i % 28) }));
           map.edges = Array.from({ length: 1500 }, (_, i) => ({ id: `synthetic-edge-${i}`, kind: "claim" as const, source: `synthetic-${i % 1000}`, target: `synthetic-${(i * 31 + 7) % 1000}`, relation: "related_to", status: i % 97 === 0 ? "disputed" as const : "active" as const }));
           for (const edge of map.edges) for (const nodeId of [edge.source, edge.target]) map.nodes[Number(nodeId.split("-")[1])].degree++;
           for (const [kind, count] of Object.entries(map.counts)) { count.total = count.shown = kind === "entity" ? 1000 : kind === "claim" ? 1500 : 0; count.truncated = false; }
@@ -118,6 +162,16 @@ export const mapScenarios: PreviewScenario[] = [
   })),
   { ...base("map-local-1hop", "A large Map opens around one company, with the key strip open on a first visit", () => select("[data-map-around]") && mapCanvas() && legendAtFirstVisit() ? select(".map-stats") : null, async root => { await enterMap(root); }),
     setup: async bridge => { await prepareFixture(bridge); localViewMap(bridge); rememberPreviewMap({ scope: "1" }); } },
+  { ...base("map-from-chat", "A chat opens the full Map on a name while the Map updates: the drawing is framed beside the inspector", () => mapCanvas() && select(".map-view .map-inspector") ? select(".map-view .map-canvas") : null, async root => {
+    await selectPanel("materials");
+    await click("#workspace-tab-chat-map", root);
+    const mini = await until(() => select(".chat-mini-map"), "Chat map did not open");
+    // The mini map's list view names this chat's companies; a name opens the full Map on it.
+    await click(".chat-mini-map-header button[aria-pressed]", mini);
+    const tsmc = await until(() => [...mini.querySelectorAll<HTMLButtonElement>(".map-list button")].find(button => button.textContent === "TSMC"), "TSMC is not in the chat's list");
+    tsmc.click();
+    await until(() => select(".map-view .map-inspector"), "The full Map did not open on TSMC");
+  }), setup: async bridge => { await prepareFixture(bridge, "answer"); mapFromChatFixture(bridge); } },
   { ...base("map-local-2hops-bounded", "Two hops stop at 150 names around the company", () => select("[data-map-around]") && mapCanvas() ? select(".map-stats") : null, async root => { await enterMap(root); }),
     setup: async bridge => { await prepareFixture(bridge); localViewMap(bridge); rememberPreviewMap({ scope: "2" }); } },
   { ...base("map-local-no-neighbors", "A company with no relationships yet", () => mapCanvas() ? select(".map-no-neighbors") : null, async root => { await enterMap(root); }),
@@ -129,6 +183,10 @@ export const mapScenarios: PreviewScenario[] = [
     }),
     setup: async bridge => { await prepareFixture(bridge); whatsNewFixture(bridge, id === "map-whats-new"); },
   })),
+  { ...base("map-whats-new-reported", "Values one Source reported about one name: one row, never a name related to itself", () => mapCanvas() ? select('.map-whats-new .map-whats-new-row[data-kind="fact"]') : null, async root => {
+    const map = await enterMap(root);
+    await click("[data-map-whats-new]", map);
+  }), setup: async bridge => { await prepareFixture(bridge); reportedValuesFixture(bridge); } },
   { ...base("map-legend-compact", "Legend with at most six rows", () => mapCanvas() ? select("details.map-legend[open] .map-legend-more") : null, async root => { await enterMap(root); }),
     setup: async bridge => {
       await prepareFixture(bridge);
@@ -138,8 +196,8 @@ export const mapScenarios: PreviewScenario[] = [
       bridge.knowledgeMap = async request => {
         const map = await read(request);
         const company = map.nodes.find(node => node.kind === "entity" && node.entityKind === "Organization");
-        const person: KnowledgeMapNode = { id: "legend-mina-cho", kind: "entity", label: "Mina Cho", entityKind: "Person", degree: 1, watched: false, held: false };
-        const journal: KnowledgeMapNode = { id: "legend-journal", kind: "journal", label: "Inventory days below 50", degree: 0, watched: false, held: false };
+        const person: KnowledgeMapNode = { id: "legend-mina-cho", kind: "entity", label: "Mina Cho", entityKind: "Person", degree: 1, watched: false };
+        const journal: KnowledgeMapNode = { id: "legend-journal", kind: "journal", label: "Inventory days below 50", degree: 0, watched: false };
         map.nodes = [...map.nodes, person, journal];
         if (company) map.edges = [...map.edges, { id: "legend-person-claim", kind: "claim", source: company.id, target: person.id, relation: "leads", status: "active" }];
         return map;
@@ -149,18 +207,17 @@ export const mapScenarios: PreviewScenario[] = [
     const list = select(".source-library > ul");
     return list && list.children.length >= 6 && mapCanvas() ? list : null;
   }, async (root) => { await navigate(root, "map"); await clickMapAction("[data-map-library]", root); }),
-  { ...base("lens-reader", "A Lens page read as sections", () => select('.workspace-lens-content .page-reader .page-section'), async root => {
+  { ...base("lens-reader", "A Lens page read as sections", () => select('.lens-page .page-reader .page-section'), async root => {
     await navigate(root, "lens");
     const method = await until(() => [...document.querySelectorAll<HTMLButtonElement>(".memory-row")].find(row => row.querySelector(".memory-marker.is-method")), "Method did not list");
     method.click();
-    await until(() => select(".workspace-lens-content .page-reader .page-section"), "Method did not open");
+    await until(() => select(".lens-page .page-reader .page-section"), "Method did not open");
   }), setup: prepareFixture },
-  { ...base("lens-reader-many", "A long page list keeps its page readable when the Lens is expanded", () => select('.workspace-lens-content .page-reader'), async root => {
+  { ...base("lens-reader-many", "A long page list keeps its page readable on the Lens page", () => select('.lens-page .page-reader'), async root => {
     await navigate(root, "lens");
     const method = await until(() => [...document.querySelectorAll<HTMLButtonElement>(".memory-row")].find(row => row.querySelector(".memory-marker.is-method")), "Method did not list");
     method.click();
-    await until(() => select('.workspace-lens-content .page-reader'), "Method did not open");
-    if (!window.matchMedia(workspaceOverlayMedia).matches) await click('.workspace-kind-heading button:first-child');
+    await until(() => select('.lens-page .page-reader'), "Method did not open");
   }), setup: async bridge => {
     await prepareFixture(bridge);
     const read = bridge.knowledgeCatalog.bind(bridge);

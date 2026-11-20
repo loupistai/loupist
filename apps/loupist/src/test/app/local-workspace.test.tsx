@@ -68,7 +68,7 @@ it("inspects a saved command inline and sends a file reference only after Ask an
   expect(await within(screen.getByLabelText("Work progress")).findByText("Margin 12.4%")).toBeVisible();
   expect(activity).toHaveBeenCalledWith({ loupist_id: "loupist-quality", thread_id: "thread-margin", detail_id: "durable-command" });
   await user.click(screen.getByRole("link", { name: "Analysis script" }));
-  const panel = await screen.findByLabelText("Chat workspace panel");
+  const panel = await screen.findByLabelText("Side panel");
   await within(panel).findByText("margin = profit / revenue");
   await user.click(within(panel).getByRole("button", { name: "Ask about this" }));
   expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Compare margins. @analysis.py ");
@@ -118,7 +118,7 @@ it("refuses a Loupist an earlier version made and offers only removing it", asyn
   vi.spyOn(bridge, "loupistSelect").mockResolvedValue({ loupist: earlier, threads: [] });
   render(<App bridge={bridge} />);
   const refusal = await screen.findByRole("alert", { name: "Made by an earlier version" });
-  expect(within(refusal).getByText("This Loupist was made by an earlier version and can't be opened. Create a new Loupist.")).toBeVisible();
+  expect(within(refusal).getByText("This Loupist was made by an earlier version and can't be opened. Remove it from the app, then create a new Loupist; its folder stays on this Mac.")).toBeVisible();
   expect(screen.queryByRole("textbox", { name: "Message Loupist" })).toBeNull();
   await user.click(within(refusal).getByRole("button", { name: "Remove Loupist" }));
   expect(await screen.findByRole("dialog", { name: "Remove Loupist?" })).toBeVisible();

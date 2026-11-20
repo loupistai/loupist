@@ -1,3 +1,4 @@
+import i18n from "../../i18n";
 import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { evidenceFixture } from "../../test/evidenceFixtures";
@@ -79,4 +80,21 @@ it("names the host only in the panel's status row, never again on the button or 
   const host = new URL(evidence.url!).hostname;
   expect(screen.getByRole("button", { name: "Open live page" })).toHaveAttribute("title", evidence.url);
   expect(screen.getByRole("article").textContent).not.toContain(host);
+});
+
+it.each([
+  ["en", "complete", "Full result"], ["ko", "complete", "전체 결과"],
+  ["en", "untrusted_web", "Unverified web content"], ["ko", "untrusted_web", "검증되지 않은 웹 콘텐츠"],
+  ["en", "future_coverage", "Unspecified"], ["ko", "future_coverage", "미지정"],
+])("labels %s evidence coverage %s and keeps the saved excerpt verbatim", async (language, coverage, label) => {
+  await i18n.changeLanguage(language);
+  const excerpt = JSON.stringify({ coverage });
+  const view = renderWithOpen(<WorkspaceEvidence evidence={evidenceFixture({ coverage, excerpt })} />);
+  try {
+    expect(screen.getByText(label, { selector: "dd" })).toBeVisible();
+    expect(screen.getByText(excerpt, { selector: "pre" })).toBeVisible();
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage("en");
+  }
 });

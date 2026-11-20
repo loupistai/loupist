@@ -58,6 +58,7 @@ pub(crate) const PROVIDERS: &[(&str, DataPolicy)] = &[
     ("web-research", Restricted),
     ("exa", Restricted),
     ("openbb", Restricted),
+    ("openfigi", Restricted),
 ];
 
 pub(crate) fn classify(identity: &str) -> DataPolicy {

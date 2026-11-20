@@ -170,8 +170,10 @@ impl AppToolExecutor {
             periods: filter("periods")?,
             source_types: filter("source_types")?,
             include_metadata: true,
-            semantic_assets: self.state.graph.semantic_assets(),
+            semantic_model: self.state.graph.semantic_model(),
         };
+        let model_loading =
+            options.semantic_model.is_none() && self.state.graph.semantic_model_loading();
         let state = self.state.clone();
         let loupist_id = policy.loupist_id.clone();
         let owned_query = query.clone();
@@ -227,6 +229,10 @@ impl AppToolExecutor {
                     });
                 }
             }
+        }
+        // The search did not wait for a model still loading after launch.
+        if model_loading {
+            retrieval_warnings.push(MODEL_LOADING);
         }
         self.as_of_hits(policy, &mut hits)?;
         let mut page = discovery_page(hits, offset, capped)?;
@@ -400,16 +406,27 @@ impl AppToolExecutor {
                 coverage,
                 attribution,
                 publication_time,
+                provided,
                 ..
-            } => Some(json!({
-                "spanId": span_id,
-                "captureId": capture_id,
-                "representationId": representation_id,
-                "selectedDigest": selected_digest,
-                "coverage": coverage,
-                "attribution": attribution,
-                "publicationTime": publication_time
-            })),
+            } => {
+                let mut source = json!({
+                    "spanId": span_id,
+                    "captureId": capture_id,
+                    "representationId": representation_id,
+                    "selectedDigest": selected_digest,
+                    "coverage": coverage,
+                    "attribution": attribution,
+                    "publicationTime": publication_time
+                });
+                // Material the user pasted earlier: its link and publisher are
+                // what the user stated, and nothing checked them.
+                if let Some(provided) = provided {
+                    source["sourceClass"] =
+                        json!(crate::knowledge::SourceClass::UserProvided.as_str());
+                    source["provided"] = provided_delivery(provided);
+                }
+                Some(source)
+            }
             _ => None,
         };
         let disagreement = match &staged.payload {
@@ -625,6 +642,8 @@ async fn merge_graph_retrieval(
     (hits, warnings)
 }
 
+const MODEL_LOADING: &str = "The local embedding model is still loading, so these results match words and Map names only and can miss a Source written in another language. Search again shortly before concluding the information is absent.";
+
 const RRF_K: f64 = 60.0;
 
 fn edge_claim_id(edge: &Value) -> Option<&str> {
@@ -748,9 +767,16 @@ pub(super) fn fuse_ranked_world_hits(
             map.insert("retrieval".to_string(), json!("rrf"));
         }
     }
+    // World rows ranked here, or by an earlier World's merge, lead by their
+    // fused score. The rest keep knowledge search's order: its own fused
+    // scores are on another scale (1,000,000 for a first place), so the two
+    // are never compared.
     items.sort_by(|left, right| {
-        let score = |hit: &Value| hit.get("score").and_then(Value::as_u64).unwrap_or(0);
-        score(right).cmp(&score(left))
+        let fused = |hit: &Value| {
+            (hit.get("retrieval").and_then(Value::as_str) == Some("rrf"))
+                .then(|| hit.get("score").and_then(Value::as_u64).unwrap_or(0))
+        };
+        fused(right).cmp(&fused(left))
     });
 }
 
@@ -838,4 +864,21 @@ fn discovery_page(hits: Value, offset: usize, capped: bool) -> Result<Value, Bro
         "hasMore": next < available || capped,"capped":capped,"windowLimit":200,"notEvidence":true,
         "notice":if capped {"Only the first 200 ranked discoveries are available; narrow the query or filter records for more."} else {"Search hits are discovery only. Read exact records before relying on them."}}),
     )
+}
+
+/// What a Source read tells the model about a user-provided capture: when it
+/// was pasted and what the user stated about it. Chat and message ids stay
+/// with the host.
+pub(super) fn provided_delivery(provided: &crate::knowledge::ProvidedOrigin) -> Value {
+    let mut delivered = json!({
+        "pastedAt": DateTime::<Utc>::from_timestamp_millis(provided.pasted_at_ms)
+            .map(|time| time.to_rfc3339_opts(SecondsFormat::Millis, true)),
+    });
+    if let Some(url) = &provided.stated_url {
+        delivered["statedUrl"] = json!(url);
+    }
+    if let Some(publisher) = &provided.stated_publisher {
+        delivered["statedPublisher"] = json!(publisher);
+    }
+    delivered
 }

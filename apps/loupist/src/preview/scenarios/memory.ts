@@ -1,6 +1,6 @@
 /** Preview scenarios, in the capture order `src/preview/scenarios.ts` assembles. */
 import { prepareFixture, PreviewBridge, previewKo } from "../fixtures";
-import { base, click, hasLayout, openLoupistSettings, select, selectPanel, until, type PreviewScenario } from "./kit";
+import { asSession, base, click, hasLayout, openLoupistSettings, select, selectPanel, until, type PreviewScenario } from "./kit";
 
 // Preview fixtures may already hold a principle with the same words; reuse it.
 const ensurePrinciple = async (bridge: PreviewBridge, request: Parameters<PreviewBridge["principleCreate"]>[0]) =>
@@ -55,7 +55,7 @@ export const memoryScenarios: PreviewScenario[] = [
       }),
     setup: async (bridge) => {
       await prepareFixture(bridge, id === "memory-page" ? "answer" : "empty");
-      for (const entry of [{ symbol: "005930", market: "KRX", displayName: "Samsung Electronics" }, { symbol: "000660", market: "KRX", displayName: "SK hynix" }, { symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }]) await bridge.watchlistAdd(entry);
+      for (const [ticker, exchange, name] of [["005930", "KS", "Samsung Electronics"], ["000660", "KS", "SK hynix"], ["AAPL", "US", "Apple"]] as const) bridge.assets.installAsset({ name, ticker, exchange });
       if (id === "memory-page") {
         const first = await ensurePrinciple(bridge, { loupistId: "loupist-quality", statement: "Check operating cash flow before trusting reported profit.", why: "Profit can rise on accruals while cash lags.", origin: "feedback", originChatId: "preview-chat", originMessageId: "preview-answer" });
         (bridge as unknown as { state: { memoryUsage?: Record<string, unknown> } }).state.memoryUsage = { "loupist-quality": [{ recordId: first.recordId, usedCount: 4, lastUsedAtMs: Date.parse("2026-10-28T00:00:00Z"), usedIn: [{ chatId: "preview-chat", atMs: Date.parse("2026-10-28T00:00:00Z") }] }] };
@@ -106,19 +106,21 @@ export const memoryScenarios: PreviewScenario[] = [
         if (id === "chat-used-principle-correction") {
           answer.lens_receipts = [{ recordId: principle.recordId, revisionId: principle.revisionId, kind: "principle", title: principle.statement, delivery: "context", revisionDigest: "digest" }];
           answer.content += previewKo()
-            ? `\n\n원칙에 따라 영업이익률을 보기 전에 [영업현금흐름을 먼저 확인했어요](lens:${principle.recordId}).`
+            ? `\n\n원칙에 따라 영업이익률을 보기 전에 [영업현금흐름을 먼저 확인했습니다](lens:${principle.recordId}).`
             : `\n\nFollowing your principle, I [checked operating cash flow first](lens:${principle.recordId}) before reading the margin.`;
         } else {
           // The user pasted something secret-looking; Rust refused to keep it.
           const question = workspace.threads[0].messages.find(item => item.role === "user");
           if (question) question.content = previewKo() ? "데이터 피드용 API 키 sk-test-4f9a2c7e를 기억해 줘." : "Remember my data feed API key sk-test-4f9a2c7e.";
-          answer.content = previewKo() ? "그 키는 기억에 저장하지 않았어요. 연결 설정에 넣으면 안전하게 보관돼요." : "I didn't keep that key in memory. Put it in the connection's settings, where it is stored safely.";
+          answer.content = previewKo() ? "그 키는 기억에 저장하지 않았습니다. 연결 설정에 넣으면 안전하게 보관됩니다." : "I didn't keep that key in memory. Put it in the connection's settings, where it is stored safely.";
           answer.evidence_refs = [];
           answer.memory_update = undefined;
           answer.tool_refusals = [{ connection_id: "memory", connection_name: "Memory", tool_name: "note_save", reason: "sensitive_memory" }];
         }
         return workspace;
       };
+      // The receipt's Used toggle is pressed: a session keeps it on the page.
+      if (id === "chat-used-principle-correction") asSession(bridge);
     },
   })),
 ];
@@ -160,7 +162,7 @@ export const receiptScenarios: PreviewScenario[] = [
         const [cited] = message.evidence_refs ?? [];
         if (cited) message.evidence_refs = [cited, { ...cited, id: `ev_${"c".repeat(32)}`, title: "Morrow Components supplier capacity survey", url: "https://morrow.example/capacity-survey", provider: "Morrow Components IR", content_sha256: "c".repeat(64) }];
         message.content += document.documentElement.lang.startsWith("ko")
-          ? `\n\n내 원칙 점검: [${principle.statement}](lens:${principle.recordId}) 이번 분기에는 충족돼요.`
+          ? `\n\n내 원칙 점검: [${principle.statement}](lens:${principle.recordId}) 이번 분기에는 충족됩니다.`
           : `\n\nChecked against your principles: [${principle.statement}](lens:${principle.recordId}) holds for this quarter.`;
         message.memory_refs = [{ read_ref: "preview-method-read", kind: "lens", title: "Separate durable margins from temporary capacity costs", excerpt: "", access: "exact_read", knowledge: { kind: "lens", recordId: "preview-method", revisionId: "preview-method-rev", objectId: "preview-method" }, as_of: null, section: null }];
         // The receipt's used principles and methods come from what the host delivered.
@@ -175,11 +177,15 @@ export const receiptScenarios: PreviewScenario[] = [
         ] };
         return workspace;
       };
+      // A research session's receipt stays on the page; Bot's shows only under the pointer.
+      asSession(bridge);
+      // Saved nothing: no page learned from it either.
+      if (id === "chat-receipt-empty") bridge.memoryLearned = async ({ messageIds }) => messageIds.map(messageId => ({ messageId, pages: [] }));
       if (id === "chat-receipt" || id === "chat-learned") {
         const readMap = bridge.knowledgeMap.bind(bridge);
         bridge.knowledgeMap = async request => {
           const map = await readMap(request);
-          map.nodes = ["Hanul Precision", "Morrow Components", "Capacity utilization", "Operating margin"].map((label, index) => ({ id: `receipt-node-${index}`, kind: "entity", label, entityKind: index < 2 ? "Organization" : "Metric", degree: index === 0 ? 3 : 1, watched: false, held: false }));
+          map.nodes = ["Hanul Precision", "Morrow Components", "Capacity utilization", "Operating margin"].map((label, index) => ({ id: `receipt-node-${index}`, kind: "entity", label, entityKind: index < 2 ? "Organization" : "Metric", degree: index === 0 ? 3 : 1, watched: false }));
           map.edges = [1, 2, 3].map(index => ({ id: `receipt-edge-${index}`, kind: "claim", source: "receipt-node-0", target: `receipt-node-${index}`, relation: "related_to", status: "active" }));
           map.worldRevisionId = "chat-receipt";
           return map;
@@ -189,4 +195,35 @@ export const receiptScenarios: PreviewScenario[] = [
       }
     },
   })),
+  // Follow-ups from what the answer changed on the Map: a disagreement it found, then a followed company it added.
+  { ...base("chat-next-steps", "Next-step chips under the latest answer", () => select(".next-step-chips .next-step-chip"), async root => {
+    await until(() => root.querySelector("article.message.assistant.complete"), "Answer did not load");
+    if (hasLayout()) select(".next-step-chips")?.scrollIntoView({ block: "center" });
+  }), setup: async bridge => {
+    await prepareFixture(bridge, "answer");
+    asSession(bridge);
+    const readMap = bridge.knowledgeMap.bind(bridge);
+    bridge.knowledgeMap = async request => {
+      const map = await readMap(request);
+      // Followed organizations qualify; a metric never does.
+      map.nodes = ["Hanul Precision", "Morrow Components", "Capacity utilization"].map((label, index) => ({ id: `next-node-${index}`, kind: "entity", label, entityKind: index < 2 ? "Organization" : "Metric", degree: 1, watched: index < 2 }));
+      map.edges = [{ id: "next-edge-1", kind: "claim", source: "next-node-0", target: "next-node-1", relation: "SUPPLIES", status: "disputed" }];
+      map.worldRevisionId = "chat-next-steps";
+      return map;
+    };
+    const event = (index: number, kind: "entity_added" | "claim_disputed", subjectId: string) => ({ eventId: `next-growth-${index}`, loupistId: "loupist-quality", originChatId: "preview-chat", originMessageId: "preview-answer", atMs: Date.now() - 60_000, kind, subjectId, recordId: "preview-world", actor: "loupist" as const, summary: "", beforeSummary: null, afterSummary: null });
+    bridge.knowledgeGrowthEvents = async () => ({ events: [event(0, "claim_disputed", "next-edge-1"), event(1, "entity_added", "next-node-1"), event(2, "entity_added", "next-node-2")], nextCursor: null });
+  } },
+  // Suggest a correction, open with a draft: the label, the count and Save or Cancel.
+  { ...base("chat-feedback-correcting", "Suggesting a correction to an answer", () => select(".answer-correction textarea"), async root => {
+    await until(() => root.querySelector("article.message.assistant.complete"), "Answer did not load");
+    await click('.answer-feedback button[aria-expanded="false"]', root);
+    const field = await until(() => select(".answer-correction textarea"), "The correction editor did not open") as HTMLTextAreaElement;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, previewKo() ? "연결 기준이 아니라 별도 기준 수치입니다." : "These are separate, not consolidated, figures.");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    if (hasLayout()) select(".answer-correction")?.scrollIntoView({ block: "center" });
+  }), setup: async bridge => {
+    await prepareFixture(bridge, "answer");
+    asSession(bridge);
+  } },
 ];

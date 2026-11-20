@@ -4,6 +4,7 @@ import { Popover } from "radix-ui";
 import { useRef } from "react";
 import type { ChatEvidenceRef } from "../../types";
 import { quoteEvidence, type QuoteRead, type QuoteRow } from "../../chat/quoteEvidence";
+import { providerName } from "@/lib/marketProviderName";
 
 const clock = (value: string | undefined) => {
   if (!value) return null;
@@ -23,7 +24,7 @@ export function QuoteEvidenceBody({ read, evidence, mode, checked }: {
 }) {
   const { t } = useTranslation("chat");
   const retrieved = clock(evidence.retrieved_at);
-  const provider = evidence.provider?.trim();
+  const provider = providerName(evidence.provider);
   const focus = mode === "cell" ? read.focus : null;
   const listed = focus ? [] : read.rows.slice(0, shownRows);
   const hidden = focus ? 0 : read.rows.length - listed.length;

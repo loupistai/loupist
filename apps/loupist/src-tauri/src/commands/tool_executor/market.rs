@@ -30,11 +30,12 @@ pub(super) fn bounded_chart_query_end(
     Ok(end)
 }
 
+/// The timestamp distinguishes replacements with unchanged or restored payloads.
 pub(super) fn chart_edit_token(revision: &ChatArtifactRevision) -> String {
     sha256(
         format!(
-            "{}:{}:{}",
-            revision.artifact_id, revision.revision, revision.digest
+            "{}:{}:{}:{}",
+            revision.artifact_id, revision.revision, revision.digest, revision.created_at_ms
         )
         .as_bytes(),
     )
@@ -374,6 +375,7 @@ mod as_of_tests {
             propose_memory_updates: false,
             memory_proposal_budget: 0,
             as_of: None,
+            display_currency: None,
         };
         for value in [json!(20260310), json!(false), json!([]), json!({})] {
             let mut params = json!({"as_of": value});

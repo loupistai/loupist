@@ -28,6 +28,15 @@ pub(crate) fn validate_folder(directory: &Path) -> KnowledgeResult<()> {
         &database,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,
     )?;
+    validate_folder_connection(&connection, directory)
+}
+
+/// Validate the caller's retained SQLite file and transaction, without reopening
+/// its pathname. Recovery repeats this after reserving its transaction snapshot.
+pub(crate) fn validate_folder_connection(
+    connection: &Connection,
+    directory: &Path,
+) -> KnowledgeResult<()> {
     let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let application_id: i64 =
         connection.query_row("PRAGMA application_id", [], |row| row.get(0))?;
@@ -45,25 +54,21 @@ pub(crate) fn validate_folder(directory: &Path) -> KnowledgeResult<()> {
         ));
     }
     let unsupported = |_| KnowledgeError::Invalid("Loupist folder schema is unsupported");
-    let connection = match crate::store::schema_standing(&connection).map_err(unsupported)? {
+    let upgraded;
+    let connection = match crate::store::schema_standing(connection).map_err(unsupported)? {
         Standing::Current => connection,
         Standing::Earlier => return Err(KnowledgeError::EarlierVersion),
         Standing::Newer => return Err(KnowledgeError::NewerVersion),
         // Admission stays read-only: it validates an upgraded in-memory copy;
         // registration then upgrades the folder itself, after a backup.
-        Standing::Upgradable => crate::store::upgraded_copy(&connection)
-            .map_err(|_| KnowledgeError::Invalid("Loupist folder could not be upgraded"))?,
+        Standing::Upgradable => {
+            upgraded = crate::store::upgraded_copy(connection)
+                .map_err(|_| KnowledgeError::Invalid("Loupist folder could not be upgraded"))?;
+            &upgraded
+        }
     };
-    let tables = {
-        let mut statement = connection.prepare(
-            "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-        )?;
-        let names = statement
-            .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-        names
-    };
-    match schema::inspect_knowledge(&connection, &tables)? {
+    let tables = folder_tables(connection)?;
+    match schema::inspect_knowledge(connection, &tables)? {
         schema::SchemaState::Current => {}
         _ => {
             return Err(KnowledgeError::Invalid(
@@ -71,6 +76,16 @@ pub(crate) fn validate_folder(directory: &Path) -> KnowledgeResult<()> {
             ))
         }
     }
+    validate_folder_rows(connection, directory)
+}
+
+/// Recheck all admitted records after identity writes, including any changes a
+/// saved SQL trigger made. Schema admission happened before these DML writes.
+pub(crate) fn validate_folder_rows(
+    connection: &Connection,
+    directory: &Path,
+) -> KnowledgeResult<()> {
+    let tables = folder_tables(connection)?;
     let profiles = {
         let mut statement = connection
             .prepare("SELECT id, workspace_root, updated_at_ms, data_json FROM loupist_profiles")?;
@@ -127,8 +142,8 @@ pub(crate) fn validate_folder(directory: &Path) -> KnowledgeResult<()> {
             }
         }
     }
-    super::graph_jobs::validate_saved_settings(&connection)?;
-    crate::scheduled_tasks::store::validate_saved_tasks(&connection)
+    super::graph_jobs::validate_saved_settings(connection)?;
+    crate::scheduled_tasks::store::validate_saved_tasks(connection)
         .map_err(|_| KnowledgeError::Invalid("saved scheduled tasks are invalid"))?;
     let integrity: String = connection.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
     if integrity != "ok" {
@@ -181,6 +196,34 @@ pub(crate) fn validate_folder(directory: &Path) -> KnowledgeResult<()> {
         read_retained_snapshot_blob(directory, &digest, length)?;
     }
     Ok(())
+}
+
+fn folder_tables(connection: &Connection) -> KnowledgeResult<Vec<String>> {
+    let tables = {
+        let mut statement = connection.prepare(
+            "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )?;
+        let names = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        names
+    };
+    // Validation helpers use ordinary table names. With a catalog attached,
+    // missing folder tables must not fall through to that catalog's tables.
+    for required in [
+        "loupist_profiles",
+        "app_settings",
+        "chat_sessions",
+        "scheduled_tasks",
+        "scheduled_task_runs",
+    ] {
+        if !tables.iter().any(|table| table == required) {
+            return Err(KnowledgeError::Invalid(
+                "Loupist folder schema is incomplete",
+            ));
+        }
+    }
+    Ok(tables)
 }
 
 fn read_retained_snapshot_blob(

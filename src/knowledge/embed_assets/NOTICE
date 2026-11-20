@@ -1,7 +1,14 @@
-potion-base-4M
-Copyright MinishLab contributors
-License: MIT
-https://huggingface.co/minishlab/potion-base-4M
+blink-multilingual-64M
+https://huggingface.co/minishlab/blink-multilingual-64M
+Revision a7198ef875b9a756b8b641ab064542f7408e50f3
+Copyright The Minish Lab
+License: MIT, as declared on the model card; the repository has no LICENSE file.
 
-The bundled tokenizer originates from BAAI/bge-base-en-v1.5, also under MIT.
-Weights are loaded from these files only; search does not download models.
+The token embeddings were initialized from BAAI/bge-m3 (MIT) and trained on
+minishlab/tokenlearn-c4-multilingual-bge-m3, derived from multilingual C4, and
+on public retrieval pairs from hotchpotch/bekko-embedding-v1-unsupervised.
+
+tokenizer.json and config.json are the upstream files. model.safetensors is the
+upstream float32 table stored as int8 with one float32 scale per row, derived
+by Loupist's stage-embed-assets.py. Weights are loaded from these files only;
+search does not download models.

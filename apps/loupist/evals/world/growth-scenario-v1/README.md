@@ -7,7 +7,7 @@ a prebuilt World.
 
 The opt-in Rust test drives the production Chat and broker, Source retention, World
 supervisor, automatic learning review and scheduled briefing dispatch. Every model
-call uses `openai-codex/gpt-6.1-sol` at `medium` with provider retries disabled. The
+call uses `openai-codex/gpt-6.2-sol` at `medium` with provider retries disabled. The
 existing Pi directory is used in place; app, Loupist and World index state
 are disposable. No window opens and no external data connection is enabled.
 

@@ -28,35 +28,6 @@
   .message.user {
     width: fit-content;
   }
-  .composer-footer {
-    min-width: 0;
-    align-items: flex-end;
-  }
-  .composer-tools {
-    min-width: 0;
-    flex: 1 1 auto;
-    flex-wrap: wrap;
-  }
-  .composer-tools::-webkit-scrollbar {
-    display: none;
-  }
-  .composer-tools > [data-slot="button"] {
-    flex: 0 0 auto;
-  }
-  .composer-queue-action,
-  .composer-steer-action {
-    min-width: 0;
-  }
-  .composer-model-menu {
-    max-width: 220px;
-  }
-  .composer-shell {
-    margin-bottom: var(--gg-space-3);
-  }
-  .composer {
-    width: 100%;
-    margin: 0;
-  }
 }
 
 /* token-exception: breakpoint; vars unsupported in query conditions */
@@ -83,8 +54,4 @@
     width: fit-content;
     max-width: 90%;
   }
-  .composer-model-menu {
-    max-width: 148px;
-  }
-
 }

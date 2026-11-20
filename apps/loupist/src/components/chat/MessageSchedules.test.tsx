@@ -63,6 +63,6 @@ it("labels a hand-off receipt by the conversation's surface, not its id", () => 
   const { rerender } = render(view("session"));
   expect(screen.getByText("Handed to Bot · Active")).toBeVisible();
   rerender(view("bot"));
-  expect(screen.getByText("Active")).toBeVisible();
+  expect(screen.queryByText("Active")).toBeNull();
   expect(screen.queryByText(/Handed to Bot/)).toBeNull();
 });

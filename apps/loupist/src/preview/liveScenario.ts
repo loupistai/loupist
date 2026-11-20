@@ -49,20 +49,20 @@ export const LIVE_ANSWER = [
 ].join("");
 
 const LIVE_ANSWER_KO = [
-  "세 회사 가운데 이익률은 한빛화학이 가장 높아요. 영업이익률이 **11.0%**로, 솔숲식품 8.4%, 이슬물류 5.9%보다 높아요. ",
-  `매출 규모는 솔숲식품이 4,523억 원으로 가장 커요. [1](#evidence-${statementsId("solsup")})`,
+  "세 회사 가운데 이익률은 한빛화학이 가장 높습니다. 영업이익률이 **11.0%**로, 솔숲식품 8.4%, 이슬물류 5.9%보다 높습니다. ",
+  `매출 규모는 솔숲식품이 4,523억 원으로 가장 큽니다. [1](#evidence-${statementsId("solsup")})`,
   "\n\n### 차이를 만든 요인\n\n",
-  "- **원재료 가격.** 하반기 들어 한빛화학의 원재료 가격이 내려갔고, 기사도 같은 점을 짚어요. ",
+  "- **원재료 가격.** 하반기 들어 한빛화학의 원재료 가격이 내려갔고, 기사도 같은 점을 짚습니다. ",
   "[2](#evidence-ev_live_news)\n",
-  "- **규모.** 솔숲식품은 가장 큰 매출에 고정비를 나누지만, 순이익률은 한빛화학보다 낮아요.\n",
-  "- **공시 기준.** 이슬물류는 별도 재무제표만 공시해서 자회사 실적이 빠져 있어요.\n",
+  "- **규모.** 솔숲식품은 가장 큰 매출에 고정비를 나누지만, 순이익률은 한빛화학보다 낮습니다.\n",
+  "- **공시 기준.** 이슬물류는 별도 재무제표만 공시해서 자회사 실적이 빠져 있습니다.\n",
   "\n### 이익률 비교\n\n",
   "| 회사 | 영업이익률 | 순이익률 |\n| --- | ---: | ---: |\n",
   "| 한빛화학 | 11.0% | 6.9% |\n",
   "| 솔숲식품 | 8.4% | 4.7% |\n",
   "| 이슬물류 | 5.9% | 3.8% |\n",
-  "\n영업이익률 비교는 공정하지만, 이슬물류의 순이익률은 조심해서 보세요. 별도 기준이라 실제보다 좋아 보일 수 있어요. ",
-  "다음 공시의 연결 기준 수치를 확인한 뒤 순이익률 순위를 매기세요.",
+  "\n영업이익률 비교는 공정하지만, 이슬물류의 순이익률은 조심해서 보십시오. 별도 기준이라 실제보다 좋아 보일 수 있습니다. ",
+  "다음 공시의 연결 기준 수치를 확인한 뒤 순이익률 순위를 매기십시오.",
 ].join("");
 
 const QUICK_ANSWER = [
@@ -74,11 +74,11 @@ const QUICK_ANSWER = [
 ].join("");
 
 const QUICK_ANSWER_KO = [
-  "영업이익률은 영업이익을 매출로 나눈 값이에요. EBITDA 마진은 나누기 전에 감가상각비와 무형자산상각비를 다시 더하기 때문에, 둘 중 항상 더 높게 나와요.\n\n",
+  "영업이익률은 영업이익을 매출로 나눈 값입니다. EBITDA 마진은 나누기 전에 감가상각비와 무형자산상각비를 다시 더하기 때문에, 둘 중 항상 더 높게 나옵니다.\n\n",
   "| 지표 | 출발점 | 빼지 않는 비용 |\n| --- | --- | --- |\n",
   "| 영업이익률 | 영업이익 | 없음 |\n",
   "| EBITDA 마진 | 영업이익 + 상각비 | 감가상각비, 무형자산상각비 |\n",
-  "\n새 라인을 막 지은 회사에서는 두 값의 차이가 벌어져요. 라인이 다 차기 전에도 감가상각은 첫날부터 시작되기 때문이에요.",
+  "\n새 라인을 막 지은 회사에서는 두 값의 차이가 벌어집니다. 라인이 다 차기 전에도 감가상각은 첫날부터 시작되기 때문입니다.",
 ].join("");
 
 /** The question each live reply answers. */
@@ -142,7 +142,7 @@ function researchBeats(ending: LiveEnding): { beats: Beat[]; answerAt: number } 
   const statement = (company: string) => grid.evidence.find((item) => item.id === statementsId(company))!;
   const names = { solsup: ko ? "솔숲식품" : "Solsup Foods", iseul: ko ? "이슬물류" : "Iseul Logistics", hanbit: ko ? "한빛화학" : "Hanbit Chem" };
   const note = commentaryBeats("commentary-0", ko
-    ? "저장한 노트와 세 회사의 FY2025 재무제표를 먼저 읽고, 이익률을 표로 나란히 놓아 볼게요."
+    ? "저장한 노트와 세 회사의 FY2025 재무제표를 먼저 읽고, 이익률을 표로 나란히 놓아 보겠습니다."
     : "I’ll start with your saved notes and the three FY2025 filings, then line the margins up in a table.", 1_800, false);
   const beats: Beat[] = [{ at: 900, phase: "thinking" }, { at: 1_780, phase: "writing" }, ...note.beats];
   let at = note.end + 300;
@@ -159,9 +159,9 @@ function researchBeats(ending: LiveEnding): { beats: Beat[]; answerAt: number } 
   if (ending === "question") {
     beats.push({ at, question: {
       requestId: "live-question", itemId: "live-ask",
-      question: ko ? "순이익률은 어느 기준으로 비교할까요?" : "Which basis should net margin use?",
+      question: ko ? "순이익률은 어느 기준으로 비교하시겠습니까?" : "Which basis should net margin use?",
       options: ko
-        ? [{ label: "연결 기준", description: "자회사까지 포함해요" }, { label: "공시된 기준 그대로", description: "이슬물류는 별도 기준으로 남아요" }]
+        ? [{ label: "연결 기준", description: "자회사까지 포함합니다" }, { label: "공시된 기준 그대로", description: "이슬물류는 별도 기준으로 남습니다" }]
         : [{ label: "Consolidated", description: "Includes subsidiaries" }, { label: "As filed", description: "Iseul stays on separate statements" }],
       recommended: 0, state: "waiting", requestedAtMs: 0,
     } });

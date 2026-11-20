@@ -1,4 +1,6 @@
 import { render, screen } from "@testing-library/react";
+import i18n from "@/i18n";
+import type { ChatThread } from "../../types";
 import userEvent from "@testing-library/user-event";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import type { AttentionItem } from "../../contracts/attention";
@@ -50,4 +52,23 @@ it("lists an answer that asked a question as waiting on the user, named by its c
 it("renders nothing when nothing waits", () => {
   const { container } = render(<SidebarProvider><NeedsAttention items={[]} onOpen={vi.fn()} /></SidebarProvider>);
   expect(container.querySelector(".needs-attention")).toBeNull();
+});
+
+it("localizes a briefing question by its Loupist and scheduled chat and preserves a custom title", async () => {
+  const question = item({ kind: "question", chatId: "run", title: "Briefings" });
+  const thread = (owner: string, kind: string): ChatThread => ({
+    id: "run", loupist_id: owner, title: "Briefings", updated_at: "", use_memory: false, update_memory: false,
+    messages: [{ id: "request", role: "user", content: "", created_at: "", scheduled: { task_id: "task", run_id: "run", task_title: "Briefings", task_kind: kind } }],
+  });
+  await i18n.changeLanguage("ko");
+  const view = render(<SidebarProvider><NeedsAttention items={[question, { ...question, loupistId: "g2" }]}
+    threads={{ g1: [thread("g1", "briefing")], g2: [thread("g2", "custom")] }} onOpen={vi.fn()} /></SidebarProvider>);
+  try {
+    const rows = screen.getAllByRole("button");
+    expect(rows[0]).toHaveTextContent("브리핑");
+    expect(rows[1]).toHaveTextContent("Briefings");
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage("en");
+  }
 });

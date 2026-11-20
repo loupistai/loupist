@@ -13,6 +13,7 @@ fn policy() -> ToolPolicy {
         propose_memory_updates: false,
         memory_proposal_budget: 0,
         as_of: None,
+        display_currency: None,
     }
 }
 
@@ -128,12 +129,21 @@ async fn refused(executor: &AppToolExecutor, policy: &ToolPolicy, params: Value)
 async fn every_value_cell_is_checked_against_the_evidence_it_cites() {
     let temporary = tempfile::tempdir().unwrap();
     let executor = executor(&temporary, "assistant-grid");
+    let registered = executor
+        .state
+        .store
+        .seed_followed_listing("loupist-a", "990221", "KRX", Some("Private label"))
+        .unwrap();
+    let memory_policy = ToolPolicy {
+        use_memory: true,
+        ..policy()
+    };
     let solsup = statements(&executor, "Solsup Foods", "452300000000", "38100000000").await;
     let iseul = statements(&executor, "Iseul Logistics", "128400000000", "7600000000").await;
     let margin = margin(&executor, &solsup).await;
     let output = executor
         .execute(
-            &policy(),
+            &memory_policy,
             ToolMethod::GridPublish,
             grid(
                 json!([
@@ -194,8 +204,18 @@ async fn every_value_cell_is_checked_against_the_evidence_it_cites() {
     let calc = calculated.check.calc.as_ref().unwrap();
     assert_eq!(calc.formulas.len(), 1);
     assert!(calc.inputs.iter().all(|input| input.evidence_id.is_some()));
-    // Rows resolve to an asset page; holdings never reach the document.
-    assert!(grid.rows[0].asset_id.is_some());
+    assert_eq!(
+        grid.rows[0].asset_id.as_deref(),
+        Some(registered.asset_id.as_str())
+    );
+    assert_eq!(grid.rows[1].asset_id, None);
+    assert_eq!(
+        executor.state.store.assets_list("loupist-a", true).unwrap(),
+        [registered]
+    );
+    assert!(!serde_json::to_string(grid)
+        .unwrap()
+        .contains("Private label"));
     let stored = serde_json::to_string(&commit.revision.payload).unwrap();
     assert!(!stored.contains("quantity"));
 }
@@ -648,6 +668,26 @@ async fn under_an_as_of_date_every_cell_was_known_by_then() {
         panic!("not a grid");
     };
     assert_eq!(grid.as_of(), Some("2026-04-01"));
+    let refused = executor
+        .execute(
+            &as_of("2026-03-31"),
+            ToolMethod::ArtifactRead,
+            json!({"artifact_id":commit.artifact.id}),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        refused.to_string().contains("as_of_unsupported"),
+        "{refused}"
+    );
+    executor
+        .execute(
+            &as_of("2026-04-02"),
+            ToolMethod::ArtifactRead,
+            json!({"artifact_id":commit.artifact.id}),
+        )
+        .await
+        .unwrap();
     super::tests::save_artifact_turn(&executor.state, &commit);
 
     // Read back under an earlier date it cannot show what was known then.
@@ -673,4 +713,224 @@ async fn under_an_as_of_date_every_cell_was_known_by_then() {
     assert!(error.contains("as_of_unsupported"), "{error}");
     assert!(read(as_of("2026-04-02")).await.is_ok());
     assert!(read(policy()).await.is_ok());
+}
+
+#[tokio::test]
+async fn a_grid_publish_is_a_read_and_revisions_replace_only_on_delivery() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut executor = executor(&temporary, "assistant-replacements");
+    let shown = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = shown.clone();
+    Arc::get_mut(&mut executor.capture).unwrap().artifact_sink =
+        Some(Arc::new(move |view| sink.lock().unwrap().push(view)));
+    let source = statements(&executor, "Solsup Foods", "452300000000", "38100000000").await;
+    let mut params = grid(
+        rows(2),
+        json!([{"id":"revenue","label":"Revenue","unit":"amount"}]),
+        json!([[{"value":"₩451bn","citation_url":source}],[{"empty":"unavailable"}]]),
+    );
+    let first = executor
+        .execute(&policy(), ToolMethod::GridPublish, params.clone())
+        .await
+        .unwrap();
+    let id = first["artifact"]["artifact_id"].as_str().unwrap();
+    let original_token = first["edit_token"]
+        .as_str()
+        .expect("a publish result is a read");
+    params["mode"] = json!("revise");
+    params["artifact_id"] = json!(id);
+    params["edit_token"] = json!(original_token);
+    params["cells"][0][0]["value"] = json!("₩452.3bn");
+    let pending = executor
+        .execute_for_delivery(
+            &policy(),
+            ToolMethod::GridPublish,
+            params.clone(),
+            "replacement",
+        )
+        .await
+        .unwrap();
+    assert_ne!(pending["edit_token"], original_token);
+    // Pending is neither readable nor visible, and a parallel publisher is refused.
+    let read = executor
+        .execute(
+            &policy(),
+            ToolMethod::ArtifactRead,
+            json!({"artifact_id":id}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(read["artifact"]["edit_token"], original_token);
+    let error = executor
+        .execute_for_delivery(
+            &policy(),
+            ToolMethod::GridPublish,
+            params.clone(),
+            "parallel",
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("Another call in this batch"),
+        "{error}"
+    );
+    executor.discard_delivery(&policy(), "parallel").await;
+    executor.discard_delivery(&policy(), "replacement").await;
+    assert_eq!(shown.lock().unwrap().len(), 1);
+    assert_eq!(
+        executor.capture.artifacts.lock().await[0].revision.digest,
+        first["artifact"]["digest"].as_str().unwrap()
+    );
+    let second = executor
+        .execute(&policy(), ToolMethod::GridPublish, params.clone())
+        .await
+        .unwrap();
+    assert!(
+        executor
+            .execute(&policy(), ToolMethod::GridPublish, params.clone())
+            .await
+            .is_err(),
+        "the old digest token is stale"
+    );
+    let mut latest = second;
+    for index in 0..4 {
+        params["edit_token"] = latest["edit_token"].clone();
+        params["title"] = json!(format!("Corrected {index}"));
+        latest = executor
+            .execute(&policy(), ToolMethod::GridPublish, params.clone())
+            .await
+            .unwrap();
+        assert_eq!(latest["artifact"]["revision"], 1);
+    }
+    assert_eq!(executor.capture.artifacts.lock().await.len(), 1);
+    assert_eq!(shown.lock().unwrap().len(), 6);
+    assert!(shown
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|view| view.artifact.id == id && view.revision.revision == 1));
+    for _ in 0..3 {
+        let mut create = params.clone();
+        create["mode"] = json!("create");
+        create.as_object_mut().unwrap().remove("artifact_id");
+        create.as_object_mut().unwrap().remove("edit_token");
+        executor
+            .execute(&policy(), ToolMethod::GridPublish, create)
+            .await
+            .unwrap();
+    }
+    let mut fifth = params.clone();
+    fifth["mode"] = json!("create");
+    fifth.as_object_mut().unwrap().remove("artifact_id");
+    fifth.as_object_mut().unwrap().remove("edit_token");
+    let error = executor
+        .execute(&policy(), ToolMethod::GridPublish, fifth)
+        .await
+        .unwrap_err();
+    // The broker's public error body must keep the transaction_limit contract.
+    assert_eq!(error.to_string(), "This turn has reached its limit of 4 documents, charts or tables, so this one was not published.");
+    assert!(
+        matches!(error, BrokerError::WithNext { ref source, ref next }
+        if matches!(source.as_ref(), BrokerError::ArtifactLimit { limit: 4 })
+            && next.as_ref() == "Those already published can still be revised."),
+        "{error}"
+    );
+    params["edit_token"] = latest["edit_token"].clone();
+    executor
+        .execute(&policy(), ToolMethod::GridPublish, params)
+        .await
+        .unwrap();
+    assert!(executor
+        .state
+        .store
+        .list_chat_artifacts("chat-a")
+        .unwrap()
+        .is_empty());
+}
+
+async fn assert_grid_draft_token_freshness(restore_payload: bool) {
+    let temporary = tempfile::tempdir().unwrap();
+    let executor = executor(&temporary, "assistant-grid-token");
+    let source = statements(&executor, "Solsup Foods", "452300000000", "38100000000").await;
+    let mut params = grid(
+        rows(2),
+        json!([{"id":"revenue","label":"Revenue","unit":"amount"}]),
+        json!([[{"value":"₩452.3bn","citation_url":source}],[{"empty":"unavailable"}]]),
+    );
+    params["notes"] = json!(["A"]);
+    let original = executor
+        .execute(&policy(), ToolMethod::GridPublish, params.clone())
+        .await
+        .unwrap();
+    let id = original["artifact"]["artifact_id"].as_str().unwrap();
+    params["mode"] = json!("revise");
+    params["artifact_id"] = json!(id);
+    params["title"] = json!("Corrected title");
+    let mut latest = original.clone();
+    let notes: &[&str] = if restore_payload { &["B", "A"] } else { &["A"] };
+    for note in notes {
+        params["edit_token"] = latest["edit_token"].clone();
+        params["notes"] = json!([note]);
+        latest = executor
+            .execute(&policy(), ToolMethod::GridPublish, params.clone())
+            .await
+            .unwrap();
+        assert_eq!(latest["artifact"]["revision"], 1);
+    }
+    assert_eq!(latest["artifact"]["digest"], original["artifact"]["digest"]);
+    params["edit_token"] = original["edit_token"].clone();
+    params["title"] = json!("Latest title");
+    let error = executor
+        .execute(&policy(), ToolMethod::GridPublish, params.clone())
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("edit_token does not match"),
+        "{error}"
+    );
+    let current = executor
+        .execute(
+            &policy(),
+            ToolMethod::ArtifactRead,
+            json!({"artifact_id":id}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(current["artifact"]["title"], "Corrected title");
+    assert_eq!(current["artifact"]["edit_token"], latest["edit_token"]);
+    params["edit_token"] = latest["edit_token"].clone();
+    latest = executor
+        .execute(&policy(), ToolMethod::GridPublish, params)
+        .await
+        .unwrap();
+    let commit = executor.capture.artifacts.lock().await[0].clone();
+    super::tests::save_artifact_turn(&executor.state, &commit);
+    let next = AppToolExecutor {
+        state: executor.state.clone(),
+        capture: Arc::new(ToolCapture::for_chat("assistant-grid-next".into())),
+        loupist_id: "loupist-a".into(),
+        capability_ids: BTreeSet::new(),
+    };
+    let retained = next
+        .execute(
+            &policy(),
+            ToolMethod::ArtifactRead,
+            json!({"artifact_id":id}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        retained["artifact"]["edit_token"], latest["edit_token"],
+        "a retained revision's token stays stable across turns"
+    );
+}
+
+#[tokio::test]
+async fn grid_draft_tokens_reject_title_only_predecessors() {
+    assert_grid_draft_token_freshness(false).await;
+}
+
+#[tokio::test]
+async fn grid_draft_tokens_reject_restored_payload_predecessors() {
+    assert_grid_draft_token_freshness(true).await;
 }

@@ -6,37 +6,30 @@ Memory reads and saves are Rust transactions. Delivery counts are not influence 
 
 The tabs collapse from a list/reader split based on the pane's width, at 972px; below it an open page hides the heading, tabs and search, which return with Back. A narrow tab row scrolls instead of painting past the pane. The page title wraps instead of being cut off. An open method fills the card: its title stays inside the reader, and pause and archive follow the document. Focusing a row or a reader action below the fold scrolls it into the pane. Model-provider cards fill their own 800px settings column.
 
-Lens opens beside Chat from the sidebar or header. "What {Loupist} knows"
-names its contents, with two tabs, Pages and History. What the user follows, holdings and
-Watching live on the [Following page](follow.md#what-you-follow) (`components/briefings/FollowingPage.tsx`):
-followed assets in one table per class with a Watch-for checkbox per kind, add (a bare
-six-digit code is a KRX listing), remove, a quiet "Adding to the map…" line while
-`knowledge_followed_status` reports queued, running or waiting work (read again every few seconds
-until it settles), a quiet "Couldn't load Watching settings." line with Try again when those
-settings fail to load, holdings as a count and date
-per kind from `holdings_summary` with Import holdings, Watch all through
-`watch_defaults_apply` (also offered on the first follow receipt in chat; both list each kind that
-still needs a data connection, linked to Settings › Data connections), Check now and Pause.
-It is the `following` page from its sidebar row; Schedule's Watching row opens it. The shared
-Loupists list sits under Pages and is hidden [in this release](sharing.md#this-release).
+Lens opens as a full page from the sidebar (⌘3). "What {Loupist} knows"
+names its contents, with two tabs, Pages and History. The shared Loupists list
+sits under Pages and is hidden [in this release](sharing.md#this-release).
+The sidebar also opens the [Following page](follow.md#what-you-follow).
+`knowledge_followed_status` reports queued, running and waiting Map work for
+the Loupist's followed list.
 **Pages**: every active Lens page in one list grouped as Topics (`subject`), Ideas
 (`idea`), Methods (`method`), Your principles (`principle`) and Perspective (`perspective`);
 the groups are 주제, 아이디어, 분석 방법, 내 원칙 and 관점 in Korean. Search waits for a
 pause in typing, then runs `knowledge_lens_search` for pages and matches a principle
 on its own words. Paused pages remain in this inspection search so the user can
-resume them; agent discovery still excludes them. Opening a
+resume them; agent discovery still excludes them. With no pages yet the search field is
+left out and the list says how pages appear, beside Add principle. Opening a
 row reads it in `PageReader`: Markdown sections under their headings, each with its
 basis chip (Claim and Source open the claim on the Map or the retained Source; "You
 said"; "Loupist's view" with its uncertainty line; a page chip opens that page), a
 "Sources disagree" marker on a contested section, and Forget. Forget calls
 `memory_section_forget` and offers Undo through `memory_op_undo`. `world:` links draw as
 Map chips, `lens:` links open the page, and the reader lists links, backlinks, the
-names the page is anchored to and its last changes. Pause and Archive stay on the page.
+names the page is anchored to and its last changes. Pause in answers (Resume in answers once paused; a paused page stays but is left out of future answers) and Archive stay on the page.
 A principle keeps its statement, why and example. **History**: from the growth events
 and the Lens log, newest first. "Filed after: {chat}" for a page a chat filed, sections
 you forgot or brought back, principles taught, names added to the Map and changes to what
-the map tracks. The standing conversation reads as Bot here and in each page's
-"Used in" list, never its stored title.
+the map tracks. The standing conversation reads as Bot here and in the chat list under each page. A principle labels this list "Read in".
 
 Each item lists the chats that used it. Rust's
 `knowledge_memory_usage` counts distinct completed turns that received the item in
@@ -54,7 +47,7 @@ items with known Loupist authorship: whole pages the Loupist created that hold n
 user or shared section, and Loupist-origin sections retired from pages the user
 keeps (a user retire, so the Loupist cannot refile that key), with the summary
 cleared when the log shows the Loupist wrote it last (counted with the sections). User-created pages,
-shared items, manually saved Sources, Journal, what you follow, holdings and
+shared items, manually saved Sources, Journal, what you follow and
 [Bot memory](../ui/home-thread.md#bot-memory) (tool `bot_memory`) stay. Relationships with independent user/shared support and names still
 used by preserved relationships stay. A Source also stays if it is the sole basis
 of a protected user/shared/unknown-authored relationship. Immutable removed Sources and Lens records
@@ -113,7 +106,7 @@ What each filter removes is counted for the answer's note
 
 ### Using and correcting Memory in a Chat
 
-The receipt's "Used n principles / methods" segment uses host-recorded Lens
+The receipt labels principles "Read your principle" and "Read · Principle". Lens counts the answers that read each principle. These labels reflect host-recorded Lens
 receipts on the completed message: record, revision, digest, kind, title and delivery
 route (`context` or `exact_read`). A principle read exactly remains a principle;
 answer-text `lens:` links never determine the receipt's kind or imply delivery.

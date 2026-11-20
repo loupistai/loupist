@@ -83,9 +83,6 @@ pub(crate) struct Finding {
     pub item_key: String,
     pub item_kind: ItemKind,
     pub item_label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub symbol: Option<String>,
     pub blocking: bool,
 }
 
@@ -605,18 +602,13 @@ fn language(input: &ExportInput) -> String {
     }
 }
 
-fn finding_id(class: PrivateClass, key: &str, symbol: Option<&str>) -> String {
-    pack::sha256_hex(format!("{class:?}\u{0}{key}\u{0}{}", symbol.unwrap_or("")).as_bytes())[..16]
-        .to_owned()
+fn finding_id(class: PrivateClass, key: &str) -> String {
+    pack::sha256_hex(format!("{class:?}\u{0}{key}\u{0}").as_bytes())[..16].to_owned()
 }
 
 fn label(text: &str) -> String {
     let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if line.chars().count() > 80 {
-        format!("{}…", line.chars().take(79).collect::<String>())
-    } else {
-        line
-    }
+    crate::util::shorten(&line, 80)
 }
 
 /// The item's label as a finding names it: cut before the first word that
@@ -636,11 +628,10 @@ fn finding_label(text: &str) -> String {
         words.push(word);
     }
     let mut out = words.join(" ");
-    if cut || out.chars().count() > 80 {
-        out = out.chars().take(79).collect();
+    if cut {
         out.push('…');
     }
-    out
+    crate::util::shorten(&out, 80)
 }
 
 fn scan_item(
@@ -657,12 +648,11 @@ fn scan_item(
     }
     for hit in hits {
         findings.push(Finding {
-            id: finding_id(hit.class, key, hit.symbol.as_deref()),
+            id: finding_id(hit.class, key),
             class: hit.class,
             item_key: key.to_owned(),
             item_kind: kind,
             item_label: finding_label(item_label),
-            symbol: hit.symbol,
             blocking: hit.class.blocking(),
         });
     }

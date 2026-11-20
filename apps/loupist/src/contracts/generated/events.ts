@@ -3,11 +3,13 @@
 
 import type { Review } from "./knowledge/learning";
 
+/** A rate refresh, grant or preference changed what a window may display. */
+export type FxChangedEvent = { revision?: string, state: FxDisplayState };
+
+export type FxDisplayState = "unset" | "invalidated" | "ready" | "waiting" | "unavailable";
+
 /** A learning review finished, failed or was deferred. */
 export type LearningReviewFinishedEvent = { loupistId: string, review: Review };
-
-/** A Loupist's watch settings or events changed. */
-export type WatchChangedEvent = { loupistId: string };
 
 /** A Loupist's World kinds changed (added by processing, undone or removed). */
 export type WorldSchemaChangedEvent = { loupistId: string };

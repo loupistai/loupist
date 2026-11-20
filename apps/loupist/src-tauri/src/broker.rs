@@ -39,8 +39,6 @@ use windows_sys::Win32::{
     System::Threading::{GetCurrentProcess, OpenProcessToken},
 };
 
-use crate::chat::artifacts::MAX_CHAT_TURN_ARTIFACTS;
-
 const PROTOCOL: &str = "loupist-tool/1";
 // Memory proposals may contain up to 2 MiB of Markdown. Keep framing headroom
 // for typed target metadata and JSON escaping.
@@ -210,6 +208,8 @@ pub struct ToolPolicy {
     pub memory_proposal_budget: u8,
     #[serde(default)]
     pub as_of: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_currency: Option<String>,
 }
 
 const fn default_memory_proposal_budget() -> u8 {
@@ -224,7 +224,7 @@ pub enum ToolMethod {
     ScheduleRead,
     ScheduleCreate,
     ScheduleHandoff,
-    ScheduleWatch,
+    ScheduleQuiet,
     ScheduleBriefing,
     ScheduleUpdate,
     ScheduleSetStatus,
@@ -234,6 +234,7 @@ pub enum ToolMethod {
     ResearchOpen,
     BotMemory,
     ChatHistory,
+    InterfaceLabels,
     DatasetDescribe,
     DatasetQuery,
     DatasetExport,
@@ -255,7 +256,6 @@ pub enum ToolMethod {
     McpConnect,
     McpCall,
     RunResultsList,
-    PlanUpdate,
     WebSearch,
     WebFetch,
     SourceSave,
@@ -275,8 +275,10 @@ pub enum ToolMethod {
     WorldJob,
     ConversationMemory,
     AssetPageRead,
+    AssetLookup,
+    PriceReadSave,
+    FxRate,
     ThesisUpdate,
-    EarningsSnapshotSave,
     ArtifactList,
     ArtifactRead,
     ArtifactPublish,
@@ -284,6 +286,7 @@ pub enum ToolMethod {
     ChartPublish,
     GridPublish,
     WorkspaceCapture,
+    PastedCapture,
     #[serde(rename = "run_python")]
     PythonRun,
 }
@@ -384,6 +387,8 @@ pub enum BrokerError {
     Offline(String),
     #[error("{tool} has reached its limit of {limit} per reply. Do not call it again in this reply; other tools still work.")]
     BudgetExceeded { tool: String, limit: u8 },
+    #[error("{}", format!("This turn has reached its limit of {} documents, charts or tables, so this one was not published.", .limit))]
+    ArtifactLimit { limit: usize },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -417,6 +422,13 @@ impl BrokerError {
             field: field.into(),
             expected: expected.into(),
         }
+    }
+
+    pub(crate) fn invalid_interface_labels() -> Self {
+        Self::invalid(
+            "interface_labels",
+            "Pass only keys, an array of 1 to 7 distinct label keys from the tool definition.",
+        )
     }
 
     pub(crate) fn with_next(self, next: impl Into<std::borrow::Cow<'static, str>>) -> Self {
@@ -569,7 +581,6 @@ struct TransactionCardinality {
     connection_setups: u8,
     questions: u8,
     filings: u8,
-    artifact_publishes: u8,
     research_opens: u8,
 }
 
@@ -626,14 +637,6 @@ impl TransactionCardinality {
                     limit: MAX_CHAT_TURN_FILINGS,
                 });
             }
-            ToolMethod::ArtifactPublish | ToolMethod::ChartPublish | ToolMethod::GridPublish
-                if self.artifact_publishes >= MAX_CHAT_TURN_ARTIFACTS as u8 =>
-            {
-                return Err(BrokerError::BudgetExceeded {
-                    tool: method.tool_name(),
-                    limit: MAX_CHAT_TURN_ARTIFACTS as u8,
-                });
-            }
             ToolMethod::ResearchOpen if self.research_opens >= 1 => {
                 return Err(BrokerError::BudgetExceeded {
                     tool: method.tool_name(),
@@ -652,9 +655,6 @@ impl TransactionCardinality {
             ToolMethod::NoteSave => self.journals += 1,
             ToolMethod::SourceSave => self.evidence_creations += 1,
             ToolMethod::PrincipleSave => self.proposals += 1,
-            ToolMethod::ArtifactPublish | ToolMethod::ChartPublish | ToolMethod::GridPublish => {
-                self.artifact_publishes += 1
-            }
             _ => {}
         }
         Ok(())
@@ -677,9 +677,6 @@ impl TransactionCardinality {
             }
             ToolMethod::AskUser => self.questions = self.questions.saturating_sub(1),
             ToolMethod::LensFile => self.filings = self.filings.saturating_sub(1),
-            ToolMethod::ArtifactPublish | ToolMethod::ChartPublish | ToolMethod::GridPublish => {
-                self.artifact_publishes = self.artifact_publishes.saturating_sub(1)
-            }
             _ => {}
         }
     }
@@ -1365,7 +1362,14 @@ async fn execute_request(
         let error = BrokerError::MethodDenied;
         (id.clone(), error)
     })?;
-    validate_argument_text(&request.params).map_err(|error| (id.clone(), error))?;
+    validate_argument_text(&request.params).map_err(|error| {
+        let error = if method == ToolMethod::InterfaceLabels {
+            BrokerError::invalid_interface_labels()
+        } else {
+            error
+        };
+        (id.clone(), error)
+    })?;
     executor
         .enforce_turn_policy(method, &request.params)
         .map_err(|error| (id.clone(), error))?;
@@ -1449,7 +1453,7 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
-fn error_body(error: &BrokerError) -> Value {
+pub(crate) fn error_body(error: &BrokerError) -> Value {
     fn sentence(message: &str) -> String {
         let message = message.trim_end();
         if message.ends_with('.') {
@@ -1532,7 +1536,7 @@ fn error_body(error: &BrokerError) -> Value {
             "The result was too large. Request a smaller page or file instead of repeating this call.",
             false,
         ),
-        BrokerError::BudgetExceeded { .. } => ("", false),
+        BrokerError::BudgetExceeded { .. } | BrokerError::ArtifactLimit { .. } => ("", false),
         BrokerError::Authentication => ("The tool request was rejected. Do not retry it.", false),
         BrokerError::Io(_) => (
             "One changed attempt is reasonable; do not loop on the same call.",
@@ -1594,7 +1598,9 @@ fn error_code(error: &BrokerError) -> &'static str {
         BrokerError::WithNext { source, .. } => error_code(source),
         BrokerError::Execution(message) => as_of_code(message).unwrap_or("execution_failed"),
         BrokerError::Offline(_) => "offline",
-        BrokerError::BudgetExceeded { .. } => "transaction_limit",
+        BrokerError::BudgetExceeded { .. } | BrokerError::ArtifactLimit { .. } => {
+            "transaction_limit"
+        }
         BrokerError::Io(_) => "io_failed",
     }
 }

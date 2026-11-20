@@ -1,6 +1,31 @@
 import i18n from "../i18n";
 import { prepareFixture, previewKo, type PreviewBridge } from "./fixtures";
 import type { PreviewScenario } from "./scenarios";
+import { openLoupistSettings } from "./scenarios/kit";
+import { FX_DISPLAY_FIXTURES } from "../bridge/mock/fxDisplay";
+import { PREVIEW_LOUPIST } from "./assets";
+import { previewRates, showInDisplayCurrency } from "./displayCurrency";
+
+const marketDataOff = (bridge: PreviewBridge) => bridge.loupistCapabilityDisable({ loupist_id: PREVIEW_LOUPIST, entry_id: "openbb.platform" });
+/** Scenario id, the status Settings shows (`data-fx-status`), and how the mock host is put in that state. */
+const DISPLAY_STATUSES: ReadonlyArray<readonly [string, string, (bridge: PreviewBridge) => Promise<unknown>]> = [
+  ["ready", "ready", bridge => showInDisplayCurrency(bridge, previewRates("KRW"))],
+  ["waiting", "waiting", bridge => showInDisplayCurrency(bridge, null, "KRW")],
+  ["behind-offline", "behind-offline", bridge => showInDisplayCurrency(bridge, previewRates("KRW", { behind: "offline" }))],
+  ["behind-provider", "behind-provider_failed", bridge => showInDisplayCurrency(bridge, previewRates("KRW", { behind: "provider_failed" }))],
+  ["behind-connection", "behind-connection_off", async bridge => { await marketDataOff(bridge); await showInDisplayCurrency(bridge, previewRates("KRW")); }],
+  ["connection-off", "connection_off", async bridge => { await marketDataOff(bridge); await showInDisplayCurrency(bridge, null, "KRW"); }],
+  ["offline", "offline", bridge => showInDisplayCurrency(bridge, FX_DISPLAY_FIXTURES.offline)],
+  ["provider-failed", "provider_failed", bridge => showInDisplayCurrency(bridge, FX_DISPLAY_FIXTURES.providerFailed)],
+  ["no-rate", "no_rate_for_currency", bridge => showInDisplayCurrency(bridge, FX_DISPLAY_FIXTURES.noRate)],
+  ["too-old", "too_old", bridge => showInDisplayCurrency(bridge, FX_DISPLAY_FIXTURES.tooOld)],
+  // A well-shaped code set by hand outside the reference table: kept, named, and no rate.
+  ["unsupported", "no_rate_for_currency", bridge => showInDisplayCurrency(bridge, { state: "unavailable", currency: "XAU", reason: "no_rate_for_currency", lastDate: "2026-11-16" })],
+  ["read-failed", "failed", async bridge => {
+    await showInDisplayCurrency(bridge, null, "KRW");
+    bridge.fxDisplay = async () => { throw new Error("The rate read failed."); };
+  }],
+];
 
 type Helpers = {
   base: (id: string, title: string, landmark: PreviewScenario["landmark"], enter?: PreviewScenario["enter"]) => PreviewScenario;
@@ -20,8 +45,7 @@ export function settingsScenarios({ base, select, settings, until }: Helpers): P
   return [
     ...(["chat", "learning", "capabilities", "workspace", "remove"] as const).map((section): PreviewScenario => ({
       ...base(`loupist-settings-${section}`, `Loupist preferences: ${section}`, () => select(section === "remove" ? ".loupist-delete-dialog" : `[data-loupist-section="${section}"]`), async () => {
-        const open = await until(() => select("[data-header-loupist-settings]") as HTMLButtonElement | null, "Loupist header did not load");
-        open.click();
+        await openLoupistSettings();
         if (section === "remove") {
           const remove = await until(() => select(".agent-removal-card button") as HTMLButtonElement | null, "Remove action did not load");
           remove.click();
@@ -34,6 +58,28 @@ export function settingsScenarios({ base, select, settings, until }: Helpers): P
       }), setup: prepareFixture,
     })),
     base("settings-appearance", "Theme and language preferences", () => select(".appearance-card"), root => settings(root, "appearance")),
+    // Display currency: each status sentence Settings writes from the host's display state.
+    ...DISPLAY_STATUSES.map(([kind, status, prepare]): PreviewScenario => ({
+      ...base(`settings-appearance-currency-${kind}`, `Display currency: ${kind}`, () => select(`[data-fx-status="${status}"]:not(:empty)`), async root => {
+        await settings(root, "appearance");
+        const group = await until(() => select(`[data-fx-status="${status}"]:not(:empty)`), `The ${kind} rate status did not appear`);
+        // Scroll only the settings column; scrollIntoView would also move the window.
+        const page = group.closest<HTMLElement>(".settings-page");
+        if (page) page.scrollTop += group.getBoundingClientRect().bottom - page.getBoundingClientRect().bottom + 24;
+      }),
+      setup: async bridge => { await prepareFixture(bridge); await prepare(bridge); },
+    })),
+    // The holdings export after its shell line was dismissed: the date, Show file and Save a copy….
+    { ...base("settings-legacy-holdings", "General keeps the holdings export date, Show file and Save a copy…", () => select("[data-legacy-holdings-settings]"), async root => {
+      await settings(root, "general");
+      const row = await until(() => select("[data-legacy-holdings-settings]"), "The holdings export row did not load");
+      // Scroll only the settings column; scrollIntoView would also move the window.
+      const page = row.closest<HTMLElement>(".settings-page");
+      if (page) page.scrollTop += row.getBoundingClientRect().bottom - page.getBoundingClientRect().bottom + 24;
+    }), setup: async bridge => {
+      await prepareFixture(bridge);
+      bridge.legacyHoldings.setStatus({ state: "exported", dismissed: true, exportedAtMs: Date.UTC(2026, 10, 17, 9), counts: { wallets: 2, snapshots: 3, positions: 14 } });
+    } },
     base("settings-agent-advanced", "Chat preferences, context limits and recovery", () => select(".agent-config-advanced[open]"), async root => {
       await settings(root, "agent");
       const summary = await until(() => select(".agent-config-advanced summary") as HTMLElement | null, "Advanced settings did not load");
@@ -86,10 +132,10 @@ export function settingsScenarios({ base, select, settings, until }: Helpers): P
         bridge.updateStatus = async () => {
           const state = await read();
           return { ...state, supported: kind !== "unsupported", phase: kind === "checking" || kind === "confirming" || kind === "downloading" || kind === "installing" || kind === "restarting" ? kind : "idle",
-            offer: kind !== "current" && kind !== "checking" && kind !== "error" && kind !== "unsupported" ? { offer_id: "preview-update", version: "0.0.2", published_at: "2026-11-04T00:00:00Z", notes: previewKo() ? "긴 문서와 여러 연구 방법을 더 편하게 읽을 수 있도록 화면 배치를 개선했어요." : "Improved reading layouts for long documents and collections of research methods." } : null,
+            offer: kind !== "current" && kind !== "checking" && kind !== "error" && kind !== "unsupported" ? { offer_id: "preview-update", version: "0.0.2", published_at: "2026-11-04T00:00:00Z", notes: previewKo() ? "긴 문서와 여러 연구 방법을 더 편하게 읽을 수 있도록 화면 배치를 개선했습니다." : "Improved reading layouts for long documents and collections of research methods." } : null,
             downloaded_bytes: 50, total_bytes: 100,
             error: kind === "error" ? i18n.t("settings:useAppUpdate.couldNotCheckForUpdates") : null,
-            blockers: kind === "blocked" ? [{ id: "preview-chat", kind: "chat", label: previewKo() ? "한울정밀의 분기 실적을 검토하고 있어요." : "Reviewing Hanul Precision's quarterly results." }] : [] };
+            blockers: kind === "blocked" ? [{ id: "preview-chat", kind: "chat", label: previewKo() ? "한울정밀의 분기 실적을 검토하고 있습니다." : "Reviewing Hanul Precision's quarterly results." }] : [] };
         };
       },
     })),

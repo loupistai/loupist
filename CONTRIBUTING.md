@@ -22,7 +22,8 @@ each change, named `<tool>/<topic>` for coding agents (`codex/`, `cursor/`,
 `claude/`) and `<name>/<topic>` otherwise. Open a pull request targeting `main`,
 describe the observable change and list the checks that established it. Use
 `git commit -s` to add the required Developer Certificate of Origin sign-off. A
-GitHub-provided noreply address can keep your personal email private.
+GitHub-provided noreply address can keep your personal email private. Write
+commit messages, pull requests, review comments and code comments in English.
 
 Merging requires the `Source and product contracts` check to pass and review
 conversations to be resolved. The branch does not need to be current with `main`.

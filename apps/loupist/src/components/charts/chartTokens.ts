@@ -5,10 +5,13 @@ export function readChartTokens() {
   const style = getComputedStyle(document.documentElement);
   const color = (name: string) => style.getPropertyValue(`--gg-color-${name}`).trim() || "transparent";
   return {
+    // Price direction only; they follow appearance.price_colors through data-price-colors.
     up: color("price-up"), down: color("price-down"),
     text: color("text-primary"), secondary: color("text-secondary"),
     border: color("border-subtle"), background: color("bg-app"),
-    raised: color("bg-raised"), info: color("info"),
+    raised: color("bg-raised"),
+    // A user's drawing or an emphasised series: never a price colour, which carries meaning.
+    accent: color("accent-ink"),
     series: ["company", "product", "event", "person", "other"].map((name) => color(`map-${name}`)),
     font: style.getPropertyValue("--gg-font-ui").trim(),
   };

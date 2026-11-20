@@ -105,6 +105,31 @@ describe("number popover words", () => {
     expect(calcView(saved, [saved]).title).toBe("Margin");
   });
 
+  it("marks only a conversion's amount that the host recorded with a declared currency", async () => {
+    const amount = { name: "amount", label: "Amount", unit: { kind: "amount" as const, currency: "USD", scale: 6 }, display: "412.6", evidence_id: "ev_page", status: "matched" as const };
+    const rate = { name: "rate", label: "Rate", unit: { kind: "number" as const, text: "KRW per USD" }, display: "1,334.87", evidence_id: "ev_fx", status: "matched" as const };
+    const conversion = (inputs: NonNullable<NumberCheck["calc"]>["inputs"], operation: NonNullable<NumberCheck["calc"]>["operation"] = "convert"): NumberCheck => ({
+      link_index: 0, text: "₩550.8bn", evidence_id: "ev_convert", kind: "calculated", status: "rounded",
+      calc: { operation, title: "Currency conversion", formulas: ["Amount × Rate = 412.6 USD millions × 1,334.87 KRW per USD (ECB, 2026-11-16) = 550,767.36 KRW millions"], inputs } });
+    const declared = (check: NumberCheck) => calcView(check, [check]).inputs.filter((input) => input.declaredCurrency).map((input) => input.name);
+    expect(declared(conversion([{ ...amount, currency_basis: "declared" }, rate]))).toEqual(["amount"]);
+    // The source stated the currency, or an answer saved before the marker: nothing to say.
+    expect(declared(conversion([amount, rate]))).toEqual([]);
+    // Never on the rate, an unknown basis, or another operation's input.
+    expect(declared(conversion([amount, { ...rate, currency_basis: "declared" }]))).toEqual([]);
+    expect(declared(conversion([{ ...amount, currency_basis: "stated" }, rate]))).toEqual([]);
+    expect(declared(conversion([{ ...amount, currency_basis: "declared" }, rate], "ratio"))).toEqual([]);
+    // The rate keeps the host's unit text: target units per one source unit.
+    expect(calcView(conversion([amount, rate]), []).inputs[1]!.value).toBe("1,334.87 KRW per USD");
+    // A stored zero is a value; a blank display is no value and has no row.
+    expect(calcView(conversion([amount, { ...rate, display: "0" }]), []).inputs.map((input) => input.value)).toEqual(["$412.6m", "0 KRW per USD"]);
+    expect(calcView(conversion([amount, { ...rate, display: "  " }]), []).inputs.map((input) => input.name)).toEqual(["amount"]);
+    await i18n.changeLanguage("ko");
+    expect(operationName("convert")).toBe(i18n.t("chat:numberChip.operation.convert"));
+    expect(calcView(conversion([amount, rate]), []).title).toBe(operationName("convert"));
+    expect(operationName("convert")).not.toBe("Currency conversion");
+  });
+
   it("humanizes unknown keys and leaves unknown labels as written", () => {
     expect(humanize("fs_div_code")).toBe("Fs div code");
     expect(plainLabel("adjusted EBIT")).toEqual({ text: "adjusted EBIT" });
@@ -125,9 +150,33 @@ describe("number popover words", () => {
     const tree = { type: "root" as const, children: [{ type: "element" as const, tagName: "p", properties: {}, children: [{ type: "text" as const, value: "이익률은 " }, link, { type: "text" as const, value: "였고, 매출은" }] }] };
     keepNumberParticles()(tree);
     const paragraph = tree.children[0]!;
-    expect(paragraph.children.map((child) => child.type === "text" ? child.value : `${child.tagName}.${String((child.properties as Record<string, unknown>).className ?? "")}`)).toEqual(["이익률은 ", "span.number-keep", ", 매출은"]);
+    expect(paragraph.children.map((child) => child.type === "text" ? child.value : `${child.tagName}.${String((child.properties as Record<string, unknown>).className ?? "")}`)).toEqual(["이익률은 ", "span.number-keep", " 매출은"]);
     const group = paragraph.children[1] as { children: unknown[] };
-    expect(group.children).toEqual([link, { type: "text", value: "였고" }]);
+    expect(group.children).toEqual([link, { type: "text", value: "였고," }]);
+  });
+
+  it("keeps a sentence's period and a bracket with the citation they touch, so neither starts or ends a line alone", () => {
+    const link = (label: string) => ({ type: "element" as const, tagName: "a", properties: { href: "#evidence-ev" }, children: [{ type: "text" as const, value: label }] });
+    const quote = link("price quote");
+    const cited = link("2");
+    const tree = { type: "root" as const, children: [{ type: "element" as const, tagName: "p", properties: {}, children: [
+      { type: "text" as const, value: "The saved quotes are the " }, quote, { type: "text" as const, value: ". The filing says so (" }, cited, { type: "text" as const, value: ")." },
+    ] }] };
+    keepNumberParticles()(tree);
+    const paragraph = tree.children[0]!;
+    const shown = (child: (typeof paragraph.children)[number]): string => child.type === "text" ? child.value : `[${(child.children as typeof paragraph.children).map(shown).join("")}]`;
+    expect(paragraph.children.map(shown)).toEqual(["The saved quotes are the ", "[[price quote].]", " The filing says so ", "[([2]).]"]);
+  });
+
+  it("groups a link before its period arrives, so the period joins it without moving the link", () => {
+    const link = { type: "element" as const, tagName: "a", properties: { href: "#evidence-ev" }, children: [{ type: "text" as const, value: "1" }] };
+    const streamed = (tail: string) => {
+      const tree = { type: "root" as const, children: [{ type: "element" as const, tagName: "p", properties: {}, children: [{ type: "text" as const, value: "The margin fell " }, structuredClone(link), ...(tail ? [{ type: "text" as const, value: tail }] : [])] }] };
+      keepNumberParticles()(tree);
+      return tree.children[0]!.children.map((child) => child.type === "text" ? "text" : `${child.tagName}>${(child.children as { type: string; tagName?: string }[]).map((inner) => inner.tagName ?? inner.type).join(",")}`);
+    };
+    expect(streamed("")).toEqual(["text", "span>a"]);
+    expect(streamed(".")).toEqual(["text", "span>a,text"]);
   });
 });
 

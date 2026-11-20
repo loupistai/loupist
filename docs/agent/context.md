@@ -1,6 +1,6 @@
 # Context bounds
 
-Rust seals context in a fixed order with byte bounds. Holdings quantities are not in that envelope. Delivery under a cutoff is in [Context delivery](context-delivery.md).
+Rust seals context in a fixed order with byte bounds. The Loupist's saved followed list supplies identities only. Delivery under a cutoff is in [Context delivery](context-delivery.md).
 
 ## Memory and context
 
@@ -9,7 +9,7 @@ What a turn may save, and how it should discover evidence before answering, is i
 ### Context assembly and bounds
 
 `commands/chat_runtime/setup.rs` freezes profile instructions, the Loupist's tone and
-identity-only followed companies before admitting the turn. `agent_harness.rs`
+identity-only followed assets before admitting the turn. `agent_harness.rs`
 attaches those values and orders the delivered envelope. Tool rules and authority govern the request; user principles outrank Loupist instructions,
 methods and the standing perspective. The agent briefly explains a conflict.
 Profile instructions apply with Memory on or off, including Briefings. An empty
@@ -24,7 +24,7 @@ Pi renders them in this order. Installed Skill bodies load only when selected/re
 | 2 | Host workspace instructions | Each file ≤64 KiB; instruction and custom Skill resources share ≤64 files and ≤256 KiB | Admitted personal/workspace/Loupist instructions exist |
 | 3 | Skills XML index | Fixed bundled selection plus custom resources within the same file/byte limits | Enabled Skills; a mention selects a method without changing Memory authority |
 | 4 | Selected workspace CWD | One canonical filesystem path | Every turn; private Pi runtime CWD is not exposed |
-| 5 | Runtime permissions and connections/capability index | Fixed bundled catalog plus ≤32 custom connections; purpose text ≤160 characters per component, cut at a sentence or word | Every turn; off connections cost one fixed sentence naming `connection_setup` |
+| 5 | Runtime permissions and connections/capability index | Fixed bundled catalog plus ≤32 custom connections; purpose text ≤160 characters per component, cut at a sentence or word | Every turn; off connections cost one sentence that lists each name with the first sentence of its purpose |
 | 6 | Personal/Loupist Skill folders | Two host-selected paths and fixed guidance | Personal root available |
 | Separate provider field | Active tool definitions | Host-authorized catalog/native definitions; lazy capabilities add their admitted schemas | Permitted active tools only |
 
@@ -39,9 +39,10 @@ are listed in their serialized order inside that block.
 | 1 | Perspective | The active perspective page as its exact `PageView` JSON, ≤32 KiB; otherwise a small `readRequired` pointer | Memory on and an active perspective; admitted exact-read reference stays in `memory_protocol` |
 | 2 | User principles and revision identities | ≤30 active principles, ≤6,000 characters including overflow notice | Memory on and at least one fitting principle |
 | 3 | Instructions from the user for this Loupist | ≤4,000 Unicode scalar characters, checked on save and again at delivery | Every turn, including Memory off and an empty definition |
-| 4 | What the user follows | ≤60 unique `(symbol, market)` identities; holdings fill the cap first, then the followed list, alphabetical within each list; one row can be both held and followed; symbol/market ≤64 characters and name ≤256. Under an as-of date: followed identities only, alphabetical, without flags, with a hint that holdings are left out | Memory on; empty list is explicit. Never quantity, cost basis, currency or market value |
+| 3b | Research focus (`LOUPIST_FOCUS_BLOCK`, `agent_harness.rs`) | The profile's focus, ≤280 characters, checked on save and again at delivery; protected from leaving in a URL like the perspective | Every turn, including Memory off and an empty focus; the only place the agent reads the focus |
+| 4 | What the user follows | `{hint, assets}` with ≤60 followed assets. Each row carries `assetId`, `name` and `reference` (one listing's identifiers as saved, or null), plus `price_read` (`none` or `failed`) only when the asset has no working saved price read. Live and as-of turns use the same block and hint | Memory on; empty list is explicit. Never quantity, cost basis, currency or market value |
 | 5 | Loupist tone | One enum per Loupist: `careful`, `balanced` (default), `direct`, chosen when the Loupist is created and changed in Loupist settings. Presentation only; evidence rules never change | Every turn, including Memory off |
-| 5b | `chat_surface` | `{surface, hint}`: `bot`, `session`, `scheduled` or `delegated` (`src-tauri/src/chat/surface.rs`), resolved once in setup, frozen in `AgentHostContext` and part of the runtime surface seal; one fixed hint per surface | Every turn, including Memory off |
+| 5b | `chat_surface` | `{surface, hint?}`: `bot`, `session`, `scheduled`, `price_setup` or `delegated` (`src-tauri/src/chat/surface.rs`), resolved once in setup, frozen in `AgentHostContext` and part of the runtime surface seal. `bot`, `session` and `scheduled` have a fixed hint; a typed hand-off's hint is attached with its note, a Map-link hand-off keeps the `session` hint and carries its own in `handoff.hint`, and `price_setup` has none | Every turn, including Memory off |
 | 5c | `bot_memory` | `loupist-bot-memory/1`: ≤30 entries (kind, text ≤300 characters, first and last dates, ≤4 basis message ids), the room left and, when due, a review of ≤8 earlier user messages as ≤600-character excerpts, under a fixed not-instructions, not-evidence rule ([Bot memory](../ui/home-thread.md#bot-memory)) | Bot (`bot` surface) with Memory on; under an as-of date, as it stood then and without a review |
 | 6a | Memory active flag and standing-perspective read reference | One flag/reference | Memory on; read reference only after full delivery |
 | 6b | Due Journal review pointers | ≤5; judgment ≤1,000 characters, reasoning ≤2,000; check claim ≤2,000, metric ≤200, unit ≤80, date 10; exact-read args | Memory on; excludes frozen evidence, nested earlier-Journal text and read receipts |

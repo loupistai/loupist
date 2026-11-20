@@ -34,6 +34,26 @@ pub(crate) fn validate_fields(
     check: Option<&JournalCheck>,
     thesis: Option<&super::assets::JournalThesis>,
 ) -> KnowledgeResult<()> {
+    validate_draft_fields(
+        judgment,
+        reasoning,
+        entities,
+        check,
+        thesis.map(|thesis| thesis.role),
+    )?;
+    if let Some(thesis) = thesis {
+        super::assets::validate_thesis(thesis, check.is_some())?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_draft_fields(
+    judgment: &str,
+    reasoning: &str,
+    entities: &[String],
+    check: Option<&JournalCheck>,
+    role: Option<super::assets::ThesisRole>,
+) -> KnowledgeResult<()> {
     text(
         judgment,
         1000,
@@ -65,15 +85,13 @@ pub(crate) fn validate_fields(
         }
     }
     // A line on an asset page may stand without a date; every other check is dated.
-    let line = thesis.is_some_and(|thesis| thesis.role == super::assets::ThesisRole::Line);
+    let line = role == Some(super::assets::ThesisRole::Line);
     if let Some(check) = check {
         validate_check(check, !line)?;
     }
-    if let Some(thesis) = thesis {
-        super::assets::validate_thesis(thesis, check.is_some())?;
-    }
-    Ok(())
+    super::assets::validate_thesis_role(role, check.is_some())
 }
+
 /// Shape only; `validate_fields` decides whether the check needs a date.
 pub(crate) fn parse_check(value: Option<&Value>) -> KnowledgeResult<Option<JournalCheck>> {
     let Some(value) = value.filter(|v| !v.is_null()) else {

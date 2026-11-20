@@ -47,6 +47,7 @@ export function BrowserWorkspaceView({
             size="icon"
             variant="ghost"
             aria-label={t("browserWorkspaceView.goBack")}
+            title={t("browserWorkspaceView.goBack")}
             disabled={!tab.native_id}
             onClick={() => onAction("back")}
           >
@@ -57,6 +58,7 @@ export function BrowserWorkspaceView({
             size="icon"
             variant="ghost"
             aria-label={t("browserWorkspaceView.goForward")}
+            title={t("browserWorkspaceView.goForward")}
             disabled={!tab.native_id}
             onClick={() => onAction("forward")}
           >
@@ -67,6 +69,7 @@ export function BrowserWorkspaceView({
             size="icon"
             variant="ghost"
             aria-label={t("browserWorkspaceView.reloadPage")}
+            title={t("browserWorkspaceView.reloadPage")}
             disabled={!tab.native_id}
             onClick={() => onAction("reload")}
           >
@@ -81,6 +84,12 @@ export function BrowserWorkspaceView({
           readOnly={creating}
           aria-busy={creating || undefined}
           onChange={(event) => onAddressChange(event.target.value)}
+          // As in a browser, Esc first puts back the page's address; with nothing edited it closes the panel.
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || event.nativeEvent.isComposing || address === tab.url) return;
+            event.preventDefault();
+            onAddressChange(tab.url);
+          }}
         />
         {/* Enter in the address navigates; the submit stays for assistive technology only (chat design change 22),
             out of the Tab order so keyboard focus never lands on a control it cannot see. */}
@@ -91,6 +100,7 @@ export function BrowserWorkspaceView({
           size="icon"
           variant="ghost"
           aria-label={t("browserWorkspaceView.openInSystemBrowser")}
+          title={t("browserWorkspaceView.openInSystemBrowser")}
           disabled={!tab.url}
           onClick={() => onOpenExternal(tab.url)}
         >
@@ -102,7 +112,7 @@ export function BrowserWorkspaceView({
           <p>{tab.error}</p>
           <div className="browser-recovery-actions">
             <Button type="button" variant="outline" size="sm" disabled={!tab.url || tab.loading} onClick={onRetry}>{t("browserWorkspaceView.tryAgain")}</Button>
-            <Button type="button" variant="outline" size="sm" disabled={!tab.url} onClick={() => onOpenExternal(tab.url)}>{t("browserWorkspaceView.openInBrowser")}</Button>
+            <Button type="button" variant="outline" size="sm" disabled={!tab.url} onClick={() => onOpenExternal(tab.url)}>{t("browserWorkspaceView.openInSystemBrowser")}</Button>
             {onViewSaved ? <Button type="button" variant="outline" size="sm" onClick={onViewSaved}>{t("browserWorkspaceView.viewSavedPassage")}</Button> : null}
           </div>
         </div>

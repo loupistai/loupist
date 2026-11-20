@@ -190,26 +190,22 @@ impl RunStatus {
 #[cfg_attr(
     test,
     derive(ts_rs::TS),
-    ts(type = "\"custom\" | \"briefing\" | \"earnings\" | string")
+    ts(type = "\"custom\" | \"briefing\" | string")
 )]
 pub enum TaskKind {
     Custom,
     Briefing,
-    /// "Results before and after": automatic, created by Rust, no model call;
-    /// Pause/Resume and Run now only.
-    Earnings,
     Unknown(String),
 }
 
 impl TaskKind {
     /// The kinds this build runs, by their stored names.
-    pub const KNOWN: [Self; 3] = [Self::Custom, Self::Briefing, Self::Earnings];
+    pub const KNOWN: [Self; 2] = [Self::Custom, Self::Briefing];
 
     pub fn as_str(&self) -> &str {
         match self {
             Self::Custom => "custom",
             Self::Briefing => "briefing",
-            Self::Earnings => "earnings",
             Self::Unknown(name) => name,
         }
     }
@@ -379,55 +375,6 @@ impl Task {
     }
 }
 
-/// What a host run did, one item per capture, as fields the renderer words in
-/// the reader's language; the results task (`commands/earnings.rs`) writes them,
-/// so each kind is named for it.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[serde(tag = "kind")]
-pub enum RunSummaryItem {
-    /// Expected values captured before a results date.
-    #[serde(rename = "earnings_expected")]
-    Expected {
-        name: String,
-        period: String,
-        count: usize,
-    },
-    /// Reported values recorded after it.
-    #[serde(rename = "earnings_reported")]
-    Reported {
-        name: String,
-        period: String,
-        count: usize,
-    },
-    /// A capture that failed; the run's `error` keeps the reason.
-    #[serde(rename = "earnings_failed")]
-    Failed { name: String, period: String },
-    /// Nothing was due.
-    #[serde(rename = "earnings_nothing")]
-    Nothing,
-}
-
-/// Summary items a run keeps: one per capture, at most eight captures a run.
-const MAX_SUMMARY_ITEMS: usize = 16;
-
-impl RunSummaryItem {
-    fn valid(&self) -> bool {
-        match self {
-            Self::Expected { name, period, .. }
-            | Self::Reported { name, period, .. }
-            | Self::Failed { name, period } => {
-                !name.trim().is_empty()
-                    && name.chars().count() <= 200
-                    && !name.contains('\0')
-                    && period.chars().count() <= 32
-                    && !period.contains('\0')
-            }
-            Self::Nothing => true,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Run {
@@ -435,8 +382,8 @@ pub struct Run {
     pub kind: TaskKind,
     pub read_at_ms: Option<i64>,
     pub summary: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub summary_items: Vec<RunSummaryItem>,
+    #[serde(default)]
+    pub quiet: bool,
     pub message_id: Option<String>,
     pub skipped_tools: Vec<SkippedTool>,
     pub id: String,
@@ -451,6 +398,94 @@ pub struct Run {
     pub finished_at_ms: Option<i64>,
     pub status: RunStatus,
     pub error: Option<String>,
+}
+
+/// What a custom run is given about its task's earlier runs (`previous_run`):
+/// how the last finished one ended, and the last one whose answer reached the
+/// user when that is a different run. Host facts from the run records; the
+/// earlier answers stay in their own Chats.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PreviousRun {
+    pub finished_at: String,
+    pub status: RunStatus,
+    pub quiet: bool,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_delivered: Option<DeliveredRun>,
+    /// Not sent: a summary here came from an answer that read third-party
+    /// text, so it is delimited and the run starts with that tier raised.
+    #[serde(skip)]
+    pub untrusted: bool,
+}
+
+/// The last run whose answer was delivered to the user.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct DeliveredRun {
+    pub finished_at: String,
+    pub summary: String,
+}
+
+/// The longest summary a run passes on, as the Bot preview keeps it.
+pub const PREVIOUS_RUN_SUMMARY_CHARS: usize = 280;
+
+impl PreviousRun {
+    /// From the task's finished runs under its current prompt, newest first;
+    /// none for a first run. `tainted` says whether a run's answer read
+    /// third-party text, as its Chat recorded it.
+    pub fn from_runs(runs: &[Run], tainted: impl Fn(&Run) -> bool) -> Option<Self> {
+        let previous = runs.first()?;
+        let previous_finished = finished_at(previous)?;
+        // An answer reached the user when the run succeeded and did not stay quiet.
+        let delivered = |run: &&Run| run.status == RunStatus::Succeeded && !run.quiet;
+        let id = crate::custom_connections::taint::fresh_id();
+        let mut untrusted = false;
+        let mut summary = |run: &Run| {
+            let text: String = run
+                .summary
+                .chars()
+                .take(PREVIOUS_RUN_SUMMARY_CHARS)
+                .collect();
+            if text.is_empty() || !tainted(run) {
+                return text;
+            }
+            untrusted = true;
+            // Labelled as `chat_history` labels a tainted reply it returns.
+            let source = match &run.message_id {
+                Some(message) => format!("earlier reply {message}"),
+                None => "earlier reply".into(),
+            };
+            crate::custom_connections::taint::delimited(&text, &source, &id)
+        };
+        let last_delivered = if delivered(&previous) {
+            None
+        } else {
+            runs[1..].iter().find(delivered).and_then(|run| {
+                Some(DeliveredRun {
+                    finished_at: finished_at(run)?,
+                    summary: summary(run),
+                })
+            })
+        };
+        let summary = summary(previous);
+        Some(Self {
+            finished_at: previous_finished,
+            status: previous.status,
+            // Quiet is a successful check that posted nothing, as the inbox reads it.
+            quiet: previous.quiet && previous.status == RunStatus::Succeeded,
+            summary,
+            last_delivered,
+            untrusted,
+        })
+    }
+}
+
+fn finished_at(run: &Run) -> Option<String> {
+    if run.status == RunStatus::Running {
+        return None;
+    }
+    let finished = chrono::DateTime::from_timestamp_millis(run.finished_at_ms?)?;
+    Some(finished.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
 /// Read-only list projection; the latest occurrence is not stored in Task JSON.
@@ -480,8 +515,6 @@ impl Run {
             || self.read_at_ms.is_some_and(|at| at < 0)
             || (self.status == RunStatus::Running && self.read_at_ms.is_some())
             || self.skipped_tools.len() > 100
-            || self.summary_items.len() > MAX_SUMMARY_ITEMS
-            || !self.summary_items.iter().all(RunSummaryItem::valid)
         {
             return Err(invalid("stored inbox fields exceed their limits"));
         }
@@ -513,6 +546,8 @@ impl Run {
 pub struct Claim {
     pub task: Task,
     pub run: Run,
+    /// The sessions of runs this claim pushed out of the history.
+    pub released: Vec<String>,
 }
 
 /// An unknown kind is still a short stored name, never free text.

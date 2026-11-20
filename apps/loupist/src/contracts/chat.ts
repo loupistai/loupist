@@ -2,8 +2,6 @@ import type { ScheduleReceipt } from "./scheduled";
 import type { LoupistSummary } from "./loupist";
 import type { MemoryRef, MemoryUpdateResult } from "./memory";
 import type { AgentHarnessSnapshot, ExecutionModelLock } from "./model";
-import type { EarningsMeasure } from "./earnings";
-import type { WatchEvent } from "./watch";
 import type { LearnedDigest } from "./lens";
 import type * as Wire from "./generated";
 
@@ -49,6 +47,7 @@ export type ChatProgressItem =
       refusal?: ChatStepRefusal;
       startedAtMs: number;
       finishedAtMs: number | null;
+      failureReason?: Wire.ChatStepFailureReason;
     };
 
 /**
@@ -222,14 +221,16 @@ export type ChatFailureKind = Wire.ChatFailureKind;
 
 export type ChatToolRefusal = Wire.ChatToolRefusal;
 
-/** A research session the Bot handed off (Rust `HomeHandoff`): one card per hand-off, its status changing in place. */
-export type HomeHandoff = {
-  handoffId: string;
-  chatId: string;
-  title: string;
-  status: "running" | "done" | "failed" | "stopped";
+/**
+ * Bot's post for a research session it handed off (Rust `HomeHandoff`), once that session finished,
+ * failed or stopped. A session at work posts nothing; its thread carries `handoff_run` instead.
+ */
+export type HomeHandoff = Omit<Wire.HomeHandoff, "learned"> & {
   learned?: LearnedDigest;
 };
+
+/** The Bot hand-off a research session is running, while the host runs it (Rust `HandoffRunDto`). */
+export type HandoffRun = Wire.HandoffRunDto;
 
 /** One hop of a discovered link's path: the name reached and the relation walked, against its claim when `reversed`. */
 export type HomeLinkHop = Wire.HomeLinkHop;
@@ -246,18 +247,6 @@ export type HomeDelivery = Wire.HomeDelivery;
 /** A crossed red line the host announced in the home Thread (Rust `HomeAlert`). Names and the user's claim only. */
 export type HomeAlert = Wire.HomeAlert;
 
-/**
- * Watcher events the host posted in one Thread message (Rust `HomeWatch`): at
- * most five, one sentence each, then "+{more} more". Names and dated facts only,
- * never holdings.
- */
-export type HomeWatch = {
-  event_ids: string[];
-  events: WatchEvent[];
-  /** Events of the same check beyond the five shown (opens Schedule › Watching). */
-  more: number;
-};
-
 /** New kinds of things the map tracks after a preset or a background review. Labels are display words. */
 export type HomeVocabulary = {
   changeId: string;
@@ -266,25 +255,6 @@ export type HomeVocabulary = {
   /** The same kinds in Korean, in the same order, when each has one. */
   labelsKo?: string[];
 };
-/**
- * A results snapshot the host posted (Rust `HomeEarnings`): "{name} reported
- * {period} results." with the two most material measures, or a failed
- * before-capture with Try again. Successful before-captures post nothing.
- */
-export type HomeEarnings = {
-  asset_id: string;
-  event_id: string;
-  name: string;
-  symbol: string;
-  market: string;
-  period: string;
-  outcome: "reported" | "failed";
-  /** The side to capture again for a failed run. */
-  side?: "before" | "after";
-  /** At most two measures, as the card's table renders them. */
-  measures: EarningsMeasure[];
-};
-
 /** A thesis update Rust did not save at commit; `reason` is its refusal code. */
 export type UnsavedThesis = Wire.UnsavedThesis;
 
@@ -297,43 +267,7 @@ export type NumberCheckKind = Wire.NumberCheckKind;
 export type CalcInputUnit = Wire.CalcInputUnit;
 
 export type NumberCheck = Wire.NumberCheck;
-
-/**
- * A `dcf_grid` or `reverse_dcf` result as Rust copied it from the host's own
- * calculation (finance-korea-retail-disagreement.md §2.2). Never one point value.
- */
-export type SensitivityGrid = {
-  operation: "reverse_dcf" | "dcf_grid";
-  /** Discount rates (%), one per row. */
-  row_values: number[];
-  /** Long-run growth rates (%), one per column. */
-  column_values: number[];
-  /** rows × columns: implied yearly growth (%) for reverse_dcf, value for dcf_grid; null where reverse_dcf found no growth within −50%…100%. */
-  values: (number | null)[][];
-  /** "%" for reverse_dcf; "per share" or the amount unit for dcf_grid. */
-  unit: string;
-  forecast_years: number;
-  /** reverse_dcf with a reference growth (usually a past CAGR); `years` and `label` describe the period it covers when known. */
-  reference?: { value_pct: number; label?: string; years?: number; evidence_id?: string; status?: NumberCheckStatus };
-  /** Cells that need more growth than the reference (reverse_dcf with a reference only). */
-  above_reference?: boolean[][];
-  /** The price the reverse grid solves for: as the input printed it, its currency and date when known, and its source. */
-  price?: { value: number; display: string; currency?: string; date?: string; evidence_id?: string; status?: NumberCheckStatus };
-  /** Currency and scale of the amount inputs as the calculation was given them ("USD millions"). */
-  amount_unit?: string;
-  /** cash_flow, shares, net_debt (and growth_pct for dcf_grid), with the label the calculation was given and their sources. */
-  inputs: { name: string; label?: string; display: string; evidence_id?: string; status?: NumberCheckStatus }[];
-  formulas: string[];
-};
-
-/** A paragraph of the answer that is only a link to a grid result renders as this card in place of the paragraph. */
-export type SensitivityCard = SensitivityGrid & {
-  /** Index among the answer's `[text](#evidence-…)` links, in order (the paragraph's own link). */
-  link_index: number;
-  evidence_id: string;
-  /** The link text: the company or asset the grid is about (at most 80 characters). */
-  subject: string;
-};
+export type NumberCheckContext = Wire.NumberCheckContext;
 
 /** What an as-of answer could not use (finance-point-in-time.md §7). */
 export type AsOfReport = Wire.AsOfReport;
@@ -344,10 +278,6 @@ export type HostPostRecords = {
   delivery?: HomeDelivery;
   /** Present on a host-posted crossed-line message. */
   alert?: HomeAlert;
-  /** Present on a host-posted watcher message. */
-  watch?: HomeWatch;
-  /** Present on a host-posted results message. */
-  earnings?: HomeEarnings;
   /** Present on a host-posted "your map now also tracks" message. */
   vocabulary?: HomeVocabulary;
   /** Present on a host-posted research hand-off card. */
@@ -356,36 +286,16 @@ export type HostPostRecords = {
   link?: HomeLink;
 };
 
-export type ChatMessage = HostPostRecords & {
-  tool_refusals?: ChatToolRefusal[];
-  feedback?: ChatFeedback | null;
-  failure_kind?: ChatFailureKind;
-  /** For a busy (`rate_limited`) answer: how long the provider asked to wait, bounded by Rust. */
-  retry_after_seconds?: number;
-  host_composed?: boolean;
-  /** Guidance accepted while a reply ran; it shows as a "Guided" row, not a bubble. */
-  steer?: boolean;
-  /** A data read in this reply never reached its source (the network or that provider was unreachable). */
-  offline_reads?: boolean;
-  /** The chosen model's name when its provider no longer offered it and Rust answered on Auto (W17.5). */
-  replaced_model?: string;
-  /** Asset reads this reply's tool accepted but its commit did not save (the page changed first). */
-  unsaved_theses?: UnsavedThesis[];
-  /** The as-of date the request was sent with (`YYYY-MM-DD`), on the request and its answer. */
-  as_of?: string;
-  /** Number links Rust checked against their evidence when the answer finished. */
-  number_checks?: NumberCheck[];
-  /** Grid results the answer linked as paragraphs of their own, copied by Rust when the answer finished. */
-  sensitivity_cards?: SensitivityCard[];
-  /** What an as-of answer could not use. */
-  as_of_report?: AsOfReport;
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  /** `content` is the host's failure placeholder, not model text; the run state explains the failure. */
-  placeholder?: boolean;
-  created_at: string;
-  status?: "streaming" | "complete" | "aborted" | "error";
+export type HandoffNote = Wire.HandoffNoteDto;
+export type HandoffAction = Wire.HandoffAction;
+export type ScheduledTurn = Wire.ScheduledTurn;
+
+export type ChatMessage = HostPostRecords & Pick<Wire.ChatMessageDto,
+  "id" | "role" | "content" | "created_at" | "research_session_id" | "handoff_note" | "handoff_action" | "scheduled" |
+  "tool_refusals" | "failure_kind" | "retry_after_seconds" | "steer" | "offline_reads" |
+  "replaced_model" | "unsaved_theses" | "as_of" | "number_checks" | "as_of_report" | "placeholder"
+> & Partial<Pick<Wire.ChatMessageDto, "feedback" | "host_composed">> & {
+  status?: Wire.ChatMessageDto["status"] | "streaming";
   memory_refs?: MemoryRef[];
   lens_receipts?: import("./memory").LensReceipt[];
   evidence_refs?: ChatEvidenceRef[];
@@ -437,14 +347,8 @@ export type ChatAttachmentInput = Wire.ChatAttachmentInput;
 
 export type ChatMemorySetAsideRequest = Wire.ChatMemorySetAsideRequest;
 
-export type ResearchHandoffRequest = {
-  loupistId: string;
-  title: string;
-  question: string;
-  brief?: string;
-  pins?: Array<{ lens: string } | { world: string }>;
-  requestKey: string;
-};
+export type ResearchHandoffRequest = Wire.ResearchHandoffRequest;
+export type ResearchHandoffChoices = Omit<ResearchHandoffRequest, "loupistId" | "connectionId">;
 export type ResearchHandoffReceipt = Wire.ResearchHandoffReceipt;
 
 export type ChatThread = {
@@ -452,6 +356,7 @@ export type ChatThread = {
   loupist_id: string;
   /** The Loupist's home Thread: listed first, landed on, never renamed or deleted. */
   home?: boolean;
+  hide_from_recent?: boolean;
   title: string;
   updated_at: string;
   use_memory: boolean;
@@ -461,6 +366,8 @@ export type ChatThread = {
   /** Edit forks (X18): the other versions of this chat's tail. */
   versions?: ChatVersionSummary[];
   messages: ChatMessage[];
+  /** A research session's Bot hand-off at work: where it is followed, guided and stopped. */
+  handoff_run?: HandoffRun;
 };
 
 /** Another version of a chat's tail; it shares every message up to `after_message_id`. */
@@ -537,6 +444,7 @@ export type ChatControlReceipt = {
 /** One event on a Chat run's stream, as the renderer reads it (`ChatStreamEvent` in Rust). */
 export type ChatStreamEvent =
   | { type: "started"; run_id: string }
+  | { type: "stream_reset"; run_id: string }
   | { type: "memory"; run_id: string; memories: MemoryRef[] }
   | { type: "schedule"; run_id: string; receipt: ScheduleReceipt }
   | { type: "evidence"; run_id: string; evidence: ChatEvidenceRef }
@@ -575,6 +483,7 @@ export type ChatStreamEvent =
     }
   | {
       type: "completed";
+      research_session_id?: string;
       lens_receipts: import("./memory").LensReceipt[];
       tool_refusals: ChatToolRefusal[];
       offline_reads?: boolean;
@@ -590,8 +499,6 @@ export type ChatStreamEvent =
       replaced_model?: string;
       as_of?: string;
       number_checks?: NumberCheck[];
-      /** The answer's sensitivity cards, as `ChatMessage.sensitivity_cards`. */
-      sensitivity_cards?: SensitivityCard[];
       as_of_report?: AsOfReport;
     }
   | { type: "aborted"; run_id: string }
@@ -611,6 +518,9 @@ export type ChatStreamEvent =
       agent_harness: AgentHarnessSnapshot;
       progress?: ChatProgress;
     };
+
+export type ChatWatchRequest = Wire.ChatWatchRequest;
+export type ChatWatchSnapshot = Omit<Wire.ChatWatchSnapshot, "thread"> & { thread: ChatThread };
 
 
 export const CHART_SCHEMA = "loupist-chart/1";

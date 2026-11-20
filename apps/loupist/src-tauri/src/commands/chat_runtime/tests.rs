@@ -3,6 +3,60 @@ use serde_json::json;
 use tauri::Manager;
 use FirstProviderBodyWatchdogSelectMode::{Fair, Timeout};
 
+#[test]
+fn price_setup_host_context_starts_the_extension_with_bundled_capabilities() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = agent_harness::workspace::workspace_snapshot(root.path(), root.path()).unwrap();
+    let capabilities = [
+        "community.web-research",
+        "defillama.tvl",
+        "openbb.platform",
+        "openfigi.lookup",
+        "world-bank.indicators",
+    ]
+    .map(String::from);
+    let mut request = crate::commands::tests::chat_behavior::send_request(
+        "price-setup-fixture",
+        "loupist-a",
+        "price-setup-thread",
+        "Find a price.",
+    );
+    request.use_memory = true;
+    request.update_memory = true;
+    let context = setup::chat_host_context(
+        &request,
+        &request.prompt,
+        crate::chat::surface::ChatSurface::PriceSetup,
+        &[],
+        &capabilities,
+        workspace,
+    )
+    .unwrap();
+    let context_path = root.path().join("host-context.json");
+    std::fs::write(&context_path, serde_json::to_vec(&context).unwrap()).unwrap();
+    let output = std::process::Command::new("node")
+        .arg(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/commands/tests/fixtures/host_context_probe.mjs"),
+        )
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("LOUPIST_HOST_CONTEXT_FILE", &context_path)
+        .env("LOUPIST_MODEL_RUN_OPTIONS", "{}")
+        .output()
+        .expect("Node is required for the extension startup probe");
+    assert!(
+        output.status.success(),
+        "extension startup failed ({}): {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !context_path.exists(),
+        "extension did not load the host context"
+    );
+}
+
 fn memory_ref(read_ref: &str, title: &str, access: MemoryAccess) -> MemoryRefSnapshot {
     MemoryRefSnapshot {
         read_ref: read_ref.into(),
@@ -83,6 +137,311 @@ fn durable_memory_trace_is_empty_without_exact_reads() {
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 #[tokio::test]
+async fn fx_admitted_envelope_and_tool_keep_the_same_currency_across_a_preference_write() {
+    use crate::{
+        broker::{ToolExecutor, ToolMethod},
+        commands::tests::{
+            chat,
+            chat_behavior::{install_chat_rpc_fixture, send_request},
+            initialized_workspace, profile, seed_profile,
+        },
+    };
+    let temporary = tempfile::tempdir().unwrap();
+    let workspace = temporary.path().join("workspace");
+    initialized_workspace(&workspace, "frozen-appearance");
+    let mut state = AppState::for_test(temporary.path().join("app"));
+    install_chat_rpc_fixture(
+        &mut state,
+        temporary.path(),
+        include_str!("../tests/fixtures/model_gone_pi.py"),
+    );
+    let profile = profile("loupist-a", &workspace, 1);
+    seed_profile(state.store.as_ref(), &profile);
+    for id in ["chat-a", "chat-b"] {
+        state.store.create_chat(&chat(id, &profile.id, 1)).unwrap();
+    }
+    state
+        .fx_reference
+        .resolve(chrono::Utc::now(), true, || async {
+            Ok(json!({"date":"2099-11-17","KRW":1470.23,"USD":1.1014,"JPY":172.1}))
+        })
+        .await
+        .unwrap();
+    let set_currency = |currency| {
+        std::fs::write(
+            state.artifacts.app_data_dir.join("config.toml"),
+            format!("[appearance]\ndisplay_currency = '{currency}'\nlanguage = 'en'\n"),
+        )
+        .unwrap();
+    };
+    let admit = |run, thread| {
+        let mut request = send_request(run, &profile.id, thread, "Question");
+        request.use_memory = false;
+        request.update_memory = false;
+        match setup::admit_chat_turn(request, ChatEventSink::new(|_| Ok(())), &state, None).unwrap()
+        {
+            ControlFlow::Continue(turn) => turn,
+            ControlFlow::Break(_) => panic!("turn must be admitted"),
+        }
+    };
+    set_currency("KRW");
+    let previous = admit("fx-admit-a", "chat-a");
+    let execute = |policy: crate::broker::ToolPolicy| {
+        let executor = crate::commands::tool_executor::AppToolExecutor::for_host(
+            &state,
+            &profile.id,
+            ["openbb.platform".into()].into(),
+        );
+        async move {
+            executor
+                .execute(&policy, ToolMethod::FxRate, json!({"from":"USD"}))
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(execute(previous.policy.clone()).await["to"], "KRW");
+    set_currency("JPY");
+    assert_eq!(execute(previous.policy.clone()).await["to"], "KRW");
+    let next = admit("fx-admit-b", "chat-b");
+    assert_eq!(execute(next.policy.clone()).await["to"], "JPY");
+    assert_eq!(previous.runtime_policy_sha256, next.runtime_policy_sha256);
+
+    let mut digests = Vec::new();
+    for (turn, expected) in [(previous, "KRW"), (next, "JPY")] {
+        let envelope = launch::build_turn_envelope(
+            turn.envelope,
+            &state,
+            &turn.profile,
+            false,
+            &turn.surface,
+            &ToolCapture::default(),
+        )
+        .await
+        .unwrap();
+        let rendered: Value =
+            serde_json::from_str(&agent_harness::render_turn_context(&envelope)).unwrap();
+        assert_eq!(rendered["interface"]["display_currency"], expected);
+        digests.push(agent_harness::envelope_context_digest(&envelope));
+    }
+    assert_ne!(digests[0], digests[1]);
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn a_new_loupists_focus_reaches_the_turn_from_its_profile_without_a_lens_page() {
+    use crate::commands::tests::{
+        chat,
+        chat_behavior::{install_chat_rpc_fixture, send_request},
+    };
+    let temporary = tempfile::tempdir().unwrap();
+    let workspace = temporary.path().join("research");
+    std::fs::create_dir(&workspace).unwrap();
+    let mut state = AppState::for_test(temporary.path().join("app"));
+    install_chat_rpc_fixture(
+        &mut state,
+        temporary.path(),
+        include_str!("../tests/fixtures/model_gone_pi.py"),
+    );
+    let focus = "Korean memory makers and HBM capacity";
+    let created = crate::commands::loupist::create_folder_loupist_with_setup(
+        &state,
+        &workspace,
+        Some(focus.into()),
+        None,
+    )
+    .await
+    .unwrap();
+    let perspective =
+        crate::knowledge::KnowledgeStore::for_loupist(state.store.clone(), &created.id)
+            .unwrap()
+            .read(|write| write.active_perspective(&created.id))
+            .unwrap();
+    assert_eq!(
+        perspective, None,
+        "a new Loupist's focus files no Lens page"
+    );
+    // The test store does not write the folder; a turn reads the folder's settings.
+    std::fs::create_dir_all(workspace.join(".loupist")).unwrap();
+    state
+        .store
+        .create_chat(&chat("focus-chat", &created.id, 1))
+        .unwrap();
+    for memory in [false, true] {
+        let mut request = send_request(
+            &format!("focus-run-{memory}"),
+            &created.id,
+            "focus-chat",
+            "Question",
+        );
+        request.use_memory = memory;
+        request.update_memory = false;
+        let ControlFlow::Continue(turn) =
+            setup::admit_chat_turn(request, ChatEventSink::new(|_| Ok(())), &state, None).unwrap()
+        else {
+            panic!("turn must be admitted");
+        };
+        let envelope = launch::build_turn_envelope(
+            turn.envelope,
+            &state,
+            &turn.profile,
+            memory,
+            &turn.surface,
+            &ToolCapture::default(),
+        )
+        .await
+        .unwrap();
+        let rendered: Value =
+            serde_json::from_str(&agent_harness::render_turn_context(&envelope)).unwrap();
+        assert_eq!(rendered[agent_harness::LOUPIST_FOCUS_BLOCK], focus);
+        assert!(rendered.get("Standing perspective").is_none());
+    }
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn interface_labels_follow_turn_origin_and_freeze_the_admitted_appearance() {
+    use crate::{
+        broker::{ToolExecutor, ToolMethod},
+        chat::{
+            handoff::{
+                claim_fixture, commit_standalone, HandoffRequest, HandoffRun, StagedHandoff,
+            },
+            surface::ChatSurface,
+        },
+        commands::tests::{
+            chat_behavior::{install_chat_rpc_fixture, send_request},
+            initialized_workspace, profile, seed_profile,
+        },
+    };
+
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = temp.path().join("workspace");
+    initialized_workspace(&workspace, "interface-labels");
+    let mut state = AppState::for_test(temp.path().join("app"));
+    install_chat_rpc_fixture(
+        &mut state,
+        temp.path(),
+        include_str!("../tests/fixtures/model_gone_pi.py"),
+    );
+    let profile = profile("loupist-interface", &workspace, 1);
+    seed_profile(state.store.as_ref(), &profile);
+    let home = crate::chat::home::ensure_home_thread(&state, &profile.id).unwrap();
+    let handoff = commit_standalone(
+        &state,
+        &profile.id,
+        &StagedHandoff {
+            request: HandoffRequest::parse(&json!({
+                "title": "Alder Rail",
+                "question": "Write the answer in French.",
+                "requestKey": "interface-labels"
+            }))
+            .unwrap(),
+            run: HandoffRun {
+                model_profile_id: "fixture".into(),
+                thinking_level: "medium".into(),
+                run_options: BTreeMap::new(),
+                use_memory: true,
+                update_memory: false,
+            },
+        },
+    )
+    .unwrap();
+
+    let set_appearance = |lang| {
+        std::fs::write(
+            state.artifacts.app_data_dir.join("config.toml"),
+            format!("[appearance]\nlanguage = '{lang}'\n"),
+        )
+        .unwrap();
+    };
+    for (index, (thread, expected, memory)) in [
+        (&home.id, ChatSurface::Bot, false),
+        (&home.id, ChatSurface::Scheduled, true),
+        (
+            &handoff.chat_id,
+            ChatSurface::Delegated {
+                handoff_id: handoff.id.clone(),
+            },
+            true,
+        ),
+        (&handoff.chat_id, ChatSurface::Session, true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        set_appearance(if index == 3 { "en" } else { "ko" });
+        let run = format!("labels-{index}");
+        let (admission, prompt) = match &expected {
+            ChatSurface::Delegated { .. } => {
+                let (admission, prompt) = claim_fixture(&state, &handoff, &run);
+                (Some(admission), prompt)
+            }
+            ChatSurface::Scheduled => (
+                Some(ChatAdmission::new(&state, &run, &profile.id, thread).unwrap()),
+                "Write the answer in French.".into(),
+            ),
+            _ => (None, "Where is the map?".into()),
+        };
+        let mut request = send_request(&run, &profile.id, thread, &prompt);
+        request.use_memory = memory;
+        request.update_memory = false;
+        let admitted =
+            setup::admit_chat_turn(request, ChatEventSink::new(|_| Ok(())), &state, admission)
+                .unwrap();
+        let ControlFlow::Continue(admitted) = admitted else {
+            panic!("fixture turn was not admitted");
+        };
+        assert_eq!(admitted.surface, expected);
+        let host: Value = serde_json::from_str(&admitted.host_context).unwrap();
+        let tools = host["agent_runtime"]["core_tool_names"].as_array().unwrap();
+        assert_eq!(
+            tools.contains(&json!("interface_labels")),
+            expected.interactive()
+        );
+        assert!(tools.contains(&json!("chat_history")));
+        let policy = admitted.policy.clone();
+        set_appearance(if index == 3 { "ko" } else { "en" });
+        let launched = launch::launch_chat_turn(admitted, &state).await.unwrap();
+        let ControlFlow::Continue(mut launched) = launched else {
+            panic!("fixture turn did not launch");
+        };
+        let seed = launched.gone_retry.as_ref().unwrap();
+        let envelope: Value = serde_json::from_str(&seed.turn_envelope).unwrap();
+        if expected.interactive() {
+            assert!(envelope.get("interface").is_none());
+        } else {
+            assert_eq!(envelope["interface"]["language"], "ko");
+            assert_eq!(envelope["interface"]["names"]["map"], "지도");
+            assert!(seed.current_prompt.contains("Write the answer in French."));
+        }
+
+        let executor = crate::commands::tool_executor::AppToolExecutor {
+            state: state.clone(),
+            capture: launched.capture.clone(),
+            loupist_id: profile.id.clone(),
+            capability_ids: Default::default(),
+        };
+        // Local labels stay available after an acknowledged third-party read.
+        launched.capture.turn_taint.mark_untrusted_text();
+        let result = executor
+            .execute(
+                &policy,
+                ToolMethod::InterfaceLabels,
+                json!({"keys": ["map"]}),
+            )
+            .await;
+        match expected {
+            ChatSurface::Bot => assert_eq!(result.unwrap(), json!({"map": "지도"})),
+            ChatSurface::Session => assert_eq!(result.unwrap(), json!({"map": "Map"})),
+            _ => assert!(result.is_err()),
+        }
+        let streamed = stream::stream_chat_turn(&mut launched).await;
+        finalize::finalize_chat_turn(launched, streamed).await;
+    }
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
 async fn a_stopped_reply_with_a_settle_failure_is_persisted_and_emitted_once() {
     use crate::commands::tests::{
         chat,
@@ -140,6 +499,7 @@ async fn a_stopped_reply_with_a_settle_failure_is_persisted_and_emitted_once() {
             pending_controls: HashMap::new(),
             settled_controls: BTreeMap::new(),
             first_text_ms: None,
+            answer_text_ms: None,
             generation_ms: None,
             token_usage: AssistantTokenUsage::default(),
             progress: ChatProgressProjection::new(now_ms()),
@@ -700,6 +1060,7 @@ fn terminal_replies_keep_acknowledged_records_across_reopen_without_a_renderer()
         url: Some("https://issuer.example/filing.pdf".into()),
         provider: Some("issuer.example".into()),
         tool_name: "web_fetch".into(),
+        user_provided: false,
         calc_operation: None,
         read_ref: None,
         retrieved_at: "2026-10-11T00:00:00Z".into(),
@@ -960,4 +1321,123 @@ fn scheduled_abort_sink_distinguishes_a_user_stop_from_app_quit_without_counting
             );
         }
     }
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn replacing_an_acknowledged_setup_keeps_the_reply_and_skips_its_orphaned_journal() {
+    use crate::{
+        broker::{ToolExecutor as _, ToolMethod, ToolPolicy},
+        commands::{
+            tests::{
+                chat_behavior::{install_chat_rpc_fixture, send_request},
+                initialized_workspace, profile, seed_profile,
+            },
+            tool_executor::AppToolExecutor,
+        },
+    };
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("workspace");
+    initialized_workspace(&workspace, "orphaned-thesis");
+    let mut state = AppState::for_test(root.path().join("app"));
+    install_chat_rpc_fixture(
+        &mut state,
+        root.path(),
+        include_str!("fixtures/message_snapshot_pi.py"),
+    );
+    let profile = profile("orphaned-thesis", &workspace, 1);
+    seed_profile(&state.store, &profile);
+    let chat = crate::chat::home::ensure_home_thread(&state, &profile.id).unwrap();
+    let mut request = send_request("orphan", &profile.id, &chat.id, "uncalled snapshot");
+    request.use_memory = true;
+    request.update_memory = true;
+    let admitted = match setup::admit_chat_turn(
+        request,
+        ChatEventSink::new(|_| Ok(())),
+        &state,
+        None,
+    )
+    .unwrap()
+    {
+        ControlFlow::Continue(turn) => turn,
+        ControlFlow::Break(_) => panic!("turn was not admitted"),
+    };
+    let mut launched = match launch::launch_chat_turn(admitted, &state).await.unwrap() {
+        ControlFlow::Continue(turn) => turn,
+        ControlFlow::Break(_) => panic!("fixture did not launch"),
+    };
+    let executor = AppToolExecutor {
+        state: state.clone(),
+        capture: launched.capture.clone(),
+        loupist_id: profile.id.clone(),
+        capability_ids: BTreeSet::new(),
+    };
+    let policy = ToolPolicy {
+        loupist_id: profile.id.clone(),
+        session_id: chat.id.clone(),
+        use_memory: true,
+        propose_memory_updates: true,
+        memory_proposal_budget: 4,
+        as_of: None,
+        display_currency: None,
+    };
+    // The broker has its own one-setup limit. Exercise replacement at the
+    // host acknowledgement boundary, then run the real reply commit.
+    for (method, params) in [
+        (
+            ToolMethod::LoupistSetup,
+            json!({"follow":[{"name":"NEWT"}]}),
+        ),
+        (
+            ToolMethod::JournalSave,
+            json!({"judgment":"Keep the capacity thesis", "thesis":{"asset":"NEWT","role":"reason"}}),
+        ),
+        (
+            ToolMethod::PrincipleSave,
+            json!({"statement":"Check cash flow before profit"}),
+        ),
+        (
+            ToolMethod::LoupistSetup,
+            json!({"follow":[{"name":"STAY"}]}),
+        ),
+    ] {
+        executor.execute(&policy, method, params).await.unwrap();
+    }
+    std::fs::write(root.path().join("snapshot-read-ready"), "ready").unwrap();
+    let streamed = stream::stream_chat_turn(&mut launched).await;
+    finalize::finalize_chat_turn(launched, streamed).await;
+
+    let chat = state.store.get_chat(&chat.id).unwrap().unwrap();
+    let reply = chat.messages.last().unwrap();
+    assert_eq!(reply.status, ChatMessageStatus::Complete, "{reply:?}");
+    assert_eq!(reply.content, "No snapshot figures.");
+    let receipt = reply.memory_update.as_ref().unwrap();
+    assert_eq!(receipt.skipped_kinds.len(), 1);
+    assert_eq!(
+        receipt.skipped_kinds[0].name,
+        crate::domain::SKIPPED_JOURNAL_SAVE
+    );
+    assert_eq!(receipt.setup.len(), 1);
+    assert!(receipt
+        .changes
+        .iter()
+        .any(|change| change.kind == "principle"));
+    let follows = state.store.assets_list(&profile.id, true).unwrap();
+    assert_eq!(follows.len(), 1);
+    assert_eq!(follows[0].name, "STAY");
+    crate::commands::assets::with_assets(&state, &profile.id, false, |tx| {
+        assert!(crate::knowledge::journal::list(tx, &profile.id)?.is_empty());
+        assert!(crate::knowledge::assets::list_pages(tx, &profile.id)?
+            .iter()
+            .all(|page| page.asset_id == follows[0].asset_id));
+        Ok(())
+    })
+    .unwrap();
+    let db = state.store.lock().unwrap();
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM assets", [], |row| row
+            .get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
 }

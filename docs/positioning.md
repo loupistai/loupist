@@ -30,9 +30,12 @@ failures with a recovery action. Distinguish retained evidence, processing statu
 a proposed change and a committed save. Do not call a retrieval hit, record count
 or saved method proof of better analysis; evaluation must test subsequent work.
 
+Korean copy is formal (…습니다, …하십시오, never 해요체); the rules are in
+[Interface localization](../apps/loupist/src/i18n/README.md#interface-localization).
 Call the agent "your Loupist" or its name, a research companion (ko 리서치 동료).
 Bot is a place. The sidebar shows Bot · Following · Map · Lens · Schedule.
-Map and Lens open beside Chat; the header also opens Chat materials. Map contains
+Map and Lens open as full pages from the sidebar. In a conversation, Activity
+opens the activity sheet and the split buttons open Chat materials. Map contains
 the [Library](ui/map-lens.md#map-and-library), with Sources · Journal · Notes tabs.
 Lens holds principles, perspectives, methods, topics and ideas. Use World only in
 developer descriptions of the model, storage or code; identifiers stay unchanged.
@@ -49,8 +52,7 @@ uses the same meanings.
 | --- | --- |
 | Loupist | A research companion for one topic. It remembers what you read together and learns how you like to research. |
 | Bot / 봇; research session / 리서치 세션 | The standing conversation; a separate conversation for one question. |
-| Following / 관심 자산; Holdings / 보유 자산 | What you follow, shared across Loupists; what you hold. Following is not a trade. |
-| Watching / 지켜보기 | Automatic checks while the app is running; their results are alerts (알림). |
+| Following / 관심 자산 | What you follow with this Loupist; each Loupist keeps its own list. Following is not a holding or a trade; the app keeps no record of what you own. |
 | Map / 지도 | Connections from Sources; background reading is Map building (지도 구성). |
 | Library / 자료함; Source / 자료 | Saved material and its retained evidence. |
 | Lens / 렌즈 | Your principles and research pages, with evidence and history; Perspective / 관점 is a starting view. |
@@ -74,8 +76,9 @@ owns the detailed model behavior boundary.
 
 ## Visual language
 
-Use neutral reading surfaces, clear source access and burnt amber `#a4530c` for
-focus/identity. Reserve price-direction colors for data. Avoid decorative AI brains,
+Use cool neutral reading surfaces, clear source access and one iris-violet accent
+(`#5b45e0` light, `#6a55f2` dark) on primary actions, focus, links and identity. Reserve
+price-direction colors for data. Avoid decorative AI brains,
 circuits and opaque intelligence scores. Preserve keyboard focus, long-form reading,
 light/dark themes and the minimum desktop size. The
 [design rubric](dev/ui-qa.md#design-rubric) owns measurable review standards.

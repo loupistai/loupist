@@ -7,10 +7,13 @@ export const BRIDGE_EVENTS = {
   inboxChanged: "inbox-changed",
   inboxOpen: "inbox-open",
   providerStatus: "provider-status",
+  modelCatalogChanged: "model-catalog-changed",
   learningReviewFinished: "learning-review-finished",
   worldSchemaChanged: "world-schema-changed",
   deepLinkImport: "deep-link-import",
-  watchChanged: "watch-changed",
+  legacyHoldingsChanged: "legacy-holdings-changed",
+  assetsChanged: "assets-changed",
+  fxChanged: "fx-changed",
 } as const;
 
 export type BridgeEventName = (typeof BRIDGE_EVENTS)[keyof typeof BRIDGE_EVENTS];

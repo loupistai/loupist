@@ -11,10 +11,8 @@ use rusqlite::{Connection, Transaction, TransactionBehavior};
 
 pub mod assets;
 mod authority;
-pub mod earnings;
 mod folder;
-pub mod watch;
-pub(crate) use folder::validate_folder;
+pub(crate) use folder::{validate_folder, validate_folder_connection, validate_folder_rows};
 mod blob;
 mod canonical;
 mod catalog;
@@ -22,8 +20,23 @@ pub(crate) mod connections;
 mod error;
 mod followed;
 mod graph_inference;
+pub use graph_inference::LocalModel;
 #[cfg(test)]
-pub(crate) use graph_inference::{embed_local_english_batch, InferenceDisposition, InferenceReply};
+pub(crate) use graph_inference::{
+    embed_local_batch, fixture_model, InferenceDisposition, InferenceReply,
+};
+pub(crate) use graph_inference::{loaded_local_model, local_model, local_model_loading};
+
+/// The staged bundled embedding model, for tests that need its real vectors.
+#[cfg(test)]
+pub(crate) fn staged_embed_assets() -> std::path::PathBuf {
+    let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/embed_assets");
+    assert!(
+        assets.join("model.safetensors").is_file(),
+        "stage the embedding model first: python3 apps/loupist/scripts/stage-embed-assets.py"
+    );
+    assets
+}
 mod graph_jobs;
 mod graph_projection;
 mod graph_service;
@@ -40,7 +53,7 @@ pub use principles::{Principle, PrincipleInput};
 mod identity;
 mod map;
 pub use growth::{GrowthEventsPage, GrowthEventsQuery};
-pub(crate) use identity::{match_items, resolve_followed, IdentityMatch};
+pub(crate) use identity::{match_items, IdentityMatch};
 pub use map::{KnowledgeMap, KnowledgeMapQuery};
 mod model;
 pub mod numbers;
@@ -50,7 +63,9 @@ mod revision;
 mod schema;
 mod search_embeddings;
 mod search_index;
-pub use search_index::{PreparedSearch, SearchOptions, SEARCH_LIMIT, SEARCH_WINDOW_LIMIT};
+pub use search_index::{
+    query_group_count, PreparedSearch, SearchOptions, SEARCH_LIMIT, SEARCH_WINDOW_LIMIT,
+};
 mod entity_name;
 mod schema_writer;
 pub(crate) mod shared_pack;
@@ -61,7 +76,8 @@ mod world;
 pub(crate) mod world_extract;
 mod world_followups;
 pub(crate) use world_followups::{
-    mark_shown as connections_mark_shown, to_show as connections_to_show,
+    connection_in_loupist, mark_shown as connections_mark_shown,
+    set_status as set_connection_status, to_show as connections_to_show,
 };
 pub use world_followups::{ConnectionStatus, ConnectionView};
 mod world_filter;
@@ -77,10 +93,10 @@ pub use error::{KnowledgeError, KnowledgeResult};
 #[cfg(test)]
 pub(crate) use followed::{anchor_followed, followed_text, FOLLOWED_PER_SOURCE};
 pub(crate) use followed::{
-    followed_assets, title_key, FollowedAsset, FollowedState, FollowedStatus, FOLLOWED_PROVIDER,
-    UNKNOWN_MARKET,
+    followed_source_assets, title_key, FollowedAsset, FollowedState, FollowedStatus,
+    FOLLOWED_PROVIDER, UNKNOWN_MARKET,
 };
-pub(crate) use graph_jobs::recover_interrupted as recover_interrupted_jobs;
+pub(crate) use graph_jobs::pause_copied_processing;
 #[cfg(any(test, feature = "eval-harness"))]
 pub use graph_jobs::SealedWorldIndex;
 pub use graph_jobs::{
@@ -177,16 +193,14 @@ impl KnowledgeStore {
         self.with_locked(true, body)
     }
 
-    pub fn followed_items(&self) -> Vec<crate::store::user_context::MapContextItem> {
+    /// What this Loupist follows, the seeds a publication's follow-ups match.
+    pub fn followed_items(
+        &self,
+        loupist_id: &str,
+    ) -> Vec<crate::store::user_context::MapContextItem> {
         self.connection
-            .map_context()
-            .map(|context| {
-                context
-                    .watchlist
-                    .into_iter()
-                    .chain(context.holdings)
-                    .collect()
-            })
+            .map_context(loupist_id)
+            .map(|context| context.watchlist)
             .unwrap_or_default()
     }
 
@@ -376,7 +390,21 @@ impl KnowledgeStore {
         at_ms: i64,
         usage_uncertain: bool,
     ) -> KnowledgeResult<GraphJobView> {
-        let followed = self.followed_items();
+        // The job's own Loupist; an unknown job is refused by the publication below.
+        let loupist_id: Option<String> = self.read(|write| {
+            use rusqlite::OptionalExtension as _;
+            Ok(write
+                .tx
+                .query_row(
+                    "SELECT loupist_id FROM knowledge_graph_outbox WHERE job_id=?1",
+                    [job_id],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })?;
+        let followed = loupist_id
+            .map(|loupist_id| self.followed_items(&loupist_id))
+            .unwrap_or_default();
         self.transact(|write| {
             graph_jobs::publish_and_complete(
                 write,
@@ -410,12 +438,21 @@ impl<'a> KnowledgeWrite<'a> {
         map::query(self.tx, request, context)
     }
 
+    /// A Source a Chat reply saved. A user-provided one names the message it
+    /// was pasted in (`provided`); every other Source passes `None`.
     pub fn retain_new_source_with_origin(
         &self,
         request: RetainNewSource,
         origin_message_id: &str,
+        provided: Option<&ProvidedOrigin>,
     ) -> KnowledgeResult<RetainedSource> {
-        source::retain_new_source_with_origin(self.tx, self.blobs, request, Some(origin_message_id))
+        source::retain_new_source_with_origin(
+            self.tx,
+            self.blobs,
+            request,
+            Some(origin_message_id),
+            provided,
+        )
     }
 
     pub fn growth_events(&self, request: &GrowthEventsQuery) -> KnowledgeResult<GrowthEventsPage> {
@@ -427,13 +464,13 @@ impl<'a> KnowledgeWrite<'a> {
     }
 
     /// The asset page a thesis entry names, created with the turn if new.
-    pub fn ensure_asset_page(
+    pub(crate) fn ensure_asset_page(
         &self,
         loupist_id: &str,
-        identity: &assets::AssetIdentity,
+        page: &crate::commands::assets::wire::AssetRow,
         at_ms: i64,
     ) -> KnowledgeResult<assets::PageRecord> {
-        assets::ensure_page(self.tx, loupist_id, identity, None, at_ms)
+        assets::ensure_asset_page(self.tx, loupist_id, page, at_ms)
     }
 
     pub fn create_record(&self, request: CreateRecord) -> KnowledgeResult<OwnedRecord> {
@@ -957,12 +994,11 @@ fn erase_guarded_rows(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult
         "DELETE FROM knowledge_journals WHERE loupist_id = ?1",
         [loupist_id],
     )?;
-    earnings::erase(tx, loupist_id)?;
-    watch::erase(tx, loupist_id)?;
     for table in [
-        "knowledge_asset_section_deltas",
+        "knowledge_asset_line_readings",
+        "knowledge_saved_price_reads",
+        "knowledge_asset_price_points",
         "knowledge_asset_moves",
-        "knowledge_asset_observations",
         "knowledge_asset_pages",
     ] {
         tx.execute(

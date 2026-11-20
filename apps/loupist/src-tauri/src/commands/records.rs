@@ -345,16 +345,33 @@ pub async fn chat_delete(
     request: ChatDeleteRequest,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
+    delete_chat_session(&state, &request.loupist_id, &request.thread_id, |chat| {
+        if crate::chat::home::is_home(chat) {
+            Err(CommandError::conflict("the home Thread cannot be deleted"))
+        } else {
+            Ok(())
+        }
+    })
+}
+
+/// Deletes one Chat with everything that hangs off it: artifacts, hand-offs,
+/// knowledge chat origins, attachments, the Pi session cache and drafts. The
+/// user's Delete and the host's release of a session it made for its own run
+/// both come here. `allow` sees the Chat while it is held against other turns.
+pub(crate) fn delete_chat_session(
+    state: &AppState,
+    loupist_id: &str,
+    thread_id: &str,
+    allow: impl FnOnce(&ChatSession) -> Result<(), CommandError>,
+) -> Result<(), CommandError> {
     let _mutation = state.register_run(
         new_id("chat-mutation"),
-        request.loupist_id.clone(),
+        loupist_id.to_owned(),
         RunKind::ChatMutation,
-        RunTarget::ChatThread(request.thread_id.clone()),
+        RunTarget::ChatThread(thread_id.to_owned()),
     )?;
-    let expected = artifact_chat(&state, &request.loupist_id, &request.thread_id)?;
-    if crate::chat::home::is_home(&expected) {
-        return Err(CommandError::conflict("the home Thread cannot be deleted"));
-    }
+    let expected = artifact_chat(state, loupist_id, thread_id)?;
+    allow(&expected)?;
     let durable_root = state.loupist_files_root(&expected.loupist_id)?;
     let timestamp = now_ms();
     let result = if state.store.is_folder_catalog() {
@@ -390,8 +407,27 @@ pub async fn chat_delete(
         }
         return Err(error);
     }
-    super::workspace_ui::clear_chat_drafts(&state, &expected.loupist_id, &expected.id)?;
+    crate::chat::questions::forget_chat(loupist_id, thread_id);
+    super::workspace_ui::clear_chat_drafts(state, &expected.loupist_id, &expected.id)?;
     Ok(())
+}
+
+/// Applies the release rules for sessions the host made for its own runs
+/// (scheduled runs, price setup) to every available Loupist, so what earlier
+/// runs left behind is settled the same way a new run settles it.
+pub(crate) fn release_host_sessions(state: &AppState) -> usize {
+    let Ok(loupists) = state.store.list_loupists() else {
+        eprintln!("Host sessions could not be released: Loupists unreadable");
+        return 0;
+    };
+    loupists
+        .iter()
+        .filter(|loupist| state.ensure_loupist_available(&loupist.id).is_ok())
+        .map(|loupist| {
+            crate::scheduled_tasks::service::release_sessions(state, &loupist.id, None)
+                + super::assets::setup::release_sessions(state, &loupist.id)
+        })
+        .sum()
 }
 
 #[tauri::command(rename_all = "snake_case")]

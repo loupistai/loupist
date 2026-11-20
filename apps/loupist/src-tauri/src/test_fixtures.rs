@@ -20,6 +20,7 @@ pub(crate) fn loupist_profile(id: &str) -> LoupistProfile {
         workspace_root: format!("/tmp/{id}"),
         runtime_filesystem_identity: None,
         root_filesystem_identity: Some(RootFilesystemIdentity {
+            birth_time: None,
             device: 1,
             inode: id.bytes().fold(7u64, |hash, byte| {
                 hash.wrapping_mul(31).wrapping_add(u64::from(byte))
@@ -81,13 +82,15 @@ pub(crate) fn chat_message(id: &str, role: ChatRole, content: &str) -> ChatMessa
         replaced_model: None,
         as_of: None,
         number_checks: Vec::new(),
-        sensitivity_cards: Vec::new(),
         as_of_report: None,
         alert: None,
-        watch: None,
-        earnings: None,
+
         vocabulary: None,
         handoff: None,
+        research_session_id: None,
+        handoff_note: None,
+        handoff_action: None,
+        scheduled: None,
         link: None,
     }
 }

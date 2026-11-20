@@ -37,6 +37,7 @@ it("pauses, runs once and deletes a task with the host commands, without a model
 it("resumes a paused task, keeps the briefing undeletable, and shows a failure with retry", async () => {
   const { calls, user } = setup(task({ kind: "briefing", status: "paused" }), { scheduledTaskSetStatus: vi.fn().mockRejectedValueOnce(new Error("")) as never });
   expect(screen.queryByRole("button", { name: /More actions/ })).toBeNull();
+  expect(screen.getByText("To change the briefing’s days and time, tell Bot.")).toBeVisible();
   // Paused: Resume is the one filled button.
   expect(screen.getByRole("button", { name: "Resume" })).toHaveAttribute("data-variant", "default");
   await user.click(screen.getByRole("button", { name: "Resume" }));

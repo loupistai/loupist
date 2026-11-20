@@ -1,9 +1,10 @@
 import { chatTitle } from "@/app/chatTitle";
 import i18n, { useTranslation } from "@/i18n";
-import { useId } from "react";
+import { useId, useRef } from "react";
 import { tabShortcut } from "../../app/shortcuts";
-import { MoreHorizontalIcon, DownloadIcon, EyeOffIcon, HouseIcon, PencilIcon, PrinterIcon, Trash2Icon } from "lucide-react";
+import { MoreHorizontalIcon, DownloadIcon, EyeOffIcon, MessageCircleIcon, PencilIcon, PrinterIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -15,6 +16,7 @@ type Props = {
   iconOnly?: boolean;
   thread: ChatThread;
   active: boolean;
+  /** A reply is running in this chat; the row's status slot shows the spinner. */
   running: boolean;
   /** The run ended while the user was looking elsewhere. */
   finished?: boolean;
@@ -31,35 +33,49 @@ type Props = {
 export function LoupistChatItem({ iconOnly = false, thread, active, running, finished = false, draft = false, onSelect, onSchedule, onRename, onDelete, onExport }: Props) {
   useTranslation();
   const homeDescId = useId();
+  const draftId = useId();
+  const statusId = useId();
   const title = chatTitle(thread);
   const homeDescriptor = thread.home ? i18n.t("app:loupistChatItem.homeDescriptor") : "";
   // A chat that neither reads nor saves Memory is a private chat (composer spec X12).
   const privateChat = thread.use_memory === false && thread.update_memory === false;
+  // Scheduled tasks opens another page, so focus moves to that page's heading instead of
+  // back to "…": no ring stays on a sidebar control the user has left. Escape still returns to "…".
+  const openedSchedule = useRef(false);
+  // One status at the row's end, first match: running, finished out of sight, private. A
+  // button's own marks are not read inside it, so hidden words describe the row with them.
+  const status = running ? "running" : finished ? "finished" : privateChat ? "private" : null;
+  const statusLabel = status === "running" ? i18n.t("app:loupistChatItem.running")
+    : status === "finished" ? i18n.t("app:attention.finishedHidden")
+      : status === "private" ? i18n.t("app:loupistChatItem.privateChat") : "";
+  const draftLabel = i18n.t("app:loupistChatItem.unsentDraft");
+  const describedBy = [thread.home && !iconOnly ? homeDescId : null, draft ? draftId : null, statusLabel ? statusId : null].filter(Boolean).join(" ") || undefined;
   return (
     <SidebarMenuItem className="loupist-chat-row" data-testid="loupist-chat-row" data-home={thread.home || undefined}>
       <SidebarMenuButton
         type="button"
         className="loupist-chat-button" data-testid="loupist-chat-button" data-thread-id={thread.id}
-        aria-label={thread.home && !iconOnly ? undefined : title}
-        aria-describedby={thread.home && !iconOnly ? homeDescId : undefined}
+        aria-label={title}
+        aria-describedby={describedBy}
         title={thread.home ? `${title}. ${homeDescriptor}` : title}
-        aria-busy={running || undefined}
         isActive={active}
         data-selected={active || undefined}
         aria-current={active ? "page" : undefined}
         onClick={() => onSelect(thread)}
       >
-        {thread.home ? <HouseIcon className="loupist-home-icon" aria-hidden="true" /> : null}
+        {thread.home ? <MessageCircleIcon className="loupist-home-icon" aria-hidden="true" /> : null}
         {iconOnly ? null : thread.home ? <><span className="loupist-chat-title" data-testid="loupist-chat-title">{title}</span><span id={homeDescId} hidden>{homeDescriptor}</span><kbd className="loupist-place-key" aria-hidden="true">{tabShortcut(1)}</kbd></>
           : <span className="loupist-chat-title" data-testid="loupist-chat-title">{title}</span>}
-        {draft ? <span className="loupist-draft-dot" role="img" aria-label={i18n.t("app:loupistChatItem.unsentDraft")} title={i18n.t("app:loupistChatItem.unsentDraft")} /> : null}
-        {/* A still mark: while a reply runs, its live line's sheen is the one thing that loops. */}
-        {running ? <span className="thread-running" role="status" aria-label={i18n.t("app:loupistChatItem.isRunning", { title: chatTitle(thread) })} />
-          : finished ? <span className="loupist-status-dot" data-state="finished" role="img" aria-label={i18n.t("app:attention.finishedHidden")} />
-            : privateChat ? <span className="loupist-private-mark" role="img" aria-label={i18n.t("app:loupistChatItem.privateChat")} title={i18n.t("app:loupistChatItem.privateChat")}><EyeOffIcon aria-hidden="true" /></span> : null}
+        {draft ? <><span className="loupist-draft-dot" role="img" aria-label={draftLabel} title={draftLabel} /><span id={draftId} hidden>{draftLabel}</span></> : null}
+        {/* The app's spinner, with a fixed name and no live region, so its turning is never announced.
+            Reduced motion stops it (tokens.css), leaving its open ring still. */}
+        {status === "running" ? <Spinner className="thread-running" role="img" aria-label={statusLabel} />
+          : status === "finished" ? <span className="loupist-status-dot" data-state="finished" role="img" aria-label={statusLabel} />
+            : status === "private" ? <span className="loupist-private-mark" role="img" aria-label={statusLabel} title={statusLabel}><EyeOffIcon aria-hidden="true" /></span> : null}
+        {statusLabel ? <span id={statusId} hidden>{statusLabel}</span> : null}
       </SidebarMenuButton>
       {/* The Thread is permanent and an unsent chat has nothing to rename or delete yet. */}
-      {thread.home && onSchedule ? <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" className="loupist-chat-menu" data-testid="loupist-chat-menu" data-bot-menu aria-label={i18n.t("app:loupistChatItem.optionsFor", { title })}><MoreHorizontalIcon /></Button></DropdownMenuTrigger><DropdownMenuContent side="right" align="start"><DropdownMenuItem data-bot-schedule onSelect={onSchedule}>{i18n.t("app:shell.taskHistory")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu> : thread.home || isEmptyChatThreadId(thread.id) ? null : <DropdownMenu>
+      {thread.home && onSchedule ? <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" className="loupist-chat-menu" data-testid="loupist-chat-menu" data-bot-menu aria-label={i18n.t("app:loupistChatItem.optionsFor", { title })}><MoreHorizontalIcon /></Button></DropdownMenuTrigger><DropdownMenuContent side="right" align="start" onCloseAutoFocus={event => { if (!openedSchedule.current) return; openedSchedule.current = false; event.preventDefault(); document.getElementById("current-location")?.focus({ preventScroll: true }); }}><DropdownMenuItem data-bot-schedule onSelect={() => { openedSchedule.current = true; onSchedule(); }}>{i18n.t("app:shell.taskHistory")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu> : thread.home || isEmptyChatThreadId(thread.id) ? null : <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button size="icon-sm" variant="ghost" className="loupist-chat-menu" data-testid="loupist-chat-menu" aria-label={i18n.t("app:loupistChatItem.optionsFor", { title: chatTitle(thread) })}>
             <MoreHorizontalIcon />

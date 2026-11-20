@@ -18,6 +18,31 @@ const editingElsewhere = () => {
   return active instanceof HTMLElement && (active.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName));
 };
 
+/** Requests answered from inside their waiting card while it held focus. */
+const answeredFromCard = new Set<string>();
+
+/**
+ * Called as the user answers a waiting card (a question or an approval). Its buttons go away when
+ * it settles, so the settled line takes focus in their place instead of leaving it on the page.
+ * Returns the undo for an answer that did not go through.
+ */
+export function keepFocusOnSettle(requestId: string, card: HTMLElement | null) {
+  if (card?.contains(document.activeElement)) answeredFromCard.add(requestId);
+  return () => { answeredFromCard.delete(requestId); };
+}
+
+/** The settled line of a request answered from its focused card takes focus when it appears. */
+export function useSettledFocus<T extends HTMLElement>(requestId: string) {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    if (!answeredFromCard.delete(requestId)) return;
+    const focused = document.activeElement;
+    if (focused && focused !== document.body && focused.isConnected) return;
+    ref.current?.focus({ preventScroll: true });
+  }, [requestId]);
+  return ref;
+}
+
 /**
  * Answering collapses the card to one line. The turn keeps the height it has
  * now while the reply runs (`--turn-hold`, chat.css), so the scroll range never
@@ -53,12 +78,14 @@ function WaitingQuestion({ question, onAnswer, focusOnArrive }: { question: Chat
   const [text, setText] = useState("");
   const otherId = useId();
   const answer = async (value: Answer) => {
+    const forget = keepFocusOnSettle(question.requestId, cardRef.current);
     setBusy(true);
     setFailed(false);
     const release = holdTurnHeight(cardRef.current);
     try {
       await onAnswer(value);
     } catch {
+      forget();
       release();
       setFailed(true);
       setBusy(false);
@@ -120,7 +147,12 @@ export function QuestionCard({ question, bridge, loupistId, focusOnArrive = fals
     return <WaitingQuestion question={question} focusOnArrive={focusOnArrive}
       onAnswer={(answer) => bridge.chatQuestionAnswer({ loupist_id: loupistId, request_id: question.requestId, ...answer })} />;
   }
-  return <p className="question-line" data-state={question.state} data-request-id={question.requestId}>{settledLine(question)}</p>;
+  return <SettledQuestion question={question} />;
+}
+
+function SettledQuestion({ question }: { question: ChatQuestion }) {
+  const ref = useSettledFocus<HTMLParagraphElement>(question.requestId);
+  return <p ref={ref} tabIndex={-1} className="question-line" data-state={question.state} data-request-id={question.requestId}>{settledLine(question)}</p>;
 }
 
 export function QuestionCards({ questions, bridge, loupistId, streaming = false }: { questions: readonly ChatQuestion[]; bridge: LoupistBridge; loupistId: string; streaming?: boolean }) {

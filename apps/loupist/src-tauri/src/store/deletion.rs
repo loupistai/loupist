@@ -80,7 +80,12 @@ pub fn delete_loupist(
     // Only app-owned runtime files belong to this deletion. A user workspace
     // can be moved, disconnected, or shared with other apps and is never removed.
     let source_identity = root.directory_identity(&source)?;
-    if source_identity.is_some() && source_identity != expected.runtime_filesystem_identity {
+    if source_identity.as_ref().is_some_and(|actual| {
+        expected
+            .runtime_filesystem_identity
+            .as_ref()
+            .is_none_or(|saved| !actual.matches_binding(saved))
+    }) {
         return Err(CommandError::conflict(
             "Loupist private runtime folder changed before deletion",
         ));
@@ -780,6 +785,7 @@ mod tests {
             loupist_id: "loupist-bad".into(),
             target_id: "loupist-bad".into(),
             expected_source_identity: Some(RootFilesystemIdentity {
+                birth_time: None,
                 device: 1,
                 inode: 1,
             }),

@@ -104,6 +104,9 @@ it("filters capabilities by availability and opens the selected connection’s d
   expect(openConnection).toHaveBeenCalledWith("koreainvestment.market-data");
   await user.click(screen.getByRole("radio", { name: "Enabled" }));
   expect(screen.getByRole("switch", { name: "Research: enabled" })).toBeChecked();
+  // The list's own action says where it goes, instead of repeating the list's title.
+  await user.click(screen.getByRole("button", { name: "Manage connections" }));
+  expect(openConnection).toHaveBeenLastCalledWith();
 });
 
 it("shows the unavailable workspace and blocks mutations until it is reconnected", async () => {
@@ -148,14 +151,14 @@ it("saves a profile, publishes its new identity, and discards later edits", asyn
   const user = userEvent.setup();
   const save = screen.getByRole("button", { name: "Save" });
   expect(save).toBeDisabled();
-  const avatars = screen.getByRole("group", { name: "Avatar" });
+  const avatars = screen.getByRole("group", { name: "Face color" });
   expect(within(avatars).getAllByRole("button")).toHaveLength(10);
   expect(within(avatars).getAllByRole("button", { pressed: true })).toHaveLength(1);
   await user.clear(screen.getByLabelText("Name", { exact: true }));
   await user.type(screen.getByLabelText("Name", { exact: true }), "  My research  ");
   await user.clear(screen.getByLabelText("Focus", { exact: true }));
   await user.type(screen.getByLabelText("Focus", { exact: true }), "Energy transitions");
-  await user.click(screen.getByRole("button", { name: "Hourglass" }));
+  await user.click(screen.getByRole("button", { name: "Orchid" }));
   await user.click(save);
   await waitFor(() => expect(onUpdated).toHaveBeenCalledWith(expect.objectContaining({ name: "My research", philosophy: "Energy transitions", avatar: "loupist-08" })));
   expect(update).toHaveBeenCalledOnce();

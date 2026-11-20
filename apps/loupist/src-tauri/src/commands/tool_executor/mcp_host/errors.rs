@@ -73,6 +73,11 @@ pub(super) fn map_mcp_error(error: McpError) -> BrokerError {
             "The MCP request timed out",
             "Reduce the requested date range, symbols, or page size. Do not repeat the identical request in a loop.",
         ),
+        // Only the bundled runtime reaches this mapping, before any request ran.
+        McpError::StartupTimeout => (
+            "Market data was still starting and did not become ready in time",
+            "This computer may be busy. Do not load it again in this turn: continue with your other sources, and tell the user that market data was still starting and that they can ask again shortly.",
+        ),
         McpError::FrameTooLarge => (
             "The MCP response exceeded the size limit",
             "Load this capability again, then request a smaller date range or page. Do not repeat the oversized request.",
@@ -97,13 +102,17 @@ pub(super) fn map_mcp_error(error: McpError) -> BrokerError {
 }
 
 pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerError {
-    if result
+    match result
         .structured_content
         .as_ref()
         .and_then(|value| value.pointer("/loupist_error/kind"))
-        == Some(&json!("offline"))
+        .and_then(Value::as_str)
     {
-        return BrokerError::Offline("market data provider".into());
+        Some("offline") => return BrokerError::Offline("market data provider".into()),
+        Some("alpha_vantage_paid_plan_required") => {
+            return BrokerError::Execution("This needs a paid Alpha Vantage plan.".into());
+        }
+        _ => {}
     }
     // MCP tools commonly put a JSON error inside a text content block.
     // Decode one layer only; never return this provider-controlled body.
@@ -221,6 +230,20 @@ mod tests {
     }
 
     #[test]
+    fn a_paid_alpha_request_names_the_plan_without_reconnecting() {
+        let result = serde_json::from_value(json!({
+            "isError": true,
+            "content": [{"type":"text", "text":"fixture-private-detail"}],
+            "structuredContent": {"loupist_error": {"kind": "alpha_vantage_paid_plan_required"}},
+        }))
+        .unwrap();
+        let error = rejected_mcp_result(&result);
+        assert!(error.to_string().contains("paid Alpha Vantage plan"));
+        assert!(!error.to_string().contains("fixture-private-detail"));
+        assert!(mcp_error_next(&error).is_none());
+    }
+
+    #[test]
     fn mcp_failures_offer_recovery_without_exposing_provider_or_transport_details() {
         let private = "fixture-private-detail";
         let rate_limited: crate::mcp::McpCallResult = serde_json::from_value(json!({
@@ -252,5 +275,20 @@ mod tests {
                 .contains(mcp_error_next(&error).unwrap()));
             assert!(!response.to_string().contains(private));
         }
+    }
+
+    #[test]
+    fn a_runtime_that_never_finished_starting_says_market_data_was_starting() {
+        let error = map_mcp_error(McpError::StartupTimeout);
+        let message = error.to_string();
+        assert!(
+            message.contains("Market data was still starting"),
+            "{message}"
+        );
+        assert!(!message.contains("timed out"), "{message}");
+        let next = mcp_error_next(&error).unwrap();
+        // Nothing was requested yet, so request-narrowing advice does not apply.
+        assert!(!next.contains("date range"), "{next}");
+        assert!(next.contains("Do not load it again in this turn"), "{next}");
     }
 }

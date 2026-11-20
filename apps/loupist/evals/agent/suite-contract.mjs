@@ -6,9 +6,10 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const catalogPath = join(here, '../../agent/tool-catalog.json');
 
-import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, LENS_ASSERTS, lensAssertion, ANSWER_ASSERTS, answerPatterns, citationAssertion, validDate,
+import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, LENS_ASSERTS, lensAssertion, ANSWER_ASSERTS, answerPatterns, numberSpellings, figureSpellings, citationAssertion, sourceSpanAssertion, validDate,
   numbersLinkedAssertion, asOfLeftOutAssertion, asOfRefusedAssertion, calculateInputsAssertion, gridCellsAssertion, metricTolerance,
-  toolCalledAssertion, sensitivityCardAssertion, planProgressAssertion, calculationChipAssertion, skillReadAssertion, toolOrderAssertion } from './eval-contract.mjs';
+  toolCalledAssertion, calculationChipAssertion, skillReadAssertion, toolOrderAssertion,
+  answerLanguageAssertion, visibleLabelsAssertion, scheduledFixture } from './eval-contract.mjs';
 const METRICS = new Set([
   'carry_forward',
   'negative_transfer',
@@ -23,6 +24,8 @@ const METRICS = new Set([
   'retrieval',
   'efficiency',
   'boundary',
+  'answer_language',
+  'number_writing',
 ]);
 const CONNECTIONS = new Set(['opendart', 'krx', 'koreainvestment', 'world-bank', 'web-research', 'defillama']);
 const ROLES = new Set(['train', 'probe']);
@@ -110,11 +113,15 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
   assert.ok(Array.isArray(scenario.tags), scenario.id);
   assert.equal(new Set(scenario.tags).size, scenario.tags.length, scenario.id);
   assertScenarioSplit(scenario, filePath);
+  // The real-ticker timing probe is an explicit exception to replay-only graded suites.
+  const liveProbe = suite === 'bot-quick-probe' && scenario.tags.includes('timing-probe');
   if (scenario.connections !== undefined) {
     assert.ok(Array.isArray(scenario.connections), scenario.id);
-    for (const connection of scenario.connections) assert.ok(CONNECTIONS.has(connection), `${scenario.id} ${connection}`);
+    for (const connection of scenario.connections) {
+      assert.ok(CONNECTIONS.has(connection) || (connection === 'openbb.platform' && (liveProbe || scenario.replay)), `${scenario.id} ${connection}`);
+    }
   }
-  if ((scenario.connections ?? []).length > 0 || (scenario.tags ?? []).includes('needs-replay') || scenario.replay) {
+  if ((!liveProbe && (scenario.connections ?? []).length > 0) || (scenario.tags ?? []).includes('needs-replay') || scenario.replay) {
     assert.equal(typeof scenario.replay, 'string', scenario.id);
     assert.match(scenario.replay, /^replay\/[a-z0-9]+(?:-[a-z0-9]+)*\.json$/u, scenario.id);
     assert.ok((scenario.tags ?? []).includes('needs-replay'), scenario.id);
@@ -128,6 +135,10 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
       assert.equal(path.startsWith('/'), false, path);
       assert.equal(path.split('/').includes('..'), false, path);
     }
+  }
+  // The app keeps no record of what the user owns, so nothing can seed one.
+  for (const key of ['holdings_csv', 'holdings_crypto_csv']) {
+    assert.equal(Object.hasOwn(scenario.seed ?? {}, key), false, `${scenario.id} retired holdings seed ${key}`);
   }
   for (const page of scenario.seed?.lens ?? []) {
     assert.ok(Object.keys(page).every(key => ['title', 'summary', 'sections'].includes(key)), `${scenario.id} unknown Lens seed field`);
@@ -149,6 +160,7 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
       const where = `${scenario.id} ${session.id}#${index}`;
       assert.equal(typeof turn.user, 'string', where);
       assert.ok(turn.user.trim().length > 0, where);
+      scheduledFixture(scenario, session, turn);
       if (turn.attachments !== undefined) {
         assert.ok(Array.isArray(turn.attachments) && turn.attachments.length <= 4, `${where} attachments`);
         for (const attachment of turn.attachments) {
@@ -182,7 +194,7 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
               if (task.prompt_includes !== undefined) assert.ok(Array.isArray(task.prompt_includes) && task.prompt_includes.every((text) => typeof text === 'string' && text.length > 0), where);
             }
           } else if (item.assert === 'tool_called' || item.assert === 'tool_not_called') {
-            assert.ok(toolNames.has(item.tool), `${where} unknown tool ${item.tool}`);
+            assert.ok(toolNames.has(item.tool) || item.assert === 'tool_not_called' && item.tool === 'interface_labels', `${where} unknown tool ${item.tool}`);
             if (item.assert === 'tool_called') toolCalledAssertion(item);
             else assert.equal(item.args, undefined, `${where} tool_not_called takes no args`);
           } else if (item.assert === 'tool_called_before') {
@@ -202,12 +214,10 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
             calculateInputsAssertion(item);
           } else if (item.assert === 'grid_cells_linked') {
             gridCellsAssertion(item);
-          } else if (item.assert === 'sensitivity_card') {
-            sensitivityCardAssertion(item);
+          } else if (item.assert === 'scheduled_delivery') {
+            assert.ok(turn.scheduled, `${where} scheduled_delivery requires a scheduled turn`);
           } else if (item.assert === 'skill_read') {
             skillReadAssertion(item);
-          } else if (item.assert === 'plan_progress') {
-            planProgressAssertion(item);
           }
         } else if (bucket === 'memory') {
           assert.ok(MEMORY_ASSERTS.has(item.assert), where);
@@ -234,8 +244,15 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
             assert.equal(item.values, undefined, where);
           } else if (item.assert === 'prediction') {
             assert.equal(item.values, undefined, where);
-          } else if (item.assert === 'answer_not_matching') {
+          } else if (item.assert === 'figures_present') {
+            figureSpellings(item);
+          } else if (item.assert === 'contains_number_any') {
+            numberSpellings(item.values);
+          } else if (['answer_matching', 'answer_not_matching'].includes(item.assert)) {
             answerPatterns(item);
+          } else if (item.assert === 'cites_source_span') {
+            const { figure } = sourceSpanAssertion(item, scenario);
+            assert.doesNotMatch(userCorpus(scenario), figure, `${where} cited figure leaked into user inputs`);
           } else if (item.assert === 'cites_result') {
             const { tools } = citationAssertion(item);
             for (const tool of tools) assert.ok(toolNames.has(tool), `${where} unknown tool ${tool}`);
@@ -243,6 +260,11 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
             numbersLinkedAssertion(item);
           } else if (item.assert === 'calculation_chip') {
             calculationChipAssertion(item);
+          } else if (item.assert === 'visible_labels') {
+            visibleLabelsAssertion(item, scenario);
+          } else if (item.assert === 'answer_language') {
+            answerLanguageAssertion(item);
+            assert.equal(item.values, undefined, where);
           } else {
             assert.ok(Array.isArray(item.values) && item.values.length > 0, where);
             for (const value of item.values) assert.equal(typeof value, 'string', where);

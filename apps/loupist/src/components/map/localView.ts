@@ -70,22 +70,21 @@ export function localSet(nodes: readonly KnowledgeMapNode[], edges: readonly Kno
 }
 
 /**
- * Where the Map centers on open: the remembered name, else the first watched
- * company by degree, then a held company, then the best-connected company.
+ * Where the Map centers on open: the remembered name, else the followed company
+ * with the highest degree, then the best-connected company.
  */
 export function defaultFocal(nodes: readonly KnowledgeMapNode[], rememberedId?: string) {
   const names = nodes.filter((node) => node.kind === "entity" && !node.archived);
   if (rememberedId && names.some((node) => node.id === rememberedId)) return rememberedId;
   const companies = names.filter((node) => nodeCategory(node) === "company");
   return (companies.filter((node) => node.watched).sort(byDegree)[0]
-    ?? companies.filter((node) => node.held).sort(byDegree)[0]
     ?? [...companies].sort(byDegree)[0])?.id;
 }
 
-/** Watched names first, then held ones; each by degree. */
+/** Followed names, by degree. */
 export function followedNames(nodes: readonly KnowledgeMapNode[]) {
   const names = nodes.filter((node) => node.kind === "entity" && !node.archived);
-  return [...names.filter((node) => node.watched).sort(byDegree), ...names.filter((node) => node.held && !node.watched).sort(byDegree)];
+  return names.filter((node) => node.watched).sort(byDegree);
 }
 
 /** The focal name's relationship neighbors in clockwise screen order, starting at twelve o'clock. */

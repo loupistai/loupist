@@ -20,6 +20,8 @@ describe("Loupist · Model changes (W17.5)", () => {
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(ack).toHaveBeenCalledExactlyOnceWith({ id: "notice-1" });
     await waitFor(() => expect(document.querySelector(".model-notice-line")).toBeNull());
+    // The × went with the line; the message takes focus rather than the page.
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveFocus());
   });
 
   it("acknowledges the line when the next message goes out, and an Auto send names no model", async () => {

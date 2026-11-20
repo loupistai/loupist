@@ -9,8 +9,7 @@ mod memory;
 pub use answer_checks::{
     valid_as_of, AsOfEmpty, AsOfLeftOut, AsOfRefusal, AsOfReport, CalcInputUnit, CalcInputUnitKind,
     NumberCheck, NumberCheckCalc, NumberCheckField, NumberCheckInput, NumberCheckKind,
-    NumberCheckStatus, SensitivityCard, SensitivityGrid, SensitivityInput, SensitivityPrice,
-    SensitivityReference, MAX_AS_OF_ITEMS, MAX_NUMBER_CHECKS, MAX_SENSITIVITY_CARDS,
+    NumberCheckStatus, MAX_AS_OF_ITEMS, MAX_NUMBER_CHECKS,
 };
 pub use chat::*;
 pub use loupist::*;

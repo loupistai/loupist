@@ -22,6 +22,18 @@ pub enum ChatProgressStatus {
     Skipped,
 }
 
+/// A fixed presentation category; remote diagnostics never become UI copy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ChatStepFailureReason {
+    Timeout,
+    Unreachable,
+    ProviderError,
+    EmptyResult,
+    InvalidInput,
+}
+
 /// Why the host refused a failed step, when a security rule or the user's own
 /// card answer did. The renderer explains it in the step and offers no override.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -147,6 +159,13 @@ pub enum ChatProgressItem {
         #[cfg_attr(test, ts(optional))]
         file_path: Option<String>,
         status: ChatProgressStatus,
+        #[serde(
+            default,
+            rename = "failureReason",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[cfg_attr(test, ts(optional))]
+        failure_reason: Option<ChatStepFailureReason>,
         /// Set on a failed step the host refused under a security rule.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(test, ts(optional))]
@@ -167,6 +186,13 @@ pub enum ChatProgressItem {
         #[serde(deserialize_with = "crate::domain::required_option")]
         href: Option<String>,
         status: ChatProgressStatus,
+        #[serde(
+            default,
+            rename = "failureReason",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[cfg_attr(test, ts(optional))]
+        failure_reason: Option<ChatStepFailureReason>,
         #[serde(default, rename = "startedAtMs")]
         started_at_ms: i64,
         #[serde(default, rename = "finishedAtMs")]
@@ -493,83 +519,6 @@ fn valid_plan_label(label: &str) -> bool {
         && !label.chars().any(char::is_control)
 }
 
-/// Reads `plan_update` arguments. Errors name the field and the expected shape for the model.
-pub fn parse_plan_update(args: &Value) -> Result<Vec<ChatPlanItem>, (String, String)> {
-    let invalid = |field: &str, expected: &str| (field.to_owned(), expected.to_owned());
-    let object = args
-        .as_object()
-        .ok_or_else(|| invalid("arguments", "an object with an items array"))?;
-    if let Some(extra) = object.keys().find(|key| key.as_str() != "items") {
-        return Err(invalid(extra, "no other fields; send only items"));
-    }
-    let items = object
-        .get("items")
-        .and_then(Value::as_array)
-        .ok_or_else(|| invalid("items", "an array of 2 to 6 plan items"))?;
-    if !(MIN_PLAN_ITEMS..=MAX_PLAN_ITEMS).contains(&items.len()) {
-        return Err(invalid("items", "2 to 6 plan items"));
-    }
-    let mut seen = HashSet::new();
-    let mut active = 0;
-    let mut parsed = Vec::with_capacity(items.len());
-    for (index, item) in items.iter().enumerate() {
-        let field = |name: &str| format!("items[{index}].{name}");
-        let object = item.as_object().ok_or_else(|| {
-            (
-                format!("items[{index}]"),
-                "an object with id, label and status".to_owned(),
-            )
-        })?;
-        if let Some(extra) = object
-            .keys()
-            .find(|key| !matches!(key.as_str(), "id" | "label" | "status"))
-        {
-            return Err((field(extra), "no other fields".to_owned()));
-        }
-        let id = object
-            .get("id")
-            .and_then(Value::as_str)
-            .filter(|id| valid_plan_id(id))
-            .ok_or_else(|| (field("id"), "1 to 32 letters, digits, - or _".to_owned()))?;
-        if !seen.insert(id.to_owned()) {
-            return Err((field("id"), "a unique id within the plan".to_owned()));
-        }
-        let label = object
-            .get("label")
-            .and_then(Value::as_str)
-            .filter(|label| valid_plan_label(label))
-            .ok_or_else(|| {
-                (
-                    field("label"),
-                    "one line of plain words, at most 120 characters".to_owned(),
-                )
-            })?;
-        let status = object
-            .get("status")
-            .cloned()
-            .and_then(|status| serde_json::from_value::<ChatPlanStatus>(status).ok())
-            .ok_or_else(|| {
-                (
-                    field("status"),
-                    "pending, active, done or not_done".to_owned(),
-                )
-            })?;
-        if status == ChatPlanStatus::Active {
-            active += 1;
-        }
-        parsed.push(ChatPlanItem {
-            id: id.to_owned(),
-            label: label.to_owned(),
-            status,
-            activated_at_ms: None,
-        });
-    }
-    if active > 1 {
-        return Err(invalid("items", "at most one active item"));
-    }
-    Ok(parsed)
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -693,7 +642,7 @@ pub struct ChatProgressProjection {
 }
 
 /// Arguments that name an asset by its symbol.
-const SYMBOL_ARGS: &[&str] = &["symbol", "symbols", "ticker", "tickers", "company"];
+const SYMBOL_ARGS: &[&str] = &["symbol", "symbols", "ticker", "tickers", "company", "asset"];
 /// Symbols one argument may list ("AAPL,MSFT,NVDA") and still be named.
 const MAX_NAMED_SYMBOLS: usize = 12;
 
@@ -910,14 +859,6 @@ impl ChatProgressProjection {
         at_ms: i64,
     ) {
         self.close_commentary();
-        if tool_name == "plan_update" {
-            // The checklist is the presentation; an invalid call shows nothing and the
-            // executor returns the field error to the agent.
-            if let Ok(items) = parse_plan_update(args) {
-                self.update_plan(items, at_ms);
-            }
-            return;
-        }
         // Steps name assets as the Loupist knows them; the call keeps its symbols.
         let presentation = summarize_tool(tool_name, &self.asset_names.rename(args), web_source);
         if tool_name == "dataset_export" {
@@ -950,6 +891,7 @@ impl ChatProgressProjection {
             detail_id: None,
             file_path: None,
             status: ChatProgressStatus::Running,
+            failure_reason: None,
             refusal: None,
             started_at_ms: at_ms.max(0),
             finished_at_ms: None,
@@ -988,8 +930,14 @@ impl ChatProgressProjection {
         let Some(&index) = self.item_indices.get(&id) else {
             return;
         };
-        if let Some(ChatProgressItem::Tool { status, .. }) = self.progress.items.get_mut(index) {
+        if let Some(ChatProgressItem::Tool {
+            status,
+            failure_reason,
+            ..
+        }) = self.progress.items.get_mut(index)
+        {
             if *status == ChatProgressStatus::Failed {
+                *failure_reason = None;
                 *status = ChatProgressStatus::Skipped;
                 self.mark_dirty(&id);
             }
@@ -1059,7 +1007,39 @@ impl ChatProgressProjection {
             };
             *finished_at_ms = Some(at_ms.max(*started_at_ms));
         }
+        if failed {
+            self.set_failure_reason(tool_call_id, ChatStepFailureReason::ProviderError);
+        }
         self.mark_dirty(&id);
+    }
+
+    pub(crate) fn finish_tool_result(
+        &mut self,
+        call_id: &str,
+        failed: bool,
+        at_ms: i64,
+        result: &Value,
+        host_error: Option<&Value>,
+    ) {
+        self.finish_tool(call_id, failed, at_ms, summarize_tool_result(result));
+        if failed {
+            self.set_failure_reason(call_id, step_failure_reason(result, host_error));
+        }
+    }
+
+    pub(crate) fn set_failure_reason(&mut self, call_id: &str, reason: ChatStepFailureReason) {
+        if let Some(id) = self.tool_items.get(call_id) {
+            if let Some(index) = self.item_indices.get(id) {
+                if let ChatProgressItem::Tool {
+                    failure_reason,
+                    status: ChatProgressStatus::Failed,
+                    ..
+                } = &mut self.progress.items[*index]
+                {
+                    *failure_reason = Some(reason);
+                }
+            }
+        }
     }
 
     /// Links a host-issued result to the tool call that produced it.
@@ -1169,6 +1149,7 @@ impl ChatProgressProjection {
             target,
             href: None,
             status: ChatProgressStatus::Running,
+            failure_reason: None,
             started_at_ms: at_ms.max(0),
             finished_at_ms: None,
         });
@@ -1195,6 +1176,7 @@ impl ChatProgressProjection {
             status,
             started_at_ms,
             finished_at_ms,
+            failure_reason,
             ..
         }) = self.progress.items.get_mut(index)
         {
@@ -1204,23 +1186,9 @@ impl ChatProgressProjection {
                 ChatProgressStatus::Succeeded
             };
             *finished_at_ms = Some(at_ms.max(*started_at_ms));
+            *failure_reason = failed.then_some(ChatStepFailureReason::ProviderError);
         }
         self.mark_dirty(&id);
-    }
-
-    /// Replaces the plan, keeping each item's first activation time so steps stay nested.
-    fn update_plan(&mut self, mut items: Vec<ChatPlanItem>, at_ms: i64) {
-        let previous = self.progress.plan.take();
-        for item in &mut items {
-            let earlier = previous
-                .as_ref()
-                .and_then(|plan| plan.items.iter().find(|old| old.id == item.id))
-                .and_then(|old| old.activated_at_ms);
-            item.activated_at_ms = earlier
-                .or_else(|| matches!(item.status, ChatPlanStatus::Active).then_some(at_ms.max(0)));
-        }
-        self.progress.plan = Some(ChatPlan { items });
-        self.plan_dirty = true;
     }
 
     /// A failed run did not finish its active step.
@@ -1871,7 +1839,7 @@ fn command_target(args: &Value) -> Option<String> {
         .lines()
         .next()?
         .trim();
-    safe_value(first).map(|value| value.chars().take(120).collect())
+    safe_value(first).map(|value| crate::util::shorten(&value, 120))
 }
 
 fn named_join(
@@ -1899,6 +1867,67 @@ fn named_join(
 
 /// Whether a failed tool result is the host refusing a read under the turn's
 /// as-of date (`as_of_unsupported`).
+pub(crate) fn host_tool_failed(result: &Value) -> bool {
+    let value = result.get("details").unwrap_or(result);
+    value.get("call_error") == Some(&Value::Bool(true))
+        || value.pointer("/result/call_error") == Some(&Value::Bool(true))
+}
+
+pub(crate) fn step_failure_reason(
+    result: &Value,
+    host_error: Option<&Value>,
+) -> ChatStepFailureReason {
+    use ChatStepFailureReason::*;
+    let decoded = result
+        .pointer("/content/0/text")
+        .and_then(Value::as_str)
+        .and_then(|s| serde_json::from_str::<Value>(s).ok());
+    let value = result.get("details").or(decoded.as_ref()).unwrap_or(result);
+    let code = [
+        "/failureReason",
+        "/code",
+        "/error/kind",
+        "/loupist_error/kind",
+        "/structuredContent/loupist_error/kind",
+    ]
+    .into_iter()
+    .find_map(|p| value.pointer(p).and_then(Value::as_str))
+    .or_else(|| host_error.and_then(|error| error["code"].as_str()));
+    match code {
+        Some("timeout" | "provider_timeout" | "request_timeout" | "tool_timeout") => Timeout,
+        Some("offline" | "unreachable" | "io_failed" | "connection_failed") => Unreachable,
+        Some("empty_result" | "empty_results" | "no_data") => EmptyResult,
+        Some(
+            "invalid_input"
+            | "invalid_arguments"
+            | "malformed_request"
+            | "method_denied"
+            | "frame_too_large"
+            | "protected_path"
+            | "outside_workspace"
+            | "untrusted_text_paused"
+            | "transaction_limit",
+        ) => InvalidInput,
+        _ => {
+            // These are fixed diagnostics emitted by the host's MCP mapper.
+            let message = host_error
+                .and_then(|e| e["message"].as_str())
+                .or_else(|| value["message"].as_str())
+                .unwrap_or_default()
+                .trim_end_matches('.');
+            if message == "tool execution failed: The MCP request timed out" {
+                Timeout
+            } else if message
+                == "tool execution failed: The MCP runtime stopped or lost its connection"
+            {
+                Unreachable
+            } else {
+                ProviderError
+            }
+        }
+    }
+}
+
 pub(crate) fn as_of_refusal(result: &Value) -> bool {
     let text = result
         .pointer("/content/0/text")
@@ -2301,6 +2330,7 @@ mod tests {
             detail_id: None,
             file_path: None,
             status: ChatProgressStatus::Succeeded,
+            failure_reason: None,
             refusal: None,
             started_at_ms: 1,
             finished_at_ms: Some(2),
@@ -2689,113 +2719,23 @@ mod plan_tests {
     use super::*;
     use serde_json::json;
 
-    fn plan_args(statuses: &[(&str, &str)]) -> Value {
-        json!({"items": statuses.iter().map(|(id, status)| json!({
-            "id": id, "label": format!("Check {id}"), "status": status,
-        })).collect::<Vec<_>>()})
-    }
-
-    fn plan_statuses(plan: &ChatPlan) -> Vec<ChatPlanStatus> {
-        plan.items.iter().map(|item| item.status).collect()
-    }
-
     #[test]
-    fn plan_updates_become_one_checklist_not_step_rows() {
-        let mut projection = ChatProgressProjection::new(10);
-        projection.start_tool(
-            "plan-1",
-            "plan_update",
-            &plan_args(&[("filings", "active"), ("prices", "pending")]),
-            None,
-            11,
-        );
-        projection.finish_tool("plan-1", false, 12, None);
-        let first = projection.take_patch().expect("plan patch");
-        assert!(first.upsert_items.is_empty());
-        let plan = first.plan.expect("plan in patch");
+    fn stored_progress_keeps_legacy_plan_and_activation_times() {
+        let stored = json!({
+            "startedAtMs": 10,
+            "finishedAtMs": 20,
+            "items": [],
+            "plan": {"items": [
+                {"id": "filings", "label": "Read the filings", "status": "done", "activatedAtMs": 11},
+                {"id": "prices", "label": "Compare prices", "status": "not_done"},
+            ]},
+        });
+        let progress: ChatProgress = serde_json::from_value(stored.clone()).unwrap();
+        assert!(progress.validate(true).is_ok());
+        let plan = progress.plan.as_ref().unwrap();
         assert_eq!(plan.items[0].activated_at_ms, Some(11));
         assert_eq!(plan.items[1].activated_at_ms, None);
-        let encoded = serde_json::to_value(&plan).unwrap();
-        assert_eq!(encoded["items"][0]["activatedAtMs"], 11);
-        assert_eq!(encoded["items"][1]["status"], "pending");
-
-        projection.start_tool("read", "web_search", &json!({"query":"filing"}), None, 13);
-        projection.start_tool(
-            "plan-2",
-            "plan_update",
-            &plan_args(&[("filings", "done"), ("prices", "active")]),
-            None,
-            20,
-        );
-        let second = projection.take_patch().expect("second patch");
-        let plan = second.plan.expect("changed plan");
-        // An item keeps the time it first became active.
-        assert_eq!(plan.items[0].activated_at_ms, Some(11));
-        assert_eq!(plan.items[1].activated_at_ms, Some(20));
-        assert_eq!(projection.snapshot().items.len(), 1);
-        // Nothing changed, so no patch and no plan.
-        assert!(projection.take_patch().is_none());
-    }
-
-    #[test]
-    fn invalid_plan_calls_show_nothing() {
-        let mut projection = ChatProgressProjection::new(10);
-        for args in [
-            plan_args(&[("only", "active")]),
-            plan_args(&[("a", "active"), ("b", "active")]),
-            plan_args(&[("a", "pending"), ("a", "pending")]),
-            plan_args(&[("bad id", "pending"), ("b", "pending")]),
-            plan_args(&[("a", "started"), ("b", "pending")]),
-            json!({"items": [{"id":"a","label":"Line\nbreak","status":"pending"},{"id":"b","label":"B","status":"pending"}]}),
-            json!({"items": [{"id":"a","label":"x".repeat(121),"status":"pending"},{"id":"b","label":"B","status":"pending"}]}),
-            json!({"items": [{"id":"a","label":"A","status":"pending","note":"x"},{"id":"b","label":"B","status":"pending"}]}),
-        ] {
-            projection.start_tool("plan", "plan_update", &args, None, 11);
-        }
-        assert!(projection.take_patch().is_none());
-        assert!(projection.snapshot().plan.is_none());
-        assert!(projection.finish(20, false).is_none());
-    }
-
-    #[test]
-    fn finishing_closes_unfinished_plan_items() {
-        let statuses = [("a", "done"), ("b", "active"), ("c", "pending")];
-        let mut completed = ChatProgressProjection::new(10);
-        completed.start_tool("p", "plan_update", &plan_args(&statuses), None, 11);
-        let snapshot = completed
-            .finish(20, false)
-            .expect("plan keeps the progress");
-        assert_eq!(
-            plan_statuses(snapshot.plan.as_ref().unwrap()),
-            [
-                ChatPlanStatus::Done,
-                ChatPlanStatus::Done,
-                ChatPlanStatus::NotDone
-            ]
-        );
-        assert!(snapshot.validate(true).is_ok());
-        assert!(completed.take_patch().unwrap().plan.is_some());
-
-        let mut stopped = ChatProgressProjection::new(10);
-        stopped.start_tool("p", "plan_update", &plan_args(&statuses), None, 11);
-        let snapshot = stopped.finish(20, true).unwrap();
-        assert_eq!(
-            plan_statuses(snapshot.plan.as_ref().unwrap()),
-            [
-                ChatPlanStatus::Done,
-                ChatPlanStatus::NotDone,
-                ChatPlanStatus::NotDone
-            ]
-        );
-
-        let mut failed = ChatProgressProjection::new(10);
-        failed.start_tool("p", "plan_update", &plan_args(&statuses), None, 11);
-        failed.fail_plan();
-        let snapshot = failed.finish(20, false).unwrap();
-        assert_eq!(
-            plan_statuses(snapshot.plan.as_ref().unwrap())[1],
-            ChatPlanStatus::NotDone
-        );
+        assert_eq!(serde_json::to_value(progress).unwrap(), stored);
     }
 
     #[test]
@@ -2861,7 +2801,7 @@ mod plan_tests {
         projection.start_tool(
             "a",
             "asset_page_read",
-            &json!({"symbol": "990221", "market": "KRX"}),
+            &json!({"asset": "990221"}),
             None,
             11,
         );
@@ -2879,10 +2819,10 @@ mod plan_tests {
             None,
             13,
         );
-        projection.start_tool("d", "asset_page_read", &json!({"symbol": "BTC"}), None, 14);
+        projection.start_tool("d", "asset_page_read", &json!({"asset": "BTC"}), None, 14);
         projection.start_tool(
             "e",
-            "asset_page_read",
+            "krx_daily_quote",
             &json!({"symbol": "BTC", "market": "CME"}),
             None,
             15,
@@ -2910,7 +2850,7 @@ mod plan_tests {
         plain.start_tool(
             "a",
             "asset_page_read",
-            &json!({"symbol": "990221"}),
+            &json!({"asset": "990221"}),
             None,
             11,
         );
@@ -2918,5 +2858,69 @@ mod plan_tests {
             &plain.snapshot().items[0],
             ChatProgressItem::Tool { target: Some(target), .. } if target.ends_with("990221")
         ));
+    }
+}
+
+#[cfg(test)]
+mod step_failure_contract_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn fast_and_zero_time_rows_finish_and_each_scripted_failure_has_a_safe_reason() {
+        assert!(host_tool_failed(&json!({"details":{"call_error":true}})));
+        assert!(!host_tool_failed(&json!({"details":{"call_error":false}})));
+        assert_eq!(
+            step_failure_reason(
+                &json!({}),
+                Some(
+                    &json!({"code":"execution_failed","message":"tool execution failed: The MCP request timed out."})
+                )
+            ),
+            ChatStepFailureReason::Timeout
+        );
+        let mut progress = ChatProgressProjection::new(10);
+        for (index, code) in [
+            "timeout",
+            "offline",
+            "execution_failed",
+            "empty_result",
+            "malformed_request",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let id = format!("call-{index}");
+            progress.start_tool(&id, "asset_lookup", &json!({"query":"NVDA"}), None, 10);
+            let result = json!({"content":[{"type":"text","text":json!({"code":code,"message":"private remote credential text"}).to_string()}]});
+            progress.finish_tool_result(&id, true, 10, &result, None);
+        }
+        let encoded = serde_json::to_value(progress.snapshot()).unwrap();
+        let items = encoded["items"].as_array().unwrap();
+        assert_eq!(
+            items
+                .iter()
+                .map(|row| row["failureReason"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            [
+                "timeout",
+                "unreachable",
+                "provider_error",
+                "empty_result",
+                "invalid_input"
+            ]
+        );
+        assert!(items.iter().all(|row| row["finishedAtMs"] == 10));
+        assert!(!encoded.to_string().contains("credential"));
+        progress.start_system(
+            "s",
+            ChatProgressOperation::Compact,
+            "Summarized earlier messages",
+            None,
+            10,
+        );
+        progress.finish_system("s", true, 15);
+        let encoded = serde_json::to_value(progress.snapshot()).unwrap();
+        assert_eq!(encoded["items"][5]["finishedAtMs"], 15);
+        assert_eq!(encoded["items"][5]["failureReason"], "provider_error");
     }
 }

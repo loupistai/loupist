@@ -13,7 +13,7 @@ const t = i18n.getFixedT(null, "chat");
 /** Keys chosen at runtime from host-provided names, so not typed literals. */
 const tDynamic = t as unknown as (key: string, options?: Record<string, unknown>) => string;
 
-type Operation = "percentChange" | "cagr" | "growthSeries" | "returnsSummary" | "movingAverage" | "ratio" | "margin" | "payoutRatio" | "netDebtToEbitda" | "freeCashFlow" | "dcfGrid" | "reverseDcf";
+type Operation = "percentChange" | "cagr" | "growthSeries" | "returnsSummary" | "movingAverage" | "ratio" | "margin" | "payoutRatio" | "netDebtToEbitda" | "freeCashFlow" | "dcfGrid" | "reverseDcf" | "convert";
 
 /**
  * Plain-words keys by the host's operation id (`calculations.rs` `Operation`). Answers
@@ -23,6 +23,7 @@ const OPERATIONS: Partial<Record<CalcOperation, Operation>> = {
   percent_change: "percentChange", cagr: "cagr", growth_series: "growthSeries", returns_summary: "returnsSummary",
   moving_average: "movingAverage", ratio: "ratio", margin: "margin", payout_ratio: "payoutRatio",
   net_debt_to_ebitda: "netDebtToEbitda", free_cash_flow: "freeCashFlow", dcf_grid: "dcfGrid", reverse_dcf: "reverseDcf",
+  convert: "convert",
 };
 
 /** A host operation ("reverse_dcf") in plain, localized words; undefined for any other operation. */
@@ -129,7 +130,13 @@ export function inputValue(display: string, unit: CalcInputUnit | undefined) {
   }
 }
 
-export type CalcInputView = { name: string; label: string; value: string; evidenceId?: string };
+export type CalcInputView = {
+  name: string; label: string; value: string; evidenceId?: string;
+  /** A conversion's amount whose currency Rust took from the request because its cited source states none. */
+  declaredCurrency?: true;
+  /** A conversion's rate: its source is dated by publication only, never by the day it was read. */
+  publishedDateOnly?: true;
+};
 export type CalcView = { title: string; formulas: string[]; inputs: CalcInputView[]; value?: string };
 
 /**
@@ -146,10 +153,16 @@ export function calcView(check: NumberCheck, checks: readonly NumberCheck[]): Ca
   const periods: string[] = [];
   const addPeriod = (period: string | undefined) => { if (period && !periods.includes(period)) periods.push(period); };
   const sourcePeriods: string[] = [];
-  const inputs = calc.inputs.map((input): CalcInputView => {
+  const conversion = calc.operation === "convert";
+  // A conversion input the record holds no value for has no row; a stored "0" is a value.
+  const shown = conversion ? calc.inputs.filter((input) => typeof input.display === "string" && input.display.trim() !== "") : calc.inputs;
+  const inputs = shown.map((input): CalcInputView => {
     const label = plainLabel(labels[input.name]!);
     addPeriod(label.period);
-    return { name: input.name, label: label.text, value: inputValue(input.display, input.unit), evidenceId: input.evidence_id };
+    // Only the host's explicit marker on a conversion's amount; never inferred from a label, source or rate.
+    const declared = conversion && input.name === "amount" && input.currency_basis === "declared";
+    return { name: input.name, label: label.text, value: inputValue(input.display, input.unit), evidenceId: input.evidence_id,
+      ...(declared ? { declaredCurrency: true } : {}), ...(conversion && input.name === "rate" ? { publishedDateOnly: true } : {}) };
   });
   if (!periods.length) {
     // Periods of the answer's own data numbers from the same sources.
@@ -172,7 +185,8 @@ export function calcView(check: NumberCheck, checks: readonly NumberCheck[]): Ca
   const replacements = Object.values(labels).map((label) => [label, plainLabel(label).text] as const)
     .filter(([label, plain]) => plain.toLowerCase() !== label.toLowerCase())
     .sort((a, b) => b[0].length - a[0].length);
-  const formulas = calc.formulas.map((formula) => {
+  // A conversion's formula is its retained receipt and is printed as the host wrote it.
+  const formulas = conversion ? calc.formulas : calc.formulas.map((formula) => {
     if (!replacements.length) return formula;
     const at = formula.indexOf(" = ");
     let left = at < 0 ? formula : formula.slice(0, at);
@@ -205,10 +219,35 @@ const FIELD_LABELS: Record<string, string> = {
   value: "amount", amount: "amount", thstrm_amount: "amount",
   unit: "unit", currency: "unit", fs_div: "basis", basis: "basis",
 };
+/**
+ * Market-data price, valuation and results fields (a bundled quote tool, `asset_page_read`):
+ * the label key under `numberChip.quoteField`, and whether the value is a percent.
+ */
+const QUOTE_FIELDS: Record<string, { label: string; percent?: true; price?: true }> = {
+  last: { label: "last", price: true }, last_price: { label: "last", price: true }, close: { label: "close", price: true },
+  previous_close: { label: "previousClose", price: true }, change: { label: "change", price: true }, change_pct: { label: "changePct", percent: true },
+  // Older reads stored a signed distance under this key, so the bare key keeps its older label.
+  high_52w: { label: "high52", price: true }, low_52w: { label: "low52", price: true }, below_52w_high_pct: { label: "below52High", percent: true },
+  // Keys only the host's by-direction magnitudes use.
+  above_52w_high_pct: { label: "pctAbove52High", percent: true },
+  below_ma50_pct: { label: "pctBelowMa50", percent: true }, above_ma50_pct: { label: "pctAboveMa50", percent: true },
+  below_ma200_pct: { label: "pctBelowMa200", percent: true }, above_ma200_pct: { label: "pctAboveMa200", percent: true },
+  distance_from_52w_high_pct: { label: "distanceFrom52High", percent: true }, price_to_book_multiple: { label: "priceToBook" }, ev_ebitda_multiple: { label: "evEbitda" },
+  ma50: { label: "ma50", price: true }, ma200: { label: "ma200", price: true },
+  from_ma50_pct: { label: "fromMa50", percent: true }, distance_from_ma50_pct: { label: "fromMa50", percent: true },
+  from_ma200_pct: { label: "fromMa200", percent: true }, distance_from_ma200_pct: { label: "fromMa200", percent: true },
+  market_cap: { label: "marketCap", price: true }, pe: { label: "pe" }, pe_multiple: { label: "pe" }, forward_pe: { label: "forwardPe" }, forward_pe_multiple: { label: "forwardPe" },
+  operating_margin_pct: { label: "operatingMargin", percent: true }, gross_margin_pct: { label: "grossMargin", percent: true },
+  revenue_yoy_pct: { label: "revenueYoy", percent: true }, revenue_growth_yoy_pct: { label: "revenueYoy", percent: true },
+  revenue_qoq_pct: { label: "revenueQoq", percent: true }, revenue_growth_qoq_pct: { label: "revenueQoq", percent: true },
+};
 const ENTITY_FIELDS = ["corp_name", "entity", "company", "name"];
 const BASIS: Record<string, string> = { CFS: "consolidated", OFS: "separate" };
 
 export type DataRowView = { key: string; label: string; value: string; matched: boolean };
+
+/** "10.27%", the sign as stored; a zero is "0%", never "-0%". */
+const percentText = (value: number) => `${formatNumber(value === 0 ? 0 : value, { maximumFractionDigits: 2 })}%`;
 
 /**
  * A data number's row in plain words: "Item · Revenue", "Amount · ₩452,312,000,000".
@@ -219,10 +258,14 @@ export function dataRows(check: NumberCheck, evidence: ChatEvidenceRef, checks: 
   return (check.fields ?? []).flatMap((field) => {
     if (ENTITY_FIELDS.includes(field.key) && title.includes(field.value)) return [];
     const kind = FIELD_LABELS[field.key];
-    const label = kind ? tDynamic(`numberChip.field.${kind}`) : humanize(field.key);
+    const quote = kind ? undefined : QUOTE_FIELDS[field.key];
+    const label = kind ? tDynamic(`numberChip.field.${kind}`) : quote ? tDynamic(`numberChip.quoteField.${quote.label}`) : humanize(field.key);
     const number = parse(field.value);
     let value = field.value;
-    if (kind === "item") value = termOf(field.value) ? term(termOf(field.value)!) : humanize(field.value);
+    if (quote && number !== undefined) {
+      value = quote.percent ? percentText(number)
+        : quote.price && currency ? formatAmount(number, currency, { exact: true }) : formatNumber(number, { maximumFractionDigits: 6 });
+    } else if (kind === "item") value = termOf(field.value) ? term(termOf(field.value)!) : humanize(field.value);
     else if (kind === "basis" && BASIS[field.value]) value = tDynamic(`numberChip.basis.${BASIS[field.value]}`);
     else if (kind !== "period" && kind !== "unit" && number !== undefined) {
       value = (kind === "amount" || field.matched) && currency ? formatAmount(number, currency, { exact: true }) : formatNumber(number, { maximumFractionDigits: 6 });

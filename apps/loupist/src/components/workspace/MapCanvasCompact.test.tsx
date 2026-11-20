@@ -7,11 +7,11 @@ vi.mock('react-force-graph-2d', async () => {
  const { forwardRef, useImperativeHandle } = await import('react');
  return { default: forwardRef((props: ForceGraphProps<PositionedNode, MapCanvasLink>, ref) => {
    renderer.props = props;
-   useImperativeHandle(ref, () => ({ centerAt: () => ({ x: 0, y: 0 }), zoom: () => 1, zoomToFit: vi.fn(), graph2ScreenCoords: (x: number, y: number) => ({ x: x + 100, y: y + 100 }) }));
+   useImperativeHandle(ref, () => ({ centerAt: () => ({ x: 0, y: 0 }), zoom: () => 1, graph2ScreenCoords: (x: number, y: number) => ({ x: x + 100, y: y + 100 }) }));
    return <canvas />;
  }) };
 });
-const nodes: PositionedNode[] = Array.from({ length: 12 }, (_, i) => ({ id: `n${i}`, label: `Name ${i}`, degree: 12 - i, kind: 'entity', entityKind: 'Organization', watched: false, held: false, x: i * 40, y: 0, fx: i * 40, fy: 0 }));
+const nodes: PositionedNode[] = Array.from({ length: 12 }, (_, i) => ({ id: `n${i}`, label: `Name ${i}`, degree: 12 - i, kind: 'entity', entityKind: 'Organization', watched: false, x: i * 40, y: 0, fx: i * 40, fy: 0 }));
 const props = { nodes, edges: [{ id: 'edge', kind: 'claim' as const, source: 'n0', target: 'n1' }], scopeKey: 'compact-test', controls: { current: null }, stats: '12 names', onSelect: vi.fn(), onClear: vi.fn() };
 beforeEach(() => { vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900); vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(700); });
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });

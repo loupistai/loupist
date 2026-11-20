@@ -37,7 +37,8 @@ export function AsOfNote({ report, loupistName }: { report: AsOfReport; loupistN
   if (leftOut.length) bullets.push(t("asOf.leftOut", { loupist: loupistName, items: leftOut.join(", ") }));
   if (!bullets.length) return null;
   const title = t("asOf.noteTitle", { date });
-  return <section className="as-of-note" role="region" aria-label={title} aria-live="polite">
+  // Not a live region: the turn's footer is its one, and says the settled answer once.
+  return <section className="as-of-note" role="region" aria-label={title}>
     <p>{title}</p>
     <ul>{bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}</ul>
   </section>;

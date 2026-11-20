@@ -9,10 +9,9 @@
 //! OpenDART has seven reads behind a company resolver, Korea Investment a
 //! token cache, an account profile and a reviewed operation catalog, KRX a
 //! service approval per market. A trait would only rename their entry points.
-//! Public blockchains (`onchain.wallets`) has no agent tool and reads on the
-//! host's own schedule, so it has no row.
 use super::{
-    DEFILLAMA_SOURCE_ID, KIS_SOURCE_ID, KRX_SOURCE_ID, OPENDART_SOURCE_ID, WORLD_BANK_SOURCE_ID,
+    openfigi::SOURCE_ID as ASSET_LOOKUP_SOURCE_ID, DEFILLAMA_SOURCE_ID, KIS_SOURCE_ID,
+    KRX_SOURCE_ID, OPENDART_SOURCE_ID, WORLD_BANK_SOURCE_ID,
 };
 use crate::broker::ToolMethod;
 
@@ -20,6 +19,8 @@ use crate::broker::ToolMethod;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum VendorCredential {
     Keyless,
+    /// An optional personal key used directly by authorized listing lookups.
+    OptionalOpenFigiKey,
     /// One `api_key`, verified by a filing list request for today.
     OpenDartKey,
     /// One `api_key`, verified for each KRX daily trading service.
@@ -39,7 +40,13 @@ pub(crate) struct NativeVendor {
     pub(crate) tools: &'static [ToolMethod],
 }
 
-pub(crate) static NATIVE_VENDORS: [NativeVendor; 5] = [
+pub(crate) static NATIVE_VENDORS: [NativeVendor; 6] = [
+    NativeVendor {
+        source_id: ASSET_LOOKUP_SOURCE_ID,
+        hosts: &["api.openfigi.com"],
+        credential: VendorCredential::OptionalOpenFigiKey,
+        tools: &[],
+    },
     NativeVendor {
         source_id: OPENDART_SOURCE_ID,
         hosts: &["opendart.fss.or.kr"],

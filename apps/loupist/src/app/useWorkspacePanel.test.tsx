@@ -440,33 +440,13 @@ it("opens a web citation in the browser, keeps the saved passage in memory, and 
 });
 
 
-describe("canonical panel kinds", () => {
-  it("keeps material references when moving between Lens and World, and explicit readers return to materials", async () => {
-    const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    const { result } = renderHook(() => useWorkspacePanel(bridge));
-    await waitFor(() => expect(result.current.hydrated).toBe(true));
-    const key = chatSessionKey("loupist", "thread");
-    expect(result.current.open).toBe(false);
-    expect(result.current.kind).toBe("materials");
-    act(() => result.current.openArtifact("loupist", "thread", artifact));
-    const session = result.current.sessions[key];
-    act(() => result.current.selectKind("lens", key));
-    expect(result.current.kind).toBe("lens");
-    expect(result.current.sessions[key]).toBe(session);
-    act(() => result.current.selectKind("world", key));
-    expect(result.current.sessions[key]).toBe(session);
-    act(() => result.current.openBrowser("loupist", "thread", "https://example.com/report"));
-    expect(result.current.kind).toBe("materials");
-    expect(result.current.sessions[key].tabs).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "work", artifact }), expect.objectContaining({ kind: "browser", url: "https://example.com/report" })]));
-  });
-
+describe("header splits", () => {
   it("keeps the header split for all panel content and toggles the active split closed", async () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const { result } = renderHook(() => useWorkspacePanel(bridge));
     await waitFor(() => expect(result.current.hydrated).toBe(true));
     const key = chatSessionKey("loupist", "thread");
     act(() => result.current.selectSplit("bottom", key));
-    act(() => result.current.selectKind("world", key));
     act(() => result.current.applyDockKind("reading"));
     expect(result.current.placement).toBe("bottom");
     expect(result.current.open).toBe(true);

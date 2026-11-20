@@ -45,6 +45,14 @@ it("answers in the user's own words with Enter or Send and never sends an empty 
   expect(answer.mock.calls[0][0]).not.toHaveProperty("choice");
 });
 
+it("hands focus to the settled line when the card that held it goes away", async () => {
+  const user = userEvent.setup();
+  const { view, rerender } = setup();
+  await user.type(screen.getByRole("textbox", { name: "Or answer in your own words" }), "Since the listing{Enter}");
+  rerender(view(waiting({ state: "answered", answer: { text: "Since the listing" } })));
+  expect(screen.getByText("You answered: Since the listing")).toHaveFocus();
+});
+
 it("settles into one line once the host answers or the wait ends", () => {
   const { view, rerender } = setup();
   rerender(view(waiting({ state: "answered", answer: { choice: 1 } })));

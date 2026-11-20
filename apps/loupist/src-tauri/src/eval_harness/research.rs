@@ -111,7 +111,7 @@ async fn open_arm(run: &Run, name: &str) -> Result<Arm> {
         state.maintenance.clone(),
         Some(inference.clone()),
     );
-    if !state.graph.runtime_available() {
+    if !state.graph.runtime_available() || !state.graph.wait_for_semantic_model() {
         return Err("Graph runtime unavailable".into());
     }
     let profile = &run.fixture.loupist;

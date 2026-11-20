@@ -1,9 +1,59 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
+import type { MarketplaceConnectorStatus } from "../../marketplace/types";
 import { MarketplaceSetupDialog } from "./MarketplaceSetupDialog";
 
 describe("Marketplace setup feedback", () => {
+  it("saves an optional OpenFIGI key without a verification call", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const [loupist] = await bridge.loupistList();
+    const snapshot = await bridge.marketplaceSnapshot();
+    const entry = snapshot.catalog.entries.find((item) => item.id === "openfigi.lookup")!;
+    const connector = snapshot.connectors.find((item) => item.entry_id === entry.id)!;
+    const verify = vi.spyOn(bridge, "marketplaceCredentialVerify");
+
+    render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={connector} onClose={vi.fn()} onChanged={vi.fn()} />);
+    // What works without the optional key, said once.
+    expect(screen.getByText("Optional. Without a key, listing search works at OpenFIGI's lower request limit; a key raises it.")).toBeVisible();
+    expect(screen.queryByText("Not stored")).toBeNull();
+    const save = screen.getByRole("button", { name: "Save API key" });
+    expect(save).toBeDisabled();
+    await user.type(screen.getByLabelText("OpenFIGI API key (optional)"), "synthetic-openfigi-key");
+    await user.click(save);
+    expect(await screen.findByText("API key saved")).toBeVisible();
+    expect(verify).not.toHaveBeenCalled();
+    expect(await bridge.marketplaceCredentialUnlock({ entry_id: entry.id })).toMatchObject([
+      { stored: true, active: true, pending: false, verification: "never", verified_at: null },
+    ]);
+
+    await bridge.loupistCapabilityEnable({ loupist_id: loupist!.id, entry_id: entry.id });
+    await bridge.marketplaceCredentialDelete({ entry_id: entry.id });
+    expect(await bridge.loupistCapabilityList(loupist!.id)).toContainEqual(
+      expect.objectContaining({ entry_id: entry.id, enabled: true, available: true }),
+    );
+  });
+
+  it("opens CFTC signup and can verify a token after starting anonymously", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const snapshot = await bridge.marketplaceSnapshot();
+    const entry = snapshot.catalog.entries.find(item => item.id === "cftc.commitments")!;
+    const connector = snapshot.connectors.find(item => item.entry_id === entry.id)!;
+    const open = vi.spyOn(bridge, "openExternalUrl").mockResolvedValue(undefined);
+    const verify = vi.spyOn(bridge, "marketplaceCredentialVerify");
+    render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={connector} onClose={vi.fn()} onChanged={vi.fn()} />);
+    expect(connector.readiness).toBe("ready");
+    const save = screen.getByRole("button", { name: "Save & verify" });
+    expect(save).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: /Get a key/ }));
+    expect(open).toHaveBeenCalledWith("https://publicreporting.cftc.gov/signup");
+    await user.type(screen.getByLabelText("CFTC app token (optional)"), "fixture-token-123");
+    await user.click(save);
+    await waitFor(() => expect(verify).toHaveBeenCalledWith({ entry_id: entry.id }));
+  });
+
   it("reports the saved KRX key's verified and unapproved markets separately", async () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const snapshot = await bridge.marketplaceSnapshot();
@@ -70,6 +120,81 @@ describe("Marketplace setup feedback", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Credentials deleted");
   });
 });
+
+describe("checking a key", () => {
+  async function savedFred(patch: Partial<MarketplaceConnectorStatus> = {}) {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    await bridge.marketplaceCredentialSave({ entry_id: "fred.macro", secrets: { api_key: "abcdefabcdefabcdefabcdefabcdef12" } });
+    const snapshot = await bridge.marketplaceSnapshot();
+    const entry = snapshot.catalog.entries.find((item) => item.id === "fred.macro")!;
+    const connector = { ...snapshot.connectors.find((item) => item.entry_id === entry.id)!, ...patch };
+    return { bridge, entry, connector };
+  }
+
+  it("names the button for what it does: Verify again for a saved key, Save & verify once one is typed", async () => {
+    const user = userEvent.setup();
+    const { bridge, entry, connector } = await savedFred();
+    const verify = vi.spyOn(bridge, "marketplaceCredentialVerify");
+    const save = vi.spyOn(bridge, "marketplaceCredentialSave");
+    render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={connector} onClose={vi.fn()} onChanged={vi.fn().mockResolvedValue(undefined)} />);
+    const button = screen.getByRole("button", { name: "Verify again" });
+    await user.type(screen.getByLabelText("FRED API key"), "x");
+    expect(button).toHaveAccessibleName("Save & verify");
+    await user.clear(screen.getByLabelText("FRED API key"));
+    await user.click(screen.getByRole("button", { name: "Verify again" }));
+    await waitFor(() => expect(verify).toHaveBeenCalledWith({ entry_id: "fred.macro" }));
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("says a key could not be checked offline, and to verify again when back online", async () => {
+    const user = userEvent.setup();
+    const { bridge, entry, connector } = await savedFred();
+    vi.spyOn(bridge, "marketplaceCredentialVerify").mockRejectedValueOnce({ code: "provider_unavailable", message: "The provider could not verify these credentials right now." });
+    Object.defineProperty(window.navigator, "onLine", { configurable: true, get: () => false });
+    try {
+      render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={connector} onClose={vi.fn()} onChanged={vi.fn().mockResolvedValue(undefined)} />);
+      await user.click(screen.getByRole("button", { name: "Verify again" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("You're offline. The key is saved on this Mac but not verified. Select Verify again when you're back online.");
+    } finally {
+      Reflect.deleteProperty(window.navigator, "onLine");
+    }
+  });
+
+  it("names KRX approval when KRX rejects a key", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const snapshot = await bridge.marketplaceSnapshot();
+    const entry = snapshot.catalog.entries.find((item) => item.id === "krx.market-data")!;
+    vi.spyOn(bridge, "marketplaceCredentialVerify").mockRejectedValueOnce({ code: "credential_rejected", message: "The provider rejected these credentials." });
+    const connector = snapshot.connectors.find((item) => item.entry_id === entry.id)!;
+    const props = { bridge, entry, onClose: vi.fn(), onChanged: vi.fn().mockResolvedValue(undefined) };
+    const view = render(<MarketplaceSetupDialog {...props} connector={connector} />);
+    await user.type(screen.getByLabelText("KRX API key"), "krx-test-key");
+    await user.click(screen.getByRole("button", { name: "Save & verify" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("KRX Open API rejected this key. Check that you copied the whole key, then try again. A new KRX key works only after KRX approves it for KOSPI or KOSDAQ daily trading.");
+    // The rejected key stays saved; the open dialog keeps its title and shows the result beside the key, above About.
+    view.rerender(<MarketplaceSetupDialog {...props} connector={{ ...connector, credentials: connector.credentials.map((credential) => ({ ...credential, stored: true, pending: true })) }} />);
+    expect(screen.getByRole("dialog", { name: "Set up KRX Open API" })).toBeVisible();
+    expect(alert.compareDocumentPosition(screen.getByText("About this connection")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("offers Loupist access once the connection is set up, not before", async () => {
+    const { bridge, entry, connector } = await openDartEntry();
+    const props = { bridge, entry, onClose: vi.fn(), onChanged: vi.fn(), onManageLoupists: vi.fn() };
+    const view = render(<MarketplaceSetupDialog {...props} connector={connector} />);
+    expect(screen.queryByRole("button", { name: "Loupist access" })).toBeNull();
+    view.rerender(<MarketplaceSetupDialog {...props} connector={{ ...connector, readiness: "ready" }} />);
+    expect(screen.getByRole("button", { name: "Loupist access" })).toBeVisible();
+  });
+});
+
+async function openDartEntry() {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const snapshot = await bridge.marketplaceSnapshot();
+  const entry = snapshot.catalog.entries.find((item) => item.id === "opendart.disclosures")!;
+  return { bridge, entry, connector: snapshot.connectors.find((item) => item.entry_id === entry.id)! };
+}
 
 it("explains an unavailable connection and blocks setup while retaining its details", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });

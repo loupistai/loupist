@@ -183,13 +183,43 @@ export async function preferEnglish(browser) {
 }
 
 export async function selectedLoupistTitle(browser) {
-  return browser.execute(() =>
-    document.querySelector("[data-testid=loupist-header-identity][aria-pressed='true'] strong")?.textContent?.trim() ?? "",
-  );
+  return browser.execute(() => {
+    const identity = document.querySelector("[data-testid=loupist-header-identity]");
+    // The icon rail shows only the face; the name is then the button's label.
+    return (identity?.querySelector("strong")?.textContent ?? identity?.getAttribute("aria-label") ?? "").trim();
+  });
+}
+
+/** Opens the Loupist switcher at the top of the sidebar: every Loupist, its settings and New Loupist. */
+export async function openLoupistSwitcher(browser, timeout = 5_000) {
+  if (await browser.$(".loupist-switcher-menu").isDisplayed().catch(() => false)) return;
+  await clickControl(browser, "[data-testid=loupist-header-identity]");
+  await browser.$(".loupist-switcher-menu").waitForDisplayed({ timeout, timeoutMsg: "The Loupist switcher did not open" });
+}
+
+/** Every Loupist's id and name, read from the switcher, which is closed again. */
+export async function switcherLoupists(browser) {
+  await openLoupistSwitcher(browser);
+  const loupists = await browser.execute(() => [...document.querySelectorAll(".loupist-switcher-menu [data-loupist-option]")].map((item) => ({
+    id: item.getAttribute("data-loupist-option"),
+    name: item.querySelector(".loupist-switcher-name")?.textContent?.trim() ?? "",
+  })));
+  await browser.keys("Escape");
+  // The menu is still displayed while it closes; a caller that reopens the switcher at once would take it for open.
+  await browser.$(".loupist-switcher-menu").waitForDisplayed({ reverse: true, timeout: 5_000, timeoutMsg: "The Loupist switcher did not close" });
+  return loupists;
+}
+
+/** Opens Loupist settings or New Loupist from the switcher. */
+export async function loupistSwitcherAction(browser, action) {
+  await openLoupistSwitcher(browser);
+  const item = await browser.$(action === "settings" ? "[data-header-loupist-settings]" : "[data-testid=loupist-header-new]");
+  await item.waitForDisplayed({ timeout: 5_000 });
+  await item.click();
 }
 
 /**
- * Open Bot, Following, Map, Lens, Schedule or Settings. Settings replaces the header tabs, so
+ * Open Bot, Following, Map, Lens, Schedule or Settings. Settings replaces the sidebar, so
  * it is left through its sidebar footer first.
  */
 export async function openMainTab(browser, tab, timeout = 15_000) {
@@ -212,8 +242,8 @@ export async function openMainTab(browser, tab, timeout = 15_000) {
     await browser.$("[data-testid=loupist-header-selector]").waitForDisplayed({ timeout });
   }
   if (tab === "map" || tab === "lens") {
-    // Picking the current workspace pane toggles it closed. Opening a
-    // destination must be idempotent for successive reader checks.
+    // Map and Lens are pages; opening one that is already shown is a no-op,
+    // so successive reader checks can call this freely.
     if (await visible(tab === "map" ? "[data-testid=map-view]" : "[data-testid=memory-page]")) return;
     await clickControl(browser, `[data-sidebar-place="${tab}"] button`);
     await browser.$(tab === "map" ? "[data-testid=map-view]" : "[data-testid=memory-page]").waitForDisplayed({ timeout });
@@ -285,35 +315,53 @@ export function coldStartMark(timing) {
 }
 
 export async function measureLoupistSwitch(browser, title) {
-  const started = await browser.execute((name) => {
-    const buttons = () => [...document.querySelectorAll("button[data-testid=loupist-header-identity]")];
-    const button = buttons().find((item) => item.querySelector("strong")?.textContent?.trim() === name);
-    if (!button) return { error: `Loupist button was not in the header: ${name}` };
-    if (button.getAttribute("aria-pressed") === "true") {
-      return { error: `Loupist was already selected: ${name}` };
-    }
+  await openLoupistSwitcher(browser);
+  const startMeasurement = (name) => {
+    const option = [...document.querySelectorAll(".loupist-switcher-menu [data-loupist-option]")]
+      .find((item) => item.querySelector(".loupist-switcher-name")?.textContent?.trim() === name);
+    if (!option) return null;
+    if (option.getAttribute("aria-checked") === "true") return { error: `Loupist was already selected: ${name}` };
+    const target = option.getAttribute("data-loupist-option");
+    const current = () => document.querySelector("[data-testid=loupist-header-identity]")?.getAttribute("data-loupist-id");
     const start = performance.now();
     window.__loupistSwitchMeasure = { pending: true, title: name };
     const finish = (result) => {
       window.__loupistSwitchMeasure = result;
     };
     const observer = new MutationObserver(() => {
-      const current = buttons().find((item) => item.querySelector("strong")?.textContent?.trim() === name);
-      if (current?.getAttribute("aria-pressed") === "true") {
+      if (current() === target) {
         observer.disconnect();
         finish({ ms: performance.now() - start, title: name });
       }
     });
-    observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ["aria-pressed"] });
+    observer.observe(document.body, { attributes: true, childList: true, subtree: true, attributeFilter: ["data-loupist-id"] });
     window.setTimeout(() => {
       if (window.__loupistSwitchMeasure?.pending) {
         observer.disconnect();
         finish({ error: `Loupist switch timed out: ${name}` });
       }
     }, 5_000);
-    button.click();
+    option.click();
     return { pending: true };
-  }, title);
+  };
+  let started;
+  try {
+    await browser.waitUntil(
+      async () => {
+        // A list refresh after a Loupist is created can close the open menu.
+        await openLoupistSwitcher(browser);
+        started = await browser.execute(startMeasurement, title);
+        return Boolean(started);
+      },
+      { timeout: 15_000, interval: 150 },
+    );
+  } catch {
+    const listed = await browser.execute(() => {
+      const menu = document.querySelector(".loupist-switcher-menu");
+      return menu ? [...menu.querySelectorAll(".loupist-switcher-name")].map((item) => item.textContent?.trim() ?? "").join(", ") : "menu closed";
+    });
+    throw new Error(`Loupist was not in the switcher: ${title} (listed: ${listed})`);
+  }
   if (started?.error) return started;
   await browser.waitUntil(
     async () => {
@@ -387,7 +435,7 @@ async function measurePreviewMapProbe(browser, devUrl, scenario, mode, timeout, 
         const status = document.documentElement.dataset;
         if (status.previewReady === "error") return { error: status.previewError || "Preview initialization failed" };
         if (status.previewReady !== "true") return null;
-        const host = document.querySelector('#workspace-panel[data-panel-kind="world"] [data-testid=map-view] [data-testid=map-canvas]');
+        const host = document.querySelector('#main-panel-map [data-testid=map-view] [data-testid=map-canvas]');
         const element = host?.querySelector("canvas");
         const box = element?.getBoundingClientRect();
         return {

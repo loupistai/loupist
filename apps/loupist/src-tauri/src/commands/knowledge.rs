@@ -22,7 +22,8 @@ pub(crate) mod source_selection;
 pub(super) use chat_reads::*;
 mod selected_references;
 pub(super) use selected_references::{
-    attach_selected_references, selected_reference_hints, validate_selected_references,
+    attach_selected_references, resolve_handoff_pins, selected_reference_hints,
+    validate_selected_references,
 };
 mod learning;
 pub(super) use learning::*;
@@ -66,6 +67,10 @@ pub struct KnowledgeObjectRefDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub title_key: Option<&'static str>,
+    /// Material the user pasted into a Chat (`SourceClass::UserProvided`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub user_provided: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -163,6 +168,10 @@ pub struct SourceDetailDto {
     pub selected_span_id: Option<String>,
     pub publication_time: Option<crate::knowledge::TimePoint>,
     pub acquired_at: Option<crate::knowledge::TimePoint>,
+    /// Where a user-provided Source was pasted and what the user stated about it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub provided: Option<crate::knowledge::ProvidedOrigin>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -339,7 +348,10 @@ pub(crate) fn map(
     request: crate::knowledge::KnowledgeMapQuery,
 ) -> Result<crate::knowledge::KnowledgeMap, CommandError> {
     admit(state, &request.loupist_id)?;
-    let context = state.store.map_context().map_err(super::map_store)?;
+    let context = state
+        .store
+        .map_context(&request.loupist_id)
+        .map_err(super::map_store)?;
     with_loupist_knowledge(state, &request.loupist_id, |tx, blobs| {
         crate::knowledge::KnowledgeWrite::bind(tx, blobs).map(&request, &context)
     })
@@ -399,14 +411,6 @@ pub fn knowledge_connection_dismiss(
         &request,
         crate::knowledge::ConnectionStatus::Dismissed,
     )
-}
-
-#[tauri::command]
-pub fn knowledge_connection_open(
-    request: KnowledgeConnectionRequest,
-    state: State<'_, AppState>,
-) -> Result<crate::knowledge::ConnectionView, CommandError> {
-    connection_set_status(&state, &request, crate::knowledge::ConnectionStatus::Opened)
 }
 
 #[tauri::command]
@@ -1202,6 +1206,7 @@ pub(crate) fn source_read(
         let mut material = String::new();
         let mut verification = "unresolved".to_string();
         let mut derivation = None;
+        let mut provided = None;
         for capture in &source.captures {
             let selected_capture = request.span_id.as_ref().is_none_or(|span_id| {
                 capture.representations.iter().any(|representation| {
@@ -1222,6 +1227,7 @@ pub(crate) fn source_read(
                         }
                     });
                 coverage = capture.coverage.as_str().to_string();
+                provided = capture.provided.clone();
                 verification = if capture.coverage == Coverage::MetadataOnly {
                     "declared_digest".to_string()
                 } else if capture.material_digest.is_some() {
@@ -1314,6 +1320,7 @@ pub(crate) fn source_read(
             spans,
             publication_time,
             acquired_at,
+            provided,
         })
     })
 }
@@ -1376,7 +1383,7 @@ pub(crate) fn lens_search(
             }
             let summary = write
                 .read_page(&request.loupist_id, record_id)
-                .map(|page| page.body.summary().chars().take(240).collect())
+                .map(|page| crate::util::shorten(page.body.summary(), 240))
                 .unwrap_or_default();
             found.push(LensSearchHitDto {
                 record_id: record_id.to_string(),
@@ -1392,13 +1399,12 @@ pub(crate) fn lens_search(
                     .unwrap_or("Lens")
                     .to_string(),
                 summary,
-                snippet: hit
-                    .get("snippet")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("")
-                    .chars()
-                    .take(240)
-                    .collect(),
+                snippet: crate::util::shorten(
+                    hit.get("snippet")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or(""),
+                    240,
+                ),
             });
         }
         Ok(found)
@@ -1432,13 +1438,7 @@ pub(crate) fn research_search(
                 ResearchRecordDto {
                     id: hit.journal_id.clone().unwrap_or(hit.research_id),
                     chat_id: hit.chat_id,
-                    title: conclusion
-                        .lines()
-                        .next()
-                        .unwrap_or("")
-                        .chars()
-                        .take(160)
-                        .collect(),
+                    title: crate::util::shorten(conclusion.lines().next().unwrap_or(""), 160),
                     summary: hit.journal_id.is_none().then_some(conclusion.clone()),
                     recorded_at: recorded_at_rfc3339(hit.recorded_at_ms),
                     journal: hit.journal_id.map(|id| ResearchJournalDto {
@@ -1546,11 +1546,12 @@ fn summarize(
                             .map(|presentation| presentation.text)
                             .unwrap_or(text)
                         };
-                        readable.chars().take(240).collect()
+                        crate::util::shorten(&readable, 240)
                     })
             })
         });
         vec![KnowledgeObjectRefDto {
+            user_provided: source.source_class == crate::knowledge::SourceClass::UserProvided,
             origin: source.origin.clone(),
             title_key: crate::knowledge::title_key(&source.provider_identity),
             id: source.source_id,

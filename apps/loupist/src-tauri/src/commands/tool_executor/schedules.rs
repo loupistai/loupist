@@ -12,6 +12,9 @@ use crate::{
 
 #[derive(Clone)]
 pub(crate) struct ScheduleContext {
+    /// Research continues the admitted Bot turn. Schedules keep the user's
+    /// requested defaults, including an unresolved Auto choice.
+    pub research_model: Option<crate::providers::catalog::ExecutionModelLock>,
     pub model_profile_id: String,
     pub thinking_level: String,
     pub run_options: BTreeMap<String, String>,
@@ -187,6 +190,50 @@ fn safe_run(run: crate::scheduled_tasks::types::Run) -> Value {
 }
 
 impl AppToolExecutor {
+    pub(super) async fn schedule_quiet(
+        &self,
+        policy: &ToolPolicy,
+        params: Value,
+        delivery_id: &str,
+    ) -> Result<Value, BrokerError> {
+        self.ensure_scope(policy)?;
+        let Some(run_id) = self.capture.scheduled_run_id() else {
+            return Err(BrokerError::invalid(
+                "schedule_quiet",
+                "Requires a scheduled custom run.",
+            ));
+        };
+        if params != json!({})
+            || self.capture.bound_chat_id.as_deref() != Some(policy.session_id.as_str())
+        {
+            return Err(BrokerError::Malformed);
+        }
+        let run = self
+            .state
+            .store
+            .scheduled_task_run_get(&self.loupist_id, run_id)
+            .map_err(crate::commands::tool_executor::store_error)?;
+        let Some(run) = run.filter(|run| {
+            run.kind == crate::scheduled_tasks::types::TaskKind::Custom
+                && run.status == crate::scheduled_tasks::types::RunStatus::Running
+        }) else {
+            return Err(BrokerError::invalid(
+                "schedule_quiet",
+                "Requires a scheduled custom run.",
+            ));
+        };
+        if !run.skipped_tools.is_empty() || !self.capture.has_data_for_quiet().await {
+            return Err(BrokerError::invalid(
+                "schedule_quiet",
+                "Report what you could not check in your reply.",
+            ));
+        }
+        self.capture
+            .stage(delivery_id, |pending| pending.quiet_schedule = true)
+            .await;
+        Ok(json!({"quiet":true}))
+    }
+
     pub(super) async fn schedule_tool(
         &self,
         policy: &ToolPolicy,
@@ -226,44 +273,6 @@ impl AppToolExecutor {
         }
         let state = &self.state;
         let loupist = &self.loupist_id;
-        if method == ToolMethod::ScheduleWatch {
-            if !policy.use_memory || !policy.propose_memory_updates {
-                return Err(memory_schedule_refusal());
-            }
-            #[derive(Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct WatchRequest {
-                asset_id: String,
-                kind: crate::knowledge::watch::WatchKind,
-                enabled: bool,
-                expected_revision: i64,
-            }
-            let request: Option<WatchRequest> = if params == json!({}) {
-                None
-            } else {
-                Some(decode(params)?)
-            };
-            let view = match request {
-                None => crate::commands::watch::settings_view(
-                    state,
-                    &state.scheduled.watch_runtime(),
-                    loupist,
-                )
-                .map_err(error)?,
-                Some(r) => crate::commands::watch::update_setting(
-                    state,
-                    crate::commands::watch::WatchSettingSetRequest {
-                        loupist_id: loupist.to_owned(),
-                        asset_id: r.asset_id,
-                        kind: r.kind,
-                        enabled: r.enabled,
-                        expected_revision: r.expected_revision,
-                    },
-                )
-                .map_err(error)?,
-            };
-            return Ok(json!(view));
-        }
         let (task, action) = match method {
             ToolMethod::ScheduleBriefing => {
                 if !policy.use_memory || !policy.propose_memory_updates {
@@ -593,7 +602,7 @@ impl AppToolExecutor {
         result["memory"] = json!({"use_memory":task.use_memory,"update_memory":task.update_memory});
         result["notice"]=json!("Runs while Loupist is open. This saved action remains if the reply later stops. Fresh runs have new Chat history; continue runs reuse only this task’s dedicated Chat. Both use the saved Memory settings.");
         if task.awaiting_confirmation {
-            result["notice"] = json!("Saved paused, waiting for the user's OK in the card under your reply; nothing runs until they turn it on there. Say this in one short sentence in the user's language without naming the button, and do not turn it on yourself in this reply.");
+            result["notice"] = json!("Saved paused, waiting for the user's OK in the card under your reply; nothing runs until they turn it on there. Tell the user this in their language without naming the button, and do not turn it on yourself in this reply.");
         }
         if action != ScheduleAction::Deleted {
             result["recent_runs"] = json!(service::runs(state, loupist, &task.id)
@@ -648,6 +657,7 @@ mod tests {
             (false, _) => ChatSurface::Scheduled,
         });
         capture.schedule_context = Some(ScheduleContext {
+            research_model: None,
             model_profile_id: "fixture".into(),
             thinking_level: "medium".into(),
             run_options: BTreeMap::new(),
@@ -668,11 +678,108 @@ mod tests {
             propose_memory_updates: false,
             memory_proposal_budget: 1,
             as_of: None,
+            display_currency: None,
         };
         (executor, policy)
     }
     fn create(key: &str, mode: &str) -> Value {
         json!({"request_key":key,"title":format!("Review {key}"),"prompt":"Summarize the local report.","schedule":{"kind":"weekly","days":[1,2,3,4,5],"hour":9,"minute":0,"timezone":"Asia/Seoul"},"session_mode":mode,"status":"active"})
+    }
+
+    #[tokio::test]
+    async fn schedule_quiet_requires_a_committed_original_after_a_data_attempt() {
+        let temp = tempfile::tempdir().unwrap();
+        let (mut executor, policy) = fixture(&temp, true, "home-loupist-a");
+        let task = executor
+            .execute(
+                &policy,
+                ToolMethod::ScheduleCreate,
+                create("quiet", "continue"),
+            )
+            .await
+            .unwrap();
+        let (claim, ()) = executor
+            .state
+            .store
+            .scheduled_task_claim_with(
+                &policy.loupist_id,
+                task["task_id"].as_str().unwrap(),
+                now_ms(),
+                true,
+                |_| Ok(()),
+            )
+            .unwrap()
+            .unwrap();
+        let capture = Arc::get_mut(&mut executor.capture).unwrap();
+        capture.surface = Some(ChatSurface::Scheduled);
+        capture.unattended_run_id = Some(claim.run.run_id.clone());
+        let quiet = || executor.execute(&policy, ToolMethod::ScheduleQuiet, json!({}));
+        assert!(quiet().await.is_ok(), "a Memory-only check can be quiet");
+
+        let method = ToolMethod::KrxDailyQuote;
+        let args = json!({"symbol":"005930","date":"2026-04-20"});
+        assert!(executor
+            .execute(&policy, method, args.clone())
+            .await
+            .is_err());
+        assert!(quiet()
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("Report what you could not check"));
+        assert!(
+            !executor.capture.has_data_for_quiet().await,
+            "a prior quiet request must be rechecked at commit"
+        );
+
+        let producer = RunResultProducer {
+            origin: RunResultOrigin::AcquiredOriginal,
+            runtime_id: "native-finance".into(),
+            tool_name: method.tool_name(),
+            provider: Some("krx".into()),
+        };
+        executor
+            .capture
+            .stage_run_result_with_delivery(
+                "quote",
+                producer,
+                &args,
+                json!({"close": 19500}),
+                vec![],
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(
+            quiet().await.is_err(),
+            "an unacknowledged result cannot make a run quiet"
+        );
+        executor.commit_delivery(&policy, "quote").await.unwrap();
+        assert!(quiet().await.is_ok());
+
+        executor
+            .state
+            .store
+            .scheduled_run_skip_tool(
+                &policy.loupist_id,
+                &claim.run.run_id,
+                "run_python",
+                "Refused",
+            )
+            .unwrap();
+        assert!(quiet().await.is_err());
+        let mut db = executor
+            .state
+            .store
+            .lock_loupist(&policy.loupist_id)
+            .unwrap();
+        let tx = db.transaction().unwrap();
+        assert!(crate::scheduled_tasks::store::mark_quiet(
+            &tx,
+            &policy.loupist_id,
+            &claim.run.run_id
+        )
+        .is_err());
     }
 
     #[test]
@@ -787,7 +894,7 @@ mod tests {
             kind: TaskKind::Custom,
             read_at_ms: None,
             summary: private.into(),
-            summary_items: vec![],
+            quiet: false,
             message_id: None,
             skipped_tools: vec![],
             id: "occurrence-a".into(),
@@ -806,12 +913,7 @@ mod tests {
         let receipt = safe_run(run);
         assert_eq!(receipt["run_id"], "run-a");
         assert_eq!(receipt["error"], RUN_FAILED);
-        for field in [
-            "summary",
-            "summary_items",
-            "briefing_context",
-            "skipped_tools",
-        ] {
+        for field in ["summary", "briefing_context", "skipped_tools"] {
             assert!(receipt.get(field).is_none(), "{field}");
         }
         assert!(!receipt.to_string().contains(private));
@@ -851,12 +953,8 @@ mod tests {
             )
             .unwrap();
         let briefing = json!({"schedule":{"kind":"daily","hour":9,"minute":0,"timezone":"Asia/Seoul"},"enabled":false});
-        for method in [ToolMethod::ScheduleWatch, ToolMethod::ScheduleBriefing] {
-            let params = if method == ToolMethod::ScheduleWatch {
-                json!({})
-            } else {
-                briefing.clone()
-            };
+        for method in [ToolMethod::ScheduleBriefing] {
+            let params = { briefing.clone() };
             for (read, save) in [(false, false), (true, false), (false, true)] {
                 policy.use_memory = read;
                 policy.propose_memory_updates = save;
@@ -1244,7 +1342,6 @@ mod tests {
         let (executor, policy) = fixture(&temp, false, "home-loupist-a");
         for method in [
             ToolMethod::ScheduleHandoff,
-            ToolMethod::ScheduleWatch,
             ToolMethod::ScheduleBriefing,
             ToolMethod::ScheduleCreate,
             ToolMethod::ScheduleUpdate,

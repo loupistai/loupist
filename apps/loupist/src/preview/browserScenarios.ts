@@ -45,7 +45,7 @@ const articleMessages = (): ChatMessage[] => {
       status: "complete",
       created_at: "2026-10-28T00:00:20Z",
       content: ko
-        ? `실적 발표일은 [${title}](#evidence-${ARTICLE_EVIDENCE_ID})에 있어요.`
+        ? `실적 발표일은 [${title}](#evidence-${ARTICLE_EVIDENCE_ID})에 있습니다.`
         : `The results date is in the [${title}](#evidence-${ARTICLE_EVIDENCE_ID}).`,
       evidence_refs: [{
         id: ARTICLE_EVIDENCE_ID,

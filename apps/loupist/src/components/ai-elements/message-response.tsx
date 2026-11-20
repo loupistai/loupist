@@ -3,7 +3,9 @@ import type { NumberCheck } from "../../types";
 import { citationLabel, evidencePresentation, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
 import { memoryReadForEvidence } from "../../chat/memoryActivity";
 import { checkFor, looksLikeNumber } from "../../chat/numberChecks";
+import { evidenceLinkStarts } from "../../chat/evidenceLinkOrder";
 import { keepNumberParticles } from "../../chat/keepParticles";
+import { evidenceLinkAliases } from "../../chat/evidenceLinkAliases";
 import { CitationChip, UnavailableCitation } from "../chat/CitationChip";
 import { NumberChip, PendingNumber } from "../chat/NumberChip";
 import { useTurn } from "../chat/TurnProvider";
@@ -19,7 +21,7 @@ import type { MathPlugin } from "@streamdown/math";
 import type { DiagramPlugin } from "@streamdown/mermaid";
 import type { ComponentProps, ReactNode } from "react";
 import { createContext, isValidElement, memo, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
-import { Streamdown, defaultComponents, defaultRehypePlugins, defaultUrlTransform, type StreamdownTranslations } from "streamdown";
+import { Block, Streamdown, defaultComponents, defaultRehypePlugins, defaultUrlTransform, parseMarkdownIntoBlocks, type BlockProps, type StreamdownTranslations } from "streamdown";
 import { WorkspaceImage } from "../workspace/WorkspaceImage";
 import { useArtifactReadLinks } from "../chat/ArtifactReadLinks";
 
@@ -34,6 +36,32 @@ type TextBlock = {
 };
 const TextBlockContext = createContext<TextBlock>({});
 
+/**
+ * Which of the answer's evidence links a rendered link is, so it reads the
+ * check Rust made for that occurrence (`link_index`). Streamdown renders the
+ * text as separate Markdown blocks: per text, the number of evidence links
+ * before each block; per block, its first link's index and where each starts.
+ */
+const LinkBasesContext = createContext<readonly number[] | null>(null);
+const BlockLinksContext = createContext<{ base: number; starts: readonly number[] } | null>(null);
+
+function AnswerBlock(props: BlockProps) {
+  const base = useContext(LinkBasesContext)?.[props.index];
+  const content = props.content;
+  const links = useMemo(() => base === undefined ? null : { base, starts: evidenceLinkStarts(content) }, [base, content]);
+  return <BlockLinksContext.Provider value={links}><Block {...props} /></BlockLinksContext.Provider>;
+}
+
+/** The evidence links before each block of this text, as Streamdown splits it. */
+function linkBases(text: string) {
+  let count = 0;
+  return parseMarkdownIntoBlocks(text).map((block) => {
+    const base = count;
+    count += evidenceLinkStarts(block).length;
+    return base;
+  });
+}
+
 function nodeText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(nodeText).join("");
@@ -41,7 +69,7 @@ function nodeText(node: ReactNode): string {
   return "";
 }
 
-type MarkdownLinkProps = ComponentProps<"a"> & { node?: unknown };
+type MarkdownLinkProps = ComponentProps<"a"> & { node?: { position?: { start: { offset?: number } } } };
 
 const DefaultMarkdownImage = defaultComponents.img;
 function LoupistMarkdownImage(props: ComponentProps<typeof DefaultMarkdownImage>) {
@@ -49,11 +77,12 @@ function LoupistMarkdownImage(props: ComponentProps<typeof DefaultMarkdownImage>
   return path ? <WorkspaceImage path={path} alt={props.alt ?? ""} /> : <DefaultMarkdownImage {...props} />;
 }
 
-function EvidenceLink({ href, children }: { href: string; children?: ReactNode }) {
+function EvidenceLink({ href, start, children }: { href: string; start?: number; children?: ReactNode }) {
   useTranslation("chat");
   const turn = useTurn();
   const artifactLinks = useArtifactReadLinks();
   const { numberChecks, streaming } = useContext(TextBlockContext);
+  const block = useContext(BlockLinksContext);
   const evidenceRefs = turn?.evidenceRefs ?? [];
   const evidence = evidenceRefs.find((ref) => href === `#evidence-${ref.id}`);
   if (!evidence) {
@@ -63,7 +92,8 @@ function EvidenceLink({ href, children }: { href: string; children?: ReactNode }
   }
   // A number link is the control for its own evidence: Rust checked it when the answer finished.
   const linkText = nodeText(children).trim();
-  const check = checkFor(numberChecks, evidence.id, linkText);
+  const ordinal = start === undefined || !block ? -1 : block.starts.indexOf(start);
+  const check = checkFor(numberChecks, block && ordinal >= 0 ? block.base + ordinal : undefined, evidence.id, linkText);
   if (check) return <NumberChip check={check} checks={numberChecks} evidence={evidence} evidenceRefs={evidenceRefs} asOf={turn?.asOf}>{children}</NumberChip>;
   if (streaming && looksLikeNumber(linkText)) return <PendingNumber>{children}</PendingNumber>;
   const read = memoryReadForEvidence(evidence, turn?.memoryRefs);
@@ -91,13 +121,13 @@ function LoupistMarkdownLink({
   children,
   className,
   href,
-  node: _node,
+  node,
   rel: _rel,
   target: _target,
   ...anchorProps
 }: MarkdownLinkProps) {
   useTranslation("chat");
-  if (href?.startsWith("#evidence-")) return <EvidenceLink href={href}>{children}</EvidenceLink>;
+  if (href?.startsWith("#evidence-")) return <EvidenceLink href={href} start={node?.position?.start.offset}>{children}</EvidenceLink>;
 
   if (href?.startsWith("#")) {
     return (
@@ -204,6 +234,15 @@ function useContentPlugins(text: string) {
 }
 const disabledLinkSafety = { enabled: false } as const;
 
+/**
+ * Streamdown's link hardening with its rules unchanged, except that a refused
+ * link keeps only its text: never a "[blocked]" marker inside an answer.
+ */
+const quietHarden = (() => {
+  const harden = defaultRehypePlugins.harden;
+  return Array.isArray(harden) ? [harden[0], { ...harden[1], linkBlockPolicy: "text-only" }] as typeof harden : harden;
+})();
+
 export const MessageResponse = memo(
   ({
     className,
@@ -224,7 +263,7 @@ export const MessageResponse = memo(
     const contentPlugins = useContentPlugins(typeof children === "string" ? children : "");
     const rehypePlugins = useMemo(() => {
       // A Korean particle stays on the line of the number it follows.
-      if (!hasLinkAction) return [...Object.values(defaultRehypePlugins), keepNumberParticles];
+      if (!hasLinkAction) return [defaultRehypePlugins.raw, evidenceLinkAliases, defaultRehypePlugins.sanitize, quietHarden, keepNumberParticles];
       const sanitizer = defaultRehypePlugins.sanitize;
       // Normalize Windows drive links before the sanitizer treats the drive as
       // an unsupported protocol. Keep every default rule, extending only href;
@@ -239,7 +278,7 @@ export const MessageResponse = memo(
       // Streamdown's processor cache keys plugins by their name and options.
       // Explicit options keep each Loupist and relative Markdown base separate.
       const fileLinks: typeof sanitizer = [workspaceLinksPlugin, { rootPath: workspacePath, basePath: workspaceBasePath }];
-      return [defaultRehypePlugins.raw, ...(hasFileAction ? [fileLinks] : []), fileSanitizer, defaultRehypePlugins.harden, keepNumberParticles];
+      return [defaultRehypePlugins.raw, evidenceLinkAliases, ...(hasFileAction ? [fileLinks] : []), fileSanitizer, quietHarden, keepNumberParticles];
     }, [hasFileAction, hasLinkAction, workspacePath, workspaceBasePath]);
     const fileUrlTransform = useMemo(() => hasLinkAction ? ((url: string, key: string, node: Parameters<typeof defaultUrlTransform>[2]) =>
       ((key === "href" && ((hasFileAction && decodedWorkspaceLink(url)) || lensLinkRecordId(url))) || (key === "src" && hasFileAction && decodedWorkspaceLink(url)))
@@ -291,8 +330,17 @@ export const MessageResponse = memo(
 
     const streaming = Boolean(props.isAnimating);
     const textBlock = useMemo(() => ({ numberChecks, streaming }), [numberChecks, streaming]);
+    // Only checked text needs its links counted: while an answer streams it has no checks.
+    const checked = Boolean(numberChecks?.length);
+    const text = typeof children === "string" ? children : "";
+    // Static mode renders the text as one Markdown tree; otherwise each block places its own links.
+    const whole = props.mode === "static";
+    const bases = useMemo(() => checked && !whole ? linkBases(text) : null, [checked, whole, text]);
+    const wholeLinks = useMemo(() => checked && whole ? { base: 0, starts: evidenceLinkStarts(text) } : null, [checked, whole, text]);
     return (
       <TextBlockContext.Provider value={textBlock}>
+      <LinkBasesContext.Provider value={bases}>
+      <BlockLinksContext.Provider value={wholeLinks}>
       <Streamdown
         key={`${workspacePath ?? ""}:${workspaceBasePath ?? ""}`}
         className={cn(
@@ -305,10 +353,13 @@ export const MessageResponse = memo(
         urlTransform={fileUrlTransform}
         linkSafety={hasLinkAction ? disabledLinkSafety : linkSafety}
         plugins={streamdownPlugins}
+        BlockComponent={AnswerBlock}
         {...props}
       >
         {children}
       </Streamdown>
+      </BlockLinksContext.Provider>
+      </LinkBasesContext.Provider>
       </TextBlockContext.Provider>
     );
   },

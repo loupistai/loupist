@@ -1,6 +1,6 @@
 # Untrusted text
 
-Third-party text raises a turn tier that pauses selected outbound tools and instruction-file writes, wraps the text the model sees, and keeps `web_fetch` to known sites. `run_python` stays allowed. Holdings quantities stay on this computer.
+Third-party text raises a turn tier that pauses selected outbound tools and instruction-file writes, wraps the text the model sees, and keeps `web_fetch` to known sites. `run_python` stays allowed. Reviewed account fields are hidden before a connector result reaches the model.
 
 Third-party text raises a weaker tier of the same `TurnTaint`
 (`apps/loupist/src-tauri/src/custom_connections/taint.rs`). Which broker methods each
@@ -32,8 +32,12 @@ deletion and stopping.
 Third-party text that comes back from retained material raises the tier and is
 wrapped the same way (`tool_executor/returning.rs`). A `world_read` of a saved
 Source, and `world_search` hits on it, do so when a publisher, a search or a custom
-connection authored its capture; the user's files, pasted text and statements, Korea
-Investment reads and a shared pack's Sources (below) do not. A saved provider result
+connection authored its capture, and for every
+[user-provided Source](../knowledge/sources-notes.md#user-provided-sources) (material
+pasted into a Chat, `pasted_capture`): the user handed it over, someone else wrote
+it. The user's files, text added through Add source and statements, Korea
+Investment reads and a shared pack's Sources (below) do not. A capture in the turn
+the user pastes the text is the user's message and raises nothing. A saved provider result
 counts as numeric only when the dataset it names records `trust: numeric`.
 `dataset_query` and `dataset_describe` do so for a dataset whose `trust` is not
 `numeric` or `user_file`, including one retained before trust was recorded.
@@ -41,16 +45,16 @@ counts as numeric only when the dataset it names records `trust: numeric`.
 an unavailable input revision fails closed. Artifacts from a reply recorded as
 tainted return delimited too. World claim reads and search hits resolve their
 canonical evidence spans and use the Source capture's authorship, as Source reads
-do. Asset-page observation rows and watch alerts, and a briefing's `assetDeltas`
-and watch alerts, are delimited; a briefing starts at the untrusted-text tier
-before its first tool call. Observation rows are conservative because even a
-numeric observation can carry a publisher's filing or source title.
+do. Asset lookup returns bounded structured listing metadata. It keeps the
+ordinary retention receipt and leaves same-turn follow and schedule operations available.
 
 Rust records whether either tier was raised in the reply's existing `tool_trace`
 JSON. `conversation_memory` and `chat_history` delimit that reply's returned text
-or snippets and raise the untrusted-text tier in the new turn; user messages and
-clean replies remain unchanged. Offsets still address the original saved text.
-Replies saved before this receipt was recorded cannot retroactively recover it.
+or snippets and raise the untrusted-text tier in the new turn. Ordinary history
+reads preserve user messages and clean replies. Bot's hand-off card read delimits
+the linked session's guidance together with its saved answer and title.
+Offsets still address the original saved text. Replies saved before this receipt
+was recorded cannot retroactively recover it.
 
 App exports of untrusted datasets and Source captures get host-owned SHA-256
 markers under the app's private `export-trust` directory. Renderer-composed CSV
@@ -80,9 +84,8 @@ already-seen sites and `web_search` queries are not checked for exfiltration.
 
 Once the tier is up, `web_fetch` keeps to sites the turn already knows
 (`TurnTaint::web_fetch_target`). A search result (by `source_id` or its exact URL), a
-page already read and a URL the user typed always open. A URL carrying a held
-quantity, cost or value from the latest snapshot of each holdings source, including
-each wallet (whole numbers of four digits or more, years excepted), or a 24-character run of the turn's principles,
+page already read and a URL the user typed always open. A URL carrying a
+24-character run of the turn's principles,
 perspective, Lens bodies or notes and Journal text, is refused on any site. Official
 filing and statistics sites (`RESEARCH_SITES`) open. A site seen this turn (a search
 result's or fetched page's host, or a site named in the user's message) opens when its
@@ -92,11 +95,9 @@ else is refused with `untrusted_text_paused` and a `next` that says to find the 
 with `web_search` and fetch the result, whose exact URL then opens. Links and text
 inside a page, its alternates and a saved Source's own site never count as known.
 
-These URL privacy checks run in production builds as well as tests. After
-third-party text, a failed holdings read refuses the fetch with
-`untrusted_text_paused`; a successful read with no holdings still follows the
-site rule. Debug-only prompt and tool-result canary logging is separate from
-this outbound gate.
+These URL privacy checks run in production builds as well as tests. The app has no current
+ownership records or wallet addresses. URLs with numbers follow the same site
+and private-text rules.
 
 Text from a [shared Loupist](../knowledge/sharing.md#sharing) is third-party text too
 (`sharing/delivery.rs`). In the turn's Memory context and Memory tool results
@@ -113,17 +114,14 @@ or search that returns them, including a pack Source read. When the lookup of sh
 records fails, every Memory delivery is wrapped and raises the tier. The user's own
 Memory never raises it.
 
-Holdings reach a model only as identities (symbol, market, name and a held flag; see
-[context bounds](../agent/context.md#context-assembly-and-bounds)). A Korea Investment
-account read is the one tool result that carries quantities, amounts, prices paid and the
+A Korea Investment account read can carry quantities, amounts, prices paid and the
 rates derived from them. In every run, interactive or unattended, Rust
-(`privacy/holdings.rs`) replaces each field the operation's reviewed `holding_fields` list
-names with `[hidden on this computer]` before the result reaches Pi, a dataset (a reused
-one included), a result reference, a chart or an export
+(`privacy/account_fields.rs`) replaces each field the operation's reviewed `holding_fields`
+list names with `[hidden on this computer]` before the result reaches Pi, a dataset
+(a reused one included), a result reference, a chart or an export
 ([catalog review](../capabilities/data-services.md#maintaining-the-korea-investment-read-catalog)).
+This boundary depends only on the reviewed account-read catalog. `account_fields_visible` is the
+single decision point for a connection and currently always returns false.
 An account operation without a reviewed list is refused before any request
 (`account_fields_unreviewed`), and `source_save` refuses an account result
 (`account_data_not_saved`). Numbers the user types into a message are left as typed.
-Debug builds also scan each briefing prompt and every delivered tool result for
-quantity, cost and value strings (four digits or more) from the latest snapshot of
-each holdings source, including each wallet, and log a hit.

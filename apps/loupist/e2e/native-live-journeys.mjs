@@ -18,6 +18,7 @@ import {
   mapNameCount,
   openMapLibrary,
   openCustomConnections,
+  loupistSwitcherAction,
   measureLoupistSwitch,
   clickControl,
   measureMapDrawProbe,
@@ -128,8 +129,7 @@ async function removeEveryLoupist() {
     // The selected Loupist has a visible Settings action in the sidebar.
     const identity = await browser.$("[data-testid=loupist-header-identity]");
     if (!(await identity.isExisting()) || !(await identity.isDisplayed())) return;
-    const opener = await displayed("[data-header-loupist-settings]");
-    await opener.click();
+    await loupistSwitcherAction(browser, "settings");
     const sheet = await displayed("[data-testid=loupist-settings-page]");
     await clickButton("Remove Loupist", sheet);
     const dialog = await dialogByTitle(browser, "Remove Loupist?");
@@ -348,15 +348,20 @@ async function answerText() {
 
 /** Open one workspace file from Chat materials. The last segment is refreshed until it appears. */
 async function openMaterialsFile(relativePath) {
-  await clickControl(browser, "[data-testid=header-panel-toggle]");
-  await (await displayed('[data-workspace-kind="materials"]')).click();
+  // The page header's activity button opens the activity sheet; its In use tab opens this chat's materials.
+  const materialsOpen = async () => (await browser.$("#workspace-panel").isDisplayed().catch(() => false));
+  if (!(await materialsOpen())) {
+    if ((await browser.$("[data-header-activity]").getAttribute("aria-pressed")) !== "true") await clickControl(browser, "[data-header-activity]");
+    await browser.$('[data-activity-tab="using"]').waitForExist({ timeout: 10_000 });
+    await clickControl(browser, '[data-activity-tab="using"]');
+    await browser.$("[data-activity-materials]").waitForExist({ timeout: 10_000 });
+    await clickControl(browser, "[data-activity-materials]");
+  }
   await browser.waitUntil(async () => {
     const panel = await browser.$("#workspace-panel");
-    return (await panel.isExisting())
-      && (await panel.getAttribute("data-panel-kind")) === "materials"
-      && await panel.isDisplayed().catch(() => false);
+    return (await panel.isExisting()) && await panel.isDisplayed().catch(() => false);
   }, { timeout: 20_000, timeoutMsg: "Chat materials did not open" });
-  await (await displayed('#workspace-panel summary[aria-label="Open workspace item"]')).click();
+  await (await displayed('#workspace-panel summary[aria-label="Add a tab"]')).click();
   await (await childWithText(await browser.$("#workspace-panel"), '[role="menuitem"]', "Files")).click();
   const parts = relativePath.split("/").filter(Boolean);
   let current = "";
@@ -444,6 +449,8 @@ try {
     if (!(await (await displayed("[data-notice-acknowledgment]")).isSelected())) await (await displayed("[data-notice-acknowledgment]")).click();
     await clickButton("Get started");
     await waitForOnboardingStep(browser, 3, 20_000);
+    await (await displayed("[data-onboarding-next]")).click();
+    await waitForOnboardingStep(browser, 4, 20_000);
     await (await displayed("[data-onboarding-create]")).click();
     await waitForShell(browser, 30_000);
     assert.equal(await selectedLoupistTitle(browser), loupistName);
@@ -495,11 +502,10 @@ try {
     await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
     await choosePreset();
     await sendPrompt("Use research_open to open a separate chat titled Arithmetic handoff. Its task is to calculate 17 times 19 with calculate and report the result briefly, with no outside sources. Start it now and keep your Loupist acknowledgment short.");
+    // Bot posts the hand-off once its session ends.
     const selector = '.thread-delivery[aria-label="Research: Arithmetic handoff"]';
-    await browser.waitUntil(async () => {
-      const row = await browser.$(selector);
-      return await row.isExisting() && await row.getAttribute("data-status") !== "running";
-    }, { timeout: 480_000, interval: 1000, timeoutMsg: "The research handoff did not settle" });
+    await browser.waitUntil(async () => (await browser.$(selector)).isExisting(),
+      { timeout: 480_000, interval: 1000, timeoutMsg: "The research handoff did not settle" });
     const row = await displayed(selector);
     assert.equal(await row.getAttribute("data-status"), "done", await row.getText());
     await (await row.$(".morning-link")).click();
@@ -509,7 +515,7 @@ try {
   });
 
   if (journeyEnabled("switch")) await step("Loupist switch", async () => {
-    await (await displayed('button[aria-label="New Loupist"]')).click();
+    await loupistSwitcherAction(browser, "new");
     const dialog = await displayed('[role="dialog"]');
     await clickTemplate("Dividend income");
     await clickButton("Create Loupist", dialog);
@@ -651,18 +657,16 @@ try {
     const answer = await answerText();
     // MessageResponse renders a lens: markdown link as button.loupist-lens-link, not an <a href>.
     const lensControl = await browser.execute(() => {
-      const button = document.querySelector("#main-panel-chat button.loupist-lens-link");
+      const answers = document.querySelectorAll("#main-panel-chat article.message.assistant[data-message-id]");
+      const button = answers[answers.length - 1]?.querySelector("button.loupist-lens-link");
       return button
         ? { text: (button.textContent ?? "").trim().slice(0, 120), role: button.getAttribute("role") ?? "" }
         : null;
     });
-    const section = /Checked against your principles/i.test(answer);
-    report.journeys.principle = { applied: section, lensControl };
+    report.journeys.principle = { applied: Boolean(lensControl), lensControl };
     await shot("04-principle-applied");
-    if (!section || !lensControl) {
-      const message = section
-        ? "The principles section rendered, but no Lens link button was in the answer"
-        : `The answer did not include Checked against your principles: ${scrub(answer).slice(0, 500)}`;
+    if (!lensControl) {
+      const message = `The answer did not include a Lens link: ${scrub(answer).slice(0, 500)}`;
       report.journeys.principle.error = message;
       report.blockingError = [report.blockingError, message].filter(Boolean).join("\n");
     }
@@ -724,11 +728,30 @@ try {
       await browser.pause(1_500);
       read = (await firstRun())?.unread !== "true";
     }
+    // The briefing's session is the run's record: Research sessions does not list it,
+    // Continue in Chat opens it with the request named as the briefing's, and the
+    // sidebar shows it as the current conversation only while it is open.
+    const sessionRows = () => browser.execute(() => [...document.querySelectorAll(".loupist-sessions [data-testid=loupist-chat-button]")]
+      .map((row) => ({ id: row.getAttribute("data-thread-id"), current: row.getAttribute("aria-current") === "page" })));
+    const before = await sessionRows();
+    await (await displayed(".briefings-reader .briefings-continue")).click();
+    const turn = await displayed(".chat-scheduled-turn[data-task-kind=briefing]", 30_000);
+    assert.equal(await (await turn.$("details")).isExisting(), false, "The briefing's host request should not be shown");
+    assert.equal(await browser.execute(() => Boolean(document.querySelector(".message.user"))), false, "The briefing's request should not read as the user's message");
+    const open = (await sessionRows()).filter((row) => row.current);
+    assert.equal(open.length, 1, "The open briefing session should be listed as the current conversation");
+    assert.ok(!before.some((row) => row.id === open[0].id), "Research sessions listed the briefing's session before it was opened");
+    await shot("05-briefing-session");
+    await clickControl(browser, "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]");
+    await browser.waitUntil(async () => !(await sessionRows()).some((row) => row.id === open[0].id), {
+      timeout: 10_000, timeoutMsg: "The briefing's session stayed in Research sessions after leaving it",
+    });
     report.journeys.briefing = {
       opened: true,
       readerRendered: true,
       read,
       readOnOpen: read ? "observed" : "deferred: requires an unlocked screen",
+      session: "kept out of Research sessions; listed while open",
     };
     await shot("05-briefing-read");
   });
@@ -807,7 +830,7 @@ try {
         timeout: 20_000,
         timeoutMsg: "Connection detail did not close",
       });
-      // Settings replaces the Chat/Map/Briefings header. Back is the same control the renderer tests use.
+      // Settings replaces the sidebar. Back is the same control the renderer tests use.
       if (!(await browser.$("[data-testid=loupist-header-selector]").isDisplayed().catch(() => false))) await clickButton("Back");
       await newChat();
       await choosePreset();
@@ -916,6 +939,10 @@ try {
       await (await form.$("textarea")).setValue("local-test-model");
       await shot("07-custom-form");
       await (await form.$("[data-custom-add]")).click();
+      // The Loupist that already exists is named on the name step, never after its folder.
+      await waitForOnboardingStep(browser, 4, 30_000);
+      assert.notEqual(await (await displayed("#onboarding-name")).getValue(), "workspace");
+      await (await displayed("[data-onboarding-create]")).click();
       await waitForShell(browser, 30_000);
       if (compactionJourney) await browser.execute(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;

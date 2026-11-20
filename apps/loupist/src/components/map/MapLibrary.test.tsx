@@ -14,7 +14,7 @@ async function setup() {
   const method = catalog.lenses.find(l => l.lensKind === 'method')!;
   const perspective = catalog.lenses.find(l => l.lensKind === 'perspective')!;
   const map = await bridge.knowledgeMap({ loupistId: loupist.id });
-  map.nodes = [map.nodes[0], { id: 'method', recordId: method.recordId, label: method.title, kind: 'lens_method', degree: 1, watched: false, held: false }, { id: 'perspective', recordId: perspective.recordId, label: perspective.title, kind: 'lens_perspective', degree: 0, watched: false, held: false }];
+  map.nodes = [map.nodes[0], { id: 'method', recordId: method.recordId, label: method.title, kind: 'lens_method', degree: 1, watched: false }, { id: 'perspective', recordId: perspective.recordId, label: perspective.title, kind: 'lens_perspective', degree: 0, watched: false }];
   map.edges = [{ id: 'application', source: 'method', target: map.nodes[0].id, kind: 'applies_to' }];
   vi.spyOn(bridge, 'knowledgeMap').mockResolvedValue(map);
   const read = vi.spyOn(bridge, 'knowledgeSourceRead');

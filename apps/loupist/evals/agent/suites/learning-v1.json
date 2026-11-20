@@ -132,7 +132,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -325,7 +326,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -606,7 +608,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -1608,7 +1611,7 @@
                 "rubric": [
                   {
                     "id": "discloses-status",
-                    "criterion": "The answer gives 33 percent as the current gross margin and says what was retained, what was revised, and what was rejected about the earlier 40 percent view.",
+                    "criterion": "The answer gives 33 percent as the current gross margin and says that it replaces the earlier 40 percent figure and why.",
                     "metric": "revision_disclosure"
                   }
                 ]
@@ -1616,7 +1619,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -1788,7 +1792,7 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "Later source. Origin: https://fictional.example/amberline/termination. That same top customer filed to terminate the contract on 2026-04-09.",
+              "user": "Later source. Origin: https://fictional.example/amberline/termination. That same top customer terminated the contract effective 2026-04-09.",
               "expect": {
                 "memory": [
                   {
@@ -1848,7 +1852,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2478,7 +2483,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -2719,7 +2725,7 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "Save this primary source as Marrow margin original. Origin: https://fictional.example/marrow/fy2024. Body: Marrow Glass original FY2024 gross margin was 40.0 percent. Also save a Lens titled Marrow margin view that treats 40.0 percent as the current margin.",
+              "user": "Save this primary source as Marrow margin original. Origin: https://fictional.example/marrow/fy2024. Body: Marrow Glass original FY2024 gross margin was 40.0 percent. Also save a Lens titled Marrow margin view that records 40.0 percent as the FY2024 gross margin.",
               "expect": {
                 "memory": [
                   {
@@ -2815,7 +2821,7 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "What is your current view of the Marrow Glass FY2024 gross margin? Search and exact-read the saved Lens first. Disclose retained, revised, and rejected knowledge. End with a JSON object {\"metrics\":{\"current_gross_margin\": <number>}} and no text after it.",
+              "user": "What is your current view of the Marrow Glass FY2024 gross margin? Search and exact-read the saved Lens first. Disclose retained, revised, and rejected knowledge. End with a JSON object {\"metrics\":{\"fy2024_gross_margin\": <number>}} and no text after it.",
               "discriminator": "A no-Memory analyst does not have the restatement, so it cannot give 33 percent as the current margin or disclose the revision of 40.0 percent. Both facts come from the earlier sessions.",
               "expect": {
                 "trace": [
@@ -2842,7 +2848,7 @@
                   {
                     "assert": "metrics",
                     "values": {
-                      "current_gross_margin": 33
+                      "fy2024_gross_margin": 33
                     },
                     "scales": [
                       0.01
@@ -2853,7 +2859,7 @@
                 "rubric": [
                   {
                     "id": "reads-and-discloses",
-                    "criterion": "The answer reads the saved Lens, gives 33 percent as current, and discloses retained, revised, and rejected items.",
+                    "criterion": "The answer reads the saved Lens, gives 33 percent as the FY2024 gross margin it now uses, and discloses retained, revised, and rejected items.",
                     "metric": "revision_disclosure"
                   }
                 ]
@@ -2861,7 +2867,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",

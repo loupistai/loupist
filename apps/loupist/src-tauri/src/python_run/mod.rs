@@ -38,6 +38,12 @@ const CODE_BYTES: usize = 64 * 1024;
 const OUTPUT_BYTES: usize = 64 * 1024;
 const DEFAULT_TIMEOUT_SECONDS: u64 = 60;
 const MAX_TIMEOUT_SECONDS: u64 = 120;
+/// The first call after an install or update compiles the pinned runtime
+/// before any code runs: 27 s at load 20 and 33-51 s at load 90-200 on an
+/// 8-core Apple Silicon Mac, often past a 60 s call. The worker's own guest
+/// clock starts only after compilation, so this bounds the compile alone.
+#[cfg(unix)]
+const COLD_COMPILE_SECONDS: u64 = 180;
 static WORKERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
 #[derive(Debug)]
@@ -146,13 +152,14 @@ async fn run_owned(
     let (roots, cache_root, code) = (roots.clone(), cache_root.to_path_buf(), code.to_owned());
     tokio::spawn(async move {
         let disconnected = SearchCancel::from_watch(receiver);
+        let wait = queue_wait(&cache_root, timeout_seconds);
         // Bound total compiler/guest RSS for the app, not just each wasm
         // memory. A queued call owns no snapshot and can still be cancelled.
         let _permit = tokio::select! {
             permit = WORKERS.acquire() => permit.map_err(|_| BrokerError::Execution("Python execution is unavailable".into()))?,
             _ = cancel.cancelled() => return Err(BrokerError::Execution("Python execution was cancelled".into())),
             _ = disconnected.cancelled() => return Err(BrokerError::Execution("Python execution was cancelled".into())),
-            _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_seconds)) => return Err(BrokerError::Execution("Python execution timed out while waiting for another run".into())),
+            _ = tokio::time::sleep(wait) => return Err(BrokerError::Execution("Python execution timed out while waiting for another run".into())),
         };
         drive(
             &roots,
@@ -167,6 +174,24 @@ async fn run_owned(
     })
     .await
     .map_err(|_| BrokerError::Execution("Python execution failed".into()))?
+}
+
+/// How long a call may wait for the one worker slot: its own timeout, plus
+/// the compile bound while this build has not compiled here, because the call
+/// ahead of it may be that compile.
+fn queue_wait(cache_root: &Path, timeout_seconds: u64) -> std::time::Duration {
+    #[cfg(unix)]
+    {
+        let identity = worker_path()
+            .zip(runtime_dir())
+            .and_then(|(worker, runtime)| compiled_identity(&worker, &runtime));
+        PythonCache::at(cache_root).wall_clock(identity.as_deref(), timeout_seconds)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = cache_root;
+        std::time::Duration::from_secs(timeout_seconds)
+    }
 }
 
 #[cfg(unix)]
@@ -204,11 +229,13 @@ async fn drive(
         .ok_or_else(|| BrokerError::Execution("Python runtime is unavailable".into()))?;
     let worker = worker_path()
         .ok_or_else(|| BrokerError::Execution("Python runtime is unavailable".into()))?;
-    let cache = ensure_cache(cache_root)?;
+    let cache = PythonCache::prepare(cache_root)?;
+    let identity = compiled_identity(&worker, &runtime);
+    let wall = cache.wall_clock(identity.as_deref(), timeout_seconds);
     let _ = std::fs::set_permissions(&snapshot, std::fs::Permissions::from_mode(0o700));
     secrets.extend([
         snapshot.clone(),
-        cache.clone(),
+        cache.root.clone(),
         runtime.clone(),
         worker.clone(),
     ]);
@@ -216,7 +243,7 @@ async fn drive(
         code: code.to_owned(),
         timeout_seconds,
         runtime,
-        cache,
+        cache: cache.compiled.clone(),
         snapshot: snapshot.clone(),
         writable: prepared.writable_names().to_vec(),
     };
@@ -226,15 +253,13 @@ async fn drive(
     let omitted_paths = prepared.omitted.clone();
     let scan_truncated = prepared.scan_truncated;
     let untrusted_inputs = prepared.untrusted_inputs;
-    let outcome = supervise_worker(
-        &worker,
-        &snapshot,
-        &bytes,
-        timeout_seconds,
-        cancel,
-        disconnected,
-    )
-    .await;
+    let outcome = supervise_worker(&worker, &snapshot, &bytes, wall, cancel, disconnected).await;
+    if let (Ok(outcome), Some(identity)) = (&outcome, &identity) {
+        // A worker that ended on its own got past compilation and saved it.
+        if outcome.exited_itself {
+            cache.mark_compiled(identity);
+        }
+    }
     let report = tokio::task::spawn_blocking(move || prepared.writeback())
         .await
         .map_err(|_| BrokerError::Execution("Python execution failed".into()))??;
@@ -300,6 +325,9 @@ struct WorkerRequest {
 
 struct WorkerOutcome {
     status: &'static str,
+    /// The worker ended by itself, so it compiled (or loaded) the runtime;
+    /// the host did not kill it.
+    exited_itself: bool,
     exit_code: i32,
     stdout: Vec<u8>,
     stderr: Vec<u8>,
@@ -320,7 +348,7 @@ async fn supervise_worker(
     worker: &Path,
     snapshot: &Path,
     request: &[u8],
-    timeout_seconds: u64,
+    wall: std::time::Duration,
     cancel: SearchCancel,
     disconnected: SearchCancel,
 ) -> Result<WorkerOutcome, BrokerError> {
@@ -360,9 +388,10 @@ async fn supervise_worker(
         status = child.wait() => Stop::Exit(status.map_err(|_| failed())?),
         _ = cancel.cancelled() => Stop::Cancel,
         _ = disconnected.cancelled() => Stop::Cancel,
-        _ = tokio::time::sleep(Duration::from_secs(timeout_seconds)) => Stop::Timeout,
+        _ = tokio::time::sleep(wall) => Stop::Timeout,
         _ = overflow.notified() => Stop::Output,
     };
+    let exited = matches!(stop, Stop::Exit(_));
     let status = match &stop {
         Stop::Exit(status) => *status,
         Stop::Cancel | Stop::Timeout | Stop::Output => {
@@ -395,6 +424,8 @@ async fn supervise_worker(
     }
     Ok(WorkerOutcome {
         status: name,
+        // 125 refuses the request before the runtime loads.
+        exited_itself: exited && exit_code != 125,
         exit_code,
         stdout,
         stderr,
@@ -508,14 +539,77 @@ fn redact(bytes: &[u8], secrets: &[String]) -> String {
     text
 }
 
+/// `python-cache/` under a cache root: Wasmtime's compiled-module cache in
+/// `compiled/`, and `compiled.id`, naming the worker and runtime whose
+/// compilation finished there. The guest sees neither.
 #[cfg(unix)]
-fn ensure_cache(root: &Path) -> Result<PathBuf, BrokerError> {
-    use std::os::unix::fs::PermissionsExt;
-    let cache = root.join("python-cache");
-    std::fs::create_dir_all(&cache)
-        .map_err(|_| BrokerError::Execution("Python execution failed".into()))?;
-    let _ = std::fs::set_permissions(&cache, std::fs::Permissions::from_mode(0o700));
-    Ok(cache)
+struct PythonCache {
+    root: PathBuf,
+    compiled: PathBuf,
+    marker: PathBuf,
+}
+
+#[cfg(unix)]
+impl PythonCache {
+    fn at(cache_root: &Path) -> Self {
+        let root = cache_root.join("python-cache");
+        Self {
+            compiled: root.join("compiled"),
+            marker: root.join("compiled.id"),
+            root,
+        }
+    }
+
+    fn prepare(cache_root: &Path) -> Result<Self, BrokerError> {
+        use std::os::unix::fs::PermissionsExt;
+        let cache = Self::at(cache_root);
+        std::fs::create_dir_all(&cache.compiled)
+            .map_err(|_| BrokerError::Execution("Python execution failed".into()))?;
+        for path in [&cache.root, &cache.compiled] {
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+        }
+        Ok(cache)
+    }
+
+    fn is_compiled(&self, identity: &str) -> bool {
+        std::fs::read_to_string(&self.marker).is_ok_and(|saved| saved == identity)
+    }
+
+    fn mark_compiled(&self, identity: &str) {
+        if !self.is_compiled(identity) {
+            let _ = std::fs::write(&self.marker, identity);
+        }
+    }
+
+    /// The host's wall clock for one call: its own timeout, plus the compile
+    /// bound until this worker and runtime have compiled here once.
+    fn wall_clock(&self, identity: Option<&str>, timeout_seconds: u64) -> std::time::Duration {
+        let compile = match identity {
+            Some(identity) if self.is_compiled(identity) => 0,
+            _ => COLD_COMPILE_SECONDS,
+        };
+        std::time::Duration::from_secs(timeout_seconds + compile)
+    }
+}
+
+/// Size and modification time of the worker and the module it compiles; a
+/// new build changes them and compiles again.
+#[cfg(unix)]
+fn compiled_identity(worker: &Path, runtime: &Path) -> Option<String> {
+    let stamp = |path: &Path| -> Option<String> {
+        let metadata = std::fs::metadata(path).ok()?;
+        let modified = metadata
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?;
+        Some(format!("{}:{}", metadata.len(), modified.as_nanos()))
+    };
+    Some(format!(
+        "{}|{}",
+        stamp(worker)?,
+        stamp(&runtime.join("python-snapshot.wasm"))?
+    ))
 }
 
 pub(crate) fn runtime_dir() -> Option<PathBuf> {

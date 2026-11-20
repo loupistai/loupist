@@ -9,13 +9,34 @@
   {
     "name": "chat_history",
     "method": "chat.history",
-    "args": {}
+    "args": {
+      "card_id": "handoff-fixture",
+      "offset": 0
+    }
+  },
+  {
+    "name": "interface_labels",
+    "method": "interface.labels",
+    "args": {
+      "keys": [
+        "map"
+      ]
+    }
   },
   {
     "name": "workspace_capture",
     "method": "workspace.capture",
     "args": {
       "path": "notes/report.csv"
+    }
+  },
+  {
+    "name": "pasted_capture",
+    "method": "pasted.capture",
+    "args": {
+      "text": "솔숲식품은 2025-03-12 현재 수주잔고 수치가 184.6이고 단위는 십억 원이라고 알렸다.",
+      "url": "https://fictional.example/solsup/backlog-2025",
+      "publisher": "솔숲식품"
     }
   },
   {
@@ -125,7 +146,11 @@
     "name": "loupist_setup",
     "method": "loupist.setup",
     "args": {
-      "focus": "Research companies"
+      "follow": [
+        {
+          "name": "NVIDIA"
+        }
+      ]
     }
   },
   {
@@ -158,8 +183,7 @@
     "name": "asset_page_read",
     "method": "asset.page_read",
     "args": {
-      "symbol": "AAPL",
-      "market": "NASDAQ"
+      "asset": "AAPL"
     }
   },
   {
@@ -173,35 +197,9 @@
     }
   },
   {
-    "name": "earnings_snapshot_save",
-    "method": "earnings.snapshot_save",
-    "args": {
-      "assetId": "ast_0000000000000000",
-      "side": "expected"
-    }
-  },
-  {
     "name": "run_results_list",
     "method": "run.results.list",
     "args": {}
-  },
-  {
-    "name": "plan_update",
-    "method": "run.plan.update",
-    "args": {
-      "items": [
-        {
-          "id": "research",
-          "label": "Example 1",
-          "status": "pending"
-        },
-        {
-          "id": "research",
-          "label": "Example 1",
-          "status": "pending"
-        }
-      ]
-    }
   },
   {
     "name": "ask_user",
@@ -536,11 +534,6 @@
     }
   },
   {
-    "name": "schedule_watch",
-    "method": "schedule.watch",
-    "args": {}
-  },
-  {
     "name": "schedule_briefing",
     "method": "schedule.briefing",
     "args": {
@@ -591,5 +584,37 @@
       "task_id": "task-1",
       "run_id": "run-1"
     }
+  },
+  {
+    "name": "fx_rate",
+    "method": "fx.rate",
+    "args": {
+      "from": "EUR",
+      "to": "USD"
+    }
+  },
+  {
+    "name": "asset_lookup",
+    "method": "asset.lookup",
+    "args": {
+      "query": "NVIDIA"
+    }
+  },
+  {
+    "name": "price_read_save",
+    "method": "price_read.save",
+    "args": {
+      "assetId": "ast_0000000000000000",
+      "citation_url": "#evidence-ev_00000000000000000000000000000000",
+      "fields": {
+        "value": "/price",
+        "date": "/date"
+      }
+    }
+  },
+  {
+    "name": "schedule_quiet",
+    "method": "schedule.quiet",
+    "args": {}
   }
 ]

@@ -1,7 +1,7 @@
 import { useSettledScroll } from "./settledScroll";
 import { ConnectionOrigin } from "../connections/custom/ConnectionOrigin";
 import { formatDate, formatNumber } from "../../i18n/format";
-import { dateValue, timePointValue, spanSelectorLabel } from "../../knowledge/presentation";
+import { coverageLabel, metadataLabel, dateValue, timePointValue, spanSelectorLabel } from "../../knowledge/presentation";
 import i18n, { useTranslation } from "../../i18n";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Disclosure } from "@/components/ui/disclosure";
@@ -15,7 +15,7 @@ import { Alert, AlertDescription } from "../ui/alert";
 import { EmptyState } from "../ui/empty-state";
 import { Spinner } from "../ui/spinner";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
-import type { Coverage, LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, KnowledgeSourceFile, RepresentationRole, SourceClass, SourceDetail } from "../../types";
+import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, KnowledgeSourceFile, RepresentationRole, SourceClass, SourceDetail } from "../../types";
 import { errorMessage } from "../../lib/errors";
 import { pinForSource } from "../../knowledge/location";
 import { sourceOrigin, sourceTitle } from "../../knowledge/hostSource";
@@ -27,8 +27,8 @@ const originLabel = (): Record<SourceClass, string> => ({
   publisher_document: i18n.t("knowledge:sourceWorkspace.publisherDocument"), dataset: i18n.t("knowledge:sourceWorkspace.dataset"), user_statement: i18n.t("knowledge:sourceWorkspace.userStatement"),
   tool_result: i18n.t("knowledge:sourceWorkspace.toolResult"), analysis: i18n.t("knowledge:sourceWorkspace.analysis"), imported_contributor: i18n.t("knowledge:sourceWorkspace.importedSource"),
   code_revision: i18n.t("knowledge:sourceWorkspace.sourceCode"), web_page: i18n.t("knowledge:sourceWorkspace.webPage"), historical_document: i18n.t("knowledge:sourceWorkspace.historicalDocument"), user_file: i18n.t("knowledge:sourceWorkspace.userFile"),
+  user_provided: i18n.t("knowledge:sourceWorkspace.userProvided"),
 });
-const coverageLabel = (): Record<Coverage, string> => ({ included_full: i18n.t("knowledge:sourceWorkspace.fullDocument"), included_excerpt: i18n.t("knowledge:sourceWorkspace.excerpt"), upstream_truncated: i18n.t("knowledge:sourceWorkspace.incompleteSourceText"), metadata_only: i18n.t("knowledge:sourceWorkspace.sourceDetailsOnly"), omitted: i18n.t("knowledge:sourceWorkspace.contentNotSaved") });
 const materialLabel = (): Record<RepresentationRole, string> => ({ original: i18n.t("knowledge:sourceWorkspace.originalMaterial"), provider_payload: i18n.t("knowledge:sourceWorkspace.downloadedCopy"), extracted_text: i18n.t("knowledge:sourceWorkspace.extractedText"), structured: i18n.t("knowledge:sourceWorkspace.structuredData"), excerpt: i18n.t("knowledge:sourceWorkspace.excerpt"), derived: i18n.t("knowledge:sourceWorkspace.processedMaterial") });
 const compactOrigin = (value: string | undefined) => {
   if (!value) return "";
@@ -64,6 +64,17 @@ const sourceProcessingLabel = (status?: string) => {
 };
 /** A row shows its Map status only when it says more than "Source saved": a finished or unprocessed source stays quiet. */
 const quietStatus = (status?: string) => status === "completed" || sourceProcessingLabel(status) === sourceProcessingLabel();
+
+/** Where a user-provided Source came from: the Chat it was pasted in and what the user said about it, none of it verified. */
+function ProvidedNote({ provided }: { provided: NonNullable<SourceDetail["provided"]> }) {
+  const { t } = useTranslation("knowledge");
+  const pasted = sourceDate(new Date(provided.pastedAtMs).toISOString());
+  return <p className="knowledge-hint source-provided" data-testid="source-provided">
+    {t("sourceWorkspace.pastedInChat", { date: pasted })}
+    {provided.statedPublisher ? <> · {t("sourceWorkspace.statedPublisher", { publisher: provided.statedPublisher })}</> : null}
+    {" "}{t("sourceWorkspace.statedNotVerified")}
+  </p>;
+}
 
 type Props = { bridge: LoupistBridge; catalog: KnowledgeCatalog; location: KnowledgeLocation; query?: string; onQueryChange?: (query: string) => void; onManageProcessing?: () => void; onAddSource?: () => void; readerOnly?: boolean; compact?: boolean; onOpen: (location: KnowledgeLocation) => void; onPatch?: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin) => void; onChanged: () => void; onOpenLink?: (url: string) => void | Promise<void> };
 
@@ -228,7 +239,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
         {sources.map(({ record, item }) => <li key={`${record.recordId}:${item.id}`}>
           <Button variant="ghost" className="source-library-row" data-testid="source-library-row" data-source-id={item.id} aria-current={item.id === selected?.sourceId} onClick={() => onOpen({ loupistId: location.loupistId, surface: "source", recordId: record.recordId, revisionId: record.revisionId, objectId: item.id, view: { ...location.view, readerScrollTop: 0, focusSourceId: item.id }, selection: { kind: "source", sourceId: item.id } })}>
             <span className="memory-rail-copy"><strong>{sourceTitle(item)}</strong>{item.summary ? <span className="source-summary">{item.summary}</span> : null}
-              <small className="source-row-meta"><ConnectionOrigin origin={item.origin} /><span className="source-row-origin" title={sourceOrigin(item)}>{compactOrigin(sourceOrigin(item))}</span>{item.publicationTime?.value ?? item.acquiredAt?.value ? <time title={item.publicationTime?.value ?? item.acquiredAt?.value}>{sourceDate(item.publicationTime?.value ?? item.acquiredAt?.value)}</time> : null}
+              <small className="source-row-meta"><ConnectionOrigin origin={item.origin} />{item.userProvided ? <span className="source-row-provided">{t("sourceWorkspace.userProvided")}</span> : null}<span className="source-row-origin" title={sourceOrigin(item)}>{compactOrigin(sourceOrigin(item))}</span>{item.publicationTime?.value ?? item.acquiredAt?.value ? <time title={item.publicationTime?.value ?? item.acquiredAt?.value}>{sourceDate(item.publicationTime?.value ?? item.acquiredAt?.value)}</time> : null}
               {quietStatus(item.processing?.status) ? null : <span className="source-row-status" data-attention={needsAttention(item.processing?.status) || undefined}>{isProcessing(item.processing?.status) ? <Spinner /> : item.processing?.status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceProcessingLabel(item.processing?.status)}</span>}</small>
             </span>
           </Button>
@@ -245,8 +256,9 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
       {!detail && !error ? <p role="status" className="memory-loading-inline"><Spinner />{t("sourceWorkspace.openingSource")}</p> : null}
       {detail ? <article ref={readerRef} tabIndex={-1} aria-label={t("sourceWorkspace.sourceReader")} data-source-id={detail.sourceId}>
         <header className="knowledge-read-head source-read-head"><h2>{sourceTitle(detail)}</h2></header>
-        <div className="memory-meta-row"><ConnectionOrigin origin={detail.origin} /><Badge variant="outline">{originLabel()[detail.sourceClass]}</Badge><span className="source-origin">{originalUrl ? <Button variant="link" title={originalUrl} onClick={() => { void Promise.resolve().then(() => (onOpenLink ?? bridge.openExternalUrl.bind(bridge))(originalUrl)).catch((cause: unknown) => setExportError(errorMessage(cause, t("sourceWorkspace.couldNotOpenTheOriginalSource")))); }}><ExternalLinkIcon />{t("sourceWorkspace.openOriginal", { hostname: new URL(originalUrl).hostname })}</Button> : compactOrigin(sourceOrigin(detail))}</span>{detail.publicationTime?.value ? <time title={detail.publicationTime.value}>{sourceDate(detail.publicationTime.value)}</time> : null}</div>
-        <div className="source-evidence-summary"><span>{coverageLabel()[detail.coverage]}</span>{detail.revisionId !== sourceRecord?.revisionId ? <span>{t("sourceWorkspace.savedVersion")}</span> : null}</div>
+        <div className="memory-meta-row"><ConnectionOrigin origin={detail.origin} /><Badge variant="outline">{metadataLabel(originLabel(), detail.sourceClass)}</Badge><span className="source-origin">{originalUrl ? <Button variant="link" title={originalUrl} onClick={() => { void Promise.resolve().then(() => (onOpenLink ?? bridge.openExternalUrl.bind(bridge))(originalUrl)).catch((cause: unknown) => setExportError(errorMessage(cause, t("sourceWorkspace.couldNotOpenTheOriginalSource")))); }}><ExternalLinkIcon />{t(detail.provided ? "sourceWorkspace.openStatedLink" : "sourceWorkspace.openOriginal", { hostname: new URL(originalUrl).hostname })}</Button> : compactOrigin(sourceOrigin(detail))}</span>{detail.publicationTime?.value ? <time title={detail.publicationTime.value}>{sourceDate(detail.publicationTime.value)}</time> : null}</div>
+        {detail.provided ? <ProvidedNote provided={detail.provided} /> : null}
+        <div className="source-evidence-summary"><span>{coverageLabel(detail.coverage)}</span>{detail.revisionId !== sourceRecord?.revisionId ? <span>{t("sourceWorkspace.savedVersion")}</span> : null}</div>
         {exportError && originalUrl ? <p role="alert">{exportError}</p> : null}
         {span ? <section className="source-passage-section" aria-label={t("sourceWorkspace.savedPassage")}><h3>{t("sourceWorkspace.savedPassage")}</h3>{textMedia(span.mediaType) && readableText ? <blockquote className="knowledge-passage" data-testid="knowledge-passage" data-quote-source={readerOnly ? `source:${detail.sourceId}:${span.spanId}` : undefined} data-quote-retained-source={readerOnly ? JSON.stringify({ loupistId: location.loupistId, recordId: detail.recordId, revisionId: detail.revisionId, sourceId: detail.sourceId, spanId: span.spanId, worldRecordId: selected?.worldRecordId, worldRevisionId: selected?.worldRevisionId, purpose: "renderer_inspection" }) : undefined}>{readableText}</blockquote> : <p>{t("sourceWorkspace.theOriginalFileIsSavedATextPreviewIsUnavailable")}</p>}{span.presentation && (span.presentation.contentOffset > 0 || span.presentation.nextOffset !== null) ? <p className="knowledge-hint">{t("sourceWorkspace.thisIsASavedSectionOfALongerDocument")}</p> : null}{span.presentation?.extractionTruncated ? <p className="knowledge-hint">{t("sourceWorkspace.textExtractionStoppedBeforeTheEndOfTheDocument")}</p> : null}</section> : <p>{t("sourceWorkspace.onlyTheSourceDetailsWereSavedNoPassageIsAvailable")}</p>}
         {span && !textMedia(span.mediaType) ? <div className="knowledge-inspector-actions"><Button variant="outline" disabled={exporting} onClick={() => void exportFile()}>{exporting ? t("sourceWorkspace.exporting") : detail.material === "original" ? t("sourceWorkspace.exportOriginalFile") : t("sourceWorkspace.exportSavedFile")}</Button>{exported ? <span role="status">{t("sourceWorkspace.fileExported")}</span> : null}{exportError ? <p role="alert">{exportError}</p> : null}</div> : null}
@@ -255,7 +267,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
         {detailRefreshError ? <div className="knowledge-inspector-actions"><p role="alert">{detailRefreshError}</p><Button variant="outline" disabled={detailRefreshing} onClick={() => void refreshDetail()}>{detailRefreshing ? t("sourceWorkspace.refreshingSource") : t("sourceWorkspace.refreshSourceDetails")}</Button></div> : null}
         {detail.relatedClaims.length ? <details className="source-related-claims" aria-label={t("sourceWorkspace.relatedRelationships")}><summary>{t("sourceWorkspace.relationshipsUsingThisSource")}<span>{formatNumber(detail.relatedClaims.length)}</span></summary><ul aria-label={t("sourceWorkspace.relatedRelationships")}>{detail.relatedClaims.map((claim) => <li key={`${claim.worldRecordId}:${claim.worldRevisionId}:${claim.claimId}`}><Button variant="ghost" onClick={() => onOpen({ loupistId: location.loupistId, surface: "world", recordId: claim.worldRecordId, revisionId: claim.worldRevisionId, objectId: claim.claimId, selection: { kind: "claim", id: claim.claimId } })}>{claim.proposition}<small>{relationName(claim.relation, t)}</small></Button></li>)}</ul></details> : null}
         {detail.derivation ? <p>{detail.derivation}</p> : null}
-        <details className="knowledge-source-details"><summary>{t("sourceWorkspace.sourceDetails")}</summary><dl className="memory-meta-grid"><div><dt>{t("sourceWorkspace.coverage")}</dt><dd>{coverageLabel()[detail.coverage]}</dd></div><div><dt>{t("sourceWorkspace.format")}</dt><dd>{materialLabel()[detail.material]}</dd></div>{detail.acquiredAt ? <div><dt>{t("sourceWorkspace.saved")}</dt><dd>{timePointValue(detail.acquiredAt)}</dd></div> : null}</dl>{span?.contextNote ? <p>{span.contextNote}</p> : null}{span && spanSelectorLabel(span.selector) ? <p>{spanSelectorLabel(span.selector)}</p> : null}</details>
+        <details className="knowledge-source-details"><summary>{t("sourceWorkspace.sourceDetails")}</summary><dl className="memory-meta-grid"><div><dt>{t("sourceWorkspace.coverage")}</dt><dd>{coverageLabel(detail.coverage)}</dd></div><div><dt>{t("sourceWorkspace.format")}</dt><dd>{metadataLabel(materialLabel(), detail.material)}</dd></div>{detail.acquiredAt ? <div><dt>{t("sourceWorkspace.saved")}</dt><dd>{timePointValue(detail.acquiredAt)}</dd></div> : null}</dl>{span?.contextNote ? <p>{span.contextNote}</p> : null}{span && spanSelectorLabel(span.selector) ? <p>{spanSelectorLabel(span.selector)}</p> : null}</details>
       </article> : null}
     </div> : null}
   </div>;

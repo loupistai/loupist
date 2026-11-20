@@ -11,7 +11,10 @@ async function openImport(bridge: MockLoupistBridge) {
   await user.click(await mainTab(/Settings/));
   await user.click(screen.getByRole("button", { name: "Loupists" }));
   await user.click(await screen.findByRole("button", { name: "Import Loupist" }));
-  return { user, dialog: screen.getByRole("dialog", { name: "Open a Loupist folder" }) };
+  // The dialog is named like the button that opens it, and says once which folder to choose.
+  const dialog = screen.getByRole("dialog", { name: "Import a Loupist" });
+  expect(within(dialog).getAllByText(/Choose a Loupist folder|Choose the folder/u)).toHaveLength(1);
+  return { user, dialog };
 }
 
 it("requires a chosen and trusted folder, then imports, selects the Loupist and opens Chat", async () => {
@@ -27,7 +30,7 @@ it("requires a chosen and trusted folder, then imports, selects the Loupist and 
   expect(submit).toBeDisabled();
   await user.click(within(dialog).getByRole("checkbox", { name: /I trust this folder/ }));
   await user.click(submit);
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Open a Loupist folder" })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Import a Loupist" })).toBeNull());
   expect(importLoupist).toHaveBeenCalledExactlyOnceWith({ workspace_path: folder });
   expect(selectedLoupistButton()).toHaveTextContent("Restored Loupist");
   expect(screen.getByRole("button", {name:"Bot",current:"page"})).toBeVisible();
@@ -50,7 +53,7 @@ it("keeps a native rejection visible and retries the same folder", async () => {
   expect(selectLoupist).toHaveBeenCalledTimes(selectionsBefore);
   expect(within(dialog).getByRole("checkbox")).toBeChecked();
   await user.click(within(dialog).getByRole("button", { name: "Import" }));
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Open a Loupist folder" })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Import a Loupist" })).toBeNull());
   expect(importLoupist).toHaveBeenCalledTimes(2);
 });
 

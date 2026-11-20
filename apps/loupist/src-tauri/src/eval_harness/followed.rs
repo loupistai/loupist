@@ -1,20 +1,19 @@
-//! Opt-in live check that followed assets reach a Loupist's Map through "What
-//! you follow" Sources and ordinary World jobs, at creation and when followed later.
+//! Opt-in live check that a Loupist's followed assets reach its Map through
+//! "What you follow" Sources and ordinary World jobs, for its first follows and
+//! for ones followed later.
 use super::*;
 
 /// A mixed list: a US stock, a Korean stock under its Korean name, an ETF, a
 /// crypto asset, a commodity and a manual entry without a name or market.
-const WATCHING: [(&str, &str, Option<&str>); 6] = [
+const WATCHING: [(&str, &str, Option<&str>); 7] = [
     ("AAPL", "NASDAQ", Some("Apple")),
     ("005930", "KRX", Some("삼성전자")),
     ("SPY", "NYSEARCA", Some("SPDR S&P 500 ETF Trust")),
     ("BTC", "CRYPTO", Some("Bitcoin")),
     ("GC", "COMEX", Some("Gold")),
     ("NVDA", "UNKNOWN", None),
+    ("000660", "KRX", Some("SK하이닉스")),
 ];
-/// Held, under its Korean name.
-const HOLDINGS_CSV: &str =
-    "symbol,market,name,quantity,cost,value,currency\n000660,KRX,SK하이닉스,10,150000,1800000,KRW\n";
 /// Followed after creation: a stock, a crypto asset and two fictional manual
 /// entries like the native journey's.
 const FOLLOWED_LATER: [(&str, &str, Option<&str>); 4] = [
@@ -69,7 +68,7 @@ fn landed(state: &AppState, loupist: &str) -> Result<Value> {
             cursor: None,
         })?
         .events;
-    let context = state.store.map_context()?;
+    let context = state.store.map_context(loupist)?;
     let snapshot: Option<String> = {
         let connection = state.store.lock_loupist(loupist)?;
         let mut statement = connection.prepare(
@@ -107,7 +106,7 @@ fn landed(state: &AppState, loupist: &str) -> Result<Value> {
         })
         .collect();
     let mut assets = Vec::new();
-    for item in context.watchlist.iter().chain(&context.holdings) {
+    for item in context.watchlist.iter() {
         let (matched, _) = crate::knowledge::match_items(std::slice::from_ref(item), &world);
         let nodes: Vec<Value> = matched
             .iter()
@@ -132,12 +131,11 @@ fn landed(state: &AppState, loupist: &str) -> Result<Value> {
         .nodes
         .iter()
         .filter(|node| node.kind == "entity")
-        .map(|node| json!({ "label": node.label, "entityKind": node.entity_kind, "watched": node.watched, "held": node.held }))
+        .map(|node| json!({ "label": node.label, "entityKind": node.entity_kind, "watched": node.watched }))
         .collect();
     Ok(json!({
         "assets": assets,
         "unmatchedWatchlist": map.unmatched_watchlist.iter().map(|item| &item.symbol).collect::<Vec<_>>(),
-        "unmatchedHoldings": map.unmatched_holdings.iter().map(|item| &item.symbol).collect::<Vec<_>>(),
         "entities": entities,
         "claims": claims,
         "entityAdded": events.iter().filter(|event| event.kind == "entity_added").count(),
@@ -159,8 +157,8 @@ async fn live_followed_assets_reach_the_map() -> Result<()> {
     }
     let resources = PathBuf::from(std::env::var("LOUPIST_FOLLOWED_RESOURCES")?);
     let profile = std::env::var("LOUPIST_FOLLOWED_MODEL")
-        .unwrap_or_else(|_| "openai-codex/gpt-6-luna".into());
-    let thinking = std::env::var("LOUPIST_FOLLOWED_THINKING").unwrap_or_else(|_| "high".into());
+        .unwrap_or_else(|_| "openai-codex/gpt-6.2-sol".into());
+    let thinking = std::env::var("LOUPIST_FOLLOWED_THINKING").unwrap_or_else(|_| "medium".into());
     let (provider, model_id) = profile.split_once('/').ok_or("model is provider/model")?;
     let temp = tempfile::Builder::new()
         .prefix("loupist-followed-")
@@ -191,14 +189,9 @@ async fn live_followed_assets_reach_the_map() -> Result<()> {
         state.maintenance.clone(),
         Some(inference.clone()),
     );
-    if !state.graph.runtime_available() {
+    if !state.graph.runtime_available() || !state.graph.wait_for_semantic_model() {
         return Err("Graph runtime unavailable".into());
     }
-    for (symbol, market, name) in WATCHING {
-        state.store.watchlist_add(symbol, market, name)?;
-    }
-    let preview = state.store.preview_csv_bytes(HOLDINGS_CSV.as_bytes())?;
-    state.store.holdings_commit_csv(&preview.preview_id)?;
     let loupist = crate::commands::loupist::create_managed_loupist(
         &state,
         crate::commands::LoupistCreateRequest {
@@ -211,9 +204,9 @@ async fn live_followed_assets_reach_the_map() -> Result<()> {
     )
     .await?
     .id;
-    // The eval catalog has no World default, so the Source waits for a model like
-    // a new Loupist created before connecting; choosing one backfills it.
-    let config = {
+    // The eval catalog has no World default, so the World model is chosen before
+    // the new Loupist's first follows, as New Loupist's starters follow after it.
+    {
         let mut conn = state.store.lock_loupist(&loupist)?;
         let tx = conn.transaction()?;
         let mut config = load_settings(&tx, &loupist)?;
@@ -231,11 +224,13 @@ async fn live_followed_assets_reach_the_map() -> Result<()> {
             .collect();
         store_settings(&tx, &loupist, &config)?;
         tx.commit()?;
-        config
-    };
-    KnowledgeStore::for_loupist(state.store.clone(), &loupist)?.transact(|write| {
-        write.enqueue_existing_sources(&loupist, &config, crate::commands::now_ms())
-    })?;
+    }
+    for (symbol, market, name) in WATCHING {
+        state
+            .store
+            .seed_followed_listing(&loupist, symbol, market, name)?;
+    }
+    crate::commands::knowledge::sync_followed_assets(&state, &loupist)?;
     let execution = async {
         let mut bytes = vec![];
         let mut phase = |name: &str, processing: Value, elapsed: Duration| -> Result<Value> {
@@ -280,7 +275,10 @@ async fn live_followed_assets_reach_the_map() -> Result<()> {
         // Following later goes through the production follow path; the burst
         // settles into one more "What you follow" Source and one World job.
         for (symbol, market, name) in FOLLOWED_LATER {
-            crate::commands::user_context::follow(&state, symbol, market, name, Some(&loupist))?;
+            state
+                .store
+                .seed_followed_listing(&loupist, symbol, market, name)?;
+            crate::commands::assets::follows_changed(&state);
         }
         tokio::time::sleep(Duration::from_secs(6)).await;
         let started = Instant::now();

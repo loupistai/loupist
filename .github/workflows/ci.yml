@@ -179,7 +179,7 @@ jobs:
             runtime: "false"
             cache: verify-lint
           - leg: tests
-            steps: tests,python-runtime-verify
+            steps: embed-assets-verify,tests,python-runtime-verify
             runtime: "true"
             cache: verify
           - leg: eval
@@ -232,10 +232,28 @@ jobs:
           rust-components: clippy,rustfmt
           rust-cache-key: ${{ matrix.cache }}
 
-      # setup.sh stages the Python runtime as the runner user. apt above is the root step.
+      # The pinned embedding model is a 265 MB download. setup.sh's --ensure
+      # checks a restored copy against the pins and downloads only on a miss.
+      - name: Restore the staged embedding model
+        if: matrix.runtime == 'true'
+        id: embed-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/loupist/src-tauri/resources/embed_assets
+          key: embed-assets-v1-${{ runner.os }}-${{ hashFiles('src/knowledge/embed_assets/pin.json', 'src/knowledge/embed_assets/NOTICE', 'apps/loupist/scripts/stage-embed-assets.py', 'apps/loupist/scripts/check_embed_assets.py') }}
+
+      # setup.sh stages the Python runtime and the embedding model as the
+      # runner user. apt above is the root step.
       - name: Install locked runtime test dependencies
         if: matrix.runtime == 'true'
         run: sh apps/loupist/scripts/setup.sh
+
+      - name: Save the staged embedding model
+        if: matrix.leg == 'tests' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.embed-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/loupist/src-tauri/resources/embed_assets
+          key: ${{ steps.embed-cache.outputs.cache-primary-key }}
 
       - name: Verify desktop Rust
         run: |
@@ -312,6 +330,17 @@ jobs:
       - name: Stage the pinned offline Python runtime
         run: python3 apps/loupist/scripts/stage_python_runtime.py --ensure
 
+      # verify-rust on main saves this key; --ensure checks the restored copy
+      # against the pins and downloads only on a miss.
+      - name: Restore the staged embedding model
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/loupist/src-tauri/resources/embed_assets
+          key: embed-assets-v1-${{ runner.os }}-${{ hashFiles('src/knowledge/embed_assets/pin.json', 'src/knowledge/embed_assets/NOTICE', 'apps/loupist/scripts/stage-embed-assets.py', 'apps/loupist/scripts/check_embed_assets.py') }}
+
+      - name: Stage the pinned local embedding model
+        run: python3 apps/loupist/scripts/stage-embed-assets.py --ensure
+
       # No DISPLAY is set, so the GUI lease starts a private Xvfb per suite.
       - name: Run native interaction regression suite
         working-directory: apps/loupist/e2e
@@ -347,7 +376,7 @@ jobs:
             runtime: "false"
             cache: verify-lint
           - leg: tests
-            steps: tests,python-runtime-verify
+            steps: embed-assets-verify,tests,python-runtime-verify
             runtime: "true"
             cache: verify
           - leg: eval
@@ -373,9 +402,26 @@ jobs:
           rust-components: clippy,rustfmt
           rust-cache-key: ${{ matrix.cache }}
 
+      # The pinned embedding model is a 265 MB download. setup.sh's --ensure
+      # checks a restored copy against the pins and downloads only on a miss.
+      - name: Restore the staged embedding model
+        if: matrix.runtime == 'true'
+        id: embed-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/loupist/src-tauri/resources/embed_assets
+          key: embed-assets-v1-${{ runner.os }}-${{ hashFiles('src/knowledge/embed_assets/pin.json', 'src/knowledge/embed_assets/NOTICE', 'apps/loupist/scripts/stage-embed-assets.py', 'apps/loupist/scripts/check_embed_assets.py') }}
+
       - name: Install locked runtime test dependencies
         if: matrix.runtime == 'true'
         run: sh apps/loupist/scripts/setup.sh
+
+      - name: Save the staged embedding model
+        if: matrix.leg == 'tests' && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.embed-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/loupist/src-tauri/resources/embed_assets
+          key: ${{ steps.embed-cache.outputs.cache-primary-key }}
 
       - name: Verify desktop Rust
         run: |

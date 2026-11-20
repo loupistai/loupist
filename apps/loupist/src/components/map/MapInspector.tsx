@@ -16,10 +16,10 @@ import { Button } from "../ui/button";
 import { extensionKindLabel, nodeCategory } from "../../knowledge/mapKinds";
 import { entityLabel } from "../../knowledge/mapItems";
 import { useMapDetail } from "./useMapData";
+import { InspectorThesis } from "../assets/InspectorThesis";
 import { MapRelationships } from "./MapRelationships";
 import { hasRelationshipsView } from "./relationships";
 import { isBasePerspective, isLensNode, isStandingPlaceholder, lensDisplayTitle } from "./lensReading";
-import { InspectorThesis } from "../assets/InspectorThesis";
 import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
@@ -101,8 +101,11 @@ export function MapInspector({ node, map, bridge, location, onClose, onSelect, o
   if (node.kind === "lens_principle" && node.recordId) return <PrincipleInspector key={`${location.loupistId}:${node.recordId}`} bridge={bridge} loupistId={location.loupistId} refreshKey={lens?.revisionId ?? node.label} node={node} map={map} onClose={onClose} onSelect={onSelect} onChanged={onChanged} onOpenChat={onOpenChat} />;
   return <aside className="map-inspector" aria-labelledby="map-inspector-title"><Button variant="ghost" size="icon-sm" className="map-inspector-close" aria-label={t("map.close")} onClick={onClose}><XIcon /></Button>
     {trail.length ? <Button variant="ghost" size="sm" className="map-inspector-back" onClick={walkBack}><ArrowLeftIcon />{t("map.back")}</Button> : null}
-    <div className="map-kind-chip"><i className={`map-swatch is-${nodeCategory(node)}`} />{extensionKindLabel(node.kindLabels, i18n.language, t(`map.kind.${nodeCategory(node)}`))}{node.watched ? <span>{t("map.kind.watching")}</span> : null}{node.held ? <span>{t("map.kind.holding")}</span> : null}</div>
-    <h2 id="map-inspector-title" tabIndex={-1} ref={heading}>{headingText}</h2>
+    {/* The name leads; the kind sits above it in the side column and after it on the bottom sheet's one line. */}
+    <div className="map-inspector-title">
+      <h2 id="map-inspector-title" tabIndex={-1} ref={heading}>{headingText}</h2>
+      <div className="map-kind-chip"><i className={`map-swatch is-${nodeCategory(node)}`} />{extensionKindLabel(node.kindLabels, i18n.language, t(`map.kind.${nodeCategory(node)}`))}{node.watched ? <span>{t("map.kind.watching")}</span> : null}</div>
+    </div>
     {!isLensNode(node) && name !== node.label ? <p className="map-muted">{node.label}</p> : null}
     {basePerspective ? <p className="map-base-perspective">{t("principles.perspectiveCaption")}</p> : null}
     <ConnectionOrigin origin={node.origin} />

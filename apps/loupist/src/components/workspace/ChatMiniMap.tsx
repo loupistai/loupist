@@ -5,6 +5,7 @@ import { useTranslation } from "../../i18n";
 import { formatNumber } from "../../i18n/format";
 import { Button } from "../ui/button";
 import { frozenLayout } from "../map/layout";
+import { isDrawnRelation } from "../../knowledge/mapItems";
 import type { MapCanvasControls } from "../map/MapCanvas";
 import { MapList } from "../map/MapList";
 import { useChatMap } from "./ChatMapContext";
@@ -21,13 +22,13 @@ export function ChatMiniMap({ onOpenFull }: { onOpenFull: (location: KnowledgeLo
   const positions = useMemo(() => map && state ? frozenLayout(`chat:${state.loupistId}:${state.chatId}`, map.worldRevisionId, map.nodes, map.edges) : [], [map, state?.loupistId, state?.chatId]);
   if (!state) return null;
   const nameCount = map?.nodes.length ?? 0;
-  const linkCount = map?.edges.length ?? 0;
+  const linkCount = map?.edges.filter(isDrawnRelation).length ?? 0;
   const stats = t("map.stats", { names: t("map.chatStatsNames", { count: nameCount, formattedCount: formatNumber(nameCount) }), links: t("map.statsLinks", { count: linkCount, formattedCount: formatNumber(linkCount) }) });
   const full = (selection?: KnowledgeLocation["selection"]) => onOpenFull({ loupistId: state.loupistId, surface: "world", selection });
   return <section className="chat-mini-map" aria-busy={state.loading}>
     <header className="chat-mini-map-header">
       <Button variant="link" size="sm" onClick={() => full()}>{t("map.chatOpenFull")}</Button>
-      <Button variant="ghost" size="sm" aria-pressed={list} onClick={() => setList(!list)}>{t(list ? "map.canvasView" : "map.listView")}</Button>
+      <Button variant="ghost" size="sm" aria-pressed={list} onClick={() => setList(!list)}>{t("map.listView")}</Button>
     </header>
     {state.error ? <div className="map-error" role="alert">{t("map.error")}<Button variant="ghost" onClick={state.retry}>{t("map.retry")}</Button></div> : null}
     <div className="chat-mini-map-body">

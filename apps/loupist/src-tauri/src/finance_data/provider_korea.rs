@@ -580,7 +580,7 @@ impl FinanceDataService {
             .append_pair("crtfc_key", api_key);
         let raw = self
             .fetch_provider(
-                self.client.get(request_url),
+                self.dart_client.get(request_url),
                 OPENDART_SOURCE_ID,
                 public_url.to_string(),
                 16 * 1024 * 1024,
@@ -623,7 +623,7 @@ impl FinanceDataService {
         pacer().await;
         let raw = self
             .fetch_provider(
-                self.client.get(request_url),
+                self.dart_client.get(request_url),
                 OPENDART_SOURCE_ID,
                 public_url.to_string(),
                 MAX_PROVIDER_BYTES,
@@ -675,7 +675,7 @@ impl FinanceDataService {
             .append_pair("crtfc_key", api_key);
         let raw = self
             .fetch_provider(
-                self.client.get(request_url),
+                self.dart_client.get(request_url),
                 OPENDART_SOURCE_ID,
                 public_url.to_string(),
                 MAX_PROVIDER_BYTES,
@@ -705,16 +705,13 @@ impl FinanceDataService {
             .append_pair("crtfc_key", api_key);
         let raw = self
             .fetch_provider(
-                self.client.get(request_url),
+                self.dart_client.get(request_url),
                 OPENDART_SOURCE_ID,
                 public_url.to_string(),
                 MAX_LARGE_PROVIDER_BYTES,
             )
             .await?;
-        if raw.bytes.first() == Some(&b'{') {
-            validate_dart_status(&raw.bytes)?;
-            return Err(FinanceDataError::InvalidResponse);
-        }
+        validate_dart_document_status(&raw.bytes)?;
         let normalized = normalize_dart_filing_read(&rcept_no, &raw)?;
         Ok(normalized)
     }

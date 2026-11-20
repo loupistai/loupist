@@ -110,17 +110,9 @@ fn every_loupist_has_exactly_one_home_thread() {
 }
 
 #[test]
-fn a_finished_run_posts_one_short_message_into_the_thread_without_holdings_values() {
+fn a_finished_run_posts_one_short_message_into_the_thread() {
     let temporary = tempfile::tempdir().unwrap();
     let state = fixture(&temporary);
-    let preview = state
-        .store
-        .preview_csv_bytes(b"symbol,market,name,quantity,cost,value,currency\nHANUL,KRX,Hanul Precision,4321,77.25,98765.43,KRW\n")
-        .unwrap();
-    state
-        .store
-        .holdings_commit_csv(&preview.preview_id)
-        .unwrap();
     ensure_home_thread(&state, "loupist-a").unwrap();
     let task = service::create(&state, "loupist-a", draft("Compare inventory days"), None).unwrap();
     let run_id = finish_run(
@@ -153,8 +145,6 @@ fn a_finished_run_posts_one_short_message_into_the_thread_without_holdings_value
     assert!(delivery.schedule.is_some());
     assert!(delivery.run_thread_id.is_some());
     assert!(home.pi_session_cache.is_none());
-    let stored = serde_json::to_string(&home).unwrap();
-    assert!(!stored.contains("4321") && !stored.contains("98765"));
 }
 
 #[test]
@@ -184,6 +174,57 @@ fn a_failed_run_is_posted_as_unfinished_and_a_busy_thread_receives_it_later() {
         home.messages[0].delivery.as_ref().unwrap().status,
         RunStatus::Failed
     );
+}
+
+#[test]
+fn a_run_a_crash_cut_short_is_posted_as_unfinished_and_one_the_user_ended_is_not() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary);
+    let home = ensure_home_thread(&state, "loupist-a").unwrap();
+    let ended = |title: &str, error: Option<&str>| {
+        let task = service::create(&state, "loupist-a", draft(title), None).unwrap();
+        let (claim, ()) = state
+            .store
+            .scheduled_task_claim_with("loupist-a", &task.id, now_ms(), true, |_| Ok(()))
+            .unwrap()
+            .unwrap();
+        match error {
+            Some(error) => {
+                state
+                    .store
+                    .scheduled_task_finish(
+                        "loupist-a",
+                        &claim.run.run_id,
+                        RunStatus::Interrupted,
+                        Some(error),
+                        now_ms(),
+                    )
+                    .unwrap();
+            }
+            // Startup recovery: the app went away while the run was unfinished.
+            None => {
+                state
+                    .store
+                    .scheduled_tasks_recover_running(now_ms())
+                    .unwrap();
+            }
+        }
+        claim.run.run_id
+    };
+    ended("Stopped check", Some(crate::scheduled_tasks::USER_STOPPED));
+    ended("Quit check", Some(crate::scheduled_tasks::APP_QUIT));
+    let crashed = ended("Crashed check", None);
+
+    assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 1);
+    assert_eq!(deliver_finished_runs(&state, "loupist-a").unwrap(), 0);
+    let home = state.store.get_chat(&home.id).unwrap().unwrap();
+    assert_eq!(home.messages.len(), 1);
+    let message = &home.messages[0];
+    assert_eq!(message.content, "Crashed check could not finish.");
+    let delivery = message.delivery.as_ref().unwrap();
+    assert_eq!(delivery.run_id, crashed);
+    assert_eq!(delivery.status, RunStatus::Interrupted);
+    assert!(delivery.run_thread_id.is_some());
 }
 
 #[test]
@@ -271,18 +312,12 @@ fn a_crossed_line_is_announced_once_in_the_thread_and_waits_in_needs_attention()
     let temporary = tempfile::tempdir().unwrap();
     let state = fixture(&temporary);
     let home = ensure_home_thread(&state, "loupist-a").unwrap();
+    let fixture_asset = state
+        .store
+        .seed_followed_listing("loupist-a", "990308", "KRX", Some("Hanul Precision"))
+        .unwrap();
     let asset_id = crate::commands::assets::with_assets(&state, "loupist-a", true, |tx| {
-        let page = assets::ensure_page(
-            tx,
-            "loupist-a",
-            &assets::AssetIdentity {
-                symbol: "HANU".into(),
-                market: "KRX".into(),
-                name: "Hanul Precision".into(),
-            },
-            None,
-            home.created_at_ms,
-        )?;
+        let page = assets::ensure_asset_page(tx, "loupist-a", &fixture_asset, home.created_at_ms)?;
         let thesis = |role| {
             Some(assets::JournalThesis {
                 asset_id: page.asset_id.clone(),

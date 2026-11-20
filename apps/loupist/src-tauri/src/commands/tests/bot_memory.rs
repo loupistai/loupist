@@ -83,6 +83,7 @@ fn policy(saving: bool) -> ToolPolicy {
         propose_memory_updates: saving,
         memory_proposal_budget: u8::from(saving),
         as_of: None,
+        display_currency: None,
     }
 }
 

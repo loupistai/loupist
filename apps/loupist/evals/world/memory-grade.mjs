@@ -210,8 +210,8 @@ export function evaluateMemoryCheck(check, row, scenario, prior = new Map()) {
       if (!learned) return unknown('referenced learning snapshot missing');
       ids = new Set(learned.map((entry) => entry.record.recordId));
     } else if (check.kind === 'lens') {
-      // Reading the automatic standing perspective does not prove retrieval of
-      // a method learned earlier in this scenario.
+      // Reading the standing perspective, which every turn's context delivers,
+      // does not prove retrieval of a method learned earlier in this scenario.
       const learned = [...prior.values()].flatMap((earlier) => createdLenses(earlier) ?? []);
       if (learned.length) ids = new Set(learned.map((entry) => entry.record.recordId));
     }

@@ -217,6 +217,7 @@ def test_official_server_is_admin_only_and_reaches_every_manifest_grant(
     tmp_path.chmod(0o700)
     script = """
 import asyncio
+import json
 import sys
 from pathlib import Path
 from loupist_openbb.bootstrap import (
@@ -232,6 +233,7 @@ from loupist_openbb.manifest import (
 
 scratch = Path(sys.argv[1])
 configure_scratch_environment(scratch)
+from fastmcp import Client
 from loupist_openbb.server import create_server
 
 manifest = load_runtime_manifest()
@@ -321,6 +323,25 @@ async def check_surface():
     assert local_tools | set(implicit_provider) <= discovered_tools
     for tool_name in implicit_provider:
         assert hasattr(registered_by_name[tool_name].run, "__wrapped__")
+
+    # The host reads these schemas after activation. A single oversized
+    # descriptor invalidates the inventory for every active Tool.
+    async with Client(server) as client:
+        for category in categories:
+            activation = await client.call_tool("activate_category", {"category": category})
+            assert not activation.is_error
+        advertised = {tool.name: tool for tool in await client.list_tools()}
+    assert set(advertised) == discovered_tools | {tool.name for tool in tools}
+    cot = advertised["cftc_cot"]
+    assert cot.outputSchema == {"type": "object"}
+    assert {"provider", "code", "report_type", "measure", "futures_only", "start_date"} <= (
+        cot.inputSchema["properties"].keys()
+    )
+    for name, tool in advertised.items():
+        for schema in (tool.inputSchema, tool.outputSchema):
+            if schema is not None:
+                encoded = json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
+                assert len(encoded.encode()) <= 65536, name
 
     from openbb_core.provider.utils import helpers as provider_helpers
     try:

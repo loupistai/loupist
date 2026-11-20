@@ -83,7 +83,10 @@ pub(super) async fn launch_chat_turn(
         request,
         on_event,
         surface,
+        host_handoff,
         untrusted_context,
+        handoff_trust,
+        retained_handoff_text,
         chat_started_at,
         run_id,
         chat_controls,
@@ -108,7 +111,7 @@ pub(super) async fn launch_chat_turn(
         chat_attachments,
         mut chat,
         had_prior_messages,
-        envelope,
+        mut envelope,
         activity_recorder,
         memory_revision,
         mut turn_resources,
@@ -135,12 +138,32 @@ pub(super) async fn launch_chat_turn(
     let entity_links = std::sync::mpsc::channel::<(String, Vec<String>)>();
     // Approval and question cards wake the run loop even while a tool waits and no Pi event arrives.
     let (card_tx, card_rx) = tokio::sync::mpsc::unbounded_channel::<(Option<String>, CardUpdate)>();
+    agent_harness::interface::resolve_language(&mut envelope.appearance.language);
     let capture = {
         let mut capture = ToolCapture::for_chat(assistant_message_id.clone());
         capture.unattended_run_id = (!surface.interactive()).then(|| run_id.clone());
         capture.surface = Some(surface.clone());
+        capture.host_handoff = host_handoff;
+        capture.interface_locale = surface.interactive().then(|| {
+            agent_harness::interface::InterfaceLocale::from_language(&envelope.appearance.language)
+        });
         capture.tool_trace = on_event.tool_trace.clone();
-        capture.admit_untrusted_context(untrusted_context);
+        // A previous run's summary from an answer that read third-party text
+        // arrives delimited and raises the tier, as `chat_history` returns it.
+        capture.admit_untrusted_context(
+            untrusted_context
+                || retained_handoff_text
+                || handoff_trust
+                    .as_ref()
+                    .is_some_and(|trust| trust.untrusted())
+                || envelope
+                    .previous_run
+                    .as_ref()
+                    .is_some_and(|run| run.untrusted),
+        );
+        if let Some(trust) = &handoff_trust {
+            trust.restore_custom(&capture.turn_taint);
+        }
         capture.native = crate::commands::tool_executor::NativeGate::for_turn(native_roots);
         #[cfg(feature = "eval-harness")]
         {
@@ -149,11 +172,19 @@ pub(super) async fn launch_chat_turn(
         // Sites the user names stay readable after third-party text arrives.
         // A host briefing prompt includes observation text, not a user message;
         // its embedded URLs must not be admitted as sites the user typed.
-        if !untrusted_context {
+        if !untrusted_context
+            && chat
+                .messages
+                .last()
+                .is_none_or(|message| message.handoff_action.is_none())
+        {
             capture.turn_taint.note_user_text(&request.prompt);
         }
         capture.tool_refusals = on_event.tool_refusals.clone();
         capture.bound_chat_id = Some(chat.id.clone());
+        capture.opening_task_id = chat
+            .opening_scheduled_turn()
+            .map(|turn| turn.task_id.clone());
         capture.turn_as_of = request.as_of.clone();
         capture.principle_user_message_id = Some(user_message_id.clone());
         capture.bot_memory_review = envelope
@@ -163,6 +194,7 @@ pub(super) async fn launch_chat_turn(
             .unwrap_or_default();
         capture.schedule_context =
             Some(crate::commands::tool_executor::schedules::ScheduleContext {
+                research_model: surface.is_bot().then(|| pi_execution.model_lock()),
                 model_profile_id: request.model_profile_id.clone(),
                 thinking_level: request.thinking_level.clone(),
                 run_options: request.run_options.clone(),
@@ -205,9 +237,11 @@ pub(super) async fn launch_chat_turn(
         capture.approval_sink = Some(Arc::new(move |call_id, approval| {
             let _ = approval_tx.send((call_id, CardUpdate::Approval(approval)));
         }));
-        capture.question_sink = Some(Arc::new(move |call_id, question| {
-            let _ = card_tx.send((call_id, CardUpdate::Question(question)));
-        }));
+        if !host_handoff {
+            capture.question_sink = Some(Arc::new(move |call_id, question| {
+                let _ = card_tx.send((call_id, CardUpdate::Question(question)));
+            }));
+        }
         capture.mcp_scratch_root = Some(turn_resources.run_scratch_path().join("mcp"));
         capture.mcp_pool = Some(state.mcp_pool.clone());
         capture.web_search_policy = web_search_policy;
@@ -237,6 +271,8 @@ pub(super) async fn launch_chat_turn(
             reply.failed_with_stop_precedence(pi_execution.model_lock(), None),
         ));
     }
+    #[cfg(feature = "eval-harness")]
+    let eval_appearance = envelope.appearance.clone();
     let turn_envelope = match build_turn_envelope(
         envelope,
         state,
@@ -281,6 +317,9 @@ pub(super) async fn launch_chat_turn(
             ));
         }
     };
+    let is_handoff = handoff_trust.is_some();
+    let turn_envelope =
+        crate::commands::attachments::attach_handoff_note(&turn_envelope, chat.messages.last());
     let pi_config = match pi_config
         .with_skills(skill_files)
         .and_then(|config| config.with_host_context(host_context))
@@ -288,6 +327,7 @@ pub(super) async fn launch_chat_turn(
             let continuation = pi_chat_turn_prompt(
                 &current_prompt,
                 &agent_harness::render_turn_context(&turn_envelope),
+                is_handoff,
                 None,
             )
             .map_err(|_| crate::pi::PiError::InvalidLaunchValue)?;
@@ -329,8 +369,9 @@ pub(super) async fn launch_chat_turn(
             on_event.set_failure_kind(classify_turn_failure(&_error, ChatFailureKind::PiExited));
             #[cfg(feature = "eval-harness")]
             if let Some(capture) = &on_event.eval_pi_event {
+                // Pi failed before the prompt was sent, so no model call ran.
                 capture(
-                    &serde_json::json!({"type":"eval_error","code":_error.code,"message":crate::pi::e2e_failure_category(&_error.message)}),
+                    &serde_json::json!({"type":"eval_error","phase":"launch","code":_error.code,"message":crate::pi::e2e_failure_category(&_error.message)}),
                 );
             }
             #[cfg(feature = "e2e")]
@@ -354,6 +395,7 @@ pub(super) async fn launch_chat_turn(
     let pi_prompt = match pi_chat_turn_prompt(
         &current_prompt,
         &turn_envelope,
+        is_handoff,
         (!resumed).then_some(ColdChatBootstrap {
             attachments_root: &chat_attachments,
             thread_id: &chat.id,
@@ -400,6 +442,26 @@ pub(super) async fn launch_chat_turn(
             ));
         }
     };
+    #[cfg(feature = "eval-harness")]
+    if let Some(observe) = &on_event.eval_pi_event {
+        let language = if eval_appearance.language == "system" {
+            crate::briefings::system_language()
+        } else {
+            eval_appearance.language
+        };
+        let sent: Value = serde_json::from_str(&turn_envelope).expect("rendered turn envelope");
+        observe(&serde_json::json!({
+            "type": "eval_admission",
+            "run_id": run_id,
+            "thread_id": request.thread_id,
+            "surface": surface.name(),
+            "prompt": (!surface.interactive()).then_some(&current_prompt),
+            "resolved_appearance": language,
+            "display_currency": eval_appearance.display_currency,
+            "interface_name_count": sent["interface"]["names"].as_object().map_or(0, |names| names.len()),
+            "resumed": resumed,
+        }));
+    }
     let setup_ms = elapsed_millis(chat_started_at);
     #[cfg(feature = "e2e")]
     eprintln!("Loupist E2E Chat diagnostic: phase=prompt category=sent");
@@ -432,6 +494,7 @@ pub(super) async fn launch_chat_turn(
     let gone_retry = Box::new(super::model_gone::GoneRetrySeed {
         pi_config,
         turn_envelope: full_turn_envelope,
+        is_handoff,
         current_prompt,
         chat_id: chat.id.clone(),
         history,
@@ -498,7 +561,7 @@ pub(super) async fn launch_chat_turn(
 /// the selected artifact, principles and the Loupist's voice. The charter
 /// delivery and principle context are admitted into `capture` here, before
 /// Pi starts. Only the Journal read can fail.
-async fn build_turn_envelope(
+pub(super) async fn build_turn_envelope(
     inputs: TurnEnvelopeInputs,
     state: &AppState,
     profile: &LoupistProfile,
@@ -507,6 +570,7 @@ async fn build_turn_envelope(
     capture: &ToolCapture,
 ) -> Result<String, CommandError> {
     let TurnEnvelopeInputs {
+        appearance,
         mentioned_connections,
         selected_artifact,
         host_memory,
@@ -515,6 +579,7 @@ async fn build_turn_envelope(
         working_context,
         bot_memory,
         left_out,
+        previous_run,
     } = inputs;
     capture.note_left_out(left_out);
     let (learned_index, charter, charter_read_ref) = if let Some(memory) = &host_memory {
@@ -599,6 +664,15 @@ async fn build_turn_envelope(
         .unwrap_or_else(|_| r#"{"live_time":{"not_evidence":true}}"#.into())
     });
     let turn_envelope = agent_harness::attach_chat_surface(&turn_envelope, surface);
+    let turn_envelope = match &previous_run {
+        Some(run) => agent_harness::attach_previous_run(&turn_envelope, run),
+        None => turn_envelope,
+    };
+    let turn_envelope = agent_harness::attach_interface(
+        &turn_envelope,
+        !surface.interactive() || capture.host_handoff,
+        &appearance,
+    );
     let turn_envelope = match bot_memory {
         Some(memory) => {
             memory.protect(&capture.turn_taint);
@@ -685,9 +759,13 @@ async fn build_turn_envelope(
                 .extend(memory.principle_receipts.clone());
         }
     }
+    // The research focus is the user's own words, like the perspective: it must not leave in a URL
+    // after third-party text arrives.
+    capture.turn_taint.protect_private_text(&profile.focus);
     let turn_envelope = agent_harness::attach_loupist_context(
         &turn_envelope,
         &profile.instructions,
+        &profile.focus,
         profile.tone,
         followed.as_ref(),
     );

@@ -20,6 +20,7 @@ const DISCOVERY_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 pub struct ProviderSupportCoordinator {
     state: Arc<Mutex<ProviderSupportState>>,
     maintenance: MaintenanceCoordinator,
+    discovery_queue: Arc<tokio::sync::Mutex<()>>,
 }
 
 #[derive(Debug)]
@@ -32,6 +33,7 @@ pub struct ProviderSupportLease {
 #[derive(Debug, Default)]
 struct ProviderSupportState {
     active: Option<Weak<SupportOperation>>,
+    active_search: Option<Weak<SupportOperation>>,
     pending_mutation: Option<Weak<SupportOperation>>,
     shutdown_failed: bool,
 }
@@ -40,7 +42,9 @@ struct ProviderSupportState {
 enum SupportKind {
     Ordinary,
     Discovery,
+    UpgradeDiscovery,
     OAuth,
+    Search,
 }
 
 #[derive(Debug)]
@@ -217,13 +221,17 @@ impl Drop for ProviderSupportLease {
             let mut state = state
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            if state
-                .active
+            let active = if self.operation.kind == SupportKind::Search {
+                &mut state.active_search
+            } else {
+                &mut state.active
+            };
+            if active
                 .as_ref()
                 .and_then(Weak::upgrade)
                 .is_some_and(|current| Arc::ptr_eq(&current, &self.operation))
             {
-                state.active = None;
+                *active = None;
             }
             if state
                 .pending_mutation
@@ -244,15 +252,60 @@ impl ProviderSupportCoordinator {
         Self {
             state: Arc::default(),
             maintenance,
+            discovery_queue: Arc::default(),
         }
     }
 
-    pub fn try_acquire(&self) -> Result<ProviderSupportLease, CommandError> {
-        self.try_acquire_inner(SupportKind::Ordinary)
+    pub fn try_acquire_search(&self) -> Result<ProviderSupportLease, CommandError> {
+        self.try_acquire_inner(SupportKind::Search)
     }
 
+    #[cfg(any(test, feature = "eval-harness"))]
     pub fn try_acquire_discovery(&self) -> Result<ProviderSupportLease, CommandError> {
         self.try_acquire_inner(SupportKind::Discovery)
+    }
+
+    /// Settings and the composer share the support helper. Discovery
+    /// waits its turn; contention is not a provider failure. Credential changes
+    /// retain priority and can still preempt the active discovery.
+    pub async fn acquire_discovery(&self) -> Result<ProviderSupportLease, CommandError> {
+        self.acquire_discovery_kind(SupportKind::Discovery).await
+    }
+
+    pub async fn acquire_upgrade_discovery(&self) -> Result<ProviderSupportLease, CommandError> {
+        self.acquire_discovery_kind(SupportKind::UpgradeDiscovery)
+            .await
+    }
+
+    async fn acquire_discovery_kind(
+        &self,
+        kind: SupportKind,
+    ) -> Result<ProviderSupportLease, CommandError> {
+        let _queue = self.discovery_queue.lock().await;
+        loop {
+            let blocker = {
+                let state = self
+                    .state
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                ensure_shutdown_confirmed(&state)?;
+                state
+                    .pending_mutation
+                    .as_ref()
+                    .and_then(Weak::upgrade)
+                    .or_else(|| state.active.as_ref().and_then(Weak::upgrade))
+                    .or_else(|| state.active_search.as_ref().and_then(Weak::upgrade))
+            };
+            if let Some(blocker) = blocker {
+                blocker.released().await;
+                continue;
+            }
+            match self.try_acquire_inner(kind) {
+                // A credential operation may have won admission after the snapshot.
+                Err(error) if error.code == "conflict" => continue,
+                result => return result,
+            }
+        }
     }
 
     pub async fn acquire_mutation(&self) -> Result<ProviderSupportLease, CommandError> {
@@ -335,8 +388,13 @@ impl ProviderSupportCoordinator {
         kind: SupportKind,
         preempt_discovery: bool,
     ) -> Result<(ProviderSupportLease, Option<Arc<SupportOperation>>), CommandError> {
+        let id = if kind == SupportKind::UpgradeDiscovery {
+            "provider-upgrade-discovery"
+        } else {
+            "provider-support"
+        };
         let activity = self.maintenance.admit_activity(MaintenanceBlocker {
-            id: "provider-support".into(),
+            id: id.into(),
             kind: "provider_support".into(),
             label: "Provider connection or model discovery".into(),
         })?;
@@ -346,14 +404,30 @@ impl ProviderSupportCoordinator {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         ensure_shutdown_confirmed(&state)?;
         let active = state.active.as_ref().and_then(Weak::upgrade);
+        // Upgrade discovery can read a usable token for the plan list, but
+        // never refreshes it. Search may use Pi's credential store alongside it.
+        let overlaps_upgrade = kind == SupportKind::Search
+            && active
+                .as_ref()
+                .is_some_and(|op| op.kind == SupportKind::UpgradeDiscovery);
         if state
             .pending_mutation
             .as_ref()
             .and_then(Weak::upgrade)
             .is_some()
-            || active
+            || state
+                .active_search
                 .as_ref()
-                .is_some_and(|active| !preempt_discovery || active.kind != SupportKind::Discovery)
+                .and_then(Weak::upgrade)
+                .is_some()
+            || active.as_ref().is_some_and(|active| {
+                !(overlaps_upgrade
+                    || preempt_discovery
+                        && matches!(
+                            active.kind,
+                            SupportKind::Discovery | SupportKind::UpgradeDiscovery
+                        ))
+            })
         {
             return Err(CommandError::conflict(
                 "another provider support operation is already active",
@@ -365,7 +439,9 @@ impl ProviderSupportCoordinator {
             released: AtomicBool::new(false),
             release_notify: Notify::new(),
         });
-        if active.is_some() {
+        if kind == SupportKind::Search {
+            state.active_search = Some(Arc::downgrade(&operation));
+        } else if active.is_some() {
             state.pending_mutation = Some(Arc::downgrade(&operation));
         } else {
             state.active = Some(Arc::downgrade(&operation));
@@ -466,11 +542,15 @@ impl ProviderSupportLease {
 
     pub async fn cancelled(&self) {
         match self.operation.kind {
-            SupportKind::Discovery | SupportKind::OAuth => {
+            SupportKind::Discovery | SupportKind::UpgradeDiscovery | SupportKind::OAuth => {
                 self.operation.cancellation.cancelled().await
             }
-            SupportKind::Ordinary => pending().await,
+            SupportKind::Ordinary | SupportKind::Search => pending().await,
         }
+    }
+
+    pub fn is_upgrade_discovery(&self) -> bool {
+        self.operation.kind == SupportKind::UpgradeDiscovery
     }
 
     pub fn is_cancelled(&self) -> bool {
@@ -619,18 +699,21 @@ mod tests {
     #[test]
     fn provider_support_is_single_flight_and_raii_releases_every_exit() {
         let coordinator = ProviderSupportCoordinator::default();
-        let lease = coordinator.try_acquire().unwrap();
-        assert_eq!(coordinator.try_acquire().unwrap_err().code, "conflict");
+        let lease = coordinator.try_acquire_search().unwrap();
+        assert_eq!(
+            coordinator.try_acquire_search().unwrap_err().code,
+            "conflict"
+        );
         drop(lease);
 
         fn fail_after_admission(
             coordinator: &ProviderSupportCoordinator,
         ) -> Result<(), CommandError> {
-            let _lease = coordinator.try_acquire()?;
+            let _lease = coordinator.try_acquire_search()?;
             Err(CommandError::internal("synthetic support failure"))
         }
         assert!(fail_after_admission(&coordinator).is_err());
-        coordinator.try_acquire().unwrap();
+        coordinator.try_acquire_search().unwrap();
     }
 
     #[tokio::test]
@@ -654,12 +737,86 @@ mod tests {
         assert_eq!(coordinator.oauth_authorization_url(), None);
 
         coordinator.cancel_oauth();
-        let ordinary = coordinator.try_acquire().unwrap();
+        let ordinary = coordinator.try_acquire_search().unwrap();
         assert!(
             tokio::time::timeout(std::time::Duration::from_millis(10), ordinary.cancelled())
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn concurrent_discoveries_wait_for_support_and_run_in_order() {
+        let coordinator = ProviderSupportCoordinator::default();
+        let active = coordinator.try_acquire_discovery().unwrap();
+        let settings = coordinator.acquire_discovery();
+        let composer = coordinator.acquire_discovery();
+        tokio::pin!(settings, composer);
+        tokio::select! {
+            biased;
+            result = &mut settings => panic!("Settings must wait: {result:?}"),
+            result = &mut composer => panic!("Composer must wait: {result:?}"),
+            _ = tokio::task::yield_now() => {},
+        }
+        drop(active);
+        let settings = settings.await.unwrap();
+        tokio::select! {
+            result = &mut composer => panic!("Composer overlapped Settings: {result:?}"),
+            _ = tokio::task::yield_now() => {},
+        }
+        drop(settings);
+        let composer = composer.await.unwrap();
+        assert!(!composer.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn native_search_can_overlap_upgrade_discovery_but_excludes_credential_changes() {
+        let coordinator = ProviderSupportCoordinator::default();
+        let upgrade = coordinator.acquire_upgrade_discovery().await.unwrap();
+        let search = coordinator.try_acquire_search().unwrap();
+        assert_eq!(
+            coordinator.try_acquire_search().unwrap_err().code,
+            "conflict"
+        );
+        assert_eq!(
+            coordinator.acquire_mutation().await.unwrap_err().code,
+            "conflict"
+        );
+        drop(search);
+
+        let reconnect = coordinator.acquire_oauth();
+        tokio::pin!(reconnect);
+        tokio::select! {
+            _ = upgrade.cancelled() => {},
+            result = &mut reconnect => panic!("mutation started before upgrade discovery stopped: {result:?}"),
+        }
+        assert_eq!(
+            coordinator.try_acquire_search().unwrap_err().code,
+            "conflict"
+        );
+        drop(upgrade);
+        reconnect.await.unwrap();
+
+        let manual = coordinator.acquire_discovery().await.unwrap();
+        assert_eq!(
+            coordinator.try_acquire_search().unwrap_err().code,
+            "conflict"
+        );
+        drop(manual);
+    }
+
+    #[tokio::test]
+    async fn discovery_waits_for_an_account_change_without_reporting_failure() {
+        let coordinator = ProviderSupportCoordinator::default();
+        let mutation = coordinator.acquire_mutation().await.unwrap();
+        let discovery = coordinator.acquire_discovery();
+        tokio::pin!(discovery);
+        tokio::select! {
+            result = &mut discovery => panic!("Discovery must wait for the account: {result:?}"),
+            _ = tokio::task::yield_now() => {},
+        }
+        drop(mutation);
+        assert!(!discovery.await.unwrap().is_cancelled());
     }
 
     #[tokio::test]
@@ -722,7 +879,10 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.code, "conflict");
         assert!(discovery.is_cancelled());
-        assert_eq!(coordinator.try_acquire().unwrap_err().code, "conflict");
+        assert_eq!(
+            coordinator.try_acquire_search().unwrap_err().code,
+            "conflict"
+        );
         drop(discovery);
         coordinator.acquire_oauth().await.unwrap();
     }
@@ -739,7 +899,10 @@ mod tests {
         }
         coordinator.cancel_oauth();
         assert_eq!(reconnect.await.unwrap_err().code, "cancelled");
-        assert_eq!(coordinator.try_acquire().unwrap_err().code, "conflict");
+        assert_eq!(
+            coordinator.try_acquire_search().unwrap_err().code,
+            "conflict"
+        );
         drop(discovery);
         coordinator.acquire_oauth().await.unwrap();
     }
@@ -768,7 +931,7 @@ mod tests {
     fn update_maintenance_blocks_provider_admission_and_reports_active_support() {
         let maintenance = MaintenanceCoordinator::default();
         let coordinator = ProviderSupportCoordinator::new(maintenance.clone());
-        let support = coordinator.try_acquire().unwrap();
+        let support = coordinator.try_acquire_search().unwrap();
 
         let blockers = maintenance.begin_update().unwrap_err();
         assert_eq!(blockers.len(), 1);
@@ -776,9 +939,9 @@ mod tests {
 
         drop(support);
         let update = maintenance.begin_update().unwrap();
-        let error = coordinator.try_acquire().unwrap_err();
+        let error = coordinator.try_acquire_search().unwrap_err();
         assert_eq!(error.code, "maintenance_active");
         drop(update);
-        coordinator.try_acquire().unwrap();
+        coordinator.try_acquire_search().unwrap();
     }
 }

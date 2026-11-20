@@ -15,7 +15,11 @@ async function start(bridge: MockLoupistBridge) {
   await user.click(await screen.findByRole("button", { name: "Get started" })); return user;
 }
 
-const createLoupist = async (user: ReturnType<typeof userEvent.setup>) => user.click(await screen.findByRole("button", { name: "Create Loupist" }));
+/** The template step's Continue, then the name step's Create. */
+const createLoupist = async (user: ReturnType<typeof userEvent.setup>) => {
+  if (!screen.queryByRole("button", { name: "Create Loupist" })) await user.click(await screen.findByRole("button", { name: "Continue" }));
+  await user.click(await screen.findByRole("button", { name: "Create Loupist" }));
+};
 
 it("offers the presets after connecting and creates the Loupist from the chosen one", async () => {
   const bridge = await fresh();
@@ -23,12 +27,27 @@ it("offers the presets after connecting and creates the Loupist from the chosen 
   const user = await start(bridge);
   expect(screen.getByRole("button", { name: /My portfolio/ })).toHaveAttribute("aria-pressed", "true");
   await user.click(screen.getByRole("button", { name: /Semiconductors/ }));
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+  expect(screen.getByRole("heading", { name: "Name your Loupist" })).toBeVisible();
   expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Chip Loupist");
+  expect(within(screen.getByRole("group", { name: "Face color" })).getByRole("button", { name: "Teal", pressed: true })).toBeVisible();
   expect(create).not.toHaveBeenCalled();
   await createLoupist(user);
   expect(await screen.findByRole("textbox", { name: "Message Loupist" })).toBeEnabled();
   expect(create).toHaveBeenCalledTimes(1);
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ template: "semiconductors", name: "Chip Loupist" }));
+});
+
+it("moves focus to each new step's heading, forward and back", async () => {
+  const user = await start(await fresh(false));
+  expect(screen.getByRole("heading", { name: "Connect your AI account" })).toHaveFocus();
+  await user.click(screen.getByRole("button", { name: "Look around first" }));
+  expect(screen.getByRole("heading", { name: "Create your first Loupist" })).toHaveFocus();
+  expect(screen.getByText("Choose what it researches: the closest template, or Custom to describe your own.")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+  expect(screen.getByRole("heading", { name: "Name your Loupist" })).toHaveFocus();
+  await user.click(screen.getByRole("button", { name: "Back" }));
+  expect(screen.getByRole("heading", { name: "Create your first Loupist" })).toHaveFocus();
 });
 
 it("creates the default Bot and lets the user ask immediately", async () => {
@@ -81,13 +100,14 @@ it("imports an existing folder from the full-window wizard and opens its Chat", 
   const user = userEvent.setup(); render(<App bridge={bridge} />);
   await user.click(await screen.findByRole("checkbox", { name:"I understand" }));
   await user.click(screen.getByRole("button", { name: "Already have a Loupist folder? Import it" }));
-  const dialog = await screen.findByRole("dialog", { name: "Open a Loupist folder" });
+  const dialog = await screen.findByRole("dialog", { name: "Import a Loupist" });
   await user.click(within(dialog).getByRole("button", { name: "Choose folder" }));
   await user.click(await within(dialog).findByRole("checkbox"));
   await user.click(within(dialog).getByRole("button", { name: "Import" }));
   await waitFor(() => expect(imported).toHaveBeenCalledWith({ workspace_path: "/Users/research/Imported Loupist" }));
   expect(await screen.findByRole("textbox", { name: "Message Loupist" })).toBeVisible();
-  expect(await screen.findByRole("article", { name: /^Message from / })).toBeVisible();
+  // The imported Loupist opens in its Bot, which greets before the user writes.
+  expect(await screen.findByRole("region", { name: / greets you$/ })).toBeVisible();
 });
 
 it("gates welcome on acknowledgment and persists the version when onboarding completes", async () => {
@@ -129,7 +149,10 @@ it("lets a user without an AI account look around first, and goes back between s
   await user.click(screen.getByRole("button", { name: "Get started" }));
   await user.click(screen.getByRole("button", { name: "Look around first" }));
   expect(screen.getByRole("heading", { name: "Create your first Loupist" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Continue" }));
   expect(screen.getByText(/reads it in the background to build its Map/)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Back" }));
+  expect(screen.getByRole("heading", { name: "Create your first Loupist" })).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Back" }));
   expect(screen.getByRole("heading", { name: "Connect your AI account" })).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Look around first" }));
@@ -138,12 +161,41 @@ it("lets a user without an AI account look around first, and goes back between s
   await waitFor(() => expect(acknowledge).toHaveBeenCalledTimes(1));
 });
 
-it("follows a template's starter from the first Loupist step", async () => {
+it("follows a template's starter by name once the first Loupist is created", async () => {
   const bridge = await fresh();
-  const follow = vi.spyOn(bridge, "watchlistAdd");
+  const follow = vi.spyOn(bridge, "assetFollowName");
   const user = await start(bridge);
   await user.click(screen.getByRole("button", { name: /^Crypto/ }));
   await user.click(screen.getByRole("button", { name: "Follow Bitcoin" }));
-  await waitFor(() => expect(follow).toHaveBeenCalledWith({ symbol: "BTC", market: "CRYPTO", displayName: "Bitcoin" }));
   expect(screen.getByRole("button", { name: "Follow Bitcoin" })).toHaveAttribute("aria-pressed", "true");
+  // No Loupist exists yet: nothing is followed until it is.
+  expect(follow).not.toHaveBeenCalled();
+  await createLoupist(user);
+  await waitFor(() => expect(follow).toHaveBeenCalledWith({ loupistId: expect.any(String), name: "Bitcoin" }));
+  expect(follow).toHaveBeenCalledTimes(1);
+});
+
+it("asks for a name when a Loupist already exists, instead of keeping the folder's name", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0, notice_acknowledged_version: 0 });
+  for (const loupist of await bridge.loupistList()) await bridge.loupistDelete({ loupist_id: loupist.id });
+  // The development seed registers a folder, and the host names it after the folder.
+  const seeded = await bridge.loupistImport({ workspace_path: "/tmp/e2e/workspace" });
+  expect(seeded.name).toBe("workspace");
+  // A seeded Loupist without a stored face shows one derived from its id; fix it so choosing Orchid is always a change.
+  await bridge.loupistProfileUpdate({ loupistId: seeded.id, avatar: "loupist-01" });
+  // A new profile with a Loupist but no AI account and no acknowledged notice opens onboarding.
+  for (const provider of (await bridge.modelCatalogGet()).providers) await bridge.providerDisconnect(provider.id);
+  const update = vi.spyOn(bridge, "loupistProfileUpdate");
+  const user = await start(bridge);
+  await user.click(screen.getByRole("button", { name: "Look around first" }));
+  expect(screen.getByRole("heading", { name: "Name your Loupist" })).toBeVisible();
+  const name = screen.getByRole("textbox", { name: "Name" });
+  expect(name).toHaveValue("Portfolio Loupist");
+  await user.clear(name); await user.type(name, "Rates desk");
+  await user.click(within(screen.getByRole("group", { name: "Face color" })).getByRole("button", { name: "Orchid" }));
+  await user.click(screen.getByRole("button", { name: "Save and continue" }));
+  await waitFor(() => expect(update).toHaveBeenCalledWith({ loupistId: seeded.id, name: "Rates desk", avatar: "loupist-08" }));
+  expect(await screen.findByRole("textbox", { name: "Message Loupist" })).toBeVisible();
+  expect((await bridge.loupistList()).find(item => item.id === seeded.id)?.name).toBe("Rates desk");
+  expect(screen.queryByText("workspace")).toBeNull();
 });

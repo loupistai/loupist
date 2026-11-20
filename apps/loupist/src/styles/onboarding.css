@@ -27,21 +27,34 @@
 .loupist-template-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gg-space-3); }
 .loupist-template-card { display: flex; flex-direction: column; gap: var(--gg-space-1); padding: var(--gg-space-4); text-align: left; border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); min-width: 0; }
 .loupist-template-card:hover { border-color: var(--gg-color-border-strong); }
-.loupist-template-card[aria-pressed="true"] { border-color: var(--gg-color-text-primary); background: var(--gg-color-bg-raised); box-shadow: inset 0 0 0 1px var(--gg-color-text-primary); }
-.loupist-template-card strong { font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
+/* A selected choice wears the accent: the template, a followed starter, the tone and the face colour. */
+.loupist-template-card[aria-pressed="true"] { border-color: var(--gg-color-accent); background: var(--gg-color-accent-soft); box-shadow: inset 0 0 0 1px var(--gg-color-accent); }
+.loupist-template-card strong { overflow-wrap: anywhere; font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
 .loupist-template-card > span:last-child { font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); color: var(--gg-color-text-secondary); width: 100%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; white-space: normal; }
 .loupist-template-fields .form-field { display: grid; gap: var(--gg-space-2); }
 .loupist-template-fields textarea { min-height: auto; resize: vertical; }
-/* Template grid (finance-crypto-and-templates.md §2.4): three columns from 520 px of form width. */
+/* Template grid (finance-crypto-and-templates.md §2.4): three columns from 460 px of form width,
+   which New Loupist's form has, so the face colours sit higher in its scroll area. */
 .loupist-template-fields { container-type: inline-size; }
-@container (min-width: 520px) { .loupist-template-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (min-width: 460px) { .loupist-template-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (min-width: 460px) { .loupist-template-card { padding: var(--gg-space-3) var(--gg-space-4); } }
+/* New Loupist scrolls: a soft edge at the bottom says more follows, so a row the edge cuts
+   (the face colours) never reads as clipped. The cover scrolls with the content and hides
+   the edge once the end is reached. */
+.dialog-body:has(> .loupist-template-fields) {
+  padding-bottom: var(--gg-space-4);
+  background:
+    linear-gradient(transparent, var(--popover) 60%) 0 100% / 100% 32px no-repeat local,
+    linear-gradient(to top, color-mix(in srgb, var(--popover), black 12%), transparent) 0 100% / 100% 12px no-repeat scroll;
+}
 .loupist-template-starters { display: grid; gap: var(--gg-space-2); }
 .loupist-template-starters > p { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 /* Every field label in the form reads alike: Name, Focus, Avatar, the starters and the tone legend. */
-.loupist-template-fields :is(.form-field > label, .loupist-template-starters > p, .loupist-profile-avatars > legend) { color: var(--gg-color-text-primary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); }
+.loupist-template-fields :is(.form-field > label, .loupist-template-starters > p, .loupist-profile-avatars > legend),
+.onboarding-step .loupist-identity :is(.form-field > label, .loupist-profile-avatars > legend) { color: var(--gg-color-text-primary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); font-weight: var(--gg-weight-medium); }
 .loupist-starter { min-height: var(--gg-size-control-sm); padding-inline: var(--gg-space-3); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-raised); font-size: var(--gg-text-control); }
 .loupist-starter:hover { border-color: var(--gg-color-border-strong); }
-.loupist-starter[aria-pressed="true"] { border-color: var(--gg-color-text-primary); background: var(--gg-color-bg-raised); box-shadow: inset 0 0 0 1px var(--gg-color-text-primary); }
+.loupist-starter[aria-pressed="true"] { border-color: var(--gg-color-accent); background: var(--gg-color-accent-soft); color: var(--gg-color-accent-ink); box-shadow: inset 0 0 0 1px var(--gg-color-accent); }
 /* Tone: one choice in three rows, shared by onboarding, New Loupist and Loupist settings. */
 /* Keep grid sizing off the native fieldset: WebKit can collapse its legend to one character. */
 .loupist-tone-field { display: block; min-width: 0; margin: 0; padding: 0; border: 0; }
@@ -49,26 +62,47 @@
 .loupist-tone-options { display: grid; gap: var(--gg-space-2); min-width: 0; }
 .loupist-tone-field .loupist-tone-option { display: flex; align-items: flex-start; gap: var(--gg-space-3); padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); font-size: var(--gg-text-control); cursor: pointer; }
 .loupist-tone-field .loupist-tone-option:hover { border-color: var(--gg-color-border-strong); }
-.loupist-tone-field .loupist-tone-option[data-selected] { border-color: var(--gg-color-text-primary); background: var(--gg-color-bg-raised); box-shadow: inset 0 0 0 1px var(--gg-color-text-primary); }
+.loupist-tone-field .loupist-tone-option[data-selected] { border-color: var(--gg-color-accent); background: var(--gg-color-accent-soft); box-shadow: inset 0 0 0 1px var(--gg-color-accent); }
 .loupist-tone-field .loupist-tone-option:has(input:focus-visible) { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
 .loupist-tone-field:disabled .loupist-tone-option { cursor: default; opacity: .6; }
-.loupist-tone-option input { flex: none; margin: 3px 0 0; accent-color: var(--gg-color-action); }
+.loupist-tone-option input { flex: none; margin: 3px 0 0; accent-color: var(--gg-color-accent); }
 .loupist-tone-option > span { display: grid; gap: 2px; min-width: 0; }
 .loupist-tone-option strong { font-weight: var(--gg-weight-semibold); }
 .loupist-tone-field .loupist-tone-option > span > span { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .loupist-tone-field .loupist-tone-note { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
 @keyframes onboarding-enter { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
 @media (prefers-reduced-motion: reduce) { @keyframes onboarding-enter { from { opacity: 0; } to { opacity: 1; } } }
-/* Programmatic step announcements are not interactive focus targets. */
-.onboarding-step[tabindex="-1"]:focus { outline: none !important; }
+/* A new step focuses its heading for the keyboard and screen readers; a heading is not a control, so it shows no ring. */
+.onboarding-step h1[tabindex="-1"]:focus { outline: none; }
 
 .onboarding-primary[data-waiting="true"]:disabled { opacity: 1; color: var(--gg-color-action-ink); background: var(--gg-color-action); }
 
 /* Leave room for the required notice at the minimum desktop height. */
 @media (max-height: 700px) {
   .onboarding-window { padding-block: var(--gg-space-4); }
-  .onboarding-step[data-step="3"] > h1 + p { display: none; }
+  .onboarding-step:is([data-step="3"], [data-step="4"]) > h1 + p { display: none; }
 }
 @media (max-height: 800px) {
   .onboarding-window[data-onboarding="4"] { padding-bottom: 0; }
 }
+
+/* Name and face (LoupistIdentityFields): onboarding step 4, New Loupist and Loupist settings. */
+.loupist-identity { display: grid; gap: var(--gg-space-4); min-width: 0; }
+.loupist-identity .form-field { display: grid; gap: var(--gg-space-2); }
+.loupist-identity-preview { display: flex; align-items: center; gap: var(--gg-space-4); min-width: 0; padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-lg); background: var(--gg-color-bg-raised); box-shadow: var(--gg-shadow-card); }
+.loupist-identity-preview > span { display: grid; gap: 2px; min-width: 0; }
+.loupist-identity-preview strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gg-color-text-primary); font-size: var(--gg-text-heading); line-height: var(--gg-leading-heading); font-weight: var(--gg-weight-semibold); }
+.loupist-identity-preview strong[data-empty] { color: var(--gg-color-text-tertiary); font-weight: var(--gg-weight-medium); }
+.loupist-identity-preview small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+/* Face colours. Keep the fieldset a block (WebKit collapses a grid fieldset's legend); the grid is inside it. */
+.loupist-profile-avatars { display: block; min-width: 0; margin: 0; padding: 0; border: 0; }
+.loupist-profile-avatars > legend { display: block; width: 100%; padding: 0; }
+.loupist-profile-avatars > div { display: grid; grid-template-columns: repeat(auto-fill, 36px); gap: var(--gg-space-2); margin-top: var(--gg-space-2); }
+.loupist-profile-avatars button { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: var(--gg-radius-full); background: transparent; }
+.loupist-profile-avatars button > .loupist-face { width: 30px; height: 30px; flex-basis: 30px; }
+/* The swatches hold still; only a face that stands for the Loupist blinks. */
+.loupist-profile-avatars .loupist-face-eyes ellipse { animation: none; }
+.loupist-profile-avatars button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--gg-color-accent); }
+.loupist-profile-avatars button:hover:not(:disabled):not([aria-pressed="true"]) { box-shadow: 0 0 0 2px var(--gg-color-border-default); }
+.loupist-profile-avatars button:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
+.loupist-profile-avatars button:disabled { opacity: .5; }

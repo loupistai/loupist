@@ -37,9 +37,15 @@
 }
 .number-chip:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; }
 .number-chip[data-status="differs"] { text-decoration-style: wavy; text-decoration-color: var(--gg-color-warning); }
+/* Not in its source: no checked underline, a muted figure and a small raised "?". */
+.number-chip[data-status="not_found"] { color: var(--gg-color-text-secondary); text-decoration-style: dashed; text-decoration-color: var(--gg-color-warning); }
+/* Generated content, so a copied selection keeps the figure as written. */
+.number-chip-unmatched::after { content: "?"; margin-inline-start: 1px; color: var(--gg-color-warning); font-size: 0.72em; font-weight: var(--gg-weight-medium); vertical-align: super; line-height: 0; }
 .number-chip[data-status="pending"] { cursor: text; text-decoration-color: var(--gg-color-border-subtle); }
 .number-chip[data-status="pending"]:hover { background: transparent; }
-td .number-chip { display: inline-block; min-height: 28px; line-height: 28px; font-variant-numeric: tabular-nums; }
+/* A host table (grid, conflict) gives each figure a 28px line. A Markdown table cell
+   is top-aligned reading text, so its chip stays inline there and shares the row's baseline. */
+td:not([data-streamdown="table-cell"]) .number-chip { display: inline-block; min-height: 28px; line-height: 28px; font-variant-numeric: tabular-nums; }
 /* A Korean particle stays on the number's line ("8.4%였고"). */
 .number-keep { white-space: nowrap; }
 
@@ -74,15 +80,22 @@ td .number-chip { display: inline-block; min-height: 28px; line-height: 28px; fo
 .number-chip-caption:lang(ko) { letter-spacing: 0; text-transform: none; }
 .number-chip-here { letter-spacing: normal; text-transform: none; }
 .number-chip-inputs { display: grid; gap: var(--gg-space-1); margin: 0; }
-.number-chip-inputs > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; gap: var(--gg-space-2); }
+/* The label keeps a minimum: a long value and source ("1,334.87 KRW per USD", "European Central Bank") would otherwise take its whole width. */
+.number-chip-inputs > div { display: grid; grid-template-columns: minmax(4em, 1fr) auto auto; align-items: baseline; gap: 0 var(--gg-space-2); }
 .number-chip-inputs > div > :last-child { white-space: nowrap; }
-.number-chip-inputs dt { overflow: hidden; color: var(--gg-color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+/* The label wraps rather than cut: "Operating …" would hide which input this is. */
+.number-chip-inputs dt { min-width: 0; color: var(--gg-color-text-secondary); overflow-wrap: break-word; }
 .number-chip-inputs dd { margin: 0; }
 .number-chip-source { min-width: 0; text-align: end; }
 .number-chip-source button { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0 var(--gg-space-1); max-width: 100%; text-align: end; padding: 0; border: 0; background: transparent; color: var(--gg-color-accent-ink); font: inherit; cursor: pointer; }
 .number-chip-source button:hover { text-decoration: underline; }
 .number-chip-date { display: inline-flex; align-items: center; gap: var(--gg-space-1); white-space: nowrap; }
 .number-chip-unlinked { color: var(--gg-color-text-tertiary); }
+/*
+ * A caption of the amount: on the line right under its value, from the value column to the row's end.
+ * The source stays the row's last cell, so the note is placed explicitly; it wraps in that width and never sizes the columns.
+ */
+.number-chip-inputs > div > .number-chip-currency-note { grid-row: 2; grid-column: 2 / -1; contain: inline-size; color: var(--gg-color-text-tertiary); }
 .number-chip-meta { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
 .number-chip-passage { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 4; -webkit-box-orient: vertical; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 .number-chip-popover mark { padding: 0 1px; border-radius: 2px; background: var(--gg-color-accent-soft); color: var(--gg-color-text-primary); }

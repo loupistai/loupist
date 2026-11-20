@@ -1,155 +1,305 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { LoupistSummary } from "../../types";
-import { AssetPageOpenerProvider } from "../assets/assetOpener";
-import { FollowingPage, parseFollow } from "./FollowingPage";
+import { AssetPageOpenerProvider, type OpenAssetPage } from "../assets/assetOpener";
+import { App } from "../../App";
+import { FollowingPage, type FollowingPageProps } from "./FollowingPage";
 
-async function fixture(setup?: (bridge: MockLoupistBridge) => Promise<void>) {
+type Setup = (bridge: MockLoupistBridge, loupist: LoupistSummary) => Promise<unknown> | void;
+
+async function fixture(setup?: Setup, props: Partial<FollowingPageProps> = {}) {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const [loupist] = await bridge.loupistList() as LoupistSummary[];
-  await setup?.(bridge);
-  render(<FollowingPage bridge={bridge} loupist={loupist!} />);
-  return { bridge, loupist: loupist!, user: userEvent.setup() };
+  await setup?.(bridge, loupist!);
+  const lookup = vi.spyOn(bridge, "assetLookup");
+  const followName = vi.spyOn(bridge, "assetFollowName");
+  const openAsset = vi.fn<OpenAssetPage>();
+  const view = render(<AssetPageOpenerProvider value={openAsset}><FollowingPage bridge={bridge} loupist={loupist!} {...props} /></AssetPageOpenerProvider>);
+  await screen.findByTestId("following-page");
+  await waitFor(() => expect(document.querySelector("[data-following-loading]")).toBeNull());
+  return { bridge, loupist: loupist!, openAsset, view, lookup, followName, user: userEvent.setup() };
 }
+const NVIDIA = { name: "NVIDIA CORP", ticker: "NVDA", exchange: "US", figi: "BBG000BBJQV0", securityType: "Common Stock" };
+const field = () => screen.getByRole("combobox", { name: "Find or add by name or ticker" });
+const results = () => screen.getByRole("listbox", { name: "Search results" });
+const options = () => within(results()).getAllByRole("option");
+const row = (name: string) => screen.getByText(name, { selector: ".following-name" }).closest("li") as HTMLElement;
+const settle = () => act(() => new Promise(resolve => setTimeout(resolve, 300)));
+/** The line under the results for one lookup state, once it shows. */
+const lookupLine = (state: string) => waitFor(() => { const line = document.querySelector<HTMLElement>(`[data-lookup="${state}"]`); expect(line).not.toBeNull(); return line!; });
 
-it("says what Following is and what to add when nothing is followed", async () => {
-  await fixture(async bridge => { for (const entry of await bridge.watchlistList()) await bridge.watchlistRemove({ symbol: entry.symbol, market: entry.market }); });
-  expect(screen.getByRole("heading", { name: "Following" })).toBeVisible();
-  expect(screen.getByText("What you follow is shared by all your Loupists. Each Loupist chooses what to watch for.")).toBeVisible();
-  expect(await screen.findByText("Add a company, fund or coin to follow. Following is not a holding or a trade.")).toBeVisible();
-  expect(screen.getByText("Or tell Bot: “follow NVDA”.")).toBeVisible();
-});
+afterEach(() => { cleanup(); Reflect.deleteProperty(window.navigator, "onLine"); });
 
-it("follows a bare six-digit code on KRX and notes the Map is still adding it", async () => {
-  const { bridge, user } = await fixture(async bridge => { vi.spyOn(bridge, "knowledgeFollowedStatus").mockResolvedValue({ state: "queued", assets: 1 }); });
-  const add = vi.spyOn(bridge, "watchlistAdd");
-  await user.type(screen.getByRole("textbox", { name: "Add something to follow" }), "005930");
-  await user.click(screen.getByRole("button", { name: "Follow" }));
-  expect(add).toHaveBeenCalledWith(expect.objectContaining({ symbol: "005930", market: "KRX" }));
-  expect(await screen.findByText("Adding to the map…")).toBeVisible();
-});
-
-it("parses what to follow without guessing a market for other symbols", () => {
-  expect(parseFollow(" aapl ")).toEqual({ symbol: "AAPL", market: "UNKNOWN" });
-  expect(parseFollow("005930")).toEqual({ symbol: "005930", market: "KRX" });
-  expect(parseFollow("005930:kosdaq")).toEqual({ symbol: "005930", market: "KOSDAQ" });
-});
-
-it("lists follows and holdings as counts only, removes a follow from its row menu, and imports holdings", async () => {
-  const { bridge, user } = await fixture(async bridge => {
-    await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" });
-    const preview = await bridge.holdingsImportCsv({ path: "/tmp/holdings.csv" });
-    await bridge.holdingsCommitCsv({ previewId: preview.previewId });
+it("lists each followed asset by its name and reference fields, or Name only, sorted by name", async () => {
+  await fixture(bridge => {
+    bridge.assets.installAsset({ name: "Zeta Instruments", ticker: "ZETA", exchange: "UW" });
+    bridge.assets.installAsset(NVIDIA);
+    bridge.assets.installAsset({ name: "Alpine office stake" });
   });
-  const remove = vi.spyOn(bridge, "watchlistRemove");
-  const row = (await screen.findByRole("rowheader", { name: /Apple/ })).closest("tr")!;
-  expect(await screen.findByText(/^Stocks and funds: 1 asset · .* · Crypto: none/)).toBeVisible();
-  // Quantities and values never reach this page.
-  expect(document.body).not.toHaveTextContent("2.5");
-  expect(document.body).not.toHaveTextContent("500");
-  await user.click(within(row as HTMLElement).getByRole("button", { name: "More actions for Apple" }));
-  await user.click(await screen.findByRole("menuitem", { name: "Stop following Apple" }));
-  expect(remove).toHaveBeenCalledWith({ symbol: "AAPL", market: "NASDAQ" });
-  await waitFor(() => expect(screen.queryByRole("rowheader", { name: /Apple/ })).toBeNull());
-  // With holdings imported, the action reads Update….
-  await user.click(screen.getByRole("button", { name: "Update…" }));
-  expect(await screen.findByRole("dialog")).toBeVisible();
+  const list = screen.getByRole("list", { name: "Followed assets" });
+  expect(within(list).getAllByRole("listitem").map(item => item.querySelector(".following-name")?.textContent)).toEqual(["Alpine office stake", "NVIDIA CORP", "Zeta Instruments"]);
+  expect(row("NVIDIA CORP").querySelector(".following-identity")).toHaveTextContent("NVDA · US · Common Stock");
+  expect(row("Alpine office stake").querySelector(".following-identity")).toHaveTextContent("Name only");
+  expect(within(row("Zeta Instruments")).getByRole("button", { name: "Stop following Zeta Instruments" })).toBeVisible();
+  expect(screen.getByTestId("following-page")).not.toHaveTextContent(/\$|%|Alerts|Watching|Kind/iu);
 });
 
-it("gives each followed asset one row with a menu, and no second list of the same names", async () => {
-  const opened = vi.fn();
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
-  const [loupist] = await bridge.loupistList() as LoupistSummary[];
-  for (const entry of await bridge.watchlistList()) await bridge.watchlistRemove({ symbol: entry.symbol, market: entry.market });
-  await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" });
-  // A currency cannot be watched, so it keeps a row above the add field with the same menu.
-  await bridge.watchlistAdd({ symbol: "USDKRW", market: "FX", displayName: "Dollar won" });
-  const remove = vi.spyOn(bridge, "watchlistRemove");
-  const user = userEvent.setup();
-  render(<AssetPageOpenerProvider value={opened}><FollowingPage bridge={bridge} loupist={loupist!} /></AssetPageOpenerProvider>);
-  const row = (await screen.findByRole("rowheader", { name: /Apple/ })).closest("tr") as HTMLElement;
-  const menu = within(row).getByRole("button", { name: "More actions for Apple" });
-  expect(menu).toHaveClass("size-7");
-  expect(screen.getAllByText("Apple")).toHaveLength(1);
-  expect(screen.queryByText("Apple · AAPL")).toBeNull();
-  await user.click(menu);
-  await user.click(await screen.findByRole("menuitem", { name: "Open asset page" }));
-  expect(opened).toHaveBeenCalledWith(expect.objectContaining({ loupistId: loupist!.id, name: "Apple" }));
-  const unlisted = screen.getByTestId("following-unlisted");
-  expect(within(unlisted).getByText("Dollar won · USDKRW")).toBeVisible();
-  await user.click(within(unlisted).getByRole("button", { name: "More actions for Dollar won" }));
-  await user.click(await screen.findByRole("menuitem", { name: "Stop following Dollar won" }));
-  expect(remove).toHaveBeenCalledWith({ symbol: "USDKRW", market: "FX" });
-  await waitFor(() => expect(screen.queryByTestId("following-unlisted")).toBeNull());
+it("shows each available stored price beside its followed asset", async () => {
+  await fixture((bridge, loupist) => {
+    const asset = bridge.assets.installAsset(NVIDIA);
+    bridge.assets.installAsset({ name: "No stored quote" });
+    bridge.assets.installPrice(loupist.id, asset.assetId, { price: {
+      value: 1093.8299560546875, currency: "USD", date: "2026-11-19", provider: "yfinance",
+      sourceUrl: null, dataset: { dataset_id: "quote", revision: 1, digest: "test" },
+    } });
+  });
+  expect(await within(row("NVIDIA CORP")).findByText("$1,093.83")).toBeVisible();
+  expect(row("No stored quote")).not.toHaveTextContent("$");
 });
 
-it("lists every followed asset with a Watch-for box per kind that saves on change", async () => {
-  const { bridge, loupist, user } = await fixture(async bridge => { await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }); });
-  const set = vi.spyOn(bridge, "watchSettingSet");
-  const box = await screen.findByRole("checkbox", { name: "Filings, Apple" });
-  expect(box).not.toBeChecked();
-  await user.click(box);
-  expect(set).toHaveBeenCalledWith(expect.objectContaining({ loupistId: loupist.id, kind: "filings", enabled: true }));
-  await waitFor(() => expect(screen.getByRole("checkbox", { name: "Filings, Apple" })).toBeChecked());
+it("opens an asset page from a row by its id", async () => {
+  const { openAsset, loupist, user, bridge } = await fixture(bridge => { bridge.assets.installAsset(NVIDIA); });
+  const [asset] = await bridge.assetsList({ loupistId: loupist.id });
+  await user.click(screen.getByRole("button", { name: /^NVIDIA CORP/u }));
+  expect(openAsset).toHaveBeenCalledWith({ loupistId: loupist.id, assetId: asset!.assetId, name: "NVIDIA CORP" });
 });
 
-it("watches every followed asset with the class defaults in one step, naming a single one", async () => {
-  const { bridge, loupist, user } = await fixture(async bridge => { await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }); });
-  const apply = vi.spyOn(bridge, "watchDefaultsApply");
-  // One undecided asset reads "Watch Apple", not "Watch all 1".
-  const button = await screen.findByRole("button", { name: "Watch Apple" });
-  expect(screen.getByText(/No AI usage\. Only names are sent to data sources\./)).toBeVisible();
-  await user.click(button);
-  expect(apply).toHaveBeenCalledWith({ loupistId: loupist.id });
-  await waitFor(() => expect(screen.queryByRole("button", { name: /^Watch all/ })).toBeNull());
-  const watching = screen.getByRole("article", { name: "Watching" });
-  expect(within(watching).getAllByRole("table").length).toBeGreaterThan(0);
+it("says when nothing is followed and focuses the field", async () => {
+  await fixture();
+  expect(screen.getByRole("heading", { name: "No assets followed" })).toBeVisible();
+  await waitFor(() => expect(field()).toHaveFocus());
 });
 
-it("offers Watch all only for assets with no decision yet, not one switched fully off", async () => {
-  const asset = (symbol: string, name: string) => ({ assetId: `asset-${symbol}`, symbol, market: "NASDAQ", name, revision: 2, kinds: [{ kind: "filings" as const, enabled: false }, { kind: "results" as const, enabled: false }] });
-  const { bridge, loupist } = await fixture(async bridge => {
-    for (const [symbol, displayName] of [["AAPL", "Apple"], ["MSFT", "Microsoft"], ["NVDA", "Nvidia"]]) await bridge.watchlistAdd({ symbol: symbol!, market: "NASDAQ", displayName });
+it("filters what is followed while typing and sends nothing until Enter", async () => {
+  const { lookup, user } = await fixture(bridge => { bridge.assets.installAsset(NVIDIA); });
+  await user.type(field(), "nvid");
+  await settle();
+  expect(options().map(item => item.dataset.kind)).toEqual(["followed", "search", "typed"]);
+  expect(within(results()).getByRole("option", { name: "Open NVIDIA CORP, already followed" })).toBeVisible();
+  expect(within(results()).getByRole("option", { name: "Search listings for nvid" })).toBeVisible();
+  expect(lookup).not.toHaveBeenCalled();
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(lookup).toHaveBeenCalledTimes(1));
+  expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ query: "nvid" }));
+});
+
+it("searches listings once per submitted text, marks the followed one and keeps Follow as typed last", async () => {
+  const { lookup, user } = await fixture(bridge => { bridge.assets.installAsset(NVIDIA); });
+  await user.type(field(), "nvidia{Enter}");
+  await screen.findByText("Listings from OpenFIGI. Your search text was sent to OpenFIGI.");
+  // The followed listing shows once, as the followed match typing found.
+  expect(options().map(item => [item.dataset.kind, item.dataset.figi ?? ""])).toEqual([["followed", ""], ["candidate", "BBG000BBJR79"], ["typed", ""]]);
+  expect(within(results()).getByRole("option", { name: "Follow NVIDIA CORP, NVDA · UW · Common Stock" })).toBeVisible();
+  // Enter again on the same answered text sends nothing more.
+  await user.keyboard("{Enter}");
+  await settle();
+  expect(lookup).toHaveBeenCalledTimes(1);
+});
+
+it("follows a picked listing with its fields as the reference, clears the field and announces it", async () => {
+  const { followName, loupist, user, bridge } = await fixture();
+  await user.type(field(), "apple{Enter}");
+  await user.click(await screen.findByRole("option", { name: "Follow APPLE INC, AAPL · US · Common Stock" }));
+  expect(followName).toHaveBeenCalledWith({ loupistId: loupist.id, name: "APPLE INC", reference: { figi: "BBG000B9XRY4", ticker: "AAPL", exchange: "US", securityType: "Common Stock" } });
+  await waitFor(() => expect(row("APPLE INC")).toBeVisible());
+  expect(field()).toHaveValue("");
+  expect(field()).toHaveFocus();
+  expect(screen.getByText(`Following APPLE INC. ${loupist.name} looks for its price.`)).toBeInTheDocument();
+  // The host starts one price setup for the burst of follows.
+  expect(bridge.assets.setups.at(-1)?.reason).toBe("follow");
+});
+
+it("keeps the host's ranking and carries the selected exchange name into the followed row", async () => {
+  const { followName, loupist, lookup, user } = await fixture();
+  const first = { ...NVIDIA, name: "Zeta Corp", exchange: "UB", exchangeName: "Example Exchange", marketSector: "Equity" };
+  const second = { ...NVIDIA, name: "Alpine Fund", figi: "BBG000BBJR79", marketSector: "Equity" };
+  lookup.mockResolvedValue([first, second]);
+  await user.type(field(), "NVDA{Enter}");
+  const top = await screen.findByRole("option", { name: "Follow Zeta Corp, NVDA · Example Exchange · Common Stock" });
+  expect(options().filter(item => item.dataset.kind === "candidate").map(item => item.dataset.figi)).toEqual([first.figi, second.figi]);
+  await user.click(top);
+  expect(followName).toHaveBeenCalledWith({ loupistId: loupist.id, name: first.name,
+    reference: { figi: first.figi, ticker: first.ticker, exchange: "UB", exchangeName: "Example Exchange", securityType: first.securityType } });
+  expect(row(first.name).querySelector(".following-identity")).toHaveTextContent("NVDA · Example Exchange · Common Stock");
+});
+
+it("follows the text as typed by name alone, from the last option or with the arrows and Enter", async () => {
+  const { followName, loupist, lookup, user } = await fixture();
+  await user.type(field(), "Seongsu office stake");
+  await user.keyboard("{ArrowDown}{ArrowDown}");
+  expect(field().getAttribute("aria-activedescendant")).toBe(within(results()).getByRole("option", { name: "Follow Seongsu office stake as typed" }).id);
+  await user.keyboard("{Enter}");
+  expect(followName).toHaveBeenCalledWith({ loupistId: loupist.id, name: "Seongsu office stake" });
+  await waitFor(() => expect(row("Seongsu office stake").querySelector(".following-identity")).toHaveTextContent("Name only"));
+  expect(lookup).not.toHaveBeenCalled();
+});
+
+it.each([NVIDIA, { name: "NVIDIA CORP" }])("opens the followed asset from the exact-name typed option ($figi)", async asset => {
+  const { bridge, followName, lookup, loupist, openAsset, user } = await fixture(bridge => {
+    bridge.assets.installAsset(asset);
+  });
+  const [existing] = await bridge.assetsList({ loupistId: loupist.id });
+  await user.type(field(), "  nvidia corp  ");
+  const typed = options().at(-1);
+  expect(typed).toHaveAttribute("data-kind", "typed");
+  expect(typed).toHaveAccessibleName("Open NVIDIA CORP, already followed");
+  expect(typed).toHaveTextContent("Already followed");
+  await user.keyboard("{ArrowUp}");
+  expect(field()).toHaveAttribute("aria-activedescendant", typed!.id);
+  await user.keyboard("{Enter}");
+  expect(openAsset).toHaveBeenCalledWith({ loupistId: loupist.id, assetId: existing!.assetId, name: asset.name });
+  expect(followName).not.toHaveBeenCalled();
+  expect(lookup).not.toHaveBeenCalled();
+});
+
+it("shows Adding on the picked row, and on failure keeps the query and results with Retry", async () => {
+  const { bridge, user } = await fixture();
+  await user.type(field(), "apple{Enter}");
+  const pick = await screen.findByRole("option", { name: /^Follow APPLE INC/u });
+  let fail: (error: Error) => void = () => {};
+  bridge.assetFollowName = () => new Promise((_, reject) => { fail = reject; });
+  await user.click(pick);
+  expect(pick).toHaveAttribute("data-pick", "adding");
+  act(() => fail(new Error("locked")));
+  await waitFor(() => expect(pick).toHaveAttribute("data-pick", "failed"));
+  expect(pick).toHaveTextContent("Couldn't add · Try again");
+  expect(field()).toHaveValue("apple");
+});
+
+it("says no listing matched, keeps Follow as typed, and Ask Bot drafts the request", async () => {
+  const onAskInChat = vi.fn();
+  const { user } = await fixture(undefined, { onAskInChat });
+  await user.type(field(), "Hanbit Heavy");
+  // Typing only filters; the box says plainly that Enter searches listings.
+  expect(screen.getByText("Press Enter to search listings on OpenFIGI.")).toBeVisible();
+  await user.keyboard("{Enter}");
+  expect(await screen.findByText("No listing matched. OpenFIGI matches English names and tickers, such as Apple or AAPL. You can still follow it as typed.")).toBeVisible();
+  expect(options().map(item => item.dataset.kind)).toEqual(["typed"]);
+  await user.click(screen.getByRole("button", { name: "Ask Bot to follow it" }));
+  expect(onAskInChat).toHaveBeenCalledWith("Follow “Hanbit Heavy”.");
+});
+
+it("words each lookup failure with the one thing to do about it", async () => {
+  const onOpenConnections = vi.fn();
+  const { bridge, user, lookup } = await fixture(undefined, { onOpenConnections });
+  bridge.assets.lookupNeedsConnection = true;
+  await user.type(field(), "nvidia{Enter}");
+  expect(await lookupLine("connection")).toHaveTextContent("Asset lookup is off for this Loupist. Turn it on in Connections to search listings.");
+  await user.click(screen.getByRole("button", { name: "Open Connections" }));
+  expect(onOpenConnections).toHaveBeenCalledWith("openfigi.lookup");
+
+  bridge.assets.lookupNeedsConnection = false;
+  bridge.assets.lookupRateLimited = true;
+  await user.clear(field());
+  await user.type(field(), "nvidia{Enter}");
+  expect(await lookupLine("busy")).toHaveTextContent("OpenFIGI asked to wait. Try again in a minute.");
+  bridge.assets.lookupRateLimited = false;
+  await user.click(screen.getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(options().filter(item => item.dataset.kind === "candidate")).toHaveLength(2));
+  expect(lookup).toHaveBeenCalledTimes(3);
+});
+
+it.each([
+  ["credential_rejected", "keyRejected", "OpenFIGI rejected the saved API key. Replace or remove it in Connections."],
+  ["credential_locked", "keyUnreadable", "Loupist can't use the saved OpenFIGI API key. Allow access to it, or save it again, in Connections."],
+  ["credential_unavailable", "keyUnreadable", "Loupist can't use the saved OpenFIGI API key."],
+])("sends a saved-key problem (%s) to Connections, not to Try again", async (code, state, text) => {
+  const onOpenConnections = vi.fn();
+  const { lookup, user } = await fixture(undefined, { onOpenConnections });
+  lookup.mockRejectedValueOnce({ code, message: "OpenFIGI key problem." });
+  await user.type(field(), "nvidia{Enter}");
+  const line = await lookupLine(state);
+  expect(line).toHaveTextContent(text);
+  // Searching again would fail the same way until the key is fixed.
+  expect(within(line).queryByRole("button", { name: "Try again" })).toBeNull();
+  await user.click(within(line).getByRole("button", { name: "Open Connections" }));
+  expect(onOpenConnections).toHaveBeenCalledWith("openfigi.lookup");
+});
+
+it("describes the field with what typing and Enter do, and shows a long name whole on hover", async () => {
+  const long = "Northern Lights Hydroelectric Infrastructure and Transmission Holdings Corporation";
+  await fixture(bridge => { bridge.assets.installAsset({ name: long, ticker: "NLHT", exchange: "US" }); });
+  expect(field()).toHaveAccessibleDescription("Typing filters what you follow. Press Enter to search listings on OpenFIGI.");
+  expect(field()).not.toHaveAttribute("aria-controls");
+  expect(row(long).querySelector(".following-name")).toHaveAttribute("title", long);
+});
+
+it("sends nothing offline and says so", async () => {
+  Object.defineProperty(window.navigator, "onLine", { configurable: true, get: () => false });
+  const { lookup, user } = await fixture();
+  await user.type(field(), "nvidia{Enter}");
+  expect(await lookupLine("offline")).toHaveTextContent("Listing search is unavailable offline. You can still follow it as typed.");
+  expect(lookup).not.toHaveBeenCalled();
+});
+
+it("leaves Enter to the input method while it composes", async () => {
+  const { lookup } = await fixture();
+  const input = field();
+  fireEvent.compositionStart(input);
+  fireEvent.change(input, { target: { value: "엔비디아" } });
+  fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+  await settle();
+  expect(lookup).not.toHaveBeenCalled();
+  fireEvent.compositionEnd(input);
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(lookup).toHaveBeenCalledTimes(1));
+});
+
+it("drops an answer for text that was cleared before it arrived", async () => {
+  const { bridge, user } = await fixture();
+  bridge.assets.lookupHold = true;
+  await user.type(field(), "nvidia{Enter}");
+  expect(await screen.findByText("Searching listings on OpenFIGI…")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Clear search" }));
+  bridge.assets.lookupHold = false;
+  await settle();
+  await user.type(field(), "nvidia");
+  expect(options().map(item => item.dataset.kind)).toEqual(["search", "typed"]);
+});
+
+it("stops following at once, moving focus to the next row, then the field; a failure says so and retries", async () => {
+  const { bridge, user, loupist } = await fixture(bridge => {
+    bridge.assets.installAsset({ name: "Alpha", ticker: "ALPH" });
+    bridge.assets.installAsset({ name: "Beta", ticker: "BETA" });
+  });
+  const unfollow = vi.spyOn(bridge, "assetUnfollow");
+  await user.click(screen.getByRole("button", { name: "Stop following Alpha" }));
+  await waitFor(() => expect(screen.queryByText("Alpha", { selector: ".following-name" })).toBeNull());
+  expect(unfollow).toHaveBeenCalledWith({ loupistId: loupist.id, assetId: expect.stringMatching(/^ast_[0-9a-f]{16}$/u) });
+  await waitFor(() => expect(within(row("Beta")).getByRole("button", { name: /^Beta/u })).toHaveFocus());
+  bridge.assets.unfollowFails = true;
+  await user.click(screen.getByRole("button", { name: "Stop following Beta" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't stop following Beta.");
+  bridge.assets.unfollowFails = false;
+  await user.click(within(row("Beta")).getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(field()).toHaveFocus());
+  expect(await bridge.assetsList({ loupistId: loupist.id })).toEqual([]);
+});
+
+it("reads the list again when the host says assets changed", async () => {
+  const { bridge } = await fixture();
+  bridge.assets.installAsset(NVIDIA);
+  act(() => bridge.assets.changed());
+  expect(await screen.findByText("NVIDIA CORP", { selector: ".following-name" })).toBeVisible();
+});
+
+describe("in the app", () => {
+  it("opens from Bot's Add assets to follow card with the field focused, and Ask Bot drafts into the composer", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const user = userEvent.setup();
+    render(<App bridge={bridge} />);
+    const card = await waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>('.bot-greeting [data-ask="follow"]');
+      expect(button).not.toBeNull();
+      return button!;
+    }, { timeout: 4000 });
+    await user.click(card);
+    await waitFor(() => expect(field()).toHaveFocus());
+    await user.type(field(), "Hanbit Heavy{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Ask Bot to follow it" }, { timeout: 2000 }));
+    await waitFor(() => expect(document.querySelector<HTMLTextAreaElement>("textarea[data-chat-composer]")?.value).toContain("Follow “Hanbit Heavy”."));
     const [loupist] = await bridge.loupistList();
-    // Apple was switched fully off; Microsoft and Nvidia have no decision.
-    bridge.watch.install(loupist!.id, { notWatched: [asset("AAPL", "Apple"), asset("MSFT", "Microsoft"), asset("NVDA", "Nvidia")], undecidedAssetIds: ["asset-MSFT", "asset-NVDA"] });
+    expect(await bridge.assetsList({ loupistId: loupist!.id })).toEqual([]);
   });
-  expect(await screen.findByRole("button", { name: "Watch all 2" })).toBeVisible();
-  cleanup();
-  bridge.watch.install(loupist.id, { notWatched: [asset("AAPL", "Apple")], undecidedAssetIds: [] });
-  render(<FollowingPage bridge={bridge} loupist={loupist} />);
-  expect(await screen.findByRole("checkbox", { name: "Filings, Apple" })).toBeVisible();
-  expect(screen.queryByRole("button", { name: /^Watch/ })).toBeNull();
-  expect(screen.queryByText(/No AI usage\. Only names are sent to data sources\./)).toBeNull();
-});
-
-it("says when Watching settings could not load and loads them again on retry", async () => {
-  const { user } = await fixture(async bridge => {
-    await bridge.watchlistAdd({ symbol: "AAPL", market: "NASDAQ", displayName: "Apple" });
-    vi.spyOn(bridge, "watchSettingsList").mockRejectedValueOnce(new Error("store busy"));
-  });
-  const alert = await screen.findByRole("alert");
-  expect(alert).toHaveTextContent("Couldn't load Watching settings.");
-  await user.click(within(alert).getByRole("button", { name: "Try again" }));
-  expect(await screen.findByRole("checkbox", { name: "Filings, Apple" })).toBeVisible();
-  expect(screen.queryByRole("alert")).toBeNull();
-});
-
-it("drops the Adding to the map note once the Map has read what was followed", async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
-  try {
-    const status = vi.fn().mockResolvedValueOnce({ state: "queued", assets: 1 }).mockResolvedValueOnce({ state: "running", assets: 1 }).mockResolvedValue({ state: "done", assets: 1 });
-    const { user } = await fixture(async bridge => { vi.spyOn(bridge, "knowledgeFollowedStatus").mockImplementation(status); });
-    await user.type(screen.getByRole("textbox", { name: "Add something to follow" }), "005930");
-    await user.click(screen.getByRole("button", { name: "Follow" }));
-    expect(await screen.findByText("Adding to the map…")).toBeVisible();
-    await vi.advanceTimersByTimeAsync(3_000);
-    expect(screen.getByText("Adding to the map…")).toBeVisible();
-    await vi.advanceTimersByTimeAsync(3_000);
-    await waitFor(() => expect(screen.queryByText("Adding to the map…")).toBeNull());
-    expect(status).toHaveBeenCalledTimes(3);
-  } finally {
-    vi.useRealTimers();
-  }
 });

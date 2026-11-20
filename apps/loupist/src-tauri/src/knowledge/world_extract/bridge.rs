@@ -43,7 +43,6 @@ pub(super) use super::super::graph_inference::MAX_ANSWER_TOKENS as EXTRACT_EDGES
 const MAX_FRAME_BYTES: usize = 2_000_000;
 const MAX_EMBED_TEXTS: usize = 256;
 const EMBED_CACHE_LIMIT: usize = 1024;
-const EMBEDDING_DIMENSION: usize = 128;
 
 /// One model call as the pipeline asks for it.
 pub(crate) struct LlmCall<'a> {
@@ -102,6 +101,13 @@ pub(crate) fn clean_input(text: &str) -> String {
 }
 
 /// One record of the evaluation stage log (no prompt or provider text).
+#[cfg_attr(
+    not(any(debug_assertions, feature = "eval-harness")),
+    expect(
+        dead_code,
+        reason = "the stage log is read only in development and eval builds"
+    )
+)]
 #[derive(Debug, Clone)]
 pub(crate) struct StageRecord {
     pub kind: &'static str,
@@ -410,12 +416,13 @@ impl<'a> Bridge<'a> {
                     usage: Value::Null,
                     texts: batch.len(),
                 });
+                // The model's width; a fallback vector must match it.
                 let dimension = vectors
                     .iter()
                     .filter_map(Value::as_array)
                     .map(Vec::len)
                     .find(|len| *len > 0)
-                    .unwrap_or(EMBEDDING_DIMENSION);
+                    .ok_or(Stop::Rejected("embedding result has no vector width"))?;
                 for (text, vector) in batch.iter().zip(vectors) {
                     let values: Vec<f32> = vector
                         .as_array()

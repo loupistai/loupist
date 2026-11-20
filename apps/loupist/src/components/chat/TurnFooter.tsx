@@ -1,10 +1,10 @@
 import i18n, { useTranslation } from "@/i18n";
 import { formatNumber } from "@/i18n/format";
-import { CornerDownRightIcon } from "lucide-react";
+import { ChevronRightIcon, CornerDownRightIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { clockLabel, useNow, useThrottledAnnouncement } from "../../chat/runStatus";
+import { clockLabel, elapsedLabel, useNow, useThrottledAnnouncement } from "../../chat/runStatus";
 import type { LiveLine as LiveLineView, TurnFooter as FooterSlot } from "../../chat/turnView";
-import { Ticker, TurnGlyph, useArrived } from "./turnMotion";
+import { Ticker, TurnGlyph, useArrived, useChatSurface } from "./turnMotion";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -12,13 +12,15 @@ const t = i18n.getFixedT(null, "chat");
 export const DWELL_MS = 600;
 /** After a step ends, its label holds this long before the line reads Thinking. */
 export const STEP_HOLD_MS = 800;
+/** Lines that wait out a finished step's hold: the step's label, not Thinking or the batch, fills a quick gap. */
+const HELD_AFTER_STEP = new Set<LiveLineView["kind"]>(["thinking", "still", "note", "batch"]);
 /** The live line's exit at commit (`--gg-motion-fast`). */
 const LEAVE_MS = 120;
 
 /**
  * The label the live line shows: at least 600 ms per label, so a burst of
  * quick steps never strobes, and a finished step's label held 800 ms so the
- * gap before the next step never flashes "Thinking". A stop or a question is
+ * gap before the next step never flashes "Thinking" or the batch line. A stop or a question is
  * the reader's business and shows at once. "+N" follows the latest state.
  */
 export function useShownLine(line: LiveLineView): LiveLineView {
@@ -36,7 +38,7 @@ export function useShownLine(line: LiveLineView): LiveLineView {
       if (want.key === showing.line.key) return;
       const urgent = want.kind === "stopping" || want.kind === "waiting";
       let readyAt = urgent ? now : showing.at + DWELL_MS;
-      if (!urgent && (want.kind === "thinking" || want.kind === "still") && current.stepEnded !== null) {
+      if (!urgent && HELD_AFTER_STEP.has(want.kind) && current.stepEnded !== null) {
         readyAt = Math.max(readyAt, current.stepEnded + STEP_HOLD_MS);
       }
       if (readyAt > now) { timer = window.setTimeout(evaluate, readyAt - now); return; }
@@ -73,14 +75,43 @@ function LiveLine({ line, sinceMs }: { line: LiveLineView; sinceMs: number }) {
   );
 }
 
+/**
+ * Bot's working state: one quiet line beside the Loupist's face, what it is doing
+ * now and for how long. No glyph, count or chips; the steps are in the activity sheet,
+ * which the line opens. The same dwell keeps quick steps from strobing.
+ */
+function BotWorkingLine({ line, sinceMs, onOpen }: { line: LiveLineView; sinceMs: number; onOpen?: () => void }) {
+  useTranslation("chat");
+  const shown = useShownLine(line);
+  const now = useNow(true);
+  const elapsed = elapsedLabel(now - sinceMs);
+  // The name leaves out the ticking clock, so it holds still while focused; the run's start and end are announced once.
+  return (
+    <button type="button" className="turn-live bot-working" data-testid="turn-live" data-kind={shown.kind} data-sheen={shown.sheen || undefined}
+      data-tone={shown.kind === "waiting" ? "you" : undefined} onClick={onOpen} disabled={!onOpen}
+      aria-label={t("bot.working", { label: [shown.label, shown.target].filter(Boolean).join(" · ") })}>
+      <Ticker id={shown.key} className="turn-live-text">
+        <span className="turn-live-label">{shown.label}</span>
+        {shown.target ? <span className="turn-live-target">{shown.target}</span> : null}
+      </Ticker>
+      <span className="bot-working-clock" aria-hidden="true">{elapsed}</span>
+      <span className="bot-working-open" aria-hidden="true">{t("bot.activity")}<ChevronRightIcon /></span>
+    </button>
+  );
+}
+
 type Props = {
   footer: FooterSlot;
+  /** Bot: the working line opens the activity sheet at this answer. */
+  onOpenActivity?: () => void;
   /** The one live region for the whole turn, throttled. */
   announce: string;
   /** Guidance sent while this reply runs; it applies after the current step. */
   guiding?: readonly string[];
   /** The settled row: sources, copy, receipt and feedback, drawn by the card. */
   children?: ReactNode;
+  /** The reply shows its notes on the page, so the line does not repeat the latest one. */
+  noteOnPage?: boolean;
 };
 
 /**
@@ -89,9 +120,13 @@ type Props = {
  * the actions, receipt and sources. At commit the live line fades out as the
  * action row fades in; nothing above the slot moves.
  */
-export function TurnFooter({ footer, announce, guiding, children }: Props) {
+export function TurnFooter({ footer: given, announce, guiding, onOpenActivity, children, noteOnPage = false }: Props) {
   useTranslation("chat");
-  const announced = useThrottledAnnouncement(announce, true);
+  const bot = useChatSurface().kind === "bot";
+  // A note on the page right above the line is not said again: the line reads as working.
+  const quiet = given.kind === "live" && noteOnPage ? given.line.besideNote : undefined;
+  const footer = quiet && given.kind === "live" ? { ...given, line: quiet } : given;
+  const announced = useThrottledAnnouncement(quiet ? quiet.label : announce, true);
   const arrived = useArrived();
   // The live line the reader last saw, kept for its exit when the slot settles.
   const [last, setLast] = useState<{ line: LiveLineView; sinceMs: number } | null>(footer.kind === "live" ? footer : null);
@@ -107,16 +142,17 @@ export function TurnFooter({ footer, announce, guiding, children }: Props) {
   const arriving = committed || (arrived && footer.kind === "settled");
   return (
     <div className="turn-footer" data-state={footer.kind}>
-      {footer.kind === "live" ? <LiveLine line={footer.line} sinceMs={footer.sinceMs} />
+      {footer.kind === "live" ? bot ? <BotWorkingLine line={footer.line} sinceMs={footer.sinceMs} onOpen={onOpenActivity} /> : <LiveLine line={footer.line} sinceMs={footer.sinceMs} />
         : <>
-          {last ? <p className="turn-live" data-leaving="" aria-hidden="true">
-            <span className="turn-live-glyph"><TurnGlyph glyph={last.line.glyph} /></span>
+          {last ? <p className={bot ? "turn-live bot-working" : "turn-live"} data-leaving="" aria-hidden="true">
+            {bot ? null : <span className="turn-live-glyph"><TurnGlyph glyph={last.line.glyph} /></span>}
             <span className="turn-live-label">{last.line.label}</span>
           </p> : null}
           <div className="message-action-bar" data-arriving={arriving || undefined}>{children}</div>
         </>}
       <span className="sr-only" aria-live="polite">{announced}</span>
-      {footer.kind === "live" && guiding?.length ? <div className="chat-guiding">{guiding.map((text, index) => <p key={index} className="chat-guiding-row" role="status">
+      {/* No status of its own: the conversation log already says a row it adds, once. */}
+      {footer.kind === "live" && guiding?.length ? <div className="chat-guiding">{guiding.map((text, index) => <p key={index} className="chat-guiding-row">
         <CornerDownRightIcon aria-hidden="true" />{t("chatProgressTimeline.guiding", { text })}
       </p>)}</div> : null}
     </div>

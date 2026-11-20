@@ -3,6 +3,7 @@
 
 /** Why a sign-in ended without a credential; the renderer maps each to copy. */
 export type ConnectFailure =
+  | "chatgpt_connection_rejected"
   | "plan_permission_declined"
   | "plan_not_eligible"
   | "port_in_use"

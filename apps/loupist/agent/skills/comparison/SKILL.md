@@ -21,14 +21,8 @@ multiples with `calculate` so each carries its formula and inputs. A peer
 median is context, not proof that the subject deserves that multiple.
 
 Return the aligned comparison, important exceptions, and evidence explaining
-a premium or discount. Publish the comparison table with `grid_publish`: one row
-per asset, one column per measure with its period and basis, each value cell
-citing the result it came from (a `calculate` result for margins, growth and
-multiples). Leave a value the sources do not give, or one on another basis,
-empty with its reason rather than mixing bases in one column; say in a note
-what is missing. Use the available visualize Skill when a chart clarifies the
-comparison.
-
-When two sources give different figures for the same company, measure and
-period, do not average or quietly choose: publish a `grid_publish` conflict
-card and say which figure the comparison uses and why.
+a premium or discount. When the sources
+do not give a figure, or give it only on another basis, say what is missing and
+why rather than mixing bases in one measure. `grid_publish` publishes a table
+the user can sort and export, with each cell checked against its source. Use the
+available visualize Skill when a chart clarifies the comparison.

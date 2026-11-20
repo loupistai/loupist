@@ -9,9 +9,9 @@ import {
   writeSync,
 } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, readStoredCredential, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import { runControlsFor } from "./model-run-controls.mjs";
+import { hasTrustedModelEndpoint, runControlsFor } from "./model-run-controls.mjs";
 import { MAX_INFERENCE_REQUEST_BYTES, runProviderInference } from "./provider-inference.mjs";
 import {
   isNativeSearchProvider,
@@ -35,6 +35,7 @@ export const API_KEY_TITLE = `${PROTOCOL}:api_key`;
 const MAX_RESULT_BYTES = 512 * 1024;
 const LIVE_MODELS_URL = "https://api.openai.com/v1/models";
 const LIVE_MODELS_TIMEOUT_MS = 8_000;
+const PUBLIC_CATALOG_TIMEOUT_MS = 4_000;
 const MAX_LIVE_MODELS_BYTES = 1024 * 1024;
 const MAX_REQUEST_BYTES = 64 * 1024;
 const IS_WINDOWS = process.platform === "win32";
@@ -111,17 +112,24 @@ function emit(ctx, event) {
   ctx.ui.notify(`${PROTOCOL}:${JSON.stringify(event)}`, "info");
 }
 
-function modelsFor(ctx, providerId, live = null) {
-  const known = ctx.modelRegistry.getAvailable().filter((model) => model.provider === providerId);
+function modelsFor(ctx, providerId, live, requireLive) {
+  const droppedEndpoints = [];
+  const known = ctx.modelRegistry.getAvailable()
+    .filter((model) => model.provider === providerId)
+    .filter((model, index) => {
+      if (hasTrustedModelEndpoint(model)) return true;
+      droppedEndpoints.push(index + 1);
+      return false;
+    });
   // A live plan list keeps only what the plan offers; IDs Pi does not know
-  // have no capability metadata and are left out. A list that shares no ID
-  // with Pi's catalog tells nothing usable, so Pi's catalog stays.
+  // have no capability metadata and are left out. If there is no overlap,
+  // only interactive discovery can fall back to Pi's catalog.
   const offered = live && known.some((model) => live.has(model.id)) ? live : null;
-  return known
-    .filter((model) => !offered || offered.has(model.id))
+  const models = known
+    .filter((model) => offered ? offered.has(model.id) : !requireLive)
     .map((model) => ({
       id: model.id,
-      name: offered?.get(model.id) || model.name || model.id,
+      name: offered?.get(model.id) || (model.name == null || typeof model.name === "string" ? model.name || model.id : ""),
       reasoning: Boolean(model.reasoning),
       context_window: model.contextWindow,
       max_tokens: model.maxTokens,
@@ -130,20 +138,36 @@ function modelsFor(ctx, providerId, live = null) {
       thinking_level_map: model.thinkingLevelMap ?? {},
       run_controls: runControlsFor(model),
     }))
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .sort((left, right) => {
+      const name = (model) => typeof model.name === "string" ? model.name : "";
+      return name(left).localeCompare(name(right));
+    });
+  return { models, dropped_endpoints: droppedEndpoints, live_filtered: offered !== null };
+}
+
+async function liveOpenAIToken(ctx, readOnly) {
+  if (readOnly) {
+    // The upgrade pass can overlap native search. Use the saved access token
+    // while current, without starting a refresh that would hold Pi's auth lock.
+    const agentDir = process.env.PI_CODING_AGENT_DIR;
+    if (!agentDir || !isAbsolute(agentDir)) return undefined;
+    const saved = readStoredCredential("openai", join(agentDir, "auth.json"));
+    return saved?.type === "oauth" && saved.expires > Date.now() ? saved.access : undefined;
+  }
+  const auth = await ctx.modelRegistry.getProviderAuth("openai");
+  return auth?.source === "OAuth" ? auth.auth?.apiKey : undefined;
 }
 
 /**
  * Sign in with ChatGPT lists the models a plan offers at `GET /v1/models`.
  * Reads the OpenAI list shape (`data[].id`) and, defensively, the plan form
  * (`slug`, `display_name`, `visibility`). Returns ID → display name (""
- * when the list names none), or null so the caller keeps Pi's catalog.
+ * when the list names none), or null when the list is unavailable.
  */
-export async function liveOpenAIModels(ctx, send = globalThis.fetch) {
+export async function liveOpenAIModels(ctx, send = globalThis.fetch, readOnly = false) {
   try {
-    const auth = await ctx.modelRegistry.getProviderAuth("openai");
-    const token = auth?.auth?.apiKey;
-    if (auth?.source !== "OAuth" || typeof token !== "string" || !token) return null;
+    const token = await liveOpenAIToken(ctx, readOnly);
+    if (typeof token !== "string" || !token) return null;
     const response = await send(LIVE_MODELS_URL, {
       headers: { authorization: `Bearer ${token}`, accept: "application/json" },
       // The plan token goes to this one address only, never to a redirect.
@@ -230,6 +254,7 @@ export function withLoupistSignInIdentity(fetchImpl, providerId) {
 /** Fixed sign-in failure reasons; provider text never leaves this process. */
 export function loginFailureReason(error) {
   const message = String(error?.message ?? error ?? "").toLowerCase();
+  if (message.includes("openai oauth token request failed") && /\binvalid_grant\b/u.test(message)) return "chatgpt_connection_rejected";
   if (message.includes("chatgpt.tokens.use.direct")) return "plan_permission_declined";
   if (message.includes("not_eligible") || message.includes("not eligible")) return "plan_not_eligible";
   if (message.includes("access_denied")) return "denied";
@@ -323,7 +348,6 @@ export async function resolveSearchAuth(ctx, providerId) {
   return {
     apiKey: auth.auth.apiKey,
     headers: auth.auth.headers ?? {},
-    baseUrl: auth.auth.baseUrl,
   };
 }
 
@@ -430,15 +454,30 @@ export default function loupistTerminalProviderExtension(pi) {
   pi.registerCommand("loupist-provider-models", {
     description: "Return Pi's bundled model catalog for one provider",
     handler: async (args, ctx) => {
-      const parts = args.trim().split(/\s+/u);
-      if (parts.length > 2 || (parts.length === 2 && parts[1] !== "--live")) {
+      const [id, ...flags] = args.trim().split(/\s+/u);
+      if (new Set(flags).size !== flags.length || flags.some(flag => !["--live", "--refresh-public", "--read-only-auth"].includes(flag))) {
         throw new Error("Model catalog command is invalid");
       }
-      const providerId = validateProviderId(parts[0]);
+      const providerId = validateProviderId(id);
       const provider = ctx.modelRegistry.getProvider(providerId);
       if (!provider) throw new Error("Pi provider is unavailable");
-      const live = parts[1] === "--live" && providerId === "openai" ? await liveOpenAIModels(ctx) : null;
-      writeResult({ type: "models", provider: providerId, models: modelsFor(ctx, providerId, live) });
+      let publicRefreshFailed = false;
+      if (provider.refreshModelsAuth === "configured") {
+        // Pi 1.5.2's public catalog refresh checks credential presence only.
+        // Enable it for this provider without starting personalized refreshes.
+        const refreshed = await ctx.modelRegistry.refresh({
+          providers: [providerId],
+          allowNetwork: true,
+          force: flags.includes("--refresh-public"),
+          signal: AbortSignal.timeout(PUBLIC_CATALOG_TIMEOUT_MS),
+        });
+        publicRefreshFailed = refreshed?.aborted === true || refreshed?.errors.has(providerId) === true;
+      }
+      const wantsLive = flags.includes("--live") && providerId === "openai";
+      const readOnly = flags.includes("--read-only-auth");
+      const live = wantsLive ? await liveOpenAIModels(ctx, globalThis.fetch, readOnly) : null;
+      const catalog = modelsFor(ctx, providerId, live, wantsLive && readOnly);
+      writeResult({ type: "models", provider: providerId, ...catalog, public_refresh_failed: publicRefreshFailed });
     },
   });
 
@@ -533,7 +572,7 @@ export default function loupistTerminalProviderExtension(pi) {
       const secrets = [];
       try {
         const availableModelIds = ctx.modelRegistry.getAvailable()
-          .filter((model) => model.provider === request.provider)
+          .filter((model) => model.provider === request.provider && hasTrustedModelEndpoint(model))
           .map((model) => model.id);
         const result = await runNativeSearch(request, {
           ctx,

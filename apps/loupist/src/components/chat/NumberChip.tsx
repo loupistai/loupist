@@ -3,8 +3,9 @@ import "@/styles/answer-checks.css";
 import i18n, { useTranslation } from "@/i18n";
 import { TriangleAlertIcon } from "lucide-react";
 import { Popover } from "radix-ui";
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { ChatEvidenceRef, NumberCheck } from "../../types";
+import { providerName } from "@/lib/marketProviderName";
 import { formatAsOf } from "../../chat/asOf";
 import { evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
 import { quoteEvidence } from "../../chat/quoteEvidence";
@@ -15,6 +16,7 @@ import { narrowWindow } from "../../chat/narrowWindow";
 import { wantsExternal } from "../../chat/navigation";
 import { Button } from "../ui/button";
 import { useOpenProps } from "../navigation/Open";
+import { useConversationScroll } from "../ai-elements/conversation";
 import { CLOSE_DELAY_MS, OPEN_DELAY_MS, useEvidencePopover } from "./useEvidencePopover";
 
 const t = i18n.getFixedT(null, "chat");
@@ -49,40 +51,53 @@ function hostChecked(check: NumberCheck): { value: string; symbol?: string } | u
   return value ? { value, symbol } : undefined;
 }
 
-/** The marked passage text, from the check's byte offsets into the retained excerpt. */
-function passageParts(evidence: ChatEvidenceRef, span: NumberCheck["span"]) {
-  if (!span || span.start < 0 || span.end <= span.start) return null;
-  const bytes = new TextEncoder().encode(evidence.excerpt);
-  if (span.end > bytes.length) return null;
+/** Text split at a match given as UTF-8 byte offsets into it; null when the offsets do not decode inside it. */
+function markedParts(text: string, start: number, end: number) {
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start) return null;
+  const bytes = new TextEncoder().encode(text);
+  if (end > bytes.length) return null;
   try {
     const decoder = new TextDecoder("utf-8", { fatal: true });
     // A short window around the number keeps the four-line clamp on the match.
-    const before = decoder.decode(bytes.slice(0, span.start));
+    const before = decoder.decode(bytes.slice(0, start));
     return {
       before: before.length > 220 ? `…${before.slice(-220)}` : before,
-      match: decoder.decode(bytes.slice(span.start, span.end)),
-      after: decoder.decode(bytes.slice(span.end)),
+      match: decoder.decode(bytes.slice(start, end)),
+      after: decoder.decode(bytes.slice(end)),
     };
   } catch { return null; }
 }
 
-/** The passage with the number marked. Mounted only while the popover is open, so the excerpt is encoded once per open. */
-function PassageBody({ evidence, span, meta }: { evidence: ChatEvidenceRef; span: NumberCheck["span"]; meta: ReactNode }) {
-  const passage = useMemo(() => passageParts(evidence, span), [evidence, span]);
+/**
+ * The marked passage: the check's span into the retained excerpt or, when the
+ * excerpt lacks the number, the host's bounded context of the full result.
+ * A span wins; offsets that do not decode leave the excerpt unmarked.
+ */
+function passageParts(evidence: ChatEvidenceRef, span: NumberCheck["span"], context: NumberCheck["context"]) {
+  if (span) return markedParts(evidence.excerpt, span.start, span.end);
+  return context ? markedParts(context.text, context.start, context.end) : null;
+}
+
+/** The passage with the number marked. Mounted only while the popover is open, so the text is encoded once per open. */
+function PassageBody({ evidence, span, context, meta }: { evidence: ChatEvidenceRef; span: NumberCheck["span"]; context: NumberCheck["context"]; meta: ReactNode }) {
+  const passage = useMemo(() => passageParts(evidence, span, context), [evidence, span, context]);
   return <>
     <small className="number-chip-meta">{meta}</small>
     <p className="number-chip-passage">{passage ? <>{passage.before}<mark>{passage.match}</mark>{passage.after}</> : evidence.excerpt}</p>
   </>;
 }
 
-function InputSource({ source, evidenceRefs }: { source: ChatEvidenceRef; evidenceRefs: readonly ChatEvidenceRef[] }) {
+/** A provider by name, never a runtime id. */
+const providerText = (evidence: ChatEvidenceRef) => providerName(evidence.provider);
+
+function InputSource({ source, evidenceRefs, publishedOnly = false }: { source: ChatEvidenceRef; evidenceRefs: readonly ChatEvidenceRef[]; publishedOnly?: boolean }) {
   const link = useOpenProps({ kind: "evidence", evidence: source });
   const number = citationNumber(source, evidenceRefs);
   const chip = number ? <span className="loupist-citation" aria-hidden="true">{number}</span> : null;
-  const date = evidenceDate(source);
+  const date = evidenceDate(source, publishedOnly ? "published_only" : "published_at");
   // The provider may wrap above the date; the date and its citation stay together.
   const body = <>
-    <span>{source.provider ?? sourceIdentityLabel(source)}{date ? " · " : ""}</span>
+    <span>{providerText(source) ?? sourceIdentityLabel(source)}{date ? " · " : ""}</span>
     {date ? <span className="number-chip-date">{date}{chip}</span> : chip}
   </>;
   return link.available ? <button type="button" {...link.props}>{body}</button> : <span>{body}</span>;
@@ -109,8 +124,10 @@ function CalculatedBody({ check, view, evidenceRefs }: { check: NumberCheck; vie
           return <div key={input.name}>
             <dt title={input.label}>{input.label}</dt>
             <dd className="gg-num">{input.value}</dd>
+            {/* Read right after the amount it qualifies; drawn on its own line below the row. */}
+            {input.declaredCurrency ? <dd className="number-chip-currency-note">{t("numberChip.currencyDeclared")}</dd> : null}
             <dd className="number-chip-source">{source
-              ? <InputSource source={source} evidenceRefs={evidenceRefs} />
+              ? <InputSource source={source} evidenceRefs={evidenceRefs} publishedOnly={input.publishedDateOnly} />
               : <span className="number-chip-unlinked">{t("numberChip.notLinked")}</span>}</dd>
           </div>;
         })}
@@ -139,6 +156,7 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
   children: ReactNode;
 }) {
   useTranslation("chat");
+  const conversation = useConversationScroll();
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const { state: copyState, copy: copyText } = useCopyFeedback(`${check.evidence_id}:${check.link_index}`);
@@ -165,7 +183,10 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
   };
   const show = (pin: boolean) => {
     setOpen(true);
-    if (pin) setPinned(true);
+    if (!pin) return;
+    setPinned(true);
+    // A pinned popover is something the reader opened: the thread stays under it as it grows.
+    conversation?.holdScrollPosition();
   };
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
   useEffect(() => {
@@ -176,22 +197,26 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
   }, [pinned, open]);
   // In a short window the popover scrolls under its status and actions; a rule then marks where they begin.
   const [overflowing, setOverflowing] = useState(false);
+  // The portaled content can mount after `open` changes, so the measurement follows the node itself.
+  const [contentNode, setContentNode] = useState<HTMLDivElement | null>(null);
+  const contentRef = useCallback((node: HTMLDivElement | null) => { content.current = node; setContentNode(node); }, []);
   useEffect(() => {
-    const node = content.current;
+    const node = contentNode;
     if (!open || !node) return;
     const measure = () => setOverflowing(node.scrollHeight > node.clientHeight + 1);
     measure();
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
     observer?.observe(node);
     return () => observer?.disconnect();
-  }, [open]);
+  }, [open, contentNode]);
 
   const dismiss = () => {
     setOpen(false);
     setPinned(false);
     chip.current?.focus();
   };
-  const controls = () => [...(content.current?.querySelectorAll<HTMLElement>("button") ?? [])];
+  const controls = () => [...(content.current?.querySelectorAll<HTMLButtonElement>("button:enabled") ?? [])]
+    .filter(button => button.tabIndex >= 0);
   const onChipKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "Escape" && open) { event.stopPropagation(); dismiss(); return; }
     // The popover is portaled, so Tab from the number moves into it as if it followed the number.
@@ -219,14 +244,17 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
     setOpen(false);
     setPinned(false);
     const scope = chip.current?.closest("article") ?? document.body;
-    const focusable = [...scope.querySelectorAll<HTMLElement>("button, a[href], [tabindex]:not([tabindex='-1'])")];
+    const focusable = [...scope.querySelectorAll<HTMLElement>(":is(button, a[href], [tabindex]):not(:disabled)")]
+      .filter(element => element.tabIndex >= 0);
     const next = focusable[focusable.indexOf(chip.current!) + 1];
     (next ?? chip.current)?.focus();
   };
 
   const source = sourceIdentityLabel(evidence);
   const value = spokenNumber(check.text);
-  const label = check.kind === "calculated" ? t("numberChip.labelCalculated", { value }) : t("numberChip.labelSourced", { value, source });
+  // A number its source does not hold is never named as coming from it.
+  const label = check.status === "not_found" ? t("numberChip.labelUnmatched", { value, source })
+    : check.kind === "calculated" ? t("numberChip.labelCalculated", { value }) : t("numberChip.labelSourced", { value, source });
   // "Rounded from …" only when the printed value is not the source value itself.
   const status = needsChecking(check) || (check.status === "rounded" && !shownExactly(check)) ? statusId : undefined;
   // Worded only while open: popovers mount lazily (finance-show-the-math.md §3.3).
@@ -278,12 +306,14 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
           show(true);
         }}>
         {children}
+        {/* A quiet mark after a number its source does not hold, so it never reads as checked. */}
+        {check.status === "not_found" ? <span className="number-chip-unmatched" aria-hidden="true" /> : null}
       </button>
     </Popover.Anchor>
     {status ? <span id={statusId} hidden>{check.status === "not_found" ? t("numberChip.notFound") : check.status === "differs" ? t("numberChip.differs", { nearest: check.nearest ?? "", shown: check.text }) : t("numberChip.rounded", { exact })}</span> : null}
     {open ? <Popover.Portal>
       {/* A non-modal dialog whether opened by hover, focus or click: it holds buttons, so it is never a tooltip. */}
-      <Popover.Content ref={content} id={popoverId} role="dialog" aria-modal={false} aria-labelledby={titleId}
+      <Popover.Content ref={contentRef} id={popoverId} role="dialog" aria-modal={false} aria-labelledby={titleId}
         className="number-chip-popover" data-kind={check.kind} data-overflow={overflowing || undefined} side="top" align="start" sideOffset={6}
         // Stay under the titlebar and above the composer. A short window scrolls the body; the actions stay pinned.
         collisionPadding={popoverCollisionPadding(chip.current)}
@@ -305,15 +335,14 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
         </div>
         {quote ? <QuoteEvidenceBody read={quote} evidence={evidence} mode="cell" checked={checked} /> : null}
         {!quote && check.kind === "calculated" && check.calc && view ? <CalculatedBody check={check} view={view} evidenceRefs={evidenceRefs} /> : null}
-        {!quote && check.kind === "passage" ? <PassageBody evidence={evidence} span={check.span}
+        {!quote && check.kind === "passage" ? <PassageBody evidence={evidence} span={check.span} context={check.context}
           meta={published ? t("numberChip.published", { source, date: published }) : source} /> : null}
         {!quote && check.kind === "data" ? <>
           {rows.length ? <table className="number-chip-row"><tbody>
             {rows.map((row) => <tr key={row.key}><th scope="row">{row.label}</th><td className="gg-num">{row.matched ? <mark>{row.value}</mark> : row.value}</td></tr>)}
           </tbody></table> : null}
-          <small className="number-chip-meta">{evidence.published_at && fetched
-            ? t("numberChip.filedFetched", { provider: evidence.provider ?? source, filed: published, fetched })
-            : [evidence.provider ?? source, fetched].filter(Boolean).join(" · ")}</small>
+          <small className="number-chip-meta">{evidence.published_at && fetched ? t("numberChip.filedFetched", { provider: providerText(evidence) ?? source, filed: published, fetched })
+            : [providerText(evidence) ?? source, fetched].filter(Boolean).join(" · ")}</small>
         </> : null}
         {check.kind === "step" ? <p className="number-chip-meta">{evidenceTitle(evidence)}</p> : null}
         {/* The status and actions stay in view when a short window makes the popover scroll. */}
@@ -347,14 +376,21 @@ function composerClearance(chip: HTMLElement | null): number {
   return Math.max(8, Math.round(window.innerHeight - shell.getBoundingClientRect().top + 8));
 }
 
-/** The receipt's "numbers to check": scroll to the first such number in the answer and pin its popover. */
-export function revealFirstNumberToCheck(messageId: string) {
-  const answer = [...document.querySelectorAll<HTMLElement>("[data-message-id]")].find((element) => element.dataset.messageId === messageId);
-  const chip = answer?.querySelector<HTMLButtonElement>('[data-number-check="check"]');
-  if (!chip) return;
-  const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  chip.scrollIntoView?.({ block: "center", behavior: reduced ? "auto" : "smooth" });
-  chip.click();
+/**
+ * The receipt's "numbers to check": scroll to the first such number in the answer and pin its popover.
+ * The thread then stays at that number: a chat opened at its end no longer returns there when it grows.
+ */
+export function useRevealNumberToCheck() {
+  const conversation = useConversationScroll();
+  return useCallback((messageId: string) => {
+    const answer = [...document.querySelectorAll<HTMLElement>("[data-message-id]")].find((element) => element.dataset.messageId === messageId);
+    const chip = answer?.querySelector<HTMLButtonElement>('[data-number-check="check"]');
+    if (!chip) return;
+    conversation?.holdScrollPosition();
+    const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    chip.scrollIntoView?.({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    chip.click();
+  }, [conversation]);
 }
 
 /** A number link while its answer streams: a subtle underline, no popover, no layout shift. */

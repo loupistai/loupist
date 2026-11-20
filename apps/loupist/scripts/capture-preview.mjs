@@ -10,6 +10,7 @@ import { openChrome } from "./visual-diff.mjs";
 import { assertChatLayout, measureChatLayout } from "../e2e/native-layout.mjs";
 import { assertShellLayout, measureShellLayout } from "../e2e/shell-layout.mjs";
 import { assertReaderLayout, measureReaderLayout } from "../e2e/reader-layout.mjs";
+import { assertMapOverlays, measureMapOverlays } from "../e2e/map-layout.mjs";
 import { collectRunningCssMotion, reducedMotionViolations } from "./capture-motion.mjs";
 import { markdownIsRendered } from "./capture-readiness.mjs";
 
@@ -26,7 +27,7 @@ const args = process.argv.slice(2);
 const layout = args[0] === "--chat-layout";
 if (layout) args.shift();
 const options = layout ? {
-  scenarios: "chat-grid-card,browser-ready,shell-titlebar-grown,chat-header-resuming",
+  scenarios: "chat-grid-card,browser-ready,shell-titlebar-grown,chat-header-resuming,activity-sheet",
   themes: "light",
   sizes: "700x560,1060x820,1061x820,1280x820,1920x1080",
 } : {};
@@ -72,7 +73,7 @@ function checkChatCell(cell, geometry, width, height) {
   if (!panel || geometry.panelPlacement !== "side" || panelOverlay !== (width <= 1060)) {
     throw new Error("Article panel must overlay a narrow window and dock beside chat on desktop");
   }
-  if (!stage || (width >= 900) !== (stage.x > 0)) throw new Error("Unexpected sidebar space");
+  if (!stage || (width >= 640) !== (stage.x > 0)) throw new Error("Unexpected sidebar space");
   if (panel.right > width + 1) throw new Error("Panel escapes viewport");
   // Under 840 px of stage the sheet covers the whole stage; above it the chat wraps into the strip beside it.
   const fullSheet = panelOverlay && stage && stage.width < 840;
@@ -219,6 +220,8 @@ try {
             assertShellLayout(cell.shell, { label: file });
             cell.readers = await evaluate(`(${measureReaderLayout.toString()})()`);
             assertReaderLayout(cell.readers, { label: file });
+            cell.maps = await evaluate(`(${measureMapOverlays.toString()})()`);
+            assertMapOverlays(cell.maps, { label: file });
           }
           if (layout) checkChatCell(cell, await evaluate(`(${measureChatLayout.toString()})()`), width, height);
           cell.status = "ok";

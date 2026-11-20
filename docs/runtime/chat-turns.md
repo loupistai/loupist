@@ -11,6 +11,9 @@ fixed authority. Cache reuse requires matching transcript, runtime, configuratio
 resource and connector seals; changed valid seals rebuild from SQLite. The runtime
 seal includes the turn's as-of date, so changing the date starts a cold session.
 Confirmed Pi shutdown is required before cache reuse or cleanup.
+Pi's boot and its first pipelined controls may take 60 seconds, because a loaded
+Mac boots Pi slowly; a later control on a running Pi has 10 seconds. Stop or a Pi
+exit ends either wait at once (`pi/execution.rs`).
 Cold sessions retain historical attachment metadata even when an original is missing
 or changed. Restored text prefixes have a separate 1 MiB budget; at most two
 historical images share the turn's 5 MiB image budget with current images.
@@ -37,9 +40,21 @@ branch change. The lazily created `chat_artifact_revisions` table keeps bounded
 snapshots in the same database, without changing its schema version; deletion of
 an artifact cascades to its history. Publication, restore and pruning are atomic.
 A delivered `chart_publish` or `grid_publish` call also streams its staged content
-(`artifact_staged`) so the card fills at once; that event writes nothing, and only the
-reply's commit stores the artifact and sends its `artifact` reference.
+(`artifact_staged`) so the card fills at once. A revision in the same reply replaces
+the staged card under the same artifact id and revision. That event writes nothing;
+only the reply's commit stores one final revision per artifact and sends its
+`artifact` reference. A failed or undelivered revision leaves the earlier draft,
+and cancelling the reply drops all drafts.
 [Artifact history](../analysis/charts.md#visualizations) describes retention and revision reads. [Item surfaces](../analysis/surfaces.md#where-each-item-appears) owns that UI mapping.
+
+An acknowledged data read keeps its ordinary evidence receipt. The saved price
+read path can use that receipt to register a repeatable provider call, then
+replay it outside a model turn. See [Saved price reads](../knowledge/asset-pages.md#saved-price-reads).
+
+Host progress keeps finish times even for same-millisecond
+steps, and `failureReason` is one of `timeout`, `unreachable`, `provider_error`,
+`empty_result`, or `invalid_input`. Only these fixed codes cross the presentation boundary;
+provider error prose stays out of the row's reason.
 
 ### Local workspace execution
 
@@ -119,10 +134,10 @@ date). `source_save` refuses undated material with an argument error whose messa
 starts `as_of_undated`, under the code `malformed_request`. A step whose tool failed
 with `as_of_unsupported` gets the progress status `skipped`, not `failed`.
 
-At commit Rust writes three records on the answer and sends them with the completed
+At commit Rust writes two records on the answer and sends them with the completed
 event; the renderer only reads them and model text cannot set them. `number_checks`
-(at most 200) holds the [number checks](../analysis/number-checks.md#number-checks) and
-`sensitivity_cards` (at most eight) the [grid cards](../analysis/calculation.md#sensitivity-cards). An
+(at most 200) holds the [number checks](../analysis/number-checks.md#number-checks); a
+number link past that bound stays a citation with its text as written. An
 as-of turn's `as_of_report` holds its cutoff; the tools refused with `as_of_unsupported` (with
 their connection) and the reads that returned `as_of_empty` (with a target taken from
 arguments such as `symbol`, `corp_code` or `query`), each listed once and at most 16;
@@ -142,6 +157,53 @@ The extension defers automatic compaction after a finished answer until the next
 input. A cancelled or deferred attempt leaves no successful or failed compaction step in the
 answer's progress. Compaction before a prompt and between tool rounds retains its
 normal error, timeout and cancellation handling.
+
+### Research hand-offs
+
+A successful Bot reply can commit one acknowledged `research_open` request.
+Its assistant message and live completion carry the new research session’s ID
+from the same transaction.
+The new session begins with the whole original Bot user message. Rust finds it
+by Loupist, thread and message ID, including retained Chat versions. The Bot's
+question and brief belong to the hand-off note. An identical retry of that
+source turn returns the same receipt. A later Bot turn can reuse the model's
+`requestKey` and start its own hand-off.
+
+A retained **Look into it** action supplies its scoped connection and the
+user's current composer choices, including Auto. Rust records the opened
+status with the target. While the request is queued or running, identical
+retries return the same receipt and different settings conflict. After it
+finishes, fails or stops, the next click starts a fresh session and keeps the
+earlier one in history. An unavailable link leaves storage unchanged.
+
+Bot posts nothing while the run works. While this app holds the run, the session's
+thread carries `handoff_run`, and showing the session attaches to the same Chat
+stream used for an ordinary turn: the host sends the opening transcript, replays
+current progress, then follows new events. Each viewer can detach without
+cancelling; a lagging viewer gets a reset signal and can reload the snapshot.
+Guidance (`chat_steer`) steers the existing run, as it does a reply the user
+started, and Stop in the session cancels it. When the run ends, Bot gets one post
+with the outcome ([Bot](../ui/home-thread.md#home-thread)).
+
+This app holds a Running hand-off while its Chat run is registered or its live
+lease is alive. The sink that records the run's outcome owns the lease, so the
+lease outlives the registration, which the turn hands to the Memory writer before
+its answer commits: a delivery pass from any caller in that window leaves the row
+running. A pass that finds a Running row with neither (the app quit, or the run
+ended without reporting) settles it in one transaction. If the reply after the
+session's opening request is a complete answer, the row is Done with it;
+otherwise it stops as interrupted, not a run to retry silently.
+
+Typed Bot hand-offs use Delegated. A verified Map link uses the ordinary Session
+surface with its own language context. Neither host-started path offers
+`ask_user`; a new user-started reply uses the ordinary interactive policy.
+
+Both paths use the admitted model, thinking level and run options and preserve
+the allowed Memory choices. Rust checks any advisory pins against owned records
+and revisions. Paused, removed, stale and Memory-off pins can be omitted.
+Attachments, as-of dates and chosen
+Skills are outside the hand-off. An interrupted or unverifiable pending hand-off
+shows a reason when it stops. The user can request the work again in a new turn.
 
 ## Code
 

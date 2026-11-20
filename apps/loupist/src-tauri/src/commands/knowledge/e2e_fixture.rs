@@ -20,6 +20,18 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
         .ok_or_else(|| CommandError::internal("the default Loupist is missing"))?;
     let blobs = knowledge_blobs_for_loupist(state, &loupist_id)?;
     let text = format!("sealed-world-anchor sentence\nSynthetic technology and geopolitics scenario for UI verification.\n{}", fixture_claims("").iter().map(|claim| claim.proposition.as_str()).collect::<Vec<_>>().join("\n")).into_bytes();
+    let handles = [
+        ("LMPST", "Lamppost Test Works"),
+        ("NWPST", "Newpost Test Works"),
+    ]
+    .into_iter()
+    .map(|(symbol, name)| {
+        state
+            .store
+            .seed_followed_listing(&loupist_id, symbol, "US", Some(name))
+    })
+    .collect::<crate::store::StoreResult<Vec<_>>>()
+    .map_err(crate::commands::map_store)?;
     let (
         record_id,
         span_id,
@@ -30,6 +42,14 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
         selected,
         source_id,
     ) = with_loupist_knowledge(state, &loupist_id, |tx, blobs| {
+        for handle in handles {
+            crate::knowledge::assets::ensure_asset_page(
+                tx,
+                &loupist_id,
+                &handle,
+                1_700_000_000_000,
+            )?;
+        }
         let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
         let source = write.create_record(CreateRecord {
             loupist_id: loupist_id.clone(),
@@ -163,13 +183,15 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
                 replaced_model: None,
                 as_of: None,
                 number_checks: Vec::new(),
-                sensitivity_cards: Vec::new(),
                 as_of_report: None,
                 alert: None,
-                watch: None,
-                earnings: None,
+
                 vocabulary: None,
                 handoff: None,
+                research_session_id: None,
+                handoff_note: None,
+                handoff_action: None,
+                scheduled: None,
                 link: None,
                 failure_kind: None,
                 host_composed: false,
@@ -246,6 +268,7 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
             coverage: "included_full".into(),
             attribution: "eval-fixture".into(),
             publication_time: None,
+            provided: None,
         },
     }];
     let research = crate::commands::tool_executor::StagedResearch {
@@ -298,8 +321,186 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
             .map_err(|error| crate::store::StoreError::Invalid(error.to_string()))
         })
         .map_err(|error| CommandError::internal(error.to_string()))?;
-    let _ = record_id;
-    Ok(())
+    seed_handoff_fixture(state, &loupist_id)
+}
+
+fn seed_handoff_fixture(state: &AppState, loupist_id: &str) -> Result<(), CommandError> {
+    use crate::{
+        chat::handoff::LinkPath,
+        chat::home::{ensure_home_thread, host_message},
+        commands::{map_store, now_ms},
+        domain::{
+            ChatRole, ChatSession, HandoffAction, HandoffNote, HomeLink, HomeLinkHop, MemoryPolicy,
+        },
+    };
+    use serde_json::json;
+
+    let now = now_ms();
+    // The native persistence profile has no model catalog. Admit the click
+    // with a fixture ID that is absent from Pi's registry, before any prompt.
+    state.replace_provider_models(
+        "openai",
+        vec![crate::providers::catalog::ConfiguredModel {
+            id: crate::commands::handoff_fixture::MODEL_PROFILE.into(),
+            name: "Fixture research model".into(),
+            provider: "openai".into(),
+            model: "loupist-e2e-link-research".into(),
+            input: vec!["text".into()],
+            reasoning: false,
+            context_window: 32_000,
+            max_tokens: 4_096,
+            thinking_levels: vec!["off".into()],
+            thinking_level_map: Default::default(),
+            run_controls: Vec::new(),
+        }],
+    )?;
+    let home = ensure_home_thread(state, loupist_id)?;
+    let mut updated = home.clone();
+    let request_text =
+        "Compare the sealed site's confirmed supply changes, delivery dates and sources. "
+            .repeat(30)
+            + "Answer in one table and skip any forecasts.";
+    let mut user = host_message("fixture-user", request_text, now)?;
+    user.role = ChatRole::User;
+    user.host_composed = false;
+    updated.messages.push(user.clone());
+    let mut post = host_message("fixture-link", "A retained Map link.".into(), now)?;
+    let path = vec![
+        HomeLinkHop {
+            name: "Sealed Hub".into(),
+            relation: "SUPPLIES".into(),
+            reversed: false,
+        },
+        HomeLinkHop {
+            name: "Newpost Test Works".into(),
+            relation: "SUPPLIES".into(),
+            reversed: false,
+        },
+    ];
+    post.link = Some(HomeLink {
+        connection_id: "con_fixture_supply".into(),
+        seed_name: "Lamppost Test Works".into(),
+        far_name: "Newpost Test Works".into(),
+        node_ids: vec![
+            "fixture-lamp".into(),
+            "fixture-hub".into(),
+            "fixture-newpost".into(),
+        ],
+        path,
+    });
+    updated.messages.push(post);
+    updated.updated_at_ms = now.max(home.updated_at_ms);
+
+    let mut typed = user.clone();
+    typed.handoff_note = Some(HandoffNote {
+        title: "Sealed supply check".into(),
+        question: Some("Who else supplies the sealed part?".into()),
+        brief: Some("Compare retained evidence and dated filings.".into()),
+        untrusted_id: Some(crate::custom_connections::taint::fresh_id()),
+    });
+    let typed = vec![
+        typed,
+        host_message(
+            "fixture-reply",
+            "The saved sources were checked.".into(),
+            now,
+        )?,
+    ];
+    let mut action = user;
+    action.id = super::super::new_id("fixture-action");
+    action.content = crate::chat::handoff::LINK_CAPTION.into();
+    let path = LinkPath::from(&HomeLink {
+        connection_id: "con_fixture_hub".into(),
+        seed_name: "Sealed Hub".into(),
+        far_name: "Lamppost Test Works".into(),
+        node_ids: vec!["fixture-hub".into(), "fixture-lamp".into()],
+        path: vec![HomeLinkHop {
+            name: "Lamppost Test Works".into(),
+            relation: "SUPPLIES".into(),
+            reversed: true,
+        }],
+    });
+    let link_title = path.title("en");
+    action.handoff_action = Some(HandoffAction::Link {
+        connection_id: "con_fixture_hub".into(),
+    });
+    action.handoff_note = Some(HandoffNote {
+        title: link_title.clone(),
+        question: None,
+        brief: Some(serde_json::to_string(&path).map_err(map_internal)?),
+        untrusted_id: Some(crate::custom_connections::taint::fresh_id()),
+    });
+    let action = vec![
+        action,
+        host_message(
+            "fixture-reply",
+            "The stored relationship was checked.".into(),
+            now,
+        )?,
+    ];
+    let session = |id: &str, title: &str, mut messages: Vec<crate::domain::ChatMessage>| {
+        for message in &mut messages {
+            // These are already-settled fixture replies, not Bot announcements.
+            message.host_composed = false;
+        }
+        ChatSession {
+            id: id.into(),
+            loupist_id: loupist_id.into(),
+            pi_session_id: uuid::Uuid::new_v4().to_string(),
+            pi_session_cache: None,
+            title: title.into(),
+            memory_policy: MemoryPolicy {
+                use_memory: false,
+                update_memory: false,
+            },
+            set_aside_memory: Vec::new(),
+            versions: Vec::new(),
+            messages,
+            created_at_ms: now,
+            updated_at_ms: now,
+            bot_memory: Default::default(),
+        }
+    };
+    let chats = [
+        session("chat-fixture-bot-handoff", "Sealed supply check", typed),
+        session("chat-fixture-link-handoff", &link_title, action),
+        session(
+            "chat-fixture-legacy-handoff",
+            "Pre-update research",
+            Vec::new(),
+        ),
+    ];
+    for chat in &chats {
+        chat.validate().map_err(map_internal)?;
+    }
+    let path = json!({"seedName":"Lamppost Test Works","hops":[
+        {"claimId":"fixture-link-hub","relation":"SUPPLIES","fromRole":"source","toRole":"target",
+            "reversed":false,"nodeId":"fixture-hub","name":"Sealed Hub"},
+        {"claimId":"fixture-link-newpost","relation":"SUPPLIES","fromRole":"source","toRole":"target",
+            "reversed":false,"nodeId":"fixture-newpost","name":"Newpost Test Works"},
+    ]});
+    let legacy = json!({
+        "id":"handoff-fixture-legacy","loupist_id":loupist_id,"request_key":"fixture-legacy",
+        "chat_id":chats[2].id,"title":chats[2].title,"prompt":"Pre-update synthetic request.",
+        "run":{"model_profile_id":"fixture","thinking_level":"medium","run_options":{},
+            "use_memory":false,"update_memory":false},
+        "status":"created","run_id":null,"message_id":null,"error":null,
+        "created_at_ms":now,"finished_at_ms":null,
+    });
+    state.store.replace_chat_with(&home, &updated, |tx| {
+        for chat in &chats {
+            tx.execute("INSERT INTO chat_sessions(id,loupist_id,updated_at_ms,data_json) VALUES(?1,?2,?3,?4)",
+                rusqlite::params![chat.id, loupist_id, now, serde_json::to_string(chat)?])?;
+        }
+        tx.execute("INSERT INTO knowledge_connections(connection_id,loupist_id,seed_node_id,far_node_id,
+            path_json,score,status,created_at_ms,status_at_ms,shown_at_ms)
+            VALUES('con_fixture_supply',?1,'fixture-lamp','fixture-newpost',?2,1,'shown',?3,?3,?3)",
+            rusqlite::params![loupist_id, path.to_string(), now])?;
+        tx.execute("INSERT INTO chat_handoffs(id,loupist_id,request_key,chat_id,status,created_at_ms,data_json)
+            VALUES('handoff-fixture-legacy',?1,'fixture-legacy',?2,'created',?3,?4)",
+            rusqlite::params![loupist_id, chats[2].id, now, legacy.to_string()])?;
+        Ok(())
+    }).map_err(map_store)
 }
 
 fn fixture_nodes() -> Vec<crate::knowledge::GraphNode> {
@@ -344,6 +545,9 @@ fn fixture_nodes() -> Vec<crate::knowledge::GraphNode> {
         "A programmable machine used in the synthetic scenario.",
     );
     for (id, name) in [
+        ("fixture-lamp", "Lamppost Test Works"),
+        ("fixture-hub", "Sealed Hub"),
+        ("fixture-newpost", "Newpost Test Works"),
         ("compiler", "Compiler"),
         ("protocol", "Protocol"),
         ("chip", "Chip"),
@@ -418,6 +622,20 @@ fn fixture_claims(span_id: &str) -> Vec<crate::knowledge::GraphClaim> {
         }
     };
     vec![
+        claim(
+            "fixture-link-hub",
+            "Lamppost Test Works supplies Sealed Hub.",
+            "SUPPLIES",
+            "fixture-lamp",
+            "fixture-hub",
+        ),
+        claim(
+            "fixture-link-newpost",
+            "Sealed Hub supplies Newpost Test Works.",
+            "SUPPLIES",
+            "fixture-hub",
+            "fixture-newpost",
+        ),
         claim(
             "described",
             "Ada described the engine.",

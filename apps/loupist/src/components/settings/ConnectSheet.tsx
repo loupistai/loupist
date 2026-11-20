@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { AlertCircleIcon, CheckCircle2Icon, ChevronLeftIcon, ExternalLinkIcon, LoaderCircleIcon } from "lucide-react";
 import { useTranslation } from "@/i18n";
 import { formatNumber } from "@/i18n/format";
@@ -253,6 +253,18 @@ function LocalView({ bridge, onBusy, onDone }: { bridge: ConnectSheetBridge; onB
   </div>;
 }
 
+/**
+ * Scrolls the sheet's field column (never the window) down to `last`, as far as keeps
+ * `first` in view: a Test result and the models it found appear below the fold of a short window.
+ */
+function revealInSheet(first: HTMLElement | null, last: HTMLElement | null) {
+  const scroller = first?.closest<HTMLElement>(".connect-sheet-scroll");
+  if (!first || !scroller) return;
+  const box = scroller.getBoundingClientRect();
+  const below = (last ?? first).getBoundingClientRect().bottom - box.bottom;
+  if (below > 0) scroller.scrollTop += Math.min(below, first.getBoundingClientRect().top - box.top);
+}
+
 /** The address as Rust stores it: a parsed URL without a trailing slash. */
 function sameAddress(value: string) {
   try { return new URL(value.trim()).href.replace(/\/+$/u, ""); } catch { return value.trim(); }
@@ -272,6 +284,9 @@ function CustomView({ edit, bridge, onBusy, onDone }: { edit?: CustomModelProvid
   const [typed, setTyped] = useState(edit?.model_ids.join("\n") ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const resultRef = useRef<HTMLParagraphElement>(null);
+  const modelsRef = useRef<HTMLFieldSetElement>(null);
+  useEffect(() => { if (result) revealInSheet(resultRef.current, modelsRef.current); }, [result]);
   // A changed address, dialect or key needs a new Test.
   const invalidate = () => { setResult(null); setChecked(new Set()); setError(null); };
   const test = async () => {
@@ -338,11 +353,11 @@ function CustomView({ edit, bridge, onBusy, onDone }: { edit?: CustomModelProvid
     <div className="connect-actions connect-actions-start">
       <Button type="button" variant="outline" data-custom-test disabled={!address.trim() || testing || saving} onClick={() => void test()}>{testing ? <LoaderCircleIcon className="animate-spin" aria-hidden="true" /> : null}{t("providers.test")}</Button>
     </div>
-    {result ? <p className="connect-test-result" role="status" data-outcome={result.outcome}>
+    {result ? <p ref={resultRef} className="connect-test-result" role="status" data-outcome={result.outcome}>
       {result.outcome === "ok" ? <CheckCircle2Icon aria-hidden="true" /> : <AlertCircleIcon aria-hidden="true" />}
       <span>{t(result.outcome === "not_found" && hasApiPath(address) ? "providers.testNotFoundPath" : TEST_COPY[result.outcome], { formattedCount: formatNumber(result.models.length) })}</span>
     </p> : null}
-    {tested && !typing && result.models.length ? <fieldset className="connect-test-models" aria-label={t("providers.models", { formattedCount: formatNumber(result.models.length) })}>
+    {tested && !typing && result.models.length ? <fieldset ref={modelsRef} className="connect-test-models" aria-label={t("providers.models", { formattedCount: formatNumber(result.models.length) })}>
       {result.models.map(model => <label key={model} className="connect-model">
         <input type="checkbox" checked={checked.has(model)} disabled={saving || (!checked.has(model) && checked.size >= MAX_CUSTOM_MODELS)} onChange={event => toggle(model, event.target.checked)} />
         <span className="connect-model-name">{model}</span>

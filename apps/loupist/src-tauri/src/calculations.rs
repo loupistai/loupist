@@ -15,9 +15,12 @@ mod tests;
 
 use crate::datasets::DatasetRef;
 use crate::domain::{CalcInputUnit, CalcInputUnitKind};
+use crate::finance_data::fx::{is_currency_marker, CURRENCY_CODES};
 use crate::knowledge::numbers::{currency_code, Unit};
 use serde_json::{json, Map, Value};
 use std::sync::Arc;
+
+pub(crate) use dcf::reverse_dcf_target;
 
 pub(crate) const MAX_SERIES: usize = 20_000;
 const MAX_MAGNITUDE: f64 = 1e18;
@@ -114,10 +117,11 @@ pub(crate) enum Operation {
     HoldingsOverlap,
     GoalGrid,
     DcaHistory,
+    Convert,
 }
 
 impl Operation {
-    const ALL: [(&'static str, Self); 16] = [
+    const ALL: [(&'static str, Self); 17] = [
         ("percent_change", Self::PercentChange),
         ("cagr", Self::Cagr),
         ("growth_series", Self::GrowthSeries),
@@ -134,6 +138,7 @@ impl Operation {
         ("holdings_overlap", Self::HoldingsOverlap),
         ("goal_grid", Self::GoalGrid),
         ("dca_history", Self::DcaHistory),
+        ("convert", Self::Convert),
     ];
 
     fn name(self) -> &'static str {
@@ -163,6 +168,7 @@ impl Operation {
             Self::HoldingsOverlap => "Holdings overlap",
             Self::GoalGrid => "Savings goal grid",
             Self::DcaHistory => "Regular investing history",
+            Self::Convert => "Currency conversion",
         }
     }
 
@@ -172,6 +178,7 @@ impl Operation {
             Self::PercentChange => (&["from", "to"], &[]),
             Self::Cagr => (&["start", "end", "years"], &[]),
             Self::Ratio => (&["numerator", "denominator"], &[]),
+            Self::Convert => (&["amount", "rate"], &[]),
             Self::Margin => (&["profit", "revenue"], &[]),
             Self::PayoutRatio => (&["dividends"], &["earnings", "free_cash_flow"]),
             Self::NetDebtToEbitda => (&["total_debt", "cash", "ebitda"], &[]),
@@ -214,6 +221,7 @@ impl Operation {
             ],
             Self::MovingAverage => &["series", "dates", "skip_missing", "window"],
             Self::Ratio => &["as_percent"],
+            Self::Convert => &["to"],
             Self::DcfGrid | Self::ReverseDcf => {
                 &["wacc_pct", "terminal_growth_pct", "forecast_years"]
             }
@@ -283,7 +291,7 @@ fn output(name: &str, value: f64, unit: &str) -> Result<Value, CalcError> {
     }))
 }
 
-fn display(value: f64, unit: &str) -> String {
+pub(crate) fn display(value: f64, unit: &str) -> String {
     match unit {
         "%" => format::percent(value),
         "x" => format::multiple(value),
@@ -311,6 +319,8 @@ fn default_label(name: &str) -> &str {
         "fee_pct" => "fee",
         "weights_a" => "A",
         "weights_b" => "B",
+        "amount" => "Amount",
+        "rate" => "Rate",
         // from, to, start, end, years, numerator, denominator, capex, shares,
         // price, contribution, target and series read as their own names.
         other => other,
@@ -326,6 +336,8 @@ pub(crate) enum InputKind {
     Percent,
     /// A per-share price in the request's currency, never its scale.
     Price,
+    /// Target currency units per unit of the source currency.
+    Rate,
     /// An amount in the request's `unit`.
     Amount,
 }
@@ -334,6 +346,7 @@ pub(crate) fn input_kind(name: &str) -> InputKind {
     match name {
         "years" | "shares" | "forecast_years" | "weights_a" | "weights_b" => InputKind::Count,
         "price" => InputKind::Price,
+        "rate" => InputKind::Rate,
         _ if name.ends_with("_pct") => InputKind::Percent,
         _ => InputKind::Amount,
     }
@@ -343,6 +356,22 @@ pub(crate) fn input_kind(name: &str) -> InputKind {
 pub(crate) fn calculate(
     request: &Value,
     datasets: &mut dyn DatasetSource,
+) -> Result<Value, CalcError> {
+    calculate_with_rate(request, datasets, None)
+}
+
+/// Publication details supplied by the executor for a cited exchange rate.
+pub(crate) struct ConversionRate<'a> {
+    pub(crate) date: &'a str,
+    pub(crate) source_id: &'a str,
+    pub(crate) source: &'a Value,
+    pub(crate) revision: &'a str,
+}
+
+pub(crate) fn calculate_with_rate(
+    request: &Value,
+    datasets: &mut dyn DatasetSource,
+    rate_basis: Option<ConversionRate<'_>>,
 ) -> Result<Value, CalcError> {
     let object = request
         .as_object()
@@ -401,7 +430,15 @@ pub(crate) fn calculate(
     }
     let unit = object
         .get("unit")
-        .map(|unit| bounded_text(unit, "unit"))
+        .map(|unit| {
+            bounded_text(unit, "unit").map_err(|error| {
+                if operation == Operation::Convert {
+                    invalid_conversion_unit()
+                } else {
+                    error
+                }
+            })
+        })
         .transpose()?;
     let request = Request {
         operation,
@@ -427,6 +464,7 @@ pub(crate) fn calculate(
         Operation::HoldingsOverlap => retail::holdings_overlap(&request, &mut outcome)?,
         Operation::GoalGrid => retail::goal_grid(&request, datasets, &mut outcome)?,
         Operation::DcaHistory => retail::dca_history(&request, datasets, &mut outcome)?,
+        Operation::Convert => convert(&request, datasets, rate_basis, &mut outcome)?,
     }
     // Every input names itself as its formula does and says how it is printed,
     // so a reader never recovers either from the formula or the evidence.
@@ -562,6 +600,12 @@ impl Request<'_> {
                 currency: currency(),
                 ..of(CalcInputUnitKind::Price)
             },
+            InputKind::Rate => CalcInputUnit {
+                text: currency()
+                    .zip(self.field("to").and_then(Value::as_str))
+                    .map(|(from, to)| format!("{to} per {from}")),
+                ..of(CalcInputUnitKind::Number)
+            },
             InputKind::Amount => match unit.map(|text| (text, Unit::of_line(Some(text)))) {
                 None => of(CalcInputUnitKind::Amount),
                 Some((_, Ok(Unit::Percent))) => of(CalcInputUnitKind::Percent),
@@ -615,6 +659,81 @@ impl Request<'_> {
                 .ok_or_else(|| CalcError::invalid(name, "true or false")),
         }
     }
+}
+
+fn invalid_conversion_unit() -> CalcError {
+    CalcError::invalid("unit", "name the currency by a supported ISO code")
+}
+
+fn convert(
+    request: &Request<'_>,
+    datasets: &mut dyn DatasetSource,
+    rate_basis: Option<ConversionRate<'_>>,
+    outcome: &mut Outcome,
+) -> Result<(), CalcError> {
+    let unit = request
+        .unit
+        .as_deref()
+        .ok_or_else(invalid_conversion_unit)?
+        .trim();
+    let from = currency_code(unit).ok_or_else(invalid_conversion_unit)?;
+    let lowercase_from = from.to_ascii_lowercase();
+    let from_word = unit
+        .split(|c: char| !c.is_alphanumeric())
+        .find(|word| is_currency_marker(word) && (*word == from || *word == lowercase_from))
+        .ok_or_else(invalid_conversion_unit)?;
+    let Ok(Unit::Amount(scale)) = Unit::of_line(Some(unit)) else {
+        return Err(invalid_conversion_unit());
+    };
+    let target = request.field("to").unwrap_or(&Value::Null);
+    let to = target
+        .as_str()
+        .filter(|code| CURRENCY_CODES.contains(code))
+        .ok_or_else(|| {
+            let to = target
+                .as_str()
+                .map_or_else(|| target.to_string(), str::to_owned);
+            CalcError::invalid("to", format!("{to} is not a supported ISO currency code"))
+        })?;
+    if from == to {
+        return Err(CalcError::invalid(
+            "to",
+            format!("the target currency must differ from {from}"),
+        ));
+    }
+    let amount = request.number("amount", datasets)?;
+    let rate = Number {
+        value: plain_number(&request.inputs["rate"], "inputs.rate")?,
+        provenance: json!({"kind": "provided"}),
+    };
+    let converted = amount.value * scale * positive(&rate, "inputs.rate", "a positive number")?;
+    outcome.value("converted", converted, to)?;
+    outcome.input("amount", &amount);
+    outcome.input("rate", &rate);
+    let mut conversion = json!({"from": from, "to": to});
+    let basis = if let Some(rate_basis) = rate_basis {
+        conversion["rate_date"] = json!(rate_basis.date);
+        conversion["rate_source"] = rate_basis.source.clone();
+        conversion["revision"] = json!(rate_basis.revision);
+        format!(
+            "{}, {}",
+            rate_basis.source_id.to_ascii_uppercase(),
+            rate_basis.date
+        )
+    } else {
+        "assumed rate".to_owned()
+    };
+    outcome.extra.insert("conversion".into(), conversion);
+    let target_unit = unit.replacen(from_word, to, 1);
+    outcome.formulas.push(format!(
+        "{} × {} = {} {unit} × {} {to} per {from} ({basis}) = {} {target_unit}",
+        request.label("amount"),
+        request.label("rate"),
+        format::amount(amount.value),
+        format::amount(rate.value),
+        format::amount(converted / scale),
+    ));
+    Ok(())
 }
 
 /// A JSON number, a plain decimal string or a dataset cell

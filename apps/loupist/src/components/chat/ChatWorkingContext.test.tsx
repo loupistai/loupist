@@ -27,8 +27,20 @@ describe("Chat working context", () => {
     expect(screen.queryByRole("button", { name: "Changes" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Undo last change" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Ask for a change" }));
-    expect(onAskForChange).toHaveBeenCalledOnce();
+    await waitFor(() => expect(onAskForChange).toHaveBeenCalledOnce());
     expect(screen.getByText("Conversation content")).toBeVisible();
+  });
+
+  it("leaves focus in the composer after Ask for a change, not on the note's button", async () => {
+    const user = userEvent.setup();
+    const { bridge, props } = setup();
+    vi.spyOn(bridge, "knowledgeWorkingNotes").mockResolvedValue({ current: second });
+    const onAskForChange = () => screen.getByRole("textbox", { name: "Composer" }).focus();
+    render(<><ChatWorkingContext {...props} onAskForChange={onAskForChange}><p>Conversation content</p></ChatWorkingContext><textarea aria-label="Composer" /></>);
+    await user.click(await screen.findByRole("button", { name: "Research note" }));
+    await user.click(await screen.findByRole("button", { name: "Ask for a change" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Composer" })).toHaveFocus());
   });
 
   it("opens the exact Source and Lens versions used by the note", async () => {

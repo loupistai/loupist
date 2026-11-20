@@ -6,8 +6,7 @@ import { useTranslation } from "../../i18n";
 import { formatDate, formatNumber, formatTime } from "../../i18n/format";
 import { AppDateField } from "../ui/app-date-field";
 import { Button } from "../ui/button";
-import { groupByDay, sinceMs, useGrowthSince, whatsNewCounts, whatsNewRows, type WhatsNewRow, type WhatsNewSince } from "./whatsNew";
-import { relationName } from "./relations";
+import { groupByDay, sinceMs, useGrowthSince, whatsNewCounts, whatsNewLinkText, whatsNewRows, type WhatsNewRow, type WhatsNewSince } from "./whatsNew";
 
 const shortDate = (ms: number) => formatDate(ms, { year: undefined, month: "short", day: "numeric" });
 const DAY_MS = 86_400_000;
@@ -74,13 +73,14 @@ export function MapWhatsNew({ bridge, loupistId, map, lastSeenAtMs, nowMs, refre
 
 function WhatsNewRowButton({ row, onOpen }: { row: WhatsNewRow; onOpen: (row: WhatsNewRow) => void }) {
   const { t } = useTranslation("knowledge");
-  const glyph = row.kind === "name" ? <i className={`map-swatch is-${row.category ?? "other"}`} aria-hidden="true" />
+  const glyph = row.kind === "name" || row.kind === "fact" ? <i className={`map-swatch is-${row.category ?? "other"}`} aria-hidden="true" />
     : row.kind === "relationship" ? <i className="map-swatch is-claim-line" aria-hidden="true" />
       : row.kind === "conflict" ? <TriangleAlertIcon className="map-whats-new-warning" aria-hidden="true" />
         : <i className={`map-swatch is-${row.kind}`} aria-hidden="true" />;
-  const linkText = row.link ? row.link.relation ? t("map.newLink", { a: row.link.a, b: row.link.b, relation: relationName(row.link.relation, t) }) : t("map.newLinkPlain", { a: row.link.a, b: row.link.b }) : row.label;
+  const linkText = row.link ? whatsNewLinkText(row.link, t) : row.label;
   const text = row.kind === "conflict" ? t("map.newConflict", { summary: linkText })
     : row.kind === "relationship" ? linkText
+    : row.kind === "fact" && row.link ? t("map.newFacts", { count: row.count, formattedCount: formatNumber(row.count), name: row.link.a })
     : row.kind === "method" ? t("map.newMethod", { title: row.label })
       : row.kind === "principle" ? t("map.newPrinciple", { title: row.label })
         : row.kind === "subject" ? t("map.newSubject", { title: row.label })

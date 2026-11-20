@@ -9,4 +9,4 @@ export type ItemFinding = {
   lines: Array<number>,
 };
 
-export type PrivateClass = "credential" | "account" | "holding" | "personal";
+export type PrivateClass = "credential" | "account" | "personal";

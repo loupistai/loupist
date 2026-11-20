@@ -32,16 +32,16 @@ const copy = {
     busy: "Another update is in progress. Try again when it finishes.",
   },
   ko: {
-    background: "업데이트를 확인하지 못했어요. 잠시 후 다시 시도할게요.",
-    manual: "업데이트를 확인하지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.",
-    download: "업데이트를 내려받거나 서명을 확인하지 못했어요. 다시 시도해 주세요.",
-    install: "업데이트를 설치하지 못했어요. 다시 시도해 주세요.",
-    changed: "설치할 업데이트가 변경됐어요. 업데이트를 다시 확인해 주세요.",
-    verify: "업데이트를 검증하지 못했어요. 업데이트를 다시 확인한 뒤 시도해 주세요.",
-    schedule: "업데이트 일정을 저장하지 못했어요. 다시 시도해 주세요.",
-    unavailable: "이 빌드에서는 자동 업데이트를 사용할 수 없어요.",
-    status: "업데이트 상태를 읽지 못했어요. 다시 시도해 주세요.",
-    busy: "다른 업데이트 작업이 진행 중이에요. 끝난 뒤 다시 시도해 주세요.",
+    background: "업데이트를 확인하지 못했습니다. 잠시 후 다시 시도합니다.",
+    manual: "업데이트를 확인하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도하십시오.",
+    download: "업데이트를 내려받거나 서명을 확인하지 못했습니다. 다시 시도하십시오.",
+    install: "업데이트를 설치하지 못했습니다. 다시 시도하십시오.",
+    changed: "설치할 업데이트가 변경되었습니다. 업데이트를 다시 확인하십시오.",
+    verify: "업데이트를 검증하지 못했습니다. 업데이트를 다시 확인한 뒤 시도하십시오.",
+    schedule: "업데이트 일정을 저장하지 못했습니다. 다시 시도하십시오.",
+    unavailable: "이 빌드에서는 자동 업데이트를 사용할 수 없습니다.",
+    status: "업데이트 상태를 읽지 못했습니다. 다시 시도하십시오.",
+    busy: "다른 업데이트 작업이 진행 중입니다. 끝난 뒤 다시 시도하십시오.",
   },
 };
 
@@ -105,9 +105,9 @@ for (const language of ["en", "ko"] as const) {
     it("localizes update blockers by kind, including unknown activities", () => {
       const kinds = ["chat", "chat_mutation", "memory_write", "memory_mutation", "loupist_mutation", "loupist_deletion", "marketplace_configuration", "marketplace_credential", "provider_inference", "provider_support", "graph", "update", "future_kind"];
       const expected = language === "ko" ? [
-        "응답 작성 중", "리서치 세션 변경 중", "메모리 저장 중", "메모리 변경 중", "루피스트 변경 중", "루피스트 삭제 중", "마켓플레이스 설정 변경 중", "마켓플레이스 인증 정보 변경 중", "백그라운드 모델 작업 중", "모델 연결 확인 중", "지도 처리 중", "업데이트 설치 중", "작업 진행 중",
+        "응답 작성 중", "리서치 세션 변경 중", "기억 저장 중", "기억 변경 중", "루피스트 변경 중", "루피스트 삭제 중", "연결 설정 변경 중", "연결 키 변경 중", "백그라운드 모델 작업 중", "모델 연결 확인 중", "지도 처리 중", "업데이트 설치 중", "작업 진행 중",
       ] : [
-        "A reply in progress", "Changing a research session", "Saving Memory", "Changing Memory", "Changing a Loupist", "Deleting a Loupist", "Changing Marketplace settings", "Changing Marketplace credentials", "Background model work", "Checking a model connection", "Processing the map", "Installing an update", "Work in progress",
+        "A reply in progress", "Changing a research session", "Saving Memory", "Changing Memory", "Changing a Loupist", "Deleting a Loupist", "Changing connection settings", "Changing a connection's key", "Background model work", "Checking a model connection", "Processing the map", "Installing an update", "Work in progress",
       ];
       render(<UpdateSettingsCard status={{ ...idle, blockers: kinds.map((kind) => ({ kind, id: kind, label: `raw host label: ${kind}` })) }} phase="idle" error={null} onCheck={vi.fn()} onInstall={vi.fn()} />);
       expect(screen.getAllByRole("listitem").map(item => item.textContent)).toEqual(expected);

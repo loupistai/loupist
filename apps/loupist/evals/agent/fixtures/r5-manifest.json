@@ -1,0 +1,183 @@
+{
+  "model": "openai-codex/gpt-6.2-sol",
+  "thinking": "medium",
+  "judge": {
+    "backend": "claude",
+    "model": "claude-opus-5-5",
+    "reasoningEffort": "medium"
+  },
+  "pins": {
+    "pre-wave": {
+      "product": "b897d42ae4c481c88e8b9689a86c71f68480e24f",
+      "evalBase": "0e8e8c384d7a62fed46a99e158b86ad34d739441"
+    },
+    "p3-n3": {
+      "product": "c895cf9997853f427daf338dd824fdc544865095",
+      "evalBase": "ef5d59b9db0a751be26a348c46b53ef35b68bd85"
+    },
+    "p3-n3-b": {
+      "product": "6c1213df787346175a01c54b64b423eb7b1d1ae2",
+      "evalBase": "707bc5067cca7b83fc551d340e00285d9ed7c44c"
+    }
+  },
+  "stages": [
+    {
+      "name": "P3",
+      "control": "pre-wave",
+      "candidate": "p3-n3",
+      "arms": [
+        {
+          "suite": "tool-use",
+          "scenarios": [
+            "T-041",
+            "T-042",
+            "T-047",
+            "T-048",
+            "T-049",
+            "T-050",
+            "T-051",
+            "T-057"
+          ],
+          "trials": 1
+        },
+        {
+          "suite": "scheduled-valuation",
+          "scenarios": [
+            "SV-001"
+          ],
+          "trials": 3
+        }
+      ]
+    },
+    {
+      "name": "N3",
+      "control": "pre-wave",
+      "candidate": "p3-n3",
+      "arms": [
+        {
+          "suite": "principles",
+          "scenarios": [
+            "P-R01",
+            "P-R02",
+            "P-R03",
+            "P-R04",
+            "P-R05a",
+            "P-R05b",
+            "P-R06",
+            "P-R07",
+            "P-R08",
+            "P-R09",
+            "P-R10"
+          ],
+          "trials": 2
+        },
+        {
+          "suite": "judgment",
+          "scenarios": [
+            "B-KO-002"
+          ],
+          "trials": 2
+        }
+      ]
+    },
+    {
+      "name": "B screen",
+      "control": "p3-n3",
+      "candidate": "p3-n3-b",
+      "arms": [
+        {
+          "suite": "language",
+          "scenarios": [
+            "LG-003"
+          ],
+          "trials": 3
+        },
+        {
+          "suite": "session-language",
+          "scenarios": [
+            "LG-003-EN"
+          ],
+          "trials": 3
+        }
+      ]
+    },
+    {
+      "name": "B survivors",
+      "control": "p3-n3",
+      "candidate": "p3-n3-b",
+      "arms": [
+        {
+          "suite": "language",
+          "scenarios": [
+            "LG-001",
+            "LG-002",
+            "LG-003",
+            "LG-004",
+            "LG-005",
+            "LG-006",
+            "LG-007",
+            "LG-008"
+          ],
+          "trials": 3
+        },
+        {
+          "suite": "r5-bot-quick",
+          "scenarios": [
+            "BQ-PROBE-001"
+          ],
+          "trials": 3
+        },
+        {
+          "suite": "session-language",
+          "scenarios": [
+            "F3-SW-01",
+            "F3-SW-02",
+            "F3-UI-01",
+            "F3-UI-02"
+          ],
+          "trials": 3
+        },
+        {
+          "suite": "scheduled-language",
+          "scenarios": [
+            "F3-RUN-BRIEF-EN",
+            "F3-RUN-CUSTOM-EN",
+            "F3-RUN-OVERRIDE-EN",
+            "F3-RUN-BRIEF-KO",
+            "F3-RUN-CUSTOM-KO",
+            "F3-RUN-OVERRIDE-KO",
+            "F3-KO-RUN-CUSTOM-EN",
+            "F3-KO-RUN-OVERRIDE-EN",
+            "F3-KO-RUN-CUSTOM-KO",
+            "F3-KO-RUN-OVERRIDE-KO"
+          ],
+          "trials": 3
+        },
+        {
+          "suite": "smoke",
+          "scenarios": [
+            "L-SMOKE-001",
+            "L-SMOKE-002",
+            "L-SMOKE-003",
+            "L-SMOKE-004"
+          ],
+          "trials": 1
+        },
+        {
+          "suite": "scheduling",
+          "scenarios": [
+            "S-001",
+            "S-002",
+            "S-003",
+            "S-004",
+            "S-005",
+            "S-006",
+            "S-007",
+            "S-008"
+          ],
+          "trials": 1
+        }
+      ]
+    }
+  ]
+}

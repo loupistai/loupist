@@ -90,8 +90,9 @@ for line in sys.stdin:
         })
         (fixture_root / "calculation.json").write_text(json.dumps(calculated))
         url = calculated["result"]["citation_url"]
-        answer = (f"Operating margin was [8.42%]({url}), not the [9.1%]({url}) guided; "
-                  f"see [the calculation]({url}).")
+        answer = (f"Operating margin was [8.42%](citation_url={url}), not the [9.1%](citation_url:{url}) guided; "
+                  f"see [the calculation]({url}).\n\n`[8.42%](citation_url={url})`\n\n"
+                  f"```md\n[9.1%](citation_url:{url})\n```")
         message = {"role": "assistant", "stopReason": "stop", "content": [{"type": "text", "text": answer}]}
         entries = [{"id": "assistant-answer", "type": "message", "message": message}]
         session_file.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")

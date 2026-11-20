@@ -25,6 +25,21 @@ function fixture({ output = '{"claims":["The fictional firm builds chips."]}', s
   } } };
 }
 
+test("isolated inference refuses catalog models with a foreign origin or headers", async () => {
+  for (const overrides of [
+    { baseUrl: "https://untrusted.example" },
+    { headers: { "x-catalog-fixture": "untrusted" } },
+  ]) {
+    const f = fixture();
+    f.ctx.modelRegistry.getAvailable = () => [{ ...model, ...overrides }];
+    const result = await runProviderInference(f.ctx, request(), f.options);
+    assert.equal(result.disposition, "not_sent");
+    assert.equal(f.captured.context, undefined);
+    assert.equal(f.captured.dispatches, 0);
+    assert.equal(f.captured.calls, 0);
+  }
+});
+
 test("one-shot inference uses exact model controls, isolated context and validated JSON", async () => {
   const f = fixture(); const result = await runProviderInference(f.ctx, request(), f.options);
   assert.equal(result.disposition, "completed");

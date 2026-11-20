@@ -94,6 +94,8 @@ describe("as-of answers", () => {
     expect(row.querySelector(".chat-progress-node")).toBe(within(row as HTMLElement).getByLabelText("Not available for this date").parentElement);
     render(<AsOfNote loupistName="Quality" report={{ cutoff: "2026-03-03", refused: [{ tool: "kis_read" }], empty: [{ tool: "krx_daily_quote", target: "990221" }], left_out: { facts: 12, sources: 2, notes: 0, methods: 1 } }} />);
     const note = screen.getByRole("region", { name: "Looked back to Mar 3, 2026." });
+    // Read with the answer, not announced on its own over the turn's one live line.
+    expect(note).not.toHaveAttribute("aria-live");
     expect(within(note).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
       "Couldn't show as known then: market data.",
       "Nothing dated on or before that day in: daily prices for 990221.",

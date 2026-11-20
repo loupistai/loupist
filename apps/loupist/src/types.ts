@@ -21,9 +21,6 @@ export type {
 
 export type * from "./contracts/workspace";
 export type * from "./contracts/scheduled";
-export type * from "./contracts/earnings";
-export type * from "./contracts/watch";
 export type * from "./contracts/config";
 
 export type * from "./contracts/skills";
-export type * from "./contracts/userContext";

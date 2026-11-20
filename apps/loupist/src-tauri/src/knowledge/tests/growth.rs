@@ -190,14 +190,14 @@ fn knowledge_growth_source_retention_deduplication_and_rollback() {
     let mut request = source_request("loupist-a", b"Retained source");
     request.origin_chat_id = Some("chat-a".into());
     let rollback = store.transact(|write| -> KnowledgeResult<()> {
-        write.retain_new_source_with_origin(request.clone(), "message-a")?;
+        write.retain_new_source_with_origin(request.clone(), "message-a", None)?;
         assert_eq!(write.growth_events(&query("loupist-a"))?.events.len(), 1);
         Err(KnowledgeError::Invalid("rollback test"))
     });
     assert!(rollback.is_err());
     assert!(events_since(&store, None).is_empty());
     let saved = store
-        .transact(|write| write.retain_new_source_with_origin(request.clone(), "message-a"))
+        .transact(|write| write.retain_new_source_with_origin(request.clone(), "message-a", None))
         .unwrap();
     store.retain_new_source(request).unwrap();
     let events = events_since(&store, None);

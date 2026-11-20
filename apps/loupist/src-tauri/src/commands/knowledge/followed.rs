@@ -1,6 +1,6 @@
-//! What the user follows reaches each Loupist's Map through "What you follow"
-//! Sources and ordinary World jobs: at creation, after a burst of follows, and
-//! when a Loupist is opened.
+//! What each Loupist follows reaches its Map through "What you follow" Sources
+//! and ordinary World jobs: after a burst of follows, and when the Loupist is
+//! opened.
 use super::{
     admit, admit_mutation, graph_settings_view, load_graph_settings, with_loupist_knowledge,
 };
@@ -21,30 +21,37 @@ use tauri::State;
 /// A burst of follows (several symbols, an import) settles before anything is written.
 const QUIET: Duration = Duration::from_secs(3);
 
-fn current_followed(state: &AppState) -> Result<Vec<FollowedAsset>, CommandError> {
+fn current_followed(
+    state: &AppState,
+    loupist_id: &str,
+) -> Result<Vec<FollowedAsset>, CommandError> {
     let context = state
         .store
-        .map_context()
+        .map_context(loupist_id)
         .map_err(crate::commands::map_store)?;
     let asset = |item: crate::store::user_context::MapContextItem| {
-        FollowedAsset::new(&item.symbol, &item.market, item.display_name.as_deref())
+        FollowedAsset::new(
+            &item.asset_id,
+            &item.symbol,
+            &item.market,
+            item.display_name.as_deref(),
+        )
     };
-    Ok(crate::knowledge::followed_assets(
+    Ok(crate::knowledge::followed_source_assets(
         context.watchlist.into_iter().map(asset),
-        context.holdings.into_iter().map(asset),
     ))
 }
 
-/// Brings one Loupist's "What you follow" Sources up to date with the watchlist
-/// and holdings: assets no earlier one lists get a new Source (names, symbols and
-/// markets; holdings by name only), an anchor each and an ordinary World job.
+/// Brings one Loupist's "What you follow" Sources up to date with its own
+/// followed list alone: assets no earlier one lists get a new Source (names,
+/// symbols and markets), an anchor each and an ordinary World job.
 /// Without a connected model the Source waits and is queued when one connects.
 /// Returns how many World jobs were queued now.
 pub(crate) fn sync_followed_assets(
     state: &AppState,
     loupist_id: &str,
 ) -> Result<usize, CommandError> {
-    let assets = current_followed(state)?;
+    let assets = current_followed(state, loupist_id)?;
     if assets.is_empty() {
         return Ok(0);
     }

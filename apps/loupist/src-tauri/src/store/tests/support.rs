@@ -7,7 +7,11 @@ pub(super) fn loupist() -> LoupistProfile {
 pub(super) fn loupist_with_root(id: &str, device: u64, inode: u64) -> LoupistProfile {
     LoupistProfile {
         name: format!("{id} Loupist"),
-        root_filesystem_identity: Some(RootFilesystemIdentity { device, inode }),
+        root_filesystem_identity: Some(RootFilesystemIdentity {
+            device,
+            inode,
+            birth_time: None,
+        }),
         ..crate::test_fixtures::loupist_profile(id)
     }
 }

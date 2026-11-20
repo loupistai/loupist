@@ -2,6 +2,8 @@
 //! artifact trust and private deletion below the app-data root.
 
 pub(crate) mod artifact_trust;
+#[cfg(unix)]
+pub(crate) mod filesystem_identity;
 pub(crate) mod loupist_root;
 pub(crate) mod pinned_root;
 pub(crate) mod secure_delete;

@@ -26,7 +26,6 @@ pub(crate) enum CommitStage {
     Deliveries,
     Citations,
     Assets,
-    Earnings,
     Vocabulary,
     Setup,
     Handoff,

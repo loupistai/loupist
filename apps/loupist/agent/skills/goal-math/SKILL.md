@@ -12,8 +12,8 @@ it cannot be done without, and otherwise state a plain assumption and continue.
 Forward: `calculate` `goal_grid` with `years`, `contribution` (or `target` to
 find the saving needed each period), the user's `start` amount if they gave one,
 `periods_per_year` matching how often they save, and three to five yearly rates
-in `return_pct`, from cash-like to stock-like. Show every rate in a small table,
-never one headline number, and say no rate is a forecast or a promise.
+in `return_pct`, from cash-like to stock-like. Give each rate and its outcome,
+and say no rate is a forecast or a promise.
 
 Backward ("what if I had invested every month"): read a dated price series, then
 `calculate` `dca_history` with the `contribution`, the `schedule` and any fee.

@@ -95,6 +95,7 @@ impl DecisionKind {
     }
 
     /// The kind a 주요사항보고서 title names, if the tool reads it.
+    #[cfg(test)]
     pub(crate) fn from_report_title(title: &str) -> Option<&'static str> {
         let compact: String = title.chars().filter(|c| !c.is_whitespace()).collect();
         if !compact.contains("주요사항보고서") {
@@ -1001,7 +1002,7 @@ impl FinanceDataService {
             .query_pairs_mut()
             .append_pair("crtfc_key", api_key);
         self.fetch_provider(
-            self.client.get(request_url),
+            self.dart_client.get(request_url),
             OPENDART_SOURCE_ID,
             public_url.to_string(),
             maximum_bytes,
@@ -1158,7 +1159,7 @@ impl FinanceDataService {
             .dart_get(document, api_key, MAX_LARGE_PROVIDER_BYTES)
             .await
         {
-            Ok(raw) if raw.bytes.first() != Some(&b'{') => {
+            Ok(raw) if validate_dart_document_status(&raw.bytes).is_ok() => {
                 provider_korea::extract_dart_document(&raw.bytes)
                     .ok()
                     .map(|(text, _, _)| text)

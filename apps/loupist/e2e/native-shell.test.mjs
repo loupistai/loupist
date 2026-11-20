@@ -54,7 +54,7 @@ function browserFixture(frames) {
         location: { href: frame.url ?? requestedUrl },
         document: {
           documentElement: { dataset: { previewReady: frame.ready ?? "true", previewError: frame.error } },
-          querySelector: (selector) => selector === '#workspace-panel[data-panel-kind="world"] [data-testid=map-view] [data-testid=map-canvas]' ? host : hidden,
+          querySelector: (selector) => selector === '#main-panel-map [data-testid=map-view] [data-testid=map-canvas]' ? host : hidden,
         },
       });
     },

@@ -24,7 +24,7 @@ export function readerScenarios({ base, select, navigate, selectPanel, click, cl
     })),
     ...(["list", "csv", "markdown", "empty", "error"] as const).map((kind): PreviewScenario => ({
       ...base(`workspace-files-${kind}`, `Workspace files: ${kind}`, () => select(kind === "csv" ? ".reader-csv-preview" : kind === "markdown" ? ".workspace-file-content [data-streamdown]" : kind === "error" ? '.workspace-files [role="alert"]' : kind === "empty" ? ".workspace-file-list .reader-empty" : ".workspace-file-entry"), async () => {
-        await until(() => select(".header-panel-toggle"), "Chat did not load");
+        await until(() => select("[data-header-activity]"), "Chat did not load");
         await selectPanel("materials");
         await click(".workspace-add > summary");
         await click(".workspace-add-menu button:first-child");
@@ -41,7 +41,7 @@ export function readerScenarios({ base, select, navigate, selectPanel, click, cl
             { kind: "file", name: "research.md", path: "research.md", size_bytes: 240 },
           ] };
         };
-        bridge.workspaceRead = async request => ({ path: request.path, content: kind === "csv" ? "period,revenue,margin\n2026 Q1,125000000,0.148\n2026 Q2,142000000,0.153\n2026 Q3,156000000,0.162" : previewKo() ? "# 분기 실적 검토\n\n## 확인할 내용\n\n매출과 이익률을 같은 기간의 보관한 자료와 비교해요.\n\n- 보고 기간을 확인해요.\n- 현금흐름과 가동률을 비교해요." : "# Quarterly research\n\n## What to check\n\nCompare revenue and margins against retained sources for the same period.\n\n- Confirm the reporting period.\n- Compare cash conversion and utilization.", content_sha256: "a".repeat(64), media_type: kind === "csv" ? "text/csv" : "text/markdown", size_bytes: 240, binary: false, truncated: false });
+        bridge.workspaceRead = async request => ({ path: request.path, content: kind === "csv" ? "period,revenue,margin\n2026 Q1,125000000,0.148\n2026 Q2,142000000,0.153\n2026 Q3,156000000,0.162" : previewKo() ? "# 분기 실적 검토\n\n## 확인할 내용\n\n매출과 이익률을 같은 기간의 보관한 자료와 비교합니다.\n\n- 보고 기간을 확인합니다.\n- 현금흐름과 가동률을 비교합니다." : "# Quarterly research\n\n## What to check\n\nCompare revenue and margins against retained sources for the same period.\n\n- Confirm the reporting period.\n- Compare cash conversion and utilization.", content_sha256: "a".repeat(64), media_type: kind === "csv" ? "text/csv" : "text/markdown", size_bytes: 240, binary: false, truncated: false });
       },
     })),
     ...(["workspace_unavailable", "earlier_version", "newer_version"] as const).map((status): PreviewScenario => ({

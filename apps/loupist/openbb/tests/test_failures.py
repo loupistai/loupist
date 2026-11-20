@@ -19,9 +19,11 @@ from openbb_mcp_server.models.settings import MCPSettings
 
 from loupist_openbb.failures import (
     OFFLINE,
+    PAID_ALPHA_PLAN,
+    AlphaVantagePaidPlanRequired,
     CredentialRejectedError,
     credential_rejected,
-    credential_rejection,
+    provider_refusal,
     is_offline_error,
 )
 from loupist_openbb.server import (
@@ -79,6 +81,7 @@ def test_network_failure_crosses_openbb_rest_and_mcp_without_private_text() -> N
         if failure == "ok":
             return {"provider": provider, "results": [{"price": 12}]}
         errors = {
+            "plan": AlphaVantagePaidPlanRequired(),
             "dns": socket.gaierror(
                 -2, "private-hostname.example?api_key=private-canary"
             ),
@@ -111,14 +114,16 @@ def test_network_failure_crosses_openbb_rest_and_mcp_without_private_text() -> N
             await client.call_tool(
                 "activate_tools", {"tool_names": ["equity_price_quote"]}
             )
-            for failure in ["dns", "connect", "timeout"]:
+            for failure in ["dns", "connect", "timeout", "plan"]:
                 result = await client.call_tool(
                     "equity_price_quote",
                     {"provider": "fixture", "failure": failure},
                     raise_on_error=False,
                 )
                 assert result.is_error
-                assert result.structured_content == OFFLINE
+                assert result.structured_content == (
+                    PAID_ALPHA_PLAN if failure == "plan" else OFFLINE
+                )
                 assert "private-canary" not in str(result)
             error = await client.call_tool(
                 "equity_price_quote",
@@ -200,7 +205,7 @@ def test_fred_key_errors_fail_with_a_fixed_reason_instead_of_an_empty_series(
         _fred_series_with(
             monkeypatch, status, {"error_code": status, "error_message": message}
         )
-    assert credential_rejection(raised.value) == credential_rejected(reason)
+    assert provider_refusal(raised.value) == credential_rejected(reason)
     assert "private-canary" not in str(raised.value)
     assert "32 character" not in str(raised.value)
 
@@ -214,7 +219,7 @@ def test_fred_other_errors_fail_without_provider_text(
             400,
             {"error_code": 400, "error_message": "Bad Request. private-canary"},
         )
-    assert credential_rejection(raised.value) is None
+    assert provider_refusal(raised.value) is None
     assert "private-canary" not in str(raised.value)
 
 

@@ -1,4 +1,4 @@
-import { connectionText } from "./connectionCopy";
+import { connectionText } from "@/lib/connectionCopy";
 import i18n, { useTranslation } from "@/i18n";
 import { Disclosure } from "../ui/disclosure";
 import { ExternalLinkIcon, ShieldCheckIcon, LoaderCircleIcon, SlidersHorizontalIcon, Trash2Icon } from "lucide-react";
@@ -50,21 +50,35 @@ const VERIFICATION_LABELS: Record<
 };
 
 /** A provider's own safe diagnostic, such as "KIS error · EGW00123: …", is kept after the plain words. */
+const KRX_ENTRY = "krx.market-data";
 const PROVIDER_DIAGNOSTIC = /^[A-Z][A-Za-z]* error · /u;
 
-/** Words a failed key check by what the host established: rejected (and why), or not checked. */
-function verificationFailure(cause: unknown, name: string): SetupMessage {
+/**
+ * Words a failed key check by what the host established: rejected (and why), or not
+ * checked, and what to do next. KRX refuses a key it has not approved for a market the
+ * same way it refuses a wrong one, so its rejection names both causes.
+ */
+function verificationFailure(cause: unknown, entry: MarketplaceEntry): SetupMessage {
+  const name = connectionText(entry.name);
   const code = commandErrorCode(cause);
   const message = errorMessage(cause, "");
   const diagnostic = PROVIDER_DIAGNOSTIC.test(message) ? ` ${message}` : "";
+  if (code === "provider_plan_required") {
+    return { tone: "error", title: i18n.t("connections:marketplaceSetupDialog.paidPlanRequired"), detail: i18n.t("connections:marketplaceSetupDialog.alphaPlanDetail") };
+  }
   if (code === "credential_format_rejected") {
     return { tone: "error", title: i18n.t("connections:marketplaceSetupDialog.keyRejectedTitle"), detail: i18n.t("connections:marketplaceSetupDialog.keyFormatRejected", { name }) };
   }
   if (code === "credential_rejected") {
-    return { tone: "error", title: i18n.t("connections:marketplaceSetupDialog.keyRejectedTitle"), detail: `${i18n.t("connections:marketplaceSetupDialog.keyNotAccepted", { name })}${diagnostic}` };
+    const approval = entry.id === KRX_ENTRY ? ` ${i18n.t("connections:marketplaceSetupDialog.krxApprovalHint")}` : "";
+    return { tone: "error", title: i18n.t("connections:marketplaceSetupDialog.keyRejectedTitle"), detail: `${i18n.t("connections:marketplaceSetupDialog.keyNotAccepted", { name })}${approval}${diagnostic}` };
   }
   if (code === "provider_unavailable") {
-    return { tone: "error", title: i18n.t("connections:marketplaceSetupDialog.keyNotCheckedTitle"), detail: `${i18n.t("connections:marketplaceSetupDialog.keySavedNotVerified", { name })}${diagnostic}` };
+    // A Mac without a network cannot reach any provider: say that, not that the provider failed.
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    return { tone: "error", title: i18n.t("connections:marketplaceSetupDialog.keyNotCheckedTitle"), detail: offline
+      ? i18n.t("connections:marketplaceSetupDialog.keySavedOffline")
+      : `${i18n.t("connections:marketplaceSetupDialog.keySavedNotVerified", { name })}${diagnostic}` };
   }
   return {
     tone: "error",
@@ -92,6 +106,7 @@ export function MarketplaceSetupDialog({
   onChanged,
   onManageLoupists,
   onOpenModelSettings,
+  here,
 }: {
   bridge: LoupistBridge;
   entry: MarketplaceEntry | null;
@@ -100,6 +115,8 @@ export function MarketplaceSetupDialog({
   onChanged: () => Promise<void>;
   onManageLoupists?: () => void;
   onOpenModelSettings?: () => void;
+  /** Whether the current Loupist has this connection on, and how to turn it on. */
+  here?: { loupist: string; enabled: boolean; enable: () => Promise<void> };
 }) {
   useTranslation();
   const [configDraft, setConfigDraft] = useState<Record<string, string>>({});
@@ -115,6 +132,12 @@ export function MarketplaceSetupDialog({
     null,
   );
   const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
+  const [hereBusy, setHereBusy] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const messageRef = useRef<HTMLDivElement>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+  /** An action ran: when the control used went away or was disabled, focus lands on its result. */
+  const restoreFocus = useRef(false);
   const hasUnsavedKey = Object.values(credentialDraft).some((value) => value.trim() !== "");
   // Leaving with a key typed but unsaved asks first. A save in flight keeps its own window.
   const leave = (after?: () => void) => {
@@ -124,8 +147,15 @@ export function MarketplaceSetupDialog({
   };
   const requestClose = () => leave();
 
-  const dialogTitle = !entry ? "" : !entry.setup || connector?.readiness === "runtime_unavailable" ? connectionText(entry.name) : entry.id === "community.web-research" ? i18n.t("connections:marketplaceSetupDialog.settingsTitle", { name: connectionText(entry.name) }) : setupEntryLabel(entry, connector);
+  const currentTitle = !entry ? "" : !entry.setup || connector?.readiness === "runtime_unavailable" ? connectionText(entry.name) : entry.id === "community.web-research" ? i18n.t("connections:marketplaceSetupDialog.settingsTitle", { name: connectionText(entry.name) }) : setupEntryLabel(entry, connector);
+  // The title is fixed for each opening: a failed check that leaves a saved key must not rename the open dialog.
+  const [openedTitle, setOpenedTitle] = useState({ entryId: entry?.id ?? null, language: i18n.language, title: currentTitle });
+  if (openedTitle.entryId !== (entry?.id ?? null) || openedTitle.language !== i18n.language) setOpenedTitle({ entryId: entry?.id ?? null, language: i18n.language, title: currentTitle });
+  const dialogTitle = openedTitle.entryId === (entry?.id ?? null) ? openedTitle.title : currentTitle;
   const selectedEntryId = entry?.id ?? null;
+  const isAssetLookup = selectedEntryId === "openfigi.lookup";
+  const optionalTokenEmpty = selectedEntryId === "cftc.commitments" && !hasUnsavedKey
+    && !connector?.credentials.some((credential) => credential.stored);
   const selectedEntryIdRef = useRef(selectedEntryId);
   selectedEntryIdRef.current = selectedEntryId;
   const operationRef = useRef(0);
@@ -138,6 +168,8 @@ export function MarketplaceSetupDialog({
     setSetupProgress("");
     setRefreshNeeded(false);
     setDeleteError(null);
+    setHereBusy(false);
+    restoreFocus.current = false;
     if (!entry) {
       setConfigDraft({});
       setCredentialDraft({});
@@ -187,8 +219,9 @@ export function MarketplaceSetupDialog({
     if (activeOperationRef.current === operation) activeOperationRef.current = null;
   }
 
-  async function saveVerifyAndEnable() {
+  async function saveSetup() {
     if (!entry?.setup || connector?.readiness === "runtime_unavailable" || activeOperationRef.current !== null) return;
+    restoreFocus.current = true;
     const setup = entry.setup;
     const operationEntryId = entry.id;
     const operation = ++operationRef.current;
@@ -247,6 +280,7 @@ export function MarketplaceSetupDialog({
           throw new Error(i18n.t("connections:marketplaceSetupDialog.isRequired", { label: connectionText(field.label) }));
         }
       }
+      if ((isAssetLookup && !patchingCredentials) || optionalTokenEmpty) return;
       setSetupBusy("save");
       if (setup.config_fields.length) {
         phase = "configure";
@@ -266,7 +300,7 @@ export function MarketplaceSetupDialog({
         });
         if (selectedEntryIdRef.current === operationEntryId && operationRef.current === operation) setCredentialDraft({});
       }
-      if (setup.credential_fields.length) {
+      if (!isAssetLookup && setup.credential_fields.length) {
         phase = "verify";
         setSetupProgress(i18n.t("connections:marketplaceSetupDialog.verifyingConnection"));
         await bridge.marketplaceCredentialVerify({
@@ -277,10 +311,14 @@ export function MarketplaceSetupDialog({
       if (selectedEntryIdRef.current !== operationEntryId || operationRef.current !== operation) return;
       setSetupMessage({
         tone: "success",
-        title: setup.credential_fields.length
-          ? i18n.t("connections:marketplaceSetupDialog.verificationSuccessful")
-          : i18n.t("connections:marketplaceSetupDialog.settingsSaved"),
-        detail: connector?.readiness === "ready"
+        title: isAssetLookup
+          ? i18n.t("connections:marketplaceSetupDialog.keySaved")
+          : setup.credential_fields.length
+            ? i18n.t("connections:marketplaceSetupDialog.verificationSuccessful")
+            : i18n.t("connections:marketplaceSetupDialog.settingsSaved"),
+        detail: isAssetLookup
+          ? i18n.t("connections:marketplaceSetupDialog.keyStoredSecurely")
+          : connector?.readiness === "ready"
           ? i18n.t(refreshed ? "connections:marketplaceSetupDialog.savedAccess" : "connections:marketplaceSetupDialog.savedAccessRefresh", { name: connectionText(entry.name) })
           : i18n.t(refreshed ? "connections:marketplaceSetupDialog.readyEnabled" : "connections:marketplaceSetupDialog.readyEnabledRefresh", { name: connectionText(entry.name) }),
       });
@@ -289,7 +327,7 @@ export function MarketplaceSetupDialog({
         notifyConfigurationChanged();
       }
       if (selectedEntryIdRef.current !== operationEntryId || operationRef.current !== operation) return;
-      setSetupMessage(phase === "verify" ? verificationFailure(cause, connectionText(entry.name)) : {
+      setSetupMessage(phase === "verify" ? verificationFailure(cause, entry) : {
         tone: "error",
         title: phase === "save" ? i18n.t("connections:marketplaceSetupDialog.couldNotSaveCredentials") : i18n.t("connections:marketplaceSetupDialog.couldNotSaveSetup"),
         detail: errorMessage(cause, i18n.t("connections:marketplaceSetupDialog.couldNotConfigure", { name: connectionText(entry.name) })),
@@ -306,6 +344,7 @@ export function MarketplaceSetupDialog({
     const operationEntryId = entry.id;
     const operation = ++operationRef.current;
     activeOperationRef.current = operation;
+    restoreFocus.current = true;
     setCredentialDraft({});
     setSetupBusy("delete");
     setSetupMessage(null);
@@ -320,8 +359,10 @@ export function MarketplaceSetupDialog({
       if (selectedEntryIdRef.current !== operationEntryId || operationRef.current !== operation) return;
       setSetupMessage({
         tone: "success",
-        title: i18n.t("connections:marketplaceSetupDialog.credentialsDeleted"),
-        detail: i18n.t(refreshed ? "connections:marketplaceSetupDialog.deletedAccess" : "connections:marketplaceSetupDialog.deletedAccessRefresh"),
+        title: i18n.t(isAssetLookup ? "connections:marketplaceSetupDialog.keyDeleted" : "connections:marketplaceSetupDialog.credentialsDeleted"),
+        detail: isAssetLookup
+          ? i18n.t("connections:marketplaceSetupDialog.openFigiKeyDeleted")
+          : i18n.t(refreshed ? "connections:marketplaceSetupDialog.deletedAccess" : "connections:marketplaceSetupDialog.deletedAccessRefresh"),
       });
     } catch (cause: unknown) {
       if (selectedEntryIdRef.current !== operationEntryId || operationRef.current !== operation) return;
@@ -338,9 +379,43 @@ export function MarketplaceSetupDialog({
     }
   }
 
+  // Saving disables the fields and the button pressed, and a result can remove it (Turn on,
+  // Delete): focus then falls to the page. Put it on the result instead, once the action settles.
+  useEffect(() => {
+    if (!restoreFocus.current || setupBusy || hereBusy) return;
+    restoreFocus.current = false;
+    const active = document.activeElement;
+    // Lost: on the page, gone, or on the dialog itself (where its focus trap puts a removed control's focus).
+    if (active && active !== document.body && active !== contentRef.current && active.isConnected) return;
+    (messageRef.current ?? contentRef.current)?.focus();
+  });
+
+  async function enableHere() {
+    if (!entry || !here || hereBusy) return;
+    const operationEntryId = entry.id;
+    restoreFocus.current = true;
+    setHereBusy(true);
+    setSetupMessage(null);
+    try {
+      await here.enable();
+      if (selectedEntryIdRef.current !== operationEntryId) return;
+      setSetupMessage({ tone: "success", title: i18n.t("connections:marketplaceSetupDialog.onForTitle", { loupist: here.loupist }), detail: i18n.t("connections:marketplaceSetupDialog.onForDetail", { name: connectionText(entry.name), loupist: here.loupist }) });
+    } catch {
+      if (selectedEntryIdRef.current !== operationEntryId) return;
+      setSetupMessage({ tone: "error", title: i18n.t("connections:marketplaceSetupDialog.couldNotTurnOn", { name: connectionText(entry.name), loupist: here.loupist }), detail: i18n.t("connections:marketplaceSetupDialog.tryAgainOrLoupistAccess") });
+    } finally {
+      if (selectedEntryIdRef.current === operationEntryId) setHereBusy(false);
+    }
+  }
+
   const scopeChanged = entry?.setup?.credential_scope_fields?.some(
     (fieldId) => connector?.config[fieldId] !== (configDraft[fieldId] ?? "").trim(),
   ) && connector?.credentials.some((credential) => credential.stored);
+  const ready = connectionState(connector) === "ready";
+  // With a saved key, nothing typed and the settings as saved, the button only checks the key again.
+  const verifyAgain = Boolean(entry?.setup?.credential_fields.length) && !hasUnsavedKey
+    && Boolean(connector?.credentials.some((credential) => credential.stored))
+    && (entry?.setup?.config_fields ?? []).every((field) => (connector?.config[field.id] ?? "") === (configDraft[field.id] ?? "").trim());
 
   async function openSetupHelp(url: string) {
     const helpEntryId = selectedEntryId;
@@ -366,7 +441,7 @@ export function MarketplaceSetupDialog({
         }}
       >
         {entry && (
-          <DialogContent className="marketplace-setup-dialog" onOpenAutoFocus={(event) => {
+          <DialogContent ref={contentRef} className="marketplace-setup-dialog" onOpenAutoFocus={(event) => {
             // Start in the key field (direction T4), not on the "Get a key" link above it.
             const field = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLInputElement>('input[type="password"]:not(:disabled), input:not([type="hidden"]):not(:disabled)');
             if (field) { event.preventDefault(); field.focus(); }
@@ -375,7 +450,7 @@ export function MarketplaceSetupDialog({
               className="dialog-form marketplace-setup-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                void saveVerifyAndEnable();
+                void saveSetup();
               }}
             >
               <DialogHeader>
@@ -389,9 +464,18 @@ export function MarketplaceSetupDialog({
                   <Badge variant="outline" data-tone={CONNECTION_STATES[connectionState(connector)].tone}>
                     {CONNECTION_STATES[connectionState(connector)].label}
                   </Badge>
+                  {/* Which Loupists may use it: the one the user is working in, said beside Ready. */}
+                  {ready && here?.enabled ? <span className="marketplace-here">{i18n.t("connections:marketplaceSetupDialog.onFor", { loupist: here.loupist })}</span> : null}
                 </div>
                 <span>{accessLabel(entry)}</span>
               </div>
+              {ready && here && !here.enabled ? <div className="marketplace-setup-here" data-here="off">
+                <p>{i18n.t("connections:marketplaceSetupDialog.offForDetail", { name: connectionText(entry.name), loupist: here.loupist })}</p>
+                <Button type="button" size="sm" variant="outline" disabled={hereBusy} aria-busy={hereBusy || undefined} onClick={() => void enableHere()}>
+                  {hereBusy ? <LoaderCircleIcon className="animate-spin" aria-hidden="true" /> : null}
+                  {i18n.t("connections:marketplaceSetupDialog.turnOnFor", { loupist: here.loupist })}
+                </Button>
+              </div> : null}
               {connector?.readiness === "runtime_unavailable" ? (
                 <div className="marketplace-setup-message" data-tone="error" role="alert">
                   <strong>{i18n.t("connections:marketplaceSetupDialog.connectionUnavailable")}</strong>
@@ -479,7 +563,7 @@ export function MarketplaceSetupDialog({
                   </div>
                 )}
 
-                {entry.setup?.credential_fields.length ? <div className="marketplace-form-section-title"><h3>{i18n.t("connections:marketplaceSetupDialog.apiCredentials")}</h3><p>{connector?.credentials.some((credential) => credential.stored) ? i18n.t("connections:marketplaceSetupDialog.leaveSavedFieldsBlankToKeepTheCurrent") : i18n.t("connections:marketplaceSetupDialog.addYourProviderCredentialsThenVerifyTheConnection")}</p></div> : null}
+                {entry.setup?.credential_fields.length ? <div className="marketplace-form-section-title"><h3>{i18n.t("connections:marketplaceSetupDialog.apiCredentials")}</h3><p>{isAssetLookup ? i18n.t("connections:marketplaceSetupDialog.openFigiKeyHelp") : connector?.credentials.some((credential) => credential.stored) ? i18n.t("connections:marketplaceSetupDialog.leaveSavedFieldsBlankToKeepTheCurrent") : i18n.t("connections:marketplaceSetupDialog.addYourProviderCredentialsThenVerifyTheConnection")}</p></div> : null}
                 {entry.setup?.credential_fields.map((field) => {
                   const inputId = `marketplace-${entry.id}-${field.id}`;
                   const status = connector?.credentials.find(
@@ -489,7 +573,7 @@ export function MarketplaceSetupDialog({
                     <div className="marketplace-setup-field" key={field.id}>
                       <div className="marketplace-setup-field-heading">
                         <Label htmlFor={inputId}>
-                          {!field.required ? i18n.t("connections:marketplaceSetupDialog.optionalField", { label: connectionText(field.label) }) : connectionText(field.label)}
+                          {!field.required && !isAssetLookup ? i18n.t("connections:marketplaceSetupDialog.optionalField", { label: connectionText(field.label) }) : connectionText(field.label)}
                         </Label>
                         {field.help_url && (
                           <Button
@@ -507,6 +591,7 @@ export function MarketplaceSetupDialog({
                       <Input
                         id={inputId}
                         type="password"
+                        aria-describedby={status?.stored ? `${inputId}-status` : undefined}
                         value={credentialDraft[field.id] ?? ""}
                         placeholder={
                           status?.stored
@@ -518,7 +603,6 @@ export function MarketplaceSetupDialog({
                         maxLength={field.max_length}
                         disabled={Boolean(setupBusy)}
                         autoComplete="new-password"
-                        aria-describedby={`${inputId}-status`}
                         onChange={(event) =>
                           setCredentialDraft((current) => ({
                             ...current,
@@ -526,17 +610,13 @@ export function MarketplaceSetupDialog({
                           }))
                         }
                       />
-                      <p id={`${inputId}-status`}>
-                        {status?.stored ? (
-                          <>
-                            {status.active && status.pending
-                              ? i18n.t("connections:marketplaceSetupDialog.currentConnectionRetained", { value1: status.verification === "never" ? i18n.t("connections:marketplaceSetupDialog.replacementNotVerified") : VERIFICATION_LABELS[status.verification] })
-                              : i18n.t("connections:marketplaceSetupDialog.storedSecurely", { value1: VERIFICATION_LABELS[status.verification] })}
-                          </>
-                        ) : (
-                          i18n.t("connections:marketplaceSetupDialog.notStored")
-                        )}
-                      </p>
+                      {/* A key not saved yet needs no line: the placeholder and the status above say it. */}
+                      {status?.stored ? <p id={`${inputId}-status`}>
+                        {isAssetLookup ? i18n.t("connections:marketplaceSetupDialog.keyStoredSecurely")
+                          : status.active && status.pending
+                            ? i18n.t("connections:marketplaceSetupDialog.currentConnectionRetained", { value1: status.verification === "never" ? i18n.t("connections:marketplaceSetupDialog.replacementNotVerified") : VERIFICATION_LABELS[status.verification] })
+                            : i18n.t("connections:marketplaceSetupDialog.storedSecurely", { value1: VERIFICATION_LABELS[status.verification] })}
+                      </p> : null}
                       {status?.krx_coverage && (
                         <div className="marketplace-service-coverage">
                           <p>{i18n.t("connections:marketplaceSetupDialog.krxCoverage")}</p>
@@ -553,6 +633,29 @@ export function MarketplaceSetupDialog({
                   );
                 })}
               </fieldset>
+
+              {/* What saving did, beside the key it was about rather than under the dialog's other sections. */}
+              {setupMessage && (
+                <div
+                  ref={messageRef}
+                  tabIndex={-1}
+                  className="marketplace-setup-message"
+                  data-tone={setupMessage.tone}
+                  role={setupMessage.tone === "error" ? "alert" : "status"}
+                >
+                  <strong>{setupMessage.title}</strong>
+                  <p>{setupMessage.detail}</p>
+                </div>
+              )}
+
+              {refreshNeeded && (
+                <Button type="button" variant="outline" size="sm" disabled={Boolean(setupBusy)} onClick={() => void retryRefresh()}>
+                  {i18n.t("connections:marketplaceSetupDialog.refreshStatus")}</Button>
+              )}
+
+              {setupBusy === "save" && (
+                <div className="marketplace-setup-progress" role="status"><LoaderCircleIcon className="animate-spin" aria-hidden="true" /><p><strong>{setupProgress}</strong>{!isAssetLookup && <span>{i18n.t("connections:marketplaceSetupDialog.youCanCloseThisWindowWhileTheCheck")}</span>}</p></div>
+              )}
 
               {entry.id === "koreainvestment.market-data" && (
                 <div className="marketplace-credential-note">
@@ -590,50 +693,38 @@ export function MarketplaceSetupDialog({
                   {entry.freshness.length ? <div><dt>{i18n.t("connections:marketplaceSetupDialog.freshness")}</dt><dd>{entry.freshness.map(connectionText).join(", ")}</dd></div> : null}
                   <div><dt>{i18n.t("connections:marketplaceSetupDialog.attribution")}</dt><dd>{connectionText(entry.attribution)}</dd></div>
                 </dl>
-                {entry.terms_url ? <Button type="button" variant="link" disabled={Boolean(setupBusy)} onClick={() => void openSetupHelp(entry.terms_url!)}>{i18n.t("connections:marketplaceSetupDialog.providerTerms")}<ExternalLinkIcon /></Button> : null}
+                {entry.terms_url ? <Button type="button" variant="link" disabled={Boolean(setupBusy)} onClick={() => void openSetupHelp(entry.terms_url!)}>{i18n.t(entry.id === "cftc.commitments" ? "connections:marketplaceSetupDialog.appTokenInstructions" : "connections:marketplaceSetupDialog.providerTerms")}<ExternalLinkIcon /></Button> : null}
               </Disclosure>
 
               {connector?.credentials.some((credential) => credential.stored) ? (
                 <div className="marketplace-remove-credentials">
-                  <div><strong>{i18n.t("connections:marketplaceSetupDialog.removeThisConnection")}</strong><p>{i18n.t("connections:marketplaceSetupDialog.deleteSavedKeysAndTurnOffAccessFor")}</p></div>
-                  <Button type="button" variant="ghost" size="sm" disabled={Boolean(setupBusy)} onClick={() => { setDeleteError(null); setCredentialToDelete(entry.id); }}><Trash2Icon />{i18n.t("connections:marketplaceSetupDialog.deleteSavedCredentials")}</Button>
+                  <div>
+                    <strong>{i18n.t(isAssetLookup ? "connections:marketplaceSetupDialog.removeSavedKey" : "connections:marketplaceSetupDialog.removeThisConnection")}</strong>
+                    <p>{i18n.t(isAssetLookup ? "connections:marketplaceSetupDialog.openFigiDeleteDescription" : "connections:marketplaceSetupDialog.deleteSavedKeysAndTurnOffAccessFor")}</p>
+                  </div>
+                  <Button ref={deleteTriggerRef} type="button" variant="ghost" size="sm" disabled={Boolean(setupBusy)} onClick={() => { setDeleteError(null); setCredentialToDelete(entry.id); }}><Trash2Icon />{i18n.t(isAssetLookup ? "connections:marketplaceSetupDialog.deleteKey" : "connections:marketplaceSetupDialog.deleteSavedCredentials")}</Button>
                 </div>
               ) : null}
 
-              {setupMessage && (
-                <div
-                  className="marketplace-setup-message"
-                  data-tone={setupMessage.tone}
-                  role={setupMessage.tone === "error" ? "alert" : "status"}
-                >
-                  <strong>{setupMessage.title}</strong>
-                  <p>{setupMessage.detail}</p>
-                </div>
-              )}
-
-              {refreshNeeded && (
-                <Button type="button" variant="outline" size="sm" disabled={Boolean(setupBusy)} onClick={() => void retryRefresh()}>
-                  {i18n.t("connections:marketplaceSetupDialog.refreshStatus")}</Button>
-              )}
-
-              {setupBusy === "save" && (
-                <div className="marketplace-setup-progress" role="status"><LoaderCircleIcon className="animate-spin" aria-hidden="true" /><p><strong>{setupProgress}</strong><span>{i18n.t("connections:marketplaceSetupDialog.youCanCloseThisWindowWhileTheCheck")}</span></p></div>
-              )}
-
               </DialogBody>
               <DialogFooter>
-                {onManageLoupists ? <Button type="button" variant="ghost" className="marketplace-manage-access" onClick={() => leave(onManageLoupists)}><SlidersHorizontalIcon />{i18n.t("connections:marketplaceSetupDialog.loupistAccess")}</Button> : null}
+                {/* Before setup no Loupist can use it, and finishing setup turns it on for every one. */}
+                {onManageLoupists && (ready || !entry.setup) ? <Button type="button" variant="ghost" className="marketplace-manage-access" onClick={() => leave(onManageLoupists)}><SlidersHorizontalIcon />{i18n.t("connections:marketplaceSetupDialog.loupistAccess")}</Button> : null}
                 {/* Before a verified setup: Cancel and the filled Save & verify. Once ready: Done is the filled button; saving changed settings stays possible. */}
                 {connectionState(connector) === "ready" ? <Button type="button" onClick={requestClose}>
                   {i18n.t("connections:marketplaceSetupDialog.done")}</Button> : <Button type="button" variant="ghost" onClick={requestClose}>
                   {i18n.t("connections:marketplaceSetupDialog.cancel")}</Button>}
-                {entry.setup && connector?.readiness !== "runtime_unavailable" ? <Button type="submit" variant={connectionState(connector) === "ready" ? "outline" : "default"} disabled={Boolean(setupBusy)}>
+                {entry.setup && connector?.readiness !== "runtime_unavailable" ? <Button type="submit" variant={connectionState(connector) === "ready" ? "outline" : "default"} disabled={Boolean(setupBusy) || (isAssetLookup && !hasUnsavedKey) || optionalTokenEmpty}>
                   {setupBusy === "save" ? <LoaderCircleIcon className="animate-spin" aria-hidden="true" /> : null}
                   {setupBusy === "save"
                     ? setupProgress
-                    : entry.setup.credential_fields.length
-                      ? i18n.t("connections:marketplaceSetupDialog.saveVerify")
-                      : i18n.t("connections:marketplaceSetupDialog.saveSetup")}
+                    : isAssetLookup
+                      ? i18n.t("connections:marketplaceSetupDialog.saveKey")
+                      : verifyAgain
+                        ? i18n.t("connections:marketplaceSetupDialog.verifyAgain")
+                        : entry.setup.credential_fields.length
+                          ? i18n.t("connections:marketplaceSetupDialog.saveVerify")
+                          : i18n.t("connections:marketplaceSetupDialog.saveSetup")}
                 </Button> : null}
               </DialogFooter>
             </form>
@@ -658,11 +749,16 @@ export function MarketplaceSetupDialog({
           if (!open && setupBusy !== "delete") setCredentialToDelete(null);
         }}
       >
-        <DialogContent className="marketplace-delete-dialog" showCloseButton={setupBusy !== "delete"}>
+        <DialogContent className="marketplace-delete-dialog" showCloseButton={setupBusy !== "delete"} onCloseAutoFocus={(event) => {
+          // After a deletion the Delete button is gone: the result takes focus instead of the page.
+          if (deleteTriggerRef.current?.isConnected) return;
+          event.preventDefault();
+          (messageRef.current ?? contentRef.current)?.focus();
+        }}>
           <DialogHeader>
-            <DialogTitle>{i18n.t("connections:marketplaceSetupDialog.deleteSavedCredentialsTitle")}</DialogTitle>
+            <DialogTitle>{i18n.t(isAssetLookup ? "connections:marketplaceSetupDialog.deleteKeyTitle" : "connections:marketplaceSetupDialog.deleteSavedCredentialsTitle")}</DialogTitle>
             <DialogDescription>
-              {i18n.t("connections:marketplaceSetupDialog.deleteDescription", { name: (entry ? connectionText(entry.name) : undefined) ?? i18n.t("connections:marketplaceSetupDialog.thisTool") })}</DialogDescription>
+              {isAssetLookup ? i18n.t("connections:marketplaceSetupDialog.openFigiDeleteDescription") : i18n.t("connections:marketplaceSetupDialog.deleteDescription", { name: (entry ? connectionText(entry.name) : undefined) ?? i18n.t("connections:marketplaceSetupDialog.thisTool") })}</DialogDescription>
           </DialogHeader>
           {deleteError && <p className="marketplace-setup-message" data-tone="error" role="alert">{deleteError}</p>}
           <DialogFooter>
@@ -681,7 +777,7 @@ export function MarketplaceSetupDialog({
                 if (credentialToDelete) void deleteCredential();
               }}
             >
-              {setupBusy === "delete" ? i18n.t("connections:marketplaceSetupDialog.deleting") : i18n.t("connections:marketplaceSetupDialog.deleteCredentials")}
+              {setupBusy === "delete" ? i18n.t("connections:marketplaceSetupDialog.deleting") : i18n.t(isAssetLookup ? "connections:marketplaceSetupDialog.deleteKey" : "connections:marketplaceSetupDialog.deleteCredentials")}
             </Button>
           </DialogFooter>
         </DialogContent>

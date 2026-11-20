@@ -100,8 +100,7 @@ async fn startup_recovers_an_orphaned_attempt_once_and_waits_for_provider_infere
 async fn loupist_settings_pause_and_frozen_model_controls_are_checked_on_every_callback() {
     use super::super::graph_inference::InferenceDisposition::{Completed, NotSent};
     let store = SqliteStore::open_in_memory().unwrap();
-    let assets = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../src/knowledge/embed_assets");
+    let assets = crate::knowledge::staged_embed_assets();
     let original = GraphProcessingSettings {
         enrichment_enabled: true,
         helper_provider: Some("openai".into()),

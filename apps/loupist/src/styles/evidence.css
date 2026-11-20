@@ -19,6 +19,8 @@
 .loupist-citation:hover { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
 /* Its passage is open in Evidence, marked in the same accent as the passage there. */
 .loupist-citation[aria-current="true"] { border-color: var(--gg-color-accent); background: var(--gg-color-accent-soft); color: var(--gg-color-accent-ink); }
+/* A citation inside a text selection fills with the selection's colour, so its box does not stand out of the run. */
+.loupist-citation[data-in-selection] { border-color: transparent; background: Highlight; }
 .loupist-unavailable-citation { color: var(--gg-color-text-secondary); }
 .message-sources { margin-top: 14px; max-width: 100%; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .message-sources summary { display: inline-flex; align-items: center; width: fit-content; min-height: var(--gg-size-control-sm); padding: 5px 0; cursor: pointer; }

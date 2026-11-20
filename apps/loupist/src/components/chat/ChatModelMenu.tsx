@@ -2,6 +2,7 @@ import i18n, { useTranslation } from "@/i18n";
 import { memo } from "react";
 import { PromptInputButton } from "../ai-elements/prompt-input";
 import { ModelSelectionMenu, type ModelSelectionMenuProps } from "../models/ModelSelectionMenu";
+import { defaultThinkingLevel, thinkingLabel } from "../../lib/modelSelection";
 import { ChevronDownIcon } from "lucide-react";
 import { planLineKind, ProviderPlanLine } from "../models/ProviderPlanLine";
 
@@ -17,8 +18,9 @@ type Props = Omit<ModelSelectionMenuProps, "renderTrigger" | "ariaLabel" | "auto
 
 /**
  * The composer's run-profile control. It never shows a model id by default:
- * "Auto" when nothing is chosen, the chosen model's name as a chip otherwise,
- * and "Connect an AI account" when no model can run.
+ * "Auto" when nothing is chosen and the chosen model's name otherwise, both as a
+ * quiet label at the composer's trailing edge, and "Connect an AI account" (the
+ * filled send slot) when no model can run.
  */
 export const ChatModelMenu = memo(function ChatModelMenu({ auto, onResetToAuto, onOpenUsage, ...props }: Props) {
   useTranslation("chat");
@@ -30,6 +32,7 @@ export const ChatModelMenu = memo(function ChatModelMenu({ auto, onResetToAuto, 
       <span>{t("chatModelMenu.connectAccount")}</span>
     </PromptInputButton>;
   }
+  const level = thinkingLabel(props.selection.thinking_level);
   const selected = props.models.find((model) => model.id === props.selection.model_profile_id);
   // Auto is chosen by Rust at admission. The last-used model is not a forecast
   // of that choice; show a plan only when its account is unambiguous.
@@ -37,10 +40,15 @@ export const ChatModelMenu = memo(function ChatModelMenu({ auto, onResetToAuto, 
   const billingProvider = auto ? connectedProviders.size === 1 ? [...connectedProviders][0] : undefined : selected?.provider;
   const billing = props.providers.find((provider) => provider.id === billingProvider);
   const planLine = onOpenUsage && planLineKind(billing) ? <ProviderPlanLine provider={billing} onOpenUsage={onOpenUsage} /> : undefined;
-  return <ModelSelectionMenu contextLabel={t("chatModelMenu.modelForThisMessage")} searchFrom={8} {...props} planLine={planLine} auto={{ active: auto, onSelect: onResetToAuto }} renderTrigger={(label) => (
-    <PromptInputButton size="sm" className="composer-model-menu" data-testid="composer-model-menu" aria-label={`${auto || !selected ? t("chatModelMenu.auto") : selected.name} · ${t("chatModelMenu.modelSettingsForThisMessage")}`} aria-description={auto ? t("chatModelMenu.autoDescription") : label}
+  // Picking a model never changes the level silently: the level in use stays when the new
+  // model lists it; otherwise that model's default applies.
+  const keepLevel = (model: { thinking_levels: string[] }) =>
+    props.selection.thinking_level && model.thinking_levels.includes(props.selection.thinking_level) ? props.selection.thinking_level : defaultThinkingLevel(model.thinking_levels);
+  return <ModelSelectionMenu levelOnModelPick={keepLevel} contextLabel={t("chatModelMenu.modelForThisMessage")} searchFrom={8} {...props} planLine={planLine} auto={{ active: auto, onSelect: onResetToAuto }} renderTrigger={(label) => (
+    <PromptInputButton size="sm" className="composer-model-menu" data-testid="composer-model-menu" aria-label={`${auto || !selected ? t("chatModelMenu.auto") : selected.name} · ${t("chatModelMenu.modelSettingsForThisMessage")}${level ? ` · ${level}` : ""}`} aria-description={auto ? t("chatModelMenu.autoDescription") : label}
       disabled={props.disabled || (!props.models.length && !props.onManageModels)} tooltip={auto ? t("chatModelMenu.autoDescription") : label}>
       {auto || !selected ? <span>{t("chatModelMenu.auto")}</span> : <span className="composer-model-chip">{selected.name}</span>}
+      {level && <span className="composer-thinking-level">{level}</span>}
       <ChevronDownIcon aria-hidden="true" />
     </PromptInputButton>
   )} />;

@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::sync::{Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use serde_json::Value;
 use unicode_normalization::UnicodeNormalization;
 
-use super::assets::class::exchange_time_zone;
 use super::{GraphNode, WorldSnapshotBody};
+use crate::market_calendar::is_us_session_market;
 use crate::store::user_context::MapContextItem;
 
 #[derive(Clone, Copy)]
@@ -361,6 +361,7 @@ pub(crate) struct WorldIdentity {
     /// The nodes carrying each key, computed once for the revision.
     by_key: Option<BTreeMap<String, BTreeSet<String>>>,
     components: Option<BTreeMap<String, String>>,
+    names: Option<Arc<Vec<Vec<String>>>>,
 }
 
 struct IdentityNode {
@@ -395,7 +396,34 @@ impl WorldIdentity {
             keys: BTreeMap::new(),
             by_key: None,
             components: None,
+            names: None,
         }
+    }
+
+    /// Every spelling of each entity, one list per component
+    /// ([`Self::component`]), so a node spelling `삼성전자` and one spelling
+    /// `Samsung Electronics` give one list when a third node spells both.
+    /// Search matches a query naming an entity in one language with text
+    /// naming it in another. Computed once for the revision.
+    pub(crate) fn names(&mut self) -> Arc<Vec<Vec<String>>> {
+        if self.names.is_none() {
+            let components = self
+                .components
+                .take()
+                .unwrap_or_else(|| self.join_components());
+            let mut names: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+            for (id, node) in &self.nodes {
+                let spellings = names.entry(&components[id]).or_default();
+                for spelling in &node.spellings {
+                    if !spellings.contains(spelling) {
+                        spellings.push(spelling.clone());
+                    }
+                }
+            }
+            self.names = Some(Arc::new(names.into_values().collect()));
+            self.components = Some(components);
+        }
+        self.names.clone().expect("the names")
     }
 
     /// The keys of `node`'s name and aliases, or None when the World has no
@@ -612,11 +640,49 @@ enum MarketAgreement {
     Undecided,
 }
 
+// World identity uses venue families. Session clocks can be shared by unrelated markets.
+fn market_family(market: &str) -> Option<&'static str> {
+    let market = market.trim().to_uppercase();
+    if is_us_session_market(&market) {
+        return Some("US");
+    }
+    Some(match market.as_str() {
+        "CRYPTO" | "UPBIT" | "BITHUMB" | "BINANCE" | "COINBASE" | "KRAKEN" | "BYBIT" | "OKX" => {
+            "CRYPTO"
+        }
+        "FX" | "FOREX" | "RATES" | "UST" => "FX",
+        "NYMEX" | "COMEX" | "ICE" => "NY_FUTURES",
+        "CME" => "CME",
+        "KRX" | "XKRX" | "KOSPI" | "KOSDAQ" | "KONEX" | "KS" | "KQ" => "KRX",
+        "TSE" | "JPX" | "TYO" | "T" | "XTKS" => "JPX",
+        "HKEX" | "HKG" | "HK" | "SEHK" | "XHKG" => "HKEX",
+        "SSE" | "SHA" | "SS" | "XSHG" => "SSE",
+        "SZSE" | "SHE" | "SZ" | "XSHE" => "SZSE",
+        "LSE" | "LON" | "L" | "XLON" => "LSE",
+        "XETRA" | "ETR" | "DE" | "XETR" => "XETRA",
+        "FRA" | "XFRA" => "FRA",
+        "EURONEXT" | "EPA" | "PAR" | "PA" | "XPAR" | "AMS" | "AS" | "XAMS" | "BRU" | "BR"
+        | "XBRU" | "LIS" | "LS" | "XLIS" | "MIL" | "MI" | "MTAA" => "EURONEXT",
+        "TSX" | "TO" | "XTSE" => "TSX",
+        "TSXV" | "TSX-V" | "V" | "XTSX" => "TSXV",
+        "CSE" | "CNSX" | "XCNQ" => "CSE",
+        "NEO" => "NEO",
+        "ASX" | "AX" | "XASX" => "ASX",
+        "NSE" | "NS" | "XNSE" => "NSE",
+        "BSE" | "BO" | "XBOM" => "BSE",
+        "SGX" | "SI" | "XSES" => "SGX",
+        "SIX" | "SWX" | "SW" | "XSWX" => "SIX",
+        "TWSE" | "TW" | "XTAI" => "TWSE",
+        "TPEX" | "TWO" | "ROCO" => "TPEX",
+        _ => return None,
+    })
+}
+
 fn market_agreement(stated: &str, followed: &str) -> MarketAgreement {
     if stated.eq_ignore_ascii_case(followed) {
         return MarketAgreement::Agrees;
     }
-    match (exchange_time_zone(stated), exchange_time_zone(followed)) {
+    match (market_family(stated), market_family(followed)) {
         (Some(a), Some(b)) if a == b => MarketAgreement::Agrees,
         (Some(_), Some(_)) => MarketAgreement::Conflicts,
         _ => MarketAgreement::Undecided,
@@ -633,6 +699,15 @@ fn followed_market(item: &MapContextItem) -> &str {
 }
 
 pub(crate) fn resolve_followed(item: &MapContextItem, nodes: &[GraphNode]) -> IdentityMatch {
+    resolve_followed_excluding(item, nodes, &[])
+}
+
+pub(super) fn resolve_followed_excluding(
+    item: &MapContextItem,
+    nodes: &[GraphNode],
+    rejected: &[String],
+) -> IdentityMatch {
+    let eligible = || nodes.iter().filter(|node| !rejected.contains(&node.id));
     let symbol = normalized(&item.symbol);
     let by_symbol = |node: &&GraphNode| {
         let mut ids = node
@@ -643,11 +718,14 @@ pub(crate) fn resolve_followed(item: &MapContextItem, nodes: &[GraphNode]) -> Id
         ids.extend(property_values(node, &SYMBOL_KEYS));
         ids.contains(&symbol)
     };
-    let mut hits: Vec<&GraphNode> = nodes.iter().filter(by_symbol).collect();
+    let mut hits: Vec<&GraphNode> = if symbol.is_empty() {
+        Vec::new()
+    } else {
+        eligible().filter(by_symbol).collect()
+    };
     if hits.is_empty() {
         if let Some(name) = item.display_name.as_deref().map(normalized) {
-            hits = nodes
-                .iter()
+            hits = eligible()
                 .filter(|node| normalized(&node.name) == name)
                 .collect();
         }
@@ -736,6 +814,7 @@ mod tests {
     }
     fn item(symbol: &str, market: &str) -> MapContextItem {
         MapContextItem {
+            asset_id: crate::knowledge::assets::asset_id(symbol, market),
             symbol: symbol.into(),
             market: market.into(),
             display_name: None,
@@ -1036,6 +1115,26 @@ mod tests {
         assert_eq!(
             resolve_followed(&item("A", "TSE"), &nodes),
             IdentityMatch::Unmatched
+        );
+    }
+
+    #[test]
+    fn followed_identity_matches_venue_families_independently_of_session_clocks() {
+        let european = [
+            node("europe", "Alpha Europe", "A", Some("EURONEXT")),
+            node("frankfurt", "Alpha Frankfurt", "A", Some("FRA")),
+        ];
+        assert_eq!(
+            resolve_followed(&item("A", "MIL"), &european),
+            IdentityMatch::Exact("europe".into())
+        );
+        let indian = [
+            node("mumbai", "Alpha Mumbai", "A", Some("BSE")),
+            node("national", "Alpha National", "A", Some("NSE")),
+        ];
+        assert_eq!(
+            resolve_followed(&item("A", "XNSE"), &indian),
+            IdentityMatch::Exact("national".into())
         );
     }
 

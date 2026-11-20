@@ -7,14 +7,14 @@ import { entityCategories, nodeCategory } from "../../knowledge/mapKinds";
 export const LEGEND_MAX_ROWS = 8;
 const categoryOrder = ["company", "product", "technology", "industry", "person", "event", "market", "other"] as const satisfies readonly (typeof entityCategories)[number][];
 
-/** `personal` says which rings are drawn: the dashed watchlist ring, the solid holdings ring, or both. */
-export type LegendRow = { id: string; kind: "category" | "lens" | "line" | "lensLine" | "personal" | "conflict"; rings?: "watch" | "hold" | "both" };
+/** `personal` names the dashed ring drawn around what the user follows. */
+export type LegendRow = { id: string; kind: "category" | "lens" | "line" | "lensLine" | "personal" | "conflict" };
 
 /**
  * Rows for every mark in the drawn view. Colour rows (entity categories and
  * Journal) come first, most drawn first, so the colour a reader sees most is
  * always explained; then, while a Lens highlight is on, the highlighted names,
- * one row naming the dashed watchlist ring and the solid holdings ring and, when a drawn relationship has
+ * one row naming the dashed ring around what the user follows and, when a drawn relationship has
  * sources that disagree, the red dashed line and dot. Past six rows, the red line
  * stays, then the drawn kinds' colours, most drawn first; the other marks and the
  * least drawn colours fold into a "More…" disclosure.
@@ -29,14 +29,12 @@ export function legendRows(nodes: readonly KnowledgeMapNode[], conflicts = false
   // "Other" explains the least, so it sorts last whatever its count.
   const colours = [...counts.keys()].sort((a, b) => Number(a === "other") - Number(b === "other") || counts.get(b)! - counts.get(a)! || order.indexOf(a) - order.indexOf(b))
     .map((id): LegendRow => ({ id, kind: "category" }));
-  // A held name draws the solid ring even when it is also watched.
-  const watch = nodes.some((node) => node.watched && !node.held);
-  const hold = nodes.some((node) => node.held);
+  const watch = nodes.some((node) => node.watched);
   const marks: LegendRow[] = [
     // A plain line is a relationship a source states; it is always explained.
     { id: "line", kind: "line" as const },
     ...(lensLines ? [{ id: "lensLine", kind: "lensLine" as const }] : []),
-    ...(watch || hold ? [{ id: "personal", kind: "personal" as const, rings: watch && hold ? "both" as const : watch ? "watch" as const : "hold" as const }] : []),
+    ...(watch ? [{ id: "personal", kind: "personal" as const }] : []),
     ...(conflicts ? [{ id: "conflict", kind: "conflict" as const }] : []),
   ];
   if (colours.length + marks.length <= LEGEND_MAX_ROWS) return { rows: [...colours, ...marks], more: [] };
@@ -78,9 +76,7 @@ export function MapLegend({ open, lead = false, nodes, conflicts = false, lensLi
     if (item.kind === "line") return <li key={item.id}><span className="map-legend-glyphs" aria-hidden="true"><i className="map-swatch is-claim-line" /></span>{t("map.legendLine")}</li>;
     if (item.kind === "lensLine") return <li key={item.id}><span className="map-legend-glyphs" aria-hidden="true"><i className="map-swatch is-lens-line" /></span>{t("map.legendLensLine")}</li>;
     if (item.kind === "conflict") return <li key={item.id}><span className="map-legend-glyphs" aria-hidden="true"><i className="map-swatch is-conflict-line" /><i className="map-swatch is-conflict" /></span>{t("map.legendConflict")}</li>;
-    if (item.kind === "personal") return <li key={item.id}><span className="map-legend-glyphs" aria-hidden="true">
-      {item.rings !== "hold" ? <i className="map-swatch is-watching" /> : null}{item.rings !== "watch" ? <i className="map-swatch is-holding" /> : null}
-    </span>{t(item.rings === "both" ? "map.legendWatchHold" : item.rings === "watch" ? "map.legendWatch" : "map.legendHold")}</li>;
+    if (item.kind === "personal") return <li key={item.id}><span className="map-legend-glyphs" aria-hidden="true"><i className="map-swatch is-watching" /></span>{t("map.legendWatch")}</li>;
     return <li key={item.id}><span className="map-legend-glyphs" aria-hidden="true"><i className={`map-swatch is-${item.id}`} /></span>{t(`map.kind.${item.id as (typeof categoryOrder)[number] | "journal"}`)}</li>;
   };
   return <details ref={ref} className={`map-legend${overflowing ? " is-overflowing" : ""}`} open={open} onToggle={(event) => {

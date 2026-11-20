@@ -1,4 +1,4 @@
-use crate::knowledge::graph_jobs::GraphProcessingSettings;
+use crate::knowledge::{followed::FOLLOWED_LEAD, graph_jobs::GraphProcessingSettings};
 use serde_json::{json, Value};
 
 #[derive(Debug, Clone)]
@@ -43,6 +43,7 @@ pub(crate) fn extraction_hints(
     observed: &[String],
     followed: &[FollowedInstrument],
 ) -> Value {
+    let body = body.strip_prefix(FOLLOWED_LEAD).unwrap_or(body);
     let folded = body.to_lowercase();
     let mut seen_symbols = std::collections::BTreeSet::new();
     let mut followed_hints = Vec::new();
@@ -171,6 +172,7 @@ mod tests {
         let mut assets: Vec<_> = (0..30)
             .map(|index| {
                 crate::knowledge::FollowedAsset::new(
+                    &crate::knowledge::assets::asset_id(&format!("SYM{index:02}"), "KRX"),
                     &format!("SYM{index:02}"),
                     "KRX",
                     Some(&format!("Company {index:02}")),
@@ -178,8 +180,18 @@ mod tests {
             })
             .collect();
         // Short tickers followed earlier do not crowd a later Source's anchors.
-        assets[0] = crate::knowledge::FollowedAsset::new("A", "NYSE", None);
-        assets[1] = crate::knowledge::FollowedAsset::new("ON", "UNKNOWN", Some("onsemi"));
+        assets[0] = crate::knowledge::FollowedAsset::new(
+            &crate::knowledge::assets::asset_id("A", "NYSE"),
+            "A",
+            "NYSE",
+            None,
+        );
+        assets[1] = crate::knowledge::FollowedAsset::new(
+            &crate::knowledge::assets::asset_id("ON", "UNKNOWN"),
+            "ON",
+            "UNKNOWN",
+            Some("onsemi"),
+        );
         let mut settings = GraphProcessingSettings::default();
         crate::knowledge::anchor_followed(&mut settings, &assets);
         // Extraction takes at most 24 anchors per episode, so 30 assets need two Sources.
@@ -198,6 +210,45 @@ mod tests {
                 .collect();
             let listed: Vec<_> = batch.iter().map(|asset| asset.name.clone()).collect();
             assert_eq!(anchored, listed);
+        }
+    }
+
+    #[test]
+    fn followed_source_lead_does_not_supply_asset_mentions() {
+        let assets = [
+            ("Agilent", "A"),
+            ("share", "SHRX"),
+            ("Beta Holdings", "BETA"),
+        ]
+        .map(|(name, symbol)| {
+            crate::knowledge::FollowedAsset::new(
+                &crate::knowledge::assets::asset_id(symbol, "NYSE"),
+                symbol,
+                "NYSE",
+                Some(name),
+            )
+        });
+        let followed: Vec<_> = assets
+            .iter()
+            .map(|asset| FollowedInstrument {
+                name: asset.name.clone(),
+                symbol: asset.symbol.clone(),
+            })
+            .collect();
+        let mut settings = GraphProcessingSettings::default();
+        crate::knowledge::anchor_followed(&mut settings, &assets);
+
+        for asset in &assets {
+            let body = crate::knowledge::followed_text(std::slice::from_ref(asset));
+            assert!(body.starts_with("Assets the user follows. "));
+            let hints = extraction_hints(&settings, &body, &[], &followed);
+            let anchors = hints["anchors"].as_array().unwrap();
+            assert_eq!(anchors.len(), 1, "{body}");
+            assert_eq!(anchors[0]["name"], asset.name);
+            assert_eq!(
+                hints["followed"],
+                json!([{ "name": asset.name, "symbol": asset.symbol }])
+            );
         }
     }
 }

@@ -13,7 +13,7 @@ pub(crate) fn usable_vector(vector: &[f32]) -> bool {
     !vector.is_empty() && vector.iter().any(|value| *value != 0.0)
 }
 
-/// Deterministic unit vector for text the English model cannot encode.
+/// Deterministic unit vector for text the local model cannot encode.
 ///
 /// Character trigrams of the normalized spelling share a bucket, so identical
 /// and near-identical spellings land near each other. It carries no meaning

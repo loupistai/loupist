@@ -150,7 +150,7 @@
       "credential_mapping": {"api_key": "alpha_vantage_api_key"},
       "verification_probe": {
         "tool": "equity_price_historical",
-        "arguments": {"symbol": "AAPL", "start_date": "2024-01-02", "end_date": "2024-01-03", "provider": "alpha_vantage"}
+        "arguments": {"symbol": "AAPL", "interval": "1d", "adjustment": "unadjusted", "provider": "alpha_vantage"}
       }
     },
     {

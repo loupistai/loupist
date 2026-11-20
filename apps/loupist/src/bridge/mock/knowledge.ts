@@ -1082,13 +1082,13 @@ export async function knowledgeMap(state: MockBridgeState, request: import("../.
   const nodes: import("../../contracts/knowledge").KnowledgeMapNode[] = SEEDED.has(request.loupistId) ? labels.map(([label, entityKind, localNames], i) => ({
     origin: undefined,
     id: `map-entity-${String(i).padStart(2, "0")}`, kind: "entity", label: label!, entityKind, localNames,
-    degree: 0, firstSeenAtMs: start + Math.floor(i * 29 / 39) * day, watched: i < 2, held: i === 2,
+    degree: 0, firstSeenAtMs: start + Math.floor(i * 29 / 39) * day, watched: i < 3,
   })) : [];
   if (nodes.length) for (const [i, label] of ["Evidence before conviction", "Compare competitive advantages", "Trace the capital cycle"].entries()) {
-    nodes.push({ id: `map-lens-${i}`, recordId: `map-lens-${i}`, kind: i === 0 ? "lens_perspective" : "lens_method", label, degree: 0, archived: false, watched: false, held: false, firstSeenAtMs: start + (i === 0 ? 0 : 27 + i) * day });
+    nodes.push({ id: `map-lens-${i}`, recordId: `map-lens-${i}`, kind: i === 0 ? "lens_perspective" : "lens_method", label, degree: 0, archived: false, watched: false, firstSeenAtMs: start + (i === 0 ? 0 : 27 + i) * day });
   }
-  if (nodes.length) nodes.push({ id: "map-lens-3", recordId: "lens-subject-tcp", kind: "lens_subject", label: "TCP", degree: 0, archived: false, watched: false, held: false, firstSeenAtMs: start + 28 * day }, { id: "map-lens-4", recordId: "lens-idea-quic", kind: "lens_idea", label: "QUIC could displace TCP for mobile traffic", degree: 0, archived: false, watched: false, held: false, firstSeenAtMs: start + 29 * day });
-  for (const p of ensure(state,request.loupistId).principles) nodes.push({id:p.recordId,recordId:p.recordId,kind:"lens_principle",label:p.statement,degree:0,archived:p.archived,watched:false,held:false,firstSeenAtMs:p.createdAtMs});
+  if (nodes.length) nodes.push({ id: "map-lens-3", recordId: "lens-subject-tcp", kind: "lens_subject", label: "TCP", degree: 0, archived: false, watched: false, firstSeenAtMs: start + 28 * day }, { id: "map-lens-4", recordId: "lens-idea-quic", kind: "lens_idea", label: "QUIC could displace TCP for mobile traffic", degree: 0, archived: false, watched: false, firstSeenAtMs: start + 29 * day });
+  for (const p of ensure(state,request.loupistId).principles) nodes.push({id:p.recordId,recordId:p.recordId,kind:"lens_principle",label:p.statement,degree:0,archived:p.archived,watched:false,firstSeenAtMs:p.createdAtMs});
   const edges: import("../../contracts/knowledge").KnowledgeMapEdge[] = SEEDED.has(request.loupistId) ? labels.slice(1).map((_, i) => ({
     id: `map-claim-${String(i).padStart(2, "0")}`, kind: "claim", source: nodes[Math.floor(i / 4)]!.id, target: nodes[i + 1]!.id,
     relation: ["supplies", "depends_on", "exposed_to", "associated_with"][i % 4], status: "active", firstSeenAtMs: nodes[i + 1]!.firstSeenAtMs,
@@ -1099,7 +1099,7 @@ export async function knowledgeMap(state: MockBridgeState, request: import("../.
     for (let i = 0; i < 10; i++) edges.push({ id: `map-application-${i}`, kind: "applies_to", source: `map-lens-${i % 2 + 1}`, target: nodes[i]!.id, weight: 12 - i, firstSeenAtMs: start + (28 + i % 2) * day });
   }
   for (const edge of edges) for (const id of new Set([edge.source, edge.target])) { const node = nodes.find((n) => n.id === id); if (node) node.degree++; }
-  const ranked = [...nodes].sort((a, b) => Number(b.watched || b.held) - Number(a.watched || a.held) || Number(b.kind !== "entity") - Number(a.kind !== "entity") || b.degree - a.degree || a.id.localeCompare(b.id));
+  const ranked = [...nodes].sort((a, b) => Number(b.watched) - Number(a.watched) || Number(b.kind !== "entity") - Number(a.kind !== "entity") || b.degree - a.degree || a.id.localeCompare(b.id));
   const chosen = new Set(ranked.slice(0, limit).map((node) => node.id));
   const shownNodes = nodes.filter((node) => chosen.has(node.id)).sort((a, b) => a.id.localeCompare(b.id));
   const shownEdges = edges.filter((edge) => chosen.has(edge.source) && chosen.has(edge.target)).sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
@@ -1109,7 +1109,7 @@ export async function knowledgeMap(state: MockBridgeState, request: import("../.
     const shown = shownNodes.filter((node) => node.kind === kind).length + shownEdges.filter((edge) => edge.kind === kind).length;
     counts[kind] = { total, shown, truncated: shown < total };
   }
-  return { nodes: shownNodes, edges: shownEdges, counts, unmatchedHoldings: [], unmatchedWatchlist: [], worldRevisionId: nodes.length ? "map-world-revision-1" : null, generatedAtMs: Math.max(nodes.length ? start + 29 * day : 0, ...ensure(state,request.loupistId).principles.map(p => p.updatedAtMs)) };
+  return { nodes: shownNodes, edges: shownEdges, counts, unmatchedWatchlist: [], worldRevisionId: nodes.length ? "map-world-revision-1" : null, generatedAtMs: Math.max(nodes.length ? start + 29 * day : 0, ...ensure(state,request.loupistId).principles.map(p => p.updatedAtMs)) };
 }
 
 function principleLens(p: Principle): PageView {

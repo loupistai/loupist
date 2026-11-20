@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+pub(crate) mod interface;
 pub(crate) mod native_policy;
 #[cfg(test)]
 mod runtime_formats;
@@ -606,7 +607,7 @@ impl AgentRuntimeProfile {
 
 /// The capability id that loads `entry`'s tools, when exactly one does: the
 /// bundled MCP runtime's plugin, or the native component of a plugin with
-/// this one entry. `onchain` holds wallets and DefiLlama, so neither maps.
+/// this one entry. DefiLlama is the onchain plugin's native entry.
 pub(crate) fn serving_component_id(
     entry: &crate::marketplace::MarketplaceEntryDto,
     market: &crate::marketplace::BundledPluginIndex,
@@ -992,12 +993,14 @@ impl AgentHostContext {
         loupist_id: String,
         session_id: String,
         as_of: Option<String>,
+        appearance: &crate::scoped_config::ResolvedAppearanceConfig,
     ) -> crate::broker::ToolPolicy {
         let runtime = &self.agent_runtime;
         crate::broker::ToolPolicy {
             loupist_id,
             session_id,
             as_of,
+            display_currency: appearance.display_currency.clone(),
             use_memory: runtime.memory_access_enabled,
             propose_memory_updates: runtime.memory_update_enabled,
             memory_proposal_budget: if runtime.memory_update_enabled {
@@ -1147,6 +1150,58 @@ pub fn attach_chat_surface(envelope: &str, surface: &crate::chat::surface::ChatS
     serde_json::to_string(&value).unwrap_or_else(|_| envelope.to_owned())
 }
 
+/// A custom scheduled run's `previous_run` block: the host's facts about its
+/// task's last finished run, beside `chat_surface`. A first run has none.
+pub(crate) fn attach_previous_run(
+    envelope: &str,
+    run: &crate::scheduled_tasks::types::PreviousRun,
+) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
+        return envelope.to_owned();
+    };
+    let (Some(object), Ok(Value::Object(mut block))) =
+        (value.as_object_mut(), serde_json::to_value(run))
+    else {
+        return envelope.to_owned();
+    };
+    block.insert("hint".into(), Value::String(PREVIOUS_RUN_HINT.into()));
+    object.insert("previous_run".into(), Value::Object(block));
+    serde_json::to_string(&value).unwrap_or_else(|_| envelope.to_owned())
+}
+
+/// User-written turns only carry the currency. Host-started turns also carry the
+/// admitted language and bundled names; the turn hint says when the answer follows it.
+pub(crate) fn attach_interface(
+    envelope: &str,
+    include_language: bool,
+    appearance: &crate::scoped_config::ResolvedAppearanceConfig,
+) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
+        return envelope.to_owned();
+    };
+    let Some(object) = value.as_object_mut() else {
+        return envelope.to_owned();
+    };
+    let mut interface = if include_language {
+        let catalog = interface::InterfaceLocale::from_language(&appearance.language).catalog();
+        json!({
+            "language": appearance.language,
+            "names": catalog.names,
+        })
+    } else {
+        json!({})
+    };
+    if let Some(currency) = &appearance.display_currency {
+        interface["display_currency"] = json!(currency);
+    }
+    if !include_language && appearance.display_currency.is_none() {
+        object.remove("interface");
+    } else {
+        object.insert("interface".into(), interface);
+    }
+    value.to_string()
+}
+
 /// Adds the as-of envelope beside the live-time envelope.
 pub fn attach_as_of(envelope: &str, cutoff: &str) -> String {
     let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
@@ -1287,68 +1342,53 @@ pub(crate) fn loupist_instructions(instructions: &str) -> String {
     instructions.trim().chars().take(4_000).collect()
 }
 
-pub(crate) const FOLLOWED_COMPANIES_HINT: &str = "These are companies the user holds (holding: true) or watches (watching: true); a company can be both. Use them to make answers relevant. Position sizes, cost and value are not available to you: never infer or ask for them.";
+/// The turn-context block holding the Loupist's research focus from its profile,
+/// the one place the agent reads it. It is definition, not Memory: present on
+/// every turn, empty when the user has set none.
+pub(crate) const LOUPIST_FOCUS_BLOCK: &str = "What this Loupist researches, in the user's words";
 
-/// Only the identity projection can enter this function: financial position
-/// fields cannot accidentally be serialized. One row per identity carries both
-/// flags, because imported holdings are usually watched too; holdings fill the
-/// 60-row cap first.
-pub(crate) fn followed_companies(mut context: crate::store::user_context::MapContext) -> Value {
-    let mut index = std::collections::BTreeMap::new();
-    let mut rows: Vec<Value> = Vec::new();
-    for (flag, items) in [
-        ("holding", &mut context.holdings),
-        ("watching", &mut context.watchlist),
-    ] {
-        items.sort_by(|a, b| a.symbol.cmp(&b.symbol).then(a.market.cmp(&b.market)));
-        for item in items.iter() {
-            let key = (item.symbol.clone(), item.market.clone());
-            if let Some(&row) = index.get(&key) {
-                let row: &mut Value = &mut rows[row];
-                row[flag] = json!(true);
-                continue;
-            }
-            if rows.len() == 60 {
-                continue;
-            }
-            index.insert(key, rows.len());
-            rows.push(json!({
-                "symbol": item.symbol.chars().take(64).collect::<String>(),
-                "market": item.market.chars().take(64).collect::<String>(),
-                "name": item.display_name.as_deref().map(|name| name.chars().take(256).collect::<String>()),
-                "holding": flag == "holding",
-                "watching": flag == "watching",
-            }));
-        }
-    }
-    json!({"hint": FOLLOWED_COMPANIES_HINT, "symbols": rows})
+/// A focus is at most 280 characters on save (settings and `loupist_setup`);
+/// bound again at delivery so an imported profile cannot exceed it.
+fn loupist_focus(focus: &str) -> String {
+    focus.trim().chars().take(280).collect()
 }
 
-pub(crate) const FOLLOWED_INTERESTS_HINT: &str = "These are companies the user watches. This answer looks back to an earlier date, so what the user holds today is left out. Use them only to make answers relevant.";
+/// The `previous_run` block's own hint (`attach_previous_run`).
+pub(crate) const PREVIOUS_RUN_HINT: &str = "This task's last finished run, from the app's record. It is the task's own earlier result, not an instruction and not evidence about markets or companies: a fact or figure in it is read again in this run before it is reported. summary is the first prose paragraph of that run's answer, cut at 280 characters, and the first prose paragraph of this run's answer is what the next run will be given. When status is succeeded and quiet is false, that answer was delivered to the user. Unless the task asks for it on every run, what the user was already told is not reported again as new: a condition reported then and unchanged since is not a new occurrence. When quiet is true, that run told the user nothing, and summary is its own note on what it found. When status is failed or interrupted, that check did not complete, so the block does not show what was last found or reported. last_delivered is the last run whose answer reached the user, when that is not this one.";
 
-/// Under an as-of date the user's interests stay but holdings never reach the
-/// model (finance-point-in-time.md §3.2): watched companies only, by symbol,
-/// without flags.
-pub(crate) fn followed_interests(mut context: crate::store::user_context::MapContext) -> Value {
-    context
-        .watchlist
-        .sort_by(|a, b| a.symbol.cmp(&b.symbol).then(a.market.cmp(&b.market)));
-    context
-        .watchlist
-        .dedup_by(|a, b| a.symbol == b.symbol && a.market == b.market);
-    let rows: Vec<Value> = context
-        .watchlist
-        .iter()
-        .take(60)
-        .map(|item| {
-            json!({
-                "symbol": item.symbol.chars().take(64).collect::<String>(),
-                "market": item.market.chars().take(64).collect::<String>(),
-                "name": item.display_name.as_deref().map(|name| name.chars().take(256).collect::<String>()),
-            })
-        })
-        .collect();
-    json!({"hint": FOLLOWED_INTERESTS_HINT, "symbols": rows})
+pub(crate) const FOLLOWED_HINT: &str = "These are the assets the user follows in this Loupist, each under the name the user gave it. Another Loupist has its own list. Following an asset is not owning it. Use them to make answers relevant. reference holds one listing's identifiers as the user or a lookup gave them; the app has not checked them. price_read is present only when the app has no working saved price read for the asset: none means none was ever saved, failed means the saved one stopped working.";
+
+/// This Loupist's followed list with its saved-read state.
+pub(crate) fn followed_context(
+    state: &crate::app::AppState,
+    loupist: &str,
+) -> Result<Value, crate::app::CommandError> {
+    let mut followed = state
+        .store
+        .assets_list(loupist, true)
+        .map_err(crate::commands::map_store)?;
+    followed.truncate(60);
+    crate::commands::assets::with_assets(state, loupist, false, |tx| {
+        use crate::commands::assets::wire::PriceReadState;
+        use crate::knowledge::assets::saved_read;
+        let mut rows = Vec::with_capacity(followed.len());
+        for asset in followed {
+            let mut row = json!({
+                "assetId": asset.asset_id,
+                "name": asset.name,
+                "reference": asset.reference,
+            });
+            match saved_read::load(tx, loupist, &asset.asset_id)?.map(|saved| saved.read.state) {
+                None | Some(PriceReadState::None) => row["price_read"] = json!("none"),
+                Some(PriceReadState::Failed | PriceReadState::NeedsConnection) => {
+                    row["price_read"] = json!("failed")
+                }
+                Some(PriceReadState::Ready) => {}
+            }
+            rows.push(row);
+        }
+        Ok(json!({"hint": FOLLOWED_HINT, "assets": rows}))
+    })
 }
 
 /// Due checks are discovery, never automatic delivery of their frozen evidence.
@@ -1412,14 +1452,16 @@ fn bound_automatic_memory(value: &mut Value) {
 pub(crate) fn attach_loupist_context(
     envelope: &str,
     instructions: &str,
+    focus: &str,
     tone: crate::domain::LoupistTone,
     followed: Option<&Value>,
 ) -> String {
     let mut value: Value = serde_json::from_str(envelope).expect("host turn envelope");
     bound_automatic_memory(&mut value);
     let instructions = loupist_instructions(instructions);
-    // An empty current definition must also replace instructions from history.
+    // An empty current definition must also replace instructions and focus from history.
     value["Instructions from the user for this Loupist"] = json!(instructions);
+    value[LOUPIST_FOCUS_BLOCK] = json!(loupist_focus(focus));
     value["Loupist tone"] = json!(tone);
     if value
         .pointer("/memory_protocol/active")
@@ -1453,9 +1495,11 @@ pub(crate) fn render_turn_context(envelope: &str) -> String {
         "User principles",
         "user_principle_revisions",
         "Instructions from the user for this Loupist",
+        LOUPIST_FOCUS_BLOCK,
         "What the user follows",
         "Loupist tone",
         "chat_surface",
+        "interface",
         "memory_protocol",
         "mentioned_connections",
     ] {
@@ -1488,6 +1532,9 @@ pub fn envelope_context_digest(envelope: &str) -> String {
     let mut value: Value = serde_json::from_str(envelope).unwrap_or_else(|_| json!({}));
     if let Some(object) = value.as_object_mut() {
         object.remove("live_time");
+        // New with every scheduled run, as the clock is; an abbreviated
+        // envelope carries it whole.
+        object.remove("previous_run");
         if let Some(memory) = object
             .get_mut("memory_protocol")
             .and_then(Value::as_object_mut)
@@ -1515,6 +1562,8 @@ pub fn maybe_abbreviate_envelope(
             "Instructions from the user for this Loupist",
             "What the user follows",
             "Loupist tone",
+            "interface",
+            "previous_run",
         ] {
             if let Some(value) = parsed.get(key) {
                 short[key] = value.clone();
@@ -1626,11 +1675,44 @@ mod tests {
     use chrono::TimeZone;
 
     #[test]
-    fn followed_hints_keep_position_privacy_without_banning_research_judgment() {
-        let live = followed_companies(Default::default());
-        assert_eq!(live["hint"], "These are companies the user holds (holding: true) or watches (watching: true); a company can be both. Use them to make answers relevant. Position sizes, cost and value are not available to you: never infer or ask for them.");
-        let historical = followed_interests(Default::default());
-        assert_eq!(historical["hint"], "These are companies the user watches. This answer looks back to an earlier date, so what the user holds today is left out. Use them only to make answers relevant.");
+    fn followed_hint_distinguishes_following_from_owning() {
+        let root = tempfile::tempdir().unwrap();
+        let state = crate::app::AppState::for_test(root.path().join("app"));
+        state
+            .store
+            .create_loupist(&crate::test_fixtures::loupist_profile("l"))
+            .unwrap();
+        let live = followed_context(&state, "l").unwrap();
+        assert_eq!(live["hint"], "These are the assets the user follows in this Loupist, each under the name the user gave it. Another Loupist has its own list. Following an asset is not owning it. Use them to make answers relevant. reference holds one listing's identifiers as the user or a lookup gave them; the app has not checked them. price_read is present only when the app has no working saved price read for the asset: none means none was ever saved, failed means the saved one stopped working.");
+    }
+
+    #[test]
+    fn the_followed_context_is_this_loupists_list() {
+        let root = tempfile::tempdir().unwrap();
+        let state = crate::app::AppState::for_test(root.path().join("app"));
+        for (loupist, symbol, name) in [
+            ("a", "HANUL", "Hanul Precision"),
+            ("b", "MORROW", "Morrow Components"),
+        ] {
+            state
+                .store
+                .create_loupist(&crate::test_fixtures::loupist_profile(loupist))
+                .unwrap();
+            state
+                .store
+                .seed_followed_listing(loupist, symbol, "KRX", Some(name))
+                .unwrap();
+        }
+        let names = |loupist| {
+            followed_context(&state, loupist).unwrap()["assets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| row["name"].as_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names("a"), ["Hanul Precision"]);
+        assert_eq!(names("b"), ["Morrow Components"]);
     }
 
     #[test]
@@ -1811,8 +1893,9 @@ mod tests {
     #[test]
     fn turn_envelope_gates_memory_and_bounds_loupist_context() {
         let now = Utc.with_ymd_and_hms(2026, 8, 10, 1, 2, 3).unwrap();
-        let followed = followed_companies(Default::default());
+        let followed = json!({"hint": FOLLOWED_HINT,"assets":[]});
         let instructions = "한😀".repeat(2_500);
+        let focus = format!(" {}", "Semiconductor supply chain ".repeat(20));
         let pointer = RelevantMemoryPointer {
             later_notes: Vec::new(),
             kind: "WorkingNote".into(),
@@ -1838,6 +1921,7 @@ mod tests {
                 &attach_loupist_context(
                     &base,
                     &instructions,
+                    &focus,
                     crate::domain::LoupistTone::Direct,
                     Some(&followed),
                 ),
@@ -1856,9 +1940,16 @@ mod tests {
             assert_eq!(value.get("memory_protocol").is_some(), memory);
             assert_eq!(value.get("What the user follows").is_some(), memory);
             assert_eq!(value["Loupist tone"], "direct");
+            // The focus comes from the profile on every turn, Memory on or off, bounded at delivery.
+            assert_eq!(
+                value[LOUPIST_FOCUS_BLOCK].as_str().unwrap().chars().count(),
+                280
+            );
+            assert!(render_turn_context(&full).contains("Semiconductor"));
             let careful = attach_loupist_context(
                 &base,
                 &instructions,
+                &focus,
                 crate::domain::LoupistTone::Careful,
                 Some(&followed),
             );
@@ -1872,6 +1963,7 @@ mod tests {
             let changed = attach_loupist_context(
                 &base,
                 "Changed instruction",
+                &focus,
                 crate::domain::LoupistTone::Direct,
                 Some(&followed),
             );
@@ -1879,7 +1971,173 @@ mod tests {
                 envelope_context_digest(&full),
                 envelope_context_digest(&changed)
             );
+            let refocused = attach_loupist_context(
+                &base,
+                &instructions,
+                "HBM packaging equipment",
+                crate::domain::LoupistTone::Direct,
+                Some(&followed),
+            );
+            assert_ne!(
+                envelope_context_digest(&full),
+                envelope_context_digest(&refocused)
+            );
+            let cleared = attach_loupist_context(
+                &base,
+                &instructions,
+                "",
+                crate::domain::LoupistTone::Direct,
+                Some(&followed),
+            );
+            let cleared: Value = serde_json::from_str(&cleared).unwrap();
+            assert_eq!(
+                cleared[LOUPIST_FOCUS_BLOCK], "",
+                "an empty focus replaces one from history"
+            );
         }
+    }
+
+    fn appearance(language: &str) -> crate::scoped_config::ResolvedAppearanceConfig {
+        crate::scoped_config::ResolvedAppearanceConfig {
+            language: language.into(),
+            ..crate::scoped_config::ResolvedConfig::default().appearance
+        }
+    }
+
+    #[test]
+    fn interface_projection_is_stable_on_cold_warm_rebuilt_and_compacted_turns() {
+        use crate::chat::surface::ChatSurface;
+        for surface in [
+            ChatSurface::Bot,
+            ChatSurface::Session,
+            ChatSurface::Scheduled,
+            ChatSurface::Delegated {
+                handoff_id: "handoff-fixture".into(),
+            },
+        ] {
+            for use_memory in [false, true] {
+                let base =
+                    turn_envelope_block(Utc::now(), use_memory, &[], None, None, None, None, &[])
+                        .unwrap();
+                let base = attach_chat_surface(&base, &surface);
+                for language in ["en", "ko", "fr"] {
+                    let mut admitted = appearance(language);
+                    let envelope = attach_interface(&base, !surface.interactive(), &admitted);
+                    let digest = envelope_context_digest(&envelope);
+                    let english =
+                        attach_interface(&base, !surface.interactive(), &appearance("en"));
+                    assert_eq!(
+                        digest == envelope_context_digest(&english),
+                        surface.interactive() || language == "en"
+                    );
+                    admitted.display_currency = Some("KRW".into());
+                    let with_currency =
+                        attach_interface(&envelope, !surface.interactive(), &admitted);
+                    let currency_digest = envelope_context_digest(&with_currency);
+                    assert_ne!(currency_digest, digest);
+                    assert_eq!(
+                        maybe_abbreviate_envelope(&with_currency, Some(&digest), true).0,
+                        with_currency
+                    );
+                    assert_eq!(
+                        maybe_abbreviate_envelope(&envelope, Some(&currency_digest), true).0,
+                        envelope
+                    );
+                    for (previous, resumed) in [
+                        (None, false),                  // cold
+                        (Some(digest.as_str()), true),  // warm
+                        (Some(digest.as_str()), false), // rebuilt
+                        (None, true),                   // stale after compaction
+                    ] {
+                        let (delivered, _) =
+                            maybe_abbreviate_envelope(&envelope, previous, resumed);
+                        let value: Value =
+                            serde_json::from_str(&render_turn_context(&delivered)).unwrap();
+                        let abbreviated = previous.is_some() && resumed;
+                        assert_eq!(
+                            value["context"]["unchanged"].as_bool(),
+                            abbreviated.then_some(true)
+                        );
+                        if surface.interactive() {
+                            assert!(value.get("interface").is_none());
+                        } else {
+                            assert_eq!(
+                                value["interface"],
+                                json!({
+                                    "language": language,
+                                    "names": interface::InterfaceLocale::from_language(language).catalog().names,
+                                })
+                            );
+                        }
+                        let (delivered, _) = maybe_abbreviate_envelope(
+                            &with_currency,
+                            previous.map(|_| currency_digest.as_str()),
+                            resumed,
+                        );
+                        let value: Value =
+                            serde_json::from_str(&render_turn_context(&delivered)).unwrap();
+                        assert_eq!(value["interface"]["display_currency"], "KRW");
+                        if surface.interactive() {
+                            assert_eq!(value["interface"], json!({"display_currency": "KRW"}));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn system_interface_language_uses_the_briefing_resolver() {
+        let mut language = "system".to_owned();
+        interface::resolve_language(&mut language);
+        assert_eq!(language, crate::briefings::system_language());
+        for explicit in ["en", "ko", "fr"] {
+            let mut language = explicit.to_owned();
+            interface::resolve_language(&mut language);
+            assert_eq!(language, explicit);
+        }
+    }
+
+    #[test]
+    fn rendered_envelope_orders_interface_before_catalogs_and_time() {
+        let base = json!({
+            "live_time": {}, "memory_protocol": {"charter": "Cash flow", "active": true},
+            "User principles": [], "user_principle_revisions": [],
+            "Instructions from the user for this Loupist": "Be concise",
+            "What the user follows": {}, "Loupist tone": "balanced", "mentioned_connections": []
+        })
+        .to_string();
+        let surface = crate::chat::surface::ChatSurface::Scheduled;
+        let rendered = render_turn_context(&attach_interface(
+            &attach_chat_surface(&base, &surface),
+            true,
+            &appearance("en"),
+        ));
+        let keys = [
+            "Standing perspective",
+            "User principles",
+            "user_principle_revisions",
+            "Instructions from the user for this Loupist",
+            "What the user follows",
+            "Loupist tone",
+            "chat_surface",
+            "interface",
+            "memory_protocol",
+            "mentioned_connections",
+            "live_time",
+        ];
+        let positions: Vec<_> = keys
+            .iter()
+            .map(|key| rendered.find(&format!("{}:", json!(key))).unwrap())
+            .collect();
+        assert!(
+            positions.windows(2).all(|pair| pair[0] < pair[1]),
+            "{rendered}"
+        );
+        assert_ne!(
+            envelope_context_digest(&attach_interface(&base, true, &appearance("en"))),
+            envelope_context_digest(&attach_interface(&base, true, &appearance("ko")))
+        );
     }
 
     #[test]
@@ -1962,7 +2220,8 @@ mod tests {
     fn automatic_memory_omits_nested_evidence_and_bounds_due_reviews() {
         let record = json!({"journalId":"jnl_fixture", "judgment":"Review revenue", "inputs":{"earlier":[{"deliveredText":"private-evidence".repeat(10_000)}]}, "check":{"claim":"x".repeat(3_000),"metric":"revenue","byDate":"2026-10-28"}});
         let base = json!({"memory_protocol":{"active":true,"workingNote":{"current":{"researchId":"rsh_fixture","markdown":"Keep this note", "inputs":{"lenses":[{"markdown":"frozen-lens-evidence"}]}}},"dueJournals":vec![record; 20]}}).to_string();
-        let result = attach_loupist_context(&base, "", crate::domain::LoupistTone::Balanced, None);
+        let result =
+            attach_loupist_context(&base, "", "", crate::domain::LoupistTone::Balanced, None);
         assert!(!result.contains("private-evidence"));
         assert!(!result.contains("frozen-lens-evidence"));
         assert!(result.contains("Keep this note"));
@@ -1971,155 +2230,6 @@ mod tests {
         assert_eq!(due.len(), 5);
         assert_eq!(due[0]["check"]["claim"].as_str().unwrap().len(), 2_000);
         assert!(result.len() < 15_000);
-    }
-
-    #[test]
-    fn an_as_of_turn_sees_watched_names_and_never_holdings() {
-        use crate::store::user_context::{MapContext, MapContextItem};
-        let item = |symbol: &str| MapContextItem {
-            symbol: symbol.into(),
-            market: "KRX".into(),
-            display_name: Some(format!("{symbol} name")),
-        };
-        let value = followed_interests(MapContext {
-            watchlist: vec![item("990308"), item("990221")],
-            holdings: vec![item("990221"), item("990777")],
-            updated_at_ms: 0,
-        });
-        let rows = value["symbols"].as_array().unwrap();
-        let symbols: Vec<_> = rows
-            .iter()
-            .map(|row| row["symbol"].as_str().unwrap())
-            .collect();
-        // A company held only is left out; a watched one carries no flag.
-        assert_eq!(symbols, ["990221", "990308"]);
-        assert!(rows
-            .iter()
-            .all(|row| row.get("holding").is_none() && row.get("watching").is_none()));
-        assert!(!value.to_string().contains("990777"));
-    }
-
-    #[test]
-    fn followed_companies_are_identity_only_ordered_and_capped_from_storage() {
-        use crate::store::user_context::{HoldingsPosition, HoldingsSource};
-        let root = tempfile::tempdir().unwrap();
-        let state = crate::app::AppState::for_test(root.path().join("app"));
-        for index in (0..59).rev() {
-            state
-                .store
-                .watchlist_add(&format!("W{index:02}"), "NYSE", Some("Watch company"))
-                .unwrap();
-        }
-        state
-            .store
-            .save_holdings_snapshot(
-                HoldingsSource::Csv,
-                ["ZZZ", "AAA", "W00"]
-                    .into_iter()
-                    .map(|symbol| HoldingsPosition {
-                        symbol: symbol.into(),
-                        market: "NYSE".into(),
-                        display_name: Some("Holding company".into()),
-                        quantity: "123456789".into(),
-                        cost_basis: Some("998877".into()),
-                        market_value: Some("11223344".into()),
-                        currency: "USD".into(),
-                    })
-                    .collect(),
-            )
-            .unwrap();
-        let value = followed_companies(state.store.map_context().unwrap());
-        let rows = value["symbols"].as_array().unwrap();
-        // Holdings fill the cap first; W00 is held and watched, so it is one row.
-        let symbols = rows
-            .iter()
-            .map(|row| row["symbol"].as_str().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(symbols.len(), 60);
-        assert_eq!(symbols[..4], ["AAA", "W00", "ZZZ", "W01"]);
-        assert_eq!(symbols[59], "W57");
-        assert_eq!(
-            (rows[1]["holding"].clone(), rows[1]["watching"].clone()),
-            (json!(true), json!(true))
-        );
-        let base = turn_envelope_block(Utc::now(), true, &[], None, None, None, None, &[]).unwrap();
-        let delivered = render_turn_context(&attach_loupist_context(
-            &base,
-            "Keep concise",
-            crate::domain::LoupistTone::Balanced,
-            Some(&value),
-        ));
-        for excluded in ["123456789", "998877", "11223344", "USD"] {
-            assert!(!delivered.contains(excluded), "{excluded}");
-        }
-    }
-
-    #[test]
-    fn crypto_holdings_reach_the_turn_context_as_held_symbols_only() {
-        let root = tempfile::tempdir().unwrap();
-        let state = crate::app::AppState::for_test(root.path().join("app"));
-        let preview = state
-            .store
-            .preview_crypto_bytes(b"asset,balance\nXXBT,0.4271\nSOL,41.0700001\n")
-            .unwrap();
-        state
-            .store
-            .holdings_commit_csv(&preview.preview_id)
-            .unwrap();
-        let address = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359";
-        let wallet = state
-            .store
-            .wallet_add(address, Some("Cold storage"))
-            .unwrap();
-        state
-            .store
-            .wallet_save_read(
-                &wallet.id,
-                crate::store::user_context::wallets::WalletRead {
-                    balances: vec![("ETH".into(), "3.14159265".into())],
-                    unlisted: 2,
-                },
-            )
-            .unwrap();
-        let value = followed_companies(state.store.map_context().unwrap());
-        let held = value["symbols"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|row| {
-                (
-                    row["symbol"].as_str().unwrap(),
-                    row["market"].as_str().unwrap(),
-                    row["holding"].as_bool().unwrap(),
-                )
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            held,
-            [
-                ("BTC", "CRYPTO", true),
-                ("ETH", "CRYPTO", true),
-                ("SOL", "CRYPTO", true)
-            ]
-        );
-        let base = turn_envelope_block(Utc::now(), true, &[], None, None, None, None, &[]).unwrap();
-        let delivered = render_turn_context(&attach_loupist_context(
-            &base,
-            "Keep concise",
-            crate::domain::LoupistTone::Balanced,
-            Some(&value),
-        ));
-        assert!(delivered.contains("BTC"));
-        for excluded in [
-            "0.4271",
-            "41.0700001",
-            "3.14159265",
-            address,
-            "0xfB69",
-            "Cold storage",
-        ] {
-            assert!(!delivered.contains(excluded), "{excluded}");
-        }
     }
 
     #[test]
@@ -2240,7 +2350,6 @@ mod tests {
                 let component = profile.components.iter().find(|c| c.id == *id).unwrap();
                 assert!(!component.tool_names.is_empty());
                 assert!(!preload.contains(&component.id));
-                assert!(component.description.starts_with("Load "));
             }
             for id in ["calculations", "datasets", "documents", "file-capture"] {
                 assert!(preload.contains(&id.into()), "{id}");
@@ -2313,7 +2422,8 @@ mod tests {
                 explicit_skill_names: explicit_skill_names("$world $skill:lens"),
                 surface: crate::chat::surface::ChatSurface::Session,
             };
-            let policy = context.tool_policy("loupist-a".into(), "chat-a".into(), None);
+            let policy =
+                context.tool_policy("loupist-a".into(), "chat-a".into(), None, &appearance("en"));
             assert_eq!(
                 (policy.use_memory, policy.propose_memory_updates),
                 (read, write)

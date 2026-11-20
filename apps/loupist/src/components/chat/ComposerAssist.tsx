@@ -49,13 +49,11 @@ export type AssistOption = {
 
 const assistHeading = (symbol: TriggerSymbol) => {
   if (symbol === "@") return t("chatComposer.context");
-  return t("chatComposer.commands");
-};
-
-const assistHint = (symbol: TriggerSymbol) => {
-  if (symbol === "@") return t("chatComposer.filesMemoryAndConnections");
   return t("chatComposer.commandsAndSkills");
 };
+
+// `/` names its sections (Commands, Skills, Actions) under the heading; a hint would repeat them.
+const assistHint = (symbol: TriggerSymbol) => symbol === "@" ? t("chatComposer.filesMemoryAndConnections") : null;
 
 const assistEmpty = (symbol: TriggerSymbol) => {
   if (symbol === "@") return t("chatComposer.noMatchingContext");
@@ -177,9 +175,9 @@ export function ComposerAssistMenu({
         <span className="composer-assist-title">{assistHeading(trigger.symbol)}</span>
         {trigger.query ? (
           <span className="composer-assist-query">{trigger.query}</span>
-        ) : (
+        ) : assistHint(trigger.symbol) ? (
           <span className="composer-assist-hint">{assistHint(trigger.symbol)}</span>
-        )}
+        ) : null}
       </div>
       {/* Rows below the fold fade out at the edge, so the list reads as one that scrolls. */}
       <div ref={moreBelow.ref} className="composer-assist-scroll" data-more-below={moreBelow.below || undefined} onScroll={moreBelow.update}>

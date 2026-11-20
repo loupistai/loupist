@@ -7,6 +7,7 @@
   "createdAt": "2026-11-01T00:00:00Z",
   "language": "en",
   "license": "CC-BY-4.0",
+  "credits": [],
   "author": null,
   "origin": [],
   "assetClasses": [],
@@ -28,8 +29,8 @@
       "bytes": 16
     },
     "lens/methods/quartz-margin-check.md": {
-      "sha256": "bf6ebafd1c4bde88e7184cc7e9123e37238836abdf08360048241009e91b60f5",
-      "bytes": 439
+      "sha256": "8dc49ff746d655dde47f4d1c68e2041f451ef1ab20057a3c60e5176a89ac1020",
+      "bytes": 443
     },
     "world/claims.jsonl": {
       "sha256": "e6a3aad64a734cf9a67d2cbec857f99a36760df6b2b13ce73e4162fbdb77d306",

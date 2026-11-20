@@ -35,7 +35,7 @@ export async function prepareGrowthReplay(bridge: PreviewBridge) {
   bridge.inboxList = async ({ limit }) => ({ items: copy(data.inbox.slice(0, limit)), nextCursor: null });
   bridge.inboxUnreadCounts = async () => [{ loupistId: "loupist-quality", count: data.inbox.filter(item => item.readAtMs === null).length }];
   bridge.journalList = async () => [];
-  bridge.watchlistList = async () => [];
+  bridge.assetsList = async () => [];
   const lenses: KnowledgeCatalog["lenses"] = data.methods.map(({ lens }) => ({ recordId: lens.recordId, kind: "lens", title: lens.title, revisionId: lens.revisionId, revisionDigest: lens.revisionDigest, readOnly: false, indexingState: "snapshot_only", objects: [], lensKind: lens.lensKind, summary: lens.document.applicability }));
   for (const principle of data.principles) lenses.push({ recordId: principle.recordId, kind: "lens", title: principle.statement, revisionId: principle.revisionId, revisionDigest: "", readOnly: false, indexingState: "snapshot_only", objects: [], lensKind: "principle" });
   bridge.knowledgeCatalog = async ({ loupistId }) => ({ loupistId, sources: [], worlds: [], lenses });

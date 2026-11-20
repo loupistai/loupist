@@ -170,6 +170,9 @@ impl ChatQuestion {
 struct Pending {
     token: Arc<()>,
     loupist_id: String,
+    chat_id: Option<String>,
+    opening_task_id: Option<String>,
+    requested_at_ms: i64,
     option_count: usize,
     sender: oneshot::Sender<QuestionAnswer>,
 }
@@ -183,6 +186,8 @@ fn registry() -> &'static Mutex<HashMap<String, Pending>> {
 pub fn register(
     request_id: &str,
     loupist_id: &str,
+    chat_id: Option<&str>,
+    opening_task_id: Option<&str>,
     option_count: usize,
 ) -> Response<QuestionAnswer> {
     let (sender, receiver) = oneshot::channel();
@@ -195,10 +200,15 @@ pub fn register(
             Pending {
                 token: token.clone(),
                 loupist_id: loupist_id.to_owned(),
+                chat_id: chat_id.map(str::to_owned),
+                opening_task_id: opening_task_id.map(str::to_owned),
+                requested_at_ms: chrono::Utc::now().timestamp_millis(),
                 option_count,
                 sender,
             },
         );
+    let owner = loupist_id.to_owned();
+    crate::briefings::desktop::changed(&owner);
     let request_id = request_id.to_owned();
     Response::new(receiver, move || {
         let mut entries = registry().lock().unwrap_or_else(|error| error.into_inner());
@@ -208,9 +218,40 @@ pub fn register(
         {
             entries.remove(&request_id);
         }
+        drop(entries);
+        crate::briefings::desktop::changed(&owner);
     })
 }
 
+pub(crate) fn waiting_chats(owner: &str) -> HashMap<String, i64> {
+    let entries = registry().lock().unwrap_or_else(|error| error.into_inner());
+    let mut chats = HashMap::new();
+    for entry in entries.values().filter(|entry| entry.loupist_id == owner) {
+        if let Some(id) = &entry.chat_id {
+            let at = chats.entry(id.clone()).or_insert(entry.requested_at_ms);
+            *at = (*at).max(entry.requested_at_ms);
+        }
+    }
+    chats
+}
+
+pub(crate) fn forget_task(owner: &str, task_id: &str) {
+    registry()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .retain(|_, entry| {
+            entry.loupist_id != owner || entry.opening_task_id.as_deref() != Some(task_id)
+        });
+}
+
+pub(crate) fn forget_chat(owner: &str, chat_id: &str) {
+    registry()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .retain(|_, entry| entry.loupist_id != owner || entry.chat_id.as_deref() != Some(chat_id));
+}
+
+#[cfg(any(test, feature = "eval-harness"))]
 pub fn forget(request_id: &str) {
     registry()
         .lock()
@@ -256,12 +297,12 @@ mod tests {
 
     #[test]
     fn cancelling_a_wait_removes_only_its_registration() {
-        let waiting = register("question-cancel", "loupist-a", 2);
+        let waiting = register("question-cancel", "loupist-a", None, None, 2);
         assert!(registry().lock().unwrap().contains_key("question-cancel"));
         drop(waiting);
         assert!(!registry().lock().unwrap().contains_key("question-cancel"));
-        let old = register("question-replaced", "loupist-a", 2);
-        let mut current = register("question-replaced", "loupist-a", 2);
+        let old = register("question-replaced", "loupist-a", None, None, 2);
+        let mut current = register("question-replaced", "loupist-a", None, None, 2);
         drop(old);
         answer("loupist-a", "question-replaced", QuestionAnswer::Choice(1)).unwrap();
         assert_eq!(current.try_recv().unwrap(), QuestionAnswer::Choice(1));
@@ -395,7 +436,7 @@ mod tests {
 
     #[test]
     fn an_answer_reaches_only_the_waiting_call_of_the_same_loupist_and_obeys_the_bounds() {
-        let mut receiver = register("req-q1", "loupist-a", 2);
+        let mut receiver = register("req-q1", "loupist-a", None, None, 2);
         assert_eq!(
             answer("loupist-b", "req-q1", QuestionAnswer::Choice(0)),
             Err(AnswerError::NotWaiting)

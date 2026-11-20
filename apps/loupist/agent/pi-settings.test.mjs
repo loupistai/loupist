@@ -57,6 +57,44 @@ test("native execution verifies project retry settings without modifying shared 
   assert.equal(providerCalls, 0);
 });
 
+test("Pi's cache warmer stops a refresh after a Chat turn settles", async (t) => {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "loupist-cache-mode-")));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const settingsManager = SettingsManager.inMemory({ cacheWarming: "idle" });
+  const loader = new DefaultResourceLoader({ cwd, agentDir: cwd, settingsManager,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    extensionFactories: [registerPiSettingsControl] });
+  await loader.reload();
+  const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false });
+  const faux = fauxProvider();
+  const model = faux.getModel();
+  model.promptCache = { short: 11 };
+  model.cost.input = 1000;
+  model.cost.cacheWrite = 1000;
+  modelRuntime.registerNativeProvider(faux.provider);
+  faux.setResponses([fauxAssistantMessage("Test response."), fauxAssistantMessage("Unexpected cache warm.")]);
+  const { session } = await createAgentSession({ cwd, agentDir: cwd, modelRuntime, model,
+    settingsManager, resourceLoader: loader, sessionManager: SessionManager.inMemory(cwd), noTools: "all" });
+  t.after(() => session.dispose());
+  await session.bindExtensions({ mode: "rpc" });
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  await session.prompt("A long prompt makes a cache refresh worthwhile. ".repeat(100), { source: "rpc" });
+  assert.equal(session.cacheWarmingStatus.state, "scheduled");
+  assert.equal(session.cacheWarmingStatus.decision.action, "warm");
+  t.mock.timers.tick(1000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(session.cacheWarmingStatus.reason, "stopped by extension");
+  assert.equal(faux.state.callCount, 1);
+});
+
+test("Pi's cache warmer stops when the session cannot report whether a turn is active", () => {
+  const handlers = new Map();
+  registerPiSettingsControl({ on: (name, handler) => handlers.set(name, handler), registerCommand() {} });
+  const decision = handlers.get("cache_warming_decision");
+  assert.equal(decision({}, { isIdle: () => false }), undefined);
+  assert.deepEqual(decision({}, { isIdle() { throw new Error("session released"); } }), { action: "stop" });
+});
+
 test("settings confirmation rejects unsupported values and effective-state drift", () => {
   const expected = settings(false);
   verifyPiSettings(expected, expected);
@@ -81,7 +119,7 @@ test("a settings mismatch exits before Pi can swallow command failure or acknowl
   const result = spawnSync(process.execPath, ["--input-type=module", "-e", `
     import { registerPiSettingsControl } from ${JSON.stringify(moduleUrl)};
     let command;
-    registerPiSettingsControl({ registerCommand: (_, value) => { command = value; }, getSettings: () => ({}) });
+    registerPiSettingsControl({ on() {}, registerCommand: (_, value) => { command = value; }, getSettings: () => ({}) });
     await command.handler(${JSON.stringify(JSON.stringify(expected))});
     process.stdout.write("unexpected acknowledgement");
   `], { encoding: "utf8", timeout: 10000 });

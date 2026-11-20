@@ -53,7 +53,7 @@ mod tests {
 
     #[test]
     fn the_command_resolves_the_waiting_call_and_refuses_bad_or_foreign_answers() {
-        let mut receiver = questions::register("req-cmd", "loupist-a", 2);
+        let mut receiver = questions::register("req-cmd", "loupist-a", None, None, 2);
         for bad in [
             request(None, None),
             request(Some(0), Some("x")),

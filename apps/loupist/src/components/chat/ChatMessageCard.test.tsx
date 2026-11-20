@@ -8,9 +8,11 @@ import { evidenceFixture } from "../../test/evidenceFixtures";
 import { TooltipProvider } from "../ui/tooltip";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { ChatMessageCard } from "./ChatMessageCard";
+import { ChatSurfaceProvider } from "./turnMotion";
 import { renderWithOpen, destinations } from "../../test/open";
 import type { ChatDestination, Open } from "../../chat/navigation";
-import type { Mock } from "vitest";
+import { onTestFinished, type Mock } from "vitest";
+import { previewGridLinkAnswer, SENSITIVITY_EVIDENCE } from "../../preview/korea";
 
 const source: KnowledgeReference = { kind: "source", recordId: "source-record", revisionId: "source-v1", objectId: "source-original", spanId: "passage-1", receiptId: "selected-receipt" };
 const read = (read_ref: string, knowledge = source): MemoryRef => ({ read_ref, kind: "source", title: "Annual report", excerpt: "Original passage", access: "exact_read", knowledge, as_of: null, section: null });
@@ -42,6 +44,18 @@ it("clears successful copy feedback after two seconds", async () => {
   }
 });
 
+it("copies the answer as written, keeping the indentation that makes its first block code", async () => {
+  const calc = evidenceFixture({ id: "ev_calc", kind: "derived", tool_name: "calculate", calc_operation: "dcf_grid", url: undefined, title: "DCF grid" });
+  const content = "    cash_flow = 110.25\n    shares = 34,560,000\n\n[Cash flow](#evidence-ev_calc)\n";
+  const { view } = renderAnswer(answer({ content, evidence_refs: [calc] }));
+  expect(view.container.querySelector(".message-content pre")).toHaveTextContent("cash_flow = 110.25");
+  // user-event replaces the clipboard when it is set up: spy on the one the click writes to.
+  const reader = user();
+  const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+  await reader.click(await screen.findByRole("button", { name: "Copy answer" }));
+  expect(write).toHaveBeenCalledWith(content);
+});
+
 it("keeps a pending copy across message snapshots with the same id", async () => {
   let resolve!: () => void;
   vi.spyOn(navigator.clipboard, "writeText").mockImplementationOnce(() => new Promise<void>(done => { resolve = done; }));
@@ -70,6 +84,30 @@ it("draws a setup card from a completed connection_setup step and asks the quest
   expect(onFillComposer).toHaveBeenCalledWith("How did Korea's GDP grow last year?");
 });
 
+describe("a note as the reply's last action", () => {
+  const between = (status: "streaming") => answer({ status, content: "", phase: "thinking", progress: { startedAtMs: 1, finishedAtMs: null, items: [
+    { id: "read", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", status: "succeeded", target: null, href: null, startedAtMs: 1, finishedAtMs: 2 },
+    { id: "note", kind: "commentary", text: "Revenue matches in both filings. Next I’ll compare margins." },
+  ] } });
+
+  it("is not repeated under the note in a session reply: the line reads Thinking", () => {
+    renderAnswer(between("streaming"));
+    expect(document.querySelector("article")).toHaveTextContent("Revenue matches in both filings. Next I’ll compare margins.");
+    expect(screen.getByLabelText("Response status")).toHaveTextContent("Thinking");
+    expect(screen.getByLabelText("Response status")).not.toHaveTextContent("compare margins");
+  });
+
+  it("is named on Bot's working line, which does not show the note", () => {
+    renderWithOpen(<TooltipProvider><ChatSurfaceProvider value={{ kind: "bot", loupist: { id: "loupist-a", name: "Lumi" } }}>
+      <ChatMessageCard message={between("streaming")} loupistId="loupist-a" chatId="chat-a" loupistName="Lumi" onReadAttachment={vi.fn()} />
+    </ChatSurfaceProvider></TooltipProvider>);
+    const working = screen.getByTestId("turn-live");
+    expect(working).toHaveAttribute("data-kind", "note");
+    expect(working).toHaveTextContent("Next I’ll compare margins.");
+    expect(document.querySelector("article")!.querySelector(".message-content")).toBeNull();
+  });
+});
+
 it.each([false, true])("keeps one stable research summary from first call to settlement (expanded: %s)", async (expanded) => {
   const first = { id: "a", kind: "tool" as const, category: "files" as const, operation: "read" as const, action: "Read file", running: "Reading file", target: "q1.csv", status: "running" as const, startedAtMs: 2, href: null, finishedAtMs: null };
   const second = { ...first, id: "b", target: "q2.csv", startedAtMs: 3 };
@@ -77,15 +115,15 @@ it.each([false, true])("keeps one stable research summary from first call to set
   const message = (status: "streaming" | "complete", items: NonNullable<ChatMessage["progress"]>["items"]) =>
     answer({ content: status === "complete" ? "Done." : "", status, phase: "tool", progress: { startedAtMs: 1, plan, items, finishedAtMs: null } });
   const { view, ...props } = renderAnswer(message("streaming", [first]));
-  // One ledger line: the plan position while it runs, the receipt once the run settles; the live line names the step.
-  const digest = screen.getByRole("button", { name: "Plan 1 of 1 · Compare quarters" });
+  // One ledger line: the step count while it runs, even with a plan, the receipt once the run settles; the live line names the step.
+  const digest = screen.getByRole("button", { name: "1 step" });
   expect(digest).toHaveAttribute("aria-expanded", "false");
   expect(screen.getByLabelText("Response status")).toHaveTextContent("Reading file");
   expect(within(digest.closest<HTMLElement>("section")!).queryByText("q1.csv")).toBeNull();
   if (expanded) await user().click(digest);
   const both = [{ ...first, status: "succeeded" as const }, second];
   view.rerender(<TooltipProvider><ChatMessageCard {...props} message={message("streaming", both)} /></TooltipProvider>);
-  expect(screen.getByRole("button", { name: "Plan 1 of 1 · Compare quarters" })).toBe(digest);
+  expect(screen.getByRole("button", { name: "2 steps" })).toBe(digest);
   view.rerender(<TooltipProvider><ChatMessageCard {...props} message={message("complete", both.map(item => ({ ...item, status: "succeeded" })))} /></TooltipProvider>);
   expect(screen.getByRole("button", { name: /2 steps/ })).toBe(digest);
   expect(digest).toHaveAttribute("aria-expanded", String(expanded));
@@ -185,13 +223,13 @@ it("keeps stopped text without exposing the runtime's English stop marker", asyn
     const { view, ...props } = renderAnswer(answer({ status: "aborted", content: "첫 문장.\n\nResponse stopped." }), { onRetry: vi.fn() });
     expect(screen.getByText("첫 문장.")).toBeVisible();
     expect(screen.queryByText("Response stopped.")).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("중지됨 · 지금까지의 글을 남겼어요");
+    expect(screen.getByRole("status")).toHaveTextContent("중지됨 · 지금까지의 글을 남겼습니다");
     view.rerender(<TooltipProvider><ChatMessageCard {...props} message={answer({ status: "aborted", content: "Response stopped." })} /></TooltipProvider>);
     expect(screen.queryByText("Response stopped.")).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("답변이 끝나기 전에 중지되었어요.");
+    expect(screen.getByRole("status")).toHaveTextContent("답변이 끝나기 전에 중지되었습니다.");
     expect(screen.queryByRole("button", { name: "답변 복사" })).not.toBeInTheDocument();
     view.rerender(<TooltipProvider><ChatMessageCard {...props} message={answer({ status: "aborted", content: "Response stopped.", progress: { startedAtMs: 1, items: [{ id: "draft", kind: "commentary", text: "쓰다 멈춘 문장" }], finishedAtMs: null } })} /></TooltipProvider>);
-    expect(screen.getByRole("status")).toHaveTextContent("중지됨 · 쓰던 글을 남겼어요");
+    expect(screen.getByRole("status")).toHaveTextContent("중지됨 · 쓰던 글을 남겼습니다");
   } finally {
     await i18n.changeLanguage("en");
   }
@@ -328,6 +366,18 @@ it("cites external grounding once, opens it, and routes saved reads to Memory", 
   expect(within(screen.getByLabelText("Work progress")).getByLabelText("Tool result")).toHaveTextContent(search.excerpt);
 });
 
+it("dates a source row as its citation card does: published, else read", async () => {
+  const filing = evidenceFixture({ id: `ev_${"7".repeat(32)}`, title: "Annual filing", published_at: "2026-10-27", retrieved_at: "2026-10-28T03:00:00Z" });
+  const page = evidenceFixture({ id: `ev_${"8".repeat(32)}`, title: "Rates page", url: "https://rates.example/today", published_at: undefined, retrieved_at: "2026-10-28T03:00:00Z" });
+  renderAnswer(answer({ content: `Margins rose [1](#evidence-${filing.id}) and rates held [2](#evidence-${page.id}).`, evidence_refs: [filing, page] }));
+  const sources = screen.getByLabelText("Research sources");
+  await user().click(within(sources).getByText("Sources (2)"));
+  const [first, second] = within(sources).getAllByRole("listitem");
+  expect(first).toHaveTextContent(/Oct 27, 2026/u);
+  expect(first).not.toHaveTextContent(/Oct 28, 2026/u);
+  expect(second).toHaveTextContent(/Oct 28, 2026/u);
+});
+
 it("keeps a numbered citation on the line of the word before it, but leaves code as written", async () => {
   const filing = evidenceFixture({ id: `ev_${"6".repeat(32)}`, title: "Annual filing" });
   const cite = `[1](#evidence-${filing.id})`;
@@ -392,6 +442,8 @@ it("opens a quote basket from the source list and the citation without the raw r
 
   // A pointer click in WKWebView can leave focus on the page. The receipt still measures the button.
   document.body.tabIndex = -1;
+  // Later tests move focus with Tab, which never leaves a page whose body is out of the tab order.
+  onTestFinished(() => document.body.removeAttribute("tabindex"));
   document.body.focus();
   const citation = screen.getByRole("button", { name: "Source 1: Equity price quote" });
   let focusedAtClick: Element | null = null;
@@ -440,7 +492,7 @@ it("shows guidance a finished reply accepted as a Guided row, not a question bub
   expect(view.container.querySelector("article.message.user")).toBeNull();
   await i18n.changeLanguage("ko");
   view.rerender(<TooltipProvider><ChatMessageCard message={steer} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" onReadAttachment={vi.fn()} /></TooltipProvider>);
-  expect(screen.getByText("안내했어요: “Focus on margins”")).toBeInTheDocument();
+  expect(screen.getByText("보낸 지침: “Focus on margins”")).toBeInTheDocument();
   await i18n.changeLanguage("en");
   // The same words as a plain question still read as a bubble.
   view.rerender(<TooltipProvider><ChatMessageCard message={{ ...steer, steer: undefined }} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" onReadAttachment={vi.fn()} /></TooltipProvider>);
@@ -564,25 +616,79 @@ describe("the in-progress reply", () => {
     expect(order()).toEqual(["tools", "card", "prose"]);
   });
 
-  it("holds a sensitivity card's paragraph behind its frame while streaming, and fills that frame at commit", async () => {
-    const { previewSensitivityGrid } = await import("../../preview/korea");
-    const grid = evidenceFixture({ id: "ev_grid01", title: "Reverse DCF grid", kind: "derived", tool_name: "calculate", calc_operation: "reverse_dcf", url: undefined });
-    const content = "The price assumes growth.\n\n[Solsup Foods](#evidence-ev_grid01)\n\nThe middle case needs 7.3%.";
-    const live = answer({ status: "streaming", phase: "writing", content: "", evidence_refs: [grid], draft: { id: "c9", answerLength: 0, settled: false }, progress: { startedAtMs: 0, finishedAtMs: null, items: [{ id: "c9", kind: "commentary", text: content }] } });
-    const { view, ...props } = renderAnswer(live);
+  /** The settled answer as the reply streamed it: its text arriving in the draft, its results already retained. */
+  const streamingOf = (settled: ChatMessage): ChatMessage => {
+    const progress = settled.progress!;
+    return { ...settled, status: "streaming", phase: "writing", content: "", number_checks: undefined, answer_key: undefined,
+      draft: { id: "c9", answerLength: 0, settled: false }, progress: { ...progress, finishedAtMs: null, items: [...progress.items, { id: "c9", kind: "commentary", text: settled.content }] } };
+  };
+
+  it("keeps a paragraph that is only a calculation link where it was written and operable, streaming and settled, and copies the answer as written", async () => {
+    const settled = { ...previewGridLinkAnswer(), answer_key: "c9" };
+    const grid = SENSITIVITY_EVIDENCE.grid;
+    // The grid as Rust retained it: the operation the retired renderer held the paragraph for.
+    expect(grid.calc_operation).toBe("reverse_dcf");
+    const { view, open, ...props } = renderAnswer(streamingOf(settled));
     const article = view.container.querySelector("article")!;
-    const slot = article.querySelector(".sensitivity-slot")!;
-    expect(slot.querySelector(".sensitivity-pending")).not.toBeNull();
-    expect(article).not.toHaveTextContent("Solsup Foods");
-    const before = slot.previousElementSibling;
-    const settled = answer({ content, answer_key: "c9", evidence_refs: [grid], sensitivity_cards: [{ ...previewSensitivityGrid("none"), link_index: 0, evidence_id: "ev_grid01", subject: "Solsup Foods" }] });
+    const prose = () => [...article.querySelectorAll<HTMLElement>(':scope > [data-turn-item="prose"]')];
+    const paragraphs = () => [...prose()[0]!.querySelectorAll<HTMLElement>(".message-content p")];
+    const ledger = () => article.querySelector<HTMLElement>(':scope > [data-turn-item="tools"]')!;
+    const citation = () => within(paragraphs()[1]!).getByRole("button", { name: "Solsup Foods · Result: Value at different growth and discount rates" });
+    const expectThreeParagraphs = () => {
+      expect(prose()).toHaveLength(1);
+      expect(paragraphs().map((paragraph) => paragraph.textContent?.trim())).toEqual([
+        expect.stringMatching(/^Solsup Foods’ price already assumes/u), "Solsup Foods", expect.stringMatching(/^The middle case needs about 7\.3% a year/u),
+      ]);
+      // No frame is held for the link while it streams, and no card stands in for it when it settles.
+      expect(article.querySelector(".sensitivity-slot, .sensitivity-card, .earnings-card")).toBeNull();
+    };
+    expectThreeParagraphs();
+    // While the answer streams, the written link is already the citation of the grid's result:
+    // it opens at its own step in the turn, with the grid the turn retained.
+    expect(citation()).toHaveAttribute("data-evidence-id", grid.id);
+    await user().click(citation());
+    const output = await within(ledger()).findByLabelText("Result output");
+    expect(output).toHaveTextContent('"measure": "implied annual growth for 5 years"');
+    // The middle row of the grid, with the 7.3% base case the prose quotes.
+    expect(output.textContent).toMatch(/\[\s*8\.4,\s*7\.9,\s*7\.3,\s*6\.6,\s*5\.8\s*\]/u);
+    expect(open).not.toHaveBeenCalled();
+    const shown = prose()[0];
     view.rerender(<TooltipProvider><ChatMessageCard {...props} message={settled} /></TooltipProvider>);
-    await waitFor(() => expect(slot.querySelector(".sensitivity-card")).not.toBeNull());
-    // The same frame, in the same place, after the same paragraph element: nothing read moved or was replaced.
-    expect(article.querySelector(".sensitivity-slot")).toBe(slot);
-    expect(slot).toHaveAttribute("data-held");
-    expect(slot.previousElementSibling).toBe(before);
-    expect(slot.querySelector(".sensitivity-pending")).toBeNull();
+    // The same prose element, before and after the commit: nothing read moved or was replaced.
+    await waitFor(() => expect(article.querySelector('[data-testid="number-chip"]')).not.toBeNull());
+    expect(prose()[0]).toBe(shown);
+    expectThreeParagraphs();
+    // Settled, the link is the same citation; the number after it keeps its own check.
+    expect(citation()).toHaveAttribute("data-evidence-id", grid.id);
+    expect(await within(paragraphs()[2]!).findByRole("button", { name: /^8 percent, calculated/u })).toHaveAttribute("data-kind", "calculated");
+    const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    await user().click(screen.getByRole("button", { name: "Copy answer" }));
+    expect(write).toHaveBeenCalledWith(settled.content);
+  });
+
+  it("keeps the Korean answer's lone calculation link as its own paragraph, streaming and settled", async () => {
+    const lang = document.documentElement.lang;
+    await i18n.changeLanguage("ko");
+    try {
+      // The fixture writes the Korean answer under a Korean document, as the preview does.
+      document.documentElement.lang = "ko";
+      const settled = { ...previewGridLinkAnswer(), answer_key: "c9" };
+      const { view, ...props } = renderAnswer(streamingOf(settled));
+      const paragraphs = () => [...view.container.querySelectorAll<HTMLElement>(".message-content p")];
+      const expectThreeParagraphs = () => {
+        expect(paragraphs().map((paragraph) => paragraph.textContent?.trim())).toEqual([
+          expect.stringMatching(/^현재 주가는/u), "솔숲식품", expect.stringMatching(/^가운데 경우에는 연 7\.3% 성장이 필요합니다\./u),
+        ]);
+        expect(paragraphs()[1]!.querySelector(".loupist-citation")).toHaveAttribute("data-evidence-id", SENSITIVITY_EVIDENCE.grid.id);
+      };
+      expectThreeParagraphs();
+      view.rerender(<TooltipProvider><ChatMessageCard {...props} message={settled} /></TooltipProvider>);
+      expect(await within(paragraphs()[2]!).findByTestId("number-chip")).toHaveTextContent("8.0%");
+      expectThreeParagraphs();
+    } finally {
+      document.documentElement.lang = lang;
+      await i18n.changeLanguage("en");
+    }
   });
 
   it("fades a card still preparing out where it stood when the reply stops, then removes it", async () => {
@@ -667,4 +773,130 @@ describe("the in-progress reply", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("The steps and the text so far were kept.");
     expect(screen.getByText("Margin fell while")).toBeVisible();
   });
+});
+
+describe("a Bot answer that read a quote", () => {
+  const read = evidenceFixture({ id: "ev_nvda", title: "NVDA · Quote", tool_name: "mcp__openbb__equity_price_quote", provider: "yfinance", url: undefined, published_at: undefined, as_of: undefined,
+    retrieved_at: "2026-11-14T15:00:00Z", excerpt: "NVDA last 162.85 change_pct -2.01" });
+  const snapshotAnswer = answer({
+    content: `NVIDIA closed at [$162.85](#evidence-${read.id}) on Friday, [-2.01%](#evidence-${read.id}) on the day.`,
+    evidence_refs: [read],
+    number_checks: [
+      { link_index: 0, text: "$162.85", evidence_id: read.id, kind: "data", status: "matched", pointer: "/price/last", fields: [{ key: "last", value: "162.85", matched: true }] },
+      { link_index: 1, text: "-2.01%", evidence_id: read.id, kind: "data", status: "matched", pointer: "/price/change_pct", fields: [{ key: "change_pct", value: "-2.01", matched: true }] },
+    ],
+  });
+  const renderBot = (message: ChatMessage) => renderWithOpen(<TooltipProvider><ChatSurfaceProvider value={{ kind: "bot", loupist: { id: "loupist-a", name: "Lumi" } }}>
+    <ChatMessageCard message={message} loupistId="loupist-a" chatId="chat-a" loupistName="Lumi" onReadAttachment={vi.fn()} bridge={new MockLoupistBridge({ delay_ms: 0 })} previousQuestion="Where NVIDIA stands" />
+  </ChatSurfaceProvider></TooltipProvider>);
+  const expectProseOnly = async () => {
+    const article = document.querySelector("article[data-bot-message]")!;
+    expect(article).toHaveTextContent("NVIDIA closed at $162.85 on Friday, -2.01% on the day.");
+    expect(within(article as HTMLElement).getAllByTestId("number-chip").map((chip) => chip.textContent)).toEqual(["$162.85", "-2.01%"]);
+    expect(await screen.findByRole("group", { name: "Sources and checked figures for this answer" })).toHaveTextContent("2 figures checked · 1 source");
+    // The answer is what the agent wrote: no card of the read under it, and nothing to take it elsewhere.
+    expect(article.querySelector(".bot-card, .snapshot-card")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Take to research" })).toBeNull();
+  };
+
+  it("shows the prose with its number chips and the trace line, and no card", async () => {
+    renderBot(snapshotAnswer);
+    await expectProseOnly();
+  });
+
+});
+
+describe("a paragraph that is only one link", () => {
+  const results = evidenceFixture({ id: `ev_${"e".repeat(32)}`, kind: "saved_context", tool_name: "source_read", url: undefined, title: "Results · Q3 2026 · Morrow Components",
+    excerpt: "{\n  \"period\": \"Q3 2026\",\n  \"status\": \"final\"\n}" });
+  const release = evidenceFixture({ id: `ev_${"a".repeat(32)}`, title: "Q3 2026 results release" });
+
+  it("to a saved read stays a citation of what the answer read", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const content = `Revenue rose to [1.27bn](#evidence-${release.id}).\n\n[Results · Q3 2026](#evidence-${results.id})\n\nMargin was [14.8%](#evidence-${release.id}).`;
+    // Rust counted every link of the answer as written: the lone link is link 1.
+    const { view, open } = renderAnswer(answer({ content, evidence_refs: [release, results], number_checks: [
+      { link_index: 0, text: "1.27bn", evidence_id: release.id, kind: "data", status: "matched" },
+      { link_index: 2, text: "14.8%", evidence_id: release.id, kind: "data", status: "matched" },
+    ] }), { bridge });
+    const paragraphs = [...view.container.querySelectorAll<HTMLElement>(".message-content p")];
+    expect(paragraphs.map((paragraph) => paragraph.textContent?.trim())).toEqual(["Revenue rose to 1.27bn.", "Results · Q3 2026", "Margin was 14.8%."]);
+    expect(within(paragraphs[0]!).getByTestId("number-chip")).toHaveTextContent("1.27bn");
+    expect(within(paragraphs[2]!).getByTestId("number-chip")).toHaveTextContent("14.8%");
+    const link = within(paragraphs[1]!).getByRole("button", { name: /^Source \d+: Results · Q3 2026 · Morrow Components/u });
+    // From the keyboard: Tab from the start of the page reaches the citation after the figure before it
+    // and that figure's card, Shift+Tab from the figure after it comes back to it, and Enter opens it.
+    const reader = user();
+    const [before, after] = [paragraphs[0]!, paragraphs[2]!].map((paragraph) => within(paragraph).getByTestId("number-chip"));
+    const stops: Element[] = [];
+    for (let step = 0; step < 20 && document.activeElement !== link; step += 1) {
+      await reader.tab();
+      stops.push(document.activeElement!);
+    }
+    expect(link).toHaveFocus();
+    expect(stops).toContain(before);
+    await reader.tab();
+    expect(after).toHaveFocus();
+    await reader.tab({ shift: true });
+    expect(link).toHaveFocus();
+    await reader.keyboard("{Enter}");
+    expect(destinations(open).at(-1)).toEqual({ kind: "evidence", evidence: results });
+  });
+
+  it("after a published card keeps the number after it on its own check", async () => {
+    const chart = { id: "chart-step", kind: "tool" as const, toolName: "chart_publish", category: "artifact" as const, operation: "publish" as const, action: "Made a chart", target: "Margins", status: "succeeded" as const, startedAtMs: 1, finishedAtMs: 2, href: null };
+    const content = `[Q3 2026 results release](#evidence-${release.id})\n\nMargin was [14.8%](#evidence-${release.id}), down from [15.1%](#evidence-${release.id}).`;
+    const { view } = renderAnswer(answer({ content, evidence_refs: [release],
+      artifact_refs: [{ artifact_id: "chart-1", revision: 1, kind: "chart", title: "Margins", digest: "a".repeat(64) }], progress: { startedAtMs: 0, finishedAtMs: 9, items: [chart] },
+      number_checks: [
+        { link_index: 1, text: "14.8%", evidence_id: release.id, kind: "data", status: "matched" },
+        { link_index: 2, text: "15.1%", evidence_id: release.id, kind: "data", status: "differs", nearest: "15.2%" },
+      ] }));
+    const article = view.container.querySelector("article")!;
+    expect([...article.querySelectorAll(":scope > [data-turn-item]")].map((block) => block.getAttribute("data-turn-item"))).toEqual(["tools", "card", "prose"]);
+    const chips = within(article.querySelector<HTMLElement>(':scope > [data-turn-item="prose"]')!).getAllByTestId("number-chip");
+    expect(chips.map((chip) => [chip.textContent, chip.getAttribute("data-status")])).toEqual([["14.8%", "matched"], ["15.1%", "differs"]]);
+  });
+
+  it("past the 200 checks Rust keeps, and a plain date citation, stay text as written", () => {
+    const links = Array.from({ length: 201 }, (_, index) => `[${index}.5%](#evidence-${release.id})`);
+    const content = `${links.join(" ")}\n\n[Mar 18, 2026](#evidence-${release.id})`;
+    const number_checks = links.slice(0, 200).map((_, index) => ({ link_index: index, text: `${index}.5%`, evidence_id: release.id, kind: "data" as const, status: "matched" as const }));
+    const { view } = renderAnswer(answer({ content, evidence_refs: [release], number_checks }));
+    const [figures, dated] = [...view.container.querySelectorAll<HTMLElement>(".message-content p")];
+    expect(within(figures!).getAllByTestId("number-chip")).toHaveLength(200);
+    // The 201st figure has no check: a citation with its own text, never a chip or a changed number.
+    const unchecked = within(figures!).getByRole("button", { name: /^200\.5% · Source \d+: Q3 2026 results release/u });
+    expect(unchecked).toHaveTextContent(/^200\.5%/u);
+    expect(unchecked).not.toHaveAttribute("data-testid", "number-chip");
+    expect(figures!.textContent).toContain(links.map((_, index) => `${index}.5%`).join(" "));
+    expect(dated!.textContent?.trim()).toBe("Mar 18, 2026");
+    expect(within(dated!).queryByTestId("number-chip")).toBeNull();
+    expect(within(dated!).getByRole("button", { name: /^Mar 18, 2026 · Source \d+: Q3 2026 results release/u })).toBeVisible();
+  });
+
+  it("a repeated figure keeps its own check, and past the 200 checks it borrows none", () => {
+    const link = (text: string) => `[${text}](#evidence-${release.id})`;
+    const figures = Array.from({ length: 199 }, (_, index) => link(`${index + 1}.5%`));
+    // Link 1 repeats link 0 with a check of its own; link 201 repeats link 0 past the bound, with none.
+    const content = `Margin was ${link("0.5%")}, then ${link("0.5%")}.\n\n${figures.join(" ")}\n\nAgain ${link("0.5%")}.`;
+    const check = (link_index: number, text: string, status: "matched" | "differs") => ({ link_index, text, evidence_id: release.id, kind: "data" as const, status });
+    const number_checks = [check(0, "0.5%", "matched"), check(1, "0.5%", "differs"), ...figures.slice(0, 198).map((_, index) => check(index + 2, `${index + 1}.5%`, "matched"))];
+    expect(number_checks).toHaveLength(200);
+    const { view } = renderAnswer(answer({ content, evidence_refs: [release], number_checks }));
+    const [repeated, listed, again] = [...view.container.querySelectorAll<HTMLElement>(".message-content p")];
+    expect(within(repeated!).getAllByTestId("number-chip").map((chip) => chip.getAttribute("data-status"))).toEqual(["matched", "differs"]);
+    expect(within(listed!).getAllByTestId("number-chip")).toHaveLength(198);
+    expect(view.container.querySelectorAll('[data-testid="number-chip"]')).toHaveLength(200);
+    expect(within(again!).queryByTestId("number-chip")).toBeNull();
+    expect(within(again!).getByRole("button", { name: /^0\.5% · Source \d+: Q3 2026 results release/u })).toHaveTextContent(/^0\.5%$/u);
+  });
+});
+
+it("opens an asset page citation by the id and name it stored", async () => {
+  const read = evidenceFixture({ id: `ev_${"d".repeat(32)}`, kind: "saved_context", tool_name: "asset_page_read", url: undefined, title: "Asset page: Alpha",
+    excerpt: JSON.stringify({ asset: { assetId: "ast_00000000000a1fa0", name: "Alpha Inc.", reference: { ticker: "QRS" } } }, null, 2) });
+  const { open } = renderAnswer(answer({ content: `[Asset page: Alpha](#evidence-${read.id})`, evidence_refs: [read] }));
+  await user().click(screen.getByRole("button", { name: "Source 1: Asset page: Alpha" }));
+  expect(opened(open, "asset")).toEqual([{ kind: "asset", target: { loupistId: "loupist-a", assetId: "ast_00000000000a1fa0", name: "Alpha Inc." } }]);
 });

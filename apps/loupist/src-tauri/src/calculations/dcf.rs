@@ -7,6 +7,10 @@ use super::*;
 const MAX_AXIS: usize = 9;
 const GROWTH_RANGE: (f64, f64) = (-50.0, 100.0);
 
+pub(crate) fn reverse_dcf_target(price: f64, shares: f64, net_debt: f64) -> f64 {
+    price * shares + net_debt
+}
+
 struct Valuation {
     enterprise: f64,
     explicit: f64,
@@ -140,8 +144,7 @@ pub(super) fn grid(
             field: "inputs.shares".into(),
             expected: "reverse_dcf needs shares outstanding".into(),
         })?;
-        let equity = price_value * shares.value;
-        let target = equity + debt;
+        let target = reverse_dcf_target(price_value, shares.value, debt);
         if target <= 0.0 {
             return Err(CalcError::domain(
                 "inputs.net_debt",

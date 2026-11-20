@@ -2,6 +2,7 @@ import i18n from "@/i18n";
 import { formatDate, formatNumber } from "@/i18n/format";
 import type { ChatEvidenceRef, ChatMessage, NumberCheck } from "../types";
 import { citationSources, sourceIdentityLabel } from "./evidence";
+import { providerName } from "../lib/marketProviderName";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -24,10 +25,15 @@ export function looksLikeNumber(text: string): boolean {
 
 const normalized = (text: string) => text.replace(/[\s ,]/gu, "");
 
-/** The check Rust stored for this link, matched by its evidence and printed text. */
-export function checkFor(checks: readonly NumberCheck[] | undefined, evidenceId: string, text: string) {
-  const printed = normalized(text);
-  return checks?.find((check) => check.evidence_id === evidenceId && normalized(check.text) === printed);
+/**
+ * The check Rust stored for the answer's evidence link at `linkIndex`, when it
+ * still names this evidence and text. A repeated figure has a check per
+ * occurrence, and a link past Rust's bound has none to borrow.
+ */
+export function checkFor(checks: readonly NumberCheck[] | undefined, linkIndex: number | undefined, evidenceId: string, text: string) {
+  if (linkIndex === undefined) return undefined;
+  const check = checks?.find((item) => item.link_index === linkIndex);
+  return check && check.evidence_id === evidenceId && normalized(check.text) === normalized(text) ? check : undefined;
 }
 
 export const needsChecking = (check: Pick<NumberCheck, "status">) => check.status === "not_found" || check.status === "differs";
@@ -54,8 +60,10 @@ export function formulaLines(formula: string): string[] {
 export const unbroken = (text: string) => text.replace(/ /gu, " ");
 
 /** The evidence date to show: publication when known, otherwise retrieval. It never wraps inside. */
-export function evidenceDate(evidence: ChatEvidenceRef | undefined, field: "published_at" | "retrieved_at" = "published_at") {
-  const value = field === "published_at" ? evidence?.published_at ?? evidence?.retrieved_at : evidence?.retrieved_at;
+export function evidenceDate(evidence: ChatEvidenceRef | undefined, field: "published_at" | "retrieved_at" | "published_only" = "published_at") {
+  // "published_only" never stands in the retrieval day for a missing publication date.
+  const value = field === "published_only" ? evidence?.published_at
+    : field === "published_at" ? evidence?.published_at ?? evidence?.retrieved_at : evidence?.retrieved_at;
   const time = value ? Date.parse(value) : Number.NaN;
   if (!Number.isFinite(time)) return "";
   return unbroken(formatDate(time, /^\d{4}-\d{2}-\d{2}$/u.test(value ?? "") ? { timeZone: "UTC" } : {}));
@@ -77,7 +85,7 @@ function inputSources(check: NumberCheck, evidenceRefs: readonly ChatEvidenceRef
     const evidence = evidenceRefs.find((item) => item.id === input.evidence_id);
     if (!evidence || seen.has(evidence.id)) continue;
     seen.add(evidence.id);
-    sources.push([evidence.provider ?? sourceIdentityLabel(evidence), isoDay(evidence)].filter(Boolean).join(", "));
+    sources.push([providerName(evidence.provider) ?? sourceIdentityLabel(evidence), isoDay(evidence)].filter(Boolean).join(", "));
   }
   return sources.join("; ");
 }

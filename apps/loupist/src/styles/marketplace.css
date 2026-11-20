@@ -1,7 +1,8 @@
 /* Connections share Settings' reading rhythm, with explicit state and quiet rows. */
 .marketplace-page { height: auto; min-width: 0; max-width: 100%; overflow: visible; padding: 0; background: transparent; }
 .marketplace-shell { width: 100%; margin-inline: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gg-space-7); }
-.marketplace-shell > .settings-heading { width: 100%; margin-bottom: 0; }
+/* PageHeader wraps the header in its frame; the shell's gap alone spaces the lead line from the list. */
+.marketplace-shell > .page-header-frame > .settings-heading { width: 100%; margin-bottom: 0; }
 .marketplace-page .custom-connections { padding-block: 0; }
 .connection-catalog { display: grid; gap: var(--gg-space-4); min-width: 0; }
 .connection-section-heading { margin: 0; font-size: var(--gg-text-subtitle); font-weight: var(--gg-weight-semibold); line-height: var(--gg-leading-subtitle); }
@@ -14,7 +15,8 @@
 .marketplace-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-3); }
 .marketplace-search { position: relative; display: block; flex: 1; min-width: 0; margin: 0; }
 .marketplace-search > svg { position: absolute; z-index: var(--gg-z-sticky); top: 50%; left: var(--gg-space-3); width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); transform: translateY(-50%); }
-.marketplace-search input { padding-left: var(--gg-size-control-lg); }
+.marketplace-search input { padding-left: var(--gg-size-control-lg); padding-right: var(--gg-size-control-md); }
+.marketplace-search > button { position: absolute; top: 50%; right: var(--gg-space-1); transform: translateY(-50%); }
 .marketplace-filter-select { width: min(154px, 100%); max-width: 100%; min-width: 0; }
 .marketplace-result-count { margin: 0; font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
 .marketplace-groups { display: grid; gap: var(--gg-size-control-sm); }
@@ -41,6 +43,10 @@
 .connection-status[data-tone="positive"] { color: var(--gg-color-positive); }
 .connection-status[data-tone="warning"] { color: var(--gg-color-warning); }
 .connection-status[data-tone="negative"] { color: var(--gg-color-negative); }
+/* The status and, for a ready connection off here, the Loupist it is off for: one group beside the action. */
+.marketplace-entry-state { display: flex; flex-direction: column; align-items: flex-end; gap: var(--gg-space-1); }
+/* Ready, but off for the Loupist the user is in: quieter than the status, under it. */
+.marketplace-off-here { font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); color: var(--gg-color-text-secondary); white-space: nowrap; }
 .marketplace-filter-count { color: var(--gg-color-text-secondary); font-variant-numeric: tabular-nums; margin-inline-start: var(--gg-space-1); }
 .marketplace-empty, .marketplace-loading { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: var(--gg-space-6); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 .marketplace-empty h3 { margin: 0 0 var(--gg-space-2); font-size: var(--gg-text-reading); font-weight: var(--gg-weight-medium); }
@@ -57,7 +63,12 @@
 .marketplace-error strong { font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
 .marketplace-setup-overview { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--gg-space-3); padding-bottom: var(--gg-space-4); border-bottom: 1px solid var(--gg-color-border-subtle); }
 .marketplace-setup-overview > span { font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
-.marketplace-setup-status { display: flex; align-items: center; }
+.marketplace-setup-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); }
+.marketplace-here { font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
+.marketplace-setup-here { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-2) var(--gg-space-4); padding: var(--gg-space-3) var(--gg-space-4); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover); }
+.marketplace-setup-here p { flex: 1 1 16rem; margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-control); }
+/* A result takes focus when the control used went away; it is text, not a control, so no ring (as a heading). */
+.marketplace-setup-message[tabindex="-1"]:focus-visible { outline: none !important; }
 .marketplace-setup-status [data-slot="badge"] { font-weight: var(--gg-weight-regular); font-size: var(--gg-text-caption); }
 .marketplace-setup-fields { display: block; min-width: 0; margin: 0; padding: 0; border: 0; }
 .marketplace-setup-fields > * + * { margin-top: var(--gg-space-4); }
@@ -103,6 +114,7 @@
 @media (max-width: 820px) {
   .marketplace-card { grid-template-columns: minmax(0,1fr); padding: var(--gg-space-4) 0; gap: var(--gg-space-3); }
   .marketplace-entry-actions { grid-column: 1; flex-direction: row; align-items: center; justify-content: space-between; padding: 0; }
+  .marketplace-entry-state { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1) var(--gg-space-3); }
 }
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @media (max-width: 520px) {

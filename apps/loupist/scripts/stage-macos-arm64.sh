@@ -5,7 +5,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 "$SCRIPT_DIR/stage-pi-macos-arm64.sh"
 "$SCRIPT_DIR/stage-openbb-macos-arm64.sh"
-"$SCRIPT_DIR/../openbb/.venv/bin/python" "$SCRIPT_DIR/stage-embed-assets.py"
+"$SCRIPT_DIR/../openbb/.venv/bin/python" "$SCRIPT_DIR/stage-embed-assets.py" --ensure
 "$SCRIPT_DIR/../openbb/.venv/bin/python" "$SCRIPT_DIR/stage_python_runtime.py" --ensure
 "$SCRIPT_DIR/check-package-prerequisites.sh"
 

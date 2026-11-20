@@ -110,6 +110,13 @@ button.grid-card-name:focus-visible { outline: 2px solid var(--gg-color-focus); 
 .grid-card-measure-label { display: inline-flex; align-items: center; gap: var(--gg-space-1); white-space: normal; overflow-wrap: normal; word-break: keep-all; text-wrap: balance; }
 .grid-card-measure-label svg { width: 16px; height: 16px; flex: none; }
 .grid-card-period { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-regular); line-height: var(--gg-leading-caption); }
+/* Measures as rows: the first column names each measure, each asset heads a column, values stay right-aligned. */
+.grid-card-asset-column .grid-card-name, .grid-card-asset-column .grid-card-symbol { margin-inline-start: auto; text-align: end; }
+.grid-card-asset-column .grid-card-name { font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+/* "Measure" sits on the line of the asset names beside it: the same line height, so the bottoms and baselines meet. */
+.grid-card-table[data-rows="measures"] .grid-card-asset-head { line-height: var(--gg-leading-body); }
+.grid-card-measure-row .grid-card-measure-label { display: block; color: var(--gg-color-text-primary); }
+.grid-card-measure-row .grid-card-period { display: block; }
 .grid-card-value { min-width: 112px; max-width: 168px; text-align: end; white-space: nowrap; }
 .grid-card-value .number-chip { transition: text-decoration-color var(--gg-motion-fast) var(--gg-ease-out); }
 .grid-card-empty-cell { min-width: 112px; max-width: 168px; text-align: end; }

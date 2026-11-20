@@ -109,6 +109,11 @@ impl ProviderFailure {
             Self::ContextTooLong
         } else if status("429") || any(&["rate limit", "rate_limit", "too many requests"]) {
             Self::RateLimited
+        } else if (message.starts_with("connection error") || message.starts_with("fetch failed"))
+            && !(status("401") || status("403"))
+        {
+            // Pi can append a transport cause such as a revoked certificate.
+            Self::Network
         } else if status("401")
             || status("403")
             || any(&[
@@ -409,6 +414,10 @@ mod tests {
             ),
             (
                 "fetch failed: getaddrinfo ENOTFOUND api.example.com",
+                ProviderFailure::Network,
+            ),
+            (
+                "Connection error.: certificate revoked (CERT_REVOKED)",
                 ProviderFailure::Network,
             ),
             ("503 Service Unavailable", ProviderFailure::Unavailable),

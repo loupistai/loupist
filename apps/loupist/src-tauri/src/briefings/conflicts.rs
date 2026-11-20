@@ -35,8 +35,7 @@ pub(super) fn entity_ids(
             .map_err(|e| CommandError::internal(e.to_string()))?
             .collect::<Result<BTreeSet<_>, _>>()
             .map_err(|e| CommandError::internal(e.to_string()))?;
-        let (mut followed, _) = crate::knowledge::match_items(&context.watchlist, &body.nodes);
-        followed.extend(crate::knowledge::match_items(&context.holdings, &body.nodes).0);
+        let (followed, _) = crate::knowledge::match_items(&context.watchlist, &body.nodes);
         let mut neighborhood = followed.clone();
         for claim in &body.claims {
             if claim.status != ClaimStatus::Withdrawn

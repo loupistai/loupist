@@ -3,7 +3,7 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use uuid::Uuid;
 
 use crate::{
@@ -49,6 +49,9 @@ CREATE INDEX scheduled_tasks_by_due ON scheduled_tasks(next_run_at_ms, id) WHERE
 CREATE INDEX scheduled_task_runs_by_task ON scheduled_task_runs(task_id, started_at_ms DESC, id);
 CREATE UNIQUE INDEX scheduled_task_one_running ON scheduled_task_runs(task_id) WHERE status = 'running';
 "#;
+
+/// The id prefix of the Chats the scheduler creates for its runs.
+pub(crate) const RUN_CHAT_PREFIX: &str = "scheduled-chat-";
 
 const TASK_COLUMNS: &str =
     "id,loupist_id,revision,status,next_run_at_ms,target_thread_id,updated_at_ms,data_json";
@@ -115,7 +118,7 @@ impl SqliteStore {
                     .ok_or_else(|| invalid("inbox cursor not found"))
             })
             .transpose()?;
-        let mut statement = connection.prepare(&format!("SELECT {RUN_COLUMNS} FROM scheduled_task_runs WHERE loupist_id=?1 AND (?2 IS NULL OR (started_at_ms,run_id)<(?2,?3)) ORDER BY started_at_ms DESC,run_id DESC LIMIT ?4"))?;
+        let mut statement = connection.prepare(&format!("SELECT {RUN_COLUMNS} FROM scheduled_task_runs WHERE loupist_id=?1 AND NOT (status='succeeded' AND coalesce(json_extract(data_json,'$.quiet'),0)) AND (?2 IS NULL OR (started_at_ms,run_id)<(?2,?3)) ORDER BY started_at_ms DESC,run_id DESC LIMIT ?4"))?;
         let rows = statement
             .query_map(
                 params![
@@ -140,7 +143,7 @@ impl SqliteStore {
     pub(crate) fn inbox_unread_count(&self, loupist_id: &str) -> StoreResult<u64> {
         let connection = self.lock_loupist(loupist_id)?;
         require_loupist(&connection, loupist_id)?;
-        Ok(connection.query_row("SELECT count(*) FROM scheduled_task_runs WHERE loupist_id=?1 AND status<>'running' AND json_extract(data_json,'$.read_at_ms') IS NULL",[loupist_id],|row| row.get::<_,i64>(0))? as u64)
+        Ok(connection.query_row("SELECT count(*) FROM scheduled_task_runs WHERE loupist_id=?1 AND status<>'running' AND NOT (status='succeeded' AND coalesce(json_extract(data_json,'$.quiet'),0)) AND json_extract(data_json,'$.read_at_ms') IS NULL",[loupist_id],|row| row.get::<_,i64>(0))? as u64)
     }
 
     pub(crate) fn inbox_mark_read(
@@ -198,59 +201,17 @@ impl SqliteStore {
         let connection = self.lock_loupist(loupist_id)?;
         let mut run = load_run(&connection, loupist_id, id)?
             .ok_or_else(|| invalid("scheduled run not found"))?;
-        run.summary = crate::briefings::summary(text);
+        // A quiet run that wrote nothing has the host's placeholder answer, not a summary.
+        run.summary = if run.quiet && text.trim() == super::QUIET_NO_REPORT {
+            String::new()
+        } else {
+            crate::briefings::summary(text)
+        };
         run.message_id = Some(message_id.to_owned());
         connection.execute(
             "UPDATE scheduled_task_runs SET data_json=?2 WHERE run_id=?1",
             params![id, serde_json::to_string(&run)?],
         )?;
-        Ok(())
-    }
-
-    /// A host run's outcomes as structured items the renderer words (the
-    /// earnings task has no reply message).
-    pub(crate) fn scheduled_run_summary(
-        &self,
-        loupist_id: &str,
-        id: &str,
-        items: Vec<super::types::RunSummaryItem>,
-    ) -> StoreResult<()> {
-        let connection = self.lock_loupist(loupist_id)?;
-        let mut run = load_run(&connection, loupist_id, id)?
-            .ok_or_else(|| invalid("scheduled run not found"))?;
-        run.summary_items = items;
-        run.validate()?;
-        connection.execute(
-            "UPDATE scheduled_task_runs SET data_json=?2 WHERE run_id=?1",
-            params![id, serde_json::to_string(&run)?],
-        )?;
-        Ok(())
-    }
-
-    /// The earnings task looks again when its next capture is due. Only an
-    /// active task moves, and its revision stays (no user edit happened).
-    pub(crate) fn scheduled_task_reschedule(
-        &self,
-        loupist_id: &str,
-        id: &str,
-        next_run_at_ms: i64,
-    ) -> StoreResult<()> {
-        validate_now(next_run_at_ms)?;
-        let mut connection = self.lock_loupist(loupist_id)?;
-        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let Some(mut task) = load_task(&transaction, loupist_id, id)? else {
-            return Ok(());
-        };
-        if task.status != TaskStatus::Active || task.kind != TaskKind::Earnings {
-            return Ok(());
-        }
-        task.next_run_at_ms = Some(next_run_at_ms);
-        task.validate()?;
-        transaction.execute(
-            "UPDATE scheduled_tasks SET next_run_at_ms=?3, data_json=json_set(?4,'$.failure_streak_started_at_ms',coalesce(json_extract(data_json,'$.failure_streak_started_at_ms'),0),'$.failure_streak_started_revision',coalesce(json_extract(data_json,'$.failure_streak_started_revision'),0)) WHERE id=?1 AND loupist_id=?2 AND status='active'",
-            params![id, loupist_id, next_run_at_ms, serde_json::to_string(&task)?],
-        )?;
-        transaction.commit()?;
         Ok(())
     }
 
@@ -267,7 +228,7 @@ impl SqliteStore {
         if run.skipped_tools.len() < 100 {
             run.skipped_tools.push(SkippedTool {
                 name: name.chars().take(128).collect(),
-                reason: reason.chars().take(256).collect(),
+                reason: crate::util::shorten(reason, 256),
             });
             connection.execute(
                 "UPDATE scheduled_task_runs SET data_json=?2 WHERE run_id=?1",
@@ -448,7 +409,7 @@ impl SqliteStore {
                     coalesce(max(coalesce(json_array_length(json_extract(data_json, '$.briefing_context.disputedEntityIds')), 0)), 0),
                     coalesce(max(finished_at_ms), 0)
              FROM scheduled_task_runs
-             WHERE loupist_id = ?1 AND status <> 'running' AND json_extract(data_json, '$.read_at_ms') IS NULL",
+             WHERE loupist_id = ?1 AND status <> 'running' AND NOT (status='succeeded' AND coalesce(json_extract(data_json,'$.quiet'),0)) AND json_extract(data_json, '$.read_at_ms') IS NULL",
             [loupist_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )?;
@@ -661,14 +622,17 @@ impl SqliteStore {
             ));
         }
         self.scheduled_task_delete(loupist_id, id, task.revision)
+            .map(|_| ())
     }
 
+    /// Deletes the task and its run history. Returns the sessions its runs
+    /// wrote in, for [`Self::scheduled_released_sessions`] to settle.
     pub fn scheduled_task_delete(
         &self,
         loupist_id: &str,
         id: &str,
         expected_revision: u64,
-    ) -> StoreResult<()> {
+    ) -> StoreResult<Vec<String>> {
         let mut connection = self.lock_loupist(loupist_id)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let task = require_task(&transaction, loupist_id, id)?;
@@ -678,6 +642,14 @@ impl SqliteStore {
                 "stop the running scheduled task before deleting it",
             ));
         }
+        let mut sessions = transaction
+            .prepare("SELECT DISTINCT thread_id FROM scheduled_task_runs WHERE task_id=?1 AND loupist_id=?2 AND thread_id IS NOT NULL")?
+            .query_map(params![id, loupist_id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        sessions.extend(
+            task.session_thread_id
+                .filter(|thread| !sessions.contains(thread)),
+        );
         let changed = transaction.execute(
             "DELETE FROM scheduled_tasks WHERE id=?1 AND loupist_id=?2 AND revision=?3",
             params![id, loupist_id, expected_revision as i64],
@@ -688,7 +660,37 @@ impl SqliteStore {
             ));
         }
         transaction.commit()?;
-        Ok(())
+        Ok(sessions)
+    }
+
+    /// Which of `candidates` (every session the scheduler made, when `None`)
+    /// are released. A session the scheduler made is its run's record until
+    /// the user writes in it (`hide_from_recent`). Such a scheduler-only
+    /// session goes once no run in history and no task points at it any more;
+    /// one the user wrote in is theirs and stays. A session from a build
+    /// before the stored `scheduled` record reads as written by the user.
+    pub(crate) fn scheduled_released_sessions(
+        &self,
+        loupist_id: &str,
+        candidates: Option<&[String]>,
+    ) -> StoreResult<Vec<String>> {
+        let connection = self.lock_loupist(loupist_id)?;
+        let candidates = candidates.map(serde_json::to_string).transpose()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT chat.id FROM chat_sessions AS chat
+             WHERE chat.loupist_id=?1 AND chat.id GLOB '{RUN_CHAT_PREFIX}*'
+               AND (?2 IS NULL OR chat.id IN (SELECT value FROM json_each(?2)))
+               AND NOT EXISTS (SELECT 1 FROM scheduled_task_runs AS run WHERE run.thread_id=chat.id)
+               AND NOT EXISTS (SELECT 1 FROM scheduled_tasks AS task WHERE task.target_thread_id=chat.id)
+               AND NOT EXISTS (SELECT 1 FROM json_each(chat.data_json,'$.messages') AS message
+                               WHERE json_extract(message.value,'$.role')='user'
+                                 AND json_extract(message.value,'$.scheduled') IS NULL)
+             ORDER BY chat.id"
+        ))?;
+        let rows = statement
+            .query_map(params![loupist_id, candidates], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub fn scheduled_task_runs(&self, loupist_id: &str, id: &str) -> StoreResult<Vec<Run>> {
@@ -701,6 +703,33 @@ impl SqliteStore {
         Ok(rows
             .into_iter()
             .filter_map(|row| readable(decode_run(&connection, row)))
+            .collect())
+    }
+
+    /// The task's finished runs other than `run_id`, newest first, back to the
+    /// last one that ran another prompt: a run before an edit of the prompt
+    /// answered a different request. Every claim advances the task revision,
+    /// so the run's own task snapshot is what tells. An unreadable run is
+    /// passed over.
+    pub(crate) fn scheduled_task_runs_since_prompt(
+        &self,
+        loupist_id: &str,
+        task_id: &str,
+        run_id: &str,
+        prompt: &str,
+    ) -> StoreResult<Vec<Run>> {
+        let connection = self.lock_loupist(loupist_id)?;
+        let mut statement = connection.prepare(&format!("SELECT {RUN_COLUMNS},coalesce(json_extract(task_snapshot_json,'$.prompt'),'')=?4 FROM scheduled_task_runs WHERE task_id=?1 AND loupist_id=?2 AND run_id<>?3 AND status<>'running' ORDER BY finished_at_ms DESC,rowid DESC LIMIT ?5"))?;
+        let rows = statement
+            .query_map(
+                params![task_id, loupist_id, run_id, prompt, MAX_RUN_HISTORY as i64],
+                |row| Ok((raw_run(row)?, row.get::<_, bool>(12)?)),
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows
+            .into_iter()
+            .take_while(|(_, same_prompt)| *same_prompt)
+            .filter_map(|(row, _)| readable(decode_run(&connection, row)))
             .collect())
     }
 
@@ -748,7 +777,7 @@ impl SqliteStore {
             }
             TaskTarget::NewChat | TaskTarget::Dedicated => {
                 let chat = ChatSession {
-                    id: new_id("chat"),
+                    id: format!("{RUN_CHAT_PREFIX}{}", Uuid::new_v4().simple()),
                     loupist_id: loupist_id.into(),
                     pi_session_id: Uuid::new_v4().to_string(),
                     pi_session_cache: None,
@@ -775,7 +804,7 @@ impl SqliteStore {
             kind: snapshot.kind.clone(),
             read_at_ms: None,
             summary: String::new(),
-            summary_items: Vec::new(),
+            quiet: false,
             message_id: None,
             skipped_tools: Vec::new(),
             id: new_id("scheduled-run"),
@@ -812,10 +841,19 @@ impl SqliteStore {
         update_task(&transaction, &task, snapshot.revision)?;
         transaction.execute("INSERT INTO scheduled_task_runs(id,task_id,loupist_id,task_revision,thread_id,run_id,status,scheduled_for_ms,started_at_ms,finished_at_ms,data_json,task_snapshot_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,NULL,?10,?11)",
             params![run.id,run.task_id,run.loupist_id,run.task_revision as i64,run.thread_id,run.run_id,run.status.as_str(),run.scheduled_for_ms,run.started_at_ms,serde_json::to_string(&run)?,serde_json::to_string(&snapshot)?])?;
-        transaction.execute("DELETE FROM scheduled_task_runs WHERE task_id=?1 AND id NOT IN (SELECT id FROM scheduled_task_runs WHERE task_id=?1 ORDER BY (status='running') DESC,started_at_ms DESC,rowid DESC LIMIT ?2)",params![id,MAX_RUN_HISTORY as i64])?;
+        let released = transaction
+            .prepare("DELETE FROM scheduled_task_runs WHERE task_id=?1 AND id NOT IN (SELECT id FROM scheduled_task_runs WHERE task_id=?1 ORDER BY (status='running') DESC,started_at_ms DESC,rowid DESC LIMIT ?2) RETURNING thread_id")?
+            .query_map(params![id, MAX_RUN_HISTORY as i64], |row| {
+                row.get::<_, Option<String>>(0)
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect();
         let claim = Claim {
             task: snapshot,
             run,
+            released,
         };
         let admission = admit(&claim)?;
         transaction.commit()?;
@@ -882,7 +920,7 @@ impl SqliteStore {
                     &run.loupist_id,
                     &run.run_id,
                     RunStatus::Interrupted,
-                    Some("Interrupted unexpectedly before completion.".into()),
+                    Some(super::UNEXPECTED_INTERRUPTION.into()),
                     now,
                 )?);
             }
@@ -1460,10 +1498,9 @@ pub(crate) fn erase_loupist_in(connection: &Connection, loupist_id: &str) -> Sto
 
 /// A restored library never starts automatic work. Keep definitions and past
 /// results, while marking unfinished attempts as interrupted without replay.
-pub(crate) fn pause_copied_tasks(connection: &Connection) -> StoreResult<()> {
-    validate_saved_tasks(connection)?;
-    connection.execute("UPDATE scheduled_tasks SET status=CASE WHEN status='active' THEN 'paused' ELSE status END,next_run_at_ms=NULL,data_json=json_set(data_json,'$.status',CASE WHEN status='active' THEN 'paused' ELSE status END,'$.next_run_at_ms',NULL)",[])?;
-    connection.execute("UPDATE scheduled_task_runs SET status='interrupted',finished_at_ms=started_at_ms,data_json=json_set(data_json,'$.status','interrupted','$.finished_at_ms',started_at_ms,'$.error','Interrupted in the copied Loupist folder.') WHERE status='running'",[])?;
+pub(crate) fn pause_copied_tasks(connection: &Connection, schema: &str) -> StoreResult<()> {
+    connection.execute(&format!("UPDATE {schema}.scheduled_tasks SET status=CASE WHEN status='active' THEN 'paused' ELSE status END,next_run_at_ms=NULL,data_json=json_set(data_json,'$.status',CASE WHEN status='active' THEN 'paused' ELSE status END,'$.next_run_at_ms',NULL)"),[])?;
+    connection.execute(&format!("UPDATE {schema}.scheduled_task_runs SET status='interrupted',finished_at_ms=started_at_ms,data_json=json_set(data_json,'$.status','interrupted','$.finished_at_ms',started_at_ms,'$.error','Interrupted in the copied Loupist folder.') WHERE status='running'"),[])?;
     Ok(())
 }
 
@@ -1496,6 +1533,20 @@ pub(crate) fn validate_saved_tasks(connection: &Connection) -> StoreResult<()> {
         if *count > MAX_RUN_HISTORY {
             return Err(invalid("saved task exceeds the run history limit"));
         }
+    }
+    Ok(())
+}
+
+/// Record quiet delivery with the Chat reply in the same transaction.
+pub(crate) fn mark_quiet(tx: &Transaction<'_>, loupist_id: &str, run_id: &str) -> StoreResult<()> {
+    let matched = tx.execute(
+        "UPDATE scheduled_task_runs SET data_json=json_set(data_json,'$.quiet',json('true'))
+         WHERE run_id=?1 AND loupist_id=?2 AND status='running' AND json_extract(data_json,'$.kind')='custom'
+         AND coalesce(json_array_length(data_json,'$.skipped_tools'),0)=0",
+        params![run_id, loupist_id],
+    )?;
+    if matched != 1 {
+        return Err(invalid("scheduled custom run cannot be marked quiet"));
     }
     Ok(())
 }

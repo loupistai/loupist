@@ -19,7 +19,7 @@ use super::{
     map_internal, map_store, new_id, now_ms, profile_summary, profile_summary_at,
     profile_summary_with_availability,
     types::{
-        chat_dto, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest,
+        chat_dto, ChatThreadDto, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest,
         LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistSummary, LoupistWorkspace,
     },
 };
@@ -82,7 +82,7 @@ pub async fn loupist_select(
     if super::knowledge::complete_pending_world_model(state.inner(), &loupist_id).is_err() {
         eprintln!("Could not complete pending World model setup for {loupist_id}");
     }
-    // Assets followed while this Loupist was closed or unavailable reach its Map now.
+    // What this Loupist followed while it was closed or unavailable reaches its Map now.
     if super::knowledge::sync_followed_assets(state.inner(), &loupist_id).is_err() {
         eprintln!("Could not add what the user follows to {loupist_id}");
     }
@@ -110,20 +110,41 @@ pub async fn loupist_select(
             .list_chats_for_loupist(&profile.id)
             .map_err(map_store)?
     };
-    let threads = chats
+    let threads = thread_dtos(&state, &profile.id, &chats);
+    Ok(LoupistWorkspace {
+        loupist: profile_summary(&state, &profile).await?,
+        threads,
+    })
+}
+
+/// The workspace's Chats for the renderer. A session at work carries its run,
+/// since Bot posts nothing for a hand-off until it ends.
+pub(crate) fn thread_dtos(
+    state: &AppState,
+    loupist_id: &str,
+    chats: &[crate::domain::ChatSession],
+) -> Vec<ChatThreadDto> {
+    let mut running = if chats.is_empty() {
+        Default::default()
+    } else {
+        crate::chat::handoff::running(state, loupist_id).unwrap_or_else(|error| {
+            eprintln!("Loupist could not read its running hand-offs ({error})");
+            Default::default()
+        })
+    };
+    chats
         .iter()
         .filter_map(|chat| match chat_dto(chat) {
-            Ok(thread) => Some(thread),
+            Ok(mut thread) => {
+                thread.handoff_run = running.remove(&thread.id);
+                Some(thread)
+            }
             Err(error) => {
                 eprintln!("Loupist skipped unreadable Chat {} ({error})", chat.id);
                 None
             }
         })
-        .collect();
-    Ok(LoupistWorkspace {
-        loupist: profile_summary(&state, &profile).await?,
-        threads,
-    })
+        .collect()
 }
 
 /// Registers or opens a user-owned Loupist folder with canonical data in `.loupist`.
@@ -196,7 +217,7 @@ async fn create_bound_loupist(
                 .ok_or_else(|| CommandError::invalid("workspace path must be valid Unicode"))?,
         )
         .to_owned(),
-        focus: focus.clone(),
+        focus,
         instructions: String::new(),
         avatar: "initial".into(),
         tone: Default::default(),
@@ -250,16 +271,12 @@ async fn create_bound_loupist(
             error,
         ));
     }
-    if let Err(error) = crate::commands::knowledge::ensure_perspective(state, &loupist_id, &focus)
-        .and_then(|_| {
-            crate::commands::knowledge::initialize_new_world(
-                state,
-                &loupist_id,
-                world_settings.as_ref(),
-                template.map(|template| template.as_str()),
-            )
-        })
-    {
+    if let Err(error) = crate::commands::knowledge::initialize_new_world(
+        state,
+        &loupist_id,
+        world_settings.as_ref(),
+        template.map(|template| template.as_str()),
+    ) {
         state.store.delete_loupist(&profile).map_err(map_store)?;
         return Err(cleanup_failed_loupist_creation(
             state,
@@ -389,7 +406,7 @@ pub(super) async fn reconnect_loupist_inner(
     )?;
     let expected = state
         .store
-        .get_loupist(&request.loupist_id)
+        .get_loupist_recorded(&request.loupist_id)
         .map_err(map_store)?
         .ok_or_else(|| CommandError::not_found("Loupist"))?;
     let workspace = selected_workspace(state, Path::new(&request.workspace_path), false)?;
@@ -405,7 +422,12 @@ pub(super) async fn reconnect_loupist_inner(
         .artifacts
         .deletion_root
         .directory_identity(&runtime_relative)?;
-    if existing_runtime.is_some() && existing_runtime != expected.runtime_filesystem_identity {
+    if existing_runtime.as_ref().is_some_and(|actual| {
+        expected
+            .runtime_filesystem_identity
+            .as_ref()
+            .is_none_or(|saved| !actual.matches_binding(saved))
+    }) {
         return Err(CommandError::conflict(
             "Loupist private runtime folder changed",
         ));
@@ -530,13 +552,6 @@ pub(super) async fn update_profile_inner(
             now_ms(),
         )
         .map_err(map_store)?;
-    if request.focus.is_some()
-        && crate::commands::knowledge::ensure_perspective(state, &profile.id, &profile.focus)
-            .is_err()
-    {
-        // The focus is saved; only its copy on the perspective page lags.
-        eprintln!("the perspective page could not take the new focus");
-    }
     profile_summary(state, &profile).await
 }
 
@@ -610,15 +625,8 @@ pub(crate) async fn create_managed_loupist(
     .await;
     match result {
         Ok(summary) => {
+            // A new Loupist follows nothing yet; its starters follow after creation.
             drop(guard);
-            // The new Loupist's first Source is what the user follows. Failing to
-            // add it never undoes a Loupist that was created; opening it catches up.
-            if crate::commands::knowledge::sync_followed_assets(state, &summary.id).is_err() {
-                eprintln!(
-                    "Could not add what the user follows to the new Loupist {}",
-                    summary.id
-                );
-            }
             Ok(summary)
         }
         Err(error) => Err(cleanup_failed_loupist_creation(
@@ -817,24 +825,17 @@ mod loupist_profile_tests {
         assert_eq!(updated.instructions, "Use primary evidence.");
         assert_eq!(updated.avatar, "loupist-10");
         assert_eq!(updated.workspace_path, original.workspace_path);
-        let page_focus = || {
-            let knowledge =
-                crate::knowledge::KnowledgeStore::for_loupist(state.store.clone(), &original.id)
-                    .unwrap();
-            knowledge
-                .read(|write| {
-                    let record_id = write.active_perspective(&original.id)?.unwrap();
-                    Ok(write
-                        .read_page(&original.id, &record_id)?
-                        .body
-                        .sections()
-                        .iter()
-                        .find(|section| section.key.as_str() == "focus")
-                        .map(|section| section.markdown.clone()))
-                })
+        let perspective = || {
+            crate::knowledge::KnowledgeStore::for_loupist(state.store.clone(), &original.id)
+                .unwrap()
+                .read(|write| write.active_perspective(&original.id))
                 .unwrap()
         };
-        assert_eq!(page_focus().as_deref(), Some("Semiconductors"));
+        assert_eq!(
+            perspective(),
+            None,
+            "the focus stays on the profile; it files no Lens page"
+        );
         let partial = update_profile_inner(
             &state,
             LoupistProfileUpdateRequest {
@@ -849,11 +850,6 @@ mod loupist_profile_tests {
         assert_eq!(partial.avatar, "loupist-10");
         assert_eq!(partial.tone, crate::domain::LoupistTone::Careful);
         assert_eq!(partial.philosophy, "");
-        assert_eq!(
-            page_focus().as_deref(),
-            Some("Semiconductors"),
-            "clearing the focus leaves the page as it was"
-        );
         let rejected = update_profile_inner(
             &state,
             LoupistProfileUpdateRequest {
@@ -956,11 +952,6 @@ mod loupist_profile_tests {
         )
         .unwrap();
         assert_eq!(summary["template"], "crypto");
-        assert_eq!(
-            crate::domain::LoupistTemplate::parse("realAssets")
-                .and_then(crate::domain::LoupistTemplate::asset_class),
-            Some(crate::knowledge::assets::AssetClass::RealAsset)
-        );
         // An unknown template is refused instead of stored.
         let refused = create_managed_loupist(
             &state,

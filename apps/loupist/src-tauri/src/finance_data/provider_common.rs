@@ -259,11 +259,11 @@ pub(super) fn detect_krx_error(bytes: &[u8]) -> Result<Value, FinanceDataError> 
     }
 }
 
-pub(super) fn validate_dart_status_allow_no_data(bytes: &[u8]) -> Result<Value, FinanceDataError> {
-    let root: Value =
-        serde_json::from_slice(bytes).map_err(|_| FinanceDataError::InvalidResponse)?;
-    match root.get("status").and_then(Value::as_str) {
-        Some("000" | "013") => Ok(root),
+/// An OpenDART status code that refuses the request; success (`000`) and
+/// no data (`013`) pass.
+fn dart_status_error(status: Option<&str>) -> Result<(), FinanceDataError> {
+    match status {
+        Some("000" | "013") => Ok(()),
         Some("010" | "011" | "012") => {
             Err(FinanceDataError::CredentialRejected(OPENDART_SOURCE_ID))
         }
@@ -275,12 +275,52 @@ pub(super) fn validate_dart_status_allow_no_data(bytes: &[u8]) -> Result<Value, 
     }
 }
 
+pub(super) fn validate_dart_status_allow_no_data(bytes: &[u8]) -> Result<Value, FinanceDataError> {
+    let root: Value =
+        serde_json::from_slice(bytes).map_err(|_| FinanceDataError::InvalidResponse)?;
+    dart_status_error(root.get("status").and_then(Value::as_str))?;
+    Ok(root)
+}
+
 pub(super) fn validate_dart_status(bytes: &[u8]) -> Result<Value, FinanceDataError> {
     let root = validate_dart_status_allow_no_data(bytes)?;
     if root.get("status").and_then(Value::as_str) == Some("013") {
         return Err(FinanceDataError::NoData(OPENDART_SOURCE_ID));
     }
     Ok(root)
+}
+
+/// A document request's reply that is a status rather than a ZIP archive:
+/// JSON (`{"status":"013",…}`) or XML (`<result><status>013</status>…`). No
+/// data (`013`) is [`FinanceDataError::NoData`], other statuses map as for
+/// JSON reads, and a status reply that reports success without a document is
+/// invalid. Any other body passes to the archive reader.
+pub(super) fn validate_dart_document_status(bytes: &[u8]) -> Result<(), FinanceDataError> {
+    let body = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes);
+    let body = &body[body
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(body.len())..];
+    let status = match body.first() {
+        Some(b'{') => {
+            validate_dart_status(body)?;
+            return Err(FinanceDataError::InvalidResponse);
+        }
+        Some(b'<') => {
+            let text = String::from_utf8_lossy(body);
+            let status = text
+                .split_once("<status>")
+                .and_then(|(_, rest)| rest.split_once("</status>"))
+                .map(|(status, _)| status.trim().to_owned());
+            dart_status_error(status.as_deref())?;
+            status
+        }
+        _ => return Ok(()),
+    };
+    if status.as_deref() == Some("013") {
+        return Err(FinanceDataError::NoData(OPENDART_SOURCE_ID));
+    }
+    Err(FinanceDataError::InvalidResponse)
 }
 
 #[cfg(test)]
@@ -323,5 +363,50 @@ mod tests {
                 Err(FinanceDataError::InvalidQuery(_))
             ));
         }
+    }
+
+    /// rc1: OpenDART answered a missing document with an XML status, which
+    /// the filing read reported as an invalid response.
+    #[test]
+    fn a_document_reads_xml_status_like_json_status() {
+        let xml = |status: &str| {
+            format!("<result><status>{status}</status><message>조회된 데이타가 없습니다.</message></result>")
+        };
+        let outcome =
+            |body: &[u8]| validate_dart_document_status(body).map_err(|error| error.to_string());
+        let no_data =
+            Err("finance data provider returned no matching data: opendart.disclosures".to_owned());
+        assert_eq!(outcome(xml("013").as_bytes()), no_data);
+        let declared = format!(
+            "\u{feff}<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{}",
+            xml(" 013 ")
+        );
+        assert_eq!(outcome(declared.as_bytes()), no_data);
+        assert_eq!(outcome(br#"{"status":"013","message":"no data"}"#), no_data);
+        assert_eq!(outcome(br#"  {"status":"013"}"#), no_data);
+        for (status, expected) in [
+            ("010", "finance data provider credential was rejected: opendart.disclosures"),
+            ("011", "finance data provider credential was rejected: opendart.disclosures"),
+            ("020", "finance data provider rate limit was reached: opendart.disclosures"),
+            ("100", "finance data provider rejected the request: OpenDART returned a provider status error"),
+        ] {
+            assert_eq!(outcome(xml(status).as_bytes()), Err(expected.to_owned()), "{status}");
+            let json = format!(r#"{{"status":"{status}"}}"#);
+            assert_eq!(outcome(json.as_bytes()), Err(expected.to_owned()), "{status}");
+        }
+        // A status reply without a document, or without a status, is invalid.
+        let invalid = Err("finance data provider returned an invalid response".to_owned());
+        assert_eq!(outcome(xml("000").as_bytes()), invalid);
+        assert_eq!(outcome(br#"{"status":"000"}"#), invalid);
+        assert_eq!(
+            outcome(b"<result><message>error</message></result>"),
+            invalid
+        );
+        assert_eq!(outcome(b"<html>bad gateway</html>"), invalid);
+        // A ZIP archive passes to the document reader.
+        assert_eq!(
+            outcome(b"PK\x03\x04\x14\x00\x00\x00\x08\x00\xff\xfe"),
+            Ok(())
+        );
     }
 }

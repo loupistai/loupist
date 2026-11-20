@@ -2,8 +2,8 @@
 
 Only exception types and our private REST markers are inspected. Provider text,
 URLs and credentials never enter the MCP diagnostic: an unreachable provider is
-``offline`` and a provider that refuses the configured key is
-``credential_rejected`` with one fixed reason code.
+``offline`` and a refused key is ``credential_rejected``.
+An Alpha Vantage subscription refusal has its own marker.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from typing import Any
 from urllib.error import URLError
 
 OFFLINE = {"loupist_error": {"kind": "offline"}}
+PAID_ALPHA_PLAN = {"loupist_error": {"kind": "alpha_vantage_paid_plan_required"}}
 CREDENTIAL_REASONS = frozenset({"key_format", "key_not_accepted"})
 
 
@@ -35,6 +36,11 @@ class CredentialRejectedError(Exception):
         self.reason = reason
 
 
+class AlphaVantagePaidPlanRequired(Exception):
+    def __init__(self) -> None:
+        super().__init__("alpha_vantage_paid_plan_required")
+
+
 def _causes(error: BaseException) -> list[BaseException]:
     causes: list[BaseException] = []
     original = getattr(error, "original", None)
@@ -48,8 +54,8 @@ def _causes(error: BaseException) -> list[BaseException]:
     return causes
 
 
-def credential_rejection(error: BaseException) -> dict[str, Any] | None:
-    """Return the fixed MCP diagnostic when ``error`` is a key rejection."""
+def provider_refusal(error: BaseException) -> dict[str, Any] | None:
+    """Return a fixed diagnostic for a key or plan refusal."""
 
     import httpx
 
@@ -60,6 +66,8 @@ def credential_rejection(error: BaseException) -> dict[str, Any] | None:
         if id(current) in seen:
             continue
         seen.add(id(current))
+        if isinstance(current, AlphaVantagePaidPlanRequired):
+            return PAID_ALPHA_PLAN
         if isinstance(current, CredentialRejectedError):
             return credential_rejected(current.reason)
         if isinstance(current, httpx.HTTPStatusError):
@@ -67,6 +75,8 @@ def credential_rejection(error: BaseException) -> dict[str, Any] | None:
                 body = current.response.json()
             except ValueError:
                 body = None
+            if body == PAID_ALPHA_PLAN:
+                return PAID_ALPHA_PLAN
             marker = body.get("loupist_error") if isinstance(body, dict) else None
             if (
                 isinstance(marker, dict)
@@ -145,8 +155,10 @@ def classify_rest_failures(app: Any) -> None:
         async def classified(request: Any, error: Exception) -> Any:
             if is_offline_error(error):
                 return JSONResponse(OFFLINE, status_code=503)
-            if rejection := credential_rejection(error):
-                return JSONResponse(rejection, status_code=401)
+            if rejection := provider_refusal(error):
+                return JSONResponse(
+                    rejection, status_code=402 if rejection == PAID_ALPHA_PLAN else 401
+                )
             return await handler(request, error)
 
         return classified
@@ -161,8 +173,10 @@ def classify_rest_failures(app: Any) -> None:
         async def unhandled(request: Any, error: Exception) -> Any:
             if is_offline_error(error):
                 return JSONResponse(OFFLINE, status_code=503)
-            if rejection := credential_rejection(error):
-                return JSONResponse(rejection, status_code=401)
+            if rejection := provider_refusal(error):
+                return JSONResponse(
+                    rejection, status_code=402 if rejection == PAID_ALPHA_PLAN else 401
+                )
             raise error
 
         app.exception_handlers[Exception] = unhandled
@@ -183,9 +197,13 @@ async def call_tool_with_failures(
                 structured_content=OFFLINE,
                 is_error=True,
             )
-        if rejection := credential_rejection(error):
+        if rejection := provider_refusal(error):
             return ToolResult(
-                content="The data provider rejected the configured key.",
+                content=(
+                    "alpha_vantage_paid_plan_required"
+                    if rejection == PAID_ALPHA_PLAN
+                    else "The data provider rejected the configured key."
+                ),
                 structured_content=rejection,
                 is_error=True,
             )

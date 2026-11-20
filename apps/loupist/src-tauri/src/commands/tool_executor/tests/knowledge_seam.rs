@@ -341,6 +341,50 @@ async fn world_search_fuses_indexed_hits_and_keeps_lexical_results_when_assets_f
     assert_eq!(failed["partial"], true);
     assert!(!failed["warnings"].as_array().unwrap().is_empty());
     assert!(!failed.to_string().contains("resources/embed_assets"));
+    // Broken assets are not a model still loading.
+    assert!(!failed.to_string().contains("still loading"));
+}
+
+/// Until the embedding model has loaded, world_search answers at once from
+/// words and Map names and says so; once it has, the same search ranks with
+/// the model and carries no warning.
+#[tokio::test]
+async fn world_search_answers_from_words_while_the_model_loads_and_says_so() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut state = seeded_state(&temporary);
+    let resources = temporary.path().join("resources");
+    fs::create_dir_all(resources.join("embed_assets")).unwrap();
+    crate::knowledge::fixture_model(&resources.join("embed_assets"));
+    state.graph = crate::knowledge::GraphSupervisor::with_inference(
+        state.store.clone(),
+        temporary.path().to_path_buf(),
+        Some(resources),
+        state.maintenance.clone(),
+        None,
+    );
+    let source = retain_publisher_source(&state, b"Memory packaging and bandwidth.");
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    let policy = policy(true, false);
+    let search = || executor.world_search(&policy, json!({"query":"bandwidth"}));
+    let found = search().await.unwrap();
+    assert!(found["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|hit| hit["recordId"] == source.record_id));
+    assert_eq!(found["partial"], true);
+    assert!(found["warnings"][0]
+        .as_str()
+        .unwrap()
+        .contains("still loading"));
+    let started = std::time::Instant::now();
+    while state.graph.semantic_model().is_none() {
+        assert!(started.elapsed() < std::time::Duration::from_secs(60));
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    let found = search().await.unwrap();
+    assert_eq!(found["partial"], false);
+    assert_eq!(found["warnings"], json!([]));
 }
 
 #[test]
@@ -373,6 +417,40 @@ fn graph_retrieval_fuses_shared_claims_once_and_keeps_lexical_hits() {
     let view = ranked["view"].get("view").unwrap_or(&ranked["view"]);
     assert_eq!(view["edges"][0]["adapter_id"], "clm_shared");
     assert!(ranked["score"].as_u64().unwrap() > 0);
+}
+
+/// Knowledge search's fused scores (a million for a first place) are on
+/// another scale than the World merge's. The World rows still lead, and the
+/// other rows keep knowledge search's order.
+#[test]
+fn world_scope_merge_puts_world_rows_before_higher_fused_knowledge_scores() {
+    let mut hits = vec![
+        json!({"scope":"source", "recordId":"rec_s", "objectId":"spn_top", "score":2_000_000}),
+        json!({"scope":"world", "recordId":"rec_w", "objectId":"clm_shared", "score":1_500_000}),
+        json!({"scope":"world", "recordId":"rec_w", "objectId":"clm_lexical", "score":1_000_000}),
+        json!({"scope":"source", "recordId":"rec_s", "objectId":"spn_next", "score":500_000}),
+        json!({"scope":"source", "recordId":"rec_t", "objectId":"spn_last", "score":500_000}),
+    ];
+    super::super::memory_reads::fuse_ranked_world_hits(
+        &mut hits,
+        "rec_w",
+        "rev_1",
+        json!("World"),
+        "hybrid",
+        json!({"view": {"edges": [{"adapter_id":"clm_graph"}, {"adapter_id":"clm_shared"}]}}),
+    );
+    let order: Vec<_> = hits
+        .iter()
+        .map(|hit| {
+            hit.get("objectId")
+                .and_then(Value::as_str)
+                .unwrap_or("indexed")
+        })
+        .collect();
+    assert_eq!(
+        order,
+        ["indexed", "clm_lexical", "spn_top", "spn_next", "spn_last"]
+    );
 }
 
 #[tokio::test]

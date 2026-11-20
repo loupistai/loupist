@@ -61,10 +61,10 @@ it('searches and selects with the keyboard, opens the inspector, and attaches th
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
   expect(screen.getByRole('combobox')).toHaveFocus();
 });
-it('provides list navigation and combines watchlist and kind filters', async () => {
+it('provides list navigation and combines the followed and kind filters', async () => {
   const { user } = await setup();
   await user.click(screen.getByRole('button', { name: 'Filter' }));
-  await user.click(screen.getByLabelText('Only what I follow and hold'));
+  await user.click(screen.getByLabelText('Only what I follow'));
   await screen.findByText('3 on the map · 2 relationships');
   await user.keyboard('{Escape}');
   await user.click(screen.getByRole('button', { name: 'More actions' }));
@@ -73,6 +73,9 @@ it('provides list navigation and combines watchlist and kind filters', async () 
   expect(within(table).getAllByRole('row')).toHaveLength(4);
   await user.click(within(table).getByRole('button', { name: 'TSMC' }));
   expect(await screen.findByRole('heading', { name: 'TSMC' })).toHaveFocus();
+  // Closing the inspector returns to the row the name was chosen from, not to search.
+  await user.click(screen.getByRole('button', { name: 'Close inspector' }));
+  expect(within(screen.getByRole('table', { name: 'List view' })).getByRole('button', { name: 'TSMC' })).toHaveFocus();
 });
 it('retries a failed projection without switching Loupist', async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -141,6 +144,7 @@ it('reads the World through a Lens and clears back to the World', async () => {
   await user.click(screen.getByRole('button', { name: /Compare competitive advantages/ }));
   const pill = await screen.findByText('Applied Lens: Compare competitive advantages');
   expect(pill.closest('[data-lens-applied]')).toHaveAttribute('data-lens-applied', 'map-lens-1');
+  expect(within(pill.closest<HTMLElement>('[data-lens-applied]')!).getByRole('button', { name: 'Clear Lens highlight' })).toHaveAttribute('title', 'Clear Lens highlight');
   expect(canvas()).toHaveAttribute('data-overlay', 'map-entity-00,map-entity-02,map-entity-04,map-entity-06,map-entity-08');
   expect(screen.getByRole('button', { name: 'Apple' })).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Filter' }));
@@ -150,29 +154,19 @@ it('reads the World through a Lens and clears back to the World', async () => {
   expect(canvas()).toHaveAttribute('data-overlay', '');
   expect(await screen.findByText('37 on the map · 36 relationships')).toBeVisible();
 });
-it('shows the host default title as the localized perspective', async () => {
+it('counts no relationship for a value a name reports about itself', async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const catalog = await bridge.knowledgeCatalog({ loupistId: 'loupist-quality' });
   const map = await bridge.knowledgeMap({ loupistId: catalog.loupistId });
-  const standing = map.nodes.find(node => node.id === 'map-lens-0');
-  standing!.label = 'Outlook';
-  catalog.lenses.push({ ...catalog.lenses[0]!, recordId: 'map-lens-0', title: 'Outlook', lensKind: 'perspective', applicability: 'This Loupist has not recorded a standing philosophy.', isStanding: true } as typeof catalog.lenses[number]);
+  const entity = map.nodes.find(node => node.kind === 'entity')!;
+  map.edges.push({ ...map.edges.find(edge => edge.kind === 'claim')!, id: 'reports-self', relation: 'REPORTS', source: entity.id, target: entity.id });
   vi.spyOn(bridge, 'knowledgeMap').mockResolvedValue(map);
   function Harness() {
     const [location, setLocation] = useState<KnowledgeLocation>({ loupistId: catalog.loupistId, surface: 'world', recordId: catalog.worlds[0]?.recordId, revisionId: catalog.worlds[0]?.revisionId });
     return <MapView bridge={bridge} catalog={catalog} location={location} onPatch={setLocation} onOpen={vi.fn()} onAsk={vi.fn()} />;
   }
   render(<Harness />);
-  await screen.findByText('37 on the map · 36 relationships');
-  const user = userEvent.setup();
-  await user.click(screen.getByRole('button', { name: 'Filter' }));
-  await user.click(screen.getByText('Highlight Lens applications'));
-  expect(screen.getByRole('button', { name: /^Perspective/ })).toBeVisible();
-  expect(screen.queryByRole('button', { name: /Standing/ })).toBeNull();
-  await user.keyboard('{Escape}');
-  await user.type(screen.getByRole('combobox'), 'Standing');
-  expect(await screen.findByText('No match on the map. Try Sources in the Library.')).toBeVisible();
-  expect(screen.queryByRole('option')).toBeNull();
+  expect(await screen.findByText('37 on the map · 36 relationships')).toBeVisible();
 });
 it('highlights the companies a Lens was applied to in Korean', async () => {
   setPreviewLanguage('ko');
@@ -188,7 +182,7 @@ it('highlights the companies a Lens was applied to in Korean', async () => {
     expect(screen.queryByRole('button', { name: '렌즈 위키' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: '필터' }));
     await userEvent.click(screen.getByText('렌즈 적용 대상 강조'));
-    expect(screen.getByText('렌즈를 선택하면 이 관점으로 살펴본 기업·자산 등이 지도에서 강조돼요.')).toBeVisible();
+    expect(screen.getByText('렌즈를 선택하면 이 관점으로 살펴본 기업·자산 등이 지도에서 강조됩니다.')).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: /Compare competitive advantages/ }));
     expect(await screen.findByText('적용된 렌즈: Compare competitive advantages')).toBeVisible();
     expect(document.querySelector('[data-lens-applied="map-lens-1"]')).toBeTruthy();

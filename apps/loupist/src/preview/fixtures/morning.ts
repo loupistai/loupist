@@ -1,7 +1,20 @@
-/** Preview fixtures for the empty Chat's morning message and its event strip. */
+/** Preview fixtures for the empty Chat's morning message. */
 import { MIN_VISIT_MS, recordVisit } from "../../app/loupistVisit";
 import { mockAssetId } from "../../bridge/mock/assets";
 import { companies, FIXTURE_TIME, prepareFixture, PreviewBridge, previewKo, sourceTitles } from "../fixtures";
+
+/**
+ * The home Thread's messages as written `days` before the fixture's clock. Bot's news waits for a
+ * real absence after the person's last message, and the stored conversation is dated at the clock.
+ */
+export function writtenEarlier(bridge: PreviewBridge, days: number) {
+  const select = bridge.loupistSelect.bind(bridge);
+  const shift = (at: string) => new Date(Date.parse(at) - days * 86_400_000).toISOString();
+  bridge.loupistSelect = async loupistId => {
+    const workspace = await select(loupistId);
+    return { ...workspace, threads: workspace.threads.map(thread => thread.home ? { ...thread, messages: thread.messages.map(message => ({ ...message, created_at: shift(message.created_at) })) } : thread) };
+  };
+}
 
 /**
  * The empty Chat's morning message. "morning": two days since the last visit with new names,
@@ -34,8 +47,7 @@ export async function prepareMorningFixture(bridge: PreviewBridge, state: "morni
     event("source_retained", null, FIXTURE_TIME - 10 * hour, ko ? "한울정밀 2026년 3분기 실적 설명자료" : sourceTitles[1]), event("schema_extended", null, FIXTURE_TIME - 11 * hour),
   ] : state === "first-day" ? ["00", "01", "02", "04", "29"].map((id, i) => event("entity_added", `map-entity-${id}`, FIXTURE_TIME - 10 * 60_000 - i)) : [];
   bridge.knowledgeGrowthEvents = async request => ({ events: events.filter(item => request.sinceMs == null || item.atMs >= request.sinceMs).sort((a, b) => a.atMs - b.atMs), nextCursor: null });
-  const watchlist = [{ symbol: "HNP", market: "KRX", displayName: ko ? "한울정밀" : "Hanul Precision", addedAtMs: FIXTURE_TIME - 30 * 86_400_000 }];
-  bridge.watchlistList = async () => structuredClone(watchlist);
+  bridge.assets.installAsset({ assetId: mockAssetId("Hanul Precision"), name: ko ? "한울정밀" : "Hanul Precision", ticker: "HNP", exchange: "KS", createdAtMs: FIXTURE_TIME - 30 * 86_400_000 });
   if (state !== "morning") {
     // A briefing already read before the last visit is not news.
     const inbox = bridge.inboxList.bind(bridge);
@@ -62,33 +74,4 @@ export async function prepareMorningFixture(bridge: PreviewBridge, state: "morni
     const select = bridge.loupistSelect.bind(bridge);
     bridge.loupistSelect = async loupistId => { const workspace = await select(loupistId); return loupistId === "loupist-quality" ? { ...workspace, loupist: { ...workspace.loupist, philosophy } } : workspace; };
   }
-}
-
-/**
- * The morning message's event strip (W15.9e) on the fixture day (Wed Oct 28):
- * five events in the next two weeks, as Rust orders them, or nothing ahead.
- */
-export async function prepareUpcomingFixture(bridge: PreviewBridge, state: "events" | "none") {
-  await prepareMorningFixture(bridge, "morning");
-  if (state === "none") { bridge.assets.installUpcoming("loupist-quality", []); return; }
-  const ko = previewKo();
-  const asset = (symbol: string, market: string, name: string, entityId: string) => ({ assetId: mockAssetId(symbol, market), symbol, market, name, entityId });
-  const hanul = asset("HNP", "KRX", "Hanul Precision", "map-entity-00");
-  const eunbit = asset("EBM", "KRX", "Eunbit Materials", "map-entity-04");
-  const backlog = ko ? "모로우의 수주 잔고가 계속 늘어난다" : "Morrow’s order backlog keeps growing";
-  // The check in the strip is the Journal's own; the message does not repeat it as a bullet.
-  const journal = bridge.journalList.bind(bridge);
-  bridge.journalList = async request => [...await journal(request), {
-    journalId: "preview-upcoming-check", researchId: "", loupistId: "loupist-quality", judgment: backlog, reasoning: "", entities: [],
-    check: { claim: backlog, metric: ko ? "수주 잔고" : "order backlog", direction: "above", threshold: 0, byDate: "2026-11-03" }, originChatId: "preview-chat",
-    createdAtMs: FIXTURE_TIME - 20 * 86_400_000, updatedAtMs: FIXTURE_TIME - 20 * 86_400_000, archived: false, inputDigest: "preview",
-    inputs: { sources: [], worlds: [], lenses: [], earlier: [] },
-  } as import("../../types").JournalRecord];
-  bridge.assets.installUpcoming("loupist-quality", [
-    { kind: "results", date: "2026-10-29", asset: asset("MRRW", "NASDAQ", "Morrow Components", "map-entity-01"), dateSource: "calendar", eventId: "ern_0123456789abcdef", period: "Q3 2026" },
-    { kind: "exDividend", date: "2026-10-30", asset: asset("BLHV", "NYSE", "Bluehaven Logistics", "map-entity-02") },
-    { kind: "results", date: "2026-11-02", asset: hanul, dateSource: "ir_notice", eventId: "ern_1123456789abcdef", period: "Q3 2026" },
-    { kind: "check", date: "2026-11-03", journalId: "preview-upcoming-check", claim: backlog },
-    { kind: "recordDate", date: "2026-11-09", asset: eunbit },
-  ]);
 }

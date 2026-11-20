@@ -49,9 +49,17 @@ pub(super) fn records(bytes: &[u8]) -> Result<Vec<Value>> {
         .map(|line| Ok(serde_json::from_str(line)?))
         .collect()
 }
-pub(super) fn selected(scenario: &Scenario, ids: &[String], tags: &[String]) -> bool {
+/// A `scripted` scenario needs fixture state that only its eval-harness test
+/// creates, such as H-004's finished hand-off card, so a live run skips it.
+pub(super) fn scripted(scenario: &Scenario) -> bool {
+    scenario.tags.iter().any(|tag| tag == "scripted")
+}
+pub(super) fn matches(scenario: &Scenario, ids: &[String], tags: &[String]) -> bool {
     (ids.is_empty() || ids.contains(&scenario.id))
         && (tags.is_empty() || tags.iter().any(|tag| scenario.tags.contains(tag)))
+}
+pub(super) fn selected(scenario: &Scenario, ids: &[String], tags: &[String]) -> bool {
+    !scripted(scenario) && matches(scenario, ids, tags)
 }
 pub(super) struct ScenarioInput {
     pub sha256: String,
@@ -396,5 +404,59 @@ mod tests {
                 .sha256
         );
         assert!(frozen.replay.unwrap().requests.is_empty());
+    }
+
+    #[test]
+    fn live_runs_never_select_a_scripted_scenario() {
+        let suite: Suite =
+            serde_json::from_str(include_str!("../../../evals/agent/suites/handoff-v1.json"))
+                .unwrap();
+        for scenario in &suite.scenarios {
+            assert!(scripted(scenario), "{}", scenario.id);
+            assert!(matches(scenario, &[], &scenario.tags));
+            assert!(!selected(scenario, &[], &[]));
+            assert!(!selected(
+                scenario,
+                std::slice::from_ref(&scenario.id),
+                &scenario.tags
+            ));
+        }
+        let live: Scenario =
+            serde_json::from_value(json!({"id":"a","title":"a","tags":["handoff"],"sessions":[]}))
+                .unwrap();
+        assert!(!scripted(&live));
+        assert!(selected(&live, &[], &[]));
+        assert!(selected(&live, &["a".into()], &["handoff".into()]));
+        assert!(!selected(&live, &["b".into()], &[]));
+    }
+
+    #[tokio::test]
+    async fn a_scripted_suite_makes_no_live_run() {
+        let root = tempfile::tempdir().unwrap();
+        let out = root.path().join("traces.jsonl");
+        let options = |scenarios: Vec<String>| Options {
+            suite: Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../evals/agent/suites/handoff-v1.json"),
+            out: out.clone(),
+            scenarios,
+            trials: 1,
+            model: None,
+            thinking: "medium".into(),
+            pi_agent_dir: root.path().to_path_buf(),
+            agent_assets: None,
+            keep: false,
+            resume: false,
+            tags: vec![],
+            turn_timeout_ms: 1_000,
+        };
+        // Nothing reaches artifacts, Pi or a provider, and no traces file is written.
+        run(options(vec![])).await.unwrap();
+        assert!(!out.exists());
+        let named = run(options(vec!["H-004".into()])).await.unwrap_err();
+        assert_eq!(
+            named.to_string(),
+            "H-004 is scripted: it runs only in its eval-harness test"
+        );
+        assert!(!out.exists());
     }
 }

@@ -18,7 +18,7 @@ tools, and any unverified boundary is reported.
 | --- | --- |
 | Prices, volume and technical studies | `chart_publish` with a financial view; KLineCharts supports indicators, custom numeric series in shared auxiliary panes, drawing overlays and local zoom |
 | Trends, rankings and relationships in tabular data | `chart_publish` with an analytic line, area, bar or scatter view, rendered through Flint and Vega-Lite |
-| Two or more assets on two or more measures, or sources that disagree on one value | `grid_publish` with layout `assets` or `conflict` ([grid cells](grids.md#grid-cells)) |
+| A sortable, exportable asset comparison or a card comparing conflicting sources | `grid_publish` with layout `assets` or `conflict` ([grid cells](grids.md#grid-cells)) |
 | A compact process, relationship or explanatory diagram | A Mermaid block in Chat or a Markdown artifact |
 | Change assumptions | Rerun a saved local script with explicit inputs and parameters, then import a new result revision |
 | A custom chart, report or shareable export | Native workspace Python or JavaScript with saved inputs, code and output files |
@@ -76,15 +76,27 @@ must follow an exact `artifact_read`. `artifact_restore` requires the current
 revision the caller saw and appends the selected content as a new current revision;
 it keeps the original producer and records `restored_from_revision_id`. Existing
 answers and retained revisions remain unchanged. Ask on an older chart selects
-that revision; edits still require a read of the current revision.
+that revision; edits require the current revision to have been read or published
+in this turn. Model reads resolve delivered drafts before storage, including their
+dataset and lineage; an explicit earlier revision still reads retained history.
+A reply may publish four distinct artifacts. Revising a delivered draft replaces
+it at the same revision number without using another slot, and only the final
+draft is stored when the reply completes. The first revision of a stored artifact
+increments its revision number once.
 
-`chart_query` pages the stored chart data at up to 200 rows and 32 KiB per window,
+`chart_query` pages the current draft or stored chart data at up to 200 rows and 32 KiB per window,
 using `next_offset` for continuation. Ask Loupist selects an exact artifact revision;
 opening, scrolling or copying its data does not add it to model context.
 
-The Files reader previews supported raster images, CSV/TSV tables and Markdown. A local HTML
-file remains source text in the app. HTML and SVG readers explain how to view
-the finished output and offer **Show file** to reveal it in the file manager.
+The Files reader previews supported raster images, SVG, CSV/TSV tables and Markdown. A
+complete SVG read (within the reader's 256 KiB bound) previews as an image, with a
+Preview and Source toggle: an `<img>` whose source is a `data:image/svg+xml` URL of the
+file's text (`workspaceSvgPreview` in `components/workspace/WorkspaceFileContext.ts`),
+so its scripts do not run and its external references do not load; its markup is never
+inserted into the page, an iframe or an object. A file that fails to draw shows the image
+error state. A local HTML file, or an SVG too large to read whole, remains source text in
+the app; its reader explains how to view the finished output and offers **Show file** to
+reveal it in the file manager.
 Opening it in a browser is a separate action. The app chart schema does not accept arbitrary
 HTML, JavaScript, Vega specifications or custom slider controls. A chart or image
 does not become independent evidence, and screenshot-derived prices are not exact

@@ -1,6 +1,6 @@
 # Chat composer
 
-The composer and rail attach context and do not send it. Text and object references appear at the textarea cursor; whole-message settings (Skills, as-of date, privacy and model) sit below the text. Focus on the composer, including the automatic focus of a new chat, turns its 1px edge to the focus color and adds a soft 3px halo of the same color. It draws no 2px outline, which would frame the whole composer. Footer controls keep their own outline. When the tools wrap onto another row, Send stays at the trailing edge of that row. `/asof` is the [date control](../analysis/point-in-time.md#composer-date-control). Width and the browser: [Evidence](evidence-browser.md).
+The composer attaches context and does not send it. It is a compact pill (24 px radius) as wide as the reading column: one row holding, in reading and tab order, the + menu, the message, a quiet model label ("Auto") and the accent Send tile. The message starts one line high and grows with its text, line by line, up to 200 px or 30% of the window height, whichever is less; past that it scrolls and keeps the caret's line in view. The controls stay on its last line. `ChatComposer` sets that height from the text itself: the WebKit of supported macOS releases has no `field-sizing: content`, so a CSS-only composer stayed one line high there (`assertComposerGrows` in `e2e/native-forms.mjs` measures it in the WebView). The placeholder addresses the Loupist by name ("Message Lumi", "루미에게 메시지"), and the one-line notice ("AI can be wrong. Not a licensed financial adviser.") sits under the pill in 11 px. Text and object references appear at the textarea cursor; attachments and guidance sit above the row inside the pill, and whole-message settings (private chat, Skills and the as-of date) sit under it, aligned with the text. Focus on the composer, including the automatic focus of a new chat, turns its 1px edge to the accent ink. It draws no 2px outline, which would frame the whole composer. Controls keep their own outline. Styles: `src/styles/composer.css`. `/asof` is the [date control](../analysis/point-in-time.md#composer-date-control). Width and the browser: [Evidence](evidence-browser.md).
 Answer table, code and diagram controls use the current UI language for their tooltips and accessible names. Copy confirmation clears after a short delay; refreshed snapshots of the same answer, number or grid preserve it. A stopped reply shows the localized run state without the runtime's English stop marker in the answer or its copy action.
 The transcript keeps public progress notes, findings and citations in reading
 order. While work runs, short action labels grow down the conversation between
@@ -48,17 +48,26 @@ While a reply runs, an empty composer shows only Stop. Typing makes Send next th
 primary control: Enter queues the message for after this reply, and Guide this response
 is the smaller control beside it (⌘Enter on a Mac, Ctrl+Enter on Windows). Shift+Enter
 starts a new line. Stop stays next to them. Files, an as-of date, pins, or selected work
-cannot guide the live reply; Send next queues that message with them. Guidance that has
+cannot guide the live reply; Send next queues that message with them. Guidance needs no
+model choice, since the running reply keeps its own; a session Bot handed off is guided the
+same way once it is open ([Bot](home-thread.md#home-thread)). Guidance that has
 not been accepted yet reads as waiting on the composer. Once Pi accepts it, that note
-switches to guiding and then clears, and a Guiding row stays in the timeline. Rust stores
+switches to guiding and then clears, and a Guiding row stays in the timeline. A screen
+reader hears the waiting note, then the Guiding row once as the conversation log adds it;
+the accepted note and the composer's status region do not say it again. Rust stores
 accepted guidance as a user message marked `steer`; it stays a user turn for the model
 and reads as a "Guided: …" row between the question and its answer after the run; a
 stopped answer says what it kept. Queued messages sit in a compact list above the
 composer: a count, one short row each, and Edit, reorder, Remove, and Send now in that
-row's menu. The list can fold. It keeps queue order and the queued payload. Up to three
+row's menu. When Send now cannot go, the menu says why under it (the running reply, offline,
+or what to reconnect). A stopped or failed reply holds the queue with a line that says so and
+offers Send next now. Removing or sending a row from its menu moves focus to the row in its
+place, or to the message when none is left. The list can fold. It keeps queue order and the queued payload. Up to three
 next-step chips after the latest answer come from the conflicts and names it
-found and fill the composer without sending. Leaving a view or switching Loupist does not cancel an admitted
-Chat. Private chat is a checkbox in the composer's + menu; while it is on, a "Private · memory off" chip with an off button sits above the composer. Without an AI account, Connect an AI account takes the send slot and the placeholder says so. Private chat is described under
+found and fill the composer without sending. A chip names only a company the Map
+matched by listing to something followed; currencies, places, sectors,
+metrics and other or unknown kinds offer none, so an answer may have no chips. Leaving a view or switching Loupist does not cancel an admitted
+Chat. Private chat is a checkbox in the composer's + menu; while it is on, a "Private · memory off" chip with an off button sits under the message row. Without an AI account, Connect an AI account takes the send slot and the placeholder says so. Private chat is described under
 [Memory permissions](../knowledge/memory.md#memory-permissions-and-retrieval).
 Focusing a control below the fold scrolls it into the conversation. A sent question
 glides to the top of the thread and the reply writes beneath it; the page moves by
@@ -69,27 +78,22 @@ the thread, 12 px above the composer, without taking a row; Jump to latest follo
 reply until the reader scrolls up. A settled chat opens at its newest answer and stays
 there while late content (images, tables, the morning message) arrives.
 
-Send and Stop are one 28 px tile at the composer's trailing edge (`ComposerTile`): the
+Send and Stop are one round 36 px tile at the composer's trailing edge (`ComposerTile`): the
 same button stays mounted from idle to running and back, so its box never changes, and
 its two icons cross-fade in place (opacity and a 0.8 scale, 120 ms; a swap under reduced
-motion) while its fill eases to the action colour. With nothing typed, Send is a quiet
-tile whose arrow uses the tertiary text colour, at least 3:1 against the tile in both
-themes; while a reply runs, Stop is a filled square. Stop ("Stop response", Esc in its tooltip; Esc in the composer stops the reply unless a
-menu is open) dims to
+motion) while its fill eases from the accent to ink. Send keeps the accent fill with
+nothing typed (it then ignores presses); while a reply runs, Stop is an ink tile with a
+filled square. Stop ("Stop response", Esc in its tooltip; Esc in the composer stops the reply unless a
+menu is open or the activity sheet overlays the chat, which Esc closes first) dims to
 55% after a press and ignores presses until the host confirms. Focus stays in the
-textarea through send, stop and commit, including the first message of a new research
+textarea through send, stop and commit (Send or Stop pressed from the keyboard returns focus
+there, and so does removing an attachment, a chip or the private mark by its button), including the first message of a new research
 session: the saved Chat it creates keeps the draft's composer and thread instead of
 mounting new ones.
-After a reply saves a Source, a running World job, or a queued job whose processing is ready, shows “Reviewing sources…” in the Learned row, including when it is folded. A queued job blocked by a disconnected provider, paused processing or another readiness condition shows the useful status or action, such as “Reconnect your AI account” or “Source review is paused”, without a spinner. If readiness cannot be read, it says “Waiting to review sources”. Polling continues so reconnecting or resuming processing updates the row. In a narrow chat the
-compact context card shows the same status above the transcript, with approval requests alongside it. As
-jobs finish, their additions become available in the row. When all work settles,
-the row shows the chat's learned counts or disappears if there are none.
+After a reply saves a Source, a running World job, or a queued job whose processing is ready, shows “Reviewing sources…” as a quiet line on the activity sheet’s Learned tab. A queued job blocked by a disconnected provider, paused processing or another readiness condition shows the useful status or action, such as “Reconnect your AI account” or “Source review is paused”, without a spinner. If readiness cannot be read, it says “Waiting to review sources”. Polling continues so reconnecting or resuming processing updates the row. As jobs finish, their additions
+appear on that tab; when all work settles, the tab shows the chat's learned names or says nothing was saved.
 
-The "In this chat" rail lists Files & images (up to eight thumbnails; files linked
-in answers marked "from Loupist"), Using (principles, methods and connections the
-answers used, plus pins), Learned (this chat's growth events, with name chips that
-highlight on the mini map) and Needs you: one "Needs your OK" row naming the waiting request (or how many) that scrolls to its card in the answer and focuses it; the buttons are only on that card. Its placement follows
-the chat workspace’s width. At 1120 px and wider, the sections share a 300px panel in a reserved right column of the chat body, inset 8px from its top and 12px from its right edge. The conversation and composer center in the remaining space; a transient status header uses that same column. At narrower widths, including beside a split panel, the same cards occupy their own right-aligned row above the transcript. A collapsed card's summary wraps so its counts stay visible. The Needs you target stays on one line, so Show stays at the end of that row. That row can scroll within 30% of the chat body height. Opening a section changes its row height instead of floating over the answer or composer. An empty status header reserves no space. The rail is absent when there is no context. Fold state is remembered per Loupist on the device. The composer's "+" menu opens above the composer, aligned to its left edge like the `@` and `/` menus, and holds
+The composer's "+" menu opens above the composer, aligned to its left edge like the `@` and `/` menus, and holds
 Files…, Paste image, Screenshot of the map (disabled with a reason when no map is
 open or it is empty) and Add from Evidence (this chat's saved Sources as pins);
 dragging files over the chat column shows one drop overlay with the limits. The tray shows each file's size. Each file may be up to 25 MB (images 5 MB); Rust enforces it in `prepare_chat_attachments` and refuses a larger file with `attachment_too_large`, which the composer words in the reader's language.
@@ -97,7 +101,9 @@ dragging files over the chat column shows one drop overlay with the limits. The 
 The composer has `@` for existing context and `/` for commands and Skills.
 `@` searches files, knowledge, work and connections, including existing World
 references, while a reply streams as well as while idle. It does not search the watchlist or offer free-form ticker selection.
-`/` lists `/brief`, `/compare`, `/check`, `/asof` and then Skills by name.
+`/` lists `/brief`, `/compare`, `/check`, `/asof` and then Skills by name, then the
+composer's actions: New research, Model, Private chat (named as in the + menu, with what
+choosing it does now under it; `/memory` finds it too) and Attach files.
 `/brief` and `/compare` start editable prose. Dollar amounts and ticker text,
 including old `$SYMBOL:MARKET (Name)` messages, remain ordinary text. They do not
 open a menu, attach a company chip, or add an asset card to an answer. Skills keep
@@ -111,7 +117,8 @@ approval that Settings › Connections shows and revokes, and Not now records a
 `declined` refusal while the Loupist continues without the tool. The card says the
 custom connection receives the request and that the approved tool can only read
 data; it does not promise the request stays on the device. A card still waiting
-when the run ends reads "No longer needed". Tools that are not read-only, and
+when the run ends reads "No longer needed". A card decided from the keyboard hands focus to
+its settled line, as a question card does once answered. Tools that are not read-only, and
 unattended runs, keep the plain refusal. This is the only approval card: a native
 command or file access is allowed or refused by Rust without asking, and a refused
 step explains itself in place ([Native tool permissions](../runtime/permissions.md));
@@ -127,7 +134,7 @@ field up to 500 characters and the waiting clock. Answers go through
 `chat_question_answer {loupist_id, request_id, choice | text}` (exactly one; Rust checks the
 Loupist, the option index and the length). The settled line reads "You answered: …" or,
 when the wait ran out or the run stopped, "No answer · continued with <recommended
-option>". A waiting question counts in the rail's "Needs your OK" row, which reads "Needs your
+option>". A waiting question counts in the activity sheet's "Waiting for you" row, which reads "Needs your
 answer" when only questions wait, and turns the footer to "Waiting for you"; one still waiting when the run ends is saved as expired.
 
 A completed `connection_setup` step leaves a setup card under the answer
@@ -148,11 +155,15 @@ removes its unsent prompt, context and attachment drafts from the app profile; a
 failed deletion keeps them. A draft write
 that arrives after deletion cannot recreate them. Drafts for other Chats stay.
 
-Selected workspace files, connections, quoted text, knowledge and work are inserted inline at the current cursor or selection. The editor uses a native textarea with a synchronized highlight layer; reference styling has the same text metrics, so wrapping, scrolling, selection and IME remain native. The draft retains bounded UTF-16 ranges alongside its existing typed pins, selected artifact and chip metadata. Typing before a reference shifts its range; editing inside it detaches the structured reference and leaves ordinary text. Backspace immediately after a reference, or Delete immediately before one, removes that occurrence atomically. Repeated references keep distinct offsets and serialize at each position; their shared typed context stays until the last occurrence is removed. The named removal action removes every occurrence of that context. Named removal controls are available to screen readers and reveal themselves when reached with Tab. Inserting or removing one reference preserves the surrounding question and other references. External draft restoration waits for the textarea to adopt the saved text before anchoring its references.
+Selected workspace files, connections, quoted text, knowledge and work are inserted inline at the current cursor or selection. An action elsewhere that puts words or a reference in the composer (a chart's or table's Ask, Ask in Chat from the Map or Lens, Explain the disagreement, a suggested question, Use in Chat, a quote) then hands it the keyboard with the caret after everything in it (`focusComposerAtEnd`); the reference it adds does not place the caret itself, because WebKit would take focus there, before any text after it. The editor uses a native textarea with a synchronized highlight layer; reference styling has the same text metrics, so wrapping, scrolling, selection and IME remain native. The draft retains bounded UTF-16 ranges alongside its existing typed pins, selected artifact and chip metadata. Typing before a reference shifts its range; editing inside it detaches the structured reference and leaves ordinary text. Backspace immediately after a reference, or Delete immediately before one, removes that occurrence atomically. Repeated references keep distinct offsets and serialize at each position; their shared typed context stays until the last occurrence is removed. The named removal action removes every occurrence of that context. Named removal controls are available to screen readers and reveal themselves when reached with Tab. Inserting or removing one reference preserves the surrounding question and other references. External draft restoration waits for the textarea to adopt the saved text before anchoring its references.
 
 Skills are whole-message modes and stay in a compact row below the textarea with the as-of date. Privacy status and model controls also stay below the text; attached file previews retain their own tray. Inline serialization keeps the reference's place in the sentence: connections use `@entry_id`, and workspace files use relative paths. Knowledge and work show their natural labels in the sent prose while their existing typed fields carry identity and ownership. No opaque editor key is put into the prompt. Rust removes retired company chips when `chat_draft_read` restores a saved draft. An inline ticker keeps its visible text and loses its reference metadata. A tray-only ticker becomes ordinary name, symbol and market prose before the existing question, and retained inline offsets shift by the prefix's UTF-16 length. Supported chips, pins, work and the as-of date stay intact. Legacy supported chips without inline ranges retain their previous serialization until the editor migrates them. Queued messages already hold serialized prose and typed context, so they need no chip migration. Selecting at least three words in an answer
 offers "Ask about this", and selecting text in a panel reader offers "Add to
-question". The floating reader action renders inside its panel so it remains
+question". The button sits just under the end of the selection, or over its start
+when the end is at the bottom of the view, and never on the selected text. An answer
+selection paints its text only (WebKit would fill line ends and the space between
+blocks), takes in checked numbers, citations and links, ends at the thread's end
+when a drag leaves the last message, and never reaches the composer. The floating reader action renders inside its panel so it remains
 visible and keyboard-reachable above a narrow overlay. A selection in a retained
 Source resolves through Rust
 `knowledge_source_selection_resolve` to its existing host-created containing
@@ -167,12 +178,17 @@ without a retained Source binding remain quote chips. A newly selected quote or 
 attach context and focus the composer; they never send. At narrow widths this
 closes the panel overlay so the composer can take focus.
 The composer's run-profile control shows "Auto" while nothing is chosen for the
-Loupist (Chat defaults apply), the chosen model's name as a chip otherwise, and
-"Connect an AI account" when no account is connected. An explicit selection shows its model and reasoning level in the tooltip. Auto says "Uses your default model settings"; it does not explain selection timing or show the last answer’s model as a prediction. Per-Loupist message overrides last for the current app session and return to Auto after reload. With nothing chosen and no Chat default, a send names no model and Rust
+Loupist (Chat defaults apply) and the chosen model's name otherwise, followed by the
+reasoning level after a middle dot ("Auto · Medium"), as a quiet
+12 px label with a small chevron, and "Connect an AI account" as the filled accent
+button in the send slot when no account is connected. An explicit selection shows its model and reasoning level in the tooltip. Auto says "Uses your default model settings"; it does not explain selection timing or show the last answer’s model as a prediction. Per-Loupist message overrides last for the current app session and return to Auto after reload. With nothing chosen and no Chat default, a send names no model and Rust
 resolves [Auto](../runtime/providers.md#shared-providers-and-world-processing) at admission. The menu
 starts with Auto (or Reset to Auto); for a ChatGPT sign-in its plan line
 ("Using your ChatGPT plan · Manage usage") follows the account that answers. Reasoning options are inside the model menu's
-Advanced section. The one-time Auto notice ("Now using …" with Change, or "… is no
+Advanced section. Picking a model never changes the level silently: the level in use stays
+when the new model lists it, otherwise that model's default applies, in Bot and in a
+research session alike. The label beside the model name is always the level that send
+carries. The one-time Auto notice ("Now using …" with Change, or "… is no
 longer offered. Chat uses Auto now.") sits above the composer until a send or ×. A
 persistent information/not-advice disclosure appears below the composer.
 
@@ -184,3 +200,48 @@ preference/catalog foundation and its coverage are described in
 ## Code
 
 - Chat progress / feedback: `src-tauri/src/chat/progress.rs`, `src/chat/progressLabels.ts`, `src/chat/chartBlocks.ts`, `src/chat/turnView.ts`, `src/components/chat/TurnLedger.tsx`, `src/components/chat/TurnFooter.tsx`, `src/components/chat/AnswerFeedback.tsx`, `src-tauri/src/commands/records.rs`
+
+## Activity sheet
+
+Everything about how a reply was made lives in one sheet
+(`ActivitySheet.tsx`, `chat/chatRail.ts`); nothing about process floats over the
+conversation. It never opens by itself. It opens from the page header's Activity button
+(which toggles it) and from any control that dispatches
+`loupist:open-activity` on `window` with `{ messageId?, tab? }`: `messageId` selects the
+reply (the latest by default), `tab` is `steps`, `sources`, `learned` or `connections`.
+It closes with its close button, Esc (from inside the sheet, from the page, or anywhere
+while it overlays, including from the composer, before Esc stops a reply; while it docks the
+composer keeps Esc for Stop) and, while it overlays, a click
+outside. It is 372px wide and docks beside the conversation when the chat keeps at
+least 420px; below that it slides over the chat from the right with a shadow and dims the
+rest of the conversation, and both stop above the composer so send, stop and the model
+menu stay in reach. Its header is one row: the tabs, "Working" only while a reply runs,
+and close. It repeats neither the Loupist's face and name, which the page already shows,
+nor the answer's time, which What it did gives once ("This answer · 9:00 AM · 11s"); once
+the reply ends, the header's status ("Answered at 9:00 AM") is spoken, not shown, and a
+source review still running shows only on the Learned tab. Earlier answers list replies only, never a
+message the host posted on its own (a result, an alert, a "now also tracks" line).
+
+Three tabs:
+- **Activity**: what the reply did, read and checked. Every step in order, steps of
+  the same kind collapsed into one row with a count and the things they read
+  ("NVDA, AMD") that expands to each run; a failed, stopped or skipped step keeps
+  its own row with a short reason (a security rule, a connection refusal, an
+  unreachable provider, a table, chart or document revision that failed while the
+  reply shows that artifact ("The change was not applied. The earlier version is
+  shown.", matched by the step's title, unless a later publish of that title in the
+  reply succeeded), or a generic "It ended with an error. It
+  was not used in the answer."). Stopped, skipped and safety refusals keep their
+  reasons first. Labels come from the locale catalogs: the catalog's step label, a read's
+  noun ("Read current quote"), the connection's name in the interface language ("Used Web Research", "웹 리서치 사용"), or a
+  generic label for the step's kind; a tool's raw name and the host's English
+  never show. A duration shows only when the host stamped both ends of a step
+  (a group sums its steps only when all have one). Then the cited sources (each opens
+  in Evidence), the figures Rust checked with their status and source, and earlier
+  answers in the chat.
+- **Learned**: the quiet "Reviewing sources" line, what the selected answer saved
+  (with the source review status and the Lens filing card), and the names this chat
+  added to the map, which select on the map.
+- **In use**: requests waiting for the user (Show scrolls to the card in the answer),
+  the principles, methods, pins and connections the chat used, the chat's files and
+  images, and "Open chat materials", which opens the materials panel.

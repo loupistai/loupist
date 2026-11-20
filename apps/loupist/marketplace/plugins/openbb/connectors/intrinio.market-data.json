@@ -1,7 +1,7 @@
 {
   "id": "intrinio.market-data",
   "name": "Intrinio",
-  "summary": "Market prices, fundamentals, and estimates.",
+  "summary": "Market prices, fundamentals, and estimates. Data access requires a paid plan. The individual trial requires a card and renews automatically.",
   "publisher": "Loupist",
   "data_authority": "Intrinio",
   "kind": "data_source",
@@ -66,7 +66,7 @@
         "required": true,
         "min_length": 8,
         "max_length": 512,
-        "help_url": "https://intrinio.com/"
+        "help_url": "https://account.intrinio.com/pricing/individual"
       }
     ]
   }

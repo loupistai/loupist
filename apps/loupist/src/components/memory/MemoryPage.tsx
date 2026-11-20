@@ -10,7 +10,7 @@ import { errorMessage } from "../../lib/errors";
 import { revealFocused } from "../../lib/revealFocused";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { displayPageTitle, displaySectionHeading } from "../../knowledge/hostDefaults";
+import { displaySectionHeading } from "../../knowledge/hostDefaults";
 import { chatTitle } from "../../app/chatTitle";
 import { LensLearningPanel } from "../knowledge/LensLearningPanel";
 import { PageReader } from "./PageReader";
@@ -76,7 +76,7 @@ type Props = {
 /**
  * "What {Loupist} knows": what the Loupist knows about the user, the principles the
  * user taught, the methods it learned, and when. Every write is a typed intent
- * that Rust validates; nothing here shows holdings quantities or values.
+ * that Rust validates.
  */
 export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, onOpenMap, onChanged, onOpenLink, onOpenKnowledge, onAsk }: Props) {
   useTranslation(["knowledge", "onboarding"]);
@@ -137,7 +137,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
     ...data.principles.map(principle => ({ kind: "principle" as const, id: principle.recordId, title: principle.statement, summary: principle.why ?? "", updatedAtMs: principle.createdAtMs, paused: data.paused.has(principle.recordId), principle })),
     ...data.catalog.lenses.filter(lens => lens.lensKind && lens.lensKind !== "principle" && !lens.archived).map(lens => ({
       kind: lens.lensKind as LensKind, id: lens.recordId, summary: lens.summary ?? "", updatedAtMs: lens.updatedAtMs, paused: data.paused.has(lens.recordId), learned: lens.learned,
-      title: displayPageTitle(lens.lensKind as LensKind, lens.title),
+      title: lens.title,
     })),
   ], [data]);
   useEffect(() => {
@@ -204,7 +204,8 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
     {showSharing ? <ShareSheet bridge={bridge} loupistId={loupistId} loupistName={loupist.name} scope={share?.recordId ? { kind: "item", recordId: share.recordId } : { kind: "loupist" }} open={share !== null} onOpenChange={open => { if (!open) setShare(null); }} /> : null}
     <div className="memory-page-subbar">
       <SegmentTabs value={current} counts={{ pages: data ? items.length : undefined }} onChange={value => { setSegment(value); setCompactReader(false); }} />
-      {current === "pages" ? <label className="memory-page-search">
+      {/* With no pages yet there is nothing to search; the empty list says how pages appear. */}
+      {current === "pages" && !(data && !items.length && !query) ? <label className="memory-page-search">
         <SearchIcon aria-hidden="true" />
         <Input type="search" aria-label={t("memoryPage.search")} placeholder={t("memoryPage.search")} value={query} onChange={event => setQuery(event.target.value)} />
         {query ? <Button variant="ghost" size="icon-sm" aria-label={t("memoryPage.clearSearch")} onClick={() => setQuery("")}><XIcon /></Button> : null}
@@ -263,7 +264,7 @@ function SegmentTabs({ value, counts, onChange }: { value: MemorySegment; counts
 
 const usageLine = (item: Item, usage: Map<string, MemoryUsage>) => {
   const used = usage.get(item.id);
-  if (item.kind === "principle") return used?.usedCount ? t("memoryPage.row.used", { count: used.usedCount, formattedCount: formatNumber(used.usedCount), date: day(used.lastUsedAtMs) }) : t("memoryPage.row.taught", { date: day(item.updatedAtMs ?? 0) });
+  if (item.kind === "principle") return used?.usedCount ? t("memoryPage.row.read", { count: used.usedCount, formattedCount: formatNumber(used.usedCount), date: day(used.lastUsedAtMs) }) : t("memoryPage.row.taught", { date: day(item.updatedAtMs ?? 0) });
   if (item.kind === "perspective") return t("memoryPage.perspectiveDescription");
   const learned = item.updatedAtMs ? day(item.updatedAtMs) : "";
   return used?.usedCount ? t("memoryPage.row.learned", { date: learned, count: used.usedCount, formattedCount: formatNumber(used.usedCount) }) : learned ? t("memoryPage.row.learnedOnly", { date: learned }) : t("memoryPage.row.neverUsed");
@@ -301,13 +302,13 @@ function ItemList({ label, description, items, selectedId, usage, onOpen, before
   </div>;
 }
 
-function UsedIn({ usage, threads, onOpenChat }: { usage?: MemoryUsage; threads: readonly ChatThread[]; onOpenChat: (threadId: string) => void }) {
+function UsedIn({ usage, threads, onOpenChat, principle }: { principle?: boolean; usage?: MemoryUsage; threads: readonly ChatThread[]; onOpenChat: (threadId: string) => void }) {
   const rows = (usage?.usedIn ?? []).flatMap(entry => {
     const thread = threads.find(item => item.id === entry.chatId);
     return thread ? [{ ...entry, title: thread.home || thread.title.trim() ? chatTitle(thread) : t("memoryPage.reader.untitledChat") }] : [];
   });
   if (!rows.length) return null;
-  return <section className="memory-reader-section"><h3>{t("memoryPage.reader.usedIn")}</h3><p className="memory-meta">{t("memoryPage.reader.usageDefinition")}</p><ul>
+  return <section className="memory-reader-section"><h3>{t(principle ? "memoryPage.reader.readIn" : "memoryPage.reader.usedIn")}</h3><p className="memory-meta">{t("memoryPage.reader.usageDefinition")}</p><ul>
     {rows.map(row => <li key={row.chatId}><button type="button" onClick={() => onOpenChat(row.chatId)}>{row.title}</button><small>{day(row.atMs)}</small></li>)}
   </ul></section>;
 }
@@ -330,7 +331,7 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
     catch (cause) { setError(errorMessage(cause, t("memoryPage.actionError"))); }
     finally { setBusy(false); }
   };
-  const pauseAction = <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => bridge.knowledgeLensPause({ loupistId, recordId: item.id, paused: !paused }))}>{t(paused ? "memoryPage.actions.resume" : "memoryPage.actions.pause")}</Button>;
+  const pauseAction = <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => bridge.knowledgeLensPause({ loupistId, recordId: item.id, paused: !paused }))}>{t(paused ? "memoryPage.actions.resumeInAnswers" : "memoryPage.actions.pauseInAnswers")}</Button>;
   const back = <Button variant="ghost" size="sm" className="memory-reader-back" data-testid="memory-reader-back" onClick={onClose}><ArrowLeftIcon aria-hidden="true" /><span className="memory-reader-back-label">{backLabel}</span></Button>;
   const kind = <p className="memory-reader-kind">{kindLabel(item.kind)} · {usageLine(item, usage)}</p>;
   const pausedHint = paused ? <p className="memory-meta" role="status">{t("memoryPage.itemPausedHint")}</p> : null;
@@ -357,7 +358,7 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
     <SharedOrigin bridge={bridge} loupistId={loupistId} subjectId={item.id} onAbout={onAboutShared} />
     {principle.why ? <section className="memory-reader-section"><h3>{t("memoryPage.reader.why")}</h3><p>{principle.why}</p></section> : null}
     {principle.example ? <section className="memory-reader-section"><h3>{t("memoryPage.reader.example")}</h3><p>{principle.example}</p></section> : null}
-    <UsedIn usage={usage.get(item.id)} threads={threads} onOpenChat={onOpenChat} />
+    <UsedIn principle usage={usage.get(item.id)} threads={threads} onOpenChat={onOpenChat} />
     {origin ? <section className="memory-reader-section"><h3>{t("memoryPage.reader.origin")}</h3><p>{origin}</p>
       {principle.originChatId && threads.some(thread => thread.id === principle.originChatId) ? <Button variant="link" size="sm" className="memory-origin-chat" onClick={() => onOpenChat(principle.originChatId!)}>{t("memoryPage.reader.openChat")}</Button> : null}
     </section> : null}
@@ -377,7 +378,7 @@ function sectionRows(page: PageView): HistoryRow[] {
   const heading = (key?: string) => key ? displaySectionHeading(key, (page.body.kind === "principle" ? undefined : page.body.sections.find(section => section.key === key)?.heading) ?? key) : "";
   return page.history.filter(entry => entry.origin === "user" && entry.outcome !== "summarized" && ["added", "retired"].includes(entry.outcome) && (entry.undoesOpId || entry.outcome === "retired")).map(entry => ({
     key: `section:${entry.opId}`, atMs: entry.createdAtMs, itemId: page.recordId,
-    text: t(entry.undoesOpId ? "memoryPage.history.undone" : "memoryPage.history.forgot", { section: heading(entry.key), page: displayPageTitle(page.kind, page.title) }),
+    text: t(entry.undoesOpId ? "memoryPage.history.undone" : "memoryPage.history.forgot", { section: heading(entry.key), page: page.title }),
   }));
 }
 

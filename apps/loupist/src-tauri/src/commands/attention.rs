@@ -1,5 +1,5 @@
 //! What waits for the user across Loupists: refused tools that still need approval,
-//! finished answers that asked the user a question, unread scheduled results and
+//! live requests for the user to answer, unread scheduled results and
 //! Journal checks coming due. The sidebar's "Needs attention" group renders this
 //! list; Rust decides what belongs in it.
 use std::{
@@ -18,7 +18,7 @@ use crate::{
     domain::{ChatRole, ChatToolRefusal, ChatToolRefusalReason},
 };
 
-/// Refusals and questions older than this stop asking for attention.
+/// Refusals older than this stop asking for attention.
 const WAITING_WINDOW_MS: i64 = 14 * 24 * 60 * 60 * 1000;
 /// Checks due within this many days (or already late) are listed.
 const CHECK_HORIZON_DAYS: i64 = 7;
@@ -32,14 +32,13 @@ const PREVIEW_CHARS: usize = 60;
 #[serde(rename_all = "camelCase")]
 pub(crate) enum AttentionKind {
     Approval,
-    /// A chat's finished last answer asked the user something (`asks_user`); shown until they reply.
+    /// A live ask_user call is waiting in this chat.
     Question,
     /// A line the user set on an asset page was crossed; shown until the page opens.
     LineCrossed,
     BriefingConflict,
     UnreadResults,
     /// Watcher alerts delivered but not on screen yet.
-    WatchAlerts,
     CheckDue,
 }
 
@@ -76,7 +75,6 @@ fn rank(kind: AttentionKind) -> u8 {
         AttentionKind::LineCrossed => 1,
         AttentionKind::BriefingConflict => 2,
         AttentionKind::UnreadResults => 3,
-        AttentionKind::WatchAlerts => 4,
         AttentionKind::CheckDue => 5,
     }
 }
@@ -99,126 +97,6 @@ pub(crate) fn sort_items(items: &mut [AttentionItem]) {
 pub(crate) fn days_until(today: chrono::NaiveDate, by_date: &str) -> Option<i64> {
     let due = chrono::NaiveDate::parse_from_str(by_date.get(..10)?, "%Y-%m-%d").ok()?;
     Some((due - today).num_days())
-}
-
-/// Closing offers of more work, lowercased: they end with a question mark but
-/// ask nothing the user must answer ("Want me to chart it?").
-const OFFER_PHRASES: &[&str] = &[
-    "want me to",
-    "like me to",
-    "would you like",
-    "do you want",
-    "shall i ",
-    "should i ",
-    "can i ",
-    "may i ",
-    "anything else",
-    "let me know",
-    "if you'd like",
-    "if you want",
-    "원하시면",
-    "필요하시면",
-];
-
-/// Whether a finished answer ends by asking the user something only they can
-/// answer. Deliberately narrow: only the answer's last line counts, outside code,
-/// headings, quotes and tables; its last sentence must end with a question mark;
-/// and a closing offer of more work ("Want me to…?", a Korean "…할까요?") is not
-/// a question. A missed question costs less than a Needs attention list that
-/// fills with polite closings.
-pub(crate) fn asks_user(answer: &str) -> bool {
-    let mut fenced = false;
-    let mut last = None;
-    for line in answer.lines().map(str::trim) {
-        if line.starts_with("```") || line.starts_with("~~~") {
-            fenced = !fenced;
-            // A code block after the text is the answer's end.
-            last = None;
-        } else if !fenced && !line.is_empty() {
-            last = Some(line);
-        }
-    }
-    let Some(line) = last.filter(|_| !fenced) else {
-        return false;
-    };
-    if line.starts_with(['#', '>', '|']) {
-        return false;
-    }
-    let line = strip_trailing_marks(strip_list_marker(line));
-    if !line.ends_with(['?', '？']) {
-        return false;
-    }
-    let sentence = last_sentence(line).to_lowercase();
-    let offer = OFFER_PHRASES.iter().any(|phrase| sentence.contains(phrase))
-        // Korean "…할까요?" / "…드릴까요?" proposes the Loupist's next step.
-        || sentence.trim_end_matches(['?', '？']).trim_end().ends_with("까요");
-    !offer
-}
-
-/// "- ", "* ", "+ ", "1. " or "1) " before a list item's text.
-fn strip_list_marker(line: &str) -> &str {
-    if let Some(rest) = line
-        .strip_prefix(['-', '*', '+'])
-        .and_then(|rest| rest.strip_prefix(' '))
-    {
-        return rest.trim_start();
-    }
-    let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-    if digits > 0 {
-        if let Some(rest) = line[digits..]
-            .strip_prefix(['.', ')'])
-            .and_then(|rest| rest.strip_prefix(' '))
-        {
-            return rest.trim_start();
-        }
-    }
-    line
-}
-
-/// The sentence without what may follow its last mark: emphasis, closing quotes
-/// and a citation or link (`…?[1](#evidence-…)`, `…? [^2]`).
-fn strip_trailing_marks(mut text: &str) -> &str {
-    loop {
-        let trimmed = text.trim_end_matches(|c: char| {
-            c.is_whitespace()
-                || matches!(
-                    c,
-                    '*' | '_' | '`' | '"' | '\'' | '”' | '’' | '»' | '」' | '』'
-                )
-        });
-        let next = if trimmed.ends_with(')') {
-            match trimmed
-                .rfind("](")
-                .and_then(|close| trimmed[..close].rfind('['))
-            {
-                Some(open) => &trimmed[..open],
-                None => trimmed.strip_suffix(')').unwrap_or(trimmed),
-            }
-        } else if trimmed.ends_with(']') {
-            trimmed.rfind('[').map_or(trimmed, |open| &trimmed[..open])
-        } else {
-            trimmed
-        };
-        if next.len() == text.len() {
-            return next;
-        }
-        text = next;
-    }
-}
-
-/// The text after the line's last sentence break (a mark followed by a space).
-fn last_sentence(line: &str) -> &str {
-    let mut start = 0;
-    let mut previous: Option<char> = None;
-    for (at, c) in line.char_indices() {
-        if c.is_whitespace()
-            && previous.is_some_and(|mark| matches!(mark, '.' | '!' | '?' | '。' | '！' | '？'))
-        {
-            start = at;
-        }
-        previous = Some(c);
-    }
-    line[start..].trim()
 }
 
 #[tauri::command]
@@ -373,22 +251,22 @@ pub(crate) async fn collect(state: &AppState) -> Result<Vec<AttentionItem>, Comm
                 ));
             }
         }
-        // A reply from the user ends the wait: only a chat's last answer is read.
-        let chats = state
-            .store
-            .chats_ending_in_answer(&loupist.id, now - WAITING_WINDOW_MS)
-            .map_err(super::map_store)?;
-        for (chat_id, title, at_ms, answer) in chats {
-            if !asks_user(&answer) {
+        for (chat_id, at_ms) in crate::chat::questions::waiting_chats(&loupist.id) {
+            let Some(chat) = state
+                .store
+                .get_chat(&chat_id)
+                .map_err(super::map_store)?
+                .filter(|chat| chat.loupist_id == loupist.id)
+            else {
                 continue;
-            }
+            };
             items.push(AttentionItem {
                 kind: AttentionKind::Question,
                 loupist_id: loupist.id.clone(),
                 loupist_name: loupist.name.clone(),
                 chat_id: Some(chat_id),
                 record_id: None,
-                title,
+                title: chat.title,
                 count: None,
                 due_date: None,
                 at_ms,
@@ -414,26 +292,6 @@ pub(crate) async fn collect(state: &AppState) -> Result<Vec<AttentionItem>, Comm
                 due_date: None,
                 at_ms: latest,
             });
-        }
-        if let Ok((count, latest)) =
-            crate::commands::assets::with_assets(state, &loupist.id, false, |tx| {
-                crate::knowledge::watch::unseen(tx, &loupist.id)
-            })
-            .inspect_err(|error| eprintln!("Could not collect watch attention: {}", error.code))
-        {
-            if count > 0 {
-                items.push(AttentionItem {
-                    kind: AttentionKind::WatchAlerts,
-                    loupist_id: loupist.id.clone(),
-                    loupist_name: loupist.name.clone(),
-                    chat_id: None,
-                    record_id: None,
-                    title: String::new(),
-                    count: Some(count),
-                    due_date: None,
-                    at_ms: latest,
-                });
-            }
         }
         if let Ok(crossed) = crate::commands::assets::with_assets(state, &loupist.id, false, |tx| {
             crate::knowledge::assets::unseen_crossings(tx, &loupist.id)
@@ -551,13 +409,7 @@ pub(crate) fn preview(text: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .replace(['*', '_', '`', '#'], "");
-    let mut chars = line.chars();
-    let head: String = chars.by_ref().take(PREVIEW_CHARS).collect();
-    if chars.next().is_some() {
-        format!("{}…", head.trim_end())
-    } else {
-        head
-    }
+    crate::util::shorten(&line, PREVIEW_CHARS)
 }
 
 /// An OS notification for a chat that finished or needs the user while it is not
@@ -578,7 +430,7 @@ pub(crate) fn attention_notify(
     if chat.loupist_id != request.loupist_id {
         return Err(CommandError::not_found("Chat"));
     }
-    let title: String = request.title.trim().chars().take(120).collect();
+    let title: String = crate::util::shorten(request.title.trim(), 120);
     if title.is_empty() {
         return Err(CommandError::invalid("A notification needs a title"));
     }
@@ -778,87 +630,59 @@ mod tests {
             .is_empty());
     }
 
-    #[test]
-    fn an_answer_asks_only_when_its_last_line_is_a_question_for_the_user() {
-        for asks in [
-            "Revenue grew 11%.\n\nWhich market do you mean, KOSPI or KOSDAQ?",
-            "Before I go on:\n\n- Is this a taxable account?\n- What is your horizon?",
-            "I found two filings. Should the 2.5% guidance or the 3% one count?",
-            "Is this the 2025 filing? [1](#evidence-q3)",
-            "**Do you hold it in a pension account?**",
-            "보유 기간은 어느 정도인가요?",
-        ] {
-            assert!(asks_user(asks), "{asks}");
-        }
-        for not in [
-            "Revenue grew 11% while margin fell to 14.8%.",
-            "Is the margin decline lasting? The evidence says no.",
-            "Margin fell.\n\nWant me to chart the next quarter too?",
-            "Would you like me to compare it with Morrow Components?",
-            "Shall I keep watching inventory days?",
-            "다음 분기도 차트로 그려 드릴까요?",
-            "원하시면 공급망도 살펴볼게요?",
-            "## What changes the view?",
-            "> Is this the right question?",
-            "| Is it? | Yes |",
-            "Run this:\n\n```python\nprint('ready?')\n```",
-            "What next?\n\n```\ncode\n```",
-            "",
-        ] {
-            assert!(!asks_user(not), "{not}");
-        }
+    #[tokio::test]
+    async fn completed_research_questions_do_not_need_attention() {
+        use crate::commands::tests::{chat, profile, seed_profile};
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(dir.path().join("app"));
+        let owner = "briefing-owner";
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        seed_profile(&state.store, &profile(owner, &workspace, 1));
+        let mut briefing = chat("finished-briefing", owner, crate::commands::now_ms());
+        briefing.messages.push(crate::test_fixtures::chat_message(
+            "a1",
+            ChatRole::Assistant,
+            "Follow-up research\n1. What will inventory show?",
+        ));
+        state.store.create_chat(&briefing).unwrap();
+        assert!(!collect(&state)
+            .await
+            .unwrap()
+            .iter()
+            .any(|row| row.kind == AttentionKind::Question));
     }
 
-    #[test]
-    fn only_chats_whose_last_message_is_a_finished_answer_are_read_for_questions() {
+    #[tokio::test]
+    async fn only_live_questions_in_existing_chats_need_an_answer() {
+        use crate::chat::questions::{self, QuestionAnswer};
         use crate::commands::tests::{chat, profile, seed_profile};
-        use crate::test_fixtures::chat_message;
-        let temp = tempfile::tempdir().unwrap();
-        let state = AppState::for_test(temp.path().join("app"));
-        let workspace = temp.path().join("workspace");
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(dir.path().join("app"));
+        let owner = "live-question-owner";
+        let workspace = dir.path().join("workspace");
         std::fs::create_dir_all(&workspace).unwrap();
-        seed_profile(state.store.as_ref(), &profile("loupist-a", &workspace, 1));
-        let question = chat_message("a1", ChatRole::Assistant, "Which market do you mean?");
-        let mut asked = chat("chat-asked", "loupist-a", 10);
-        asked.title = "Hanul margin".into();
-        asked.messages = vec![
-            chat_message("u1", ChatRole::User, "Check Hanul"),
-            question.clone(),
-        ];
-        state.store.create_chat(&asked).unwrap();
-        // The user already answered: nothing waits there.
-        let mut answered = chat("chat-answered", "loupist-a", 10);
-        answered.messages = vec![
-            question.clone(),
-            chat_message("u2", ChatRole::User, "KOSPI"),
-        ];
-        state.store.create_chat(&answered).unwrap();
-        // A stopped answer and a host-posted one are not the model asking.
-        let mut stopped = chat("chat-stopped", "loupist-a", 10);
-        let mut aborted = question.clone();
-        aborted.status = crate::domain::ChatMessageStatus::Aborted;
-        stopped.messages = vec![aborted];
-        state.store.create_chat(&stopped).unwrap();
-        let mut hosted = chat("chat-hosted", "loupist-a", 10);
-        let mut receipt = question;
-        receipt.host_composed = true;
-        hosted.messages = vec![receipt];
-        state.store.create_chat(&hosted).unwrap();
-        let rows = state.store.chats_ending_in_answer("loupist-a", 0).unwrap();
-        assert_eq!(
-            rows,
-            vec![(
-                "chat-asked".to_owned(),
-                "Hanul margin".to_owned(),
-                10,
-                "Which market do you mean?".to_owned()
-            )]
-        );
-        assert!(state
-            .store
-            .chats_ending_in_answer("loupist-a", 11)
-            .unwrap()
-            .is_empty());
+        seed_profile(&state.store, &profile(owner, &workspace, 1));
+        let thread = "live-question-chat";
+        state.store.create_chat(&chat(thread, owner, 1)).unwrap();
+        let register = || questions::register("live-question", owner, Some(thread), None, 2);
+        let listed = || async {
+            collect(&state).await.unwrap().into_iter().any(|item| {
+                item.kind == AttentionKind::Question && item.chat_id.as_deref() == Some(thread)
+            })
+        };
+        let pending = register();
+        assert!(listed().await);
+        questions::answer(owner, "live-question", QuestionAnswer::Choice(0)).unwrap();
+        assert!(!listed().await);
+        drop(pending);
+        let pending = register();
+        drop(pending); // The run stopped or the wait timed out.
+        assert!(!listed().await);
+        let pending = register();
+        crate::commands::records::delete_chat_session(&state, owner, thread, |_| Ok(())).unwrap();
+        assert!(!listed().await);
+        assert!(pending.await.is_err());
     }
 
     #[test]
@@ -884,6 +708,6 @@ mod tests {
     fn previews_are_one_short_plain_line() {
         assert_eq!(preview("**Hanul**  margin\nfell"), "Hanul margin fell");
         let long = "a".repeat(80);
-        assert_eq!(preview(&long).chars().count(), PREVIEW_CHARS + 1);
+        assert_eq!(preview(&long).chars().count(), PREVIEW_CHARS);
     }
 }

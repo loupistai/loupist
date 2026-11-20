@@ -7,7 +7,7 @@ import { TurnProvider } from "../chat/TurnProvider";
 import { openSpy, renderWithOpen, destinations } from "../../test/open";
 import { evidenceFixture } from "../../test/evidenceFixtures";
 import type { Open } from "../../chat/navigation";
-import type { ChatEvidenceRef, ChatMessage } from "../../types";
+import type { ChatEvidenceRef, ChatMessage, NumberCheck } from "../../types";
 
 describe("MessageResponse links", () => {
   it("opens Lens links through whichever opener is current, and leaves them plain outside one", async () => {
@@ -142,9 +142,55 @@ it("never leaves a numbered saved-context citation dead: an asset page read open
   const asset = evidenceFixture({ id: "ev_asset", kind: "saved_context", tool_name: "asset_page_read", url: undefined, title: "Asset page: Apple", excerpt: '{\n  "assetId": "NASDAQ:AAPL"\n}' });
   const journal = evidenceFixture({ id: "ev_journal", kind: "saved_context", tool_name: "journal_read", url: undefined, title: "Journal: hold the quality call" });
   const user = userEvent.setup();
-  const { open } = renderWithOpen(inTurn(answer([asset, journal]), `Held [1](#evidence-${asset.id}) since [2](#evidence-${journal.id}).`, { mode: "static" }));
+  const text = `Held [1](#evidence-${asset.id}) since [2](#evidence-${journal.id}).`;
+  // A saved asset page read opens that page by its id.
+  const saved = { ...answer([asset, journal]), status: "complete" as const };
+  const { open, rerender } = renderWithOpen(inTurn(saved, text, { mode: "static" }));
   await user.click(await screen.findByRole("button", { name: /^Source 1:/u }));
   expect(destinations(open).at(-1)).toEqual({ kind: "asset", target: { loupistId: "loupist-a", assetId: "NASDAQ:AAPL" } });
   await user.click(screen.getByRole("button", { name: /^Source 2:/u }));
   expect(destinations(open).at(-1)).toEqual(expect.objectContaining({ kind: "evidence", evidence: journal }));
+  // Still streaming, the citation opens the same page by its id: no instant travels with it.
+  rerender(inTurn(answer([asset, journal]), text, { mode: "static" }));
+  await user.click(await screen.findByRole("button", { name: /^Source 1:/u }));
+  expect(destinations(open).at(-1)).toEqual({ kind: "asset", target: { loupistId: "loupist-a", assetId: "NASDAQ:AAPL" } });
+});
+
+describe("evidence links the renderer cannot use yet", () => {
+  // As a model wrote them in a Bot answer: the tool result's field name kept in the link.
+  const quote = evidenceFixture({ id: "ev_9309daadd782a3fb22ccb20b02f193d3", title: "NVIDIA quote", tool_name: "mcp__openbb__equity_price_quote", provider: "yfinance" });
+  const text = `종가 [$162.85](citation_url=#evidence-${quote.id})로, 전일 대비 [−2.01%](citation_url=#evidence-ev_unissued)입니다. 출처 [1](#evidence-${quote.id}).`;
+  const noPlaceholder = (root: HTMLElement = document.body) => expect(root.textContent).not.toMatch(/blocked|[[\]]|citation_url/iu);
+
+  it("shows each figure as plain text while the answer streams, before and after its evidence arrives", () => {
+    const { rerender } = renderWithOpen(inTurn(answer([]), text, { isAnimating: true }));
+    expect(document.body).toHaveTextContent("종가 $162.85로, 전일 대비 −2.01%입니다.");
+    noPlaceholder();
+    expect(screen.queryByRole("button")).toBeNull();
+    rerender(inTurn(answer([quote]), text, { isAnimating: true }));
+    expect(screen.getAllByTestId("number-chip").map((chip) => chip.textContent)).toEqual(["$162.85"]);
+    noPlaceholder();
+  });
+
+  it("turns a figure into its chip once the answer settles, and leaves an unmatched link plain", async () => {
+    const checks: NumberCheck[] = [{ link_index: 0, text: "$162.85", evidence_id: quote.id, kind: "data", status: "matched", exact: "162.85", pointer: "/results/0/last_price",
+      fields: [{ key: "last_price", value: "162.85", matched: true }] }];
+    renderWithOpen(inTurn({ ...answer([quote]), status: "complete" }, text, { mode: "static", numberChecks: checks }));
+    expect(await screen.findByRole("button", { name: /\$162\.85/u })).toBeVisible();
+    expect(screen.getAllByTestId("number-chip").map((chip) => chip.dataset.status)).toEqual(["matched"]);
+    expect(screen.getByText("−2.01%").closest("button")).toBeNull();
+    expect(document.body).toHaveTextContent("전일 대비 −2.01%입니다.");
+    noPlaceholder();
+  });
+
+  it("keeps an unsafe or unreadable link's text without a placeholder, and never makes it a link", () => {
+    const unsafe = ["[Script](javascript:alert(1))", "[Page](data:text/html,x)", "[Field](citation_url=ev_x)", "[Scheme](foo:bar)", "[Local](file:///etc/passwd)"].join(" · ");
+    for (const view of [render(<MessageResponse mode="static">{unsafe}</MessageResponse>), renderWithOpen(<MessageResponse mode="static">{unsafe}</MessageResponse>)]) {
+      expect(view.container).toHaveTextContent("Script · Page · Field · Scheme · Local");
+      expect(view.container.textContent).not.toMatch(/blocked/iu);
+      expect(view.container.querySelector("a[href]")).toBeNull();
+      expect(screen.queryByRole("link")).toBeNull();
+      view.unmount();
+    }
+  });
 });

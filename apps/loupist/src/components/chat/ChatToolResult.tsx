@@ -7,6 +7,7 @@ import { ChevronDownIcon, DatabaseIcon, FileTextIcon, WrenchIcon } from "lucide-
 import type { ChatEvidenceRef } from "../../types";
 import { evidenceCoverage, evidencePresentation, evidenceTitle, executionEvidenceType } from "../../chat/evidence";
 import { CopyTextButton } from "../ui/copy-text-button";
+import { providerName } from "@/lib/marketProviderName";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -41,7 +42,7 @@ export function ChatToolResult({ evidence, expanded, onToggle, focusRequest }: {
       {evidence.model_delivery ? <Disclosure title={<>{t("chatToolResult.sampleReceivedByLoupist")}</>}><pre>{evidence.model_delivery.excerpt}</pre>{evidence.model_delivery.excerpt_truncated ? <p className="reader-notice">{t("chatToolResult.thisSampleAlsoHasADisplayLimit")}</p> : null}</Disclosure> : null}
       <Disclosure className="reader-technical-details" title={<>{t("chatToolResult.resultDetails")}</>}><dl className="reader-facts">
         <div><dt>{t("chatToolResult.recorded")}</dt><dd><time dateTime={evidence.retrieved_at}>{formatDateTime(new Date(evidence.retrieved_at))}</time></dd></div>
-        {evidence.provider ? <div><dt>{t("chatToolResult.provider")}</dt><dd>{evidence.provider}</dd></div> : null}
+        {providerName(evidence.provider) ? <div><dt>{t("chatToolResult.provider")}</dt><dd>{providerName(evidence.provider)}</dd></div> : null}
         {evidence.as_of ? <div><dt>{t("chatToolResult.dataAsOf")}</dt><dd>{evidence.as_of}</dd></div> : null}
         {evidence.published_at ? <div><dt>{t("chatToolResult.published")}</dt><dd>{evidence.published_at}</dd></div> : null}
         {evidence.coverage ? <div><dt>{t("chatToolResult.coverage")}</dt><dd>{evidenceCoverage(evidence.coverage)}</dd></div> : null}

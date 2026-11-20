@@ -180,6 +180,70 @@ async fn a_world_fact_files_a_section_with_a_claim_basis_and_a_log_row_at_commit
     assert!(learned.pages[0].created);
 }
 
+/// A fact from material the user pasted rests on the user-provided Source
+/// saved in the same reply, not only on the user's word.
+#[tokio::test]
+async fn a_pasted_original_backs_a_subject_fact_through_its_saved_source() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let body = "Ada described the engine in her 1843 notes.";
+    let expected = state.store.get_chat("chat-a").unwrap().unwrap();
+    let mut pasted = expected.clone();
+    pasted.messages.push(chat_message(
+        "user-1",
+        ChatRole::User,
+        &format!("Keep this excerpt as a source and file it: {body}"),
+    ));
+    state.store.replace_chat(&expected, &pasted).unwrap();
+    let capture = turn_capture();
+    let executor = executor_for(&state, capture.clone());
+    let policy = policy(true, true);
+    let captured = executor
+        .execute_for_delivery(
+            &policy,
+            ToolMethod::PastedCapture,
+            json!({"text": body}),
+            "paste",
+        )
+        .await
+        .unwrap();
+    executor.commit_delivery(&policy, "paste").await.unwrap();
+    let saved = executor
+        .stage_source_save(
+            &policy,
+            json!({"result_ref": captured["result_ref"], "title": "Ada notes", "coverage": "included_excerpt"}),
+            "source-save",
+        )
+        .await
+        .unwrap();
+    executor.capture.commit_delivery("source-save").await;
+    executor
+        .stage_lens_file(
+            &policy,
+            subject_fact(json!({"refs": [{"source": saved["saveRef"]}]})),
+            "file",
+        )
+        .await
+        .unwrap();
+    executor.capture.commit_delivery("file").await;
+    let changes = commit_turn(&state, &capture, "assistant-1").await;
+    let source = changes
+        .iter()
+        .find(|change| change.kind == "Source")
+        .unwrap();
+    assert!(source.user_provided);
+    let retained = source.knowledge.clone().unwrap();
+    let lens = changes.iter().find(|change| change.kind == "Lens").unwrap();
+    let page = knowledge(&state)
+        .read(|read| read.read_page("loupist-a", &lens.record_id))
+        .unwrap();
+    assert!(matches!(
+        page.body.sections()[0].basis.refs.as_slice(),
+        [BasisRef::Span { record_id, span_id, .. }]
+            if *record_id == retained.record_id && Some(span_id) == retained.span_id.as_ref()
+    ));
+}
+
 #[tokio::test]
 async fn a_turn_stopped_before_completion_files_nothing() {
     let temporary = tempfile::tempdir().unwrap();
@@ -261,14 +325,12 @@ async fn lens_file_requires_an_acknowledged_exact_read_and_saved_sources() {
     let capture = turn_capture();
     let executor = executor_for(&state, capture.clone());
     let policy = policy(true, true);
-    let lens = crate::commands::knowledge::ensure_perspective(&state, "loupist-a", "Base")
-        .unwrap()
-        .unwrap();
+    let lens = crate::commands::knowledge::file_test_perspective(&state, "loupist-a", "Base");
     let revise = |expected: Option<&str>, basis: Value| {
         json!({
             "pages": [{
                 "page": {"recordId": lens},
-                "ops": [{"op": "put", "key": "focus", "heading": "Focus", "markdown": "Base, with liquidity first.",
+                "ops": [{"op": "put", "key": "beliefs", "heading": "Beliefs", "markdown": "Base, with liquidity first.",
                     "basis": basis, "expected": expected}]
             }],
             "rationale": "Refined the standing view."
@@ -531,27 +593,27 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
     let changes = commit_turn(&state, &capture, "final-1").await;
     let record_id = changes[0].record_id.clone();
 
-    let handoff = crate::chat::handoff::Handoff {
-        id: "handoff-1".into(),
-        loupist_id: "loupist-a".into(),
-        request_key: "covenants".into(),
-        chat_id: "chat-session".into(),
-        title: "Covenant headroom".into(),
-        prompt: "Check covenant headroom.".into(),
-        run: crate::chat::handoff::HandoffRun {
-            model_profile_id: "fixture".into(),
-            thinking_level: "medium".into(),
-            run_options: Default::default(),
-            use_memory: true,
-            update_memory: true,
+    let handoff: crate::chat::handoff::Handoff = serde_json::from_value(json!({
+        "id": "handoff-1",
+        "loupist_id": "loupist-a",
+        "request_key": "covenants",
+        "chat_id": "chat-session",
+        "title": "Covenant headroom",
+        "prompt": "Check covenant headroom.",
+        "run": {
+            "model_profile_id": "fixture",
+            "thinking_level": "medium",
+            "run_options": {},
+            "use_memory": true,
+            "update_memory": true
         },
-        status: crate::chat::handoff::HandoffStatus::Done,
-        run_id: Some("run-1".into()),
-        message_id: Some("final-1".into()),
-        error: None,
-        created_at_ms: 1,
-        finished_at_ms: Some(2),
-    };
+        "status": "done",
+        "run_id": "run-1",
+        "message_id": "final-1",
+        "created_at_ms": 1,
+        "finished_at_ms": 2
+    }))
+    .unwrap();
     let card = crate::chat::handoff::message(&state, &handoff, None)
         .unwrap()
         .handoff
@@ -568,7 +630,7 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
         kind: crate::scheduled_tasks::types::TaskKind::Briefing,
         read_at_ms: None,
         summary: "Covenants hold.".into(),
-        summary_items: Vec::new(),
+        quiet: false,
         message_id: Some("final-1".into()),
         skipped_tools: Vec::new(),
         id: "scheduled-run-1".into(),
@@ -597,15 +659,9 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
         crate::chat::handoff::learned_digest(&state, "loupist-gone", &["final-1".into()]).is_err(),
         "a failed read is not 'nothing filed'"
     );
-    let unreadable = crate::chat::handoff::message(
-        &state,
-        &crate::chat::handoff::Handoff {
-            loupist_id: "loupist-gone".into(),
-            ..handoff
-        },
-        None,
-    )
-    .unwrap();
+    let mut handoff = handoff;
+    handoff.loupist_id = "loupist-gone".into();
+    let unreadable = crate::chat::handoff::message(&state, &handoff, None).unwrap();
     assert!(unreadable.handoff.unwrap().learned.is_none());
 }
 
@@ -905,9 +961,7 @@ async fn a_create_landing_on_a_page_the_turn_did_not_read_only_adds_sections() {
     };
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
-    crate::commands::knowledge::ensure_perspective(&state, "loupist-a", "Liquidity first.")
-        .unwrap()
-        .unwrap();
+    crate::commands::knowledge::file_test_perspective(&state, "loupist-a", "Liquidity first.");
     let idea = knowledge(&state)
         .transact(|write| {
             write.file(

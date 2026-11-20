@@ -95,9 +95,7 @@ fn setup_state(
         MarketplaceConnectorReadiness::RuntimeUnavailable => return Ok(SetupState::Unavailable),
         _ => return Ok(SetupState::NeedsSetup),
     }
-    let enabled = state
-        .store
-        .get_loupist_capability(loupist_id, &entry.id)
+    let enabled = crate::marketplace::loupist_binding(state, loupist_id, &entry.id)
         .map_err(unavailable)?
         .is_some_and(|binding| {
             binding.enabled

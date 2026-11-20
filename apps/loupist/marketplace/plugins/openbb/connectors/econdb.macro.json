@@ -1,11 +1,11 @@
 {
   "id": "econdb.macro",
   "name": "EconDB",
-  "summary": "International macroeconomic datasets.",
+  "summary": "International macroeconomic datasets. New accounts require a paid plan.",
   "publisher": "Loupist",
   "data_authority": "EconDB",
   "kind": "data_source",
-  "free_state": "free_account",
+  "free_state": "paid",
   "trust": "first_party",
   "runtime": {
     "kind": "mcp",
@@ -62,7 +62,7 @@
         "required": true,
         "min_length": 8,
         "max_length": 512,
-        "help_url": "https://www.econdb.com/api/"
+        "help_url": "https://www.econdb.com/account/keys/"
       }
     ]
   }

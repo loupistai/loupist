@@ -15,12 +15,14 @@ use std::{
 
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::*;
 use crate::{
     fs::artifact_trust::{create_private_directory, ensure_private_directory},
-    marketplace::{bundled_catalog, MarketplaceEntryDto, MarketplaceRuntimeKind},
+    marketplace::{
+        bundled_catalog, MarketplaceEntryDto, MarketplaceFreeState, MarketplaceRuntimeKind,
+    },
     mcp::pool::{authority_fingerprint, McpPoolKey, TurnMcpServer},
     mcp::{
         contains_protected_value, filter_tool_providers, tool_to_agent_schema,
@@ -32,7 +34,7 @@ use crate::{
 const MCP_CALL_TIMEOUT: Duration = Duration::from_secs(45);
 const MCP_SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
-type SharedMcpServer = Arc<Mutex<Option<TurnMcpServer>>>;
+type SharedMcpServer = Arc<RwLock<Option<TurnMcpServer>>>;
 
 fn protected_values(
     credentials: &BTreeMap<String, String>,
@@ -168,6 +170,23 @@ struct McpToolCallRequest {
     arguments: Value,
 }
 
+// Data reads share the immutable authority/inventory while the process serves
+// them. Control calls, inventory replacement, pool return and shutdown exclude
+// those readers for their entire state transition.
+enum McpCallGuard<'a> {
+    Read(RwLockReadGuard<'a, Option<TurnMcpServer>>),
+    Write(RwLockWriteGuard<'a, Option<TurnMcpServer>>),
+}
+impl McpCallGuard<'_> {
+    fn server(&self) -> &TurnMcpServer {
+        match self {
+            Self::Read(guard) => guard.as_ref(),
+            Self::Write(guard) => guard.as_ref(),
+        }
+        .expect("loaded MCP session")
+    }
+}
+
 /// A call admitted on this turn's session: what the server receives and what
 /// the host records about it.
 struct McpCallPlan {
@@ -189,7 +208,7 @@ struct McpCallPlan {
 
 /// How a forwarded call ended.
 enum McpInvocation {
-    /// A checked result, with the inventory refreshed after the call.
+    /// A checked result; the caller refreshes changed inventory exclusively.
     Answered {
         payload: Value,
         tools: Option<Vec<Value>>,
@@ -248,7 +267,7 @@ fn describe_empty_read(payload: &mut Value) {
 /// the session; a cutoff read keeps only rows on or before the cutoff.
 async fn invoke_mcp_tool(
     request: &McpToolCallRequest,
-    server: &mut TurnMcpServer,
+    server: &TurnMcpServer,
     plan: &McpCallPlan,
 ) -> Result<McpInvocation, BrokerError> {
     let call = server
@@ -267,7 +286,7 @@ async fn invoke_mcp_tool(
                 return Ok(McpInvocation::Stopped(Some(mapped)));
             }
             return Ok(McpInvocation::Failed(provider_failure(
-                mapped,
+                call_failure_reason(&request.tool_name, mapped),
                 plan.requested_provider.as_deref(),
                 &server.enabled_provider_ids,
             )));
@@ -275,7 +294,7 @@ async fn invoke_mcp_tool(
     };
     if result.is_error {
         return Ok(McpInvocation::Failed(provider_failure(
-            rejected_mcp_result(&result),
+            call_failure_reason(&request.tool_name, rejected_mcp_result(&result)),
             plan.requested_provider.as_deref(),
             &server.enabled_provider_ids,
         )));
@@ -318,14 +337,10 @@ async fn invoke_mcp_tool(
     if let Some(as_of) = as_of {
         payload["as_of"] = as_of;
     }
-    let list_changed = server.session.take_tools_changed();
-    let refresh = plan.control_tool || list_changed;
-    Ok(
-        match refresh_inventory(&request.server_id, server, refresh).await {
-            Ok(tools) => McpInvocation::Answered { payload, tools },
-            Err(_) => McpInvocation::Stopped(None),
-        },
-    )
+    Ok(McpInvocation::Answered {
+        payload,
+        tools: None,
+    })
 }
 
 impl ToolCapture {
@@ -336,7 +351,7 @@ impl ToolCapture {
         };
         let mut servers = Vec::with_capacity(sessions.len());
         for session in sessions {
-            if let Some(server) = session.lock().await.take() {
+            if let Some(server) = session.write().await.take() {
                 servers.push(server);
             }
         }
@@ -352,7 +367,7 @@ impl ToolCapture {
         }
     }
 
-    async fn mcp_session(&self, server_id: &str) -> Option<SharedMcpServer> {
+    pub(super) async fn mcp_session(&self, server_id: &str) -> Option<SharedMcpServer> {
         self.mcp_sessions.lock().await.get(server_id)
     }
 
@@ -363,7 +378,7 @@ impl ToolCapture {
             .remove_if_current(server_id, expected);
     }
 
-    async fn discard_mcp_session(
+    pub(super) async fn discard_mcp_session(
         &self,
         server_id: &str,
         expected: &SharedMcpServer,
@@ -380,7 +395,7 @@ impl ToolCapture {
         server_id: &str,
         server: TurnMcpServer,
     ) -> Result<McpServerInstall, BrokerError> {
-        let candidate = Arc::new(Mutex::new(Some(server)));
+        let candidate = Arc::new(RwLock::new(Some(server)));
         loop {
             let existing = self
                 .mcp_sessions
@@ -391,7 +406,7 @@ impl ToolCapture {
                 Ok(existing) => existing,
                 Err(()) => {
                     let candidate = candidate
-                        .lock()
+                        .write()
                         .await
                         .take()
                         .expect("unpublished MCP candidate disappeared");
@@ -403,14 +418,14 @@ impl ToolCapture {
                 return Ok(McpServerInstall::Installed);
             };
             let tools = {
-                let existing = existing.lock().await;
+                let existing = existing.write().await;
                 existing
                     .as_ref()
                     .map(|server| server_cards(server_id, server))
             };
             if let Some(tools) = tools {
                 let candidate = candidate
-                    .lock()
+                    .write()
                     .await
                     .take()
                     .expect("unpublished MCP candidate disappeared");
@@ -435,6 +450,13 @@ impl AppToolExecutor {
         let request = McpConnectRequest::parse(params)?;
         if crate::custom_connections::service::valid_id(&request.server_id) {
             return self.custom_mcp_connect(&request.server_id).await;
+        }
+        #[cfg(feature = "eval-harness")]
+        if crate::eval_harness::replay::enabled() {
+            return Err(BrokerError::Execution(
+                "eval_replay_unmatched: bundled runtime connect is unavailable during replay"
+                    .into(),
+            ));
         }
         if let Some(tools) = self.connected_mcp_tools(&request.server_id).await? {
             return Ok(json!({
@@ -461,7 +483,7 @@ impl AppToolExecutor {
         let Some(session) = self.capture.mcp_session(server_id).await else {
             return Ok(None);
         };
-        let mut guard = session.lock().await;
+        let mut guard = session.write().await;
         let Some(server) = guard.as_mut() else {
             drop(guard);
             self.capture.remove_mcp_session(server_id, &session).await;
@@ -534,98 +556,48 @@ impl AppToolExecutor {
             }
         }
 
-        let scratch = match &self.capture.mcp_pool {
-            Some(pool) => pool
-                .create_scratch(&self.loupist_id, server_id)
-                .map_err(|_| BrokerError::Execution("MCP run isolation failed".into()))?,
-            None => {
-                let scratch_root = self.capture.mcp_scratch_root.as_ref().ok_or_else(|| {
+        // Start without holding the session map. A cold start takes tens of
+        // seconds on a busy Mac; blocking the map would stall shutdown and a
+        // second connect. With a pool, the pool owns the start: this turn
+        // reuses a start already under way (the app-start one included), and
+        // a start it stops waiting for stays for the next turn.
+        let app_data_dir = self.state.artifacts.app_data_dir.clone();
+        let mut server = match (&self.capture.mcp_pool, pool_key.as_ref()) {
+            (Some(pool), Some(key)) => {
+                let start = start_bundled_server(
+                    server_id.to_owned(),
+                    authority,
+                    StartScratch::Pool(pool.clone()),
+                    app_data_dir,
+                );
+                pool.lease_fresh(key, start).await?
+            }
+            _ => {
+                let scratch_root = self.capture.mcp_scratch_root.clone().ok_or_else(|| {
                     BrokerError::Execution("MCP run isolation is unavailable".into())
                 })?;
-                ensure_private_directory(scratch_root)
-                    .map_err(|_| BrokerError::Execution("MCP run isolation failed".into()))?;
-                let scratch =
-                    scratch_root.join(format!("{}-{}", server_id, uuid::Uuid::new_v4().simple()));
-                create_private_directory(&scratch)
-                    .map_err(|_| BrokerError::Execution("MCP run isolation failed".into()))?;
-                scratch
+                start_bundled_server(
+                    server_id.to_owned(),
+                    authority,
+                    StartScratch::Under(scratch_root),
+                    app_data_dir,
+                )
+                .await?
             }
         };
-        let sensitive_values = protected_values(
-            &authority.credentials,
-            &self.state.artifacts.app_data_dir,
-            &scratch,
-        );
-        let providerless_tool_policy = authority.runtime.providerless_tool_policy.clone();
-        let provider_receipt_pointer = authority.runtime.provider_receipt_pointer.clone();
-        let control_tool_names = authority.runtime.control_tool_names.clone();
-        let enabled_provider_ids = authority.enabled_provider_ids.clone();
-        let bootstrap = json!({
-            "type": "loupist.bootstrap",
-            "protocol_version": 1,
-            "run_id": format!("mcp:{}", uuid::Uuid::new_v4().simple()),
-            "scratch_dir": scratch.to_string_lossy(),
-            "credentials": authority.credentials,
-            "settings": {
-                "allowed_categories": authority.runtime.allowed_categories.clone(),
-                "enabled_provider_ids": enabled_provider_ids.clone(),
-                "allowed_network_hosts": authority.allowed_network_hosts,
-                "provider_config": authority.provider_config,
-            }
-        });
-        let launch = McpLaunchConfig {
-            server_id: server_id.to_owned(),
-            executable: authority.runtime.executable,
-            arguments: Vec::new(),
-            private_working_dir: scratch.clone(),
-            lease_dir: authority.runtime.lease_dir,
-            environment: BTreeMap::new(),
-            bootstrap,
-        };
-        // Spawn without holding the session map. OpenBB cold start is several
-        // seconds; blocking the map would stall shutdown and a second connect.
-        let (session, initial_tools) = McpSession::spawn(launch).await.map_err(map_mcp_error)?;
-        if let Err(error) =
-            ensure_inventory_contains_no_protected_values(&initial_tools, &sensitive_values)
-        {
-            let _ = session.shutdown(MCP_SHUTDOWN_GRACE).await;
-            let _ = tokio::fs::remove_dir_all(&scratch).await;
-            return Err(error);
-        }
-        let initial_tool_names = initial_tools
-            .iter()
-            .map(|tool| tool.name.clone())
-            .collect::<BTreeSet<_>>();
-        if initial_tool_names != control_tool_names {
-            let _ = session.shutdown(MCP_SHUTDOWN_GRACE).await;
-            let _ = tokio::fs::remove_dir_all(&scratch).await;
-            return Err(BrokerError::Execution(
-                "MCP runtime initial inventory did not match its signed control surface".into(),
-            ));
-        }
-        let tools = filter_inventory(
-            &initial_tools,
-            &control_tool_names,
-            &enabled_provider_ids,
-            &providerless_tool_policy,
-        )?;
-        let cards = agent_tool_cards(
+        server.pool_key = pool_key;
+        let cards = match agent_tool_cards(
             server_id,
-            tools.values(),
-            &control_tool_names,
-            &enabled_provider_ids,
-            &providerless_tool_policy,
-        )?;
-        let mut server = TurnMcpServer {
-            session,
-            control_tool_names,
-            tools,
-            enabled_provider_ids,
-            providerless_tool_policy,
-            provider_receipt_pointer,
-            sensitive_values,
-            pool_key,
-            scratch_dir: Some(scratch),
+            server.tools.values(),
+            &server.control_tool_names,
+            &server.enabled_provider_ids,
+            &server.providerless_tool_policy,
+        ) {
+            Ok(cards) => cards,
+            Err(error) => {
+                server.discard().await;
+                return Err(error);
+            }
         };
         let cards = match activate_tools(
             server_id,
@@ -644,10 +616,67 @@ impl AppToolExecutor {
         match self.capture.install_mcp_session(server_id, server).await? {
             McpServerInstall::Installed => Ok(connect_response(server_id, cards, &notices)),
             McpServerInstall::Occupied { tools, candidate } => {
-                (*candidate).discard().await;
+                match &self.capture.mcp_pool {
+                    Some(pool) => pool.release(*candidate).await,
+                    None => (*candidate).discard().await,
+                }
                 Ok(connect_response(server_id, tools, &notices))
             }
         }
+    }
+
+    /// The display refresh forwards only the fixed ECB route. Use ordinary
+    /// provider admission and response validation, omitting dataset retention.
+    pub(in crate::commands) async fn host_fx_read(
+        &mut self,
+        policy: &ToolPolicy,
+    ) -> Result<Value, BrokerError> {
+        use crate::finance_data::fx::{RATE_PROVIDER, RATE_ROUTE};
+        self.ensure_scope(policy)?;
+        if !self.capability_ids.contains("openbb.platform") || policy.as_of.is_some() {
+            return Err(BrokerError::MethodDenied);
+        }
+        // Like asset search, own an isolated process and remove even the
+        // scratch left by a timed-out startup before the session is installed.
+        let scratch = tempfile::Builder::new()
+            .prefix("fx-display-")
+            .tempdir_in(&self.state.artifacts.app_data_dir)
+            .map_err(|_| BrokerError::Execution("FX display isolation unavailable".into()))?;
+        let capture = Arc::get_mut(&mut self.capture).ok_or(BrokerError::MethodDenied)?;
+        capture.mcp_pool = None;
+        capture.mcp_scratch_root = Some(scratch.path().to_owned());
+        let operation = async {
+            self.host_connect(policy, "openbb", &[RATE_ROUTE]).await?;
+            let session = self
+                .capture
+                .mcp_session("openbb")
+                .await
+                .ok_or(BrokerError::MethodDenied)?;
+            let guard = session.read().await;
+            let server = guard.as_ref().ok_or(BrokerError::MethodDenied)?;
+            let request = McpToolCallRequest {
+                server_id: "openbb".into(),
+                tool_name: RATE_ROUTE.into(),
+                arguments: json!({"provider":RATE_PROVIDER}),
+            };
+            let plan = self.admit_mcp_call(&request, server, None)?;
+            match invoke_mcp_tool(&request, server, &plan).await? {
+                McpInvocation::Answered { payload, .. } => Ok(payload),
+                McpInvocation::Failed(error) | McpInvocation::Stopped(Some(error)) => Err(error),
+                McpInvocation::Stopped(None) => Err(BrokerError::Execution(
+                    "The finance data provider returned an invalid response".into(),
+                )),
+            }
+        };
+        let result = tokio::time::timeout(Duration::from_secs(60), operation)
+            .await
+            .unwrap_or_else(|_| {
+                Err(BrokerError::Execution(
+                    "FX display refresh timed out".into(),
+                ))
+            });
+        self.host_shutdown().await;
+        result
     }
 
     /// One MCP tool call on this turn's session, in order: admission, a fresh
@@ -659,6 +688,17 @@ impl AppToolExecutor {
         params: Value,
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
+        self.mcp_call_with_reuse(policy, params, delivery_id, true)
+            .await
+    }
+
+    pub(super) async fn mcp_call_with_reuse(
+        &self,
+        policy: &ToolPolicy,
+        params: Value,
+        delivery_id: &str,
+        allow_reuse: bool,
+    ) -> Result<Value, BrokerError> {
         let request: McpToolCallRequest =
             serde_json::from_value(params).map_err(|_| BrokerError::Malformed)?;
         let cutoff = parse_as_of_date(policy.as_of.as_deref())?;
@@ -669,25 +709,30 @@ impl AppToolExecutor {
             }
             return self.custom_mcp_call(request, delivery_id).await;
         }
+        #[cfg(feature = "eval-harness")]
+        if request.server_id == openbb::OPENBB_SERVER_ID
+            && self.capability_ids.contains("openbb.platform")
+            && crate::eval_harness::replay::installed_for(&self.state.credential_environment)
+        {
+            return Err(BrokerError::Execution(
+                "eval_replay_unmatched: bundled runtime calls are unavailable during replay".into(),
+            ));
+        }
         let Some(session) = self.capture.mcp_session(&request.server_id).await else {
             return Ok(stopped_mcp_response(None));
         };
-        let (mut session_guard, preflight_tools) = match self
-            .lock_running_mcp_session(&request.server_id, &session)
-            .await
-        {
-            Ok(locked) => locked,
-            Err(stopped) => return Ok(stopped),
-        };
-        let server = session_guard
-            .as_mut()
-            .expect("loaded MCP session disappeared after refresh");
+        let (mut session_guard, preflight_tools) =
+            match self.lock_mcp_call_session(&request, &session).await {
+                Ok(locked) => locked,
+                Err(stopped) => return Ok(stopped),
+            };
+        let server = session_guard.server();
         let plan = match self.admit_mcp_call(&request, server, cutoff) {
             Ok(plan) => plan,
             Err(error) => return mcp_call_error_with_inventory(preflight_tools, error),
         };
         let reused = match plan.max_age {
-            Some(max_age) if !plan.control_tool => self
+            Some(max_age) if allow_reuse && !plan.control_tool => self
                 .state
                 .store
                 .dataset_fresh(&self.loupist_id, &plan.request_key, max_age)
@@ -707,8 +752,8 @@ impl AppToolExecutor {
                     return mcp_call_error_with_inventory(preflight_tools, error)
                 }
                 McpInvocation::Stopped(error) => {
-                    let stopped = session_guard.take();
                     drop(session_guard);
+                    let stopped = session.write().await.take();
                     self.capture
                         .discard_mcp_session(&request.server_id, &session, stopped)
                         .await;
@@ -716,6 +761,36 @@ impl AppToolExecutor {
                 }
             }
         };
+        // Data calls may announce an inventory change too. Upgrade only after
+        // releasing the read guard; other active reads finish before replacing
+        // inventory or quarantining the session.
+        if matches!(&session_guard, McpCallGuard::Read(_))
+            && session_guard.server().session.take_tools_changed()
+        {
+            drop(session_guard);
+            let guard = session.write().await;
+            if guard.is_none() {
+                return Ok(stopped_mcp_response(None));
+            }
+            session_guard = McpCallGuard::Write(guard);
+        }
+        let tools = if let McpCallGuard::Write(guard) = &mut session_guard {
+            let server = guard.as_mut().expect("loaded MCP session");
+            match refresh_inventory(&request.server_id, server, true).await {
+                Ok(updated) => updated.or(tools),
+                Err(_) => {
+                    let stopped = guard.take();
+                    drop(session_guard);
+                    self.capture
+                        .discard_mcp_session(&request.server_id, &session, stopped)
+                        .await;
+                    return Ok(stopped_mcp_response(None));
+                }
+            }
+        } else {
+            tools
+        };
+        drop(session_guard);
         let payload = if plan.control_tool {
             payload
         } else {
@@ -777,6 +852,41 @@ impl AppToolExecutor {
         })
     }
 
+    async fn lock_mcp_call_session<'s>(
+        &self,
+        request: &McpToolCallRequest,
+        session: &'s SharedMcpServer,
+    ) -> Result<(McpCallGuard<'s>, Option<Vec<Value>>), Value> {
+        let guard = session.read().await;
+        if let Some(server) = guard.as_ref() {
+            if !server.control_tool_names.contains(&request.tool_name)
+                && matches!(server.session.is_running().await, Ok(true))
+                && !server.session.take_tools_changed()
+            {
+                return Ok((McpCallGuard::Read(guard), None));
+            }
+        }
+        drop(guard);
+        let (mut guard, tools) = self
+            .lock_running_mcp_session(&request.server_id, session)
+            .await?;
+        // The shared preflight consumed the signal. Refresh under the exclusive
+        // guard before admitting against an inventory that may have changed.
+        let server = guard.as_mut().expect("loaded MCP session");
+        let tools = match refresh_inventory(&request.server_id, server, true).await {
+            Ok(updated) => updated.or(tools),
+            Err(_) => {
+                let stopped = guard.take();
+                drop(guard);
+                self.capture
+                    .discard_mcp_session(&request.server_id, session, stopped)
+                    .await;
+                return Err(stopped_mcp_response(None));
+            }
+        };
+        Ok((McpCallGuard::Write(guard), tools))
+    }
+
     /// Locks this turn's session for `server_id` and refreshes its inventory.
     /// A missing, stopped or failing server leaves the turn, answered with the
     /// stopped response the caller returns as is.
@@ -784,8 +894,14 @@ impl AppToolExecutor {
         &self,
         server_id: &str,
         session: &'s SharedMcpServer,
-    ) -> Result<(MutexGuard<'s, Option<TurnMcpServer>>, Option<Vec<Value>>), Value> {
-        let mut session_guard = session.lock().await;
+    ) -> Result<
+        (
+            RwLockWriteGuard<'s, Option<TurnMcpServer>>,
+            Option<Vec<Value>>,
+        ),
+        Value,
+    > {
+        let mut session_guard = session.write().await;
         let Some(server) = session_guard.as_mut() else {
             drop(session_guard);
             self.capture.remove_mcp_session(server_id, session).await;
@@ -949,33 +1065,6 @@ impl AppToolExecutor {
             .await
     }
 
-    /// Enabled providers accepted by this tool, before host market selection.
-    pub(super) async fn host_providers(&self, server_id: &str, tool: &str) -> Vec<String> {
-        let Some(session) = self.capture.mcp_session(server_id).await else {
-            return Vec::new();
-        };
-        let guard = session.lock().await;
-        let Some(server) = guard.as_ref() else {
-            return Vec::new();
-        };
-        let Some(schema) = server
-            .tools
-            .get(tool)
-            .and_then(|tool| tool.input_schema.pointer("/properties/provider"))
-        else {
-            return Vec::new();
-        };
-        match schema.get("enum").and_then(Value::as_array) {
-            Some(accepted) => accepted
-                .iter()
-                .filter_map(Value::as_str)
-                .filter(|provider| server.enabled_provider_ids.contains(*provider))
-                .map(str::to_owned)
-                .collect(),
-            None => server.enabled_provider_ids.iter().cloned().collect(),
-        }
-    }
-
     /// A provider that exists in the runtime but needs setup gets a recovery
     /// step instead of a bare denial.
     fn explain_provider_denial(
@@ -1065,15 +1154,26 @@ impl AppToolExecutor {
         let credential_specs = entries
             .iter()
             .filter(|entry| !entry.runtime.credential_mapping.is_empty())
-            .map(|entry| (entry.id.clone(), entry.runtime.credential_mapping.clone()))
+            .map(|entry| {
+                (
+                    entry.id.clone(),
+                    entry.free_state,
+                    entry.runtime.credential_mapping.clone(),
+                )
+            })
             .collect::<Vec<_>>();
         let credential_environment = self.state.credential_environment.clone();
         let credentials = tokio::task::spawn_blocking(move || {
             let mut credentials = BTreeMap::new();
-            for (entry_id, mapping) in credential_specs {
+            for (entry_id, access, mapping) in credential_specs {
                 let bundle = crate::finance_credentials::get(&credential_environment, &entry_id)
-                    .map_err(|_| ())?
-                    .ok_or(())?;
+                    .map_err(|_| ())?;
+                let Some(bundle) = bundle else {
+                    if access == MarketplaceFreeState::Keyless {
+                        continue;
+                    }
+                    return Err(());
+                };
                 for (field_id, target_id) in mapping {
                     let secret = bundle.get(&field_id).ok_or(())?.to_owned();
                     if credentials.insert(target_id, secret).is_some() {
@@ -1210,6 +1310,18 @@ async fn activate_tools(
     refresh_inventory(server_id, server, true).await
 }
 
+fn call_failure_reason(tool: &str, error: BrokerError) -> BrokerError {
+    if tool == "news_company" {
+        let source = match error {
+            BrokerError::WithNext { source, .. } => *source,
+            other => other,
+        };
+        source.with_next(openbb::COMPANY_NEWS_UNAVAILABLE)
+    } else {
+        error
+    }
+}
+
 /// Scraped providers get a passive health signal: the first failure in a
 /// turn tells the model to switch to an official provider instead of retrying.
 fn provider_failure(
@@ -1217,7 +1329,9 @@ fn provider_failure(
     provider: Option<&str>,
     enabled_provider_ids: &BTreeSet<String>,
 ) -> BrokerError {
-    if !provider.is_some_and(openbb::is_best_effort) {
+    if matches!(&error, BrokerError::WithNext { next, .. } if next.as_ref() == openbb::COMPANY_NEWS_UNAVAILABLE)
+        || !provider.is_some_and(openbb::is_best_effort)
+    {
         return error;
     }
     let source = match error {
@@ -1504,12 +1618,684 @@ async fn prepare_acquired_session(
     Ok(tools)
 }
 
+/// Where a start creates its process's private working directory.
+enum StartScratch {
+    Pool(McpProcessPool),
+    /// A run-owned root, for a turn that keeps its process out of the pool.
+    Under(std::path::PathBuf),
+}
+
+impl StartScratch {
+    fn create(&self, server_id: &str) -> Result<std::path::PathBuf, BrokerError> {
+        let failed = || BrokerError::Execution("MCP run isolation failed".into());
+        match self {
+            Self::Pool(pool) => pool.create_scratch(server_id).map_err(|_| failed()),
+            Self::Under(root) => {
+                ensure_private_directory(root).map_err(|_| failed())?;
+                let scratch = root.join(format!("{server_id}-{}", uuid::Uuid::new_v4().simple()));
+                create_private_directory(&scratch).map_err(|_| failed())?;
+                Ok(scratch)
+            }
+        }
+    }
+}
+
+/// Starts the bundled runtime with `authority` and checks its signed control
+/// surface. The process belongs to no Loupist until a turn leases it.
+async fn start_bundled_server(
+    server_id: String,
+    authority: McpRunAuthority,
+    scratch: StartScratch,
+    app_data_dir: std::path::PathBuf,
+) -> Result<TurnMcpServer, BrokerError> {
+    let scratch = scratch.create(&server_id)?;
+    let sensitive_values = protected_values(&authority.credentials, &app_data_dir, &scratch);
+    let providerless_tool_policy = authority.runtime.providerless_tool_policy.clone();
+    let provider_receipt_pointer = authority.runtime.provider_receipt_pointer.clone();
+    let control_tool_names = authority.runtime.control_tool_names.clone();
+    let enabled_provider_ids = authority.enabled_provider_ids.clone();
+    let bootstrap = json!({
+        "type": "loupist.bootstrap",
+        "protocol_version": 1,
+        "run_id": format!("mcp:{}", uuid::Uuid::new_v4().simple()),
+        "scratch_dir": scratch.to_string_lossy(),
+        "credentials": authority.credentials,
+        "settings": {
+            "allowed_categories": authority.runtime.allowed_categories.clone(),
+            "enabled_provider_ids": enabled_provider_ids.clone(),
+            "allowed_network_hosts": authority.allowed_network_hosts,
+            "provider_config": authority.provider_config,
+        }
+    });
+    let launch = McpLaunchConfig {
+        server_id: server_id.clone(),
+        executable: authority.runtime.executable,
+        arguments: Vec::new(),
+        private_working_dir: scratch.clone(),
+        lease_dir: authority.runtime.lease_dir,
+        environment: BTreeMap::new(),
+        bootstrap,
+    };
+    let (session, initial_tools) = match McpSession::spawn(launch).await {
+        Ok(started) => started,
+        Err(error) => {
+            let _ = tokio::fs::remove_dir_all(&scratch).await;
+            return Err(map_mcp_error(error));
+        }
+    };
+    let checked = ensure_inventory_contains_no_protected_values(&initial_tools, &sensitive_values)
+        .and_then(|()| {
+            let initial_tool_names = initial_tools
+                .iter()
+                .map(|tool| tool.name.clone())
+                .collect::<BTreeSet<_>>();
+            if initial_tool_names != control_tool_names {
+                return Err(BrokerError::Execution(
+                    "MCP runtime initial inventory did not match its signed control surface".into(),
+                ));
+            }
+            filter_inventory(
+                &initial_tools,
+                &control_tool_names,
+                &enabled_provider_ids,
+                &providerless_tool_policy,
+            )
+        });
+    let tools = match checked {
+        Ok(tools) => tools,
+        Err(error) => {
+            let _ = session.shutdown(MCP_SHUTDOWN_GRACE).await;
+            let _ = tokio::fs::remove_dir_all(&scratch).await;
+            return Err(error);
+        }
+    };
+    Ok(TurnMcpServer {
+        session,
+        control_tool_names,
+        tools,
+        enabled_provider_ids,
+        providerless_tool_policy,
+        provider_receipt_pointer,
+        sensitive_values,
+        pool_key: None,
+        scratch_dir: Some(scratch),
+    })
+}
+
+/// Starts the bundled market-data runtime in the background at app start when
+/// a Loupist has it enabled, so the first question finds it started or
+/// starting instead of paying its cold start. Reads no saved key: a Loupist
+/// whose market-data grants need one is skipped, because macOS may ask for the
+/// keychain password before the first read after an update. Returns whether a
+/// start began.
+pub(crate) async fn prewarm_market_data(state: &AppState) -> bool {
+    let server_id = openbb::OPENBB_SERVER_ID;
+    if !state.artifacts.mcp_runtimes.contains_key(server_id) {
+        return false;
+    }
+    let candidate = {
+        let state = state.clone();
+        tokio::task::spawn_blocking(move || keyless_market_data_grants(&state, server_id))
+            .await
+            .ok()
+            .flatten()
+    };
+    let Some((loupist_id, capability_ids)) = candidate else {
+        return false;
+    };
+    let executor = AppToolExecutor::for_host(state, &loupist_id, capability_ids);
+    let Ok(authority) = executor.mcp_run_authority(server_id).await else {
+        return false;
+    };
+    // Defense in depth: the grants above map no credential.
+    if !authority.credentials.is_empty() {
+        return false;
+    }
+    let key = pool_key(&loupist_id, server_id, &authority);
+    let start = start_bundled_server(
+        server_id.to_owned(),
+        authority,
+        StartScratch::Pool(state.mcp_pool.clone()),
+        state.artifacts.app_data_dir.clone(),
+    );
+    state.mcp_pool.prewarm(&key, start).await
+}
+
+/// The first available Loupist whose enabled grants reach `server_id`, with
+/// those grants, when none of them maps a saved key. Store reads only.
+fn keyless_market_data_grants(
+    state: &AppState,
+    server_id: &str,
+) -> Option<(String, BTreeSet<String>)> {
+    let catalog = bundled_catalog().ok()?;
+    let loupists = state.store.list_loupists().ok()?;
+    crate::marketplace::with_connector_lifecycle(state, || {
+        for loupist in loupists {
+            if state.ensure_loupist_available(&loupist.id).is_err() {
+                continue;
+            }
+            let Ok(bindings) = crate::marketplace::loupist_bindings(state, &loupist.id) else {
+                continue;
+            };
+            let granted = bindings
+                .iter()
+                .filter(|binding| {
+                    binding.enabled && crate::commands::binding_grants_execute(binding)
+                })
+                .filter_map(|binding| {
+                    let entry = catalog
+                        .entries
+                        .iter()
+                        .find(|entry| entry.id == binding.entry_id)?;
+                    (entry.runtime.kind == MarketplaceRuntimeKind::BundledMcp
+                        && entry.runtime.server_id.as_deref() == Some(server_id))
+                    .then_some((binding, entry))
+                })
+                .collect::<Vec<_>>();
+            if granted
+                .iter()
+                .any(|(_, entry)| entry.free_state != MarketplaceFreeState::Keyless)
+            {
+                continue;
+            }
+            let ready = granted
+                .into_iter()
+                // A normal turn adds optional credentials from its dedicated grants.
+                // Prewarming may only start with grants that never open the keychain.
+                .filter(|(_, entry)| entry.runtime.credential_mapping.is_empty())
+                .filter(|(binding, _)| {
+                    crate::marketplace::execute_binding_ready(binding, state).unwrap_or(false)
+                })
+                .map(|(binding, _)| binding.entry_id.clone())
+                .collect::<BTreeSet<_>>();
+            if !ready.is_empty() {
+                return Ok(Some((loupist.id, ready)));
+            }
+        }
+        Ok(None)
+    })
+    .ok()
+    .flatten()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[cfg(unix)]
     use std::{fs, path::PathBuf, sync::Arc};
+
+    #[cfg(all(unix, feature = "eval-harness"))]
+    #[tokio::test]
+    async fn fx_replay_refuses_bundled_connect_and_unrecorded_platform_call() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let turn = capture(&temporary, "fx-replay", None);
+        let mut executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
+        executor.capability_ids.insert("openbb.platform".into());
+        let _guard = serde_json::from_value::<crate::eval_harness::replay::Replay>(
+            json!({"schema":"loupist-connection-replay/1","requests":[]}),
+        )
+        .unwrap()
+        .install(&state.credential_environment)
+        .unwrap();
+        let error = executor
+            .mcp_connect(json!({"server_id":"openbb"}))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("eval_replay_unmatched"));
+        let error = executor
+            .mcp_call(
+                &policy("loupist-a", None),
+                json!({"server_id":"openbb","tool_name":"equity_price_quote",
+                    "arguments":{"symbol":"EXAMPLE","provider":"yfinance"}}),
+                "unrecorded-platform-call",
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("eval_replay_unmatched"));
+        assert!(turn.mcp_session("openbb").await.is_none());
+        assert!(!turn.mcp_scratch_root.as_ref().unwrap().exists());
+    }
+
+    #[cfg(unix)]
+    fn fx_text_executor(temporary: &tempfile::TempDir) -> AppToolExecutor {
+        let state = AppState::for_test(temporary.path().join("app"));
+        let executor = turn_executor(
+            temporary,
+            &state,
+            "loupist-a",
+            capture(temporary, "fx-text", None),
+        );
+        state
+            .store
+            .create_chat(&crate::commands::tests::chat("mcp-test", "loupist-a", 1))
+            .unwrap();
+        executor
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fx_reviewed_argument_refusals_reach_the_broker() {
+        let temporary = tempfile::tempdir().unwrap();
+        let executor = fx_text_executor(&temporary);
+        for (params, message) in [
+            (
+                json!({"from":"USD"}),
+                "to: this turn has no display currency. Pass the target ISO 4217 code in `to`.",
+            ),
+            // Pi rejects this shape before the broker. Direct callers still
+            // receive the request repair when they skip schema validation.
+            (
+                json!({"from":"USD","amount":1}),
+                "request: expected only a `from` currency code and an optional `to` currency code.",
+            ),
+        ] {
+            let error = executor
+                .execute_staged(
+                    &policy("loupist-a", None),
+                    ToolMethod::FxRate,
+                    params,
+                    "fx-refusal-text",
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(
+                crate::broker::error_body(&error),
+                json!({
+                    "code":"malformed_request", "message":message, "retryable":false, "next":""
+                })
+            );
+        }
+        assert!(executor.capture.mcp_session("openbb").await.is_none());
+        assert!(!temporary.path().join("app/cache/fx-reference").exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fx_reviewed_asof_refusal_reaches_the_model_before_any_read() {
+        let temporary = tempfile::tempdir().unwrap();
+        let executor = fx_text_executor(&temporary);
+        let error = executor
+            .execute_staged(
+                &policy("loupist-a", Some("2026-11-16")),
+                ToolMethod::FxRate,
+                json!({"from":"USD"}),
+                "asof-text",
+            )
+            .await
+            .unwrap_err();
+        let body = crate::broker::error_body(&error);
+        assert_eq!(body["code"], "as_of_unsupported");
+        assert_eq!(body["message"],"tool execution failed: as_of_unsupported: fx_rate supplies the latest rates only; currency_price_historical, a market data route, reads a currency pair's price bars up to the cutoff.");
+        assert!(executor.capture.mcp_session("openbb").await.is_none());
+        assert!(!temporary.path().join("app/cache/fx-reference").exists());
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fx_reviewed_unsupported_currency_refusal_reaches_the_model_by_field() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut executor = fx_text_executor(&temporary);
+        executor.capability_ids.insert("openbb.platform".into());
+        executor
+            .state
+            .fx_reference
+            .resolve(chrono::Utc::now(), true, || async {
+                Ok(json!({"date":"2099-11-17","USD":1.1,"KRW":1500}))
+            })
+            .await
+            .unwrap();
+        for (field, params) in [
+            ("from", json!({"from":"XXX","to":"USD"})),
+            ("to", json!({"from":"USD","to":"XXX"})),
+        ] {
+            let error = executor
+                .execute_staged(
+                    &policy("loupist-a", None),
+                    ToolMethod::FxRate,
+                    params,
+                    "unsupported-text",
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(crate::broker::error_body(&error)["message"],format!("{field}: XXX is absent from this European Central Bank reference-rate table; fx_rate accepts EUR, KRW, USD."));
+        }
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fx_reviewed_connection_off_refusal_and_next_reach_the_model() {
+        let temporary = tempfile::tempdir().unwrap();
+        let executor = fx_text_executor(&temporary);
+        let error = executor
+            .execute_staged(
+                &policy("loupist-a", None),
+                ToolMethod::FxRate,
+                json!({"from":"USD","to":"KRW"}),
+                "off-text",
+            )
+            .await
+            .unwrap_err();
+        let body = crate::broker::error_body(&error);
+        assert_eq!(body["message"],"tool execution failed: fx_rate reads through the Market data platform connection, which is off for this Loupist, and has no stored rates.");
+        assert_eq!(body["next"],"If connection_setup is available, calling it with {id: \"openbb.platform\"} shows the user the connection's setup card; otherwise the user can check the connection in Connections.");
+    }
+
+    #[cfg(unix)]
+    const FX_SCRIPT: &str = r#"
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$MCP_TEST_TRANSCRIPT"
+  id=${line#*\"id\":\"}; id=${id%%\"*}
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":"%s","result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"fixture","version":"1"}}}\n' "$id" ;;
+    *'"method":"tools/list"'*)
+      printf '{"jsonrpc":"2.0","id":"%s","result":{"tools":[{"name":"currency_reference_rates","inputSchema":{"type":"object","properties":{"provider":{"enum":["ecb"]}},"required":["provider"]},"annotations":{"readOnlyHint":true}}]}}\n' "$id" ;;
+    *'"method":"tools/call"'*)
+      printf '{"jsonrpc":"2.0","id":"%s","result":{"structuredContent":{"provider":"ecb","results":{"date":"2099-11-17","EUR":1,"USD":1.1014,"KRW":1470.23}},"isError":false}}\n' "$id" ;;
+  esac
+done
+"#;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn host_fx_read_checks_scope_and_provider_without_retaining_turn_artifacts() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut executor = fx_text_executor(&temporary);
+        let binding = policy("loupist-a", None);
+        assert!(matches!(
+            executor.host_fx_read(&binding).await,
+            Err(BrokerError::MethodDenied)
+        ));
+        executor.capability_ids.insert("openbb.platform".into());
+        let provider = spawn_script_server(&temporary, "fx-display", "ecb", None, FX_SCRIPT).await;
+        let scratch = provider.server.scratch_dir.clone().unwrap();
+        install(&executor.capture, provider.server).await;
+        let store = executor.state.store.clone();
+        let persisted = || {
+            let connection = store.lock_loupist("loupist-a").unwrap();
+            let counts =
+                ["chat_sessions", "knowledge_saved_price_reads", "datasets"].map(|table| {
+                    connection
+                        .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                            row.get::<_, i64>(0)
+                        })
+                        .unwrap()
+                });
+            let chat: String = connection
+                .query_row(
+                    "SELECT data_json FROM chat_sessions WHERE id = 'mcp-test'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            (counts, chat)
+        };
+        let before = persisted();
+        let raw = executor.host_fx_read(&binding).await.unwrap();
+        assert_eq!(raw["structuredContent"]["results"]["KRW"], 1470.23);
+        let calls = fs::read_to_string(provider.transcript).unwrap();
+        assert_eq!(calls.matches(r#""method":"tools/call""#).count(), 1);
+        assert!(calls.contains(r#""name":"currency_reference_rates""#));
+        assert!(calls.contains(r#""provider":"ecb""#));
+        assert!(executor.capture.mcp_session("openbb").await.is_none());
+        assert!(executor.capture.run_results.lock().await.results.is_empty());
+        assert!(executor.capture.evidence_refs.lock().await.is_empty());
+        assert!(!scratch.exists());
+        assert!(!executor.capture.mcp_scratch_root.as_ref().unwrap().exists());
+        assert_eq!(before, persisted());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn discarded_fx_delivery_restages_the_pinned_pair_and_its_evidence() {
+        let temporary = tempfile::tempdir().unwrap();
+        let spawned = spawn_script_server(&temporary, "fx-discard", "ecb", None, FX_SCRIPT).await;
+        let state = AppState::for_test(temporary.path().join("app"));
+        let turn = capture(&temporary, "fx-discard", None);
+        install(&turn, spawned.server).await;
+        let mut executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
+        executor.capability_ids.insert("openbb.platform".into());
+        state
+            .store
+            .create_chat(&crate::commands::tests::chat("mcp-test", "loupist-a", 1))
+            .unwrap();
+        let policy = ToolPolicy {
+            display_currency: Some("KRW".into()),
+            ..policy("loupist-a", None)
+        };
+        let first = executor
+            .execute_staged(&policy, ToolMethod::FxRate, json!({"from":"USD"}), "fx-a")
+            .await
+            .unwrap();
+        turn.discard_delivery("fx-a").await;
+        // Replace the shared service's table; this turn must keep its own revision.
+        state
+            .fx_reference
+            .resolve("2100-01-05T16:00:00Z".parse().unwrap(), true, || async {
+                Ok(json!({"date":"2100-01-05", "USD":1.0, "KRW":2000.0}))
+            })
+            .await
+            .unwrap();
+        let second = executor
+            .execute_staged(
+                &policy,
+                ToolMethod::FxRate,
+                json!({"from":"USD", "to":"KRW"}),
+                "fx-b",
+            )
+            .await
+            .unwrap();
+        turn.commit_delivery("fx-b").await;
+        let citation = second["citation_url"].as_str().unwrap();
+        let resolves = evidence::cited_result(&*turn.run_results.lock().await, citation).is_ok();
+        let receipts = turn.evidence_refs.lock().await.clone();
+        let checks = turn
+            .number_checks(
+                &format!("[{}]({citation})", second["to_per_from"]),
+                &receipts,
+            )
+            .await;
+        let reads = fs::read_to_string(&spawned.transcript)
+            .unwrap()
+            .matches(r#""method":"tools/call""#)
+            .count();
+        turn.shutdown_mcp().await;
+        assert!(
+            resolves,
+            "delivery B must retain the result its citation names after A was discarded"
+        );
+        assert_ne!(first["citation_url"], second["citation_url"]);
+        assert_eq!(second["revision"], first["revision"]);
+        assert_eq!(second["to_per_from"], first["to_per_from"]);
+        assert_eq!(reads, 1, "the pinned table must not fetch again");
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].kind, crate::domain::NumberCheckKind::Data);
+        assert_eq!(checks[0].status, crate::domain::NumberCheckStatus::Matched);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fx_executor_retains_pairs_pins_revision_and_projects_one_source() {
+        let temporary = tempfile::tempdir().unwrap();
+        let spawned = spawn_script_server(&temporary, "fx", "ecb", None, FX_SCRIPT).await;
+        let state = AppState::for_test(temporary.path().join("app"));
+        let turn = capture(&temporary, "fx", None);
+        install(&turn, spawned.server).await;
+        let mut executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
+        executor.capability_ids.insert("openbb.platform".into());
+        state
+            .store
+            .create_chat(&crate::commands::tests::chat("mcp-test", "loupist-a", 1))
+            .unwrap();
+        let policy = ToolPolicy {
+            display_currency: Some("KRW".into()),
+            ..policy("loupist-a", None)
+        };
+        let first = executor
+            .execute_staged(
+                &policy,
+                ToolMethod::FxRate,
+                json!({"from":"USD"}),
+                "fx-first",
+            )
+            .await
+            .unwrap();
+        turn.commit_delivery("fx-first").await;
+        let changes = state.fx_reference.take_display_changes();
+        assert_eq!(
+            serde_json::to_value(changes).unwrap(),
+            json!([{"state":"ready","revision":"ecb:2099-11-17"}])
+        );
+        assert_eq!(
+            first
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            [
+                "citation_url",
+                "computed",
+                "date",
+                "from",
+                "legs",
+                "revision",
+                "source",
+                "to",
+                "to_per_from"
+            ]
+        );
+        assert_eq!(first["to_per_from"], 1334.87);
+        let receipt = turn.evidence_refs.lock().await.last().unwrap().clone();
+        assert_eq!(turn.evidence_refs.lock().await.len(), 1);
+        assert_eq!(
+            receipt.title,
+            "USD/KRW · European Central Bank reference rates"
+        );
+        assert_eq!(receipt.provider.as_deref(), Some("ecb"));
+        assert_eq!(receipt.published_at.as_deref(), Some("2099-11-17"));
+        assert_eq!(
+            receipt.url.as_deref(),
+            Some(crate::finance_data::fx::SOURCE_URL)
+        );
+        let checks = turn
+            .number_checks(
+                &format!("[1334.87]({})", first["citation_url"].as_str().unwrap()),
+                std::slice::from_ref(&receipt),
+            )
+            .await;
+        assert_eq!(checks[0].kind, crate::domain::NumberCheckKind::Data);
+        assert_eq!(checks[0].status, crate::domain::NumberCheckStatus::Matched);
+        let retained = turn
+            .run_results
+            .lock()
+            .await
+            .values()
+            .find(|result| result.producer.tool_name == "fx_rate")
+            .unwrap()
+            .clone();
+        assert_eq!(retained.upstream_result_refs.len(), 1);
+        let cache = temporary.path().join("app/cache/fx-reference/latest.json");
+        let mut newer: Value = serde_json::from_slice(&fs::read(&cache).unwrap()).unwrap();
+        newer["date"] = json!("2099-11-18");
+        newer["revision"] = json!("ecb:2099-11-18");
+        newer["per_euro"]["KRW"] = json!(1600);
+        fs::write(&cache, serde_json::to_vec(&newer).unwrap()).unwrap();
+        let second = executor
+            .execute_staged(
+                &policy,
+                ToolMethod::FxRate,
+                json!({"from":"EUR","to":"KRW"}),
+                "fx-second",
+            )
+            .await
+            .unwrap();
+        assert_eq!(second["revision"], first["revision"]);
+        assert_eq!(second["to_per_from"], 1470.23);
+        let repeated = executor
+            .execute_staged(
+                &policy,
+                ToolMethod::FxRate,
+                json!({"from":"USD","to":"KRW"}),
+                "fx-repeat",
+            )
+            .await
+            .unwrap();
+        assert_eq!(repeated, first);
+        for rate in [first, repeated] {
+            let converted = executor
+                .execute_staged(
+                    &policy,
+                    ToolMethod::Calculate,
+                    json!({
+                        "operation":"convert", "unit":"USD", "to":"KRW",
+                        "inputs":{"amount":100,"rate":rate["to_per_from"].to_string()},
+                        "input_sources":{"rate":rate["citation_url"]}
+                    }),
+                    "fx-convert",
+                )
+                .await
+                .unwrap();
+            assert_eq!(converted["conversion"]["revision"], rate["revision"]);
+            assert_eq!(converted["inputs"][1]["provenance"]["status"], "matched");
+            assert!(converted["formulas"][0]
+                .as_str()
+                .unwrap()
+                .ends_with("133,487 KRW"));
+        }
+        assert_eq!(
+            fs::read_to_string(&spawned.transcript)
+                .unwrap()
+                .matches("\"method\":\"tools/call\"")
+                .count(),
+            1
+        );
+        let mut off_turn = capture(&temporary, "fx-off", None);
+        Arc::get_mut(&mut off_turn).unwrap().unattended_run_id = Some("fx-unattended".into());
+        let off = turn_executor(&temporary, &state, "loupist-a", off_turn);
+        let offline = off
+            .execute_staged(
+                &policy,
+                ToolMethod::FxRate,
+                json!({"from":"USD","to":"KRW"}),
+                "fx-off",
+            )
+            .await
+            .unwrap();
+        assert_eq!(offline["behind"]["because"], "connection_off");
+        executor.capture.shutdown_mcp().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fx_cutoff_and_invalid_pairs_make_no_read_and_unattended_is_allowed() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let executor = turn_executor(
+            &temporary,
+            &state,
+            "loupist-a",
+            capture(&temporary, "fx-refuse", None),
+        );
+        state
+            .store
+            .create_chat(&crate::commands::tests::chat("mcp-test", "loupist-a", 1))
+            .unwrap();
+        let error = executor
+            .execute_staged(
+                &policy("loupist-a", Some("2026-11-16")),
+                ToolMethod::FxRate,
+                json!({"from":"USD","to":"KRW"}),
+                "cutoff",
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("as_of_unsupported"));
+        assert!(executor.capture.mcp_session("openbb").await.is_none());
+        assert_eq!(
+            ToolMethod::FxRate.safety().unattended,
+            crate::broker::tool_class::Unattended::Allowed
+        );
+    }
 
     #[cfg(unix)]
     const ISOLATION_MCP_SCRIPT: &str = r#"
@@ -1744,6 +2530,7 @@ done
             propose_memory_updates: false,
             memory_proposal_budget: 0,
             as_of: as_of.map(str::to_owned),
+            display_currency: None,
         }
     }
 
@@ -1776,8 +2563,6 @@ done
     }
 
     #[cfg(unix)]
-    mod host_reads;
-
     #[cfg(unix)]
     fn tool_names(response: &Value) -> Vec<String> {
         response["tools"]
@@ -2146,6 +2931,170 @@ done
         assert!(!exited.is_file());
         leased.discard().await;
         wait_for_exit_marker(&exited).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_prewarmed_process_serves_the_first_turn_of_any_loupist_with_its_authority() {
+        let _guard = crate::mcp::MCP_PROCESS_TEST_LOCK.lock().await;
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let pool = state.mcp_pool.clone();
+        let granted = authority(&temporary, "yfinance", "prewarm-secret");
+        // The app-start prewarm chose another Loupist with the same grants.
+        let prewarm_key = pool_key("loupist-first", "openbb", &granted);
+        let TestServer {
+            server,
+            transcript,
+            exited,
+        } = spawn_server(&temporary, "prewarmed", "yfinance", None).await;
+        assert!(pool.prewarm(&prewarm_key, async move { Ok(server) }).await);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while pool.fresh_count().await != 1 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let turn = capture(&temporary, "first-question", Some(pool.clone()));
+        let executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
+        let connected = tokio::time::timeout(
+            Duration::from_secs(10),
+            executor.attach_or_spawn_mcp("openbb", granted, &[]),
+        )
+        .await
+        .expect("the turn reused the prewarmed process instead of starting one")
+        .unwrap();
+        assert_eq!(
+            tool_names(&connected),
+            ["activate_tools", "deactivate_tools"]
+        );
+        assert_eq!(pool.fresh_count().await, 0);
+        assert_eq!(
+            fs::read_to_string(&transcript)
+                .unwrap()
+                .matches("\"method\":\"initialize\"")
+                .count(),
+            1
+        );
+        // After its first turn the process belongs to that Loupist.
+        turn.shutdown_mcp().await;
+        wait_for_pool_idle(&pool, 1).await;
+        assert!(pool.acquire(&prewarm_key).await.is_none());
+        pool.shutdown().await;
+        wait_for_exit_marker(&exited).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dedicated_cftc_grant_starts_without_an_app_token() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut state = AppState::for_test(temporary.path().join("app"));
+        let mut runtime = authority(&temporary, "cftc", "unused").runtime;
+        runtime.provider_ids.insert("cftc".into());
+        runtime.provider_network_hosts.insert(
+            "cftc".into(),
+            BTreeSet::from(["publicreporting.cftc.gov".into()]),
+        );
+        Arc::make_mut(&mut state.artifacts)
+            .mcp_runtimes
+            .insert("openbb".into(), runtime);
+        let executor = AppToolExecutor::for_host(
+            &state,
+            "fixture",
+            BTreeSet::from(["cftc.commitments".into()]),
+        );
+        let grant = executor.mcp_run_authority("openbb").await.unwrap();
+        assert_eq!(grant.enabled_provider_ids, BTreeSet::from(["cftc".into()]));
+        assert!(grant.credentials.is_empty());
+        let env = &state.credential_environment;
+        let id = "cftc.commitments";
+        crate::finance_credentials::stage(
+            env,
+            id,
+            &BTreeMap::from([("app_token".into(), "fixture-token".into())]),
+        )
+        .unwrap();
+        let pending = crate::finance_credentials::candidate(env, id)
+            .unwrap()
+            .unwrap();
+        assert!(executor
+            .mcp_run_authority("openbb")
+            .await
+            .unwrap()
+            .credentials
+            .is_empty());
+        crate::finance_credentials::finish_verification(
+            env,
+            id,
+            pending.revision(),
+            crate::finance_credentials::VerificationOutcome::Verified,
+            1,
+            None,
+        )
+        .unwrap();
+        let grant = executor.mcp_run_authority("openbb").await.unwrap();
+        assert_eq!(
+            grant.credentials.get("cftc_app_token").map(String::as_str),
+            Some("fixture-token")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_app_start_prewarm_needs_an_enabled_grant_and_reads_no_saved_key() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut state = AppState::for_test(temporary.path().join("app"));
+        Arc::make_mut(&mut state.artifacts).mcp_runtimes.insert(
+            "openbb".into(),
+            authority(&temporary, "yfinance", "unused").runtime,
+        );
+        let workspace = temporary.path().join("loupist-a-workspace");
+        fs::create_dir_all(&workspace).unwrap();
+        crate::commands::tests::seed_profile(
+            state.store.as_ref(),
+            &crate::commands::tests::profile("loupist-a", &workspace, 1),
+        );
+        let grant = |entry_id: &str, enabled: bool| {
+            state
+                .store
+                .save_loupist_capability(&crate::domain::LoupistCapabilityBinding {
+                    loupist_id: "loupist-a".into(),
+                    entry_id: entry_id.into(),
+                    enabled,
+                    granted_permissions: vec!["execute".into()],
+                    config: BTreeMap::new(),
+                    updated_at_ms: 1,
+                })
+                .unwrap()
+        };
+        // A new Loupist starts with the keyless platform enabled, so a
+        // default install starts market data at launch.
+        let (loupist_id, granted) = keyless_market_data_grants(&state, "openbb").unwrap();
+        assert_eq!(loupist_id, "loupist-a");
+        assert!(granted.contains("openbb.platform"), "{granted:?}");
+        // With every market-data grant off, nothing starts.
+        let catalog = bundled_catalog().unwrap();
+        for binding in crate::marketplace::loupist_bindings(&state, "loupist-a").unwrap() {
+            if catalog.entries.iter().any(|entry| {
+                entry.id == binding.entry_id && entry.runtime.server_id.as_deref() == Some("openbb")
+            }) {
+                grant(&binding.entry_id, false);
+            }
+        }
+        assert!(keyless_market_data_grants(&state, "openbb").is_none());
+        grant("openbb.platform", true);
+        assert_eq!(
+            keyless_market_data_grants(&state, "openbb"),
+            Some((
+                "loupist-a".to_owned(),
+                BTreeSet::from(["openbb.platform".to_owned()])
+            ))
+        );
+        // A granted provider with a saved key would make the start read the keychain.
+        grant("fmp.market-data", true);
+        assert!(keyless_market_data_grants(&state, "openbb").is_none());
     }
 
     #[cfg(unix)]
@@ -2682,159 +3631,4 @@ while IFS= read -r line; do
   esac
 done
 "#;
-
-    /// `refresh_asset`'s own path, no model: the grant check, per-source
-    /// statuses, the first-refresh fund lookup, statuses reset when the class
-    /// changes, and the eval regression (finance-asset-page.md §8) that a
-    /// watched company shows a dated, sourced delta after a new filing.
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn asset_refresh_checks_grants_records_statuses_and_dated_sourced_filings() {
-        use crate::commands::assets::{refresh_with, with_assets};
-        use crate::knowledge::assets;
-        let _guard = crate::mcp::MCP_PROCESS_TEST_LOCK.lock().await;
-        let temporary = tempfile::tempdir().unwrap();
-        let state = AppState::for_test(temporary.path().join("app"));
-        let turn = capture(&temporary, "refresh", None);
-        let spawned =
-            spawn_script_server(&temporary, "refresh", "sec", None, ASSET_REFRESH_SCRIPT).await;
-        install(&turn, spawned.server).await;
-        let executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
-        let openbb: BTreeSet<String> = crate::marketplace::bundled_catalog()
-            .unwrap()
-            .entries
-            .into_iter()
-            .filter(|entry| entry.runtime.server_id.as_deref() == Some("openbb"))
-            .map(|entry| entry.id)
-            .take(1)
-            .collect();
-        let page = |symbol: &str, name: &str| {
-            with_assets(&state, "loupist-a", true, |tx| {
-                assets::ensure_page(
-                    tx,
-                    "loupist-a",
-                    &assets::AssetIdentity {
-                        symbol: symbol.into(),
-                        market: "NASDAQ".into(),
-                        name: name.into(),
-                    },
-                    None,
-                    crate::commands::now_ms(),
-                )
-            })
-            .unwrap()
-        };
-        let view = |asset_id: &str| {
-            let context = crate::commands::assets::view_context(&state).unwrap();
-            with_assets(&state, "loupist-a", false, |tx| {
-                assets::page_view(tx, "loupist-a", asset_id, 0, &context)
-            })
-            .unwrap()
-        };
-        let failures = |asset_id: &str| {
-            view(asset_id)
-                .checks
-                .failures
-                .into_iter()
-                .map(|failure| (failure.kind, failure.reason))
-                .collect::<Vec<_>>()
-        };
-        let calls = || {
-            fs::read_to_string(&spawned.transcript)
-                .unwrap_or_default()
-                .matches(r#""method":"tools/call""#)
-                .count()
-        };
-        let morrow = page("MORR", "Morrow Components");
-        let refresh = |asset_id: String, grants: BTreeSet<String>| {
-            let state = state.clone();
-            let executor = &executor;
-            async move {
-                // No reuse window, so each refresh reaches the server.
-                let reads = crate::commands::assets::HostReads {
-                    executor,
-                    capabilities: &grants,
-                    max_age: None,
-                };
-                refresh_with(
-                    &state,
-                    "loupist-a",
-                    &asset_id,
-                    assets::ObservationOrigin::Refresh,
-                    reads,
-                    None,
-                )
-                .await
-                .unwrap()
-            }
-        };
-
-        // Without a grant nothing is read, and every check says which connection to turn on.
-        assert_eq!(refresh(morrow.asset_id.clone(), BTreeSet::new()).await, 0);
-        assert_eq!(calls(), 0);
-        let waiting = failures(&morrow.asset_id);
-        assert_eq!(waiting.len(), 3, "{waiting:?}");
-        assert!(waiting
-            .iter()
-            .all(|(_, reason)| reason == "needs_connection"));
-        assert!(view(&morrow.asset_id).refreshed_at_ms.is_some());
-
-        // Granted: a baseline, the fund lookup says "not a fund", the failed read is named.
-        let first_at = crate::commands::now_ms();
-        assert_eq!(refresh(morrow.asset_id.clone(), openbb.clone()).await, 0);
-        let checked = view(&morrow.asset_id);
-        assert_eq!(
-            (checked.class, checked.class_source),
-            (assets::AssetClass::Equity, assets::ClassSource::Lookup)
-        );
-        assert_eq!(
-            failures(&morrow.asset_id),
-            [("results".to_owned(), "failed".to_owned())]
-        );
-        // A new 10-Q is one new row; an identical refresh adds nothing.
-        assert_eq!(refresh(morrow.asset_id.clone(), openbb.clone()).await, 1);
-        assert_eq!(refresh(morrow.asset_id.clone(), openbb.clone()).await, 0);
-        let delta = with_assets(&state, "loupist-a", false, |tx| {
-            assets::deltas(tx, "loupist-a", Some(&morrow.asset_id), first_at + 1)
-        })
-        .unwrap()
-        .remove(0);
-        let filings: Vec<_> = delta
-            .rows
-            .iter()
-            .filter(|row| row.kind == "filing")
-            .collect();
-        assert_eq!(filings.len(), 1, "{:?}", delta.rows);
-        let row = filings[0];
-        assert_eq!(
-            (row.fact_date.as_str(), row.facts["form"].as_str()),
-            ("2026-04-30", Some("10-Q"))
-        );
-        assert_eq!(
-            row.evidence[0].url.as_deref(),
-            Some("https://www.sec.gov/Archives/edgar/data/990001/000099000126000011/morr-20260328.htm")
-        );
-        assert!(row.evidence[0].dataset.is_some());
-        assert_eq!(row.evidence[0].provider.as_deref(), Some("sec"));
-        // The 10-Q is a quarterly report whose sections are not compared yet.
-        assert_eq!(row.sections.as_deref(), Some(&[][..]));
-
-        // A fund found by the lookup becomes a fund page; the equity checks'
-        // statuses (the failed results read) no longer apply to it.
-        let fund = page("QQQF", "Fictional Fund");
-        refresh(fund.asset_id.clone(), openbb.clone()).await;
-        let checked = view(&fund.asset_id);
-        assert_eq!(
-            (checked.class, checked.class_source),
-            (assets::AssetClass::Fund, assets::ClassSource::Lookup)
-        );
-        assert!(
-            failures(&fund.asset_id).is_empty(),
-            "{:?}",
-            failures(&fund.asset_id)
-        );
-        assert_eq!(checked.checks.kinds, ["price", "fees", "holdings"]);
-        turn.shutdown_mcp().await;
-        wait_for_exit_marker(&spawned.exited).await;
-    }
 }

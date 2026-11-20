@@ -165,7 +165,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "LL-002",
@@ -487,7 +488,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "LL-004",
@@ -712,7 +714,7 @@
                 "rubric": [
                   {
                     "id": "page-current",
-                    "criterion": "In lens_pages_after_turn, the Marrowfield Paper page gives 0.10 USD per share as the current quarterly dividend and 0.18 USD only as the earlier one, and it still records the July segment mix, net debt and mill footprint.",
+                    "criterion": "In lens_pages_after_turn, the Marrowfield Paper page gives 0.10 USD per share as the current quarterly dividend and 0.18 USD only as the earlier one. It still records the July segment mix and net debt, and every other July detail the page held before this turn, as the first session filed it in prior_sessions. A July detail the first session never filed, such as the mill footprint, is not required.",
                     "metric": "lens_update"
                   }
                 ]
@@ -720,7 +722,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "LL-006",
@@ -779,7 +782,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "LL-007",
@@ -871,7 +875,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "LL-008",
@@ -995,7 +1000,8 @@
             ]
           }
         ]
-      }
+      },
+      "language": "en"
     },
     {
       "id": "LL-009",
@@ -1069,7 +1075,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "LL-010",
@@ -1160,7 +1167,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "LL-011",
@@ -1265,7 +1273,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     }
   ]
 }

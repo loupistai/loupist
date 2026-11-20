@@ -1,7 +1,7 @@
 {
   "id": "krx.market-data",
   "name": "KRX Open API",
-  "summary": "Daily KOSPI and KOSDAQ prices straight from the exchange, up to 31 weekdays per read. A free KRX account needs approval for each market you use; verification checks both.",
+  "summary": "Daily KOSPI and KOSDAQ prices straight from the exchange, up to 31 weekdays per read. A free KRX account needs approval for each market you use; verification checks both. Membership requires Korean identity verification by mobile phone or i-PIN.",
   "publisher": "Loupist",
   "data_authority": "Korea Exchange",
   "kind": "data_source",
@@ -50,7 +50,7 @@
         "required": true,
         "min_length": 8,
         "max_length": 256,
-        "help_url": "https://openapi.krx.co.kr/contents/OPP/INFO/OPPINFO001.jsp"
+        "help_url": "https://openapi.krx.co.kr/contents/OPP/COMS/client/OPPCOMS002_S0.cmd"
       }
     ]
   }

@@ -1,12 +1,15 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { renderWithOpen, destinations } from "../../test/open";
 import { ChatMapProvider } from "./ChatMapContext";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ChatArtifactView, LoupistArtifactItem } from "../../types";
 import { ChatWorkspacePanel } from "./ChatWorkspacePanel";
+import { AssetPageOpenerProvider } from "../assets/assetOpener";
+import { GRID_SCHEMA } from "../../contracts/chat";
 import { evidenceFixture } from "../../test/evidenceFixtures";
-import { EVIDENCE_TAB_ID, WORK_TAB_ID, evidenceEntry, pushEvidenceEntry, workWorkspaceTab } from "../../chat/workspace";
+import { EVIDENCE_TAB_ID, WORK_TAB_ID, evidenceEntry, filesWorkspaceTab, pushEvidenceEntry, workWorkspaceTab, type ChatWorkspaceSession } from "../../chat/workspace";
 
 const view: ChatArtifactView = {
   artifact: { id: "note", chat_session_id: "chat", kind: "markdown", title: "Saved note", current_revision: 1, created_at_ms: 1_700_000_000_000, updated_at_ms: 1_700_000_000_000 },
@@ -42,7 +45,7 @@ it.each(["side", "bottom"] as const)("fits the %s panel without replacing the re
   });
   try {
     const mounted = render(<div className="app-stage"><div className="app-stage-main" /><ChatWorkspacePanel {...props} /></div>);
-    const panel = screen.getByLabelText("Chat workspace panel");
+    const panel = screen.getByLabelText("Side panel");
     const sizeProperty = placement === "side" ? "--artifact-panel-width" : "--artifact-panel-height";
     expect(panel.style.getPropertyValue(sizeProperty)).toBe(placement === "side" ? "620px" : "420px");
     act(() => { stage = { width: 900, height: 600 }; callbacks.forEach(callback => callback()); });
@@ -105,6 +108,38 @@ describe("ChatWorkspacePanel Evidence reader", () => {
     await userEvent.setup().click(screen.getByRole("tab", { name: "Evidence" }));
     expect(onInteract).toHaveBeenCalled();
   });
+  it("lets Esc put back an edited web address before it closes the panel", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const onClose = vi.fn();
+    const page = { id: "browser:q3", kind: "browser" as const, url: "https://hanul.example/q3", title: "Q3 review", loading: false };
+    render(<ChatWorkspacePanel {...panelProps(bridge)} onClose={onClose} session={{ tabs: [page], active_tab_id: page.id }} />);
+    const address = screen.getByRole("textbox", { name: "Web address" });
+    await user.clear(address);
+    await user.type(address, "https://morrow.example");
+    await user.keyboard("{Escape}");
+    expect(address).toHaveValue("https://hanul.example/q3");
+    expect(onClose).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("lets Esc clear the file filter before it closes the panel", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    vi.spyOn(bridge, "workspaceList").mockResolvedValue({ path: "", truncated: false, entries: [{ kind: "file", name: "notes.md", path: "notes.md", size_bytes: 12 }] });
+    const onClose = vi.fn();
+    const files = filesWorkspaceTab();
+    render(<ChatWorkspacePanel {...panelProps(bridge)} onClose={onClose} session={{ tabs: [files], active_tab_id: files.id }} />);
+    const filter = await screen.findByRole("textbox", { name: "Filter files" });
+    await user.type(filter, "zz");
+    await user.keyboard("{Escape}");
+    expect(filter).toHaveValue("");
+    expect(onClose).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("retries a failed artifact read within the existing tab", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -131,7 +166,7 @@ describe("ChatWorkspacePanel Work tab", () => {
     const read = vi.spyOn(bridge, "chatArtifactRead").mockResolvedValue({ ...view, artifact: { ...view.artifact, id: "older", chat_session_id: "chat-1" } });
     const props = { ...panelProps(bridge), session: { tabs: [], active_tab_id: WORK_TAB_ID } };
     render(<ChatWorkspacePanel {...props} buildingWork={[{ key: "building:step", title: "Margin vs utilization" }]} />);
-    const list = await screen.findByRole("list", { name: "Charts and documents" });
+    const list = await screen.findByRole("list", { name: "Charts, tables and documents" });
     expect(list).toHaveTextContent("Margin vs utilization");
     expect(list).toHaveTextContent("Preparing");
     expect(screen.getByRole("button", { name: /Supplier map/ })).toHaveTextContent("Chart · Version 2");
@@ -151,6 +186,32 @@ describe("ChatWorkspacePanel Work tab", () => {
     await user.click(screen.getByRole("button", { name: "All work" }));
     expect(onUpdateTab).toHaveBeenCalledWith(WORK_TAB_ID, expect.any(Function));
     expect(onUpdateTab.mock.calls[0]![1]({ id: WORK_TAB_ID, kind: "work" })).toEqual({ id: WORK_TAB_ID, kind: "work" });
+  });
+
+  it("moves keyboard focus into an opened item and back to its row, and keeps it on the row when the read fails", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    vi.spyOn(bridge, "loupistArtifactList").mockResolvedValue([workItem("note", "chat", "Saved note"), workItem("older", "chat-1", "Supplier map", "chart")]);
+    const read = vi.spyOn(bridge, "chatArtifactRead").mockRejectedValueOnce(new Error("gone")).mockResolvedValue(view);
+    // The shell keeps the Work tab: opening an item puts it in the tab, "All work" clears it.
+    function Shell() {
+      const [session, setSession] = useState<ChatWorkspaceSession>({ tabs: [], active_tab_id: WORK_TAB_ID });
+      return <ChatWorkspacePanel {...panelProps(bridge)} session={session}
+        onOpenArtifact={(artifact, threadId) => setSession({ tabs: [workWorkspaceTab(artifact, threadId)], active_tab_id: WORK_TAB_ID })}
+        onUpdateTab={(id, update) => setSession((current) => ({ ...current, tabs: current.tabs.map((tab) => tab.id === id ? update(tab) : tab) }))} />;
+    }
+    render(<Shell />);
+    const note = await screen.findByRole("button", { name: /Saved note/ });
+    note.focus();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not open this item.");
+    expect(note).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("heading", { name: "Saved note" })).toBeVisible();
+    await waitFor(() => expect(screen.getByRole("button", { name: "All work" })).toHaveFocus());
+    expect(read).toHaveBeenCalledTimes(3);
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.getByRole("button", { name: /Saved note/ })).toHaveFocus());
   });
 
   it("does not open an item whose read finishes after the chat changed", async () => {
@@ -187,20 +248,22 @@ describe("ChatWorkspacePanel Work tab", () => {
     expect(onDockKind).toHaveBeenLastCalledWith("reading");
   });
 
-  it("pins the placement for every kind from the Dock control's menu and shows when it is on", async () => {
+  it("pins the placement for every kind from the Dock control's menu, naming it, and shows when it is on", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     vi.spyOn(bridge, "chatArtifactRead").mockResolvedValue(view);
     const onPinPlacement = vi.fn();
     const mounted = render(<ChatWorkspacePanel {...panelProps(bridge)} onPinPlacement={onPinPlacement} />);
     await user.click(screen.getByRole("button", { name: "Panel menu" }));
-    const pin = await screen.findByRole("menuitemcheckbox", { name: "Always dock here" });
+    // The choice names where the panel is, so "here" is never a guess.
+    const pin = await screen.findByRole("menuitemcheckbox", { name: "Always dock at side" });
     expect(pin).toHaveAttribute("aria-checked", "false");
     await user.click(pin);
     expect(onPinPlacement).toHaveBeenLastCalledWith(true);
-    mounted.rerender(<ChatWorkspacePanel {...panelProps(bridge)} placementPinned onPinPlacement={onPinPlacement} />);
+    mounted.rerender(<ChatWorkspacePanel {...panelProps(bridge)} placement="bottom" placementPinned onPinPlacement={onPinPlacement} />);
     await user.click(screen.getByRole("button", { name: "Panel menu" }));
-    const pinned = await screen.findByRole("menuitemcheckbox", { name: "Always dock here" });
+    expect(await screen.findByRole("menuitem", { name: "Dock at side" })).toBeVisible();
+    const pinned = await screen.findByRole("menuitemcheckbox", { name: "Always dock at bottom" });
     expect(pinned).toHaveAttribute("aria-checked", "true");
     await user.click(pinned);
     expect(onPinPlacement).toHaveBeenLastCalledWith(false);
@@ -294,7 +357,7 @@ describe("ChatWorkspacePanel Expand", () => {
     vi.spyOn(bridge, "chatArtifactRead").mockResolvedValue(view);
     const onClose = vi.fn();
     const { container } = render(<div className="app-stage"><div className="app-stage-main"><textarea aria-label="Message" /></div><ChatWorkspacePanel {...panelProps(bridge)} onClose={onClose} /></div>);
-    const panel = screen.getByRole("complementary", { name: "Chat workspace panel" });
+    const panel = screen.getByRole("complementary", { name: "Side panel" });
     expect(await screen.findByRole("heading", { name: "Saved note" })).toBeVisible();
     // From the keyboard, focus moves into the column and back to the panel menu.
     const actions = screen.getByRole("button", { name: "Panel menu" });
@@ -320,7 +383,7 @@ describe("ChatWorkspacePanel Expand", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("opens the full Map instead when the Map tab is shown", async () => {
+  it("opens the full Map page instead when the Map tab is shown, leaving the panel for the way back", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const onClose = vi.fn();
@@ -332,7 +395,34 @@ describe("ChatWorkspacePanel Expand", () => {
     await user.click(screen.getByRole("button", { name: "Panel menu" }));
     await user.click(await screen.findByRole("menuitem", { name: "Expand" }));
     expect(onOpenKnowledgePage).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality", surface: "world", selection: undefined });
-    expect(onClose).toHaveBeenCalledOnce();
-    expect(screen.getByRole("complementary", { name: "Chat workspace panel" })).not.toHaveAttribute("data-expanded");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("complementary", { name: "Side panel" })).not.toHaveAttribute("data-expanded");
   });
+});
+
+it("opens a grid row from Work of the version shown by its ticker, through the shell's asset opener", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const at = (day: number) => Date.UTC(2026, 9, day, 9);
+  const grid = { layout: "assets" as const, rows: [{ symbol: "BRK.B", market: "NYSE", label: "Berkshire Hathaway" }], columns: [{ id: "revenue", label: "Revenue", unit: "amount" as const }],
+    cells: [[{ empty: "not_reported" as const }]] };
+  const version = (revision: number, day: number): ChatArtifactView => ({
+    artifact: { id: "table", chat_session_id: "chat", kind: "grid", title: "Revenue", current_revision: 2, created_at_ms: at(1), updated_at_ms: at(28) },
+    revision: { artifact_id: "table", revision, payload: { kind: "grid", schema: GRID_SCHEMA, grid }, digest: String(revision), source_message_id: `m${revision}`, created_at_ms: at(day) },
+    evidence_refs: [], chart_dataset: null,
+  } as ChatArtifactView);
+  vi.spyOn(bridge, "chatArtifactRead").mockImplementation(async (_loupist, _chat, _artifact, revision) => revision === 1 ? version(1, 27) : version(2, 28));
+  vi.spyOn(bridge, "chatArtifactVersions").mockResolvedValue([
+    { revision_id: 2, title: "Revenue", digest: "2", source_message_id: "m2", created_at_ms: at(28) },
+    { revision_id: 1, title: "Revenue", digest: "1", source_message_id: "m1", created_at_ms: at(27) },
+  ]);
+  const openAsset = vi.fn();
+  const props = { ...panelProps(bridge), session: { tabs: [workWorkspaceTab({ artifact_id: "table", revision: 2, kind: "grid" as const, title: "Revenue", digest: "2" }, "chat")], active_tab_id: WORK_TAB_ID } };
+  render(<AssetPageOpenerProvider value={openAsset}><ChatWorkspacePanel {...props} /></AssetPageOpenerProvider>);
+  await screen.findByRole("table", { name: "Revenue" });
+  await user.click(screen.getByRole("button", { name: "Version 2" }));
+  await user.click((await screen.findAllByRole("menuitemradio"))[1]!);
+  expect(await screen.findByText(/^You're viewing version 1/u)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Berkshire Hathaway" }));
+  expect(openAsset).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist", ticker: "BRK.B", name: "Berkshire Hathaway" });
 });

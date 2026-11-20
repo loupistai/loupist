@@ -1,5 +1,5 @@
 //! The derived World index in each Loupist's own database: name and fact
-//! vectors (the bundled potion model, trigram fallback for zero vectors) and
+//! vectors (the bundled local model, trigram fallback for zero vectors) and
 //! FTS5 text, stamped with the sealed World revision it was built from.
 //!
 //! The canonical World is the sealed snapshot; every row here can be rebuilt
@@ -58,9 +58,12 @@ CREATE VIRTUAL TABLE IF NOT EXISTS world_index_claim_text USING fts5(
 
 /// Index version plus the loaded model's fingerprint; a change rebuilds.
 pub(crate) fn model_stamp(assets: &Path) -> KnowledgeResult<String> {
-    let fingerprint = super::super::graph_inference::local_english_model_fingerprint(assets)
+    let model = super::super::local_model(assets)
         .map_err(|_| KnowledgeError::Invalid("local embedding model is unavailable"))?;
-    Ok(format!("world-index/v1/trigram-fb1/{fingerprint}"))
+    Ok(format!(
+        "world-index/v1/trigram-fb1/{}",
+        model.fingerprint()
+    ))
 }
 
 /// Local vectors for index rows, as the extraction's embedding calls produce them.
@@ -68,12 +71,13 @@ pub(crate) fn embed_texts(assets: &Path, texts: &[String]) -> KnowledgeResult<Ve
     if texts.is_empty() {
         return Ok(Vec::new());
     }
+    let failed = |_| KnowledgeError::Invalid("local embedding failed");
+    let model = super::super::local_model(assets).map_err(failed)?;
     let mut vectors = Vec::with_capacity(texts.len());
     for chunk in texts.chunks(256) {
-        let encoded = super::super::graph_inference::embed_local_english_batch(assets, chunk)
-            .map_err(|_| KnowledgeError::Invalid("local embedding failed"))?;
+        let encoded = model.embed_batch(chunk).map_err(failed)?;
         for (text, vector) in chunk.iter().zip(encoded) {
-            vectors.push(replace_unusable(text, vector, 128));
+            vectors.push(replace_unusable(text, vector, model.dimension()));
         }
     }
     Ok(vectors)

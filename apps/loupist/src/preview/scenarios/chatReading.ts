@@ -2,7 +2,7 @@
 import { prepareFixture, previewKo, type PreviewBridge } from "../fixtures";
 import { CHART_SCHEMA } from "../../contracts/chat";
 import type { ChartDataset, ChatArtifactView } from "../../types";
-import { base, centerOn, click, hasLayout, inlineChartFixture, select, selectAnswerWords, submitPrompt, until, type PreviewScenario } from "./kit";
+import { asSession, base, centerOn, click, hasLayout, inlineChartFixture, select, selectAnswerWords, submitPrompt, until, type PreviewScenario } from "./kit";
 
 const REVENUE_CHART = "chart-revenue-by-year";
 
@@ -29,7 +29,7 @@ async function revenueChartFixture(bridge: PreviewBridge) {
     const workspace = await original(loupistId);
     const answer = workspace.threads.find(thread => thread.id === "preview-chat")?.messages.find(message => message.id === "preview-answer");
     if (answer) Object.assign(answer, {
-      content: ko ? "매출은 2023년에 줄었다가 2025년에 다시 늘었어요." : "Revenue dipped in 2023 and grew again by 2025.",
+      content: ko ? "매출은 2023년에 줄었다가 2025년에 다시 늘었습니다." : "Revenue dipped in 2023 and grew again by 2025.",
       artifact_refs: [{ artifact_id: REVENUE_CHART, revision: 1, kind: "chart", title, digest: "e".repeat(64) }],
     });
     return workspace;
@@ -56,6 +56,7 @@ export const chatReadingScenarios: PreviewScenario[] = [
       if (question) question.created_at = "2026-10-27T09:00:00Z";
       return workspace;
     };
+    asSession(bridge);
   } },
   { ...base("chat-branch", "An edited question links to its earlier version", () => select(".message.user .message-version-link"), centerOn(".message.user .message-version-link")), setup: async (bridge) => {
     await prepareFixture(bridge, "answer");
@@ -77,7 +78,7 @@ export const chatReadingScenarios: PreviewScenario[] = [
     await prepareFixture(bridge, "answer");
     const ko = previewKo();
     const sections = ko
-      ? ["## 매출", "매출은 11% 늘어 1,842억 원이에요.", "## 영업이익률", "영업이익률은 16.2%에서 14.8%로 낮아졌어요.", "### 인증 비용", "새 생산라인의 인증 비용이 하락의 대부분이에요.", "## 다음에 볼 것", "가동률과 재고일수를 비교해 보세요."]
+      ? ["## 매출", "매출은 11% 늘어 1,842억 원입니다.", "## 영업이익률", "영업이익률은 16.2%에서 14.8%로 낮아졌습니다.", "### 인증 비용", "하락의 대부분은 새 생산라인의 인증 비용입니다.", "## 다음에 볼 것", "가동률과 재고일수를 비교해 보십시오."]
       : ["## Revenue", "Revenue grew 11% to ₩184.2 billion.", "## Operating margin", "The operating margin fell from 16.2% to 14.8%.", "### Qualification costs", "Most of the decline came from qualification costs at the new line.", "## What to watch next", "Compare utilization against inventory days."];
     const original = bridge.loupistSelect.bind(bridge);
     bridge.loupistSelect = async loupistId => {
@@ -86,6 +87,7 @@ export const chatReadingScenarios: PreviewScenario[] = [
       if (answer) answer.content = sections.join("\n\n");
       return workspace;
     };
+    asSession(bridge);
   } },
   { ...base("chat-table", "A wide answer table keeps its figures whole", () => select('.message-content [data-streamdown="table"]'), async () => {
     await centerOn('.message-content [data-streamdown="table"]', "center")();
@@ -175,4 +177,26 @@ export const chatReadingScenarios: PreviewScenario[] = [
       await click(".quote-ask");
     }
   }), setup: (bridge) => prepareFixture(bridge, "answer") },
+  // The footer's Sources (n) open: numbered rows with each site's icon, kind and date.
+  { ...base("chat-sources-open", "The answer's numbered sources, open under it", () => select(".message-sources[open] ol li"), async root => {
+    await until(() => root.querySelector("article.message.assistant.complete"), "Answer did not load");
+    await click(".message-sources > summary", root);
+    await until(() => select(".message-sources[open] ol li"), "The sources did not open");
+    if (hasLayout()) select(".message-sources")?.scrollIntoView({ block: "center" });
+  }), setup: async (bridge) => {
+    await prepareFixture(bridge, "answer");
+    const original = bridge.loupistSelect.bind(bridge);
+    bridge.loupistSelect = async loupistId => {
+      const workspace = await original(loupistId);
+      const answer = workspace.threads.find(thread => thread.id === "preview-chat")?.messages.find(message => message.id === "preview-answer");
+      const [cited] = answer?.evidence_refs ?? [];
+      if (answer && cited) {
+        const survey = { ...cited, id: `ev_${"d".repeat(32)}`, title: previewKo() ? "모로 컴포넌츠 공급 능력 조사" : "Morrow Components supplier capacity survey", url: "https://morrow.example/capacity-survey", provider: "Morrow Components IR", published_at: "2026-10-20", content_sha256: "d".repeat(64) };
+        answer.evidence_refs = [cited, survey];
+        answer.content += ` [2](#evidence-${survey.id})`;
+      }
+      return workspace;
+    };
+    asSession(bridge);
+  } },
 ];

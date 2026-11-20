@@ -1,5 +1,28 @@
 use super::*;
 
+#[test]
+fn agent_eval_defaults_to_the_pinned_sol_route_and_accepts_an_explicit_model() {
+    assert_eq!(
+        agent_eval_model_route(None).unwrap(),
+        ("openai-codex", "openai-codex/gpt-6.2-sol")
+    );
+    assert_eq!(
+        agent_eval_model_route(Some("openai/gpt-6-sol")).unwrap(),
+        ("openai", "openai/gpt-6-sol")
+    );
+}
+
+#[test]
+fn performance_override_replaces_only_a_declared_performance_control() {
+    let declared = BTreeMap::from([("performance".to_owned(), "standard".to_owned())]);
+    assert_eq!(
+        with_performance(declared.clone(), Some("fast"))["performance"],
+        "fast"
+    );
+    assert_eq!(with_performance(declared.clone(), None), declared);
+    assert!(with_performance(BTreeMap::new(), Some("fast")).is_empty());
+}
+
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 #[tokio::test]
 async fn workspace_skill_copy_is_traced_with_host_workspace_authority() {
@@ -425,8 +448,7 @@ async fn eval_seeds_use_canonical_folder_memory_and_factual_context() {
     let input: Seed = serde_json::from_value(json!({
         "lens":[{"title":"Seeded dilution method","summary":"Use diluted shares","sections":[{"key":"use-when","heading":"Use when","markdown":"Fictional valuations"},{"key":"steps","heading":"Steps","markdown":"Divide by total shares"}]}],
         "sources":[{"title":"Fictional source","text":"Fictional shares outstanding: 18","origin":"https://fictional.example/filing"}],
-        "watchlist":[{"symbol":"ZQLM","market":"NYSE","display_name":"Zircon Loom"}],
-        "holdings_csv":"symbol,market,display_name,quantity,cost_basis,market_value,currency\nZQLM,NYSE,Zircon Loom,73,41,3285,USD\nQZ731,KRX,Quartz Loom,31,8200,279000,KRW\n",
+        "watchlist":[{"name":"Zircon Loom","reference":{"ticker":"ZQLM","exchange":"NYSE"}}],
         "principles":["My label for cash uncertainty is opal meadow."]
     }))
     .unwrap();
@@ -450,17 +472,10 @@ async fn eval_seeds_use_canonical_folder_memory_and_factual_context() {
             Ok(())
         })
         .unwrap();
-    let holdings = state.store.holdings_latest().unwrap().unwrap();
-    let quantity = |symbol: &str| {
-        holdings
-            .positions
-            .iter()
-            .find(|position| position.symbol == symbol)
-            .map(|position| position.quantity.clone())
-    };
-    assert_eq!(quantity("ZQLM").as_deref(), Some("73"));
-    assert_eq!(quantity("QZ731").as_deref(), Some("31"));
-    assert_eq!(state.store.watchlist_list().unwrap()[0].symbol, "ZQLM");
+    assert_eq!(
+        state.store.assets_list(&loupist.id, true).unwrap()[0].name,
+        "Zircon Loom"
+    );
     {
         let mut connection = state.store.lock_loupist(&loupist.id).unwrap();
         let tx = connection.transaction().unwrap();
@@ -473,7 +488,7 @@ async fn eval_seeds_use_canonical_folder_memory_and_factual_context() {
 }
 
 #[tokio::test]
-async fn crypto_holdings_seed_joins_stock_holdings_through_the_product_import() {
+async fn journal_seeds_tag_reasons_with_their_asset_page() {
     let root = tempfile::tempdir().unwrap();
     let workspace = root.path().join("workspace");
     fs::create_dir(&workspace).unwrap();
@@ -482,69 +497,32 @@ async fn crypto_holdings_seed_joins_stock_holdings_through_the_product_import() 
         .await
         .unwrap();
     let input: Seed = serde_json::from_value(json!({
-        "holdings_csv":"symbol,market,quantity\nZQLM,NYSE,73\n",
-        "holdings_crypto_csv":"asset,balance\nXXBT,0.4271\n"
+        "watchlist": [{"name": "Byeolmuri Semiconductor","reference":{"ticker":"990308","exchange":"KRX"}}],
+        "journal": [{"judgment": "New packaging capacity lifts margins.", "thesis": {"asset": "Byeolmuri Semiconductor", "role": "reason"}, "createdAtMs": 1_772_020_800_000_i64}]
     }))
     .unwrap();
     seed(&state, &loupist.id, &input).unwrap();
-    let held = state
+    let asset = state
         .store
-        .map_context()
+        .assets_list(&loupist.id, true)
         .unwrap()
-        .holdings
         .into_iter()
-        .map(|item| format!("{}:{}", item.symbol, item.market))
-        .collect::<Vec<_>>();
-    assert_eq!(held, ["BTC:CRYPTO", "ZQLM:NYSE"]);
-    let refused: Seed = serde_json::from_value(
-        json!({"holdings_crypto_csv":"date,pair,side,amount\n2026-10-01,BTC/USD,buy,1\n"}),
-    )
-    .unwrap();
-    assert!(seed(&state, &loupist.id, &refused).is_err());
-    state.shutdown().await.unwrap();
-}
-
-#[tokio::test]
-async fn journal_seeds_tag_reasons_with_their_asset_page_and_a_refresh_without_grants_stays_local()
-{
-    let root = tempfile::tempdir().unwrap();
-    let workspace = root.path().join("workspace");
-    fs::create_dir(&workspace).unwrap();
-    let state = AppState::for_eval(root.path().join("app"));
-    let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
-        .await
+        .next()
         .unwrap();
-    let input: Seed = serde_json::from_value(json!({
-        "watchlist": [{"symbol": "990308", "market": "KRX", "display_name": "Byeolmuri Semiconductor"}],
-        "journal": [{"judgment": "New packaging capacity lifts margins.", "thesis": {"symbol": "990308", "market": "KRX", "role": "reason"}, "createdAtMs": 1_772_020_800_000_i64}],
-        "refresh_assets": true
-    }))
-    .unwrap();
-    seed(&state, &loupist.id, &input).unwrap();
-    // No connection is granted, so every planned read waits for one.
-    crate::commands::assets::refresh_followed(
+    let page = crate::commands::assets::page_for(
         &state,
-        &loupist.id,
-        std::time::Duration::from_secs(5),
-        None,
+        crate::commands::assets::wire::AssetOpenRequest {
+            loupist_id: loupist.id.clone(),
+            asset_id: Some(asset.asset_id),
+            ticker: None,
+            entity_id: None,
+            stored_only: None,
+        },
     )
-    .await
     .unwrap();
-    let asset_id = crate::knowledge::assets::asset_id("990308", "KRX");
-    let context = crate::commands::assets::view_context(&state).unwrap();
-    let page = crate::commands::assets::with_assets(&state, &loupist.id, false, |tx| {
-        crate::knowledge::assets::page_view(tx, &loupist.id, &asset_id, 0, &context)
-    })
-    .unwrap();
-    assert_eq!(page.name, "Byeolmuri Semiconductor");
+    assert_eq!(page.asset.name, "Byeolmuri Semiconductor");
     assert_eq!(page.reasons.len(), 1);
-    assert_eq!(page.read.as_ref().unwrap().since, "2026-02-25");
-    assert!(page
-        .checks
-        .failures
-        .iter()
-        .all(|failure| failure.reason == "needs_connection"));
-    assert!(page.refreshed_at_ms.is_some());
+    assert!(page.saved_read.is_none());
     state.shutdown().await.unwrap();
 }
 
@@ -755,6 +733,7 @@ async fn eval_journal_commits_include_optional_check_and_factual_outcome() {
     let changes = [&prior, &review]
         .iter()
         .map(|d| MemoryUpdateChange {
+            user_provided: false,
             outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
@@ -1000,6 +979,113 @@ fn product_eval_budget_counts_cached_input_and_unknown_usage() {
     assert_eq!(record["status"], "failed");
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn an_eval_run_compiles_python_once_for_all_its_trials() {
+    if crate::python_run::runtime_dir().is_none() || crate::python_run::worker_path().is_none() {
+        eprintln!("skipped: the Python runtime is not staged in this checkout");
+        return;
+    }
+    let mut cache = SharedPythonCache::new().unwrap();
+    let first = cache.warmed().await.to_path_buf();
+    // The worker ended by itself, so this build's compilation is recorded.
+    assert!(first.join("python-cache/compiled.id").is_file());
+    let started = Instant::now();
+    let later = cache.warmed().await.to_path_buf();
+    assert_eq!(first, later);
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "a later trial warmed again"
+    );
+}
+
+#[test]
+fn a_pi_that_never_started_ends_its_trial_but_not_the_budgeted_batch() {
+    let budget = Budget {
+        max_input_tokens_per_turn: 120,
+        max_turns: 2,
+    };
+    let unknown = json!({"status":"failed","error":"provider_error",
+        "usage":{"input":null,"output":null,"cache_read":null,"cache_write":null}});
+    assert_eq!(
+        budget.stop_reason(&unknown).unwrap()["error"],
+        "budget_usage_unknown"
+    );
+    let mut never_started = unknown.clone();
+    never_started["error"] = json!("startup_timeout");
+    never_started["startup_failed"] = json!(true);
+    // No model call ran, so nothing is unknown; `--resume` reruns the trial.
+    assert!(budget.stop_reason(&never_started).is_none());
+    assert!(budget.enforce(&mut never_started.clone()).is_none());
+    assert_eq!(after_turn(&never_started, false), AfterTurn::NextTrial);
+    assert_eq!(
+        after_turn(&json!({"status":"failed","error":"timeout"}), false),
+        AfterTurn::NextTrial
+    );
+    assert_eq!(
+        after_turn(&json!({"status":"completed"}), false),
+        AfterTurn::Continue
+    );
+    assert_eq!(
+        after_turn(&json!({"status":"completed"}), true),
+        AfterTurn::StopBatch
+    );
+    assert_eq!(
+        after_turn(&json!({"status":"failed","error":"quota exceeded"}), false),
+        AfterTurn::StopBatch
+    );
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn a_pi_that_dies_during_startup_is_recorded_as_a_startup_failure() {
+    let root = tempfile::Builder::new()
+        .prefix("eval-startup-exit-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let workspace = root.path().join("workspace");
+    fs::create_dir(&workspace).unwrap();
+    let mut state = AppState::for_eval(root.path().join("app"));
+    scripted(&mut state, root.path());
+    fs::write(root.path().join("exit-pi-startup"), "exit").unwrap();
+    let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
+        .await
+        .unwrap();
+    let chat = new_chat(&state, &loupist.id, "startup").unwrap();
+    let session = Session {
+        id: "startup".into(),
+        role: "train".into(),
+        memory: "remember".into(),
+        turns: vec![],
+    };
+    let record = run_turn(
+        &state,
+        &chat,
+        &session,
+        &Turn {
+            user: "STARTUP_EXIT_EVAL".into(),
+            as_of: None,
+            ..Default::default()
+        },
+        "fixture",
+        "medium",
+        60_000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(record["status"], "failed", "{record}");
+    assert_eq!(record["error"], "process_stopped_before_prompt", "{record}");
+    assert_eq!(record["failureKind"], "pi_exited", "{record}");
+    assert_eq!(record["startup_failed"], true, "{record}");
+    let budget = Budget {
+        max_input_tokens_per_turn: 500_000,
+        max_turns: 10,
+    };
+    assert!(budget.stop_reason(&record).is_none(), "{record}");
+    assert_eq!(after_turn(&record, false), AfterTurn::NextTrial);
+    state.shutdown().await.unwrap();
+}
+
 /// A `lens_file` call whose text the commit would refuse is refused when it
 /// is staged, so the answer completes and Memory never fails the reply.
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
@@ -1061,7 +1147,7 @@ fn an_eval_turn_settles_a_waiting_question_at_once() {
         label: label.into(),
         description: None,
     };
-    let receiver = questions::register("eval-question-1", "loupist-eval", 2);
+    let receiver = questions::register("eval-question-1", "loupist-eval", None, None, 2);
     let question = ChatQuestion {
         request_id: "eval-question-1".into(),
         item_id: None,
@@ -1128,24 +1214,23 @@ fn repository_lens_seeds_decode_with_their_current_page_bodies() {
             if path.extension().is_none_or(|ext| ext != "json") {
                 continue;
             }
-            let suite: Suite = serde_json::from_slice(&fs::read(&path).unwrap())
+            let suite: Value = serde_json::from_slice(&fs::read(&path).unwrap())
                 .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
-            for scenario in suite.scenarios {
-                for page in scenario.seed.lens {
-                    assert!(
-                        !page.sections.is_empty(),
-                        "{}: {}",
-                        path.display(),
-                        scenario.id
-                    );
+            for scenario in suite["scenarios"].as_array().unwrap() {
+                let id = scenario["id"].as_str().unwrap();
+                let Some(lens) = scenario.pointer("/seed/lens") else {
+                    continue;
+                };
+                let pages: Vec<LensSeed> = serde_json::from_value(lens.clone())
+                    .unwrap_or_else(|error| panic!("{}: {id}: {error}", path.display()));
+                for page in pages {
+                    assert!(!page.sections.is_empty(), "{}: {id}", path.display());
                     assert!(page
                         .sections
                         .iter()
                         .all(|section| !section.markdown.trim().is_empty()));
-                    if scenario.id.starts_with("B-")
-                        || ["P-C02", "T-007", "T-031"].contains(&scenario.id.as_str())
-                    {
-                        assert_eq!(page.sections.len(), 6, "{}", scenario.id);
+                    if id.starts_with("B-") || ["P-C02", "T-007", "T-031"].contains(&id) {
+                        assert_eq!(page.sections.len(), 6, "{id}");
                         assert!(!page.summary.is_empty());
                         repaired += 1;
                     }
@@ -1154,4 +1239,136 @@ fn repository_lens_seeds_decode_with_their_current_page_bodies() {
         }
     }
     assert_eq!(repaired, 19);
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn answer_timing_excludes_narration_and_traces_each_model_round() {
+    let root = tempfile::Builder::new()
+        .prefix("eval-answer-timing-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let mut state = AppState::for_eval(root.path().join("app"));
+    scripted(&mut state, root.path());
+    let scenario: Scenario = serde_json::from_value(json!({
+        "id":"answer-timing", "title":"Answer timing", "connections":["openbb.platform"],
+        "seed":{"watchlist":[{"name":"Nvidia"}]},
+        "sessions":[{"id":"bot","role":"probe","memory":"remember","turns":[]}]
+    }))
+    .unwrap();
+    let runtime_root = staged_market_fixture(root.path());
+    configure_market_runtime(&mut state, &scenario, &runtime_root).unwrap();
+    let workspace = root.path().join("workspace");
+    fs::create_dir(&workspace).unwrap();
+    fs::write(workspace.join("note.txt"), "A local note.").unwrap();
+    fs::write(root.path().join("replay-case.json"), json!({"name":"workspace_capture", "method":"workspace.capture", "args":{"path":"note.txt"}}).to_string()).unwrap();
+    let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
+        .await
+        .unwrap();
+    seed(&state, &loupist.id, &scenario.seed).unwrap();
+    enable_connections(&state, &loupist.id, &scenario.connections).unwrap();
+    let watch = state.store.assets_list(&loupist.id, true).unwrap();
+    assert_eq!(watch.len(), 1);
+    assert_eq!(watch[0].name, "Nvidia");
+    assert_eq!(watch[0].reference, None);
+    assert!(state
+        .store
+        .list_loupist_capabilities(&loupist.id)
+        .unwrap()
+        .iter()
+        .any(|binding| binding.entry_id == "openbb.platform" && binding.enabled));
+    let chat = crate::chat::home::ensure_home_thread(&state, &loupist.id).unwrap();
+    let session = &scenario.sessions[0];
+    let result = run_turn(
+        &state,
+        &chat,
+        session,
+        &Turn {
+            user: "REPLAY_CASE_EVAL ANSWER_TIMING_EVAL".into(),
+            ..Default::default()
+        },
+        "fixture",
+        "medium",
+        60_000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result["status"], "completed", "{result}");
+    let first = result["performance"]["first_text_ms"].as_u64().unwrap();
+    let answer = result["performance"]["answer_text_ms"]
+        .as_u64()
+        .expect("answer timing missing");
+    assert!(answer > first, "{result}");
+    assert_eq!(result["model_rounds"], 2);
+    assert_eq!(
+        result["round_usage"],
+        json!([{"output":20,"reasoning":7},{"output":30,"reasoning":null}])
+    );
+    assert_eq!(result["usage"]["output"], 50);
+    let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
+    assert_eq!(
+        serde_json::to_value(
+            stored
+                .messages
+                .last()
+                .unwrap()
+                .performance
+                .as_ref()
+                .unwrap()
+        )
+        .unwrap()["answerTextMs"],
+        answer
+    );
+    state.shutdown().await.unwrap();
+}
+
+fn staged_market_fixture(root: &Path) -> PathBuf {
+    let runtime_root = root.join("pi-runtime");
+    let runtime = runtime_root.join("openbb-runtime");
+    fs::create_dir_all(&runtime).unwrap();
+    let lock = b"version = 1\n";
+    fs::write(runtime.join("uv.lock"), lock).unwrap();
+    fs::write(
+        runtime.join(format!("loupist-openbb{}", std::env::consts::EXE_SUFFIX)),
+        b"not an executable; discovery never launches it",
+    )
+    .unwrap();
+    fs::write(runtime.join("runtime-manifest.json"), json!({
+        "schema_version":"loupist-mcp-runtime/1", "runtime_id":"openbb", "executable":"loupist-openbb",
+        "uv_lock_sha256":crate::util::sha256(lock),
+        "protocol":{"transport":"stdio", "bootstrap_type":"loupist.bootstrap", "bootstrap_version":1,
+            "initial_tools":"admin_only", "provider_receipt_pointer":"/structuredContent/provider",
+            "tool_activation":{"tool_name":"activate_tools", "argument_name":"tool_names"}, "control_tool_names":["activate_tools"]},
+        "security":{"read_only":true}, "providerless_tool_policy":{"local_tools":[], "implicit_provider":{}},
+        "allowed_categories":["equity"], "providers":[{"id":"yfinance", "network_hosts":["query1.finance.yahoo.com"]}]
+    }).to_string()).unwrap();
+    runtime_root
+}
+
+#[test]
+fn live_market_scenario_discovers_only_valid_bundles_without_starting_them() {
+    let root = tempfile::tempdir().unwrap();
+    let runtime_root = staged_market_fixture(root.path());
+    let runtime = runtime_root.join("openbb-runtime");
+    let mut state = AppState::for_eval(root.path().join("app"));
+    let mut scenario: Scenario = serde_json::from_value(json!({"id":"test", "title":"Live market probe", "connections":["openbb.platform"], "sessions":[]})).unwrap();
+    configure_market_runtime(&mut state, &scenario, &runtime_root).unwrap();
+    let discovered = state
+        .artifacts
+        .mcp_runtimes
+        .get("openbb")
+        .expect("market runtime missing");
+    assert_eq!(discovered.lease_dir, state.artifacts.process_lease_dir);
+    assert!(discovered.executable.starts_with(&runtime_root));
+    Arc::make_mut(&mut state.artifacts).mcp_runtimes.clear();
+    scenario.replay = Some("replay/fixture.json".into());
+    configure_market_runtime(&mut state, &scenario, &runtime_root).unwrap();
+    assert!(state.artifacts.mcp_runtimes.is_empty());
+    scenario.replay = None;
+    scenario.connections.clear();
+    configure_market_runtime(&mut state, &scenario, &runtime_root).unwrap();
+    assert!(state.artifacts.mcp_runtimes.is_empty());
+    scenario.connections.push("openbb.platform".into());
+    fs::write(runtime.join("uv.lock"), b"tampered").unwrap();
+    assert!(configure_market_runtime(&mut state, &scenario, &runtime_root).is_err());
 }

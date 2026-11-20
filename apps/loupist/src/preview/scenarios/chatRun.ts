@@ -2,7 +2,7 @@
 import { advancePreviewClock, prepareFixture, PreviewBridge, previewKo } from "../fixtures";
 import i18n from "../../i18n";
 import type { ChatRunPhase } from "../../contracts/chat";
-import { approvalFor, approvalRun, approvalSteps, base, centerOn, click, hasLayout, longThread, openNavigation, prepareAttention, pressMenu, runningHeader, select, submitPrompt, until, visible, type PreviewScenario } from "./kit";
+import { approvalFor, approvalRun, approvalSteps, asSession, base, centerOn, click, hasLayout, longThread, openNavigation, prepareAttention, pressMenu, runningHeader, select, submitPrompt, until, visible, type PreviewScenario } from "./kit";
 
 /** A reply that stays in flight on a running step; `phase: "tool"` sends no answer text. */
 function liveRun(bridge: PreviewBridge, phase: ChatRunPhase) {
@@ -47,7 +47,7 @@ function planRun(bridge: PreviewBridge) {
     observer({ type: "started", run_id });
     observer({ type: "phase", run_id, phase: "writing" });
     observer({ type: "delta", run_id, text: ko
-      ? "한울정밀의 매출은 11% 늘었지만 영업이익률은 낮아졌어요. 지금 가동률과 재고일수를 비교하고 있어요…"
+      ? "한울정밀의 매출은 11% 늘었지만 영업이익률은 낮아졌습니다. 지금 가동률과 재고일수를 비교하고 있습니다…"
       : "Hanul Precision’s revenue grew 11%, while operating margin declined. I’m comparing utilization with inventory days…" });
     observer({ type: "progress", run_id, sequence: 1, progress: {
       startedAtMs: start,
@@ -67,6 +67,44 @@ function planRun(bridge: PreviewBridge) {
     return { run_id };
   };
 }
+
+/**
+ * A research reply between steps: six web reads finished and no step runs. With `note`, a note
+ * followed the reads: the reply shows it on the page and its own line reads Thinking, while
+ * the status pill names its last sentence. Otherwise the line names the batch.
+ */
+function betweenStepsRun(bridge: PreviewBridge, note: boolean) {
+  bridge.chatSend = async (request, observer) => {
+    const run_id = request.run_id;
+    const ko = previewKo();
+    const start = Date.now() - 74_000;
+    const done = (id: string, toolName: string, category: "memory" | "web", operation: "read" | "search", action: string, target: string, at: number) =>
+      ({ id, kind: "tool" as const, toolName, category, operation, action, target, status: "succeeded" as const, href: null, startedAtMs: start + at, finishedAtMs: start + at + 1_500 });
+    const sites = ["hanul.example", "morrow.example", "dart.fss.or.kr", "krx.co.kr", "hanul.example", "morrow.example"];
+    observer({ type: "started", run_id });
+    observer({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: start, items: [
+      done("preview-notes", "world_read", "memory", "read", "Read saved notes", ko ? "한울정밀 영업 보고서" : "Hanul Precision operating report", 2_000),
+      done("preview-search", "web_search", "web", "search", "Searched the web", ko ? "한울정밀 재고일수" : "Hanul Precision inventory days", 6_000),
+      ...sites.map((site, index) => done(`preview-page-${index}`, "web_fetch", "web", "read", "Read a web source", site, 10_000 + index * 4_000)),
+      ...(note ? [{ id: "preview-note", kind: "commentary" as const, text: ko
+        ? "두 회사의 공시와 보고서에서 매출 수치가 일치합니다. 다음으로 최근 4개 분기의 가동률과 재고일수를 나란히 비교하겠습니다."
+        : "The filings and the reviews agree on both companies’ revenue. Next I’ll compare utilization with inventory days over the last four quarters." }] : []),
+    ], finishedAtMs: null } });
+    observer({ type: "phase", run_id, phase: "thinking" });
+    return { run_id };
+  };
+}
+
+/** The live line of the streaming reply, once it names `kind`. */
+const liveLineOf = (kind: "batch" | "thinking") => select(`.message.assistant.streaming .turn-live[data-kind="${kind}"]`);
+
+/** Sends the question and lets the line's dwell pass on the frozen preview clock. */
+const betweenSteps = (kind: "batch" | "thinking") => async (root: HTMLElement) => {
+  await submitPrompt(root, previewKo() ? "한울정밀과 모로우부품의 가동률과 재고일수를 비교해 줘." : "Compare utilization and inventory days at Hanul Precision and Morrow Components.");
+  await until(runningHeader, "Run header did not appear");
+  if (hasLayout()) advancePreviewClock(1_000);
+  await until(() => liveLineOf(kind), "The live line did not name the last action");
+};
 
 const stalledHeader = () => { const header = runningHeader(); return header?.textContent?.includes(i18n.t("chat:turn.stillWorking")) ? header : null; };
 
@@ -131,7 +169,20 @@ export const chatRunScenarios: PreviewScenario[] = [
     thread.scrollTop = 0;
     thread.dispatchEvent(new Event("scroll"));
     await new Promise((resolve) => setTimeout(resolve, 300));
-  }), setup: async (bridge) => { await prepareFixture(bridge, "streaming"); planRun(bridge); } },
+  }), setup: async (bridge) => { await prepareFixture(bridge, "streaming"); planRun(bridge); asSession(bridge); } },
+  // Between steps the live line names the last finished batch, or the note that came after it, with the timer.
+  { ...base("chat-live-batch", "Between steps, the live line names the last finished batch", () => liveLineOf("batch"), betweenSteps("batch")),
+    setup: async (bridge) => { await prepareFixture(bridge, "streaming"); betweenStepsRun(bridge, false); asSession(bridge); } },
+  // The note is on the page right above the line, so the reply's own line does not repeat it.
+  { ...base("chat-live-note", "Between steps, a note stays on the page and the line under it reads Thinking", () =>
+      select('.message.assistant.streaming [data-turn-item="prose"]') ? liveLineOf("thinking") : null, betweenSteps("thinking")),
+    setup: async (bridge) => { await prepareFixture(bridge, "streaming"); betweenStepsRun(bridge, true); asSession(bridge); } },
+  // Scrolled up, the note is out of view: the status pill names its last sentence and keeps the clock.
+  { ...base("chat-live-note-pill", "Scrolled up between steps, the status pill names the latest note's sentence", () =>
+      select(".chat-status-pill[data-running]:has(.chat-status-pill-text)") ?? (hasLayout() ? null : runningHeader()), async (root) => {
+    await betweenSteps("thinking")(root);
+    await scrollThreadUp();
+  }), setup: async (bridge) => { await prepareFixture(bridge, "answer"); longThread(bridge); betweenStepsRun(bridge, true); asSession(bridge); } },
   // A clear scheduling request produces an active saved receipt in Bot.
   { ...base("chat-routine-proposed", "A routine saved from a clear request shows its next run", () => select(".message-schedule"), async () => {
     await until(() => select(".message-schedule-open"), "The saved routine did not render");
@@ -154,11 +205,6 @@ export const chatRunScenarios: PreviewScenario[] = [
       }
       return workspace;
     };
-  } },
-  // Narrow windows hide the line on purpose; those cells show the header without it.
-  { ...base("shell-market-status", "The header shows the markets the user follows", () => select(".market-status") ?? (document.documentElement.clientWidth < 1100 ? select(".app-header") : null)), setup: async (bridge) => {
-    await prepareFixture(bridge, "answer");
-    for (const entry of [{ symbol: "005930", market: "KRX", displayName: "Samsung Electronics" }, { symbol: "000660", market: "KRX", displayName: "SK hynix" }, { symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }, { symbol: "BTC", market: "CRYPTO", displayName: "Bitcoin" }]) await bridge.watchlistAdd(entry);
   } },
   // W17.3: the run-profile menu names the plan behind the answer under its model list.
   { ...base("composer-plan-line", "The model menu says which plan pays", () => select(".composer-model-menu-panel [data-plan-line]"), async root => {
@@ -188,7 +234,7 @@ export const chatRunScenarios: PreviewScenario[] = [
         const question = workspace.threads[0].messages.find(item => item.role === "user");
         if (question) question.content = previewKo() ? "$AAPL:NASDAQ (Apple) 뭐가 달라졌어? 비용은 $5였어." : "$AAPL:NASDAQ (Apple) What changed? It cost $5.";
         const answer = workspace.threads[0].messages.find(item => item.role === "assistant");
-        if (answer) Object.assign(answer, { content: previewKo() ? "애플의 영업이익률이 올랐어요." : "Apple's operating margin increased.", evidence_refs: [], memory_update: undefined });
+        if (answer) Object.assign(answer, { content: previewKo() ? "애플의 영업이익률이 올랐습니다." : "Apple's operating margin increased.", evidence_refs: [], memory_update: undefined });
         return workspace;
       };
     },
@@ -243,6 +289,7 @@ export const chatRunScenarios: PreviewScenario[] = [
         }
         return workspace;
       };
+      asSession(bridge);
     },
   },
   { ...base("chat-private-marker", "A private chat stays marked in the sidebar", () => select(".loupist-private-mark"), async () => {
@@ -285,4 +332,46 @@ export const chatRunScenarios: PreviewScenario[] = [
     // Narrow windows keep the sidebar behind its toggle.
     if (hasLayout() && document.documentElement.clientWidth < 768) await openNavigation(".loupist-draft-dot");
   }), setup: (bridge) => prepareFixture(bridge, "answer") },
+  // While a reply runs, typing offers its three controls and the line under the message says what each key does.
+  { ...base("composer-run-typed", "While a reply runs, typed text offers Send next, Guide and Stop, and says what each does",
+    () => select(".composer-run-help") && select("button.composer-queue-action") && select("button.composer-steer-action") && select("button.composer-stop-action"), async root => {
+      await submitPrompt(root);
+      await until(runningHeader, "Run header did not appear");
+      await typeInComposer(root, previewKo() ? "새 생산라인만 봐 줘" : "Focus on the new line only");
+    }), setup: (bridge) => prepareFixture(bridge, "streaming") },
+  // Right after Stop: the reply says it stopped and the message queued behind it is one press away.
+  { ...base("chat-stopped-queue", "After Stop, the kept message waits and Send next now sends it", () => select(".chat-pending-resume") && select("button.composer-tile[data-state='send']"), async root => {
+    await submitPrompt(root);
+    await until(runningHeader, "Run header did not appear");
+    await typeInComposer(root, previewKo() ? "그다음 모로우부품과 비교해 줘" : "Then compare it with Morrow Components");
+    await click("button.composer-queue-action", root);
+    await until(() => select(".chat-pending-card"), "The queued row did not appear");
+    // The host's confirmed stop, as after the Stop tile: the frozen preview clock never ends the renderer's own wait for it.
+    await stopPreviewRun?.();
+    await until(() => select(".chat-pending-resume"), "The held queue did not offer the next message");
+  }), setup: async (bridge) => { await prepareFixture(bridge, "streaming"); stopPreviewRun = () => bridge.chatAbort("preview"); } },
+  // A queued message edited in place: Enter saves, Esc cancels, and its row keeps its place.
+  { ...base("chat-queue-editing", "A queued message being edited in place", () => select(".chat-pending-editor"), async root => {
+    await submitPrompt(root);
+    await until(runningHeader, "Run header did not appear");
+    await typeInComposer(root, previewKo() ? "그다음 모로우부품과 비교해 줘" : "Then compare it with Morrow Components");
+    await click("button.composer-queue-action", root);
+    const actions = await until(() => select(".chat-pending-more"), "The queued row did not appear");
+    pressMenu(actions);
+    const edit = await until(() => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item => item.textContent?.trim() === i18n.t("chat:chatPendingQueue.editQueuedMessage")), "Edit did not appear");
+    edit.click();
+    await until(() => select(".chat-pending-editor"), "The editor did not open");
+  }), setup: (bridge) => prepareFixture(bridge, "streaming") },
 ];
+
+/** Ends the streaming preview reply as the host does once a stop is confirmed. */
+let stopPreviewRun: (() => Promise<void>) | undefined;
+
+/** Types into the composer as the user would, with the caret at the end. */
+async function typeInComposer(root: HTMLElement, text: string) {
+  const composer = await until(() => root.querySelector<HTMLTextAreaElement>("textarea[data-chat-composer]"), "Composer did not appear");
+  composer.focus();
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(composer, text);
+  composer.setSelectionRange(text.length, text.length);
+  composer.dispatchEvent(new Event("input", { bubbles: true }));
+}

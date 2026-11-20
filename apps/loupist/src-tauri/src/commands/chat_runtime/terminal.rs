@@ -80,6 +80,7 @@ pub(in crate::commands) fn emit_completed_chat(
         });
     }
     let _ = on_event.send(ChatStreamEvent::Completed {
+        research_session_id: message.research_session_id.clone(),
         lens_receipts: message.lens_receipts.clone(),
         tool_refusals: message.tool_refusals.clone(),
         offline_reads: message
@@ -102,7 +103,6 @@ pub(in crate::commands) fn emit_completed_chat(
         replaced_model: message.replaced_model.clone(),
         as_of: message.as_of.clone(),
         number_checks: message.number_checks.clone(),
-        sensitivity_cards: message.sensitivity_cards.clone(),
         as_of_report: message.as_of_report.clone().map(Box::new),
     });
 }
@@ -192,13 +192,15 @@ pub(super) fn persist_and_emit_terminal_chat(
             .find(|message| message.role == ChatRole::User && !message.steer)
             .and_then(|message| message.as_of.clone()),
         number_checks: Vec::new(),
-        sensitivity_cards: Vec::new(),
         as_of_report: None,
         alert: None,
-        watch: None,
-        earnings: None,
+
         vocabulary: None,
         handoff: None,
+        research_session_id: None,
+        handoff_note: None,
+        handoff_action: None,
+        scheduled: None,
         link: None,
         id: message_id.to_owned(),
         role: ChatRole::Assistant,

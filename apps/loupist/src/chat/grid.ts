@@ -3,6 +3,7 @@ import type { AssetsGrid, ChatEvidenceRef, GridCell, GridEmptyCell, GridEmptyRea
 import { citedPlainText } from "./citedText";
 import { sourceIdentityLabel } from "./evidence";
 import { exportFootnote, needsChecking } from "./numberChecks";
+import { providerName } from "../lib/marketProviderName";
 
 /**
  * Presentation helpers for grid answers (finance-grid-answers.md §2.2, §3.3).
@@ -154,7 +155,7 @@ export function currencyOf(value: string): string {
 /** A model-written note for a file: each citation target becomes its source's name. */
 const noteText = (note: string, evidenceRefs: readonly ChatEvidenceRef[]) => citedPlainText(note, (id) => {
   const evidence = evidenceRefs.find((item) => item.id === id);
-  return evidence ? evidence.provider ?? sourceIdentityLabel(evidence) : t("citedNote.source");
+  return evidence ? providerName(evidence.provider) ?? sourceIdentityLabel(evidence) : t("citedNote.source");
 });
 
 const isoDay = (evidence: ChatEvidenceRef | undefined) => (evidence?.published_at ?? evidence?.retrieved_at ?? "").slice(0, 10);
@@ -184,7 +185,7 @@ export function gridCsv(grid: AssetsGrid, evidenceRefs: readonly ChatEvidenceRef
         lines.push([...base, cell.value, column.unit, currency, cell.check.status, sources, isoDay(inputs[0]), calcEquation(calc)]);
         return;
       }
-      const source = evidence ? evidence.provider ?? sourceIdentityLabel(evidence) : "";
+      const source = evidence ? providerName(evidence.provider) ?? sourceIdentityLabel(evidence) : "";
       lines.push([...base, cell.value, column.unit, currency, cell.check.status, source, isoDay(evidence), evidence?.url ?? ""]);
     });
   });

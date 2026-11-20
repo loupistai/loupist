@@ -13,7 +13,7 @@ import { loadBrokerConnection, requestBroker } from "./broker-client.mjs";
 import { registerWorkspaceTools } from "./workspace-tools.mjs";
 import { applyWorkspacePrompt, loadWorkspaceResources, registerWorkspaceResources, validExplicitSkillNames } from "./workspace-resources.mjs";
 import { registerPiSettingsControl } from "./pi-settings.mjs";
-import { applyRunOptions } from "./model-run-controls.mjs";
+import { applyRunOptions, hasTrustedModelEndpoint } from "./model-run-controls.mjs";
 import { registerSessionContinuity } from "./session-continuity.mjs";
 
 const MAX_HOST_CONTEXT_BYTES = 64 * 1024;
@@ -57,16 +57,31 @@ export function orderedToolNames(names) {
 /** Only the host's bundled runtime activates a default tool set on load; a custom server exposes all its approved tools. */
 const BUNDLED_RUNTIME_NOTE = " Loading activates common price, fundamentals, dividend and filing tools; use available_tools then activate_tools for others.";
 /** One fixed sentence, so the index stays cache-stable however many connections are off. */
-const OTHER_SOURCES_NOTE = "Other data sources (for example FRED, SEC EDGAR, OpenDART, KRX) can be added: call connection_setup and the user finishes setup in a card.";
+const OTHER_SOURCES_NOTE = "Other data sources (e.g. FRED, SEC EDGAR, OpenDART, KRX): name one if useful; call connection_setup only if the user asks or offers a key.";
 
-// Host-owned display names of bundled connections this Loupist has not enabled, so
-// the model can name the right one instead of guessing.
-function otherSourcesNote(unavailable) {
-  const names = [...new Set((unavailable ?? [])
-    .map((item) => String(item?.name ?? "").replace(/\s+/gu, " ").trim().slice(0, 60))
-    .filter(Boolean))].slice(0, 24);
-  if (names.length === 0) return OTHER_SOURCES_NOTE;
-  return `Not enabled for this Loupist: ${names.join(", ")}. When one of them would answer the question, name it and call connection_setup with that name; the user finishes setup in a card and it works from their next message.`;
+// Host-owned display names of bundled connections this Loupist has not enabled, each
+// with the first sentence of its purpose, so the model can tell which one a request
+// needs and name it instead of guessing.
+function otherSourcesNote(unavailable, canSetUp) {
+  const seen = new Set();
+  const items = [];
+  for (const item of unavailable ?? []) {
+    const name = String(item?.name ?? "").replace(/\s+/gu, " ").trim().slice(0, 60);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const purpose = String(item?.description ?? "").replace(/\s+/gu, " ").trim()
+      .split(/(?<=[.!?])\s/u)[0].replace(/[.!?]$/u, "");
+    items.push(purpose ? `${name} (${purpose})` : name);
+  }
+  const list = items.slice(0, 24).join("; ");
+  if (!canSetUp) {
+    // A run with nobody present cannot open a setup card, but its answer can still
+    // tell the user which connection would have done what it could not.
+    if (items.length === 0) return null;
+    return `Not enabled for this Loupist: ${list}. This run cannot set them up; when the enabled sources cannot do what was asked and one of these would, the answer names it.`;
+  }
+  if (items.length === 0) return OTHER_SOURCES_NOTE;
+  return `Not enabled for this Loupist: ${list}. When the enabled sources cannot do what was asked and one of these would, name it and offer to set it up; call connection_setup with that name only when the user asks for that source or offers its key.`;
 }
 
 function formatCapabilityLine(component) {
@@ -95,7 +110,8 @@ export function formatRuntimeIndex(runtime) {
   } else {
     for (const component of connections) lines.push(formatCapabilityLine(component));
   }
-  if ((runtime.core_tool_names ?? []).includes("connection_setup")) lines.push(otherSourcesNote(runtime.unavailable_connections));
+  const sources = otherSourcesNote(runtime.unavailable_connections, (runtime.core_tool_names ?? []).includes("connection_setup"));
+  if (sources) lines.push(sources);
   const onDemand = components.filter((component) => !component.connection && COMPONENT_SPECS.get(component.id)?.preload === false);
   if (onDemand.length > 0) {
     lines.push("", "# On-demand tool packs");
@@ -378,7 +394,7 @@ function register(pi, name, label, description, parameters, method) {
     label,
     description,
     parameters,
-    ...(name === "ask_user" ? { executionMode: "sequential" } : {}),
+    ...(name === "ask_user" || name === "loupist_setup" ? { executionMode: "sequential" } : {}),
     ...(name === "note_save" ? {
       prepareArguments: (input) => prepareSiblingArguments(input, "workingNote", ["sourceReads", "worldReads", "lensReads", "previousNoteIds"]),
     } : name === "lens_file" ? {
@@ -686,11 +702,23 @@ function registerLoupistExtension(originalPi) {
     };
   }
 
+  const checkModelEndpoint = (source) => {
+    try {
+      if (hasTrustedModelEndpoint(source?.model)) return;
+    } catch {
+      // A stale Pi context can throw while reading the selected model.
+    }
+    // Pi catches handler exceptions, so fail before the session can dispatch.
+    process.stderr.write("Loupist refused an untrusted model endpoint. Reload the provider's models.\n");
+    process.exit(76);
+  };
   registerSessionContinuity(originalPi, hostContext.continuationPrompt);
   originalPi.on("session_start", async (_event, ctx) => {
+    checkModelEndpoint(ctx);
     await restoreStickyComponents(ctx);
     publishActiveTools();
   });
+  originalPi.on("model_select", checkModelEndpoint);
   originalPi.on("before_agent_start", async (event) => {
     emitE2eDiagnostic("before_agent_start");
     ensureWorkspaceResourcesUnchanged();

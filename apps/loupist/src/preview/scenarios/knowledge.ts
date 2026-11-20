@@ -70,7 +70,8 @@ export const knowledgeScenarios: PreviewScenario[] = [
       if (hasLayout()) { await until(mapCanvas, "Map canvas did not load"); for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
         const target = select(id === "journal-new-entry" ? ".journal-check-fields" : id === "journal-reader-outcome" ? ".journal-outcome-card" : ".journal-entry-list");
         const viewport = target?.closest<HTMLElement>(id === "journal-new-entry" ? '[role="tabpanel"]' : ".knowledge-research-reader");
-        if (target && viewport && target.getBoundingClientRect().bottom > viewport.getBoundingClientRect().bottom) viewport.scrollTop += target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 12;
+        // A new check takes focus and scrolls its first field, with its label, clear of the sticky search.
+        if (id !== "journal-new-entry" && target && viewport && target.getBoundingClientRect().bottom > viewport.getBoundingClientRect().bottom) viewport.scrollTop += target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 12;
       }
     },
   })),
@@ -100,7 +101,7 @@ export const knowledgeScenarios: PreviewScenario[] = [
           await click(".learning-toast button");
           await until(() => select(".lens-then-now"), "Learning details did not load");
           if (id === "lens-then-now-stacked") {
-            const inspector = select(".workspace-lens-content .memory-reader")!;
+            const inspector = select(".lens-page .memory-reader")!;
             inspector.style.width = "340px";
             inspector.style.height = "100%";
             inspector.style.left = "auto";

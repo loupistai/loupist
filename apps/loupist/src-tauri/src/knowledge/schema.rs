@@ -9,22 +9,18 @@ use super::error::KnowledgeResult;
 #[cfg(test)]
 use crate::fs::artifact_trust::ensure_private_directory;
 
-pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 7;
+pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 10;
 pub const KNOWLEDGE_FORMAT_VERSION: u32 = 1;
 
 const EXPECTED_TABLES: &[&str] = &[
+    "knowledge_asset_line_readings",
     "knowledge_asset_moves",
-    "knowledge_asset_observations",
     "knowledge_asset_pages",
-    "knowledge_asset_section_deltas",
+    "knowledge_asset_price_points",
     "knowledge_blobs",
     "knowledge_capture_lineage",
     "knowledge_chat_origins",
     "knowledge_connections",
-    "knowledge_earnings_events",
-    "knowledge_earnings_notices",
-    "knowledge_earnings_rows",
-    "knowledge_earnings_tone",
     "knowledge_erasure",
     "knowledge_graph_outbox",
     "knowledge_growth_events",
@@ -42,6 +38,7 @@ const EXPECTED_TABLES: &[&str] = &[
     "knowledge_record_revisions",
     "knowledge_records",
     "knowledge_research_records",
+    "knowledge_saved_price_reads",
     "knowledge_schema",
     "knowledge_schema_changes",
     "knowledge_schema_reviews",
@@ -52,11 +49,6 @@ const EXPECTED_TABLES: &[&str] = &[
     "knowledge_sources",
     "knowledge_turn_pins",
     "knowledge_turns",
-    "knowledge_watch_assets",
-    "knowledge_watch_events",
-    "knowledge_watch_routes",
-    "knowledge_watch_settings",
-    "knowledge_watch_state",
     "knowledge_world_deliveries",
     "knowledge_world_snapshots",
 ];
@@ -261,6 +253,7 @@ fn schema_sql() -> String {
             acquisition_identity TEXT,
             origin_locator TEXT NOT NULL,
             provider_identity TEXT NOT NULL,
+            provided_json TEXT,
             PRIMARY KEY (record_id, capture_id),
             FOREIGN KEY (record_id, source_id)
                 REFERENCES knowledge_sources(record_id, source_id) ON DELETE RESTRICT,
@@ -546,9 +539,9 @@ fn schema_sql() -> String {
         CREATE INDEX knowledge_chat_origins_by_capture ON knowledge_chat_origins(capture_id);
         "#,
     );
+    sql.push_str(super::assets::PAGE_DDL);
     sql.push_str(super::assets::DDL);
-    sql.push_str(super::earnings::DDL);
-    sql.push_str(super::watch::DDL);
+    sql.push_str(super::assets::READ_DDL);
     sql.push_str(&format!(
         "INSERT INTO knowledge_schema (id, version) VALUES (1, {KNOWLEDGE_SCHEMA_VERSION});"
     ));

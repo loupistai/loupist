@@ -344,7 +344,7 @@ cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml \
 ```
 
 `LOUPIST_FOLLOWED_MODEL` and `LOUPIST_FOLLOWED_THINKING` default to
-`openai-codex/gpt-6-luna` at `high`. The resources directory supplies the embedding
+`openai-codex/gpt-6.2-sol` at `medium`. The resources directory supplies the embedding
 assets; the World job runs in-process. The retired baseline comparison harness
 has been removed; temporal, ontology and template-seed corpora and graders remain.
 

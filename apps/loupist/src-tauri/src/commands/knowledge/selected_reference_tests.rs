@@ -199,7 +199,7 @@ fn prepared_prompt(use_memory: bool, hints: Option<&serde_json::Value>) -> Strin
     )
     .expect("turn envelope");
     let envelope = attach_selected_references(&envelope, hints);
-    crate::commands::attachments::pi_chat_turn_prompt("What did I select?", &envelope, None)
+    crate::commands::attachments::pi_chat_turn_prompt("What did I select?", &envelope, false, None)
         .expect("prepared prompt")
 }
 

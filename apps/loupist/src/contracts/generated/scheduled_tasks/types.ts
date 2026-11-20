@@ -10,7 +10,7 @@ export type Run = {
   kind: TaskKind,
   read_at_ms: number | null,
   summary: string,
-  summary_items?: Array<RunSummaryItem>,
+  quiet: boolean,
   message_id: string | null,
   skipped_tools: Array<SkippedTool>,
   id: string,
@@ -28,17 +28,6 @@ export type Run = {
 };
 
 export type RunStatus = "running" | "succeeded" | "failed" | "interrupted";
-
-/**
- * What a host run did, one item per capture, as fields the renderer words in
- * the reader's language; the results task (`commands/earnings.rs`) writes them,
- * so each kind is named for it.
- */
-export type RunSummaryItem =
-  | { "kind": "earnings_expected", name: string, period: string, count: number }
-  | { "kind": "earnings_reported", name: string, period: string, count: number }
-  | { "kind": "earnings_failed", name: string, period: string }
-  | { "kind": "earnings_nothing" };
 
 export type Schedule =
   | { "kind": "once", at_ms: number }
@@ -97,7 +86,7 @@ export type Task = {
  * unchanged. Such a task is listed but never run, and its definition and
  * status are not changed here (`TaskKind::is_known`); it can still be deleted.
  */
-export type TaskKind = "custom" | "briefing" | "earnings" | string;
+export type TaskKind = "custom" | "briefing" | string;
 
 /** Read-only list projection; the latest occurrence is not stored in Task JSON. */
 export type TaskListItem = {

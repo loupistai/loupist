@@ -143,14 +143,7 @@ async fn asset_saves_name_the_disabled_grant_and_preserve_their_validation_codes
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let executor = executor_for(&state, Arc::new(ToolCapture::default()));
-    for (method, field, code) in [
-        (ToolMethod::ThesisUpdate, "thesis_update", "thesis_private"),
-        (
-            ToolMethod::EarningsSnapshotSave,
-            "earnings_snapshot_save",
-            "earnings_private",
-        ),
-    ] {
+    for (method, field, code) in [(ToolMethod::ThesisUpdate, "thesis_update", "thesis_private")] {
         for (read, save) in [(false, false), (false, true), (true, false)] {
             let error = executor
                 .execute(&policy(read, save), method, json!({}))

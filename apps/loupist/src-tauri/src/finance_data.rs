@@ -1,9 +1,10 @@
 mod dart_events;
 mod defillama;
 mod entity;
+pub(crate) mod fx;
 mod kis;
 mod krx;
-pub(crate) mod onchain;
+pub(crate) mod openfigi;
 mod percent_fields;
 mod provider_common;
 mod provider_korea;
@@ -18,10 +19,6 @@ use provider_common::*;
 pub(crate) use vendor::{native_vendor, serving_vendor, VendorCredential};
 
 /// The `dart_major_report` kind a 주요사항보고서 title names, if it is one the tool reads.
-pub(crate) fn dart_decision_kind(title: &str) -> Option<&'static str> {
-    dart_events::DecisionKind::from_report_title(title)
-}
-
 use std::{
     collections::BTreeMap,
     io::{Cursor, Read},
@@ -198,6 +195,8 @@ struct KisTokenCache {
 #[derive(Clone)]
 pub struct FinanceDataService {
     client: Client,
+    /// The client for OpenDART, whose servers need the system's TLS (see `new`).
+    dart_client: Client,
     kis_manifest: Arc<KisManifest>,
     kis_tokens: Arc<Mutex<KisTokenCache>>,
     kis_tokens_invalidated: Arc<std::sync::atomic::AtomicBool>,
@@ -217,15 +216,24 @@ struct RawProviderResponse {
 impl FinanceDataService {
     pub fn new() -> Result<Self, FinanceDataError> {
         let kis_manifest = Arc::new(KisManifest::parse(KIS_MANIFEST_JSON)?);
-        let client = Client::builder()
-            .https_only(true)
-            .redirect(Policy::none())
-            .connect_timeout(Duration::from_secs(8))
-            .timeout(Duration::from_secs(20))
-            .user_agent(concat!("Loupist/", env!("CARGO_PKG_VERSION")))
-            .build()?;
+        let builder = || {
+            Client::builder()
+                .https_only(true)
+                .redirect(Policy::none())
+                .connect_timeout(Duration::from_secs(8))
+                .timeout(Duration::from_secs(20))
+                .user_agent(concat!("Loupist/", env!("CARGO_PKG_VERSION")))
+        };
+        let client = builder().use_rustls_tls().build()?;
+        // OpenDART offers only TLS 1.2 with RSA key exchange, which rustls does not implement,
+        // so its requests use the system's TLS where the app is built for macOS.
+        #[cfg(target_os = "macos")]
+        let dart_client = builder().use_native_tls().build()?;
+        #[cfg(not(target_os = "macos"))]
+        let dart_client = client.clone();
         Ok(Self {
             client,
+            dart_client,
             kis_manifest,
             kis_tokens: Arc::new(Mutex::new(KisTokenCache::default())),
             kis_tokens_invalidated: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -265,7 +273,7 @@ impl FinanceDataService {
                 request.query_pairs_mut().append_pair("crtfc_key", secret);
                 let raw = self
                     .fetch_provider(
-                        self.client.get(request),
+                        self.dart_client.get(request),
                         OPENDART_SOURCE_ID,
                         public.to_string(),
                         MAX_PROVIDER_BYTES,
@@ -294,7 +302,7 @@ impl FinanceDataService {
                 self.remember_kis_access_token(environment, app_key, app_secret, token)
                     .await;
             }
-            Some(VendorCredential::Keyless) | None => {
+            Some(VendorCredential::Keyless | VendorCredential::OptionalOpenFigiKey) | None => {
                 return Err(FinanceDataError::InvalidQuery(
                     "credential provider is not supported",
                 ))

@@ -1,7 +1,6 @@
 //! What the user follows, as Sources each Loupist reads. The ordinary World
 //! job reads them, so followed assets arrive on the Map through the same growth
-//! log as everything else. Names, symbols and markets only: holdings never carry
-//! quantities or values here (D9).
+//! log as everything else. Names, symbols and markets from the saved list only.
 //!
 //! Sources are immutable, so each change is a new small Source listing only the
 //! assets that no earlier "What you follow" Source of this Loupist lists.
@@ -21,12 +20,12 @@ use super::{KnowledgeResult, KnowledgeWrite};
 /// The stored title. Like World text it stays English; the interface shows
 /// it in its own language through [`FOLLOWED_TITLE_KEY`].
 pub const FOLLOWED_SOURCE_TITLE: &str = "What you follow";
-/// Marks the Sources the host writes from the watchlist and holdings. Nothing
+/// Marks the Sources the host writes from the saved list. Nothing
 /// else writes this provider, so it identifies them whatever their title.
 pub const FOLLOWED_PROVIDER: &str = "loupist:followed";
 /// The display key the interface translates for these Sources' title and origin.
 pub const FOLLOWED_TITLE_KEY: &str = "followed";
-const FOLLOWED_ORIGIN: &str = "Your watchlist and holdings";
+const FOLLOWED_ORIGIN: &str = "What you follow";
 /// The worker ensures at most 24 anchors per episode, so each Source lists at
 /// most that many assets and every listed asset is anchored.
 pub const FOLLOWED_PER_SOURCE: usize = 24;
@@ -40,6 +39,7 @@ pub fn title_key(provider_identity: &str) -> Option<&'static str> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FollowedAsset {
+    pub asset_id: String,
     pub name: String,
     pub symbol: String,
     pub market: String,
@@ -47,7 +47,7 @@ pub struct FollowedAsset {
 
 impl FollowedAsset {
     /// The display name, or the symbol when the user gave none.
-    pub fn new(symbol: &str, market: &str, display_name: Option<&str>) -> Self {
+    pub fn new(asset_id: &str, symbol: &str, market: &str, display_name: Option<&str>) -> Self {
         let symbol = symbol.trim().to_owned();
         let name = display_name
             .map(str::trim)
@@ -55,14 +55,23 @@ impl FollowedAsset {
             .unwrap_or(&symbol)
             .to_owned();
         Self {
+            asset_id: asset_id.into(),
             name,
             symbol,
             market: market.trim().to_owned(),
         }
     }
 
-    fn key(&self) -> (String, String) {
+    fn ticker_key(&self) -> (String, String) {
         key(&self.symbol, &self.market)
+    }
+
+    fn source_key(&self) -> SourceKey {
+        if self.symbol.is_empty() {
+            SourceKey::Name(name_key(&self.name))
+        } else {
+            SourceKey::Ticker(self.ticker_key())
+        }
     }
 
     /// The market, unless the user gave none (onboarding saves `UNKNOWN`).
@@ -95,47 +104,80 @@ fn key(symbol: &str, market: &str) -> (String, String) {
     )
 }
 
-/// Watched assets first, then held ones; one entry per symbol and market.
-pub fn followed_assets(
-    watching: impl IntoIterator<Item = FollowedAsset>,
-    holding: impl IntoIterator<Item = FollowedAsset>,
-) -> Vec<FollowedAsset> {
+/// Saved assets, one entry per symbol and market.
+pub fn followed_assets(watching: impl IntoIterator<Item = FollowedAsset>) -> Vec<FollowedAsset> {
     let mut seen = BTreeSet::new();
     watching
         .into_iter()
-        .chain(holding)
         .filter(|asset| !asset.symbol.is_empty())
-        .filter(|asset| seen.insert(asset.key()))
+        .filter(|asset| seen.insert(asset.ticker_key()))
         .take(MAX_ANCHORS)
         .collect()
 }
 
+/// The Source lists legacy ticker identities first and local names after them.
+pub(crate) fn followed_source_assets(
+    watching: impl IntoIterator<Item = FollowedAsset>,
+) -> Vec<FollowedAsset> {
+    let (mut locals, tickers): (Vec<_>, Vec<_>) = watching
+        .into_iter()
+        .partition(|asset| asset.symbol.is_empty());
+    let mut assets = followed_assets(tickers);
+    locals.sort_by(|a, b| (&a.name, &a.asset_id).cmp(&(&b.name, &b.asset_id)));
+    let mut seen = BTreeSet::new();
+    assets.extend(
+        locals
+            .into_iter()
+            .filter(|asset| seen.insert(name_key(&asset.name)))
+            .take(MAX_ANCHORS - assets.len()),
+    );
+    assets
+}
+
 /// The Source text: one line per asset, nothing about amounts or positions.
-/// The first line says what every line is, so a symbol the model does not
-/// recognize is still read as one tradable asset with its ticker.
 pub fn followed_text(assets: &[FollowedAsset]) -> String {
     let mut text = String::from(FOLLOWED_LEAD);
     for asset in assets {
-        text.push_str(&format!("- {} ({})\n", asset.name, asset.identifier()));
+        text.push_str("- ");
+        text.push_str(&asset.name);
+        if !asset.symbol.is_empty() {
+            text.push_str(&format!(" ({})", asset.identifier()));
+        }
+        text.push('\n');
     }
     text
 }
 
-const FOLLOWED_LEAD: &str = "Assets the user follows. Each line is one asset (a company's shares, a fund, a crypto asset, a commodity or another instrument) with its ticker in parentheses, written TICKER:MARKET when the market is known.\n";
+pub(super) const FOLLOWED_LEAD: &str = "Assets the user follows. A line is one asset (a company's shares, a fund, a crypto asset, a commodity or another instrument); assets with no ticker that share a name are one line. The ticker is in parentheses when the asset has one, written TICKER:MARKET when the market is known.\n";
 
-/// The symbol and market of every asset a [`followed_text`] lists.
-fn listed_in(text: &str) -> impl Iterator<Item = (String, String)> + '_ {
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum SourceKey {
+    Ticker((String, String)),
+    Name(String),
+}
+
+fn name_key(name: &str) -> String {
+    name.trim().to_ascii_lowercase()
+}
+
+fn listed_ticker(entry: &str) -> Option<(String, String)> {
+    use crate::store::user_context::identity;
+    let (_, suffix) = entry.rsplit_once(" (")?;
+    let ticker = suffix.strip_suffix(')')?;
+    // Retained Sources also include the legacy comma form.
+    if let Some((symbol, market)) = ticker.split_once(", ").or_else(|| ticker.rsplit_once(':')) {
+        return Some(key(&identity(symbol).ok()?, &identity(market).ok()?));
+    }
+    Some(key(&identity(ticker).ok()?, ""))
+}
+
+/// Each line carries its entire name and its ticker key when present.
+fn listed_in(text: &str) -> impl Iterator<Item = (SourceKey, SourceKey)> + '_ {
     text.lines().filter_map(|line| {
         let entry = line.strip_prefix("- ")?;
-        let (_, identity) = entry.rsplit_once(" (")?;
-        let identity = identity.strip_suffix(')')?;
-        // Retained Sources are immutable; recognize their earlier comma form
-        // too so opening an existing Loupist never re-lists the same assets.
-        let (symbol, market) = identity
-            .split_once(", ")
-            .or_else(|| identity.rsplit_once(':'))
-            .unwrap_or((identity, ""));
-        Some(key(symbol, market))
+        let name = SourceKey::Name(name_key(entry));
+        let primary = listed_ticker(entry).map_or_else(|| name.clone(), SourceKey::Ticker);
+        Some((primary, name))
     })
 }
 
@@ -186,9 +228,12 @@ pub fn anchor_followed(settings: &mut GraphProcessingSettings, assets: &[Followe
         {
             continue;
         }
-        let mut identifiers = vec![asset.symbol.clone()];
-        if asset.known_market().is_some() {
-            identifiers.push(asset.identifier());
+        let mut identifiers = Vec::new();
+        if !asset.symbol.is_empty() {
+            identifiers.push(asset.symbol.clone());
+            if asset.known_market().is_some() {
+                identifiers.push(asset.identifier());
+            }
         }
         // Settings bound anchor names to 200 bytes.
         let mut name = String::new();
@@ -237,7 +282,10 @@ pub(crate) fn followed_record_ids(
 
 impl KnowledgeWrite<'_> {
     /// Every asset an earlier "What you follow" Source of this Loupist lists.
-    fn listed_followed(&self, loupist_id: &str) -> KnowledgeResult<BTreeSet<(String, String)>> {
+    fn listed_followed(
+        &self,
+        loupist_id: &str,
+    ) -> KnowledgeResult<BTreeSet<(SourceKey, SourceKey)>> {
         let mut listed = BTreeSet::new();
         for (record_id, revision_id) in followed_records(self.tx, loupist_id)? {
             let spans: Vec<String> = self
@@ -272,10 +320,14 @@ impl KnowledgeWrite<'_> {
         assets: &[FollowedAsset],
         at_ms: i64,
     ) -> KnowledgeResult<usize> {
-        let listed = self.listed_followed(loupist_id)?;
+        let listed: BTreeSet<_> = self
+            .listed_followed(loupist_id)?
+            .into_iter()
+            .flat_map(|(primary, name)| [primary, name])
+            .collect();
         let new: Vec<FollowedAsset> = assets
             .iter()
-            .filter(|asset| !listed.contains(&asset.key()))
+            .filter(|asset| !listed.contains(&asset.source_key()))
             .cloned()
             .collect();
         if new.is_empty() {
@@ -301,7 +353,12 @@ impl KnowledgeWrite<'_> {
     /// Loupist's "What you follow" Sources.
     pub fn followed_status(&self, loupist_id: &str) -> KnowledgeResult<FollowedStatus> {
         let records = followed_records(self.tx, loupist_id)?;
-        let assets = self.listed_followed(loupist_id)?.len();
+        let assets = self
+            .listed_followed(loupist_id)?
+            .into_iter()
+            .map(|(primary, _)| primary)
+            .collect::<BTreeSet<_>>()
+            .len();
         let mut status = FollowedStatus {
             state: FollowedState::None,
             assets,
@@ -379,12 +436,37 @@ mod tests {
     #[test]
     fn each_line_names_one_asset_and_reads_back_to_its_symbol_and_market() {
         let assets = [
-            FollowedAsset::new("AAPL", "NASDAQ", Some("Apple")),
+            FollowedAsset::new(
+                &crate::knowledge::assets::asset_id("AAPL", "NASDAQ"),
+                "AAPL",
+                "NASDAQ",
+                Some("Apple"),
+            ),
             // A manual entry: no name, and onboarding saves no market as UNKNOWN.
-            FollowedAsset::new("QUAYX", "UNKNOWN", None),
-            FollowedAsset::new("GOOGL", "NASDAQ", Some("Alphabet (Class A)")),
-            FollowedAsset::new("005930", "KRX", Some("삼성전자")),
-            FollowedAsset::new("btc", "crypto", Some("Bitcoin")),
+            FollowedAsset::new(
+                &crate::knowledge::assets::asset_id("QUAYX", "UNKNOWN"),
+                "QUAYX",
+                "UNKNOWN",
+                None,
+            ),
+            FollowedAsset::new(
+                &crate::knowledge::assets::asset_id("GOOGL", "NASDAQ"),
+                "GOOGL",
+                "NASDAQ",
+                Some("Alphabet (Class A)"),
+            ),
+            FollowedAsset::new(
+                &crate::knowledge::assets::asset_id("005930", "KRX"),
+                "005930",
+                "KRX",
+                Some("삼성전자"),
+            ),
+            FollowedAsset::new(
+                &crate::knowledge::assets::asset_id("btc", "crypto"),
+                "btc",
+                "crypto",
+                Some("Bitcoin"),
+            ),
         ];
         let text = followed_text(&assets);
         assert_eq!(
@@ -393,10 +475,13 @@ mod tests {
                 "{FOLLOWED_LEAD}- Apple (AAPL:NASDAQ)\n- QUAYX (QUAYX)\n- Alphabet (Class A) (GOOGL:NASDAQ)\n- 삼성전자 (005930:KRX)\n- Bitcoin (btc:crypto)\n"
             )
         );
-        let listed: Vec<_> = listed_in(&text).collect();
-        let expected: Vec<_> = assets.iter().map(FollowedAsset::key).collect();
+        let listed: Vec<_> = listed_in(&text).map(|(primary, _)| primary).collect();
+        let expected: Vec<_> = assets.iter().map(FollowedAsset::source_key).collect();
         assert_eq!(listed, expected);
-        assert_eq!(expected[1], ("QUAYX".to_owned(), "UNKNOWN".to_owned()));
+        assert_eq!(
+            expected[1],
+            SourceKey::Ticker(("QUAYX".to_owned(), "UNKNOWN".to_owned()))
+        );
         // Anchors carry the symbol, and the market only when the user gave one.
         let mut settings = GraphProcessingSettings::default();
         anchor_followed(&mut settings, &assets);
@@ -422,8 +507,12 @@ mod tests {
         let earlier = "- Apple (AAPL, NASDAQ)\n- QUAYX (QUAYX)\n- Alphabet (Class A) (GOOGL, NASDAQ)\n- 삼성전자 (005930, KRX)\n";
         let current = "- Apple (AAPL:NASDAQ)\n- QUAYX (QUAYX)\n- Alphabet (Class A) (GOOGL:NASDAQ)\n- 삼성전자 (005930:KRX)\n";
         assert_eq!(
-            listed_in(earlier).collect::<Vec<_>>(),
-            listed_in(current).collect::<Vec<_>>()
+            listed_in(earlier)
+                .map(|(primary, _)| primary)
+                .collect::<Vec<_>>(),
+            listed_in(current)
+                .map(|(primary, _)| primary)
+                .collect::<Vec<_>>()
         );
     }
 
@@ -433,8 +522,18 @@ mod tests {
         let database = dir.path().join("knowledge.sqlite");
         let store = super::super::KnowledgeStore::open(&database).unwrap();
         let assets = [
-            FollowedAsset::new("QUAYX", "UNKNOWN", None),
-            FollowedAsset::new("OTHER", "", None),
+            FollowedAsset::new(
+                &crate::knowledge::assets::asset_id("QUAYX", "UNKNOWN"),
+                "QUAYX",
+                "UNKNOWN",
+                None,
+            ),
+            FollowedAsset::new(
+                &crate::knowledge::assets::asset_id("OTHER", ""),
+                "OTHER",
+                "",
+                None,
+            ),
         ];
         store
             .transact(|w| {
@@ -456,6 +555,29 @@ mod tests {
             .transact(|w| {
                 assert_eq!(w.sync_followed("loupist-a", &assets, 3)?, 0);
                 assert_eq!(followed_records(w.tx, "loupist-a")?.len(), 1);
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn ticker_correction_records_one_followed_source_for_the_same_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let store =
+            super::super::KnowledgeStore::open(dir.path().join("knowledge.sqlite")).unwrap();
+        store
+            .transact(|w| {
+                let old = FollowedAsset::new("ast_0123456789abcdef", "OLD", "NYSE", Some("Ridge"));
+                let new = FollowedAsset {
+                    symbol: "NEW".into(),
+                    ..old.clone()
+                };
+                w.sync_followed("loupist-a", &[old], 1)?;
+                assert_eq!(followed_records(w.tx, "loupist-a")?.len(), 1);
+                w.sync_followed("loupist-a", std::slice::from_ref(&new), 2)?;
+                assert_eq!(followed_records(w.tx, "loupist-a")?.len(), 2);
+                w.sync_followed("loupist-a", &[new], 3)?;
+                assert_eq!(followed_records(w.tx, "loupist-a")?.len(), 2);
                 Ok(())
             })
             .unwrap();

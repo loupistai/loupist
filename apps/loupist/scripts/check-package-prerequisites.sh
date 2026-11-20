@@ -3,8 +3,8 @@ set -eu
 
 TARGET=aarch64-apple-darwin
 MACOS_MINIMUM_VERSION=13.0
-PI_VERSION=1.5.0
-PI_ARCHIVE_SHA256=a9bf0d82d58d2a7d337f4ae4171b5fc9ebffe42509527a831364c4b65adf2cdf
+PI_VERSION=1.5.2
+PI_ARCHIVE_SHA256=56b5e194d485ced555667b8ba3276157a8272e9ecde9e001e428af80985bdd9b
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
@@ -203,6 +203,7 @@ fi
     --verify \
     --require-signature \
     --runtime "$TAURI_ROOT/resources/python-runtime"
+"$PYTHON_BIN" "$SCRIPT_DIR/stage-embed-assets.py" --verify
 "$PYTHON_BIN" "$SCRIPT_DIR/check-sidecars.py" \
     --pi "$PI_BINARY" \
     --pi-version "$PI_VERSION" \

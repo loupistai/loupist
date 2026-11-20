@@ -10,7 +10,7 @@ import { WorkspaceTabBar } from "./WorkspaceTabBar";
 const canvasFailure = vi.hoisted(() => ({ active: false }));
 vi.mock('../map/MapCanvas', () => ({ default: ({ compact, stats }: { compact: { highlightIds: Set<string>; glowNodeIds: Set<string>; glowEdgeIds: Set<string>; liveNodeIds: Set<string> }; stats: string }) => { if (canvasFailure.active) throw new Error("Canvas unavailable"); return <div role="img" aria-label={stats} data-highlight={[...compact.highlightIds].join(',')} data-glow={[...compact.glowNodeIds, ...compact.glowEdgeIds].join(',')} data-live={[...compact.liveNodeIds].join(',')} />; } }));
 const answer: ChatMessage = { id: 'answer', role: 'assistant', content: 'Answer', created_at: '2026-10-28', status: 'complete' };
-const map = { nodes: ['a', 'b', 'c'].map(id => ({ id, label: id, kind: 'entity', degree: 1, watched: false, held: false })), edges: [{ id: 'ab', kind: 'claim', source: 'a', target: 'b' }], worldRevisionId: 'rev' } as KnowledgeMap;
+const map = { nodes: ['a', 'b', 'c'].map(id => ({ id, label: id, kind: 'entity', degree: 1, watched: false })), edges: [{ id: 'ab', kind: 'claim', source: 'a', target: 'b' }], worldRevisionId: 'rev' } as KnowledgeMap;
 const event = (id: string, chatId = 'chat', messageId = 'answer'): GrowthEvent => ({ eventId: `${chatId}:${id}`, kind: 'entity_added', loupistId: 'loupist', subjectId: id, atMs: Date.now(), originChatId: chatId, originMessageId: messageId, recordId: 'world', actor: 'loupist', summary: '', beforeSummary: null, afterSummary: null });
 function setup(events: GrowthEvent[] = [event('a'), event('b'), event('c')]) {
  const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -31,8 +31,17 @@ it('opens the local Map from its answer chip, highlights every added node, and o
  expect(await screen.findByRole('img')).toHaveAttribute('data-highlight', 'a,b,c');
  fireEvent.click(screen.getByRole('button', { name: 'List view' }));
  expect(screen.getByRole('table', { name: 'List view' })).toBeVisible();
+ // The toggle keeps its name; pressed says the list is showing.
+ expect(screen.getByRole('button', { name: 'List view' })).toHaveAttribute('aria-pressed', 'true');
  fireEvent.click(screen.getByRole('button', { name: 'Open full map →' }));
  expect(onOpenFull).toHaveBeenCalledWith({ loupistId: 'loupist', surface: 'world', selection: undefined });
+});
+it('counts no relationship for a value a name reports about itself', async () => {
+ const bridge = setup();
+ vi.spyOn(bridge, 'knowledgeMap').mockResolvedValue({ ...map, edges: [...map.edges, { id: 'reports-a', kind: 'claim', relation: 'REPORTS', source: 'a', target: 'a' }] } as KnowledgeMap);
+ render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[answer]} onOpen={vi.fn()}><Surface /></ChatMapProvider>);
+ fireEvent.click(await screen.findByRole('button', { name: /Show 3 new on the map/ }));
+ expect(await screen.findByRole('img')).toHaveAttribute('aria-label', '3 names · 1 relationship');
 });
 it('keeps other chats and answers out of the chip and resets immediately on a chat switch', async () => {
  const bridge = setup([event('a', 'other'), event('b', 'chat', 'earlier')]);

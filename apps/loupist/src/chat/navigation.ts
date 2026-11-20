@@ -35,10 +35,21 @@ export type ChatDestination =
   | { kind: "asset"; target: AssetPageTarget }
   | { kind: "schedule"; taskId: string }
   | { kind: "chat"; threadId: string }
+  /**
+   * A scheduled run's own session. A run's session goes with the run, so once it is
+   * gone this opens the run's task in Schedule, and once the task is gone too the
+   * open rejects with {@link RunRecordRemoved}.
+   */
+  | { kind: "run"; threadId: string | null; taskId: string }
   | { kind: "briefing"; runId: string }
   | { kind: "settings"; section: "connections" }
   /** The Following page (what you follow, shared by every Loupist). */
   | { kind: "following" };
+
+/** A scheduled run whose session and task are both gone: there is nothing left to open. */
+export class RunRecordRemoved extends Error {
+  constructor() { super("run_record_removed"); this.name = "RunRecordRemoved"; }
+}
 
 /** How a click asked to open: in the system browser, and from which control (a popover anchors to it). */
 export type OpenHow = { external?: boolean; anchor?: HTMLElement };
@@ -63,13 +74,31 @@ export function wantsExternal(event: PointerLike, mac = isMacPlatform()): boolea
   return event.button === 1 || (mac ? event.metaKey : event.ctrlKey);
 }
 
-const ASSET_ID = /"assetId"\s*:\s*"([^"\\]{1,200})"/u;
+/** A top-level string field of the host's pretty-printed JSON (two-space indent), so a nested one never stands in. */
+const topLevel = (excerpt: string, field: string) =>
+  new RegExp(`^ {2}"${field}"\\s*:\\s*"([^"\\\\]{1,200})"`, "mu").exec(excerpt)?.[1];
+const ASSET_READ_FIELDS = ["assetId", "ticker", "symbol", "name"] as const;
 
-/** The asset an `asset_page_read` receipt read. The id is the first field of the host's JSON. */
+/**
+ * The asset an `asset_page_read` receipt read: its id, its reference ticker (an older
+ * receipt's `symbol`) and its name, as the stored excerpt kept them. A whole excerpt is
+ * parsed; a bounded one gives what its top-level lines still hold. Without an id or a
+ * ticker it names no asset.
+ */
 function assetReadTarget(evidence: ChatEvidenceRef, loupistId: string): AssetPageTarget | null {
   if (evidence.kind !== "saved_context" || evidence.tool_name !== "asset_page_read") return null;
-  const assetId = ASSET_ID.exec(evidence.excerpt)?.[1];
-  return assetId ? { loupistId, assetId } : null;
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    const value: unknown = JSON.parse(evidence.excerpt);
+    if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+  } catch { /* bounded: read its top-level lines */ }
+  const text = (value: unknown) => typeof value === "string" && value.trim() && value.length <= 200 ? value : undefined;
+  const field = (key: typeof ASSET_READ_FIELDS[number]) => text(parsed ? parsed[key] : topLevel(evidence.excerpt, key));
+  // A whole excerpt may name the asset as the page does: `asset: {assetId, name, reference: {ticker}}`.
+  const asset = parsed?.asset && typeof parsed.asset === "object" ? parsed.asset as Record<string, unknown> : null;
+  const reference = asset?.reference && typeof asset.reference === "object" ? asset.reference as Record<string, unknown> : null;
+  const [assetId, ticker, symbol, name] = ASSET_READ_FIELDS.map(field);
+  return savedAssetTarget(loupistId, { assetId: assetId ?? text(asset?.assetId), ticker: ticker ?? symbol ?? text(reference?.ticker), name: name ?? text(asset?.name) });
 }
 
 export function evidenceTarget(evidence: ChatEvidenceRef, memoryRefs: readonly MemoryRef[] | undefined, loupistId: string): EvidenceTarget {
@@ -87,9 +116,29 @@ export function evidenceTarget(evidence: ChatEvidenceRef, memoryRefs: readonly M
 }
 
 /** A host post's source: its page through the evidence path, else the asset page the post is about. */
-export function hostSourceDestination(evidence: ChatEvidenceRef, asset: AssetPageTarget): ChatDestination {
+export function hostSourceDestination(evidence: ChatEvidenceRef, asset: AssetPageTarget | null): ChatDestination {
+  // A saved post without a usable instant has no asset page to fall back to; its evidence still opens.
+  if (!asset) return { kind: "evidence", evidence };
   const page: ChatDestination = { kind: "asset", target: asset };
   return evidence.url ? { kind: "evidence", evidence, fallback: page } : page;
+}
+
+/**
+ * The page a saved reference opens: by its asset id, else by the exact reference ticker it
+ * kept; the host says when the asset is no longer tracked. Without either there is no target.
+ */
+export function savedAssetTarget(
+  loupistId: string,
+  fields: { assetId?: string | null; ticker?: string | null; name?: string | null },
+  place: Pick<AssetPageTarget, "section"> = {},
+): AssetPageTarget | null {
+  const field = (value: string | null | undefined) => value?.trim() ? value : undefined;
+  const assetId = field(fields.assetId), ticker = field(fields.ticker), name = field(fields.name);
+  if (!assetId && !ticker) return null;
+  return {
+    loupistId, ...(assetId ? { assetId } : { ticker: ticker! }), ...(name ? { name } : {}),
+    ...(place.section ? { section: place.section } : {}),
+  };
 }
 
 const httpUrl = (url: string | undefined) => (url ? parseCredentialFreeHttpUrl(url)?.href ?? null : null);

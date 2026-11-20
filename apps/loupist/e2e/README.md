@@ -25,7 +25,7 @@ such as `[data-testid=map-view]`. They do not select by CSS class, so a styling
 rename cannot break them only after merge. A hook sits on exactly the elements
 that carry its class today; when a class moves, move its hook with it. Class
 selectors remain only for elements that have no hook yet (layout probes that
-measure a styled box, the paid live journeys, and the holdings sheet).
+measure a styled box and the paid live journeys).
 
 The mock bridge is the Vitest stand-in for the Tauri bridge contract. Extend it
 only so a renderer test can reach a path a Rust command already owns; a mock
@@ -37,7 +37,10 @@ It uses headless Chrome. A capture that looks right there is not evidence for
 WKWebView. In particular, `display: grid` or `display: flex` on a `fieldset`
 collapses its `legend` to about one character in WKWebView (the heading runs down
 the form) while Chrome keeps the line. Form-heading proof is `assertFormLegendsFit`
-in the macOS WebView (`native-forms.mjs`), not a preview PNG.
+in the macOS WebView (`native-forms.mjs`), not a preview PNG. Likewise WKWebView
+has no `field-sizing: content`, so a textarea styled to grow with its text stays
+at its row height there; the composer measures its own height, and
+`assertComposerGrows` (native smoke) types into it in the WebView.
 `browser-ready`, `browser-blocked`, and `browser-failure` are the in-app browser
 fixtures in `src/preview/browserScenarios.ts`: one fictional article opened from
 an answer link, then the ready page, a typed blocked navigation that keeps that
@@ -47,22 +50,28 @@ page, or a localized open failure. Reading-column review lives in
 `shell-sidebar-home` captures the navigation with one Loupist and its home chat.
 `shell-sidebar-many` covers long names, recent chats and status indicators.
 Both open the sidebar sheet at the minimum window size. The sidebar destinations are
-Home, Following, Map, Lens and Schedule. Following owns followed assets and holdings;
+Home, Following, Map, Lens and Schedule. Following owns followed assets;
 Lens contains Pages and History. The Map toolbar opens Library with Sources, Journal
 and Notes tabs. Custom data connections are behind the Custom connections disclosure.
 Every non-print shell capture checks the titlebar, body, frame, navigation footer,
 header controls and composer against their rendered boundaries (`shell-layout.mjs`).
-The collapsed sidebar also checks all eight actions, including Following, Map,
-Lens and Schedule, for clipping and horizontal centering.
-`shell-titlebar-grown` raises the titlebar to 72px to catch a sidebar that still
-subtracts the default height. It runs in both `preview:layout` and the native
+The icon rail also checks the face and every action, including Following, Map,
+Lens and Schedule, for clipping and horizontal centering; the sidebar and the page
+column must run the full window height, and on macOS no control may sit under the
+native window controls (the first 80 x 44 px).
+`shell-titlebar-grown` raises the page header to 72px to catch a page column that
+still assumes the default height. It runs in both `preview:layout` and the native
 geometry suite. Chat captures also check the responsive title and reading gutters.
-`chat-header-resuming` checks a recovered run's status above its context card.
-`chat-rail-files`, `chat-rail-compact` and `chat-rail-bottom` check the 300px card,
-its body inset, its reserved space beside or above the transcript, and clearance
-from the header and composer. Compact context prioritizes requests and ongoing
-source review before an open Files card. Narrow overlay panels make the covered
-chat inert, so split fixtures open docked panels only above 1060px.
+`chat-header-resuming` checks a recovered run's status above the chat body.
+`activity-sheet` and `activity-sheet-panel` check the activity sheet: at most 372px,
+held to the right edge of the chat layout under the page header; docked, it leaves
+the chat at least 420px and covers neither the reading column nor the composer;
+it overlays only when the chat layout is too narrow to dock. Narrow overlay panels
+make the covered chat inert, so split fixtures open docked panels only above 1060px.
+The panel opens with ⌘\ in these fixtures; the page header's button is the
+activity sheet's. `work-progress.mjs` reads steps from the inline ledger while the
+thread still draws one, and otherwise opens the sheet per reply and reads its
+`data-progress-*` step lines.
 
 Native automation uses the embedded `tauri-plugin-wdio-webdriver` 1.3.0 with a
 [pinned local patch](../src-tauri/vendor/tauri-plugin-wdio-webdriver/LOUPIST_PATCH.md)
@@ -235,9 +244,9 @@ temporary state, so they never rewrite a development or persistent profile.
 
 | Command | Coverage |
 | --- | --- |
-| `npm run test:native` | Credential-free notice-to-Loupist onboarding, the header profile strip, Chat, Lens and Map panels, Loupist settings, Settings → Data connections, the Map empty state, and cold-start / Loupist-switch timings, map-probe frame times for the 1,000-node overview and the 150-name two-hop view, and the number chip's dotted underline as WebKit computes it |
+| `npm run test:native` | Credential-free notice-to-Loupist onboarding, the header profile strip, Chat, Lens and Map panels, Loupist settings, Settings → Data connections, the Map empty state, and cold-start / Loupist-switch timings, map-probe frame times for the 1,000-node overview and the 150-name two-hop view, and the number chip's dotted underline as WebKit computes it. On macOS Apple Silicon it first runs a Bot hand-off from the knowledge fixture's Map link with the scripted slow child (`LOUPIST_E2E_KNOWLEDGE_SEED=1 LOUPIST_E2E_SLOW_HANDOFF=1`, set by the runner): nothing in Bot while the session works and the link reading as researched, the session's sidebar row into the live session, leaving and joining again with Bot's draft kept, Guide from the session's composer, Stop, and Bot's one Stopped post with Look into it again on the link. Other hosts print it as skipped. |
 | `npm run test:native:full` | The core smoke plus connection filtering, appearance, updates, rejected retired commands and the minimum window |
-| `npm run test:persistence` | Three launches over one state root. **Seed**: fresh app data plus the knowledge fixture; through the UI it creates a Loupist, a Chat (`/new`, then renamed), a Source and Journal entry in the Map Library, a principle in Lens, followed assets and a validated holdings CSV (invalid preview, cancellation and explicit commit), Loupist instructions, global and per-Loupist Chat defaults, and the theme. **Restart**: the same app data shows all of it, with the notice acknowledgment, language and theme applied without setting them again. **Copy**: a fresh app opens a copy of the Loupist folder; its Chats, Library, Map, principle, revised method with Then/Now history, frozen Journal inputs, instructions and Loupist preferences follow the copy, while followed assets, holdings, the other Loupist, global settings and the notice stay with the old app data. |
+| `npm run test:persistence` | Five launches. **Seed**: fresh app data plus the knowledge fixture; through the UI it creates a Loupist, a Chat (`/new`, then renamed), a Source and Journal entry in the Map Library, a principle in Lens, two new assets followed by name through Following's "Follow '{text}' as typed" (no listing search, so nothing leaves the Mac; one then unfollowed with its row's Stop following, the other opened, where the page says it has no price yet and a reason is saved), Loupist instructions, global and per-Loupist Chat defaults, the theme, and the display currency (KRW, written to the global `config.toml` without any rate read). Typing the exact name of a fixture asset opens its page and leaves one follow. **Restart**: the same app data shows all of it, with the notice acknowledgment, language and theme applied without setting them again and the display currency still selected; the typed asset is a Following row (found by its `data-row-key`) marked "Name only", the unfollowed one stays gone, the created Loupist's Following lists neither it nor the fixture asset (follows are per Loupist), and its page opens from the row with the reason and the no-price line. **Copy** and **fork**: a fresh app opens a copy of the Loupist folder; its Chats, Library, Map, principle, revised method with Then/Now history, frozen Journal inputs, instructions, the typed asset's reason (in the Library's Journal) and Loupist preferences follow the copy, while its follows (kept by the old app for this Loupist), the other Loupist, global settings and the notice stay with the old app data. **Reconnect**: the fork's folder is put at the copy's registered path; the copy's app reports the folder unavailable, reconnects it through Reconnect folder, and finds the reason. A saved price read needs a model turn and is not covered here. |
 
 `test:native` calls `assertFormLegendsFit` (`native-forms.mjs`) on `[data-loupist-tone]` on New Loupist. Its later step “native browser preserves the article while blocking unsafe navigation” calls `verifyNativeBrowserNavigation` (`native-browser.mjs`). A row above names the command. The WebKit result is that step’s finished run, recorded by the session that ran it. Preview Vitest and `preview:capture` check the React fixtures in Chrome and jsdom.
 
@@ -268,8 +277,20 @@ Linux runs the same commands; see [Run native suites on Linux](#run-native-suite
 | `LOUPIST_E2E_REUSE_DEV_SERVER=1` | Reuse this workspace's Vite server on 1420; app data and WebDriver port stay separate. |
 | `LOUPIST_E2E_STARTUP_TIMEOUT_MS` | Startup wait for isolated suites and `up.sh`/`run-dev-app.sh`, default five minutes. A failed new `up.sh` launch stops its detached process group. |
 | `LOUPIST_E2E_PROVIDER_READY=1` | Set by the credential-free smoke and persistence suites: an `e2e` build marks ChatGPT (the `openai` provider) ready without a secret or network call. No model is listed, so nothing can be sent. |
-| `LOUPIST_E2E_KNOWLEDGE_SEED=1` | Set by persistence for its first launch: on fresh app data an `e2e` build adds a sealed World, a Source, a Lens method and a saved Chat turn with its research note and Journal entry to the first Loupist. |
+| `LOUPIST_E2E_KNOWLEDGE_SEED=1` | Set by persistence for its first launch, and by the smoke on macOS Apple Silicon for its hand-off journey: on fresh app data an `e2e` build adds a sealed World, a Source, a Lens method and a saved Chat turn with its research note and Journal entry to the first Loupist. |
+| `LOUPIST_E2E_SLOW_HANDOFF=1` | Set by the smoke on macOS Apple Silicon. On a macOS Apple Silicon debug `e2e` build, runs only host-started sessions using the **Fixture research model** (`e2e-link-research`) against a scripted Pi child. No provider credentials or network are used for that turn. |
 | `LOUPIST_E2E_PICK_FILE` | An absolute existing file that `pick_file` returns in an `e2e` build. |
+
+For a live hand-off journey, start `run-app.sh` with isolated, fresh state and
+`LOUPIST_E2E_PROVIDER_READY=1 LOUPIST_E2E_KNOWLEDGE_SEED=1 LOUPIST_E2E_SLOW_HANDOFF=1`.
+In Bot, select **Fixture research model** and click **Look into it** on the
+seeded Map link. A journey can also submit `research_handoff_start` for
+`con_fixture_hub` using that model profile and thinking level `off`. The first
+step starts immediately, subsequent steps arrive two seconds apart, and the
+reply stays open for another twelve seconds. Bot posts nothing meanwhile: open the
+session from its sidebar row to watch, send an instruction to steer, then Stop;
+Bot should then post one Stopped item with Open.
+Leave the slow flag unset for the normal persistence fixture.
 
 Builds without the `e2e` feature ignore these app-side variables. Suites verify
 their session owner, then show and focus the window (on macOS retrying activation
@@ -296,7 +317,9 @@ npm run test:native          # add :full for the full smoke
 npm run test:persistence     # storage, restart and folder-copy changes
 ```
 
-When neither `DISPLAY` nor `WAYLAND_DISPLAY` is set, the GUI lease
+`run-app.sh` starts the app with a cleaned environment and passes
+`RUSTUP_HOME` and `CARGO_HOME` through when they are set, so `cargo metadata`
+uses the pinned toolchain. When neither `DISPLAY` nor `WAYLAND_DISPLAY` is set, the GUI lease
 (`native_ui_lease.py`) starts a private 2560x1600 Xvfb before it runs the
 launcher, and Xvfb exits with that launcher. `up.sh` and `down.sh` work the same
 way, so an agent can open the shared development window and drive it with

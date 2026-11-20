@@ -103,7 +103,7 @@
     },
     {
       "id": "P-R03",
-      "title": "New Chat applies a dated principle checklist",
+      "title": "A new chat applies a saved cash flow rule to dated earnings",
       "split": "regression",
       "tags": [
         "en"
@@ -148,23 +148,27 @@
                   {
                     "assert": "contains_any",
                     "values": [
-                      "lens:"
+                      "lens:rec_"
                     ],
                     "metric": "carry_forward"
                   },
                   {
-                    "assert": "contains_any",
-                    "values": [
-                      "Checked against your principles",
-                      "내 원칙 점검"
+                    "assert": "answer_matching",
+                    "patterns": [
+                      "(?<!\\d)(?:2026\\s*[-./]\\s*0?9\\s*[-./]\\s*29|(?:0?9\\s*[-./]\\s*29|29\\s*[-./]\\s*0?9)\\s*[-./]\\s*(?:20)?26)(?!\\d)",
+                      "(?<!\\d)(?:20)?26\\s*년\\s*0?9\\s*월\\s*29\\s*일",
+                      "(?<!\\d)20260929(?!\\d)",
+                      "\\bsep(?:t(?:ember)?)?\\.?[ ,./–-]+(?:the )?(?:29(?:th)?|twenty[- ]ninth)[ ,./–-]+(?:2026|[’']26|twenty twenty[- ]six|two thousand (?:and )?twenty[- ]six)\\b",
+                      "\\b(?:29(?:th)?|twenty[- ]ninth)[ ,./–-]+(?:of )?sep(?:t(?:ember)?)?\\.?[ ,./–-]+(?:2026|[’']26|twenty twenty[- ]six|two thousand (?:and )?twenty[- ]six)\\b",
+                      "\\b2026[ ,./–-]+sep(?:t(?:ember)?)?\\.?[ ,./–-]+29(?:th)?\\b"
                     ],
                     "metric": "carry_forward"
                   }
                 ],
                 "rubric": [
                   {
-                    "id": "principle-checklist",
-                    "criterion": "Pass only if the answer applies the user cash-flow principle, includes a final Checked against your principles checklist (or Korean equivalent), a lens: link, the 2026-09-29 date, and a factual result qualified by 6 cash flow versus 17 profit.",
+                    "id": "applies-cash-flow-rule",
+                    "criterion": "Link to the saved cash-flow rule and apply it to the figures the user supplied for 2026-09-29. Operating cash flow of 6 versus reported profit of 17 weakens confidence in the earnings. Require the date, both quantities in their supplied units and this conclusion in the answer’s language. Link any additional evidence used to support a derived figure.",
                     "metric": "carry_forward"
                   }
                 ]
@@ -313,29 +317,18 @@
                   {
                     "assert": "contains_any",
                     "values": [
-                      "condition is met",
-                      "condition has been met",
-                      "condition is satisfied",
-                      "condition holds",
-                      "below the 10% threshold",
-                      "매도 조건에 해당",
-                      "매도 조건이 충족",
-                      "조건 충족"
+                      "lens:rec_"
                     ],
                     "metric": "task_success"
                   },
                   {
-                    "assert": "contains_any",
+                    "assert": "contains_number_any",
                     "values": [
-                      "Checked against your principles",
-                      "내 원칙 점검"
-                    ],
-                    "metric": "task_success"
-                  },
-                  {
-                    "assert": "contains_any",
-                    "values": [
-                      "lens:"
+                      "8%",
+                      "8 %",
+                      "8 percent",
+                      "eight percent",
+                      "8퍼센트"
                     ],
                     "metric": "task_success"
                   }
@@ -343,7 +336,7 @@
                 "rubric": [
                   {
                     "id": "condition-result",
-                    "criterion": "Pass only if the answer correctly reports that the user sell rule condition is met because operating margin of 8% on 2026-09-29 is below 10%, with a dated principle checklist result. A refusal or incorrect comparison fails.",
+                    "criterion": "Apply the linked saved sell rule to the supplied 8% operating margin on 2026-09-29. Explain in the answer’s language that 8% is below its 10% threshold and the condition is met. A refusal, reversed comparison or incorrect rule link fails.",
                     "metric": "task_success"
                   }
                 ]
@@ -455,8 +448,15 @@
                     "assert": "not_contains",
                     "values": [
                       "violet lantern",
-                      "lens:",
-                      "Checked against your principles"
+                      "lens:"
+                    ],
+                    "metric": "negative_transfer"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "(?:^|[.!?\\n:]\\s*|\\bI(?:['’]ve| have)?\\s+)(?:[#>* -]*)(?:checked|assessed|compared|tested)\\s+(?:it\\s+)?against\\s+your\\s+(?:(?:saved|research|personal)\\s+)?(?:principles?|rules?|checklist)\\b",
+                      "(?:^|[.!?\\n:]\\s*|\\bI\\s+)(?:[#>* -]*)(?:under|according to|applying|applied|following)\\s+your\\s+(?:(?:saved|research|personal)\\s+)?(?:principles?|rules?|checklist)\\b"
                     ],
                     "metric": "negative_transfer"
                   }
@@ -466,6 +466,13 @@
                     "assert": "not_committed",
                     "kind": "principle",
                     "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "private-evidence",
+                    "criterion": "Assess earnings from the supplied profit and operating cash flow. Keep the saved private label and rule out of this answer and do not imply access to the user’s saved principles. Fail any claimed comparison with a personal rule or a checklist attributed to the user, however phrased. General financial reasoning from the supplied facts qualifies.",
+                    "metric": "negative_transfer"
                   }
                 ]
               }
@@ -558,23 +565,27 @@
                   {
                     "assert": "contains_any",
                     "values": [
-                      "lens:"
+                      "lens:rec_"
                     ],
                     "metric": "carry_forward"
                   },
                   {
-                    "assert": "contains_any",
-                    "values": [
-                      "Checked against your principles",
-                      "내 원칙 점검"
+                    "assert": "answer_matching",
+                    "patterns": [
+                      "(?<!\\d)(?:2026\\s*[-./]\\s*0?9\\s*[-./]\\s*29|(?:0?9\\s*[-./]\\s*29|29\\s*[-./]\\s*0?9)\\s*[-./]\\s*(?:20)?26)(?!\\d)",
+                      "(?<!\\d)(?:20)?26\\s*년\\s*0?9\\s*월\\s*29\\s*일",
+                      "(?<!\\d)20260929(?!\\d)",
+                      "\\bsep(?:t(?:ember)?)?\\.?[ ,./–-]+(?:the )?(?:29(?:th)?|twenty[- ]ninth)[ ,./–-]+(?:2026|[’']26|twenty twenty[- ]six|two thousand (?:and )?twenty[- ]six)\\b",
+                      "\\b(?:29(?:th)?|twenty[- ]ninth)[ ,./–-]+(?:of )?sep(?:t(?:ember)?)?\\.?[ ,./–-]+(?:2026|[’']26|twenty twenty[- ]six|two thousand (?:and )?twenty[- ]six)\\b",
+                      "\\b2026[ ,./–-]+sep(?:t(?:ember)?)?\\.?[ ,./–-]+29(?:th)?\\b"
                     ],
                     "metric": "carry_forward"
                   }
                 ],
                 "rubric": [
                   {
-                    "id": "principle-checklist",
-                    "criterion": "Pass only if the answer applies the user cash-flow principle, includes a final Checked against your principles checklist (or Korean equivalent), a lens: link, the 2026-09-29 date, and a factual result qualified by 6 cash flow versus 17 profit.",
+                    "id": "applies-cash-flow-rule",
+                    "criterion": "Link to the saved cash-flow rule and apply it to the figures the user supplied for 2026-09-29. Operating cash flow of 6 versus reported profit of 17 weakens confidence in the earnings. Require the date, both quantities in their supplied units and this conclusion in the answer’s language. Link any additional evidence used to support a derived figure.",
                     "metric": "carry_forward"
                   }
                 ]
@@ -1234,6 +1245,52 @@
                     "id": "korean-correction",
                     "criterion": "Pass only if the answer computes 45%, uses the privately taught 43% threshold, and says the low-conversion label is not triggered.",
                     "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-R10",
+      "title": "A profit report lacks the cash flow needed to assess earnings quality",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "seed": {
+        "principles": [
+          "Compare operating cash flow with reported profit before trusting earnings."
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Fictional Rowan Mill’s 29 September 2026 update gives profit of 17 million credits. That is the only financial figure available. How much confidence should I place in its earnings?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "lens:rec_"
+                    ],
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "missing-cash-flow",
+                    "metric": "carry_forward",
+                    "criterion": "Link the saved rule and apply it to the 17 million credits of profit reported on 29 September 2026. Explain in the answer’s language that the evidence is insufficient to tell whether cash supports those earnings and identify operating cash flow for the same period as the missing input. Treating missing cash flow as zero, inventing a value or concluding that earnings quality is strong or weak fails."
                   }
                 ]
               }

@@ -19,7 +19,7 @@ import { licenseName, licenseSummary, repoSlug, shortTitle } from "./sharingText
 import "@/styles/sharing.css";
 
 const SECTIONS: readonly ShareSectionId[] = ["profile", "perspective", "methods", "principles", "map"];
-const FINDING_KEYS = { credential: "findingKey", account: "findingAccount", holding: "findingHolding", personal: "findingPersonal" } as const;
+const FINDING_KEYS = { credential: "findingKey", account: "findingAccount", personal: "findingPersonal" } as const;
 const FINDINGS_SHOWN = 5;
 
 type Step = "options" | "signin" | "repo" | "progress" | "published";
@@ -221,7 +221,7 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
   const signOut = async () => { setAccount(await bridge.githubSignOut()); };
 
   // "Rule “Trim when…” contains what looks like…": the kind in the app's words and the record's own title, never the matched text.
-  const findingText = (finding: ShareFinding) => t(FINDING_KEYS[finding.class], { kind: t(`itemKind.${finding.itemKind}`), item: shortTitle(finding.itemLabel), symbol: finding.symbol ?? "" });
+  const findingText = (finding: ShareFinding) => t(FINDING_KEYS[finding.class], { kind: t(`itemKind.${finding.itemKind}`), item: shortTitle(finding.itemLabel) });
   const shownFindings = allFindings ? visibleFindings : visibleFindings.slice(0, FINDINGS_SHOWN);
   const leftOutLicense = counts?.leftOutLicense ? <p className="share-left-out" data-share-left-out-license>{t("leftOutLicense", { count: counts.leftOutLicense, formattedCount: formatNumber(counts.leftOutLicense) })}</p> : null;
   const countCell = (value: number | undefined, label?: string) => !summary ? (slow ? <span className="share-skeleton" aria-hidden="true" /> : null) : label ? <span className="share-count">{label}</span> : <span className="share-count gg-num">{formatNumber(value ?? 0)}</span>;

@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { grade } from './grade.mjs';
-import { validateSuite } from './eval-contract.mjs';
+import { readFile } from 'node:fs/promises';
+import { grade, unlinkedNumbers } from './grade.mjs';
+import { validateSuite, visibleAnswerText } from './eval-contract.mjs';
 import { analyzeToolCalls, isInvalidToolCall, toolValidity } from './tool-evidence.mjs';
 import { suite, traces as fixtureTraces } from './fixtures/sample.mjs';
 const traces = fixtureTraces.map((trace) => ({ ...trace, status: 'completed' }));
@@ -380,6 +381,24 @@ function expecting(expect) {
   return copy;
 }
 
+test('contains_any and not_contains match a phrase however much of it is bold or italic', () => {
+  const required = expecting({ answer: [{ assert: 'contains_any', values: ['Hearthlane Grocery grew more', 'lens:rec_', 'renewal_in_force'], metric: 'task_success' }] });
+  const forbidden = expecting({ answer: [{ assert: 'not_contains', values: ['Larkspur ranks first'], metric: 'boundary' }] });
+  const pass = (suiteCopy, answer) => grade(suiteCopy, [{ ...traces[1], answer }]).results[0].pass;
+  for (const answer of ['**Hearthlane Grocery** grew more in its established stores.',
+    '__Hearthlane Grocery__ grew more.', '*Hearthlane* Grocery **grew more**.', '***Hearthlane Grocery grew more***.',
+    'See [the **rule**](lens:rec_0123) first.', 'Set `renewal_in_force` to 0.', 'renewal_in_force: 0']) {
+    assert.equal(pass(required, answer), true, answer);
+  }
+  // Emphasis delimiters are removed, never other characters or the words they wrap.
+  for (const answer of ['**Larkspur Retail** grew more.', 'Hearthlane Grocery_grew more', 'Hearthlane Grocery **grew** less.',
+    'See [the rule](https://example.com/rec_0123).', 'renewal in force', '`Hearthlane Grocery` `grew more`']) {
+    assert.equal(pass(required, answer), false, answer);
+  }
+  assert.equal(pass(forbidden, 'Larkspur ranks second.'), true);
+  for (const answer of ['**Larkspur** ranks first.', '_Larkspur ranks_ first.']) assert.equal(pass(forbidden, answer), false, answer);
+});
+
 const LINK = '#evidence-ev_' + 'a'.repeat(32);
 const CALC = '#evidence-ev_' + 'c'.repeat(32);
 
@@ -416,6 +435,109 @@ test('numbers_linked needs every material number linked and no differing or miss
   assert.equal(result(linked, undefined).pass, null);
   assert.equal(result(linked, [{ text: '8.42%', status: 'guessed' }]).pass, null);
   assert.throws(() => validateSuite(expecting({ answer: [{ assert: 'numbers_linked', checked: [''], metric: 'connection_honesty' }] })), /numbers_linked/u);
+});
+
+test('numbers_linked accepts the R4 rate bases and flags both unlinked conversion results', () => {
+  const checked = expecting({ answer: [{ assert: 'numbers_linked', metric: 'connection_honesty' }] });
+  const won = `유로를 거쳐 계산한 원화 1원당 달러는 [0.000749134달러](${CALC})입니다.`;
+  const dollar = `2026년 11월 16일 기준 1달러당 [1,334.87원](${CALC})입니다.`;
+  const unrounded = '센트 단위로 반올림하기 전의 계산값은 각각 16.4435달러, 6.1429달러입니다.';
+  const gradeAnswer = answer => grade(checked, [{ ...traces[1], answer, number_checks: [] }]).results[0];
+  for (const answer of [won, dollar]) assert.equal(gradeAnswer(answer).pass, true, answer);
+  const result = gradeAnswer(`${won} ${unrounded}`);
+  assert.equal(result.pass, false);
+  assert.equal(result.detail, 'unlinked 16.4435달러, 6.1429달러');
+});
+
+test('only a single currency unit used as a rate base may stay unlinked', () => {
+  for (const [answer, unlinked] of [
+    ['per 1.0 USD', []],
+    ['16.44 dollars for each 1.00 KRW', ['16.44dollars']],
+    [`1달러에 [1,334.87원](${LINK})`, []],
+    ['1ドルあたり 1.25 USD', ['1.25USD']],
+    ['1 USD = 1,334.87 KRW', ['1,334.87KRW']],
+    [`[💱](${LINK}) 1 USD = [₩1,334.87](${CALC})`, []],
+    ['1 USD = 1 KRW', ['1KRW']],
+    [`1 USD = [rate](${LINK})`, ['1USD']],
+    ['1 USD = 2026-11-16', ['1USD']],
+    ['가격은 1원, 1달러 올랐습니다.', ['1원', '1달러']],
+    ['1달러에 샀다.', ['1달러']],
+    ['2달러당, 100엔당, -1원당', ['2달러', '100엔', '1원']],
+    ['per 1 million, per 1%, 1.01 USD = 1.02 KRW', ['1million', '1%', '1.01USD', '1.02KRW']],
+  ]) assert.deepEqual(unlinkedNumbers(answer), unlinked, answer);
+});
+
+test('unlinkedNumbers skips six digits in parentheses or with an uppercase exchange suffix', () => {
+  assert.deepEqual(unlinkedNumbers('솔숲식품(990221), 990905.KQ and 990221.X'), []);
+  for (const token of ['[990221]', '( 990221 )', '990221.ks', '(99022)', '(9902210)', '(990,221)']) {
+    assert.equal(unlinkedNumbers(token).length, 1, token);
+  }
+});
+
+test('numbers_linked leaves the assumed rates of a DCF grid calculated this turn plain', () => {
+  const checked = expecting({ answer: [{ assert: 'numbers_linked', metric: 'connection_honesty' }] });
+  const reverse = (grid, outcome = 'ok') => ({ name: 'calculate', outcome, args: { operation: 'reverse_dcf' },
+    result: { details: { operation: 'reverse_dcf', grid: { rows: 'wacc_pct', row_values: [8, 9], columns: 'terminal_growth_pct', column_values: [-1, 2.5], unit: '%', ...grid } } } });
+  const checks = [{ link_index: 0, text: '2.08%', evidence_id: 'c'.repeat(32), kind: 'calculated', status: 'matched' }];
+  const result = (answer, tool_calls = [reverse()]) => grade(checked, [{ ...traces[1], answer, tool_calls, number_checks: checks }]).results[0];
+  const answer = `At a 9% discount rate and 2.5% terminal growth the price implies [2.08%](${CALC}).\n\n| WACC | −1% | 2.50% |\n|---|---|---|\n| 8% | x | y |\n| 9 percent | x | y |`;
+  assert.equal(result(answer).pass, true, result(answer).detail);
+  assert.equal(result(answer.replace('9%', '할인율 9%')).pass, true);
+  // Without that calculation, or with a failed one, the rates are ordinary unlinked percents.
+  assert.equal(result(answer, []).detail, 'unlinked 9%, 2.5%, 1%, 2.50%, 8%');
+  assert.equal(result(answer, [reverse({}, 'error')]).pass, false);
+  assert.equal(result(answer, [reverse({ rows: 'wacc' })]).detail, 'unlinked 9%, 8%, 9percent');
+  // Only a percent with the axis value and sign is exempt; the grid's results still need links.
+  for (const prose of ['Revenue grew 11%.', 'Margin fell 1%.', 'The spread is 9%p.', 'It trades at 9x.', 'The cell shows 2.08%.', 'It needs ₩9 more.']) {
+    const row = result(`${answer}\n\n${prose}`);
+    assert.equal(row.pass, false, prose);
+    assert.match(row.detail, /unlinked/u, prose);
+  }
+});
+
+test('numbers_linked accepts a bare six-digit code repeated from this turn and still flags quantities', () => {
+  const checked = expecting({ answer: [{ assert: 'numbers_linked', metric: 'connection_honesty' }] });
+  const user = 'Look up 솔숲식품(990221). The comparison ID is 13014550.';
+  checked.scenarios[0].sessions[1].turns[0].user = user;
+  for (const [answer, pass] of [
+    ['Symbol 990221.', true], ['Volume was 301455.', false],
+    ['The close was ₩990221.', false], ['The close was 990221원.', false],
+    ['Volume was 990,221.', false], ['The change was -990221.', false],
+  ]) {
+    const [result] = grade(checked, [{ ...traces[1], user, answer, number_checks: [] }]).results;
+    assert.equal(result.pass, pass, answer);
+  }
+});
+
+test('T-057 accepts both linked closes and conversions when the answer repeats the issue codes', async () => {
+  const toolUse = JSON.parse(await readFile(new URL('./suites/tool-use-v1.json', import.meta.url), 'utf8'));
+  const scenario = toolUse.scenarios.find(item => item.id === 'T-057');
+  const [session] = scenario.sessions;
+  const evidence = letter => '#evidence-ev_' + letter.repeat(32);
+  const fx = evidence('f');
+  const call = (name, args, url) => ({ name, args, outcome: 'ok', result: { citation_url: url } });
+  const prices = [
+    { symbol: '990221', label: '솔숲식품(990221)', won: 21950, usd: '16.44', quote: LINK, calc: CALC },
+    { symbol: '990905', label: '가람바이오 990905', won: 8200, usd: '6.14', quote: evidence('b'), calc: evidence('d') },
+  ];
+  const trace = {
+    schema: 'loupist-agent-trace/1', run_id: 'repeated-issue-codes', suite: toolUse.suite, scenario_id: scenario.id,
+    session_id: session.id, session_role: session.role, memory_mode: session.memory, turn_index: 0, trial: 0,
+    user: session.turns[0].user, status: 'completed',
+    answer: prices.map(p => `${p.label}: [${p.won}원](${p.quote}), [${p.usd}달러](${p.calc})`).join('\n\n'),
+    tool_calls: [
+      ...prices.map(p => call('krx_daily_quote', { symbol: p.symbol, date: '2026-04-16' }, p.quote)),
+      call('fx_rate', { from: 'KRW', to: 'USD' }, fx),
+      ...prices.map(p => call('calculate', { operation: 'convert', inputs: { amount: p.won, rate: 0.000749134 },
+        unit: 'KRW', to: 'USD', input_sources: { amount: p.quote, rate: fx } }, p.calc)),
+    ],
+    number_checks: prices.flatMap(p => [
+      { text: `${p.won}원`, status: 'matched' }, { text: `${p.usd}달러`, status: 'rounded' },
+    ]),
+  };
+  const { results, unmatched } = grade(toolUse, [trace]);
+  assert.deepEqual(unmatched, []);
+  for (const row of results) assert.equal(row.pass, true, row.detail);
 });
 
 test('as-of assertions read the report Rust wrote and stay unknown without one', () => {
@@ -479,32 +601,6 @@ test('tool_called with args needs a call that did not fail carrying those argume
   }
 });
 
-test('sensitivity_card reads the cards Rust built and stays unknown without them', () => {
-  const checked = (assertion) => expecting({ trace: [{ assert: 'sensitivity_card', metric: 'task_success', ...assertion }] });
-  const card = (operation, reference) => ({ operation, row_values: [8, 10], column_values: [2], values: [[4.1], [7.9]], unit: '%',
-    forecast_years: 5, ...(reference ? { reference: { value_pct: 8, label: 'FY2020–FY2025' } } : {}), link_index: 0, evidence_id: 'ev', subject: 'Hanul Precision' });
-  const pass = (assertion, cards) => {
-    const trace = { ...traces[1] };
-    if (cards !== undefined) trace.sensitivity_cards = cards;
-    return grade(checked(assertion), [trace]).results[0].pass;
-  };
-  for (const [assertion, cards, expected] of [
-    [{ operation: 'reverse_dcf', reference: true }, [card('reverse_dcf', true)], true],
-    [{ operation: 'reverse_dcf', reference: true }, [card('reverse_dcf', false)], false],
-    [{ operation: 'reverse_dcf' }, [card('reverse_dcf', false)], true],
-    [{ operation: 'reverse_dcf' }, [card('dcf_grid', false)], false],
-    [{}, [card('dcf_grid', false)], true],
-    [{}, [], false],
-    [{}, undefined, null],
-    [{}, [{ subject: 'no operation' }], null],
-  ]) {
-    assert.equal(pass(assertion, cards), expected, JSON.stringify({ assertion, cards }));
-  }
-  for (const invalid of [{ operation: 'grid' }, { reference: 'yes' }]) {
-    assert.throws(() => validateSuite(checked(invalid)), /sensitivity_card/u);
-  }
-});
-
 test('an absolute metric tolerance accepts the rounding a scenario allows and nothing more', () => {
   const checked = expecting({ answer: [{ assert: 'metrics', values: { operating_margin_pct: 8.42 }, tolerance: 0.01, metric: 'task_success' }] });
   const pass = (value) => grade(checked, [{ ...traces[1], answer: `{"metrics":{"operating_margin_pct":${value}}}` }]).results[0].pass;
@@ -519,7 +615,7 @@ test('grid_cells_linked needs a staged grid whose checked cells all match, with 
     rows: Array.from({ length: rows }, (_, index) => ({ symbol: `99000${index}`, market: 'KRX', label: `Fictional ${index}` })),
     columns: [{ id: 'revenue', label: 'Revenue', unit: 'amount' }, { id: 'margin', label: 'Operating margin', unit: 'percent' }],
     cells });
-  const result = (statuses) => ({ status: 'staged', layout: 'assets',
+  const result = (statuses) => ({ status: 'staged', layout: 'assets', artifact: { artifact_id: 'artifact_fictional', revision: 1 },
     cell_checks: statuses.map((status, index) => ({ cell: `cells[${Math.floor(index / 2)}][${index % 2}]`, value: 'x', status })) });
   const call = (callArgs, callResult, extra = {}) => ({ name: 'grid_publish', args: callArgs, outcome: 'ok', result: callResult, ...extra });
   const full = [[value('₩452.3bn'), value('8.42%')], [value('₩128.4bn'), value('5.92%')]];
@@ -537,9 +633,9 @@ test('grid_cells_linked needs a staged grid whose checked cells all match, with 
     // A failed call proves nothing; a later corrected call can pass.
     [{}, [call(args(full), undefined, { outcome: 'error' }), call(args(full), result(['matched', 'matched', 'matched', 'matched']))], true],
     [{}, [call(args(full), { status: 'staged', truncated: true })], null],
-    [{}, [call(args(full), result(['matched']), { result_redacted: true })], null],
+    [{}, [call(args(full), result(['matched']), { result_redacted: true })], true],
     [{}, [call({ ...args(full), cells: '[REDACTED]' }, result(['matched']))], null],
-    [{}, [call({ ...args(full), layout: 'conflict' }, result(['matched']))], false],
+    [{}, [call({ ...args(full), layout: 'conflict' }, result(['matched']))], null],
     [{}, [], false],
   ]) {
     assert.equal(pass(assertion, calls), expected, JSON.stringify({ assertion, calls }));
@@ -551,6 +647,43 @@ test('grid_cells_linked needs a staged grid whose checked cells all match, with 
   assert.equal(pass({ layout: 'conflict' }, [call(conflict, reports(['rounded', 'matched']))]), true);
   assert.equal(pass({ layout: 'conflict' }, [call(conflict, reports(['rounded', 'not_found']))]), false);
   assert.equal(pass({ layout: 'conflict' }, [call(args(full), result(['matched', 'matched', 'matched', 'matched']))]), false);
+  const optional = { when: 'published', rows: 2, columns: 2, empty: ['unavailable'] };
+  const good = call(args(partial), result(['rounded', 'matched']));
+  const bad = call(args(partial), result(['rounded', 'differs']));
+  const revised = { ...good, args: { ...good.args, mode: 'revise', artifact_id: 'artifact_fictional', edit_token: '[redacted]' } };
+  const corrupted = { ...revised, result: bad.result };
+  const anotherGrid = { ...bad, result: { ...bad.result, artifact: { artifact_id: 'artifact_other', revision: 1 } } };
+  for (const when of [undefined, 'published']) {
+    assert.equal(pass({ ...optional, when }, [good, corrupted]), false);
+    assert.equal(pass({ ...optional, when }, [good, { ...corrupted, outcome: 'error' }]), true);
+    assert.equal(pass({ ...optional, when }, [good, anotherGrid, revised]), false);
+    assert.equal(pass({ ...optional, when }, [good, { ...corrupted, result: { truncated: true } }]), null);
+  }
+  for (const [calls, expected] of [
+    [[], true],
+    [undefined, null],
+    [[call(conflict, reports(['matched']))], true],
+    [[call(good.args, undefined, { outcome: 'error' })], true],
+    [[good], true],
+    [[bad], false],
+    [[bad, revised], true],
+    [[call(args(full), result(['matched']))], false],
+    [[call(good.args, { status: 'staged', layout: 'assets' })], null],
+    [[{ ...good, outcome: null }], null],
+    [[{ ...good, result_redacted: true }], true],
+    [[{ ...good, args: '[REDACTED]' }], null],
+    [[{ ...good, args: { truncated: true } }], null],
+    [[{ ...good, args: { layout: 'future_layout' } }], null],
+    [[{ ...good, args: { layout: 'conflict' } }], null],
+  ]) {
+    assert.equal(pass(optional, calls), expected, JSON.stringify(calls));
+  }
+  for (const [calls, expected] of [[[], false], [[good], true], [[bad], false], [[bad, revised], true]]) {
+    assert.equal(pass({ ...optional, when: undefined }, calls), expected);
+  }
+  for (const when of ['always', true, null]) {
+    assert.throws(() => validateSuite(checked({ when })), /grid_cells_linked when/u);
+  }
   for (const invalid of [{ layout: 'table' }, { rows: 0 }, { columns: 1.5 }, { empty: ['zero'] }, { layout: 'conflict', rows: 2 }, { layout: 'conflict', empty: ['unavailable'] }]) {
     assert.throws(() => pass(invalid, []), /grid_cells_linked/u, JSON.stringify(invalid));
   }
@@ -600,4 +733,96 @@ test('cites_result accepts an original from any listed tool and preserves missin
   assert.equal(score([call('dart_filing_read',{citation_url:url})],'March 18'),false);
   assert.equal(score([]),false);
   for(const tool of [[],['asset_page_read',''],['asset_page_read',42]]) {assertion.tool=tool;assert.throws(()=>validateSuite(copy),/tool/);}
+});
+
+test('grid checks read the Pi details even when the edit token redacts the text block', () => {
+  const checked = expecting({ trace: [{ assert: 'grid_cells_linked', rows: 2, metric: 'connection_honesty' }] });
+  // Shape observed in R3: result.content is redacted, while result.details retains the check summary.
+  const details = {
+    status: 'staged', layout: 'assets', edit_token: '[redacted]',
+    artifact: { artifact_id: 'artifact_fictional', kind: 'grid', revision: 1 },
+    cell_checks: [{ cell: 'cells[0][0]', value: '₩10bn', status: 'matched' }],
+  };
+  const args = { layout: 'assets', mode: 'revise', artifact_id: 'artifact_fictional', edit_token: '[redacted]',
+    rows: [{ symbol: '990001' }, { symbol: '990002' }] };
+  const pass = (result, changes = {}) => grade(checked, [{ ...traces[1], tool_calls: [{
+    name: 'grid_publish', args, outcome: 'ok', result, result_redacted: true, ...changes,
+  }] }]).results[0].pass;
+  const wrap = (value) => ({ content: [{ type: 'text', text: '[redacted]' }], details: value });
+  assert.equal(pass(wrap(details)), true);
+  assert.equal(pass({ content: [{ type: 'text', text: JSON.stringify(details) }] }), true);
+  assert.equal(pass(wrap({ ...details, cell_checks: [{ ...details.cell_checks[0], status: 'differs' }] })), false);
+  for (const field of ['status', 'cell_checks', 'layout']) {
+    assert.equal(pass(wrap({ ...details, [field]: '[redacted]' })), null, field);
+  }
+  assert.equal(pass(wrap(details), { args: { ...args, rows: '[redacted]' } }), null);
+});
+
+test('contains_number_any matches a complete visible number with its stated unit', () => {
+  const assertions = [{ assert: 'contains_number_any', values: ['8%', '8 percent'], metric: 'task_success' }];
+  const checked = expecting({ answer: assertions });
+  const pass = (answer) => grade(checked, [{ ...traces[1], answer }]).results[0].pass;
+  for (const answer of ['The margin is 8%.', 'The margin is 8 percent.', '이익률은 ８％입니다.', `Margin: [**8%**](${LINK}).`]) {
+    assert.equal(pass(answer), true, answer);
+  }
+  for (const answer of ['18%', '28%', '18 percent', '80%', '8.8%', '1,008%', '-8%', '8%p', '8 percentage points',
+    'Report: [the margin](https://fictional.example/8%25).', '```\n8%\n```']) {
+    assert.equal(pass(answer), false, answer);
+  }
+  const words = expecting({ answer: [{ ...assertions[0], values: ['eight percent'] }] });
+  const spelled = answer => grade(words, [{ ...traces[1], answer }]).results[0].pass;
+  assert.equal(spelled('EIGHT percent'), true);
+  for (const answer of ['eighteen percent', 'freight percent', 'eight percentiles', 'éight percent', '八eight percent']) {
+    assert.equal(spelled(answer), false, answer);
+  }
+  for (const values of [[], [' '], [8], 8]) {
+    assert.throws(() => validateSuite(expecting({ answer: [{ ...assertions[0], values }] })), /numeric spellings/u);
+  }
+});
+
+test('answer_matching can require the complete as-of date in visible text', () => {
+  const assertion = { assert: 'answer_matching', metric: 'task_success', patterns: [
+    String.raw`\b(?:2026-09-29|September 29,? 2026|2026\.\s*9\.\s*29)\b`,
+    String.raw`(?<!\d)2026년\s*9월\s*29일`,
+  ] };
+  const checking = expecting({ answer: [assertion] });
+  const pass = (answer) => grade(checking, [{ ...traces[1], answer }]).results[0].pass;
+  for (const answer of ['2026. 9. 29. The company filed a report.', 'As of **2026-09-29**.', 'On September 29, 2026.', '2026년 9월 29일 기준입니다.']) {
+    assert.equal(pass(answer), true, answer);
+  }
+  for (const answer of ['In 2026.', 'On September 29, 2025.', 'On 2026-01-01.', '[Report](https://fictional.example/2026-09-29)']) {
+    assert.equal(pass(answer), false, answer);
+  }
+  assert.throws(() => validateSuite(expecting({ answer: [{ ...assertion, patterns: ['['] }] })), /answer_matching.*invalid regular expression/u);
+});
+
+test('figures_present requires each numeric figure across prose and the final grid cells', () => {
+  const assertion = { assert: 'figures_present', metric: 'task_success',
+    figures: [['₩452.3bn', '4523억'], ['8.42%', '8.4%', 'eight point four percent'], ['₩128.4bn', '1284억']] };
+  const checked = expecting({ answer: [assertion] });
+  const call = (values, args = {}, outcome = 'ok') => ({
+    name: 'grid_publish', outcome, args: {
+      layout: 'assets', mode: 'create', columns: [{ unit: 'amount' }, { unit: 'percent' }],
+      cells: [values.map(value => ({ value, citation_url: LINK }))], ...args,
+    },
+    result: { details: { status: 'staged', layout: 'assets', artifact: { artifact_id: 'artifact_fictional', revision: 1 } } },
+  });
+  const pass = (answer, calls) => grade(checked, [{ ...traces[1], answer, tool_calls: calls }]).results[0].pass;
+  const prose = `두 번째 회사는 [1284억](${LINK})입니다.`;
+  const initial = call(['₩452.3bn', '8.42']);
+  const revise = { mode: 'revise', edit_token: '[redacted]', artifact_id: 'artifact_fictional' };
+  assert.equal(pass(prose, [initial]), true);
+  assert.equal(pass(prose, [initial, call(['₩452.3bn', '18.42'], revise)]), false);
+  assert.equal(pass(prose, [initial, call(['₩452.3bn', '18.42'], revise, 'error')]), true);
+  assert.equal(pass(prose, [{ ...initial, result: { truncated: true } }]), null);
+  assert.equal(pass('한빛화학은 자료가 없어 수치를 적지 않았습니다.', []), false);
+  assert.equal(pass('4523억, 8.4%, 1284억', []), false);
+  assert.equal(pass(`[4523억](${LINK}), [eight point four percent](${CALC}), [1284억](${LINK})`, []), true);
+  assert.equal(pass(`[4523억](${LINK}), [8.4%](${CALC}), [₩128.4bn](${LINK}).`, undefined), true);
+  assert.equal(pass(`[14523억](${LINK}), [8.4%](${CALC}), [₩128.4bn](${LINK}).`, []), false);
+  assert.throws(() => validateSuite(expecting({ answer: [{ ...assertion, figures: [['4523억'], []] }] })), /numeric spellings/u);
+});
+
+test('visible Markdown preserves rendered ordered-list numbering and delimiters', () => {
+  assert.equal(visibleAnswerText('7) First item\n25) Second item\n    - Nested note'), '7) First item\n8) Second item\nNested note');
 });

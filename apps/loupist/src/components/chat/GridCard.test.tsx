@@ -1,11 +1,25 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { AssetsGrid, ChatArtifactView, ChatEvidenceRef, ConflictGrid, NumberCheck } from "../../types";
+import type { AssetsGrid, ChatArtifactView, ChatEvidenceRef, ChatMessage, ConflictGrid, NumberCheck } from "../../types";
+import { gridBlocks } from "../../chat/chartBlocks";
 import { GRID_SCHEMA } from "../../contracts/chat";
-import { ChatGridBlock, columnFit, ConflictCard, GridCard, headerLabel } from "./GridCard";
+import { ChatGridBlock, columnFit, ConflictCard, GridCard, headerLabel, sharedPeriod } from "./GridCard";
 import { ChatExecutionProvider } from "./ChatExecutionContext";
 import { renderWithOpen, destinations } from "../../test/open";
 import type { LoupistBridge } from "../../types";
+import type { ChatDestination, Open } from "../../chat/navigation";
+import type { Mock } from "vitest";
+import { ArtifactContent } from "../artifacts/ArtifactContent";
+import { ChatMessageCard } from "./ChatMessageCard";
+import { TooltipProvider } from "../ui/tooltip";
+
+// The thread's scroll actions: revealing something in the answer keeps the page there.
+const scroll = vi.hoisted(() => ({ holdScrollPosition: vi.fn(), jumpToLatest: vi.fn(), blockAppended: vi.fn() }));
+vi.mock("../ai-elements/conversation", async (load) => ({ ...(await load<typeof import("../ai-elements/conversation")>()), useConversationScroll: () => scroll }));
+
+/** What a component handed up to the app, of one kind. */
+const opened = <K extends ChatDestination["kind"]>(open: Mock<Open>, kind: K) =>
+  open.mock.calls.map(([to]) => to).filter((to): to is Extract<ChatDestination, { kind: K }> => to.kind === kind);
 
 const DART: ChatEvidenceRef = {
   id: "ev_dart", title: "Solsup Foods FY2025 statements", kind: "original", provider: "OpenDART", tool_name: "dart_financials",
@@ -30,6 +44,9 @@ const grid: AssetsGrid = {
   ],
   as_of: "2026-04-01",
 };
+
+/** When the message holding the table was written. */
+const SAVED_AT = "2026-04-01T09:30:00Z";
 
 function renderGrid(props: Partial<Parameters<typeof GridCard>[0]> = {}) {
   return render(<GridCard title="Dividend payers" grid={grid} evidenceRefs={[DART]} {...props} />);
@@ -58,10 +75,48 @@ describe("GridCard", () => {
     expect(within(table).getByText("42.0%").closest("button")).toHaveAttribute("data-status", "differs");
     // The empty reason is spoken with its row and column, never as a zero.
     expect(within(table).getByRole("button", { name: "Hanbit Chem, Payout from earnings: Not reported" })).toHaveTextContent("Not reported");
-    expect(screen.getByText(/2 assets × 2 measures · 3 linked/u)).toBeVisible();
+    expect(screen.getByText(/2 assets × 2 measures · 3 values with sources/u)).toBeVisible();
     expect(screen.getByRole("button", { name: "1 number to check" })).toBeVisible();
     expect(screen.getByText(/Known as of Apr 1, 2026/u)).toBeVisible();
     expect(screen.getByRole("region", { name: "Table, scroll sideways" })).toHaveAttribute("tabindex", "0");
+  });
+
+  it("describes an empty cell by its note, and keeps the note open while the pointer crosses into it", async () => {
+    vi.useFakeTimers();
+    try {
+      renderGrid();
+      const cell = screen.getByRole("button", { name: "Hanbit Chem, Payout from earnings: Not reported" });
+      expect(cell).toHaveAccessibleDescription("Separate statements only.");
+      const note = () => document.querySelector<HTMLElement>(".grid-card-note");
+      fireEvent.pointerEnter(cell);
+      expect(note()).toHaveTextContent("Separate statements only.");
+      fireEvent.pointerLeave(cell);
+      fireEvent.pointerEnter(note()!);
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(note()).toBeVisible();
+      fireEvent.pointerLeave(note()!);
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(note()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps an empty cell's note open when the cell is clicked, and closes it on Escape", async () => {
+    const user = userEvent.setup();
+    renderGrid();
+    const cell = screen.getByRole("button", { name: "Hanbit Chem, Payout from earnings: Not reported" });
+    await user.click(cell);
+    await waitFor(() => expect(document.querySelector(".grid-card-note")).toHaveTextContent("Separate statements only."));
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(document.querySelector(".grid-card-note")).toBeNull());
+  });
+
+  it("opens the first number to check from the caption and keeps the thread there", async () => {
+    renderGrid();
+    await userEvent.setup().click(screen.getByRole("button", { name: "1 number to check" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(/The calculation gave/u);
+    expect(scroll.holdScrollPosition).toHaveBeenCalled();
   });
 
   it("shows the values it rounds in a column with the same decimals, and its chip says the shown value was rounded", () => {
@@ -114,6 +169,108 @@ describe("GridCard", () => {
     await user.click(screen.getByRole("button", { name: "More actions", hidden: true }));
     const items = (await screen.findAllByRole("menuitem")).map((item) => item.textContent);
     expect(items).toEqual(["Copy", "CSV with sources", "Markdown table", "Ask"]);
+  });
+});
+
+describe("GridCard asset names", () => {
+  const scope = { bridge: {} as LoupistBridge, loupistId: "loupist-a", threadId: "chat", surface: "session" as const, theme: "light" as const, active: true };
+  const value = (text: string) => ({ value: text, evidence_id: DART.id, check: check(text), sort: 1 });
+  // A linked saved row, an exchange-style row saved without an id (its symbol has a dot), and a comparison label.
+  const named: AssetsGrid = {
+    layout: "assets",
+    rows: [
+      { symbol: "990221", market: "KRX", label: "Solsup Foods", asset_id: "ast_0123456789abcdef" },
+      { symbol: "BRK.B", market: "NYSE", label: "Berkshire Hathaway" },
+      { symbol: "Peer median", market: "Peers", label: "Peer median" },
+    ],
+    columns: [{ id: "revenue", label: "Revenue", period: "FY2025", unit: "amount" }],
+    cells: [[value("₩452.3bn")], [value("$371.4bn")], [value("₩300.0bn")]],
+    as_of: "2026-04-01",
+  };
+  const card = <GridCard title="Revenue" grid={named} evidenceRefs={[DART]} />;
+
+  it("opens a row by its stored id, else by its ticker, and leaves a comparison label as text", async () => {
+    const user = userEvent.setup();
+    const { open } = renderWithOpen(<ChatExecutionProvider value={scope}>{card}</ChatExecutionProvider>);
+    await user.click(screen.getByRole("button", { name: "Berkshire Hathaway" }));
+    // An id-less exchange-style row opens by its ticker; the host says when nothing is tracked under it.
+    expect(destinations(open)).toEqual([{ kind: "asset", target: { loupistId: "loupist-a", ticker: "BRK.B", name: "Berkshire Hathaway" } }]);
+    screen.getByRole("button", { name: "Berkshire Hathaway" }).focus();
+    await user.keyboard("{Enter}");
+    expect(destinations(open)).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Solsup Foods" }));
+    expect(destinations(open).at(-1)).toEqual({ kind: "asset", target: { loupistId: "loupist-a", assetId: "ast_0123456789abcdef", name: "Solsup Foods" } });
+    expect(screen.queryByRole("button", { name: "Peer median" })).toBeNull();
+    expect(screen.getByText("Peer median", { selector: "span.grid-card-name" })).toBeVisible();
+    expect(screen.getByText("BRK.B · NYSE")).toBeVisible();
+  });
+
+  it("opens a detached table's row by its stored id", async () => {
+    const user = userEvent.setup();
+    const revisionMs = Date.parse("2026-02-03T04:05:06Z");
+    const view = {
+      artifact: { id: "grid-1", chat_session_id: "chat", kind: "grid", title: "Revenue", current_revision: 3, created_at_ms: 1, updated_at_ms: Date.now() },
+      revision: { artifact_id: "grid-1", revision: 2, digest: "c".repeat(64), source_message_id: "answer", created_at_ms: revisionMs, payload: { kind: "grid", schema: GRID_SCHEMA, grid: named } },
+      evidence_refs: [DART],
+    } as ChatArtifactView;
+    const { open } = renderWithOpen(<ChatExecutionProvider value={scope}><ArtifactContent view={view} theme="light" /></ChatExecutionProvider>);
+    await user.click(screen.getByRole("button", { name: "Solsup Foods" }));
+    expect(destinations(open)).toEqual([{ kind: "asset", target: { loupistId: "loupist-a", assetId: "ast_0123456789abcdef", name: "Solsup Foods" } }]);
+  });
+
+  it("opens a reloaded table's row in a real answer, and keeps its menu actions", async () => {
+    const user = userEvent.setup({ skipHover: true });
+    const ref = { artifact_id: "grid-1", revision: 1, kind: "grid" as const, title: "Revenue", digest: "c".repeat(64) };
+    const stored = {
+      artifact: { id: "grid-1", chat_session_id: "chat", kind: "grid", title: "Revenue", current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+      revision: { artifact_id: "grid-1", revision: 1, digest: "c".repeat(64), source_message_id: "answer", created_at_ms: Date.now(), payload: { kind: "grid", schema: GRID_SCHEMA, grid: named } },
+      evidence_refs: [DART],
+    } as ChatArtifactView;
+    const chatArtifactRead = vi.fn(async () => stored);
+    const scoped = { ...scope, bridge: { chatArtifactRead } as unknown as LoupistBridge };
+    const message: ChatMessage = { id: "answer", role: "assistant", status: "complete", content: "Here is the table.", created_at: SAVED_AT, artifact_refs: [ref] };
+    const { open } = renderWithOpen(<TooltipProvider><ChatExecutionProvider value={scoped}>
+      <ChatMessageCard message={message} loupistId="loupist-a" chatId="chat" loupistName="Loupist" onReadAttachment={vi.fn()} onAskArtifact={vi.fn()} />
+    </ChatExecutionProvider></TooltipProvider>);
+    await user.click(await screen.findByRole("button", { name: "Berkshire Hathaway" }));
+    expect(opened(open, "asset")).toEqual([{ kind: "asset", target: { loupistId: "loupist-a", ticker: "BRK.B", name: "Berkshire Hathaway" } }]);
+    expect(chatArtifactRead).toHaveBeenCalledWith("loupist-a", "chat", "grid-1", 1);
+    // The card's own actions still work in the answer.
+    expect(screen.getByRole("table", { name: "Revenue" })).toBeVisible();
+  });
+
+  it("opens a staged table's names while the answer streams and after the host saves it", async () => {
+    const user = userEvent.setup({ skipHover: true });
+    const view = (digest: string): ChatArtifactView => ({
+      artifact: { id: "grid-1", chat_session_id: "chat", kind: "grid", title: "Revenue", current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+      revision: { artifact_id: "grid-1", revision: 1, digest, source_message_id: "answer", created_at_ms: 0, payload: { kind: "grid", schema: GRID_SCHEMA, grid: named } },
+      evidence_refs: [DART],
+    } as ChatArtifactView);
+    const staged = view("c".repeat(64));
+    const scoped = { ...scope, bridge: { chatArtifactRead: vi.fn(async () => staged) } as unknown as LoupistBridge };
+    const step = { id: "publish", kind: "tool" as const, toolName: "grid_publish", category: "artifact" as const, operation: "publish" as const,
+      action: "Made a table", target: "Revenue", href: null, status: "succeeded" as const, startedAtMs: 0, finishedAtMs: null };
+    // While streaming, `created_at` is the renderer's clock; the host's own time arrives with completion.
+    const renderer = "2026-11-18T09:00:00.000Z", host = "2026-11-18T09:00:07.250Z";
+    const streaming: ChatMessage = { id: "answer", role: "assistant", status: "streaming", content: "", created_at: renderer, staged_artifacts: [staged], progress: { startedAtMs: 0, finishedAtMs: null, items: [step] } };
+    const answer = (message: ChatMessage) => <TooltipProvider><ChatExecutionProvider value={scoped}>
+      <ChatMessageCard message={message} loupistId="loupist-a" chatId="chat" loupistName="Loupist" onReadAttachment={vi.fn()} />
+    </ChatExecutionProvider></TooltipProvider>;
+    const { open, rerender } = renderWithOpen(answer(streaming));
+    const table = await screen.findByRole("table", { name: "Revenue" });
+    await user.click(within(table).getByRole("button", { name: "Berkshire Hathaway" }));
+    rerender(answer({ ...streaming, status: "complete", created_at: host, artifact_refs: [{ artifact_id: "grid-1", revision: 1, kind: "grid", title: "Revenue", digest: "c".repeat(64) }] }));
+    await user.click(await screen.findByRole("button", { name: "Berkshire Hathaway" }));
+    expect(opened(open, "asset")).toEqual([1, 2].map(() => ({ kind: "asset", target: { loupistId: "loupist-a", ticker: "BRK.B", name: "Berkshire Hathaway" } })));
+  });
+
+  it("names every row as text without a scope or an opener", () => {
+    const unscoped = renderWithOpen(card);
+    expect(within(screen.getByRole("table")).queryAllByRole("button", { name: /Solsup Foods|Berkshire Hathaway|Peer median/u })).toEqual([]);
+    unscoped.unmount();
+    render(<ChatExecutionProvider value={scope}>{card}</ChatExecutionProvider>);
+    expect(within(screen.getByRole("table")).queryAllByRole("button", { name: /Solsup Foods|Berkshire Hathaway|Peer median/u })).toEqual([]);
+    expect(screen.getByText("Berkshire Hathaway", { selector: "span.grid-card-name" })).toBeVisible();
   });
 });
 
@@ -237,6 +394,101 @@ describe("wide grids", () => {
     expect(columnFit(766, 176, 4, 0, 400).width).toBe(168);
   });
 
+  it("says a period and basis every measure shares once, in the header, and each measure's own otherwise", () => {
+    const shared: AssetsGrid = { ...grid, subtitle: "Consolidated", columns: grid.columns.map((column) => ({ ...column, basis: "CFS" })) };
+    expect(sharedPeriod(shared)).toBe("FY2025 · CFS");
+    const { unmount } = renderGrid({ grid: shared });
+    expect(screen.getByText("FY2025 · CFS", { selector: ".grid-card-header p" })).toBeVisible();
+    expect(screen.getByText("Consolidated", { selector: ".grid-card-header p" })).toBeVisible();
+    expect(within(screen.getByRole("table")).queryByText(/FY2025/u)).toBeNull();
+    unmount();
+    const differs: AssetsGrid = { ...grid, columns: [grid.columns[0]!, { ...grid.columns[1]!, period: "FY2024" }] };
+    expect(sharedPeriod(differs)).toBeNull();
+    renderGrid({ grid: differs });
+    expect(within(screen.getByRole("columnheader", { name: /Revenue/u })).getByText("FY2025")).toBeVisible();
+    expect(within(screen.getByRole("columnheader", { name: /Payout/u })).getByText("FY2024")).toBeVisible();
+    expect(screen.queryByText(/FY202/u, { selector: ".grid-card-header p" })).toBeNull();
+  });
+
+  describe("measures as rows", () => {
+    // jsdom lays nothing out: give the card a width, the asset column 176 px and each value 60 px.
+    let width = 0;
+    beforeEach(() => {
+      width = 400;
+      vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("grid-card-scroll") ? width : 0; });
+      vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("grid-card-asset-head") ? 176 : 60; });
+    });
+    afterEach(() => vi.restoreAllMocks());
+    const three: AssetsGrid = {
+      ...grid,
+      columns: [...grid.columns, { id: "yield", label: "Dividend yield", period: "Oct 31", unit: "percent" }],
+      cells: [[...grid.cells[0]!, { value: "3.1%", evidence_id: DART.id, check: check("3.1%"), sort: 3.1 }], [...grid.cells[1]!, { empty: "unavailable" }]],
+    };
+
+    it("turns a table with more measures than assets that does not fit: measures are rows, assets are columns, nothing sorts", () => {
+      renderGrid({ grid: three });
+      const table = screen.getByRole("table", { name: "Dividend payers" });
+      expect(table).toHaveAttribute("data-rows", "measures");
+      const heads = within(table).getAllByRole("columnheader");
+      expect(heads.map((head) => head.textContent)).toEqual(["Measure", "Solsup Foods990221 · KRX", "Hanbit Chem990777 · KRX"]);
+      expect(heads.every((head) => head.getAttribute("scope") === "col")).toBe(true);
+      const rows = within(table).getAllByRole("rowheader");
+      expect(rows.map((head) => [head.getAttribute("scope"), head.textContent])).toEqual([
+        ["row", "RevenueFY2025"], ["row", "Payout from earningsFY2025"], ["row", "Dividend yieldOct 31"],
+      ]);
+      expect(within(table).queryByRole("button", { name: /Revenue/u })).toBeNull();
+      expect(table.querySelector("[aria-sort]")).toBeNull();
+      // Cells are unchanged: chips with their status, empty reasons spoken with asset and measure.
+      expect(within(table).getByText("42.0%").closest("button")).toHaveAttribute("data-status", "differs");
+      expect(within(table).getByRole("button", { name: "Hanbit Chem, Payout from earnings: Not reported" })).toBeVisible();
+      // One row per measure, its cells in asset order.
+      expect(within(table).getAllByRole("row")[3]!.textContent).toMatch(/^Dividend yieldOct 313\.1%.*Hanbit Chem, Dividend yield: Couldn't get$/u);
+      expect(screen.queryByRole("button", { name: /more column/u })).toBeNull();
+    });
+
+    it("keeps asset rows when they fit, or when the table has no more measures than assets", () => {
+      width = 900;
+      const { unmount } = renderGrid({ grid: three });
+      expect(screen.getByRole("table")).toHaveAttribute("data-rows", "assets");
+      unmount();
+      width = 200;
+      renderGrid();
+      expect(screen.getByRole("table")).toHaveAttribute("data-rows", "assets");
+    });
+
+    it("decides on the width the asset rows need, so a resize turns it once each way", () => {
+      renderGrid({ grid: three });
+      const region = screen.getByRole("region", { name: "Table, scroll sideways" });
+      // 176 px + 3 × 112 px = 512 px: anything narrower turns, anything at least that wide does not.
+      for (const [next, rows] of [[511, "measures"], [512, "assets"], [512, "assets"], [511, "measures"], [400, "measures"]] as const) {
+        width = next;
+        fireEvent.scroll(region);
+        expect(screen.getByRole("table")).toHaveAttribute("data-rows", rows);
+      }
+    });
+
+    it("copies and exports asset rows in either layout", async () => {
+      const user = userEvent.setup();
+      const onExport = vi.fn().mockResolvedValue("/tmp/t.csv");
+      const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+      const saved = async () => {
+        await user.click(screen.getAllByRole("button", { name: /Export/u })[0]!);
+        await user.click(await screen.findByRole("menuitem", { name: "Markdown table" }));
+        await user.click(screen.getAllByRole("button", { name: "Copy" })[0]!);
+        return [onExport.mock.calls.at(-1)![0].bytes, writeText.mock.calls.at(-1)![0]];
+      };
+      const { unmount } = renderGrid({ grid: three, onExport });
+      expect(screen.getByRole("table")).toHaveAttribute("data-rows", "measures");
+      const turned = await saved();
+      unmount();
+      width = 900;
+      renderGrid({ grid: three, onExport });
+      expect(screen.getByRole("table")).toHaveAttribute("data-rows", "assets");
+      expect(await saved()).toEqual(turned);
+      expect(String(turned[1]).split("\n")[1]).toMatch(/^Solsup Foods/u);
+    });
+  });
+
   it("breaks a slash term only after its slash", () => {
     expect(headerLabel("Net debt/EBITDA")).toBe("Net\u00a0debt/\u200bEBITDA");
     expect(headerLabel("Operating margin")).toBe("Operating margin");
@@ -260,4 +512,37 @@ it("never draws a Loading frame between a preparing table and its delivered cont
   observer.disconnect();
   expect(added.join("|")).not.toMatch(/Loading/);
   expect(screen.getByRole("table", { name: "Dividend payers" })).toBeVisible();
+});
+
+it("replaces a table corrected in the same reply in place: the corrected value is on screen and the first is gone", async () => {
+  const draft = (digest: string, payout: string): ChatArtifactView => ({
+    artifact: { id: "grid-1", chat_session_id: "chat", kind: "grid", title: "Dividend payers", current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+    revision: { artifact_id: "grid-1", revision: 1, digest, source_message_id: "answer", created_at_ms: 0, payload: { kind: "grid", schema: GRID_SCHEMA, grid: {
+      ...grid, cells: [[grid.cells[0]![0]!, { value: payout, evidence_id: DART.id, check: check(payout, "matched"), sort: Number.parseFloat(payout) }], grid.cells[1]!],
+    } } },
+    evidence_refs: [DART],
+  } as ChatArtifactView);
+  const first = draft("a".repeat(64), "42.0%");
+  const corrected = draft("b".repeat(64), "40.2%");
+  const chatArtifactRead = vi.fn(async () => corrected);
+  const scope = { bridge: { chatArtifactRead } as unknown as LoupistBridge, loupistId: "loupist-a", threadId: "chat", surface: "session" as const, theme: "light" as const, active: true };
+  const step = (id: string) => ({ id, kind: "tool" as const, toolName: "grid_publish", category: "artifact" as const, operation: "publish" as const,
+    action: "Made a table", target: "Dividend payers", href: null, status: "succeeded" as const, startedAtMs: 0, finishedAtMs: null });
+  const message = (extra: Partial<ChatMessage>): ChatMessage => ({ id: "answer", role: "assistant", content: "", created_at: "2026-11-17T00:00:00Z", status: "streaming",
+    progress: { startedAtMs: 0, finishedAtMs: null, items: [step("publish"), step("revise")] }, ...extra });
+  const blockOf = (value: ChatMessage) => <ChatExecutionProvider value={scope}><ChatGridBlock block={gridBlocks(value)[0]!} /></ChatExecutionProvider>;
+  const { rerender } = render(blockOf(message({ staged_artifacts: [first] })));
+  const table = () => screen.getByRole("table", { name: "Dividend payers" });
+  expect(within(table()).getByText("42.0%")).toBeVisible();
+  rerender(blockOf(message({ staged_artifacts: [corrected] })));
+  expect(screen.getAllByRole("table")).toHaveLength(1);
+  expect(within(table()).getByText("40.2%")).toBeVisible();
+  expect(within(table()).queryByText("42.0%")).toBeNull();
+  // Committed, the card reads the stored revision as any stored card does, and keeps the corrected table meanwhile.
+  const ref = { artifact_id: "grid-1", revision: 1, kind: "grid" as const, title: "Dividend payers", digest: "b".repeat(64) };
+  rerender(blockOf(message({ status: "complete", artifact_refs: [ref], staged_artifacts: [corrected] })));
+  expect(within(table()).getByText("40.2%")).toBeVisible();
+  await waitFor(() => expect(chatArtifactRead).toHaveBeenCalledWith("loupist-a", "chat", "grid-1", 1));
+  expect(within(table()).getByText("40.2%")).toBeVisible();
+  expect(within(table()).queryByText("42.0%")).toBeNull();
 });

@@ -13,6 +13,7 @@ pub(super) struct GoneRetrySeed {
     /// The full turn context, before any abbreviation for a warm session.
     pub turn_envelope: String,
     pub current_prompt: String,
+    pub is_handoff: bool,
     pub chat_id: String,
     /// The Chat before this turn's request, for the cold bootstrap.
     pub history: Vec<ChatMessage>,
@@ -63,6 +64,7 @@ pub(super) async fn relaunch_on_auto(mut turn: LaunchedChatTurn) -> Relaunch {
     let Ok(prompt) = pi_chat_turn_prompt(
         &seed.current_prompt,
         &envelope,
+        seed.is_handoff,
         Some(ColdChatBootstrap {
             attachments_root: &seed.chat_attachments,
             thread_id: &seed.chat_id,

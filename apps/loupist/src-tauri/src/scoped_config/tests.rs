@@ -209,7 +209,7 @@ fn execution_digest_tracks_settings_without_presentation_changes() {
         global.path(),
         None,
         ConfigScope::Global,
-        patch("[appearance]\ntheme='dark'"),
+        patch("[appearance]\ntheme='dark'\ndisplay_currency='KRW'"),
         vec![],
     );
     assert_eq!(
@@ -598,6 +598,113 @@ fn appearance_language_is_global_only_validated_and_unsets_to_system() {
     let result = read_scope(global.path(), None, ConfigScope::Global).unwrap();
     assert_eq!(result.effective.appearance.language, "system");
     assert!(!result.diagnostics.is_empty());
+}
+
+#[test]
+fn appearance_price_colors_default_to_auto_validate_and_unset() {
+    let global = directory();
+    let initial = read_scope(global.path(), None, ConfigScope::Global).unwrap();
+    assert_eq!(initial.effective.appearance.price_colors, "auto");
+    let result = update(
+        global.path(),
+        None,
+        ConfigScope::Global,
+        patch("[appearance]\nprice_colors = 'green-up'"),
+        vec![],
+    );
+    assert_eq!(result.effective.appearance.price_colors, "green-up");
+    assert_eq!(result.sources["appearance.price_colors"], "global");
+    let result = update(
+        global.path(),
+        None,
+        ConfigScope::Global,
+        ConfigDocument::default(),
+        vec![vec!["appearance".into(), "price_colors".into()]],
+    );
+    assert_eq!(result.effective.appearance.price_colors, "auto");
+    assert_eq!(result.sources["appearance.price_colors"], "default");
+
+    for value in ["red", "up", "", "Red-Up"] {
+        let config = patch(&format!("[appearance]\nprice_colors = '{value}'"));
+        assert!(validate(&config, &ConfigScope::Global).is_err());
+    }
+    assert!(validate(&patch("[appearance]\nprice_colors = 'red-up'"), &scope()).is_err());
+    write(global.path(), "[appearance]\nprice_colors = 'blue-up'");
+    let result = read_scope(global.path(), None, ConfigScope::Global).unwrap();
+    assert_eq!(result.effective.appearance.price_colors, "auto");
+    assert!(!result.diagnostics.is_empty());
+}
+
+#[test]
+fn display_currency_round_trips_revisions_and_global_reset() {
+    let global = directory();
+    let initial = read_scope(global.path(), None, ConfigScope::Global).unwrap();
+    assert!(initial.effective.appearance.display_currency.is_none());
+    assert!(
+        serde_json::to_value(&initial.effective).unwrap()["appearance"]
+            .get("display_currency")
+            .is_none()
+    );
+
+    let path = vec!["appearance".into(), "display_currency".into()];
+    let shaped = patch("[appearance]\ndisplay_currency = 'ZZZ'");
+    assert!(validate(&shaped, &scope()).is_err());
+    assert!(validate_unset(&path, &scope()).is_err());
+    for value in ["usd", " USD", "USD ", "US", "USDD", "ÜSD", "12A", ""] {
+        assert!(validate(
+            &patch(&format!("[appearance]\ndisplay_currency = '{value}'")),
+            &ConfigScope::Global
+        )
+        .is_err());
+    }
+    let saved = update(global.path(), None, ConfigScope::Global, shaped, vec![]);
+    assert_eq!(saved.sources["appearance.display_currency"], "global");
+    assert_eq!(
+        saved
+            .explicit
+            .unwrap()
+            .appearance
+            .unwrap()
+            .display_currency
+            .as_deref(),
+        Some("ZZZ")
+    );
+    assert_eq!(
+        resolve(global.path(), None)
+            .unwrap()
+            .appearance
+            .display_currency
+            .as_deref(),
+        Some("ZZZ")
+    );
+
+    write(global.path(), "[appearance]\ndisplay_currency = 'KRW'");
+    let external = read_scope(global.path(), None, ConfigScope::Global).unwrap();
+    assert_ne!(external.revision, saved.revision);
+    assert_eq!(
+        external.effective.appearance.display_currency.as_deref(),
+        Some("KRW")
+    );
+
+    let reset = update(
+        global.path(),
+        None,
+        ConfigScope::Global,
+        ConfigDocument::default(),
+        vec![path],
+    );
+    assert!(reset.effective.appearance.display_currency.is_none());
+    assert!(reset
+        .explicit
+        .as_ref()
+        .and_then(|value| value.appearance.as_ref())
+        .and_then(|value| value.display_currency.as_ref())
+        .is_none());
+    assert!(!std::fs::read_to_string(global.path().join(FILE_NAME))
+        .unwrap()
+        .contains("display_currency"));
+    write(global.path(), "[appearance]\ndisplay_currency = 'krw'");
+    assert!(resolve(global.path(), None).is_err());
 }
 
 #[test]

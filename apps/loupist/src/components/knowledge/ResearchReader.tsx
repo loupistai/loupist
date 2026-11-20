@@ -2,7 +2,7 @@ import { Disclosure } from "../ui/disclosure";
 import { ResearchJournalForm } from "./ResearchJournalForm";
 import { JournalThenNow, ResearchJournalCheck } from "./ResearchJournal";
 import { formatDateTime, formatNumber } from "../../i18n/format";
-import { timePointValue, claimStatusLabel } from "../../knowledge/presentation";
+import { coverageLabel, metadataLabel, timePointValue, claimStatusLabel } from "../../knowledge/presentation";
 import i18n, { useTranslation } from "../../i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { knowledgeLocationFromReference } from "../../knowledge/location";
@@ -143,7 +143,7 @@ function ExactResearchReader({ bridge, location, onOpen, onAsk, refreshKey = 0, 
         <p>{receipt.pinned.attribution}</p>
         {receipt.text !== undefined ? <blockquote className="knowledge-passage" data-testid="knowledge-passage">{receipt.text}</blockquote> : <p>{t("researchReader.theOriginalFileWasSavedWithThisJournalAText")}</p>}
         <Button variant="link" onClick={() => openReference(sourceReference(receipt.pinned))}>{t("researchReader.openSourceRecord")}</Button>
-        <Disclosure title={<>{t("researchReader.fileDetails")}</>}><p>{coverageLabel()[receipt.pinned.coverage] ?? receipt.pinned.coverage}</p></Disclosure>
+        <Disclosure title={<>{t("researchReader.fileDetails")}</>}><p>{coverageLabel(receipt.pinned.coverage)}</p></Disclosure>
       </article>}
     </article>}
   </section>;
@@ -162,7 +162,7 @@ function SavedInputs({ inputs, openReference, markdown, onReadReceipt, openingRe
     <div className="research-evidence-heading"><h3>{t("researchReader.evidenceAndContext")}</h3><p>{t("researchReader.theVersionsSavedWithThisRecord")}</p></div>
     {inputs.sources.length > 0 && <Disclosure className="research-evidence-group" defaultOpen title={<>{t("researchReader.sources")} <span>{formatNumber(inputs.sources.length)}</span></>}>
     <ul>{inputs.sources.map((source, index) => <li key={source.receiptId}>
-      <p>{source.attribution || t("researchReader.sourceNumber", { index: formatNumber(index + 1) })}</p><div className="research-evidence-meta"><span>{coverageLabel()[source.coverage] ?? source.coverage}</span><span>{t("researchReader.publishedDate", { date: timePointValue(source.publicationTime) })}</span></div>
+      <p>{source.attribution || t("researchReader.sourceNumber", { index: formatNumber(index + 1) })}</p><div className="research-evidence-meta"><span>{coverageLabel(source.coverage)}</span><span>{t("researchReader.publishedDate", { date: timePointValue(source.publicationTime) })}</span></div>
       <div className="research-evidence-actions"><Button variant="link" onClick={() => openReference(sourceReference(source))}>{t("researchReader.openSource", { index: formatNumber(index + 1) })}</Button>
       {onReadReceipt && <Button variant="outline" disabled={Boolean(openingReceipt)} onClick={(event) => onReadReceipt(source.receiptId, event.currentTarget)}>{openingReceipt === source.receiptId ? t("researchReader.openingSource") : t("researchReader.readSavedSource")}</Button>}</div>
     </li>)}</ul></Disclosure>}
@@ -180,13 +180,12 @@ function SavedInputs({ inputs, openReference, markdown, onReadReceipt, openingRe
     </li>)}</ul></Disclosure>}
     {Boolean(inputs.earlier?.length) && <section aria-label={t("researchReader.earlierResearchUsed")}><h3>{t("researchReader.earlierResearchUsed")}</h3><ul>{inputs.earlier?.map((earlier, index) => <li key={`${earlier.researchId}:${earlier.journalId ?? ""}`}>
       <Button variant="link" onClick={() => openReference({ kind: earlier.journalId ? "journal" : "research", recordId: "", revisionId: "", objectId: earlier.journalId ?? earlier.researchId })}>{t(earlier.journalId ? "researchReader.openEarlierJournal" : "researchReader.openEarlierNote", { index: formatNumber(index + 1) })}</Button>
-      <p>{earlier.relation === "review" ? t("researchReader.reviewed") : earlier.relation === "supersedes" ? t("researchReader.supersedesTheEarlierInterpretation") : t("researchReader.contradictsTheEarlierInterpretation")}</p>
-      <Disclosure title={<>{t("researchReader.earlierTextUsed")}</>}>{markdown(earlier.deliveredText)}<p>{coverageLabel()[earlier.coverage] ?? earlier.coverage}</p></Disclosure>
+      <p>{earlier.relation === "review" ? t("researchReader.reviewed") : earlier.relation === "supersedes" ? t("researchReader.supersedesTheEarlierInterpretation") : earlier.relation === "contradicts" ? t("researchReader.contradictsTheEarlierInterpretation") : t("presentation.unspecified")}</p>
+      <Disclosure title={<>{t("researchReader.earlierTextUsed")}</>}>{markdown(earlier.deliveredText)}<p>{coverageLabel(earlier.coverage)}</p></Disclosure>
     </li>)}</ul></section>}
   </section>;
 }
 
 const sourceReference = (source: JournalSourceRead["pinned"]): KnowledgeReference => ({ kind: "source", recordId: source.recordId, revisionId: source.revisionId, objectId: source.spanId, spanId: source.spanId, receiptId: source.receiptId });
-const coverageLabel = (): Record<string, string> => ({ included_full: i18n.t("knowledge:researchReader.fullDocument"), included_excerpt: i18n.t("knowledge:researchReader.excerpt"), upstream_truncated: i18n.t("knowledge:researchReader.incompleteSourceText"), metadata_only: i18n.t("knowledge:researchReader.sourceDetailsOnly"), omitted: i18n.t("knowledge:researchReader.contentNotSaved") });
-const approachStatus = (status: string) => ({ considered: i18n.t("knowledge:researchReader.considered"), applied: i18n.t("knowledge:researchReader.applied"), adapted: i18n.t("knowledge:researchReader.adapted"), rejected: i18n.t("knowledge:researchReader.setAside") }[status] ?? status.replaceAll("_", " "));
+const approachStatus = (status: string) => metadataLabel({ considered: i18n.t("knowledge:researchReader.considered"), applied: i18n.t("knowledge:researchReader.applied"), adapted: i18n.t("knowledge:researchReader.adapted"), rejected: i18n.t("knowledge:researchReader.setAside") }, status);
 

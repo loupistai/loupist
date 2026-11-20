@@ -6,14 +6,14 @@ import type { KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode } from "../../con
 import { MapInspector } from "./MapInspector";
 import { hasRelationshipsView, relationshipGroups, strokeWidth } from "./relationships";
 
-const company = (id: string, label: string, degree = 1): KnowledgeMapNode => ({ id, label, kind: "entity", entityKind: "Organization", degree, watched: false, held: false });
+const company = (id: string, label: string, degree = 1): KnowledgeMapNode => ({ id, label, kind: "entity", entityKind: "Organization", degree, watched: false });
 const claim = (id: string, source: string, target: string, relation: string, extra: Partial<KnowledgeMapEdge> = {}): KnowledgeMapEdge => ({ id, kind: "claim", source, target, relation, ...extra });
 
 const nodes: KnowledgeMapNode[] = [
   company("tsmc", "TSMC", 9), company("asml", "ASML", 4), company("amat", "Applied Materials", 3), company("apple", "Apple", 6),
   company("nvidia", "NVIDIA", 5), company("samsung", "Samsung Foundry", 2), company("visera", "VisEra"), company("hsinchu", "Hsinchu"),
-  { id: "lens-1", recordId: "rec-cash", label: "Cash first", kind: "lens_principle", degree: 3, watched: false, held: false },
-  { id: "lens-2", recordId: "rec-moat", label: "Moat check", kind: "lens_method", degree: 1, watched: false, held: false },
+  { id: "lens-1", recordId: "rec-cash", label: "Cash first", kind: "lens_principle", degree: 3, watched: false },
+  { id: "lens-2", recordId: "rec-moat", label: "Moat check", kind: "lens_method", degree: 1, watched: false },
 ];
 const map = {
   nodes,

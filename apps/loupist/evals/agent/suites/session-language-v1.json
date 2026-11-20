@@ -1,0 +1,531 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "session-language",
+  "version": 1,
+  "description": "Matched Source control, warm research conversations and reciprocal directions under fixed appearances.",
+  "scenarios": [
+    {
+      "id": "LG-003-EN",
+      "title": "An English summary of the Alder Rail Source under English appearance",
+      "split": "capability",
+      "tags": [
+        "answer-language",
+        "research-session"
+      ],
+      "language": "en",
+      "connections": [],
+      "seed": {
+        "sources": [
+          {
+            "title": "Alder Rail quarterly note",
+            "origin": "https://fictional.example/alder-rail-q3",
+            "text": "Fictional note dated 2026-10-08: Alder Rail carried 18 million passengers in the third quarter of 2026, up from 16 million a year earlier, and its operating margin was 12 percent. Management expects two new trains to arrive in the first half of 2027."
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Summarize the Alder Rail quarterly note in my Sources.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "18",
+                      "1,800만",
+                      "1800만"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_source_span",
+                    "source_origin": "https://fictional.example/alder-rail-q3",
+                    "allow_plain_count": true,
+                    "figure_pattern": "(?<![\\d.,−-])(?:18\\s+million\\b|18,?000,?000|1,?800\\s*만)(?:\\s*(?:(?:third[- ]quarter\\s+|Q3\\s+)?(?:passengers?|riders?)\\b|명)|$)",
+                    "metric": "retrieval"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "interface_labels",
+                    "metric": "efficiency"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "alder-ridership",
+                    "criterion": "Explain the quarterly note in English and attribute the 18 million third-quarter passengers to Alder Rail and its note. A bare figure, a different quantity or issuer, a refusal, or a paragraph of explanation in another language fails.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "clock": "2026-11-18T09:00:00+09:00"
+    },
+    {
+      "id": "F3-SW-01",
+      "title": "Language changes twice in a continuing research session",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "ko",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Fictional Iris Mill collected 12 million credits in cash from operations and paid 9 million for equipment in June. How much free cash flow did it generate?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cash-flow-follow-up",
+                    "criterion": "Use the June figures to explain that three million credits remain after equipment spending.",
+                    "metric": "task_success"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "interface_labels",
+                    "metric": "efficiency"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "그 설비에 100만 크레디트를 더 썼다면 잉여현금흐름은 어떻게 달라져?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cash-flow-follow-up",
+                    "criterion": "Carry forward the same June figures. One million more in equipment spending reduces free cash flow to two million credits.",
+                    "metric": "task_success"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "interface_labels",
+                    "metric": "efficiency"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Why would that change matter to someone looking at how much cash was left?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cash-flow-follow-up",
+                    "criterion": "Explain that the extra spending leaves less internally generated cash for other uses, referring to the prior example.",
+                    "metric": "task_success"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "interface_labels",
+                    "metric": "efficiency"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-SW-02",
+      "title": "Language changes twice in a continuing research session",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "가상의 아이리스 제분은 6월 영업활동으로 현금 1,200만 크레디트를 벌고 설비에 900만 크레디트를 썼어. 잉여현금흐름은 얼마야?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cash-flow-follow-up",
+                    "criterion": "Use the June figures to explain that three million credits remain after equipment spending.",
+                    "metric": "task_success"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "interface_labels",
+                    "metric": "efficiency"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "What would happen to that result if the equipment cost one million more?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cash-flow-follow-up",
+                    "criterion": "Carry forward the same June figures. One million more in equipment spending reduces free cash flow to two million credits.",
+                    "metric": "task_success"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "interface_labels",
+                    "metric": "efficiency"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "남는 현금을 살펴볼 때 그 차이가 왜 중요해?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cash-flow-follow-up",
+                    "criterion": "Explain that the extra spending leaves less internally generated cash for other uses, referring to the prior example.",
+                    "metric": "task_success"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "interface_labels",
+                    "metric": "efficiency"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-UI-01",
+      "title": "Two navigation questions followed by an ordinary Source summary",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "ko",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "seed": {
+        "sources": [
+          {
+            "title": "Alder Rail quarterly note",
+            "origin": "https://fictional.example/alder-rail-q3",
+            "text": "Fictional note dated 2026-10-08: Alder Rail carried 18 million passengers in the third quarter of 2026, up from 16 million a year earlier, and its operating margin was 12 percent. Management expects two new trains to arrive in the first half of 2027."
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Which entries on my screen open the continuing chat, the relationship view and my schedules? Give the labels as they appear on screen and tell me which does which.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language",
+                    "per_paragraph": true
+                  },
+                  {
+                    "assert": "visible_labels",
+                    "keys": [
+                      "bot",
+                      "map",
+                      "schedule"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "usable-directions",
+                    "criterion": "Identify each requested destination using its actual screen label and explain the mapping in the question’s language. Quoted screen labels may be foreign. A paragraph of commentary in the other language, raw tool/provider names or unrelated instructions fail.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "What is the sidebar heading for my research threads, and what is the short group label for market data in Connections? Give the exact wording for each.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language",
+                    "per_paragraph": true
+                  },
+                  {
+                    "assert": "visible_labels",
+                    "keys": [
+                      "research_sessions_heading",
+                      "market_data_group"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "usable-directions",
+                    "criterion": "Identify each requested destination using its actual screen label and explain the mapping in the question’s language. Quoted screen labels may be foreign. A paragraph of commentary in the other language, raw tool/provider names or unrelated instructions fail.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Summarize the Alder Rail quarterly note in my Sources.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "18",
+                      "1,800만",
+                      "1800만"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_source_span",
+                    "source_origin": "https://fictional.example/alder-rail-q3",
+                    "allow_plain_count": true,
+                    "figure_pattern": "(?<![\\d.,−-])(?:18\\s+million\\b|18,?000,?000|1,?800\\s*만)(?:\\s*(?:(?:third[- ]quarter\\s+|Q3\\s+)?(?:passengers?|riders?)\\b|명)|$)",
+                    "metric": "retrieval"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "alder-ridership",
+                    "criterion": "Explain the quarterly note in English and attribute the 18 million third-quarter passengers to Alder Rail and its note. A bare figure, a different quantity or issuer, a refusal, or a paragraph of explanation in another language fails.",
+                    "metric": "task_success"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "interface_labels",
+                    "metric": "efficiency"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-UI-02",
+      "title": "Two navigation questions followed by an ordinary Source summary",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "seed": {
+        "sources": [
+          {
+            "title": "한결해운 분기 메모",
+            "origin": "https://fictional.example/hangyeol-q3",
+            "text": "가상 메모, 2026-10-08 작성: 한결해운은 2026년 3분기에 화물 1,800만 톤을 운송해 1년 전 같은 분기의 1,600만 톤보다 늘었고, 영업이익률은 12%였다. 경영진은 신규 선박 두 척을 2027년 상반기에 인도받을 예정이라고 밝혔다."
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "이어서 대화하던 곳, 자료 사이의 관계를 보는 곳, 예약한 작업을 확인하는 곳은 각각 어디야? 화면에 표시되는 이름을 그대로 써서 알려 줘.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language",
+                    "per_paragraph": true
+                  },
+                  {
+                    "assert": "visible_labels",
+                    "keys": [
+                      "bot",
+                      "map",
+                      "schedule"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "usable-directions",
+                    "criterion": "Identify each requested destination using its actual screen label and explain the mapping in the question’s language. Quoted screen labels may be foreign. A paragraph of commentary in the other language, raw tool/provider names or unrelated instructions fail.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "사이드바에서 리서치 대화를 모아 둔 곳의 제목과 연결 설정에서 시장 자료를 묶어 둔 그룹의 짧은 이름은 각각 뭐라고 표시돼?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language",
+                    "per_paragraph": true
+                  },
+                  {
+                    "assert": "visible_labels",
+                    "keys": [
+                      "research_sessions_heading",
+                      "market_data_group"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "usable-directions",
+                    "criterion": "Identify each requested destination using its actual screen label and explain the mapping in the question’s language. Quoted screen labels may be foreign. A paragraph of commentary in the other language, raw tool/provider names or unrelated instructions fail.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "제 자료에 있는 한결해운 분기 메모를 요약해 주세요.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "1,800",
+                      "1800",
+                      "18 million"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_source_span",
+                    "source_origin": "https://fictional.example/hangyeol-q3",
+                    "figure_pattern": "(?<![\\d.,−-])(?:1,?800\\s*만|18\\s+million\\b|18,000,000|18000000)\\s*(?:톤|(?:metric\\s+)?ton(?:ne)?s\\b|$)",
+                    "metric": "retrieval"
+                  }
+                ],
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "interface_labels",
+                    "metric": "efficiency"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "hangyeol-freight",
+                    "metric": "task_success",
+                    "criterion": "Summarize the Hangyeol Shipping quarterly note in Korean. Attribute the linked 18 million tonnes to freight carried in the third quarter of 2026, up from 16 million tonnes a year earlier. A different issuer, period or quantity fails."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

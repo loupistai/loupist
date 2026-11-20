@@ -1,10 +1,10 @@
 import { CustomConnections } from "../connections/custom/CustomConnections";
-import { connectionText } from "./connectionCopy";
+import { connectionText } from "@/lib/connectionCopy";
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { PageHeader } from "../ui/page-header";
-import { DatabaseIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { DatabaseIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { Input } from "@/components/ui/input";
@@ -58,8 +58,16 @@ function entrySearchText(entry: MarketplaceEntry) {
     .toLowerCase();
 }
 
+/**
+ * A plugin's group label in the interface language: the known group names are translated by
+ * `connectionGroups`; another (Asset lookup) is the English name of its one entry, which the
+ * catalog translates.
+ */
+const groupLabel = (group: { label: string }) => connectionText(group.label);
+
+/** A group of one entry named like its group needs no heading of its own. */
 const showGroupHeading = (group: { label: string; entries: MarketplaceEntry[] }) =>
-  group.entries.length > 1 || connectionText(group.entries[0]?.name ?? "") !== group.label;
+  group.entries.length > 1 || connectionText(group.entries[0]?.name ?? "") !== groupLabel(group);
 
 export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initialEntryId, onManageLoupists, onOpenModelSettings }: Props) {
   const { i18n: activeLanguage } = useTranslation("connections");
@@ -70,6 +78,17 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(initialEntryId ?? null);
+  /** Which connections the current Loupist has on, by entry id; null until read or when it cannot be. */
+  const [enabledHere, setEnabledHere] = useState<ReadonlyMap<string, boolean> | null>(null);
+  const currentLoupist = loupists.find((loupist) => loupist.id === currentLoupistId) ?? null;
+
+  const readEnabledHere = useCallback(async () => {
+    if (!currentLoupistId) return null;
+    // A page that sent the user here ("off for this Loupist") is answered on the card; without the read, cards say nothing.
+    return bridge.loupistCapabilityList(currentLoupistId)
+      .then((bindings) => new Map(bindings.map((binding) => [binding.entry_id, binding.enabled])))
+      .catch(() => null);
+  }, [bridge, currentLoupistId]);
 
   useEffect(() => {
     let active = true;
@@ -81,6 +100,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
       }).catch(() => {
         if (active && revision === requested) setError(i18n.t("connections:marketplaceView.couldNotLoadConnections"));
       });
+      void readEnabledHere().then((next) => { if (active && revision === requested) setEnabledHere(next); });
     };
     refresh();
     window.addEventListener("focus", refresh);
@@ -90,7 +110,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
       window.removeEventListener("focus", refresh);
       window.removeEventListener(CONFIG_CHANGED_EVENT, refresh);
     };
-  }, [bridge, reloadToken]);
+  }, [bridge, reloadToken, readEnabledHere]);
 
   useEffect(() => {
     if (reloadToken > 0) setSelectedEntryId(null);
@@ -137,8 +157,16 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
     : null;
 
   async function refreshMarketplace() {
-    const next = await bridge.marketplaceSnapshot();
+    const [next, here] = await Promise.all([bridge.marketplaceSnapshot(), readEnabledHere()]);
     setSnapshot(next);
+    setEnabledHere(here);
+  }
+
+  /** Turns a ready connection on for the current Loupist, from its dialog. */
+  async function enableHere(entryId: string) {
+    if (!currentLoupistId) return;
+    await bridge.loupistCapabilityEnable({ loupist_id: currentLoupistId, entry_id: entryId });
+    setEnabledHere(await readEnabledHere());
   }
 
   /** Try again: macOS may ask for the login password once more. True when the key is readable again. */
@@ -151,7 +179,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
   return (
     <section className="marketplace-page" aria-labelledby="marketplace-title">
       <div className="marketplace-shell">
-        <PageHeader className="settings-heading" titleId="marketplace-title" title={i18n.t("connections:marketplaceView.connections")}
+        <PageHeader className="settings-heading" titleId="marketplace-title" title={i18n.t("connections:marketplaceView.connections")} hideTitle
           description={i18n.t("connections:marketplaceView.newConnectionsAreEnabledForAvailableLoupistsAdjust")}
           actions={onManageLoupists ? <Button type="button" variant="outline" onClick={onManageLoupists}><SlidersHorizontalIcon />{i18n.t("connections:marketplaceView.manageLoupistAccess")}</Button> : undefined}
  />
@@ -189,6 +217,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
                 placeholder={i18n.t("connections:marketplaceView.searchConnections")}
                 onChange={(event) => setQuery(event.target.value)}
               />
+              {query ? <Button variant="ghost" size="icon-sm" aria-label={i18n.t("connections:marketplaceView.clearSearch")} onClick={() => setQuery("")}><XIcon /></Button> : null}
             </label>
             <Select
               value={freeFilter}
@@ -226,7 +255,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
               {discoveryGroups.map((group) => (
                 <section className="marketplace-group" key={group.id}>
                   {showGroupHeading(group) ? (
-                    <h3>{group.label}<span aria-hidden="true">{formatNumber(group.entries.length)}</span></h3>
+                    <h3>{groupLabel(group)}<span aria-hidden="true">{formatNumber(group.entries.length)}</span></h3>
                   ) : null}
                   <div className="marketplace-grid">
                     {group.entries.map((entry) => (
@@ -234,6 +263,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
                         key={entry.id}
                         entry={entry}
                         connector={connectorById.get(entry.id)}
+                        offFor={currentLoupist && enabledHere?.get(entry.id) === false ? currentLoupist.name : undefined}
                         headingLevel={showGroupHeading(group) ? 4 : 3}
                         onSetup={(next) => setSelectedEntryId(next.id)}
                         onUnlock={unlockEntry}
@@ -262,6 +292,11 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
         connector={
           selectedEntryId ? connectorById.get(selectedEntryId) : undefined
         }
+        here={currentLoupist && selectedEntryId && enabledHere?.has(selectedEntryId) ? {
+          loupist: currentLoupist.name,
+          enabled: enabledHere.get(selectedEntryId) === true,
+          enable: () => enableHere(selectedEntryId),
+        } : undefined}
         onClose={() => setSelectedEntryId(null)}
         onChanged={refreshMarketplace}
         onManageLoupists={onManageLoupists}

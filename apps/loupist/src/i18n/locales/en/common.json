@@ -34,5 +34,19 @@
     "year": "Year",
     "month": "Month",
     "day": "Day"
+  },
+  "market": {
+    "direction": {
+      "up": "Up",
+      "down": "Down",
+      "flat": "Unchanged"
+    },
+    "changeWithPercent": "{{change}} · {{percent}}",
+    "trend": {
+      "up": "Trend from {{first}} to {{last}}, up {{percent}}",
+      "down": "Trend from {{first}} to {{last}}, down {{percent}}",
+      "flat": "Trend from {{first}} to {{last}}, unchanged"
+    },
+    "asOf": "As of {{date}}"
   }
 }

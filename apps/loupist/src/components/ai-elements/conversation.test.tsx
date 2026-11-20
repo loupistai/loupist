@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { memo, useEffect, type ReactNode } from "react";
+import { memo, Suspense, useEffect, type ReactNode } from "react";
 import { ChatStatusPill } from "../chat/ChatStatusPill";
 import { anchorDelta, Conversation, ConversationContent, pillVisible, roomDelta, useConversationScroll } from "./conversation";
 
-let resize: () => void;
+// Every connected observer hears a resize, in the order they were connected, as the browser delivers them.
+const observers = new Set<() => void>();
+const resize = () => { for (const callback of [...observers]) callback(); };
 
 const view = { top: 0, bottom: 400, height: 400 };
 
@@ -11,10 +13,11 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance", "setTimeout", "clearTimeout"] });
   // Reduced motion makes every glide land in one step, so positions can be read at once.
   vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("reduce"), media: query, addEventListener() {}, removeEventListener() {} }));
+  observers.clear();
   vi.stubGlobal("ResizeObserver", class {
-    constructor(callback: () => void) { resize = callback; }
-    observe() {}
-    disconnect() {}
+    constructor(private readonly callback: () => void) {}
+    observe() { observers.add(this.callback); }
+    disconnect() { observers.delete(this.callback); }
   });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
@@ -50,12 +53,13 @@ function Blocks({ onReady }: { onReady: (append: (kind: "prose" | "card") => voi
 
 function thread({ running = false, wholePixels = false }: { running?: boolean; wholePixels?: boolean } = {}) {
   const actions = { append: (_kind: "prose" | "card") => {}, hold: () => {}, jump: () => {} };
-  const content = (prompt: string, live = running, extra?: ReactNode) => <Conversation aria-label="Conversation" scrollResetKey={prompt} running={live} footer={<ChatStatusPill />}>
+  // The app opens its lazy pages inside one Suspense boundary that also holds the thread.
+  const content = (prompt: string, live = running, extra?: ReactNode) => <Suspense fallback={null}><Conversation aria-label="Conversation" scrollResetKey={prompt} running={live} footer={<ChatStatusPill />}>
     <ConversationContent>
       <section data-turn="" data-turn-latest=""><article className="message user">Question</article><div id="block" />{extra}</section>
       <Blocks onReady={(append, hold, jump) => Object.assign(actions, { append, hold, jump })} />
     </ConversationContent>
-  </Conversation>;
+  </Conversation></Suspense>;
   let height = 1000;
   let viewport = 400;
   let top = 0;
@@ -63,20 +67,22 @@ function thread({ running = false, wholePixels = false }: { running?: boolean; w
   let edgeAt = 0;
   let questionAt = 900;
   let blockAt = 950;
+  // A full-page view covers the thread (`display: none`): no box, every measure zero, writes ignored.
+  let hidden = false;
   const define = (element: Element) => {
     Object.defineProperties(element, {
-      scrollHeight: { configurable: true, get: () => height },
-      clientHeight: { configurable: true, get: () => viewport },
-      scrollTop: { configurable: true, get: () => top, // WKWebView keeps scrollTop in whole pixels: a smaller step is dropped.
-      set: (value) => { top = Math.max(0, Math.min(wholePixels ? Math.floor(value) : value, height - viewport)); } },
-      getBoundingClientRect: { configurable: true, value: () => ({ top: edgeAt, bottom: edgeAt + viewport, height: viewport, left: 0, right: 600, width: 600 }) },
+      scrollHeight: { configurable: true, get: () => hidden ? 0 : height },
+      clientHeight: { configurable: true, get: () => hidden ? 0 : viewport },
+      scrollTop: { configurable: true, get: () => hidden ? 0 : top, // WKWebView keeps scrollTop in whole pixels: a smaller step is dropped.
+      set: (value) => { if (!hidden) top = Math.max(0, Math.min(wholePixels ? Math.floor(value) : value, height - viewport)); } },
     });
   };
   // jsdom has no layout: give the scroller, the question and the appended block their geometry before the first layout effect.
   const original = HTMLElement.prototype.getBoundingClientRect;
-  Object.defineProperty(HTMLElement.prototype, "offsetTop", { configurable: true, get() { return (this as HTMLElement).id === "block" ? blockAt : (this as HTMLElement).classList.contains("user") ? questionAt : 0; } });
-  Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get() { return (this as HTMLElement).id === "block" ? 26 : 40; } });
+  Object.defineProperty(HTMLElement.prototype, "offsetTop", { configurable: true, get() { return hidden ? 0 : (this as HTMLElement).id === "block" ? blockAt : (this as HTMLElement).classList.contains("user") ? questionAt : 0; } });
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get() { return hidden ? 0 : (this as HTMLElement).id === "block" ? 26 : 40; } });
   HTMLElement.prototype.getBoundingClientRect = function () {
+    if (hidden) return original.call(this);
     if ((this as HTMLElement).getAttribute("role") === "log") return { top: edgeAt, bottom: edgeAt + viewport, height: viewport, left: 0, right: 600, width: 600, x: 0, y: 0, toJSON() {} } as DOMRect;
     if ((this as HTMLElement).classList.contains("turn-footer")) return { top: height - top - 30, bottom: height - top, height: 30, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} } as DOMRect;
     return original.call(this);
@@ -87,8 +93,10 @@ function thread({ running = false, wholePixels = false }: { running?: boolean; w
   return {
     element,
     actions,
-    sendPrompt: () => { questionAt = 1000; height = 1400; result.rerender(content("second", true)); },
-    rerender: (live: boolean, extra?: ReactNode) => result.rerender(content("second", live, extra)),
+    sendPrompt: (prompt = "second", at = 1000, total = 1400) => { questionAt = at; height = total; result.rerender(content(prompt, true)); },
+    rerender: (live: boolean, extra?: ReactNode, prompt = "second") => result.rerender(content(prompt, live, extra)),
+    /** A full-page Map or Lens covers the thread, or uncovers it; WebKit may drop the position meanwhile. */
+    hide: (on: boolean) => { hidden = on; if (!on) top = 0; act(() => resize()); },
     grow: (next: number) => { height = next; act(() => resize()); },
     moveBlock: (next: number) => { blockAt = next; },
     /** Context above the thread takes `rows` px: the scroller's top edge moves down and its viewport shrinks by as much. */
@@ -238,6 +246,60 @@ describe("anchored reading", () => {
       t.contextAbove(45);
       act(() => resize());
       expect(t.element.scrollTop).toBe(1000 - 355);
+    } finally { t.restore(); }
+  });
+
+  /** A sent question at the top under a 56 px header, as the chat sits under its sub-header: the page is at 984. */
+  const readUnderHeader = () => {
+    const t = thread();
+    t.contextAbove(56);
+    act(() => resize());
+    t.sendPrompt();
+    expect(t.element.scrollTop).toBe(984);
+    return t;
+  };
+
+  it("keeps the reader's place and adds no room while a full-page Map or Lens hides the thread", () => {
+    const t = readUnderHeader();
+    try {
+      const turn = t.element.querySelector<HTMLElement>("[data-turn]")!;
+      t.hide(true);
+      // The reply commits while the Map is open.
+      t.rerender(false);
+      expect(turn.style.minHeight).toBe("");
+      expect(t.element.style.getPropertyValue("--turn-viewport")).not.toBe("0px");
+      t.hide(false);
+      expect(t.element.scrollTop).toBe(984);
+      expect(turn.style.minHeight).toBe("");
+      // The next question still glides to 16 px under the top.
+      t.sendPrompt("third", 1500, 2400);
+      expect(t.element.scrollTop).toBe(1500 - 16);
+    } finally { t.restore(); }
+  });
+
+  it("puts a question sent while the thread was hidden at the top once it shows", () => {
+    const t = readUnderHeader();
+    try {
+      t.hide(true);
+      t.sendPrompt("third", 1500, 2400);
+      t.hide(false);
+      expect(t.element.scrollTop).toBe(1500 - 16);
+    } finally { t.restore(); }
+  });
+
+  it("does not reopen the thread at its end when a lazy page's Suspense fallback shows it again", async () => {
+    const t = readUnderHeader();
+    try {
+      t.hide(true);
+      // Opening the Map loads its page: the boundary shows its fallback, then the thread again, still hidden behind the Map.
+      let loaded = false;
+      let load!: () => void;
+      const page = new Promise<void>((resolve) => { load = resolve; });
+      function LazyPage() { if (!loaded) throw page; return null; }
+      t.rerender(false, <LazyPage />);
+      await act(async () => { loaded = true; load(); await page; });
+      t.hide(false);
+      expect(t.element.scrollTop).toBe(984);
     } finally { t.restore(); }
   });
 

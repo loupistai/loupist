@@ -28,7 +28,11 @@ mod artifact_history;
 pub(crate) mod deletion;
 mod folder;
 mod host;
+pub(crate) mod legacy_holdings;
 pub(crate) mod provider_status;
+mod root_identity;
+#[cfg(all(test, unix))]
+pub(crate) use root_identity::{with_after_admission, with_before_commit};
 mod schema;
 mod upgrade;
 pub mod user_context;
@@ -111,10 +115,16 @@ pub(crate) fn collect_readable_rows<T>(
 /// Ids the `app_settings` table holds. Rust owns this list (store schema 5
 /// dropped the SQL whitelist), so a new setting needs no schema step.
 pub(crate) fn is_app_setting_id(id: &str) -> bool {
-    matches!(id, "model" | "model_visibility" | "update")
-        || id
-            .strip_prefix("world_processing:")
-            .is_some_and(|loupist| !loupist.is_empty())
+    matches!(
+        id,
+        "model"
+            | "model_visibility"
+            | "model_discovery_versions"
+            | "update"
+            | "legacy_holdings_export"
+    ) || id
+        .strip_prefix("world_processing:")
+        .is_some_and(|loupist| !loupist.is_empty())
 }
 
 fn put_app_setting(connection: &Connection, id: &str, data_json: &str) -> StoreResult<()> {
@@ -140,7 +150,6 @@ pub enum DeletionJournalRecord {
 
 pub struct SqliteStore {
     connection: Mutex<Connection>,
-    user_context_previews: Mutex<HashMap<String, user_context::PendingPreview>>,
     database_path: Option<PathBuf>,
     folder_catalog: bool,
     folders: Mutex<HashMap<String, folder::FolderConnection>>,
@@ -484,6 +493,33 @@ impl SqliteStore {
         load_json_by_id(&connection, "app_settings", "model")
     }
 
+    pub(crate) fn model_discovery_versions(
+        &self,
+    ) -> StoreResult<std::collections::BTreeMap<String, String>> {
+        let connection = self.lock()?;
+        Ok(
+            load_json_by_id(&connection, "app_settings", "model_discovery_versions")?
+                .unwrap_or_default(),
+        )
+    }
+
+    pub(crate) fn record_model_discovery_version(
+        &self,
+        provider: &str,
+        version: &str,
+    ) -> StoreResult<()> {
+        let connection = self.lock()?;
+        let mut versions: std::collections::BTreeMap<String, String> =
+            load_json_by_id(&connection, "app_settings", "model_discovery_versions")?
+                .unwrap_or_default();
+        versions.insert(provider.to_owned(), version.to_owned());
+        put_app_setting(
+            &connection,
+            "model_discovery_versions",
+            &to_json(&versions)?,
+        )
+    }
+
     pub fn save_update_schedule(&self, schedule: &PersistedUpdateSchedule) -> StoreResult<()> {
         schedule.validate()?;
         let connection = self.lock()?;
@@ -550,6 +586,7 @@ impl SqliteStore {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn save_loupist(&self, profile: &LoupistProfile) -> StoreResult<()> {
         profile
             .validate()
@@ -682,17 +719,31 @@ impl SqliteStore {
     }
 
     pub fn get_loupist(&self, id: &str) -> StoreResult<Option<LoupistProfile>> {
+        let profile = self.get_loupist_recorded(id)?;
+        Ok(profile.map(|profile| self.recover_remounted_profile(profile)))
+    }
+
+    /// Read the saved binding without remount recovery, for manual reconnect's
+    /// comparison against the authority that was stored before user intent.
+    pub(crate) fn get_loupist_recorded(&self, id: &str) -> StoreResult<Option<LoupistProfile>> {
         let connection = self.lock()?;
         load_json_by_id(&connection, "loupist_profiles", id)
     }
 
     pub fn list_loupists(&self) -> StoreResult<Vec<LoupistProfile>> {
-        let connection = self.lock()?;
-        let mut statement = connection.prepare(
-            "SELECT data_json FROM loupist_profiles ORDER BY updated_at_ms DESC, id ASC",
-        )?;
-        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
-        rows.map(|row| from_json(&row?)).collect()
+        let profiles: Vec<LoupistProfile> = {
+            let connection = self.lock()?;
+            let mut statement = connection.prepare(
+                "SELECT data_json FROM loupist_profiles ORDER BY updated_at_ms DESC, id ASC",
+            )?;
+            let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+            rows.map(|row| from_json(&row?))
+                .collect::<StoreResult<_>>()?
+        };
+        Ok(profiles
+            .into_iter()
+            .map(|profile| self.recover_remounted_profile(profile))
+            .collect())
     }
 
     pub fn save_loupist_capability(&self, binding: &LoupistCapabilityBinding) -> StoreResult<()> {
@@ -721,6 +772,20 @@ impl SqliteStore {
         if changed != 1 {
             return Err(StoreError::Conflict("Loupist capability update"));
         }
+        Ok(())
+    }
+
+    /// Removes a saved binding, as in a profile from before the entry existed.
+    #[cfg(test)]
+    pub(crate) fn forget_loupist_capability(
+        &self,
+        loupist_id: &str,
+        entry_id: &str,
+    ) -> StoreResult<()> {
+        self.lock_loupist(loupist_id)?.execute(
+            "DELETE FROM loupist_capability_bindings WHERE loupist_id = ?1 AND entry_id = ?2",
+            params![loupist_id, entry_id],
+        )?;
         Ok(())
     }
 
@@ -861,44 +926,6 @@ impl SqliteStore {
         rows.collect::<Result<_, _>>().map_err(Into::into)
     }
 
-    /// Chats updated since `since_ms` whose last message is a finished answer the
-    /// model wrote (no refusals, no host-posted receipt, delivery or alert):
-    /// `(chat id, title, updated at, answer text)`. Reads only the last message.
-    pub fn chats_ending_in_answer(
-        &self,
-        loupist_id: &str,
-        since_ms: i64,
-    ) -> StoreResult<Vec<(String, String, i64, String)>> {
-        let connection = self.lock_loupist(loupist_id)?;
-        // The last message is read once, then its few fields from that small object.
-        let mut statement = connection.prepare(
-            "SELECT id, title, updated_at_ms, json_extract(last, '$.content')
-             FROM (SELECT id, json_extract(data_json, '$.title') AS title, updated_at_ms,
-                          json_extract(data_json, '$.messages[#-1]') AS last
-                   FROM chat_sessions
-                   WHERE loupist_id = ?1 AND updated_at_ms >= ?2)
-             WHERE json_extract(last, '$.role') = 'assistant'
-               AND json_extract(last, '$.status') = 'complete'
-               AND json_extract(last, '$.content') IS NOT NULL
-               AND json_extract(last, '$.toolRefusals') IS NULL
-               AND json_extract(last, '$.hostComposed') IS NULL
-               AND json_extract(last, '$.delivery') IS NULL
-               AND json_extract(last, '$.alert') IS NULL
-               AND json_extract(last, '$.watch') IS NULL
-               AND json_extract(last, '$.earnings') IS NULL
-             ORDER BY updated_at_ms DESC, id ASC LIMIT 50",
-        )?;
-        let rows = statement.query_map(rusqlite::params![loupist_id, since_ms], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                row.get::<_, i64>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        })?;
-        rows.collect::<Result<_, _>>().map_err(Into::into)
-    }
-
     pub fn get_chat_artifact(&self, id: &str) -> StoreResult<Option<ChatArtifact>> {
         let connection = self.lock_record("chat_artifacts", id)?;
         load_json_by_id(&connection, "chat_artifacts", id)
@@ -937,45 +964,6 @@ impl SqliteStore {
             Ok((from_json(&artifact)?, title))
         })
         .collect()
-    }
-
-    pub fn get_chat_artifact_current(
-        &self,
-        artifact_id: &str,
-    ) -> StoreResult<Option<ChatArtifactRevision>> {
-        let connection = self.lock_record("chat_artifacts", artifact_id)?;
-        connection
-            .query_row(
-                "SELECT current_content_json FROM chat_artifacts WHERE id = ?1",
-                [artifact_id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?
-            .map(|data| from_json(&data))
-            .transpose()
-    }
-
-    pub fn get_chart_dataset(&self, id: &str) -> StoreResult<Option<ChartDataset>> {
-        let connection = self.lock_record("chart_artifact_datasets", id)?;
-        let stored = connection
-            .query_row(
-                "SELECT digest, data_json FROM chart_artifact_datasets WHERE id = ?1",
-                [id],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-            )
-            .optional()?;
-        stored
-            .map(|(stored_digest, data)| {
-                let dataset: ChartDataset = from_json(&data)?;
-                dataset
-                    .validate()
-                    .map_err(|error| StoreError::Invalid(error.to_string()))?;
-                if dataset.digest != stored_digest {
-                    return Err(StoreError::Invalid("chart dataset digest binding".into()));
-                }
-                Ok(dataset)
-            })
-            .transpose()
     }
 }
 

@@ -8,12 +8,13 @@ import type { ChatActivityDetail } from "./chat/activity";
 import type { ChatArtifact, ChatArtifactVersion } from "./chat/artifacts";
 import type { ModelVisibilityUpdateRequest } from "./commands";
 import type { ApprovalDecideRequest } from "./commands/approvals";
-import type { AssetClassSetRequest, AssetDeltaRequest, AssetPageGetRequest, AssetPageSeenRequest, AssetRefreshRequest, AssetVerdictUndoRequest, UpcomingEventsRequest } from "./commands/assets";
+import type { AssetEntitySetRequest, AssetVerdictUndoRequest } from "./commands/assets";
+import type { AssetFollowNameRequest, AssetIdRequest, AssetLookupCandidate, AssetLookupRequest, AssetOpenRequest, AssetPricePoint, AssetPriceSeriesRequest, AssetRow, AssetsListRequest, StoredAssetQuote, ThinAssetPageView } from "./commands/assets/wire";
 import type { AttentionItem, NotifyRequest } from "./commands/attention";
 import type { ChatRetryReceipt, ChatRetryRequest } from "./commands/chat_runtime";
 import type { PickFileRequest } from "./commands/dialog";
-import type { EarningsEventsListRequest, EarningsPrepareRequest, EarningsSnapshotGetRequest } from "./commands/earnings";
 import type { ExportRequest } from "./commands/export_file";
+import type { FxDisplayRequest } from "./commands/fx_display";
 import type { ResearchHandoffReceipt, ResearchHandoffRequest } from "./commands/handoff";
 import type { JournalSourceReadDto, KnowledgeCatalogDto, KnowledgeCatalogRequest, KnowledgeConnectionRequest, KnowledgeGraphJobRequest, KnowledgeGraphLoupistRequest, KnowledgeGraphPauseRequest, KnowledgeGraphRetrySourceRequest, KnowledgeGraphSettingsRequest, KnowledgeJournalReadRequest, KnowledgeJournalSourceReadRequest, KnowledgeLensPagesForNodeRequest, KnowledgeLensReadRequest, KnowledgeLensSearchRequest, KnowledgeResearchPageDto, KnowledgeResearchSearchRequest, KnowledgeSourceReadRequest, KnowledgeSourceRetainRequest, LensSearchHitDto, MemoryLearnedRequest, MemoryOpUndoRequest, MemorySectionForgetRequest, SourceDetailDto, WorldQueryDto } from "./commands/knowledge";
 import type { FollowedStatusRequest } from "./commands/knowledge/followed";
@@ -26,23 +27,20 @@ import type { PrincipleArchiveRequest, PrincipleCreateRequest, PrincipleListRequ
 import type { SourceSelectionPin, SourceSelectionRequest } from "./commands/knowledge/source_selection";
 import type { WorkingNoteReadRequest, WorkingNotesPage, WorkingNotesRequest } from "./commands/knowledge/working_notes";
 import type { RemoveRequest, UndoRequest, WorldSchemaLoupistRequest } from "./commands/knowledge/world_schema";
+import type { LegacyHoldingsStatus } from "./commands/legacy_holdings";
 import type { WorldKeepAwakeRequest } from "./commands/power";
 import type { QuestionAnswerRequest } from "./commands/questions";
 import type { RevisionRequest, RunRequest, ScheduledTasksLoupistRequest, StatusRequest, TaskRequest } from "./commands/scheduled_tasks";
 import type { SkillCreateRequest, SkillDeleteRequest, SkillImportRequest, SkillReadRequest, SkillSaveRequest } from "./commands/skills";
-import type { ChatArtifactListRequest, ChatArtifactReadRequest, ChatArtifactRestoreRequest, ChatArtifactViewDto, ChatAttachmentReadDto, ChatAttachmentReadRequest, ChatBranchRequest, ChatControlReceiptDto, ChatControlRequestDto, ChatCreateRequest, ChatDeleteRequest, ChatFeedbackRequest, ChatMemorySetAsideRequest, ChatRenameRequest, ChatSendRequest, ChatThreadDto, ChatVersionSwitchRequest, LoupistArtifactItemDto, LoupistArtifactListRequest, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest, LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistSummary, LoupistWorkspace, RunStarted } from "./commands/types";
-import type { CsvCommitRequest, CsvImportRequest, MapColumnsRequest, WalletAddRequest, WalletIdRequest, WalletRefreshRequest, WalletRenameRequest, WatchlistAddRequest, WatchlistRemoveRequest } from "./commands/user_context";
-import type { WatchCheckNowRequest, WatchCheckResult, WatchDefaultsApplyRequest, WatchDefaultsApplyResult, WatchEventsListRequest, WatchEventsSeenRequest, WatchPauseSetRequest, WatchSettingSetRequest, WatchSettingsListRequest, WatchSettingsView } from "./commands/watch";
+import type { ChatArtifactListRequest, ChatArtifactReadRequest, ChatArtifactRestoreRequest, ChatArtifactViewDto, ChatAttachmentReadDto, ChatAttachmentReadRequest, ChatBranchRequest, ChatControlReceiptDto, ChatControlRequestDto, ChatCreateRequest, ChatDeleteRequest, ChatFeedbackRequest, ChatMemorySetAsideRequest, ChatRenameRequest, ChatSendRequest, ChatThreadDto, ChatVersionSwitchRequest, ChatWatchRequest, ChatWatchSnapshot, LoupistArtifactItemDto, LoupistArtifactListRequest, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest, LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistSummary, LoupistWorkspace, RunStarted } from "./commands/types";
 import type { ChatActivityRequest, WorkspacePathRequest } from "./commands/workspace";
 import type { DraftAttachment, DraftIdentity, StoredChatDraft, WorkspaceUiState, WorkspaceUiWriteRequest } from "./commands/workspace_ui";
 import type { AddCommandRequest, AddJsonRequest, AddUrlRequest, ApproveRequest, AuthorizeRequest, ConfirmRequest, EnabledRequest, IdentityRequest, ListRequest, MemoryRequest } from "./custom_connections/commands";
 import type { CustomConnection } from "./custom_connections/service";
 import type { ChatFeedback } from "./domain/chat";
 import type { JsonValue } from "./external";
+import type { FxDisplay } from "./finance_data/fx";
 import type { WorkspaceDirectory, WorkspaceFile } from "./fs/workspace_files";
-import type { AssetDelta, AssetPageView } from "./knowledge/assets";
-import type { UpcomingEvent } from "./knowledge/assets/upcoming";
-import type { EventSummary, SnapshotView } from "./knowledge/earnings";
 import type { FollowedStatus } from "./knowledge/followed";
 import type { GraphJobView, GraphProcessingView } from "./knowledge/graph_jobs";
 import type { GrowthEventsPage, GrowthEventsQuery } from "./knowledge/growth";
@@ -53,7 +51,6 @@ import type { MemoryControls } from "./knowledge/memory_controls";
 import type { ResetCounts } from "./knowledge/memory_reset";
 import type { JournalRecord, RetainedSource, WorkingNote, WorldGraphQuery } from "./knowledge/model";
 import type { Principle } from "./knowledge/principles";
-import type { WatchEventView } from "./knowledge/watch";
 import type { ConnectionView } from "./knowledge/world_followups";
 import type { WorldSchemaView } from "./knowledge/world_schema";
 import type { LoupistCapabilityBindingDto, LoupistCapabilityRequest, MarketplaceConnectorConfigureRequest, MarketplaceConnectorStatusDto, MarketplaceCredentialRequest, MarketplaceCredentialSaveRequest, MarketplaceCredentialStatusDto, MarketplaceSnapshotDto } from "./marketplace/catalog";
@@ -82,9 +79,6 @@ import type { DeepLinkEvent } from "./sharing/deep_link";
 import type { ItemView, OpenResult } from "./sharing/import";
 import type { SkillCatalog, SkillDocument } from "./skills";
 import type { AppSettings } from "./store/app_settings";
-import type { HoldingsCsvPreview, HoldingsOverview, HoldingsSnapshot, WatchlistEntry } from "./store/user_context";
-import type { CryptoFilePreview } from "./store/user_context/crypto_file";
-import type { WalletView } from "./store/user_context/wallets";
 import type { UpdateInstallRequest, UpdateInstallResult, UpdateStateDto } from "./updater";
 import type { BrowserTabBoundsRequest, BrowserTabHistoryRequest, BrowserTabNavigateRequest, BrowserTabOpenRequest, BrowserTabRequest, BrowserTabState } from "./web/browser";
 
@@ -107,31 +101,34 @@ export type BridgeCommands = {
   notice_acknowledge: { request: never, response: AppSettings },
   notice_settings_get: { request: never, response: AppSettings },
   chat_approval_decide: { request: ApprovalDecideRequest, response: null },
-  asset_class_set: { request: AssetClassSetRequest, response: AssetPageView },
-  asset_delta: { request: AssetDeltaRequest, response: Array<AssetDelta> },
-  asset_page_get: { request: AssetPageGetRequest, response: AssetPageView },
-  asset_page_seen: { request: AssetPageSeenRequest, response: null },
-  asset_refresh: { request: AssetRefreshRequest, response: AssetPageView },
-  asset_verdict_undo: { request: AssetVerdictUndoRequest, response: AssetPageView },
-  upcoming_events: { request: UpcomingEventsRequest, response: Array<UpcomingEvent> },
+  assets_list: { request: AssetsListRequest, response: Array<AssetRow> },
+  asset_follow_name: { request: AssetFollowNameRequest, response: AssetRow },
+  asset_unfollow: { request: AssetIdRequest, response: null },
+  asset_lookup: { request: AssetLookupRequest, response: Array<AssetLookupCandidate> },
+  asset_price_check: { request: AssetIdRequest, response: ThinAssetPageView },
+  asset_follow: { request: AssetIdRequest, response: AssetRow },
+  asset_entity_set: { request: AssetEntitySetRequest, response: ThinAssetPageView },
+  asset_page_get: { request: AssetOpenRequest, response: ThinAssetPageView },
+  asset_page_seen: { request: AssetIdRequest, response: null },
+  watchlist_quotes: { request: AssetsListRequest, response: Array<StoredAssetQuote> },
+  asset_price_series: { request: AssetPriceSeriesRequest, response: Array<AssetPricePoint> },
+  asset_verdict_undo: { request: AssetVerdictUndoRequest, response: ThinAssetPageView },
   attention_list: { request: never, response: Array<AttentionItem> },
   attention_notify: { request: NotifyRequest, response: boolean },
   chat_abort: { request: never, response: null },
   chat_retry_last: { request: ChatRetryRequest, response: ChatRetryReceipt },
   chat_send: { request: ChatSendRequest, response: RunStarted },
   chat_steer: { request: ChatControlRequestDto, response: ChatControlReceiptDto },
+  chat_unwatch: { request: ChatWatchRequest, response: null },
+  chat_watch: { request: ChatWatchRequest, response: ChatWatchSnapshot | null },
   config_read: { request: ConfigReadRequest, response: ConfigSnapshot },
   config_reveal: { request: ConfigReadRequest, response: null },
   config_update: { request: ConfigUpdateRequest, response: ConfigSnapshot },
   pick_file: { request: PickFileRequest, response: string | null },
-  earnings_events_list: { request: EarningsEventsListRequest, response: Array<EventSummary> },
-  earnings_prepare: { request: EarningsPrepareRequest, response: SnapshotView },
-  earnings_snapshot_get: { request: EarningsSnapshotGetRequest, response: SnapshotView | null },
   export_save: { request: ExportRequest, response: string | null },
   research_handoff_start: { request: ResearchHandoffRequest, response: ResearchHandoffReceipt },
   knowledge_catalog: { request: KnowledgeCatalogRequest, response: KnowledgeCatalogDto },
   knowledge_connection_dismiss: { request: KnowledgeConnectionRequest, response: ConnectionView },
-  knowledge_connection_open: { request: KnowledgeConnectionRequest, response: ConnectionView },
   knowledge_graph_job: { request: KnowledgeGraphJobRequest, response: GraphJobView },
   knowledge_graph_pause: { request: KnowledgeGraphPauseRequest, response: GraphProcessingView },
   knowledge_graph_retry_source: {
@@ -244,27 +241,12 @@ export type BridgeCommands = {
   skills_read: { request: SkillReadRequest, response: SkillDocument },
   skills_reveal: { request: SkillReadRequest, response: null },
   skills_save: { request: SkillSaveRequest, response: SkillCatalog },
-  holdings_commit_csv: { request: CsvCommitRequest, response: HoldingsSnapshot },
-  holdings_import_crypto_file: { request: CsvImportRequest, response: CryptoFilePreview },
-  holdings_import_csv: { request: CsvImportRequest, response: HoldingsCsvPreview },
-  holdings_import_kis: { request: never, response: HoldingsSnapshot },
-  holdings_map_columns: { request: MapColumnsRequest, response: CryptoFilePreview },
-  holdings_summary: { request: never, response: HoldingsOverview },
-  wallet_add: { request: WalletAddRequest, response: Array<WalletView> },
-  wallet_refresh: { request: WalletRefreshRequest | null, response: Array<WalletView> },
-  wallet_remove: { request: WalletIdRequest, response: null },
-  wallet_rename: { request: WalletRenameRequest, response: WalletView },
-  wallets_list: { request: never, response: Array<WalletView> },
-  watchlist_add: { request: WatchlistAddRequest, response: WatchlistEntry },
-  watchlist_list: { request: never, response: Array<WatchlistEntry> },
-  watchlist_remove: { request: WatchlistRemoveRequest, response: null },
-  watch_defaults_apply: { request: WatchDefaultsApplyRequest, response: WatchDefaultsApplyResult },
-  watch_check_now: { request: WatchCheckNowRequest, response: WatchCheckResult },
-  watch_events_list: { request: WatchEventsListRequest, response: Array<WatchEventView> },
-  watch_events_seen: { request: WatchEventsSeenRequest, response: null },
-  watch_pause_set: { request: WatchPauseSetRequest, response: WatchSettingsView },
-  watch_setting_set: { request: WatchSettingSetRequest, response: WatchSettingsView },
-  watch_settings_list: { request: WatchSettingsListRequest, response: WatchSettingsView },
+  fx_display: { request: FxDisplayRequest, response: FxDisplay },
+  legacy_holdings_status: { request: never, response: LegacyHoldingsStatus },
+  legacy_holdings_retry: { request: never, response: LegacyHoldingsStatus },
+  legacy_holdings_reveal: { request: never, response: null },
+  legacy_holdings_save_copy: { request: never, response: boolean },
+  legacy_holdings_dismiss: { request: never, response: LegacyHoldingsStatus },
   chat_activity_read: { request: ChatActivityRequest, response: ChatActivityDetail },
   workspace_list: { request: WorkspacePathRequest, response: WorkspaceDirectory },
   workspace_read: { request: WorkspacePathRequest, response: WorkspaceFile },

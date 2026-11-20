@@ -572,6 +572,12 @@ async fn restricted_sources_drop_relationships_with_counts_but_public_and_user_a
         "user_file",
         "user"
     )));
+    // Material the user pasted is someone else's text of unverified origin.
+    assert!(export::source_is_private(&source(
+        "user",
+        "user_provided",
+        "user"
+    )));
     assert!(!export::source_is_private(&source(
         "native-web:web_fetch",
         "web_page",

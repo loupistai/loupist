@@ -3,7 +3,7 @@ import { MockLoupistBridge } from "../bridge/mockBridge";
 import { useConfiguration } from "../app/useConfiguration";
 import { AppearanceSettings } from "../components/settings/AppearanceSettings";
 import i18n, { resources, useTranslation } from "./index";
-import { resolveLanguage, useLanguage } from "./useLanguage";
+import { autoPriceLocale, resolveLanguage, resolvePriceColors, useLanguage } from "./useLanguage";
 import { formatTime } from "./format";
 
 afterEach(async () => { cleanup(); await i18n.changeLanguage("en"); });
@@ -34,6 +34,56 @@ it("switches subscribed UI and document language immediately after saving, and p
   await bridge.configUpdate({ scope: snapshot.scope, expectedRevision: snapshot.revision, set: { appearance: { language: "en" } }, unset: [] });
   act(() => window.dispatchEvent(new Event("focus")));
   await waitFor(() => expect(document.documentElement.lang).toBe("en"));
+});
+
+it("colours prices by the stored choice, and Automatic by the interface language", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const hook = renderHook(() => {
+    const config = useConfiguration(bridge, { kind: "global" });
+    return { config, language: useLanguage(config) };
+  });
+  await waitFor(() => expect(hook.result.current.config.snapshot?.effective.appearance.price_colors).toBe("auto"));
+  await act(() => hook.result.current.language.setPreference("ko"));
+  await waitFor(() => expect(document.documentElement.dataset.priceColors).toBe("red-up"));
+  await act(() => hook.result.current.config.update({ appearance: { price_colors: "green-up" } }));
+  await waitFor(() => expect(document.documentElement.dataset.priceColors).toBe("green-up"));
+  hook.unmount();
+  // The choice is stored by the host: a new mount reads it back once the settings load,
+  // even when the language says otherwise (English with red-up).
+  const snapshot = await bridge.configRead({ scope: { kind: "global" } });
+  await bridge.configUpdate({ scope: snapshot.scope, expectedRevision: snapshot.revision, set: { appearance: { language: "en", price_colors: "red-up" } }, unset: [] });
+  const again = renderHook(() => {
+    const config = useConfiguration(bridge, { kind: "global" });
+    return { config, language: useLanguage(config) };
+  });
+  await waitFor(() => expect(again.result.current.config.snapshot?.effective.appearance.price_colors).toBe("red-up"));
+  await waitFor(() => expect(document.documentElement.lang).toBe("en"));
+  expect(document.documentElement.dataset.priceColors).toBe("red-up");
+});
+
+it("resolves Automatic price colours from the locale and keeps an explicit choice", () => {
+  expect(resolvePriceColors("auto", "ko-KR")).toBe("red-up");
+  expect(resolvePriceColors("auto", "ja")).toBe("red-up");
+  expect(resolvePriceColors("auto", "zh-Hant-TW")).toBe("red-up");
+  expect(resolvePriceColors("auto", "en-US")).toBe("green-up");
+  expect(resolvePriceColors("auto", "de-DE")).toBe("green-up");
+  expect(resolvePriceColors("green-up", "ko")).toBe("green-up");
+  expect(resolvePriceColors("red-up", "en")).toBe("red-up");
+  // A Japanese Mac in English still follows the system's convention.
+  expect(autoPriceLocale("system", ["ja-JP", "en-US"], "en")).toBe("ja-JP");
+  expect(autoPriceLocale("en", ["ja-JP"], "en")).toBe("en");
+});
+
+it("offers the price colour choices in Appearance, each sampled in its own colours", () => {
+  const change = vi.fn();
+  render(<AppearanceSettings theme="system" onThemeChange={vi.fn()} language="en" onLanguageChange={vi.fn()} priceColors="auto" onPriceColorsChange={change} />);
+  const group = screen.getByRole("group", { name: resources.en.settings.appearance.priceColors.label });
+  expect(within(group).getByRole("button", { name: new RegExp(resources.en.settings.appearance.priceColors.auto) })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(within(group).getByRole("button", { name: resources.en.settings.appearance.priceColors.redUp }));
+  expect(change).toHaveBeenCalledWith("red-up");
+  expect(group.querySelector('[data-price-choice="red-up"] [data-price-preview="red-up"]')).not.toBeNull();
+  // Automatic samples what it resolves to for English.
+  expect(group.querySelector('[data-price-choice="auto"] [data-price-preview="green-up"]')).not.toBeNull();
 });
 
 it("pseudo-localizes copy while preserving interpolation", async () => {

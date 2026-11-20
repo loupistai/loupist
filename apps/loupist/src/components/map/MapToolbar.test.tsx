@@ -30,7 +30,7 @@ it("folds Scope into the Around menu, which then reads the focal name, when Libr
   try {
     const user = userEvent.setup();
     const onScope = vi.fn();
-    const focal = { id: "acme", label: "Acme", kind: "entity" as const, degree: 1, watched: false, held: false };
+    const focal = { id: "acme", label: "Acme", kind: "entity" as const, degree: 1, watched: false };
     render(<MapToolbar nodes={[]} query="" onQuery={noop} filters={defaultFilters()} onFilters={noop} onSelect={noop} list={false} onList={noop}
       lenses={[]} onOverlay={noop} libraryOpen={false} onLibrary={noop}
       local={{ focal, followed: [], recent: [], onFocal: noop, onPickOnMap: noop, scope: "1", onScope }} />);
@@ -45,4 +45,30 @@ it("folds Scope into the Around menu, which then reads the focal name, when Libr
     await user.click(within(menuScope).getByRole("button", { name: "Links of links" }));
     expect(onScope).toHaveBeenCalledWith("2");
   } finally { width.mockRestore(); rect.mockRestore(); }
+});
+
+it("lets Escape through from search unless it is closing the result list", async () => {
+  const user = userEvent.setup();
+  const outside = vi.fn();
+  const node = { id: "apple", label: "Apple", kind: "entity" as const, degree: 1, watched: false };
+  const toolbar = (query: string) => <div onKeyDown={event => { if (event.key === "Escape") outside(); }}>
+    <MapToolbar nodes={[node]} query={query} onQuery={noop} filters={defaultFilters()} onFilters={noop} onSelect={noop} list={false} onList={noop} lenses={[]} onOverlay={noop} libraryOpen={false} onLibrary={noop} />
+  </div>;
+  const view = render(toolbar(""));
+  await user.click(screen.getByRole("combobox"));
+  await user.keyboard("{Escape}");
+  expect(outside).toHaveBeenCalledOnce();
+  view.rerender(toolbar("App"));
+  await user.click(screen.getByRole("combobox"));
+  expect(screen.getByRole("listbox")).toBeVisible();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(outside).toHaveBeenCalledOnce();
+});
+
+it("keeps the List view item's name and says it is on with its checked state", async () => {
+  const user = userEvent.setup();
+  render(<MapToolbar nodes={[]} query="" onQuery={noop} filters={defaultFilters()} onFilters={noop} onSelect={noop} list onList={noop} lenses={[]} onOverlay={noop} libraryOpen={false} onLibrary={noop} />);
+  await user.click(screen.getByRole("button", { name: "More actions" }));
+  expect(screen.getByRole("menuitemcheckbox", { name: "List view" })).toHaveAttribute("aria-checked", "true");
 });

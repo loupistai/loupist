@@ -1,7 +1,7 @@
 {
   "id": "nasdaq.data-link",
   "name": "Nasdaq Data Link",
-  "summary": "Nasdaq datasets; a key unlocks authenticated datasets and higher limits.",
+  "summary": "Nasdaq datasets; a key unlocks authenticated datasets and higher limits. Signup requires reCAPTCHA and email activation.",
   "publisher": "Loupist",
   "data_authority": "Nasdaq Data Link",
   "kind": "data_source",

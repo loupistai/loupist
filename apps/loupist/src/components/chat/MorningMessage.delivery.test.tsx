@@ -3,7 +3,11 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { InboxItem } from "../../types";
 import { MorningMessage, wordTrimmed } from "./MorningMessage";
 
-const briefing: InboxItem = { runId: "run-1", taskId: "briefing", kind: "briefing", title: "Briefings", status: "succeeded", summary: "Hanul Precision filed its Q3 report.", startedAtMs: Date.now() - 3_600_000, finishedAtMs: Date.now() - 3_590_000, readAtMs: null, threadId: "t", messageId: "m", skippedTools: [], briefingContext: null, error: null, summaryItems: [] };
+const briefing: InboxItem = { runId: "run-1", taskId: "briefing", kind: "briefing", title: "Briefings", status: "succeeded", summary: "Hanul Precision filed its Q3 report.", startedAtMs: Date.now() - 3_600_000, finishedAtMs: Date.now() - 3_590_000, readAtMs: null, threadId: "t", messageId: "m", skippedTools: [], briefingContext: null, error: null };
+
+// News waits for a real absence: the last visit ended twenty hours ago.
+beforeEach(() => { localStorage.setItem("loupist.loupistVisit.v1", JSON.stringify({ "loupist-quality": { lastSeenAtMs: Date.now() - 20 * 3_600_000 } })); });
+afterEach(() => { localStorage.clear(); });
 
 function renderMessage(deliveredRunIds?: string[]) {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });

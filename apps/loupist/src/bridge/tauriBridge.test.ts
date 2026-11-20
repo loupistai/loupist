@@ -21,6 +21,35 @@ it("passes typed intent to native commands in the request envelope", async () =>
   expect(invoke).toHaveBeenLastCalledWith("loupist_select", { loupist_id: "loupist-quality" });
 });
 
+it("passes asset intent to Rust as typed, with a picked listing's fields as the reference", async () => {
+  const bridge = createLoupistBridge();
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  const asset = { loupistId: "a", assetId: "ast_0123456789abcdef" };
+  await bridge.assetLookup({ loupistId: "a", query: "literal [" });
+  expect(invoke).toHaveBeenLastCalledWith("asset_lookup", { request: { loupistId: "a", query: "literal [" } });
+  const picked = { loupistId: "a", name: "NVIDIA", reference: { figi: "BBG000BBJQV0", ticker: "NVDA", exchange: "US", securityType: "Common Stock" } };
+  await bridge.assetFollowName(picked);
+  expect(invoke).toHaveBeenLastCalledWith("asset_follow_name", { request: picked });
+  await bridge.assetFollowName({ loupistId: "a", name: "Harbor Fund" });
+  expect(invoke).toHaveBeenLastCalledWith("asset_follow_name", { request: { loupistId: "a", name: "Harbor Fund" } });
+  for (const [method, command] of [
+    ["assetFollow", "asset_follow"], ["assetUnfollow", "asset_unfollow"], ["assetPageGet", "asset_page_get"],
+    ["assetPriceCheck", "asset_price_check"], ["assetPriceSeries", "asset_price_series"], ["assetPageSeen", "asset_page_seen"],
+  ] as const) {
+    await bridge[method](asset);
+    expect(invoke).toHaveBeenLastCalledWith(command, { request: asset });
+  }
+  await bridge.assetPageGet({ loupistId: "a", ticker: "NVDA" });
+  expect(invoke).toHaveBeenLastCalledWith("asset_page_get", { request: { loupistId: "a", ticker: "NVDA" } });
+  await bridge.assetsList({ loupistId: "a" });
+  expect(invoke).toHaveBeenLastCalledWith("assets_list", { request: { loupistId: "a" } });
+  await bridge.watchlistQuotes({ loupistId: "a" });
+  expect(invoke).toHaveBeenLastCalledWith("watchlist_quotes", { request: { loupistId: "a" } });
+  const clear = { ...asset, entityId: null };
+  await bridge.assetEntitySet(clear);
+  expect(invoke).toHaveBeenLastCalledWith("asset_entity_set", { request: clear });
+});
+
 it("never lets the renderer choose the acknowledged notice version", async () => {
   vi.mocked(invoke).mockResolvedValue({ notice_acknowledged_version: 1 });
   const bridge = createLoupistBridge();
@@ -94,4 +123,31 @@ it("passes the explicit Source retry intent to the host", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
   await bridge.knowledgeGraphRetrySource({ loupistId: "a", recordId: "source-a" });
   expect(invoke).toHaveBeenLastCalledWith("knowledge_graph_retry_source", { request: { loupistId: "a", recordId: "source-a" } });
+});
+
+it("sends legacy export intent without paths and subscribes to host status", async () => {
+  const { listen } = await import("@tauri-apps/api/event");
+  const bridge = createLoupistBridge();
+  for (const [method, command] of [
+    ["legacyHoldingsStatus", "legacy_holdings_status"], ["legacyHoldingsRetry", "legacy_holdings_retry"],
+    ["legacyHoldingsReveal", "legacy_holdings_reveal"], ["legacyHoldingsSaveCopy", "legacy_holdings_save_copy"],
+    ["legacyHoldingsDismiss", "legacy_holdings_dismiss"],
+  ] as const) {
+    await bridge[method]();
+    expect(invoke).toHaveBeenLastCalledWith(command, undefined);
+  }
+  const handler = vi.fn();
+  const unlisten = vi.fn();
+  vi.mocked(listen).mockResolvedValueOnce(unlisten);
+  const stop = bridge.onLegacyHoldingsChanged(handler);
+  expect(listen).toHaveBeenLastCalledWith("legacy-holdings-changed", expect.any(Function));
+  const callback = vi.mocked(listen).mock.calls.at(-1)![1];
+  const status = { state: "failed", dismissed: false };
+  callback({ event: "legacy-holdings-changed", id: 1, payload: status });
+  expect(handler).toHaveBeenCalledWith(status);
+  await Promise.resolve();
+  stop();
+  expect(unlisten).toHaveBeenCalledOnce();
+  callback({ event: "legacy-holdings-changed", id: 1, payload: status });
+  expect(handler).toHaveBeenCalledOnce();
 });

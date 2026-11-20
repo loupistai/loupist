@@ -30,6 +30,13 @@ export function formatTime(value: Date | number) {
     ? i18n.t(part.value === "AM" ? "common:time.am" : "common:time.pm")
     : part.value).join("");
 }
+/** A calendar day (YYYY-MM-DD) as "Oct 30", without a time-zone shift; text that is not a day comes back as given. */
+export function formatDay(day: string | undefined) {
+  if (!day) return "";
+  const [year, month, date] = day.slice(0, 10).split("-").map(Number);
+  if (!year || !month || !date) return day;
+  return formatDate(new Date(year, month - 1, date), { year: undefined, month: "short", day: "numeric" });
+}
 export const formatDateTime = (value: Date | number, options: Intl.DateTimeFormatOptions = {}) => dateFormatter(options.dateStyle || options.timeStyle ? options : { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", ...options }).format(value);
 export function formatRelative(value: number, unit: Intl.RelativeTimeFormatUnit, options: Intl.RelativeTimeFormatOptions = {}) {
   const language = locale();
@@ -137,6 +144,56 @@ export function formatAmount(value: number, currency?: string, options: { exact?
     }
   }
   return `${sign}${symbol}${formatNumber(magnitude, { maximumFractionDigits: 2 })}`;
+}
+
+/** The decimals a currency is quoted in (2 for USD, 0 for KRW and JPY); 2 without one. */
+export function currencyDigits(currency?: string) {
+  if (!currency || !/^[A-Z]{3}$/u.test(currency)) return 2;
+  try {
+    return new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2;
+  } catch {
+    return 2;
+  }
+}
+
+/** The saved read supplies the currency. Without it, keep small quotes legible. */
+function storedPriceFormatter(value: number, currency?: string) {
+  const code = currency?.trim().toUpperCase();
+  if (code && /^[A-Z]{3}$/u.test(code)) return numberFormatter({ style: "currency", currency: code });
+  return numberFormatter(Math.abs(value) < 1 ? { maximumSignificantDigits: 6 } : { maximumFractionDigits: 2 });
+}
+
+/** Does displaying this price round away any of its stored digits? */
+export function storedPriceWasRounded(value: number, currency?: string | null) {
+  const { maximumFractionDigits, maximumSignificantDigits } = storedPriceFormatter(value, currency ?? undefined).resolvedOptions();
+  const rounded = maximumSignificantDigits === undefined ? value.toFixed(maximumFractionDigits) : value.toPrecision(maximumSignificantDigits);
+  return Number(rounded) !== value;
+}
+
+/**
+ * A quoted price with every digit, the way the interface locale writes that currency:
+ * "$162.85", "₩112,400" in English; "112,400원" in Korean, which writes its own
+ * currency as a word. `digits` overrides the currency's decimals (a $98,420 coin
+ * quoted whole). Without a currency it is a plain figure with two decimals.
+ */
+export function formatPrice(value: number, currency?: string, options: { digits?: number | "auto" } = {}) {
+  if (!Number.isFinite(value)) return String(value);
+  if (options.digits === "auto") {
+    const formatter = storedPriceFormatter(value, currency);
+    const text = formatter.format(value);
+    // Some providers supply a unit outside ISO 4217 (for example USDT).
+    return currency?.trim() && formatter.resolvedOptions().style !== "currency" ? `${text} ${currency.trim()}` : text;
+  }
+  const code = currency && /^[A-Z]{3}$/u.test(currency) ? currency : undefined;
+  const digits = typeof options.digits === "number" ? options.digits : currencyDigits(code);
+  const fraction = { minimumFractionDigits: digits, maximumFractionDigits: digits };
+  if (!code) return formatNumber(value, fraction);
+  if (isKorean() && code === "KRW") return `${formatNumber(value, fraction)}${KO_CURRENCY.KRW}`;
+  try {
+    return formatNumber(value, { ...fraction, style: "currency", currency: code, currencyDisplay: "narrowSymbol" });
+  } catch {
+    return `${formatNumber(value, fraction)} ${code}`;
+  }
 }
 
 /**

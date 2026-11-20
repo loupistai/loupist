@@ -641,7 +641,7 @@ fn clean_world(parsed: &mut ParsedPack) -> (Vec<MapFinding>, u32) {
         if findings.len() < MAX_MAP_FINDINGS {
             findings.push(MapFinding {
                 kind,
-                label: strip_hidden(label).0.chars().take(120).collect(),
+                label: crate::util::shorten(&strip_hidden(label).0, 120),
                 flags,
             });
         }

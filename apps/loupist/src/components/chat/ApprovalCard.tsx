@@ -1,12 +1,13 @@
 import { clockLabel, useNow } from "../../chat/runStatus";
 import i18n, { useTranslation } from "@/i18n";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { LoupistBridge } from "../../types";
 import type { ChatApproval, ChatApprovalDecision, ChatToolRefusal } from "../../contracts/chat";
 import type { CustomConnection } from "../../contracts/customConnections";
 import { Button } from "../ui/button";
 import { ConnectionDetail } from "../connections/custom/ConnectionDetail";
 import { humanizeToolName } from "../connections/custom/toolTitle";
+import { keepFocusOnSettle, useSettledFocus } from "./QuestionCard";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -42,22 +43,25 @@ function cardCopy(approval: ChatApproval, tool: string) {
 
 function WaitingCard({ approval, onDecide }: { approval: ChatApproval; onDecide: (decision: ChatApprovalDecision) => Promise<void> }) {
   const nowMs = useNow(true);
+  const cardRef = useRef<HTMLElement>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const tool = humanizeToolName(approval.toolName);
   const copy = cardCopy(approval, tool);
   const decide = async (decision: ChatApprovalDecision) => {
+    const forget = keepFocusOnSettle(approval.requestId, cardRef.current);
     setBusy(true);
     setFailed(false);
     try {
       await onDecide(decision);
     } catch {
+      forget();
       setFailed(true);
       setBusy(false);
     }
   };
   // The rail's "Needs your OK" row scrolls here and moves focus to the card, never to a button.
-  return <section className="approval-card" data-request-id={approval.requestId} tabIndex={-1} aria-label={copy.label}>
+  return <section ref={cardRef} className="approval-card" data-request-id={approval.requestId} tabIndex={-1} aria-label={copy.label}>
     <header>
       <strong>{t("approvalCard.title")}</strong>
       <span className="approval-card-clock">{t("approvalCard.waiting", { time: clockLabel(nowMs - approval.requestedAtMs) })}</span>
@@ -97,12 +101,7 @@ export function ApprovalCards({ approvals, refusals, bridge, loupistId }: {
     {approvals.map((approval) => {
       const tool = humanizeToolName(approval.toolName);
       if (approval.state === "waiting") return <WaitingCard key={approval.requestId} approval={approval} onDecide={decide(approval)} />;
-      return <p key={approval.requestId} className="approval-line" data-state={approval.state}>
-        {approval.state === "allowed_once" ? t("approvalCard.allowedOnce", { tool })
-          : approval.state === "always_allowed" ? <>{t("approvalCard.alwaysAllowed", { tool, connection: approval.connectionName })} · <Button type="button" variant="link" onClick={() => void detail.open(approval.connectionId)}>{t("approvalCard.changeInSettings")}</Button></>
-            : approval.state === "declined" ? t("approvalCard.declined", { tool })
-              : t("approvalCard.expired", { tool })}
-      </p>;
+      return <ApprovalLine key={approval.requestId} approval={approval} tool={tool} onOpenSettings={() => void detail.open(approval.connectionId)} />;
     })}
     {settingsOnly.map((refusal, index) => <p key={`${refusal.connection_id}:${refusal.tool_name}:${index}`} className="approval-line" data-state="settings" tabIndex={-1}>
       <span title={refusal.tool_name}>{t("approvalCard.needsSettings", { connection: refusal.connection_name, tool: humanizeToolName(refusal.tool_name) })}</span>
@@ -111,4 +110,16 @@ export function ApprovalCards({ approvals, refusals, bridge, loupistId }: {
     {detail.failed ? <p role="alert" className="approval-card-error">{i18n.t("settings:custom.error")}</p> : null}
     {detail.sheet}
   </div>;
+}
+
+/** A decided approval's one line; it takes focus when the user decided from the focused card. */
+function ApprovalLine({ approval, tool, onOpenSettings }: { approval: ChatApproval; tool: string; onOpenSettings: () => void }) {
+  useTranslation("chat");
+  const ref = useSettledFocus<HTMLParagraphElement>(approval.requestId);
+  return <p ref={ref} tabIndex={-1} className="approval-line" data-state={approval.state}>
+    {approval.state === "allowed_once" ? t("approvalCard.allowedOnce", { tool })
+      : approval.state === "always_allowed" ? <>{t("approvalCard.alwaysAllowed", { tool, connection: approval.connectionName })} · <Button type="button" variant="link" onClick={onOpenSettings}>{t("approvalCard.changeInSettings")}</Button></>
+        : approval.state === "declined" ? t("approvalCard.declined", { tool })
+          : t("approvalCard.expired", { tool })}
+  </p>;
 }
