@@ -29,8 +29,8 @@ field filled with the template's suggestion ("Chip Loupist"; Custom suggests non
 editable, the ten face colours, and Create Loupist. Preset focus and tone use defaults
 and can be changed later in Loupist settings. The notice explains that background
 source reading builds the Map and learns methods using the AI account, and can be
-turned off in Loupist settings. In New Loupist the notice spans the fixed footer
-above the Cancel and Create actions while the form scrolls. An existing AI account skips Connect. An existing
+turned off in Loupist settings. In New Loupist the notice stays visible as the form scrolls. It sits beside Cancel
+and Create at window heights up to 620 px and above them in taller windows. An existing AI account skips Connect. An existing
 Loupist skips Create but still gets Name, with Save and continue: its stored name is
 kept, unless it equals its folder's name (what the host stores for a folder registered
 without one, such as the development seed), when the template's suggestion replaces it.

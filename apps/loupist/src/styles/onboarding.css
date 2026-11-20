@@ -47,6 +47,20 @@
     linear-gradient(transparent, var(--popover) 60%) 0 100% / 100% 32px no-repeat local,
     linear-gradient(to top, color-mix(in srgb, var(--popover), black 12%), transparent) 0 100% / 100% 12px no-repeat scroll;
 }
+/* At the minimum window the titles leave the whole identity preview above the fold.
+   The descriptions stay in the cards’ accessible names. */
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@media (max-height: 620px) {
+  .loupist-create-dialog .dialog-footer > .dialog-footer-note { flex: 1 1 0; min-width: 0; }
+  .loupist-create-dialog .dialog-form { gap: var(--gg-space-3); }
+  /* A line crossing the fold fades (the map legend's edge fade) rather than being sliced; the padding lets the last line scroll clear of it. */
+  .loupist-create-dialog .dialog-body { padding-bottom: var(--gg-space-3); -webkit-mask-image: linear-gradient(to bottom, var(--gg-color-text-primary) calc(100% - var(--gg-space-3)), transparent); mask-image: linear-gradient(to bottom, var(--gg-color-text-primary) calc(100% - var(--gg-space-3)), transparent); }
+  .loupist-create-dialog .loupist-template-fields { gap: var(--gg-space-2); }
+  .loupist-create-dialog .loupist-template-grid { gap: var(--gg-space-1); }
+  .loupist-create-dialog .loupist-template-card { position: relative; padding: var(--gg-space-2) var(--gg-space-4); }
+  .loupist-create-dialog .loupist-template-card > span:last-child { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+}
+
 .loupist-template-starters { display: grid; gap: var(--gg-space-2); }
 .loupist-template-starters > p { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 /* Every field label in the form reads alike: Name, Focus, Avatar, the starters and the tone legend. */

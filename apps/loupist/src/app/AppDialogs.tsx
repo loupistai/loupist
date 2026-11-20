@@ -200,7 +200,7 @@ export function AppDialogs({
   return (
     <>
       <Dialog open={createLoupistOpen} onOpenChange={open => { if (!loupistMutationBusy) setCreateLoupistOpen(open); }}>
-        <DialogContent className="loupist-dialog loupist-workspace-dialog" showCloseButton={!loupistMutationBusy} onOpenAutoFocus={focusDialogTitle} onCloseAutoFocus={event => {
+        <DialogContent className="loupist-dialog loupist-workspace-dialog loupist-create-dialog" showCloseButton={!loupistMutationBusy} onOpenAutoFocus={focusDialogTitle} onCloseAutoFocus={event => {
           const opener = dialogs.createLoupistOpener.current;
           const target = opener?.isConnected ? opener : document.querySelector<HTMLElement>("[data-testid=loupist-header-identity]");
           if (target) { event.preventDefault(); target.focus({ preventScroll: true }); }
@@ -224,7 +224,7 @@ export function AppDialogs({
             {onUseLinkOrFile ? <div className="loupist-shared-entry" data-loupist-shared-entry><span>{i18n.t("sharing:fromShared")}</span>
               {onBrowseGallery ? <Button type="button" variant="ghost" size="sm" disabled={loupistMutationBusy} data-browse-gallery onClick={onBrowseGallery}>{i18n.t("sharing:browseGallery")}</Button> : null}
               <Button type="button" variant="ghost" size="sm" disabled={loupistMutationBusy} data-use-link-or-file onClick={onUseLinkOrFile}>{i18n.t("sharing:useLinkOrFile")}</Button></div> : null}
-            {/* The background-reading notice sits above Create in the fixed footer, so it is read before creating. */}
+            {/* The fixed footer keeps the notice visible while the form scrolls. */}
             <DialogFooter><p className="onboarding-spending dialog-footer-note" data-background-reading>{i18n.t("onboarding:wizard.backgroundReading")}</p>
               <Button type="button" variant="outline" disabled={loupistMutationBusy} onClick={() => setCreateLoupistOpen(false)}>{i18n.t("onboarding:wizard.cancel")}</Button>
               <Button type="submit" disabled={loupistMutationBusy || !dialogs.loupistDraft.name.trim()}>{i18n.t(loupistMutationBusy ? "onboarding:wizard.creating" : "onboarding:wizard.create")}</Button></DialogFooter>
