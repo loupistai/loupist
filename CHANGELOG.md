@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 - 2026-11-21
 
 - Run Loupist, a local-first financial research app, on macOS 13 or newer on Apple Silicon only.
 - Connect your own AI account with a supported sign-in or API key, or look around first without a Loupist account.
