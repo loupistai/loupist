@@ -1,4 +1,4 @@
-import { connectionText } from "./connectionCopy";
+import { connectionText } from "@/lib/connectionCopy";
 import i18n, { useTranslation } from "@/i18n";
 import { ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
@@ -13,8 +13,9 @@ const FREE_STATE_LABELS: Record<MarketplaceFreeState, string> = {
   get paid() { return i18n.t("connections:marketplaceCard.paid"); },
 };
 
-/** A keyless source that still asks for a contact email says so instead of "No API key required". */
 export function accessLabel(entry: MarketplaceEntry): string {
+  if (entry.id === "koreainvestment.market-data" || entry.id === "tradier.market-data") return i18n.t("connections:marketplaceCard.brokerageRequired");
+  if (entry.id === "biztoc.news") return i18n.t("connections:marketplaceCard.freeTierRequiresCard");
   const setup = entry.setup;
   const emailOnly = entry.free_state === "keyless" && setup && !setup.credential_fields.length
     && setup.config_fields.some((field) => field.kind === "email" && field.required);
@@ -38,9 +39,11 @@ export function setupEntryLabel(entry: MarketplaceEntry, connector?: Marketplace
   return i18n.t("connections:marketplaceCard.setupEntry", { name });
 }
 
-export function MarketplaceCard({ entry, connector, onSetup, onUnlock, headingLevel = 4 }: {
+export function MarketplaceCard({ entry, connector, offFor, onSetup, onUnlock, headingLevel = 4 }: {
   entry: MarketplaceEntry;
   connector?: MarketplaceConnectorStatus;
+  /** The current Loupist's name when this ready connection is switched off for it. */
+  offFor?: string;
   onSetup?: (entry: MarketplaceEntry) => void;
   /** Try again on a key macOS refused; resolves false when it is still locked. */
   onUnlock?: (entry: MarketplaceEntry) => Promise<boolean>;
@@ -79,8 +82,12 @@ export function MarketplaceCard({ entry, connector, onSetup, onUnlock, headingLe
       </div>
       <div className="marketplace-entry-actions">
         {/* Twenty grey "Not connected" labels say nothing: only Ready and what needs attention are marked. */}
-        {state.tone === "neutral" ? null : <span className="connection-status" data-tone={state.tone}>
-          <span aria-hidden="true" />{state.label}
+        {state.tone === "neutral" ? null : <span className="marketplace-entry-state">
+          <span className="connection-status" data-tone={state.tone}>
+            <span aria-hidden="true" />{state.label}
+          </span>
+          {/* Ready is set up for every Loupist; this one may still have it off, which is why a page sent the user here. */}
+          {offFor && connectionState(connector) === "ready" ? <span className="marketplace-off-here">{i18n.t("connections:marketplaceCard.offFor", { loupist: offFor })}</span> : null}
         </span>}
         {onSetup ? <Button type="button" size="sm" variant="ghost" aria-label={setupEntryLabel(entry, connector)} onClick={() => onSetup(entry)}>{action}<ChevronRightIcon /></Button> : null}
       </div>

@@ -24,14 +24,18 @@ pub struct InferenceReply {
     pub body: Value,
 }
 
-/// Local English embeddings are a CPU operation. They do not require paid
+/// World settings name the bundled local model by this id, whichever model
+/// is bundled. Stored vectors are tied to the asset fingerprint, not to it.
+pub(crate) const LOCAL_EMBEDDING_PROFILE: &str = "local-en-128";
+
+/// Local embeddings are a CPU operation. They do not require paid
 /// enrichment or provider credentials.
 pub fn admit_local_embedding(settings: &GraphProcessingSettings) -> Result<(), &'static str> {
     if settings.paused {
         return Err("graph processing is paused");
     }
-    if settings.embedding_profile != "local-en-128" {
-        return Err("graph embedding profile is not the local english model");
+    if settings.embedding_profile != LOCAL_EMBEDDING_PROFILE {
+        return Err("graph embedding profile is not the bundled local model");
     }
     if settings.max_embedding_calls == 0 {
         return Err("local embedding budget is closed");
@@ -43,7 +47,7 @@ pub fn admit_local_embedding(settings: &GraphProcessingSettings) -> Result<(), &
 }
 
 pub fn authorize(settings: &GraphProcessingSettings, kind: &str) -> Result<(), &'static str> {
-    if kind == "embedding" && settings.embedding_profile == "local-en-128" {
+    if kind == "embedding" && settings.embedding_profile == LOCAL_EMBEDDING_PROFILE {
         return admit_local_embedding(settings);
     }
     if !settings.enrichment_enabled {
@@ -119,9 +123,9 @@ fn embed_locally(
         }
         texts.push(text.to_owned());
     }
-    let vectors = match embed_local_english_batch(assets, &texts) {
+    let vectors = match embed_local_batch(assets, &texts) {
         Ok(vectors) => vectors,
-        Err(_) => return uncertain("local english embedding failed"),
+        Err(_) => return uncertain("local embedding failed"),
     };
     InferenceReply {
         disposition: InferenceDisposition::Completed,
@@ -167,8 +171,13 @@ pub async fn dispatch_inference(
     request: &Value,
 ) -> InferenceReply {
     let kind = request.get("kind").and_then(Value::as_str).unwrap_or("");
-    if kind == "embedding" && settings.embedding_profile == "local-en-128" {
-        return embed_locally(settings, assets, request);
+    if kind == "embedding" && settings.embedding_profile == LOCAL_EMBEDDING_PROFILE {
+        // Encoding, and waiting for a first load of the model, stay off the
+        // async runtime's threads.
+        let (settings, assets, request) = (settings.clone(), assets.to_path_buf(), request.clone());
+        return tokio::task::spawn_blocking(move || embed_locally(&settings, &assets, &request))
+            .await
+            .unwrap_or_else(|_| uncertain("local embedding failed"));
     }
     if settings.paused {
         return not_sent("World processing is paused");
@@ -263,38 +272,95 @@ fn graph_usage(usage: Option<&Value>) -> Value {
         "certainty":if input.is_some() && output.is_some() {"accounted"} else {"uncertain"}})
 }
 
-pub fn embed_local_english(assets: &Path, text: &str) -> Result<Vec<f32>, String> {
-    embed_local_english_batch(assets, &[text.to_owned()])?
-        .pop()
-        .ok_or_else(|| "local english embedding is missing".to_owned())
+/// The bundled embedding model, loaded from one verified set of asset bytes.
+/// Clones share one loaded model.
+#[derive(Clone)]
+pub struct LocalModel(std::sync::Arc<LoadedModel>);
+
+struct LoadedModel {
+    model: model2vec_rs::model::StaticModel,
+    /// The exact loaded bytes plus encoding settings. Changing bundled assets
+    /// across app runs cannot reuse another model's document vectors.
+    fingerprint: String,
 }
 
-/// Bounded tokenization batches preserve the single-text model's exact pooling.
-pub(crate) fn embed_local_english_batch(
-    assets: &Path,
-    texts: &[String],
-) -> Result<Vec<Vec<f32>>, String> {
-    let vectors = cached_english_model(assets)?
-        .0
-        .encode_with_args(texts, Some(512), 128);
-    if vectors.len() != texts.len() || vectors.iter().any(|vector| vector.len() != 128) {
-        return Err("local english embedding dimensions are invalid".to_owned());
+impl std::fmt::Debug for LocalModel {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("LocalModel")
+            .field(&self.0.fingerprint)
+            .finish()
     }
-    Ok(vectors)
 }
 
-/// Fingerprint of the exact loaded model plus encoding settings. Changing
-/// bundled assets across app runs cannot reuse another model's document vectors.
-pub(super) fn local_english_model_fingerprint(assets: &Path) -> Result<String, String> {
-    Ok(cached_english_model(assets)?.1.clone())
+impl LocalModel {
+    pub(crate) fn fingerprint(&self) -> &str {
+        &self.0.fingerprint
+    }
+
+    /// Width of the model's vectors.
+    pub(crate) fn dimension(&self) -> usize {
+        self.0.model.dim()
+    }
+
+    /// Bounded tokenization batches preserve the single-text model's exact pooling.
+    pub(crate) fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+        let vectors = self.0.model.encode_with_args(texts, Some(512), 128);
+        let dimension = self.dimension();
+        if vectors.len() != texts.len() || vectors.iter().any(|vector| vector.len() != dimension) {
+            return Err("local embedding dimensions are invalid".to_owned());
+        }
+        Ok(vectors)
+    }
+
+    pub(crate) fn embed(&self, text: &str) -> Result<Vec<f32>, String> {
+        self.embed_batch(&[text.to_owned()])?
+            .pop()
+            .ok_or_else(|| "local embedding is missing".to_owned())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn same(&self, other: &LocalModel) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
 }
 
-type CachedEnglishModel = std::sync::Arc<(model2vec_rs::model::StaticModel, String)>;
+/// The model for `assets`, loading it first if needed. A load another caller
+/// started is awaited, not repeated. For background work, which may wait.
+pub(crate) fn local_model(assets: &Path) -> Result<LocalModel, String> {
+    local_models().get(assets)
+}
 
-const ENGLISH_ASSET_NAMES: [&str; 3] = ["tokenizer.json", "model.safetensors", "config.json"];
+/// The model for `assets` if it is already loaded. Otherwise this starts one
+/// load on its own thread and returns `None` without waiting, so an
+/// interactive search can answer from words alone meanwhile. A load that
+/// failed is not retried until the asset files change.
+pub(crate) fn loaded_local_model(assets: &Path) -> Option<LocalModel> {
+    local_models().loaded(assets)
+}
 
-#[derive(PartialEq, Eq)]
-struct EnglishAssetStamp {
+/// Whether a load of the model for `assets` is under way.
+pub(crate) fn local_model_loading(assets: &Path) -> bool {
+    assets.canonicalize().is_ok_and(|assets| {
+        local_models()
+            .lock()
+            .is_ok_and(|cache| cache.loading.contains(&assets))
+    })
+}
+
+pub(crate) fn embed_local_batch(assets: &Path, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+    local_model(assets)?.embed_batch(texts)
+}
+
+fn local_models() -> &'static LocalModels {
+    static MODELS: std::sync::OnceLock<LocalModels> = std::sync::OnceLock::new();
+    MODELS.get_or_init(LocalModels::default)
+}
+
+const LOCAL_ASSET_NAMES: [&str; 3] = ["tokenizer.json", "model.safetensors", "config.json"];
+
+#[derive(Clone, PartialEq, Eq)]
+struct AssetStamp {
     len: u64,
     modified: std::time::SystemTime,
     // Also detect same-size replacements or writes whose mtime was restored.
@@ -302,10 +368,10 @@ struct EnglishAssetStamp {
     identity: (u64, u64, i64, i64),
 }
 
-fn english_asset_stamps(assets: &Path) -> Result<[EnglishAssetStamp; 3], String> {
-    let stamps = ENGLISH_ASSET_NAMES.map(|name| -> Result<EnglishAssetStamp, String> {
+fn asset_stamps(assets: &Path) -> Result<[AssetStamp; 3], String> {
+    let stamps = LOCAL_ASSET_NAMES.map(|name| -> Result<AssetStamp, String> {
         let metadata = std::fs::metadata(assets.join(name)).map_err(|error| error.to_string())?;
-        Ok(EnglishAssetStamp {
+        Ok(AssetStamp {
             len: metadata.len(),
             modified: metadata.modified().map_err(|error| error.to_string())?,
             #[cfg(unix)]
@@ -324,88 +390,238 @@ fn english_asset_stamps(assets: &Path) -> Result<[EnglishAssetStamp; 3], String>
     Ok([tokenizer?, weights?, config?])
 }
 
-struct VerifiedEnglishAssets {
-    stamps: [EnglishAssetStamp; 3],
-    model: CachedEnglishModel,
+struct VerifiedAssets {
+    stamps: [AssetStamp; 3],
+    model: LocalModel,
+}
+
+/// Loaded models and the asset directories verified in this process. The
+/// lock is held only for bookkeeping; reading, hashing and building a model
+/// happen outside it, so a lookup never waits behind another directory's load.
+#[derive(Default)]
+struct LocalModels {
+    cache: std::sync::Mutex<LocalModelCache>,
+    loaded: std::sync::Condvar,
 }
 
 #[derive(Default)]
-struct EnglishModelCache {
-    assets: std::collections::HashMap<std::path::PathBuf, VerifiedEnglishAssets>,
-    models: std::collections::HashMap<String, CachedEnglishModel>,
+struct LocalModelCache {
+    /// Verified asset directories by canonical path.
+    assets: std::collections::HashMap<std::path::PathBuf, VerifiedAssets>,
+    /// Loaded models by fingerprint: the same bytes from another path share one.
+    models: std::collections::HashMap<String, LocalModel>,
+    /// Directories being verified and loaded now.
+    loading: std::collections::HashSet<std::path::PathBuf>,
+    /// The stamps a directory's last load failed with.
+    failed: std::collections::HashMap<std::path::PathBuf, [AssetStamp; 3]>,
     #[cfg(test)]
     verifications: usize,
 }
 
-impl EnglishModelCache {
-    fn get(&mut self, assets: &Path) -> Result<CachedEnglishModel, String> {
-        let assets = assets.canonicalize().map_err(|error| error.to_string())?;
-        let stamps = english_asset_stamps(&assets)?;
-        if let Some(verified) = self.assets.get(&assets) {
-            if verified.stamps == stamps {
-                return Ok(std::sync::Arc::clone(&verified.model));
-            }
+impl LocalModelCache {
+    fn verified(&self, assets: &Path, stamps: &[AssetStamp; 3]) -> Option<LocalModel> {
+        self.assets
+            .get(assets)
+            .filter(|verified| &verified.stamps == stamps)
+            .map(|verified| verified.model.clone())
+    }
+}
+
+/// Clears a directory's loading mark however its load ends, panics included,
+/// and wakes the callers waiting for it.
+struct LoadingMark<'a> {
+    models: &'a LocalModels,
+    assets: std::path::PathBuf,
+}
+
+impl Drop for LoadingMark<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut cache) = self.models.cache.lock() {
+            cache.loading.remove(&self.assets);
         }
+        self.models.loaded.notify_all();
+    }
+}
+
+impl LocalModels {
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, LocalModelCache>, String> {
+        self.cache
+            .lock()
+            .map_err(|_| "embedding initialization failed".to_owned())
+    }
+
+    fn get(&self, assets: &Path) -> Result<LocalModel, String> {
+        let assets = assets.canonicalize().map_err(|error| error.to_string())?;
+        let mut cache = self.lock()?;
+        loop {
+            let stamps = asset_stamps(&assets)?;
+            if let Some(model) = cache.verified(&assets, &stamps) {
+                return Ok(model);
+            }
+            if cache.loading.insert(assets.clone()) {
+                break;
+            }
+            cache = self
+                .loaded
+                .wait(cache)
+                .map_err(|_| "embedding initialization failed".to_owned())?;
+        }
+        drop(cache);
+        self.load(assets)
+    }
+
+    fn loaded(&'static self, assets: &Path) -> Option<LocalModel> {
+        let assets = assets.canonicalize().ok()?;
+        let stamps = asset_stamps(&assets).ok()?;
+        let mut cache = self.lock().ok()?;
+        if let Some(model) = cache.verified(&assets, &stamps) {
+            return Some(model);
+        }
+        if cache.failed.get(&assets) == Some(&stamps) || !cache.loading.insert(assets.clone()) {
+            return None;
+        }
+        drop(cache);
+        let background = assets.clone();
+        let started = std::thread::Builder::new()
+            .name("loupist-embedding-load".into())
+            .spawn(move || {
+                let _ = self.load(background);
+            });
+        if started.is_err() {
+            // Clear the mark the thread would have cleared.
+            drop(LoadingMark {
+                models: self,
+                assets,
+            });
+        }
+        None
+    }
+
+    /// Verify and load `assets`, whose loading mark the caller set.
+    fn load(&self, assets: std::path::PathBuf) -> Result<LocalModel, String> {
+        let _mark = LoadingMark {
+            models: self,
+            assets: assets.clone(),
+        };
+        let stamps = asset_stamps(&assets)?;
+        let loaded = self.verify_and_build(&assets, &stamps);
+        let mut cache = self.lock()?;
         #[cfg(test)]
         {
-            self.verifications += 1;
+            cache.verifications += 1;
         }
+        match &loaded {
+            Ok(model) => {
+                cache.failed.remove(&assets);
+                cache.assets.insert(
+                    assets,
+                    VerifiedAssets {
+                        stamps,
+                        model: model.clone(),
+                    },
+                );
+            }
+            Err(_) => {
+                cache.failed.insert(assets, stamps);
+            }
+        }
+        loaded
+    }
+
+    fn verify_and_build(
+        &self,
+        assets: &Path,
+        stamps: &[AssetStamp; 3],
+    ) -> Result<LocalModel, String> {
         // Hash the exact bytes passed to the loader. Metadata only skips work
         // for assets already verified in this process; it never identifies
         // persisted vectors or authorizes a different model's bytes.
-        let tokenizer =
-            std::fs::read(assets.join("tokenizer.json")).map_err(|error| error.to_string())?;
-        let weights =
-            std::fs::read(assets.join("model.safetensors")).map_err(|error| error.to_string())?;
-        let config =
-            std::fs::read(assets.join("config.json")).map_err(|error| error.to_string())?;
-        if english_asset_stamps(&assets)? != stamps {
+        let read = |name: &str| std::fs::read(assets.join(name)).map_err(|error| error.to_string());
+        let (tokenizer, weights, config) = (
+            read("tokenizer.json")?,
+            read("model.safetensors")?,
+            read("config.json")?,
+        );
+        if &asset_stamps(assets)? != stamps {
             return Err("embedding assets changed during initialization".to_owned());
         }
+        // The version names the runtime's tokenization and pooling: bump it
+        // when model2vec-rs could map the same bytes to different vectors.
         let fingerprint = crate::util::sha256(
             format!(
-                "local-en-128/normalize/512-tokens/8000-chars/v1\n{}\n{}\n{}",
+                "local/model2vec-rs-0.4/normalize/512-tokens/8000-chars/v2\n{}\n{}\n{}",
                 crate::util::sha256(&tokenizer),
                 crate::util::sha256(&weights),
                 crate::util::sha256(&config),
             )
             .as_bytes(),
         );
-        let model = if let Some(model) = self.models.get(&fingerprint) {
-            std::sync::Arc::clone(model)
-        } else {
-            let model = model2vec_rs::model::StaticModel::from_bytes(
-                &tokenizer,
-                &weights,
-                &config,
-                Some(true),
-            )
-            .map_err(|error| error.to_string())?;
-            let model = std::sync::Arc::new((model, fingerprint.clone()));
-            self.models
-                .insert(fingerprint, std::sync::Arc::clone(&model));
-            model
-        };
-        self.assets.insert(
-            assets,
-            VerifiedEnglishAssets {
-                stamps,
-                model: std::sync::Arc::clone(&model),
-            },
-        );
-        Ok(model)
+        if let Some(model) = self.lock()?.models.get(&fingerprint) {
+            return Ok(model.clone());
+        }
+        let model =
+            model2vec_rs::model::StaticModel::from_bytes(&tokenizer, &weights, &config, Some(true))
+                .map_err(|error| error.to_string())?;
+        let model = LocalModel(std::sync::Arc::new(LoadedModel {
+            model,
+            fingerprint: fingerprint.clone(),
+        }));
+        Ok(self
+            .lock()?
+            .models
+            .entry(fingerprint)
+            .or_insert(model)
+            .clone())
     }
 }
 
-fn cached_english_model(assets: &Path) -> Result<CachedEnglishModel, String> {
-    use std::sync::{Mutex, OnceLock};
-    static MODELS: OnceLock<Mutex<EnglishModelCache>> = OnceLock::new();
-    // The lock also makes concurrent first use verify and load only once.
-    MODELS
-        .get_or_init(|| Mutex::new(EnglishModelCache::default()))
-        .lock()
-        .map_err(|_| "embedding initialization failed")?
-        .get(assets)
+/// A model2vec model small enough to load in milliseconds, for tests of
+/// how models are verified, shared and reloaded rather than of vectors.
+#[cfg(test)]
+pub(crate) fn fixture_model(directory: &Path) {
+    let words = [
+        "[UNK]",
+        "[PAD]",
+        "memory",
+        "the",
+        "packaging",
+        "bandwidth",
+        "and",
+        "equipment",
+    ];
+    let vocab: serde_json::Map<String, Value> = words
+        .iter()
+        .enumerate()
+        .map(|(id, word)| ((*word).to_owned(), json!(id)))
+        .collect();
+    let tokenizer = json!({
+        "version": "1.0", "truncation": null, "padding": null, "added_tokens": [],
+        "normalizer": {"type": "BertNormalizer", "clean_text": true,
+            "handle_chinese_chars": true, "strip_accents": null, "lowercase": true},
+        "pre_tokenizer": {"type": "BertPreTokenizer"},
+        "post_processor": null, "decoder": null,
+        "model": {"type": "WordPiece", "unk_token": "[UNK]",
+            "continuing_subword_prefix": "##", "max_input_chars_per_word": 100,
+            "vocab": vocab},
+    });
+    std::fs::write(
+        directory.join("tokenizer.json"),
+        serde_json::to_vec(&tokenizer).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(directory.join("config.json"), br#"{"normalize": true}"#).unwrap();
+    let width = 8;
+    let table: Vec<u8> = (0..words.len() * width)
+        .flat_map(|index| ((index as f32 * 0.37).sin()).to_le_bytes())
+        .collect();
+    let mut header = serde_json::to_vec(&json!({"embeddings": {
+        "dtype": "F32", "shape": [words.len(), width], "data_offsets": [0, table.len()]}}))
+    .unwrap();
+    header.resize(header.len().next_multiple_of(8), b' ');
+    let mut weights = (header.len() as u64).to_le_bytes().to_vec();
+    weights.extend(header);
+    weights.extend(table);
+    std::fs::write(directory.join("model.safetensors"), weights).unwrap();
 }
 
 fn not_sent(message: &str) -> InferenceReply {
@@ -434,8 +650,7 @@ mod tests {
     #[test]
     #[ignore = "local embedding timing probe"]
     fn local_embedding_batch_timings() {
-        let assets =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/knowledge/embed_assets");
+        let assets = crate::knowledge::staged_embed_assets();
         let texts: Vec<String> = (0..32)
             .map(|index| {
                 format!(
@@ -448,16 +663,19 @@ mod tests {
         let settings = GraphProcessingSettings::default();
         let request = json!({"kind":"embedding", "inputs":texts});
         let started = std::time::Instant::now();
-        let model = cached_english_model(&assets).unwrap();
+        let model = local_model(&assets).unwrap();
         println!(
             "embedding_timing cold_model_ms={:.3}",
             started.elapsed().as_secs_f64() * 1000.0
         );
-        let expected = model.0.encode_with_args(&texts, Some(512), 128);
+        let expected = model.0.model.encode_with_args(&texts, Some(512), 128);
         for sample in 0..3 {
             let started = std::time::Instant::now();
             for _ in 0..10 {
-                assert_eq!(local_english_model_fingerprint(&assets).unwrap(), model.1);
+                assert_eq!(
+                    local_model(&assets).unwrap().fingerprint(),
+                    model.fingerprint()
+                );
             }
             let fingerprint_ms = started.elapsed().as_secs_f64() * 1000.0;
             let started = std::time::Instant::now();
@@ -466,7 +684,7 @@ mod tests {
             assert_eq!(reply.disposition, InferenceDisposition::Completed);
             assert_eq!(reply.body["vectors"], json!(expected));
             let started = std::time::Instant::now();
-            let vectors = embed_local_english_batch(&assets, &texts).unwrap();
+            let vectors = embed_local_batch(&assets, &texts).unwrap();
             let batch_ms = started.elapsed().as_secs_f64() * 1000.0;
             assert_eq!(vectors, expected);
             println!(
@@ -521,69 +739,79 @@ mod tests {
         assert!(admit_helper("openai", "missing").is_err());
     }
 
+    fn verifications(models: &LocalModels) -> usize {
+        models.lock().unwrap().verifications
+    }
+
     #[test]
     fn unchanged_embedding_assets_are_verified_once_even_with_concurrent_use() {
-        let assets =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/knowledge/embed_assets");
-        let cache = std::sync::Mutex::new(EnglishModelCache::default());
-        let models = std::thread::scope(|scope| {
+        let directory = tempfile::tempdir().unwrap();
+        fixture_model(directory.path());
+        let models = LocalModels::default();
+        let loaded = std::thread::scope(|scope| {
             let handles: Vec<_> = (0..4)
-                .map(|_| scope.spawn(|| cache.lock().unwrap().get(&assets).unwrap()))
+                .map(|_| scope.spawn(|| models.get(directory.path()).unwrap()))
                 .collect();
             handles
                 .into_iter()
                 .map(|handle| handle.join().unwrap())
                 .collect::<Vec<_>>()
         });
-        let mut cache = cache.into_inner().unwrap();
-        for model in models {
-            assert!(std::sync::Arc::ptr_eq(&model, &cache.get(&assets).unwrap()));
+        for model in loaded {
+            assert!(model.same(&models.get(directory.path()).unwrap()));
         }
-        assert_eq!(cache.verifications, 1);
+        assert_eq!(verifications(&models), 1);
+    }
+
+    /// Writes `bytes` and moves the file's mtime past every earlier rewrite. A filesystem with a coarse
+    /// clock (Linux CI) can give a same-size rewrite the same ctime and mtime within one tick, which no
+    /// real asset update does; the stamp check is what these tests exercise, not the clock.
+    fn rewrite(path: &std::path::Path, bytes: impl AsRef<[u8]>) {
+        static TICK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        std::fs::write(path, bytes).unwrap();
+        let later = std::time::SystemTime::now()
+            + std::time::Duration::from_secs(
+                TICK.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            );
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
     }
 
     #[test]
     fn embedding_asset_changes_are_reverified_and_failed_loads_can_recover() {
-        let bundled =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/knowledge/embed_assets");
         let directory = tempfile::tempdir().unwrap();
-        for name in ENGLISH_ASSET_NAMES {
-            std::fs::copy(bundled.join(name), directory.path().join(name)).unwrap();
-        }
-        let mut cache = EnglishModelCache::default();
-        let first = cache.get(directory.path()).unwrap();
+        fixture_model(directory.path());
+        let models = LocalModels::default();
+        let first = models.get(directory.path()).unwrap();
         let path = directory.path().join("config.json");
         let config = std::fs::read_to_string(&path).unwrap();
         // Same-size edits must invalidate the verification too.
         let changed = config.replacen("true", "null", 1);
         assert_eq!(config.len(), changed.len());
-        std::fs::write(&path, changed).unwrap();
-        let second = cache.get(directory.path()).unwrap();
-        assert_ne!(first.1, second.1);
-        assert_eq!(cache.verifications, 2);
-        std::fs::write(&path, b"{").unwrap();
-        assert!(cache.get(directory.path()).is_err());
-        std::fs::write(&path, config).unwrap();
-        assert!(std::sync::Arc::ptr_eq(
-            &first,
-            &cache.get(directory.path()).unwrap()
-        ));
-        assert_eq!(cache.verifications, 4);
+        rewrite(&path, changed);
+        let second = models.get(directory.path()).unwrap();
+        assert_ne!(first.fingerprint(), second.fingerprint());
+        assert_eq!(verifications(&models), 2);
+        rewrite(&path, b"{");
+        assert!(models.get(directory.path()).is_err());
+        rewrite(&path, config);
+        assert!(first.same(&models.get(directory.path()).unwrap()));
+        assert_eq!(verifications(&models), 4);
         std::fs::remove_file(path).unwrap();
-        assert!(cache.get(directory.path()).is_err());
+        assert!(models.get(directory.path()).is_err());
     }
 
     #[cfg(unix)]
     #[test]
     fn same_size_asset_replacement_with_restored_mtime_is_reverified() {
-        let bundled =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/knowledge/embed_assets");
         let directory = tempfile::tempdir().unwrap();
-        for name in ENGLISH_ASSET_NAMES {
-            std::fs::copy(bundled.join(name), directory.path().join(name)).unwrap();
-        }
-        let mut cache = EnglishModelCache::default();
-        let first = cache.get(directory.path()).unwrap();
+        fixture_model(directory.path());
+        let models = LocalModels::default();
+        let first = models.get(directory.path()).unwrap();
         let path = directory.path().join("config.json");
         let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
         let config = std::fs::read_to_string(&path).unwrap();
@@ -596,19 +824,54 @@ mod tests {
             .set_times(std::fs::FileTimes::new().set_modified(modified))
             .unwrap();
         std::fs::rename(replacement, &path).unwrap();
-        let second = cache.get(directory.path()).unwrap();
-        assert_ne!(first.1, second.1);
-        assert_eq!(cache.verifications, 2);
+        let second = models.get(directory.path()).unwrap();
+        assert_ne!(first.fingerprint(), second.fingerprint());
+        assert_eq!(verifications(&models), 2);
+    }
+
+    fn eventually<T>(mut probe: impl FnMut() -> Option<T>) -> T {
+        let started = std::time::Instant::now();
+        loop {
+            if let Some(value) = probe() {
+                return value;
+            }
+            assert!(started.elapsed() < std::time::Duration::from_secs(60));
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn an_unloaded_model_is_loaded_in_the_background_without_waiting() {
+        let directory = tempfile::tempdir().unwrap();
+        fixture_model(directory.path());
+        let models: &'static LocalModels = Box::leak(Box::default());
+        let loading = || !models.lock().unwrap().loading.is_empty();
+        // The first lookup returns before the model exists and starts its load.
+        assert!(models.loaded(directory.path()).is_none());
+        let model = eventually(|| models.loaded(directory.path()));
+        assert!(model.same(&models.get(directory.path()).unwrap()));
+        assert_eq!(verifications(models), 1);
+        // A failed load is not retried until the files change.
+        let config = directory.path().join("config.json");
+        let saved = std::fs::read(&config).unwrap();
+        std::fs::write(&config, b"{").unwrap();
+        assert!(models.loaded(directory.path()).is_none());
+        eventually(|| (verifications(models) == 2 && !loading()).then_some(()));
+        assert!(models.loaded(directory.path()).is_none());
+        assert!(!loading());
+        assert_eq!(verifications(models), 2);
+        std::fs::write(&config, saved).unwrap();
+        assert!(eventually(|| models.loaded(directory.path())).same(&model));
+        assert_eq!(verifications(models), 3);
     }
 
     #[test]
     fn local_embedding_callback_matches_batched_vectors_and_checks_every_input() {
-        let assets =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/knowledge/embed_assets");
+        let assets = crate::knowledge::staged_embed_assets();
         let texts: Vec<String> = (0..131)
             .map(|index| format!("Memory packaging and bandwidth {index}"))
             .collect();
-        let expected = embed_local_english_batch(&assets, &texts).unwrap();
+        let expected = embed_local_batch(&assets, &texts).unwrap();
         let settings = GraphProcessingSettings::default();
         let mut request = json!({"inputs":texts});
         let reply = embed_locally(&settings, &assets, &request);
@@ -631,20 +894,13 @@ mod tests {
 
     #[test]
     fn knowledge_embedding_cache_distinguishes_asset_directories_and_replacements() {
-        let bundled =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/knowledge/embed_assets");
         let first_dir = tempfile::tempdir().unwrap();
         let second_dir = tempfile::tempdir().unwrap();
-        for name in ["tokenizer.json", "model.safetensors", "config.json"] {
-            std::fs::copy(bundled.join(name), first_dir.path().join(name)).unwrap();
-            std::fs::copy(bundled.join(name), second_dir.path().join(name)).unwrap();
-        }
-        let first = cached_english_model(first_dir.path()).unwrap();
+        fixture_model(first_dir.path());
+        fixture_model(second_dir.path());
+        let first = local_model(first_dir.path()).unwrap();
         // The same bytes from another path share a model; changed assets cannot.
-        assert!(std::sync::Arc::ptr_eq(
-            &first,
-            &cached_english_model(second_dir.path()).unwrap()
-        ));
+        assert!(first.same(&local_model(second_dir.path()).unwrap()));
         let mut tokenizer: serde_json::Value = serde_json::from_slice(
             &std::fs::read(second_dir.path().join("tokenizer.json")).unwrap(),
         )
@@ -653,31 +909,26 @@ mod tests {
         let other = tokenizer["model"]["vocab"]["the"].clone();
         tokenizer["model"]["vocab"]["memory"] = other;
         tokenizer["model"]["vocab"]["the"] = memory;
-        std::fs::write(
-            second_dir.path().join("tokenizer.json"),
+        rewrite(
+            &second_dir.path().join("tokenizer.json"),
             serde_json::to_vec(&tokenizer).unwrap(),
-        )
-        .unwrap();
-        let second = cached_english_model(second_dir.path()).unwrap();
-        assert_ne!(first.1, second.1);
-        assert!(!std::sync::Arc::ptr_eq(&first, &second));
-        assert!(std::sync::Arc::ptr_eq(
-            &first,
-            &cached_english_model(first_dir.path()).unwrap()
-        ));
-        assert_eq!(second.0.encode_single("memory").len(), 128);
+        );
+        let second = local_model(second_dir.path()).unwrap();
+        assert_ne!(first.fingerprint(), second.fingerprint());
+        assert!(!first.same(&second));
+        assert!(first.same(&local_model(first_dir.path()).unwrap()));
+        assert_eq!(second.embed("memory").unwrap().len(), second.dimension());
         assert_ne!(
-            first.0.encode_single("memory"),
-            second.0.encode_single("memory")
+            first.embed("memory").unwrap(),
+            second.embed("memory").unwrap()
         );
         std::fs::remove_file(second_dir.path().join("config.json")).unwrap();
-        assert!(cached_english_model(second_dir.path()).is_err());
+        assert!(local_model(second_dir.path()).is_err());
     }
 
     #[test]
     fn batched_local_embeddings_match_single_texts_across_batch_boundaries() {
-        let assets =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/knowledge/embed_assets");
+        let model = local_model(&crate::knowledge::staged_embed_assets()).unwrap();
         let texts: Vec<String> = (0..131)
             .map(|index| match index % 4 {
                 0 => String::new(),
@@ -686,23 +937,20 @@ mod tests {
                 _ => "memory and packaging equipment ".repeat(1000),
             })
             .collect();
-        let model = cached_english_model(&assets).unwrap();
         let expected: Vec<_> = texts
             .iter()
-            .map(|text| model.0.encode_single(text))
+            .map(|text| model.0.model.encode_single(text))
             .collect();
-        assert!(expected.iter().all(|vector| vector.len() == 128));
-        assert_eq!(
-            embed_local_english_batch(&assets, &texts).unwrap(),
-            expected
-        );
-        assert!(embed_local_english_batch(&assets, &[]).unwrap().is_empty());
+        assert!(expected
+            .iter()
+            .all(|vector| vector.len() == model.dimension()));
+        assert_eq!(model.embed_batch(&texts).unwrap(), expected);
+        assert!(model.embed_batch(&[]).unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn local_embedding_needs_no_provider_and_obeys_pause_and_budget() {
-        let assets =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/knowledge/embed_assets");
+        let assets = crate::knowledge::staged_embed_assets();
         let mut settings = GraphProcessingSettings::default();
         let request = json!({"kind":"embedding", "inputs":["Ada described the engine"]});
         let reply = dispatch_inference(&settings, None, &assets, &request).await;

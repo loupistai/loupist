@@ -650,7 +650,9 @@ async fn setup(
         state.maintenance.clone(),
         Some(inference.clone()),
     );
-    if scenario.world_enabled && !state.graph.runtime_available() {
+    if scenario.world_enabled
+        && !(state.graph.runtime_available() && state.graph.wait_for_semantic_model())
+    {
         return Err("staged Graph worker/runtime not available".into());
     }
     let loupist = crate::commands::loupist::create_folder_loupist(state, workspace)
@@ -1207,7 +1209,7 @@ mod tests {
                 value["scenarios"][0]["seed"] = json!("model");
             }),
             ("template seed without a curated template", |value| {
-                value["scenarios"][0]["research_focus"] = json!("Companies I hold and follow");
+                value["scenarios"][0]["research_focus"] = json!("Companies I follow");
                 value["scenarios"][0]["seed"] = json!("template");
                 value["scenarios"][0]["template"] = json!("portfolio");
             }),

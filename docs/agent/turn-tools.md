@@ -17,7 +17,10 @@ host says they are unavailable or asks for reconnection. Repeated loads return a
 Unavailable bundled entries retain enough purpose/context
 to name the connection the user needs to configure. Loading cannot grant access.
 An artifact id already returned in this Chat, including by `chart_publish`, or
-supplied by the user, is enough for `artifact_read`. Call `artifact_list` only to
+supplied by the user, is enough for `artifact_read`. A delivered publish result is
+also a read: its edit token (chart or table) or revision (document) can be used to
+revise in this reply. Reads resolve delivered drafts before storage, and a revision
+replaces the draft without using another of the four artifact slots. Call `artifact_list` only to
 discover an unknown target id.
 [Connections](../capabilities/connections.md) owns IDs and credential behavior.
 
@@ -27,13 +30,25 @@ question that needs depth or several steps to a separate Chat: `title`, `questio
 commit inserts one `chat_handoffs` row and the separate Chat in the same transaction, a
 repeated key creates nothing, and a reply that does not finish hands nothing off. After
 the commit the host runs that Chat once through ordinary Chat admission with the
-unattended allowlist and the Bot turn's model and Memory flags, and Bot shows a
-`handoff` card ([Bot](../ui/home-thread.md#home-thread)). A separate Chat or an
+unattended allowlist, the Bot turn's model and Memory flags, and the Loupist's
+Chat default thinking level (not the Bot's effort). Bot posts a `handoff` card when that Chat's run ends, and nothing while it works ([Bot](../ui/home-thread.md#home-thread)). A separate Chat or an
 unattended run does not list the tool and the broker refuses it by surface.
 
-The general `schedules` tools are independent of Memory. `schedule_watch` and
-`schedule_briefing` read and save Memory settings, so their executor guards require
-both Memory access and Save learning; a Private chat or either missing grant
+Bot can use `chat_history` with the `card_id` from a visible hand-off history
+entry to read the final assistant answer linked to that card. History entries
+provide the card ID, not a preview or session title. The read returns the
+saved answer, session title and finish time. The first slice also returns
+`user_guidance`, up to five of the most recent user messages between the initial
+request and the linked answer, in transcript order. Each entry gives
+`created_at_ms`, up to 600 characters of `content`, and a `truncated` flag.
+The read works with Memory off and returns the answer, title and guidance
+content as untrusted text. If the answer is truncated, repeat with the same
+card ID and `offset=next_offset` (UTF-8 bytes).
+Missing, hidden, unfinished, failed and out-of-scope cards all return the same
+unavailable error.
+
+The general `schedules` tools are independent of Memory. `schedule_briefing`
+reads and saves Memory settings, and requires Memory access and Save learning; a Private chat or either missing grant
 refuses them before any read or write, even though their catalog permission is
 `always`. Generic `schedule_set_status` and `schedule_run_now` also require both
 grants when their saved target is a Briefing task, before any status mutation or
@@ -44,7 +59,7 @@ receipts expose control metadata (IDs, status, times and a fixed failure notice)
 briefing context and answer summaries stay in the run's Chat, because they can
 contain Memory and third-party text. Read current IDs/revisions
 before editing and keep a stable creation key within the turn. List receipts
-include task `kind` (`briefing`, `earnings`, `custom`); use `schedule_briefing`
+include task `kind` (`briefing`, `custom`); use `schedule_briefing`
 to change the one host briefing. A request for existing work updates that task
 or leaves it unchanged. A new custom task created in Bot with a live title (NFKC, case-folded,
 whitespace collapsed) is refused, while same-key retries and distinct titles
@@ -88,20 +103,57 @@ or removed since is logged `refused_inactive`; the reply still commits. The answ
 each filed page once (kind `Lens`, operation `create` or `revise`, `outcomes` with
 `opId`, `outcome` and `key`), and a stopped reply files nothing.
 
-[Asset pages](../knowledge/asset-pages.md#asset-pages) have three catalog tools, all on the
-unattended allowlist. `asset_page_read` (Memory read, by `assetId` or symbol and
-market) returns the user's reasons and lines, the current read with its latest
-reason, the last 20 dated rows with sources and `watchAlerts` (the last ten
-[watcher](../knowledge/watchers.md#watchers) alerts with kind, fact date, facts and sources),
-plus a Korean equity's latest [investor flows](../knowledge/what-changed.md#what-changed) as
-`investorFlows`; it is a saved-context receipt, never original evidence, never creates
-a page and filters by date under `as_of` ([rules](../knowledge/asset-pages.md#asset-pages)), keeping only alerts
-dated by then. Outside an as-of turn it adds `results`: the two latest
-[results events](../analysis/results.md#results-events) whose report date is at most 14 days
-away, each staged as its own saved-context result (`earnings_snapshot`) with a
-`citation_url` and Rust's differences (`differencesComputedByRust`), filed steps and
-revisions. An answer paragraph that is only a link to that URL renders the compact
-results card.
+`pasted_capture` (core, `always`, Bot and interactive Chats only; the unattended
+allowlist, host hand-offs and a Chat other than the bound one refuse it) takes `text`
+(1 to 131,072 characters), optional `url` and optional `publisher` (up to 200
+characters). Rust finds `text` in the user's own messages of the bound Chat with only
+whitespace differing and returns the user's exact bytes as `content`, with
+`source_class: user_provided`, `pasted_at` (that message's send time), `pasted`
+(`message_id`, `created_at_ms`), any `stated_url` and `stated_publisher`, a
+`result_ref` and a `citation_url`, plus a `next` when saving is on. A miss is refused
+by field (`text`, `url`, `publisher`). The run result has no origin, so the evidence
+carries no link. `source_save` with that `result_ref` stages a
+[user-provided Source](../knowledge/sources-notes.md#user-provided-sources); it counts
+toward the 16 Source saves per reply like any other.
+
+[Asset pages](../knowledge/asset-pages.md#asset-pages) expose saved context in
+`asset_page_read`. The tool takes an `assetId` or a ticker or name and returns the
+thesis, linked Map entity, stored price and saved call. Its citation describes
+the page. A price read or other dated source supplies original evidence. Under
+an as-of cutoff, the result keeps the dated reasons, lines and moves and leaves
+out the current verdict, saved call, stored price and entity link.
+
+`asset_lookup` submits a name or ticker through the `openfigi.lookup` grant.
+The result contains bounded listing fields and uses ordinary retention.
+`price_read_save` stages an acknowledged provider call and a field mapping for
+replay. The path is described in [Saved price reads](../knowledge/asset-pages.md#saved-price-reads).
+
+`fx_rate` is a core read on every surface, without `capability_load`, taking
+an uppercase three-letter `from` code and an optional `to` code in the same form.
+Omitting `to` uses the display currency captured at turn admission. Without that
+setting the caller must supply `to`. An explicit valid target takes precedence.
+It reads the ECB daily euro reference table through this Loupist's
+`openbb.platform` grant. `to_per_from` is
+units of `to` per one `from`, rounded to six significant digits, with the table's
+own date, `ecb:YYYY-MM-DD` revision, source and non-euro legs. Cross pairs say
+`computed: cross rate through EUR`; an inverse ending in EUR says
+`computed: inverse of the reference rate`; the published EUR-to-other direction
+omits `computed`. The first successful table read pins the turn's revision and
+repeated pairs return the same retained result and citation, whether the target
+was defaulted or explicit. If a delivery is
+discarded before retention, a later call stages evidence for its own delivery
+against the same pinned table. As-of turns are refused before any read, identical codes are refused on `to`, and a missing code
+is refused on its field with the table's available codes. The sidecar read is
+upstream evidence when the turn performs it. A turn that joins a display refresh
+gets the shared table and creates its own FX receipt without display-side
+upstream evidence. [Provenance](../analysis/provenance.md#provenance-and-cutoffs)
+owns the cache, freshness and typed failures.
+
+Pass the rate's `to_per_from` as `inputs.rate` to
+[`calculate convert`](../analysis/calculation.md#calculation-1) and link the rate's
+`citation_url` in `input_sources.rate`. The rate's pair must match the amount's
+`unit` currency and the conversion's explicit `to`, in that order. The rate's publication
+date, source and revision stay with the conversion receipt.
 
 `world_schema_update` (Memory save in `memory-save`, interactive turns only, one call
 per reply, not on the scheduled-run allowlist) takes up to two `types` and three
@@ -114,17 +166,20 @@ skipped and listed in the answer's `memory_update.skippedKinds`. [Worlds](../kno
 `loupist_setup` (Memory save in `memory-save`, Bot and interactive Chats only, one call
 per reply, refused in scheduled and delegated runs by the unattended allowlist and by
 the chat surface) sets a Loupist up from what the user says. It takes `follow` (at most
-ten `{symbol, market?, name?}`), `unfollow` (at most ten `{symbol, market?}`), `focus`
+ten `{name, reference?}`), `unfollow` (at most ten `{asset}`), `focus`
 (1–280 characters, replacing the research focus) and `preset` (a `LoupistTemplate`
 id). Rust checks each field when the call arrives and refuses by field
-(`follow[1].symbol`, `focus`, `preset`); nothing applies until the reply commits, and a
-stopped reply changes nothing. The followed list lives in the app database, outside the
-reply's transaction, so its changes apply just before that transaction through the
-Following commands' own functions (`commands/user_context.rs`) and stay if the commit
-then fails; a market the user did not give stays unknown, and an asset already
-followed under any market is not added again. In the reply's
-transaction the focus is written to the Loupist profile, the World settings'
-`research_focus` and the perspective page's `focus` section together, and the preset adds its curated kinds the map lacks as one
+(`follow[1].name`, `focus`, `preset`); nothing applies until the reply commits, and a
+stopped reply changes nothing. `follow` and `unfollow` change this Loupist's own
+followed list; `unfollow` matches only what this Loupist follows. The followed list
+lives in the app database, outside the reply's transaction, so its changes apply just
+before that transaction through the Following commands' own store functions
+(`store/user_context.rs`) and stay if the commit then fails; a reference nobody gave
+stays empty, and a follow that matches an existing catalog asset (the same reference
+first, else the same name where no reference conflicts) reuses it, another Loupist's
+included, instead of adding another. In the reply's
+transaction the focus is written to the Loupist profile and the World settings'
+`research_focus` together (it files no Lens page), and the preset adds its curated kinds the map lacks as one
 `preset` change carrying the asking message. A preset's default focus (the New
 Loupist dialog's copy) fills only an empty focus, so a repeated preset changes
 nothing. The answer's `memory_update.setup` lists each applied change (`followed`,
@@ -156,52 +211,47 @@ sending the user to Data connections.
 `evidence` citation URLs from the turn and either `to` with a `reason` (≤ 280
 characters, optional `reasonId`) or `lineReading {journalId, observed}`; its result
 reports the checked step, crossing and fact date, and says the update is saved only if
-the page still fits at commit. `earnings_snapshot_save` (Memory save in `memory-save`,
-staged until the reply commits) records guidance, consensus, a broker's estimate,
-reported figures or the call's tone for one results event; its
-[rules](../analysis/results.md#results-before-and-after) refuse a value no cited source prints,
-wrongly dated evidence and any as-of or private turn, and its result reminds the model
-that the app computes every difference.
+the page still fits at commit.
 
-`journal_save` accepts `thesis {symbol, market, role}` for a reason or line the user
-stated; a `line` needs a check, whose `byDate` is then optional, and a thesis entry
-needs no `sourceReads`, `worldReads` or `lensReads`. One reply may save one reason
+`journal_save` accepts `thesis {asset, role}` for a reason or line the user stated.
+Pass an asset id, ticker or name. See the host’s
+[resolution order](../knowledge/asset-pages.md#open-and-match-an-asset). A `line`
+needs a check with optional `byDate`. A thesis entry needs no `sourceReads`,
+`worldReads` or `lensReads`. One reply may save one reason
 and one checked line for the same asset, in either order; the commit writes the
 reason first, atomically with the line and Chat. Other second entries and any
 third entry are refused. Thesis receipts add `saved_as` (`reason` or `line`) and
-`next`: only a line is tested against figures, and a line without an active or
-staged reason asks for one because readings need it. `SYSTEM.md` tells the agent to
-read the page for a followed asset, save the user's stated reasons and lines with
-`thesis`, and move the read one step only on a dated original fact read in the turn,
-never to agree with the user and never under an as-of date. It also points the agent at
-the page's `results`: cite a result's `citation_url` alone in a paragraph to show its
-card, record values with `earnings_snapshot_save` from evidence read in the turn
-(consensus from FMP or Intrinio only), and never compute a difference or call results a
-beat or a miss. Held quantities show as `[hidden on this computer]` in an account read.
-`SYSTEM.md` tells the agent to explain that local privacy limit and offer analysis
-from available public information, without asking the user to transcribe hidden
-account details or reconstructing them from other results
+`next`: only a line is tested against figures; a line's `next` says where it is
+kept, how it is tested and whether it comes due, for the answer to pass on; and a
+line without an active or staged reason asks for one because readings need it.
+The tool descriptions carry
+these rules, and `SYSTEM.md` does not repeat them: `journal_save` saves the user's
+stated reasons and lines with `thesis`; `thesis_update` moves the read one step only
+on a dated original fact read in the turn, never to agree with the user and never
+under an as-of date. Reviewed account fields show as `[hidden on this computer]` in an account read.
+`SYSTEM.md` tells the agent to explain that the host keeps hidden fields local, offer
+a next step from public information, and not reconstruct them from other results
 ([redaction](../architecture.md#trust)).
 
 `grid_publish` (`charts` pack) publishes one checked table in the answer; its contract is
-in [Grid cells](../analysis/grids.md#grid-cells). `SYSTEM.md` sends a comparison of two or more
-assets on two or more measures to a `grid_publish` table (layout `assets`) instead of
-prose or a Markdown table, with derived cells computed by `calculate` first, empty cells
-with their reason, and each column's period and basis; a small single-asset table stays
-Markdown with linked numbers. When acknowledged sources give different values for the
-same measure, entity and period, or opposite claims, it publishes a conflict card (layout
-`conflict`) and says which report the answer uses and why, or that it cannot tell; it
+in [Grid cells](../analysis/grids.md#grid-cells). `SYSTEM.md` does not name the tool: the `charts`
+pack line in the capability index and the `grid_publish` description say when a checked
+table (layout `assets`) or a conflict card (layout `conflict`) fits and give the cell
+rules. `SYSTEM.md` keeps the two rules that hold with or without a table: measures
+compared side by side cover like periods on the same basis, and when sources disagree the
+answer says what each reports and which it uses and why, or that it cannot tell; it
 never averages or silently picks one, and differences within rounding are not conflicts.
 The comparison Skill publishes its table the same way, one row per asset and one column
 per measure, leaving values on another basis empty rather than mixing bases, and shows
 disagreeing figures as a conflict card. A `world_read` with disputed claims returns
 `sources_disagree` to prompt the same card.
 
-`plan_update` is presentation only. For replies with more than three steps the
-model sets two to six short steps with a status each; Rust validates the list,
-projects it into the reply's progress plan, keeps each step's first activation
-time and marks unfinished steps Not done when the run ends. It creates no evidence
-and touches no Memory, and scheduled runs may call it.
+`interface_labels` (core, Bot and interactive Chats only) reads product and navigation
+labels in the appearance captured for the turn, with or without Memory. It takes
+only `keys`, an array of one to seven distinct keys from the tool catalog. The result
+maps each requested key to its localized label. Invalid arguments share one repair.
+[Turn context](context-delivery.md#memory-and-context) describes how unattended turns
+receive interface wording.
 
 `ask_user` (core, Bot and interactive Chats only, two calls per reply) lets the agent
 settle a real fork without ending the reply. It takes `question` (1-300 characters),
@@ -216,7 +266,7 @@ research or presentation default and say which one it used. The `assumed` label
 is only the recommendation. Before publishing the card, Rust raises a reply-local
 pending-question counter; while any question is waiting, and after any question
 ends unanswered, it refuses schedule deletion, stopping, editing and pausing;
-watch or briefing disables; Lens section retirement; unfollowing an asset or
+briefing disables; Lens section retirement; unfollowing an asset or
 replacing the research focus; and Bot memory update, resolve and forget. The
 returned `next` and tool description name this same list. Ordinary reads,
 research, calculations, other saves and work products (artifact revision,
@@ -230,8 +280,9 @@ guard in the same reply; a new reply starts fresh. A text answer's URLs count as
 the untrusted-text rule, and the answer joins the private text no URL may carry after
 third-party text. The description tells the model to ask only when the answer
 changes the work materially and no sensible default exists, never for credentials or
-account numbers, and never for permission to run a tool. Scheduled and delegated runs
-refuse it: the unattended allowlist omits it and the chat surface gates it. The card and
+account numbers, and never for permission to run a tool. Scheduled runs and all
+host-started research hand-offs refuse it, including a Map-link hand-off on the
+Session surface. The tool is omitted and the broker refuses a direct call. The card and
 `chat_question_answer` are described in [Chat composer](../ui/chat-composer.md#chat-composer).
 
 Tool failures should identify the field and expected shape, with a useful repair

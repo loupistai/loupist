@@ -21,7 +21,7 @@ const readJson = async path => JSON.parse(await readFile(path, 'utf8'));
 const readJsonl = async path => (await readFile(path, 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line));
 
 export function parseArgs(argv) {
-  const result = { iterations: 2, proposer: 'codex', model: 'openai-codex/gpt-6.1-sol', thinking: 'medium' };
+  const result = { iterations: 2, proposer: 'codex', model: 'openai-codex/gpt-6.2-sol', thinking: 'medium' };
   const allowed = new Set(['suite', 'iterations', 'proposer', 'out', 'resume', 'runner', 'pi-agent-dir', 'taxonomy', 'model', 'thinking']);
   const provided = [];
   for (let i = 0; i < argv.length; i++) {

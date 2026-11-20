@@ -75,6 +75,10 @@ pub struct MemoryUpdateChange {
     #[serde(default)]
     #[cfg_attr(test, ts(optional = nullable))]
     pub outcomes: Vec<FiledOutcome>,
+    /// A Source the user pasted into the Chat (`SourceClass::UserProvided`).
+    #[serde(default)]
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub user_provided: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,6 +118,9 @@ impl Serialize for MemoryUpdateChange {
         if !self.outcomes.is_empty() {
             map.serialize_entry("outcomes", &self.outcomes)?;
         }
+        if self.user_provided {
+            map.serialize_entry("userProvided", &true)?;
+        }
         map.end()
     }
 }
@@ -134,6 +141,9 @@ pub struct MemoryUpdateResult {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub setup: Vec<SetupChange>,
 }
+
+/// The skipped receipt key for a Journal entry whose staged asset was absent.
+pub(crate) const SKIPPED_JOURNAL_SAVE: &str = "journal_save";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -263,7 +273,12 @@ impl MemoryUpdateResult {
                 "memory update future use is invalid",
             )?;
         }
-        if self.skipped_kinds.len() > 18 {
+        let journal_skips = self
+            .skipped_kinds
+            .iter()
+            .filter(|kind| kind.name == SKIPPED_JOURNAL_SAVE)
+            .count();
+        if journal_skips > 1 || self.skipped_kinds.len() - journal_skips > 18 {
             return Err(DomainError::Invalid("memory update skipped too many kinds"));
         }
         for kind in &self.skipped_kinds {
@@ -304,6 +319,11 @@ pub struct ChatPerformance {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub first_text_ms: Option<u64>,
+    /// First text delta of the final stopping assistant message, from turn start.
+    /// Absent when that message did not stream text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub answer_text_ms: Option<u64>,
     pub generation_ms: u64,
     /// Elapsed time through preparation of the canonical completion snapshot.
     pub total_ms: u64,
@@ -350,6 +370,11 @@ pub struct ChatEvidenceRef {
     #[cfg_attr(test, ts(optional))]
     pub provider: Option<String>,
     pub tool_name: String,
+    /// The read returned a user-provided Source (`SourceClass::UserProvided`):
+    /// material the user pasted earlier, kept as given and never verified.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub user_provided: bool,
     /// For a `calculate` result: its operation, the stable id it is worded by.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
@@ -423,6 +448,8 @@ pub enum ChatEvidenceKind {
     Discovery,
     Derived,
     LocalFile,
+    /// Text the user pasted into this Chat (`pasted_capture`).
+    UserProvided,
     SavedContext,
 }
 
@@ -487,14 +514,18 @@ pub struct ChatMessage {
     /// A crossed red line the host announced in the home Thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alert: Option<HomeAlert>,
-    /// Watcher alerts the host posted in the home Thread.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub watch: Option<HomeWatch>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handoff: Option<HomeHandoff>,
-    /// A results snapshot (or a failed capture) the host posted in the home Thread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub earnings: Option<HomeEarnings>,
+    pub research_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) handoff_note: Option<HandoffNote>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff_action: Option<HandoffAction>,
+    /// The request a scheduled run sent: its task's prompt, not words the
+    /// user wrote at that time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled: Option<ScheduledTurn>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vocabulary: Option<HomeVocabulary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -507,10 +538,6 @@ pub struct ChatMessage {
     /// finished (finance-show-the-math.md §7.2).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub number_checks: Vec<crate::domain::NumberCheck>,
-    /// Grid results the answer linked as paragraphs of their own, copied
-    /// from the host's calculations when it finished.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sensitivity_cards: Vec<crate::domain::SensitivityCard>,
     /// What an as-of answer could not use, written when it finished.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub as_of_report: Option<crate::domain::AsOfReport>,
@@ -518,7 +545,7 @@ pub struct ChatMessage {
 
 /// One crossed line on an asset page, posted once into the home Thread. Built
 /// only from the page and its move: names, the user's claim and the observed
-/// value, never holdings quantities.
+/// value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct HomeAlert {
@@ -537,17 +564,6 @@ pub struct HomeAlert {
     #[cfg_attr(test, ts(optional))]
     pub source_url: Option<String>,
     pub source_title: String,
-}
-
-/// Watcher alerts in one host message: at most five, then "+{more} more".
-/// Events are the stored `WatchEventView`s (names and dated facts, never
-/// holdings); kept as JSON so the message stays a plain record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-pub struct HomeWatch {
-    pub event_ids: Vec<String>,
-    pub events: Vec<serde_json::Value>,
-    pub more: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -604,26 +620,8 @@ impl From<&crate::knowledge::ConnectionView> for HomeLink {
     }
 }
 
-/// A results message: "{name} reported {period} results." with the two most
-/// material measures, or a before-capture that failed (Try again).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-pub struct HomeEarnings {
-    pub asset_id: String,
-    pub event_id: String,
-    pub name: String,
-    pub symbol: String,
-    pub market: String,
-    pub period: String,
-    /// `reported` or `failed`.
-    pub outcome: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub side: Option<String>,
-    /// The card's measure rows (`MeasureView`), at most two.
-    pub measures: Vec<serde_json::Value>,
-}
-
+/// Bot's post for a research session it handed off, once that session finished,
+/// failed or stopped. A session at work posts nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -631,10 +629,86 @@ pub struct HomeHandoff {
     pub handoff_id: String,
     pub chat_id: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub connection_id: Option<String>,
     pub status: crate::chat::handoff::HandoffStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
+    pub stop_reason: Option<crate::chat::handoff::HandoffStopReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub learned: Option<crate::knowledge::LearnedDigest>,
+}
+
+/// The hand-off's bounded context, kept separately from the user's request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HandoffNote {
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub untrusted_id: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for HandoffNote {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct StoredNote {
+            title: String,
+            question: Option<String>,
+            brief: Option<String>,
+            untrusted_id: Option<String>,
+            // Older notes may still contain this retired display count.
+            #[serde(rename = "omittedPins")]
+            _legacy_count: Option<u32>,
+        }
+        let StoredNote {
+            title,
+            question,
+            brief,
+            untrusted_id,
+            ..
+        } = StoredNote::deserialize(deserializer)?;
+        Ok(Self {
+            title,
+            question,
+            brief,
+            untrusted_id,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum HandoffAction {
+    Link {
+        #[serde(rename = "connectionId")]
+        connection_id: String,
+    },
+}
+
+/// Which run of which scheduled task sent a request into its Chat.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ScheduledTurn {
+    pub task_id: String,
+    pub run_id: String,
+    pub task_title: String,
+    pub task_kind: crate::scheduled_tasks::types::TaskKind,
+}
+
+impl ScheduledTurn {
+    fn validate(&self) -> Result<(), DomainError> {
+        require_identifier(&self.task_id, "scheduled turn task id is invalid")?;
+        require_identifier(&self.run_id, "scheduled turn run id is invalid")?;
+        require_bounded_text(&self.task_title, 200, "scheduled turn title is invalid")
+    }
 }
 
 /// Where a host-posted Thread message came from: one finished scheduled run.
@@ -888,6 +962,14 @@ impl ChatAttachment {
 
 impl ChatMessage {
     pub fn validate(&self) -> Result<(), DomainError> {
+        if let Some(id) = &self.research_session_id {
+            require_identifier(id, "invalid research session id")?;
+            if self.role != ChatRole::Assistant || self.status != ChatMessageStatus::Complete {
+                return Err(DomainError::Invalid(
+                    "a research session link requires a completed reply",
+                ));
+            }
+        }
         if self.steer && self.role != ChatRole::User {
             return Err(DomainError::Invalid("only user messages can be steers"));
         }
@@ -901,14 +983,11 @@ impl ChatMessage {
             .as_deref()
             .is_some_and(|date| !crate::domain::valid_as_of(date))
             || (self.role != ChatRole::Assistant
-                && (!self.number_checks.is_empty()
-                    || !self.sensitivity_cards.is_empty()
-                    || self.as_of_report.is_some()))
+                && (!self.number_checks.is_empty() || self.as_of_report.is_some()))
         {
             return Err(DomainError::Invalid("invalid as-of date or answer checks"));
         }
         crate::domain::answer_checks::validate_number_checks(&self.number_checks)?;
-        crate::domain::answer_checks::validate_sensitivity_cards(&self.sensitivity_cards)?;
         if let Some(report) = &self.as_of_report {
             crate::domain::answer_checks::validate_as_of_report(report)?;
         }
@@ -1142,6 +1221,14 @@ impl ChatMessage {
                 "user chat message cannot have a model lock",
             ));
         }
+        if let Some(turn) = &self.scheduled {
+            if self.role != ChatRole::User || self.steer {
+                return Err(DomainError::Invalid(
+                    "only a scheduled run's request names its run",
+                ));
+            }
+            turn.validate()?;
+        }
         if matches!(
             self.status,
             ChatMessageStatus::Aborted | ChatMessageStatus::Error
@@ -1254,6 +1341,17 @@ pub fn prepare_chat_retry(
             "only the latest failed or stopped reply can be tried again",
         ))?;
     let user = session.messages.remove(request_index);
+    if user.handoff_note.is_some() || user.handoff_action.is_some() {
+        return Err(DomainError::Invalid(
+            "Ask again to start a new turn after a stopped hand-off",
+        ));
+    }
+    // Sent again here it would run as the user's own turn; Run now runs the task.
+    if user.scheduled.is_some() {
+        return Err(DomainError::Invalid(
+            "Run the scheduled task again with Run now",
+        ));
+    }
     if user.role != ChatRole::User
         || (user.content.trim().is_empty() && user.attachments.is_empty())
     {
@@ -1442,6 +1540,20 @@ fn cache_or_cold<'de, D: serde::Deserializer<'de>>(
 }
 
 impl ChatSession {
+    pub(crate) fn opening_scheduled_turn(&self) -> Option<&ScheduledTurn> {
+        if !self
+            .id
+            .starts_with(crate::scheduled_tasks::store::RUN_CHAT_PREFIX)
+        {
+            return None;
+        }
+        self.messages
+            .iter()
+            .find(|message| message.role == ChatRole::User)?
+            .scheduled
+            .as_ref()
+    }
+
     pub fn validate(&self) -> Result<(), DomainError> {
         require_identifier(&self.id, "chat session id is empty or unsafe")?;
         require_identifier(&self.loupist_id, "chat loupist id is empty or unsafe")?;
@@ -1470,6 +1582,17 @@ impl ChatSession {
                 ));
             }
             validate_messages(&version.messages)?;
+        }
+        if !crate::chat::home::is_home(self)
+            && self
+                .messages
+                .iter()
+                .chain(self.versions.iter().flat_map(|v| &v.messages))
+                .any(|m| m.research_session_id.is_some())
+        {
+            return Err(DomainError::Invalid(
+                "only Bot replies can link a research session",
+            ));
         }
         if !self.bot_memory.is_empty() && !crate::chat::home::is_home(self) {
             return Err(DomainError::Invalid("only the Bot keeps Bot memory"));
@@ -1572,6 +1695,7 @@ mod tests {
                 url: None,
                 provider: None,
                 tool_name: "web_fetch".into(),
+                user_provided: false,
                 calc_operation: None,
                 read_ref: None,
                 retrieved_at: "2026-10-11T00:00:00Z".into(),
@@ -1846,6 +1970,36 @@ mod tests {
             assert_eq!(prompt, "Compare margins");
             assert_eq!(next.messages, [steer]);
             assert_eq!(chat.messages.len(), 3);
+        }
+    }
+
+    #[test]
+    fn a_scheduled_runs_request_is_run_again_by_its_task_not_resent() {
+        for status in [ChatMessageStatus::Error, ChatMessageStatus::Aborted] {
+            let request = ChatMessage {
+                scheduled: Some(ScheduledTurn {
+                    task_id: "scheduled-task".into(),
+                    run_id: "scheduled-run".into(),
+                    task_title: "Daily chip check".into(),
+                    task_kind: crate::scheduled_tasks::types::TaskKind::Custom,
+                }),
+                ..retry_message(
+                    "request",
+                    ChatRole::User,
+                    ChatMessageStatus::Complete,
+                    "Check the chip makers.",
+                )
+            };
+            let failed = retry_message("failed", ChatRole::Assistant, status, "Stopped.");
+            let chat = ChatSession {
+                messages: vec![request, failed],
+                ..crate::test_fixtures::chat_session("scheduled-chat-a", "loupist-retry")
+            };
+            chat.validate().unwrap();
+            assert_eq!(
+                prepare_chat_retry(&chat, 4).unwrap_err(),
+                DomainError::Invalid("Run the scheduled task again with Run now")
+            );
         }
     }
 }

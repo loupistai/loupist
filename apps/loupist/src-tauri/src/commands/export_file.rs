@@ -71,7 +71,7 @@ fn dialog_title(title: &str) -> String {
     if line.is_empty() {
         return "Save".to_owned();
     }
-    line.chars().take(MAX_TITLE_CHARS).collect()
+    crate::util::shorten(&line, MAX_TITLE_CHARS)
 }
 fn validate_size(size: usize, kind: ExportKind) -> Result<(), CommandError> {
     if size == 0 || size > kind.max_bytes() {

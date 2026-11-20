@@ -1,6 +1,6 @@
 /** Preview scenarios, in the capture order `src/preview/scenarios.ts` assembles. */
 import { prepareFixture, previewDelivery, previewKo } from "../fixtures";
-import { prepareMorningFixture } from "../fixtures/morning";
+import { prepareMorningFixture, writtenEarlier } from "../fixtures/morning";
 import { base, click, hasLayout, navigate, openNavigation, openScheduleRun, select, until, type PreviewScenario } from "./kit";
 
 /** The Schedule tab and the home Thread. */
@@ -8,7 +8,6 @@ export const scheduleScenarios: PreviewScenario[] = [
   // W15.23 and W15.6c: the Schedule tab manages scheduled work; results arrive in the home Thread.
   ...([
     ["schedule-list", "Scheduled tasks with saved names, cadence and a task menu", ".schedule-list"],
-    ["schedule-watching-setup", "Schedule's Watching row opens Following with its status and controls", "[data-testid=following-page] .watching-status"],
     ["schedule-empty", "Nothing scheduled yet", ".schedule-list .schedule-empty"],
     ["schedule-create", "Request scheduled work in Bot", ".composer-shell textarea"],
     ["schedule-active-filter", "Active filter hides a paused task", "[data-schedule-filter='active']"],
@@ -23,10 +22,10 @@ export const scheduleScenarios: PreviewScenario[] = [
     ...base(id, title, () => {
       if (id === "schedule-list") {
         const list = select(".schedule-list");
-        return list && !list.closest(".briefings-layout")?.hasAttribute("data-reader-open") && list.querySelector('[data-schedule-task="watching"][data-status="setup"]') ? list : null;
+        return list && !list.closest(".briefings-layout")?.hasAttribute("data-reader-open") && list.querySelector(".schedule-task") ? list : null;
       }
       if (id === "schedule-active-filter") {
-        const rows = [...document.querySelectorAll(".schedule-task:not(.watching-item)")];
+        const rows = [...document.querySelectorAll(".schedule-task")];
         const paused = previewKo() ? "주간 공급 능력 비교" : "Weekly supplier capacity comparison";
         return rows.length > 0 && rows.every(row => !row.textContent?.includes(paused)) ? select(landmark) : null;
       }
@@ -43,7 +42,6 @@ export const scheduleScenarios: PreviewScenario[] = [
         return;
       }
       await navigate(root, "schedule");
-      if (id === "schedule-watching-setup") await click('[data-schedule-task="watching"] .schedule-task-summary');
       if (id === "schedule-dialog") await click('[data-schedule-task="preview-briefing"] .schedule-task-summary');
       if (id === "schedule-task-active" || id === "schedule-task-failed") await click('[data-schedule-task="preview-task-0"] .schedule-task-summary');
       if (id === "schedule-task-paused") {
@@ -56,10 +54,11 @@ export const scheduleScenarios: PreviewScenario[] = [
       bridge.includeBriefingBody = true;
       if (id === "schedule-empty") { bridge.scheduleTasks = "none"; bridge.inboxList = async () => ({ items: [], nextCursor: null }); bridge.inboxUnreadCounts = async () => []; return; }
       await bridge.briefingSettingsSet({ loupistId: "loupist-quality", enabled: true });
-      // The briefing follows the same assets the user follows, named in the cell's language.
+      // The briefing names the assets the user follows by the names they were followed by, in the cell's language.
       const ko = previewKo();
-      const followed = [["005930", "KRX", ko ? "삼성전자" : "Samsung Electronics"], ["000660", "KRX", ko ? "SK하이닉스" : "SK hynix"], ["AAPL", "NASDAQ", "Apple"]] as const;
-      bridge.watchlistList = async () => followed.map(([symbol, market, displayName]) => ({ symbol, market, displayName, addedAtMs: Date.now() - 30 * 86_400_000 }));
+      for (const [ticker, exchange, name] of [["005930", "KS", ko ? "삼성전자" : "Samsung Electronics"], ["000660", "KS", ko ? "SK하이닉스" : "SK hynix"], ["AAPL", "US", "Apple"]] as const) {
+        bridge.assets.installAsset({ name, ticker, exchange });
+      }
       const map = await bridge.knowledgeMap({ loupistId: "loupist-quality", maxNodes: 1000 });
       const entity = (node: { id: string }, index: number) => ({ eventId: `briefing-growth-${index}`, loupistId: "loupist-quality", originChatId: "preview-chat", originMessageId: "preview-answer", atMs: Date.now(), kind: "entity_added" as const, subjectId: node.id, recordId: "preview-world", actor: "loupist" as const, summary: "", beforeSummary: null, afterSummary: null });
       const disputed = id === "briefing-suggested" ? [{ ...entity({ id: "map-claim-28" }, 9), kind: "claim_disputed" as const, subjectId: "map-claim-28", atMs: Date.now() + 3_600_000 }] : [];
@@ -71,12 +70,14 @@ export const scheduleScenarios: PreviewScenario[] = [
       }
     },
   })),
-  { ...base("thread-home", "The home Thread: a delivered result and the morning news", () => select(".thread-delivery") && select('.morning-message[aria-busy="false"]'), async () => {
-    const news = await until(() => select('.morning-message[aria-busy="false"]'), "Morning news did not appear");
+  { ...base("thread-home", "The home Thread: a delivered result and the morning news", () => select(".thread-delivery") && select('.morning-message'), async () => {
+    const news = await until(() => select('.morning-message'), "Morning news did not appear");
     if (hasLayout()) news.scrollIntoView({ block: "end" });
   }), setup: async bridge => {
     await prepareMorningFixture(bridge, "morning");
     bridge.conversation = "answer";
+    // The person last wrote before the last visit; the delivered result arrived since.
+    writtenEarlier(bridge, 3);
     const select = bridge.loupistSelect.bind(bridge);
     bridge.loupistSelect = async loupistId => {
       const workspace = await select(loupistId);

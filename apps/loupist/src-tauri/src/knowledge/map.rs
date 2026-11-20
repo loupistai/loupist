@@ -55,7 +55,6 @@ pub struct KnowledgeMapNode {
     #[cfg_attr(test, ts(optional))]
     pub archived: Option<bool>,
     pub watched: bool,
-    pub held: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub learned_at_ms: Option<i64>,
@@ -101,7 +100,6 @@ pub struct KnowledgeMapCount {
 pub struct KnowledgeMap {
     pub nodes: Vec<KnowledgeMapNode>,
     pub edges: Vec<KnowledgeMapEdge>,
-    pub unmatched_holdings: Vec<MapContextItem>,
     pub unmatched_watchlist: Vec<MapContextItem>,
     /// Counts refer to projected nodes/edges (multi-endpoint claims form a star).
     pub counts: BTreeMap<String, KnowledgeMapCount>,
@@ -204,7 +202,6 @@ pub(super) fn query(
     let empty = Vec::new();
     let world_nodes = body.as_ref().map_or(&empty, |body| &body.nodes);
     let (watched, unmatched_watchlist) = match_items(&context.watchlist, world_nodes);
-    let (held, unmatched_holdings) = match_items(&context.holdings, world_nodes);
     let mut incident = BTreeMap::<String, i64>::new();
     let mut degrees = BTreeMap::<String, u32>::new();
     let mut custom_origins = BTreeMap::new();
@@ -300,7 +297,6 @@ pub(super) fn query(
                     record_id: None,
                     archived: None,
                     watched: watched.contains(&node.id),
-                    held: held.contains(&node.id),
                     learned_at_ms: None,
                     learned_rationale: None,
                 },
@@ -346,7 +342,6 @@ pub(super) fn query(
                 record_id: Some(id),
                 archived: Some(archived.is_some()),
                 watched: false,
-                held: false,
                 learned_at_ms: learned.as_ref().map(|v| v.0),
                 learned_rationale: learned.map(|v| v.1),
             },
@@ -391,7 +386,6 @@ pub(super) fn query(
                 record_id: Some(journal.journal_id),
                 archived: Some(false),
                 watched: false,
-                held: false,
                 learned_at_ms: None,
                 learned_rationale: None,
             },
@@ -439,7 +433,7 @@ pub(super) fn query(
     }
     let mut chosen = BTreeSet::new();
     // Personal context takes priority; overflow remains visible through per-kind counts.
-    for id in watched.union(&held) {
+    for id in &watched {
         if chosen.len() < limit as usize {
             chosen.insert(id.clone());
         }
@@ -523,7 +517,6 @@ pub(super) fn query(
     Ok(KnowledgeMap {
         nodes,
         edges,
-        unmatched_holdings,
         unmatched_watchlist,
         counts,
         world_revision_id: world.map(|row| row.0),
@@ -635,6 +628,7 @@ mod tests {
     }
     fn item(symbol: &str, name: Option<&str>) -> MapContextItem {
         MapContextItem {
+            asset_id: crate::knowledge::assets::asset_id(symbol, "NASDAQ"),
             symbol: symbol.into(),
             market: "NASDAQ".into(),
             display_name: name.map(str::to_owned),
@@ -660,18 +654,12 @@ mod tests {
         lens(&tx, "method", false);
         let context = MapContext {
             watchlist: vec![item("last", None), item("missing", None)],
-            holdings: vec![
-                item("other", Some("  COMPANY   48  ")),
-                item("unmatched", None),
-            ],
             updated_at_ms: 900,
         };
         let map = query(&tx, &request(Some(5)), &context).unwrap();
         assert_eq!(map.nodes.len(), 5);
         assert!(map.nodes.iter().any(|n| n.id == "n00049" && n.watched));
-        assert!(map.nodes.iter().any(|n| n.id == "n00048" && n.held));
         assert_eq!(map.unmatched_watchlist, vec![item("missing", None)]);
-        assert_eq!(map.unmatched_holdings, vec![item("unmatched", None)]);
         assert_eq!(map.counts["entity"].total, 50);
         assert!(map.counts["entity"].truncated);
         assert!(map
@@ -710,7 +698,7 @@ mod tests {
         assert!(query(&tx, &request(Some(0)), &context).is_err());
         let overflow = query(&tx, &request(Some(1)), &context).unwrap();
         assert_eq!(overflow.nodes.len(), 1);
-        assert!(overflow.nodes[0].watched || overflow.nodes[0].held);
+        assert!(overflow.nodes[0].watched);
     }
 
     #[test]
@@ -862,37 +850,6 @@ mod tests {
             serde_json::to_vec(&query(&tx2, &request(Some(20)), &MapContext::default()).unwrap())
                 .unwrap()
         );
-    }
-
-    #[test]
-    fn app_context_reads_only_latest_holdings_and_identity_fields() {
-        use crate::store::user_context::{HoldingsPosition, HoldingsSource};
-        let temp = tempfile::tempdir().unwrap();
-        let store = crate::store::SqliteStore::open(temp.path().join("app.sqlite")).unwrap();
-        store
-            .watchlist_add("t1", "nasdaq", Some("Company 1"))
-            .unwrap();
-        let position = |symbol: &str| HoldingsPosition {
-            symbol: symbol.into(),
-            market: "NASDAQ".into(),
-            display_name: None,
-            quantity: "999.5".into(),
-            cost_basis: Some("123.45".into()),
-            market_value: Some("4567".into()),
-            currency: "USD".into(),
-        };
-        store
-            .save_holdings_snapshot(HoldingsSource::Csv, vec![position("OLD")])
-            .unwrap();
-        store
-            .save_holdings_snapshot(HoldingsSource::Csv, vec![position("NEW")])
-            .unwrap();
-        let context = store.map_context().unwrap();
-        assert_eq!(context.watchlist[0].symbol, "T1");
-        assert_eq!(context.holdings, vec![item("NEW", None)]);
-        let json = serde_json::to_string(&context.holdings).unwrap();
-        assert!(!json.contains("999.5"));
-        assert!(!json.contains("quantity"));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "../../../i18n";
 import type { CustomConnection, CustomConnectionsBridge, CustomToolCard } from "../../../contracts/customConnections";
 import { Button } from "../../ui/button";
@@ -8,13 +8,24 @@ import { humanizeToolName } from "./toolTitle";
 function Tool({ tool, busy, onChoice }: { tool: CustomToolCard; busy: boolean; onChoice: (choice: "always" | "deny") => void }) {
   const { t } = useTranslation("settings");
   const [expanded, setExpanded] = useState(false);
+  // Show more is offered only when the three-line clamp actually hides part of the description.
+  const description = useRef<HTMLParagraphElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    const element = description.current;
+    if (!element || expanded) return;
+    const measure = () => setOverflows(element.scrollHeight > element.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure); observer.observe(element);
+    return () => observer.disconnect();
+  }, [tool.server_description, expanded]);
   const title = humanizeToolName(tool.name);
   return <li className="custom-tool" data-custom-tool={tool.name}>
     <span className="custom-tool-title">{title}</span>
     <span className="custom-tool-id">{tool.name}</span>
     <span className="custom-meta">{t("custom.serverDescription")}</span>
-    <p className={expanded ? "" : "custom-description-clamp"}>{tool.server_description || t("custom.noDescription")}</p>
-    {tool.server_description ? <Button variant="link" size="sm" className="flush-start" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{t(expanded ? "custom.showLess" : "custom.showMore")}</Button> : null}
+    <p ref={description} className={expanded ? "" : "custom-description-clamp"}>{tool.server_description || t("custom.noDescription")}</p>
+    {tool.server_description && (overflows || expanded) ? <Button variant="link" size="sm" className="flush-start" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{t(expanded ? "custom.showLess" : "custom.showMore")}</Button> : null}
     <p className={`custom-status ${tool.eligibility === "read_only" ? "positive" : tool.eligibility === "financial_action" ? "negative" : "muted"}`}>{t(`custom.eligibility.${tool.eligibility}`)}</p>
     {tool.definition_changed && tool.eligibility === "read_only" ? <p className="custom-status warning">{t("custom.changed")}</p> : null}
     {tool.eligibility === "read_only" ? <SegmentedControl className="custom-segments" aria-label={t("custom.approvalFor", { tool: title })} disabled={busy}

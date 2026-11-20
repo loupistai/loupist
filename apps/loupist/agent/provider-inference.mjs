@@ -1,6 +1,6 @@
 import { Compile } from "typebox/compile";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import { applyRunOptions, runControlsFor } from "./model-run-controls.mjs";
+import { applyRunOptions, hasTrustedModelEndpoint, runControlsFor } from "./model-run-controls.mjs";
 
 export const MAX_INFERENCE_REQUEST_BYTES = 512 * 1024;
 const MAX_OUTPUT_BYTES = 256 * 1024;
@@ -101,7 +101,7 @@ export async function runProviderInference(ctx, request, { signal, onDispatch = 
   let validator;
   try { validator = validateInferenceRequest(request); } catch { return reply("not_sent", "The model inference request is invalid."); }
   const model = ctx.modelRegistry.getAvailable().find((item) => item.provider === request.provider && item.id === request.model);
-  if (!model) return reply("not_sent", "The selected connected model is unavailable.");
+  if (!model || !hasTrustedModelEndpoint(model)) return reply("not_sent", "The selected connected model is unavailable.");
   if (!isGuardedInferenceApi(model.api)) return reply("not_sent", "This model transport does not support isolated, non-retrying inference.");
   const controls = runControlsFor(model);
   if (!getSupportedThinkingLevels(model).includes(request.thinkingLevel) || Object.keys(request.runOptions).length !== controls.length || controls.some((control) => !control.choices.some((choice) => choice.id === request.runOptions[control.id]))) return reply("not_sent", "The selected model controls are unavailable.");

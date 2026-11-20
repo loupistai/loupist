@@ -46,6 +46,57 @@ writing the retained original through a native save dialog.
 Source details display retained context notes as plain text. Source origins show
 the hostname for HTTP(S) URLs or the retained label for other origins.
 
+## User-provided Sources
+
+Original material the user pastes into a Chat message (a filing excerpt, an
+article, a notice, a table) can be kept as a Source of class `user_provided`. The
+agent calls `pasted_capture` with the passage and, optionally, the `url` and
+`publisher` the user gave; then `source_save` retains its `result_ref` like any
+capture ([turn tools](../agent/turn-tools.md#turn-tools)). Facts the user states
+about their own view still go to a note, Bot memory or the Journal.
+
+The host locates the passage in the user's own messages of this Chat (the bound
+Chat, never a tool argument), newest first, comparing each run of whitespace as one
+space, and copies the bytes from that message. The agent can point at text but
+never supply it: its own words, a paraphrase, a changed figure, tool results, an
+assistant reply, attachments (those use `workspace_capture`), a hand-off's opening
+request, a Map link, a scheduled task's prompt and another Chat's messages are not
+found. A stated `url` must appear verbatim and a stated `publisher` (case and
+spacing aside) in the user's messages of this Chat. Scheduled and delegated runs and
+host hand-offs refuse the tool, and `source_save` refuses pasted text that looks
+like a credential (`sensitive_memory`).
+
+The capture records `knowledge_source_captures.provided_json` (`ProvidedOrigin`:
+Chat, message, the message's send time as the paste time, stated link and
+publisher), Knowledge schema 10. The Source has authorship `user`, provider `user`,
+the stated link as its origin or `Pasted text` without one, and the agent's title
+and `publicationTime` as for every Source. None of the stated details are checked
+against the original; the Library row, the reader (with the paste date and "not
+verified"), the citation chip, a number check's source line and the answer's
+receipt all say "User-provided" ("사용자 제공").
+
+Saving the same pasted bytes again with the same coverage in this Loupist
+keeps one Source and one cited span. The current Source shows the latest save's
+title, stated link, publisher, publication date and paste-message details.
+The original capture and its bytes stay available under the same identifiers.
+
+What differs from a fetched Source:
+
+- In the turn it is pasted the text is the user's message, so capturing raises no
+  tier and the capture is not delimited. Read back from Memory later (`world_read`,
+  `world_search`, a World claim it backs, an export) it is third-party text:
+  delimited and raising the [untrusted-text tier](../runtime/untrusted-text.md#untrusted-text),
+  whoever pasted it. A `world_read` adds `source.sourceClass` and
+  `source.provided` (`pastedAt`, `statedUrl`, `statedPublisher`).
+- Its evidence kind is `user_provided` in the capturing turn; a later read stays
+  `saved_context` with `user_provided` set. A number linked to either checks as a
+  `passage` against the pasted text, so a match means the figure is what the user
+  gave, not that the original says it.
+- It can back a Lens fact (`{source: saveRef}` or a Source read), as a span the
+  reader labels user-provided; Map extraction runs as for any Source.
+- [Sharing](sharing.md#sharing) keeps it private: it is user-authored, not a
+  publisher's record.
+
 ## Working notes and Journal
 
 Substantial work can have one current Working note per Chat; Bot keeps
@@ -71,9 +122,10 @@ before staging, including entities outside the Map's display limit; an unknown
 link is refused at `journal.entities` so the same turn can omit or repair it. The
 completed-turn transaction checks the links again. The Loupist’s
 own view belongs in research notes, not in the user’s Journal.
-Map → Library → Notes lists Your journal before Research notes. Focusing a field in that form scrolls it clear of the sticky search. The user can
-create, edit and archive entries there through `journal_create`, `journal_update`,
-`journal_archive` and `journal_list`. Chat uses `journal_save`
+The Map’s Library has separate Sources, Journal and Notes tabs. Notes lists the
+Loupist’s saved analysis. In Journal, the user can list, create, edit and archive
+entries through `journal_list`, `journal_create`, `journal_update` and
+`journal_archive`. Focusing a field in the Journal form scrolls it clear of the sticky search. Chat uses `journal_save`
 and `journal_review` only. Rust accepts `journal_save` for a judgment the user
 stated in the current turn, and a review only after an exact acknowledged Journal
 read plus acknowledged evidence. The [Journal Skill](../../apps/loupist/agent/skills/journal/SKILL.md)

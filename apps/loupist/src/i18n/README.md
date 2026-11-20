@@ -14,6 +14,27 @@ translation catalogs. Korean catalogs are translated; the parity check requires
 matching keys and placeholders and `_status: "translated"` for locale metadata.
 Missing localized keys fall back to English.
 
+Korean interface copy uses the formal register of a professional macOS tool,
+never 해요체: a casual-polite ending lowers trust in financial research.
+- Statements end in …습니다 / …입니다 ("아직 알림이 없습니다").
+- Instructions use …하십시오 / …해 주십시오 ("연결을 확인한 뒤 다시 시도하십시오"),
+  or a plain statement or noun phrase when that reads as naturally and is no longer.
+- Questions and confirmations use …하시겠습니까?
+- Buttons, menu items, labels, headers, chips and tabs are nouns or verb stems
+  ("추가", "다시 시도", "연결 해제"); status and progress use a noun or …하는 중
+  ("확인 중", "답변 작성 중").
+- No …요 ending of any kind (…해요, …예요, …세요, …주세요, …까요, …죠), no exclamation
+  marks, emoji or softeners ("살짝", "잠깐만요"), and no bureaucratese
+  (…하시기 바랍니다, stacked honorifics). Keep it short, exact and calm, about as
+  long as the English, with product terms (봇, 리서치 세션, 관심 자산, 지도, 렌즈, 예약,
+  자료함, 루피스트) unchanged.
+- Text the user sends to their Loupist (a suggested prompt, an inserted draft) is
+  the user's own plain request: "…해 줘".
+
+`scripts/check-ui-copy.mjs` fails on a Korean string that ends a sentence in …요;
+a word that only ends in 요 (필요, 중요, 주요, 개요, 수요, 소요) and the answer
+아니요 (paired with 예, as on macOS) are allowed.
+
 A Korean particle after a value is written with both forms — `{{name}}이(가)`,
 `을(를)`, `은(는)`, `과(와)`, `아(야)`, `(으)로` — and the `koreanParticles`
 post-processor (`koreanParticles.ts`) picks one by the final sound of the text
@@ -24,7 +45,9 @@ rejects a single bare particle after a value (`{{name}}을`) and a wrong one aft
 the app's name (루피스트가, 루피스트를).
 
 `useLanguage` shares the global appearance configuration reader with Theme.
-Rust validates and persists `appearance.language = "system" | "en" | "ko"`.
+Rust validates and persists `appearance.language = "system" | "en" | "ko"` and
+`appearance.price_colors = "auto" | "red-up" | "green-up"` (see
+[desktop design system](../../../../docs/dev/ui-qa.md#desktop-design-system)).
 System follows the first supported language in `navigator.languages`, falling
 back to English. Saved changes and OS language events update the document and
 subscribed components without restart. Development offers the transient `en-XA`

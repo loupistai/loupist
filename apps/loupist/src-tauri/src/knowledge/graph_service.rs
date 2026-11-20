@@ -214,6 +214,32 @@ impl GraphSupervisor {
         assets.join("config.json").is_file().then_some(assets)
     }
 
+    /// The bundled embedding model if it has loaded. Until then this returns
+    /// `None` at once, and searches rank by words and Map names alone: the
+    /// first load takes seconds, and a search never waits for it.
+    pub fn semantic_model(&self) -> Option<super::LocalModel> {
+        super::loaded_local_model(&self.semantic_assets()?)
+    }
+
+    /// Whether the embedding model is still loading, so a search that just
+    /// ranked without it may miss what only the model would have found.
+    pub fn semantic_model_loading(&self) -> bool {
+        self.semantic_assets()
+            .is_some_and(|assets| super::local_model_loading(&assets))
+    }
+
+    /// Start loading the embedding model on its own thread, off the launch path.
+    pub fn prewarm_semantic_model(&self) {
+        let _ = self.semantic_model();
+    }
+
+    /// Tests and headless evals rank with the model from their first search.
+    #[cfg(any(test, feature = "eval-harness"))]
+    pub fn wait_for_semantic_model(&self) -> bool {
+        self.semantic_assets()
+            .is_some_and(|assets| super::local_model(&assets).is_ok())
+    }
+
     /// Start only after the application owns this library and has stopped its
     /// orphaned process groups. Recovery and the first wake need no UI action.
     pub fn start(&self) -> KnowledgeResult<()> {
@@ -380,8 +406,18 @@ impl GraphSupervisor {
         {
             return Err(KnowledgeError::NotFound);
         }
-        // Local embeddings and SQLite only: no model call.
+        // Local embeddings and SQLite only: no model call. While the model is
+        // still loading, answer from the snapshot rather than wait for it.
         let assets = embed_assets(self.inner.resource_dir.as_deref());
+        if super::loaded_local_model(&assets).is_none() {
+            return canonical_snapshot(
+                &knowledge,
+                loupist_id,
+                world_record_id,
+                world_revision_id,
+                search,
+            );
+        }
         let (loupist, world, revision, query) = (
             loupist_id.to_string(),
             world_record_id.to_string(),
@@ -878,14 +914,14 @@ impl Inner {
         let assets = embed_assets(self.resource_dir.as_deref());
         let callback_usage = usage.clone();
         let callback_calls = calls.clone();
+        // The extraction hints name what this job's Loupist follows.
         let followed = self
             .store
-            .map_context()
+            .map_context(&job.loupist_id)
             .map(|context| {
                 context
                     .watchlist
                     .into_iter()
-                    .chain(context.holdings)
                     .map(|item| {
                         let symbol = item.symbol;
                         let name = item
@@ -1432,11 +1468,7 @@ fn embed_assets(resource_dir: Option<&Path>) -> PathBuf {
     }
     #[cfg(debug_assertions)]
     {
-        let staged = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/embed_assets");
-        if staged.join("config.json").is_file() {
-            return staged;
-        }
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../src/knowledge/embed_assets")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/embed_assets")
     }
     #[cfg(not(debug_assertions))]
     {

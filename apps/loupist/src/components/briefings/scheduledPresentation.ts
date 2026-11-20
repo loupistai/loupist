@@ -17,9 +17,8 @@ export function friendlyTimeZone(timeZone: string, locale = "en") {
 const isWeekdays = (days: number[]) => [...days].sort((left, right) => left - right).join(",") === WEEKDAY_PRESET.join(",");
 const clockLabel = (hour: number, minute: number) => formatTime(new Date(2000, 0, 1, hour, minute));
 const scheduledTime = (at: number | null | undefined, timezone?: string) => at == null ? "—" : formatDateTime(at, { dateStyle: "medium", timeStyle: "short", ...(timezone ? { timeZone: timezone } : {}) });
-/** Titles Rust stores for the optional briefing and the automatic results task. A saved rename is left alone. */
+/** The title Rust stores for the optional briefing. A saved rename is left alone. */
 const HOST_BRIEFING_TITLE = "Briefings";
-const HOST_EARNINGS_TITLE = "Results before and after";
 
 /**
  * The name shown for a scheduled task. A title the user or the Loupist saved is
@@ -28,7 +27,6 @@ const HOST_EARNINGS_TITLE = "Results before and after";
 export function scheduledTaskTitle(kind: string, title: string) {
   const saved = title.trim();
   if (kind === "briefing" && (!saved || saved === HOST_BRIEFING_TITLE)) return i18n.t("briefings:schedule.kind.briefing");
-  if (kind === "earnings" && (!saved || saved === HOST_EARNINGS_TITLE)) return i18n.t("briefings:schedule.earningsTask");
   return title;
 }
 

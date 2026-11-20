@@ -32,7 +32,12 @@ async function start() {
   await configureTheme(bridge, theme);
   status.desktopPlatform = navigator.userAgent.includes("Macintosh") ? "macos" : "other";
   const root = document.getElementById("root")!;
-  createRoot(root).render(<App bridge={bridge} />);
+  if (scenario.render) {
+    // A gallery has no app to apply the theme, so the preview does it as useTheme would.
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }
+  createRoot(root).render(scenario.render ? scenario.render() : <App bridge={bridge} />);
   await scenario.enter(root);
   await until(() => visible(scenario.landmark()), `Landmark not visible for ${id}`);
   await document.fonts.ready;

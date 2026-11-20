@@ -18,6 +18,25 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { LiveGlyph } from "../../chat/turnView";
+import type { LoupistAvatarIdentity } from "../../lib/loupistAvatar";
+
+/**
+ * Where a thread is drawn. Bot is a conversation with a person: the Loupist's face
+ * beside its messages, bubbles, and one quiet working line. A research session stays
+ * a document. `loupist` is whose face the Bot's messages carry.
+ */
+export type ChatSurface = { kind: "bot"; loupist: LoupistAvatarIdentity } | { kind: "session" };
+const SurfaceContext = createContext<ChatSurface>({ kind: "session" });
+export const ChatSurfaceProvider = SurfaceContext.Provider;
+export const useChatSurface = () => useContext(SurfaceContext);
+
+/** The tabs of the activity sheet, which another part of the app owns and opens on this event. */
+export type ActivityTab = "steps" | "sources" | "learned" | "connections";
+
+/** Asks the activity sheet to open, at one answer and tab when given. Nothing here imports the sheet. */
+export function openActivitySheet(detail: { messageId?: string; tab?: ActivityTab } = {}) {
+  window.dispatchEvent(new CustomEvent("loupist:open-activity", { detail }));
+}
 
 /** One rule for the live line, the chips and the timeline (DIRECTION 6.3). */
 const GLYPHS: Record<Exclude<LiveGlyph, "waiting">, LucideIcon> = {

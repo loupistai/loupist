@@ -14,6 +14,7 @@ import type {
   ChatProgressPatch,
   ChatStreamEvent,
   ChatThread,
+  ChatWatchRequest,
   HostPostRecords,
   LoupistBridge,
   MemoryRef,
@@ -26,9 +27,15 @@ import type { ChatAdmission } from "./submission";
 
 const t = i18n.getFixedT(null, "chat");
 
+/**
+ * The runtime's text for a reply stopped before any answer text. It is never translated: the answer
+ * strips it in every language (turnView) and shows the kept draft with the localized run state instead.
+ */
+export const RUNTIME_STOP_MARKER = "Response stopped.";
+
 // Typed from the contract, so tsc fails when a host-post record is missing here.
 const HOST_POST_KEYS: Record<keyof HostPostRecords, true> = {
-  delivery: true, alert: true, watch: true, earnings: true, vocabulary: true, handoff: true, link: true,
+  delivery: true, alert: true, vocabulary: true, handoff: true, link: true,
 };
 const HOST_POST_FIELDS = Object.keys(HOST_POST_KEYS) as (keyof HostPostRecords)[];
 
@@ -37,7 +44,7 @@ const HOST_POST_FIELDS = Object.keys(HOST_POST_KEYS) as (keyof HostPostRecords)[
 const STREAM_EVENT_TYPES: Record<ChatStreamEvent["type"], true> = {
   started: true, memory: true, schedule: true, evidence: true, delta: true, generation_finished: true, title: true,
   progress: true, progress_patch: true, phase: true, memory_update: true, artifact_staged: true, artifact: true, completed: true,
-  aborted: true, error: true,
+  aborted: true, error: true, stream_reset: true,
 };
 
 /** Whether this build knows the event; a newer Rust may send types it does not. */
@@ -51,14 +58,13 @@ const ignoreUnknownStreamEvent = (event: { type?: unknown }) => {
 const hostPostRecords = (source: HostPostRecords | undefined): HostPostRecords =>
   Object.fromEntries(HOST_POST_FIELDS.filter((field) => source?.[field]).map((field) => [field, source![field]]));
 
-export type LoupistChatMetadata = HostPostRecords & {
+export type LoupistChatMetadata = HostPostRecords & Pick<ChatMessage, "research_session_id" | "handoff_note" | "handoff_action" | "scheduled"> & {
   tool_refusals?: ChatMessage["tool_refusals"];
   offline_reads?: boolean;
   replaced_model?: string;
   unsaved_theses?: ChatMessage["unsaved_theses"];
   as_of?: string;
   number_checks?: ChatMessage["number_checks"];
-  sensitivity_cards?: ChatMessage["sensitivity_cards"];
   as_of_report?: ChatMessage["as_of_report"];
   feedback?: ChatMessage["feedback"];
   native_message_id?: string;
@@ -119,6 +125,20 @@ export type ScheduledStreamConnection = {
   run: ScheduledRun;
   thread: ChatThread;
   connect: (observer: (event: ChatStreamEvent) => void) => void;
+  release: () => void;
+};
+
+/**
+ * A run the host started on a Chat (a research hand-off), joined from its session view.
+ * `detach` ends the local stream and leaves the run going; `reset` says the host restarted
+ * the stream, so the caller reloads the thread and attaches again.
+ */
+export type HostedStreamConnection = {
+  runId: string;
+  thread: ChatThread;
+  readonly reset: boolean;
+  connect: (observer: (event: ChatStreamEvent) => void) => void;
+  detach: () => void;
   release: () => void;
 };
 
@@ -270,13 +290,16 @@ export const toLoupistUIMessage = (message: ChatMessage): LoupistUIMessage => {
       steer: message.steer,
       host_composed: message.host_composed,
       ...hostPostRecords(message),
+      ...(message.research_session_id ? { research_session_id: message.research_session_id } : {}),
+      ...(message.handoff_note ? { handoff_note: message.handoff_note } : {}),
+      ...(message.handoff_action ? { handoff_action: message.handoff_action } : {}),
+      ...(message.scheduled ? { scheduled: message.scheduled } : {}),
       tool_refusals: message.tool_refusals,
       offline_reads: message.offline_reads,
       replaced_model: message.replaced_model,
       unsaved_theses: message.unsaved_theses,
       as_of: message.as_of,
       number_checks: message.number_checks,
-      sensitivity_cards: message.sensitivity_cards,
       as_of_report: message.as_of_report,
       performance: message.performance,
       feedback: message.feedback,
@@ -386,13 +409,16 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
     steer: message.metadata?.steer,
     host_composed: message.metadata?.host_composed,
     ...hostPostRecords(message.metadata),
+    ...(message.metadata?.research_session_id ? { research_session_id: message.metadata.research_session_id } : {}),
+    ...(message.metadata?.handoff_note ? { handoff_note: message.metadata.handoff_note } : {}),
+    ...(message.metadata?.handoff_action ? { handoff_action: message.metadata.handoff_action } : {}),
+    ...(message.metadata?.scheduled ? { scheduled: message.metadata.scheduled } : {}),
     tool_refusals: message.metadata?.tool_refusals,
     offline_reads: message.metadata?.offline_reads,
     replaced_model: message.metadata?.replaced_model,
     ...(message.metadata?.unsaved_theses?.length ? { unsaved_theses: message.metadata.unsaved_theses } : {}),
     ...(message.metadata?.as_of ? { as_of: message.metadata.as_of } : {}),
     ...(message.metadata?.number_checks?.length ? { number_checks: message.metadata.number_checks } : {}),
-    ...(message.metadata?.sensitivity_cards?.length ? { sensitivity_cards: message.metadata.sensitivity_cards } : {}),
     ...(message.metadata?.as_of_report ? { as_of_report: message.metadata.as_of_report } : {}),
     performance: message.metadata?.performance,
     feedback: message.metadata?.feedback,
@@ -461,6 +487,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
     connect: (observer: (event: ChatStreamEvent) => void) => Promise<{ run_id: string }>,
     onAdmission?: (receipt: ChatAdmission) => void,
     publishArtifacts = true,
+    endOnReset = false,
   ) {
     let admissionDelivered = false;
     const admit = (receipt: ChatAdmission) => {
@@ -608,6 +635,11 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
         const onEvent = (event: ChatStreamEvent) => {
           if (finished) return;
           if (!isKnownStreamEvent(event)) { ignoreUnknownStreamEvent(event); return; }
+          // A watch ends here whichever run the reset names; its owner reloads and attaches again.
+          if (event.type === "stream_reset") {
+            if (endOnReset) close();
+            return;
+          }
           if (event.run_id !== runId) return;
           admit({ accepted: true, runId });
           if (event.type === "started") {
@@ -721,6 +753,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
                 final_text: event.final_text,
                 created_at: event.created_at,
                 status: "complete",
+                research_session_id: event.research_session_id,
                 lens_receipts: event.lens_receipts,
                 execution_model: event.execution_model,
                 agent_harness: event.agent_harness,
@@ -731,7 +764,6 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
                 unsaved_theses: event.unsaved_theses,
                 as_of: event.as_of,
                 number_checks: event.number_checks,
-                sensitivity_cards: event.sensitivity_cards,
                 as_of_report: event.as_of_report,
                 performance: event.performance,
               },
@@ -748,7 +780,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
               enqueue({
                 type: "text-delta",
                 id: textId,
-                delta: t("aiSdk.responseStopped"),
+                delta: RUNTIME_STOP_MARKER,
               });
             }
             enqueue({
@@ -819,7 +851,62 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
     } };
   }
 
+  /**
+   * Subscribes to the run the host is doing on a Chat. Events that arrive before the
+   * snapshot (the replay) wait for `connect`. Null when nothing runs there.
+   */
+  async prepareHosted(request: ChatWatchRequest): Promise<HostedStreamConnection | null> {
+    const buffered: ChatStreamEvent[] = [];
+    let receive = (event: ChatStreamEvent) => { buffered.push(event); };
+    let reset = false;
+    let released = false;
+    const forget = () => { receive = () => {}; buffered.length = 0; };
+    let snapshot;
+    try {
+      snapshot = await this.bridge.chatWatch(request, (event) => {
+        if (event.type === "stream_reset") reset = true;
+        receive(event);
+      });
+    } catch (cause) { forget(); throw cause; }
+    if (!snapshot) { forget(); return null; }
+    const release = () => {
+      if (released) return;
+      released = true;
+      forget();
+      void this.bridge.chatUnwatch(request).catch(() => undefined);
+    };
+    if (snapshot.thread.id !== request.thread_id || snapshot.thread.loupist_id !== request.loupist_id) {
+      release();
+      throw new Error(t("aiSdk.thisReplyGotOutOfStepWithTheConversation"));
+    }
+    const runId = snapshot.run_id;
+    return {
+      runId,
+      thread: snapshot.thread,
+      get reset() { return reset; },
+      connect: (observer) => {
+        receive = observer;
+        for (const event of buffered) observer(event);
+        buffered.length = 0;
+      },
+      // Ends the local stream the way a host reset does, without the reset flag.
+      detach: () => receive({ type: "stream_reset", run_id: runId }),
+      release,
+    };
+  }
+
   async reconnectToStream({ body, abortSignal }: Parameters<ChatTransport<LoupistUIMessage>["reconnectToStream"]>[0]) {
+    const hosted = (body as { hostedConnection?: HostedStreamConnection } | undefined)?.hostedConnection;
+    if (hosted) {
+      if (abortSignal?.aborted) return null;
+      const { loupist_id, id: thread_id } = hosted.thread;
+      // Stop aborts the run by its id, as for a reply sent here; detach only ends the stream.
+      // A replay would publish its documents again, so the panel learns of them as for a scheduled run.
+      return this.nativeStream({ loupist_id, thread_id }, abortSignal, hosted.runId, async (observer) => {
+        hosted.connect(observer);
+        return { run_id: hosted.runId };
+      }, undefined, false, true);
+    }
     const connection = (body as { scheduledConnection?: ScheduledStreamConnection } | undefined)?.scheduledConnection;
     if (!connection?.run.thread_id) return null;
     if (abortSignal?.aborted) {

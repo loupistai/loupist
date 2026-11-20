@@ -159,6 +159,44 @@ fn envelope(context: &HostMemoryContext, enabled: bool) -> Value {
     serde_json::from_str(&attach_relevant_memory(&base, &context.relevant)).unwrap()
 }
 
+/// A Lens page is pointed out when it matches two words of the request, or
+/// every group of a request that is one concept (cash flow), and not when it
+/// matches one word of several. Rank fusion gives such a lone match a score
+/// far above the earlier 600 cutoff, so the rule reads matched groups.
+#[test]
+fn lens_pointers_follow_matched_request_groups_not_fused_scores() {
+    let (_dir, state) = fixture();
+    assert!(state.graph.semantic_model().is_some());
+    method(
+        &state,
+        "Cash flow discipline",
+        "Track cash flow conversion against capex every quarter.",
+        1,
+    );
+    method(
+        &state,
+        "Liquidity buffers",
+        "Hold liquidity buffers against covenant stress.",
+        2,
+    );
+    let pointed = |message: &str| -> Vec<String> {
+        host_memory_context(&state, "loupist-a", message)
+            .unwrap()
+            .relevant
+            .into_iter()
+            .filter(|pointer| pointer.kind == "Lens")
+            .map(|pointer| pointer.title)
+            .collect()
+    };
+    assert_eq!(pointed("cash flow"), ["Cash flow discipline"]);
+    assert_eq!(pointed("liquidity buffers"), ["Liquidity buffers"]);
+    assert_eq!(pointed("liquidity stress test"), ["Liquidity buffers"]);
+    assert!(pointed("review cash flow").is_empty());
+    assert!(pointed("cash covenant").is_empty());
+    let hits = host_search(&state, "loupist-a", "cash covenant", "lens").unwrap();
+    assert!(hits[0]["score"].as_u64().unwrap() >= 600);
+}
+
 #[tokio::test]
 async fn host_memory_relevant_old_method_and_cross_chat_note_are_executable_not_receipts() {
     let (_dir, state) = fixture();
@@ -221,6 +259,7 @@ async fn host_memory_relevant_old_method_and_cross_chat_note_are_executable_not_
         propose_memory_updates: true,
         memory_proposal_budget: 1,
         as_of: None,
+        display_currency: None,
     };
     let mut save = json!({
         "workingNote": {"title":"Acme assessment", "markdown":"Apply the saved covenant check.", "changeSummary":"Assessment", "expectedResearchId":null},
@@ -323,9 +362,7 @@ fn host_memory_relevant_excludes_archived_standing_weak_and_empty_and_caps_each_
             .relevant
             .is_empty()
     );
-    let standing = ensure_perspective(&state, "loupist-a", "Acme liquidity covenant")
-        .unwrap()
-        .unwrap();
+    let standing = file_test_perspective(&state, "loupist-a", "Acme liquidity covenant");
     let archived = method(
         &state,
         "Archived Acme liquidity covenant",
@@ -484,100 +521,6 @@ fn note_pointers_keep_a_working_note_when_journals_and_legacy_rows_match() {
         .collect();
     assert!(note_ids.contains(&note_id.as_str()), "{note_ids:?}");
     assert!(!note_ids.contains(&legacy_id.as_str()), "{note_ids:?}");
-}
-
-#[test]
-fn the_seeded_perspective_holds_the_focus_in_a_focus_section() {
-    let (_dir, state) = fixture();
-    let record_id = ensure_perspective(&state, "loupist-a", "  Semiconductor supply chain ")
-        .unwrap()
-        .unwrap();
-    let page = with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
-        KnowledgeWrite::bind(tx, blobs).read_page("loupist-a", &record_id)
-    })
-    .unwrap();
-    assert_eq!(page.title, "Outlook");
-    let sections: Vec<_> = page
-        .body
-        .sections()
-        .iter()
-        .map(|section| {
-            (
-                section.key.as_str().to_owned(),
-                section.heading.clone(),
-                section.markdown.clone(),
-            )
-        })
-        .collect();
-    assert_eq!(
-        sections,
-        [(
-            "focus".to_owned(),
-            "Focus".to_owned(),
-            "Semiconductor supply chain".to_owned()
-        )]
-    );
-}
-
-#[test]
-fn a_new_focus_rewrites_only_the_perspective_focus_section() {
-    let (_dir, state) = fixture();
-    let record_id = ensure_perspective(&state, "loupist-a", "Semiconductor supply chain")
-        .unwrap()
-        .unwrap();
-    let sections = || {
-        with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
-            KnowledgeWrite::bind(tx, blobs).read_page("loupist-a", &record_id)
-        })
-        .unwrap()
-        .body
-        .sections()
-        .iter()
-        .map(|section| (section.key.as_str().to_owned(), section.markdown.clone()))
-        .collect::<Vec<_>>()
-    };
-    with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
-        use crate::knowledge::lens_page::{
-            Basis, FilingOrigin, LensOp, PageDelta, PageTarget, SectionKey,
-        };
-        KnowledgeWrite::bind(tx, blobs).file(
-            "loupist-a",
-            &FilingOrigin::User {
-                chat_id: None,
-                message_id: None,
-            },
-            vec![PageDelta {
-                target: PageTarget::Existing {
-                    record_id: record_id.clone(),
-                },
-                ops: vec![LensOp::Put {
-                    key: SectionKey::new("avoid")?,
-                    heading: "Avoid".into(),
-                    markdown: "Short-term price calls".into(),
-                    basis: Basis::default(),
-                    expected: None,
-                }],
-            }],
-            2,
-        )
-    })
-    .unwrap();
-    assert_eq!(
-        ensure_perspective(&state, "loupist-a", " HBM packaging equipment ").unwrap(),
-        Some(record_id.clone())
-    );
-    let expected = vec![
-        ("focus".to_owned(), "HBM packaging equipment".to_owned()),
-        ("avoid".to_owned(), "Short-term price calls".to_owned()),
-    ];
-    assert_eq!(sections(), expected);
-    ensure_perspective(&state, "loupist-a", "HBM packaging equipment").unwrap();
-    ensure_perspective(&state, "loupist-a", "").unwrap();
-    assert_eq!(
-        sections(),
-        expected,
-        "the same or an empty focus changes nothing"
-    );
 }
 
 #[test]

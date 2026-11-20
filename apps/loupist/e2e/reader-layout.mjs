@@ -23,7 +23,7 @@ export function measureReaderLayout() {
       tab: box(tab), label: box(tab.querySelector('[role="tab"] > span')), close: box(closeButtons.get(tab.dataset.tabId)),
       closeReceivesClick: receivesClick(closeButtons.get(tab.dataset.tabId)),
     })),
-    readers: [...document.querySelectorAll('.workspace-lens-content [data-testid=memory-page][data-reader-open]')].filter(shown).map(page => ({
+    readers: [...document.querySelectorAll('.lens-page [data-testid=memory-page][data-reader-open]')].filter(shown).map(page => ({
       page: box(page), paneWidth: page.parentElement.clientWidth,
       list: box(page.querySelector('.memory-page-list, .memory-history')),
       reader: box(page.querySelector('[data-testid=memory-reader]')),

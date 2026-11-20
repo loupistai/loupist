@@ -123,8 +123,8 @@ mod tests {
     #[test]
     fn native_file_filter_mapping_preserves_labels_and_normalizes_extensions() {
         let request: PickFileRequest = serde_json::from_value(serde_json::json!({
-            "title": "Import holdings", "filters": [
-                { "name": "Holdings", "extensions": [" .CSV ", "tsv"] },
+            "title": "Choose data file", "filters": [
+                { "name": "Data", "extensions": [" .CSV ", "tsv"] },
                 { "name": "Text", "extensions": ["TXT"] }
             ]
         }))
@@ -132,10 +132,7 @@ mod tests {
         assert_eq!(
             normalized_filters(request.filters).unwrap(),
             vec![
-                (
-                    "Holdings".to_owned(),
-                    vec!["csv".to_owned(), "tsv".to_owned()]
-                ),
+                ("Data".to_owned(), vec!["csv".to_owned(), "tsv".to_owned()]),
                 ("Text".to_owned(), vec!["txt".to_owned()]),
             ]
         );
@@ -155,11 +152,7 @@ mod tests {
             "loupist-e2e-pick-ignore-{}.csv",
             std::process::id()
         ));
-        std::fs::write(
-            &path,
-            b"symbol,market,name,quantity\nNWHLD,US,Northwind,1\n",
-        )
-        .unwrap();
+        std::fs::write(&path, b"label,value\nNorthwind,1\n").unwrap();
         let result = e2e_pick_override(Some(path.as_os_str()));
         let _ = std::fs::remove_file(&path);
         assert_eq!(result.unwrap(), None);
@@ -171,11 +164,7 @@ mod tests {
     fn e2e_pick_file_returns_only_an_absolute_existing_file() {
         let path =
             std::env::temp_dir().join(format!("loupist-e2e-pick-allow-{}.csv", std::process::id()));
-        std::fs::write(
-            &path,
-            b"symbol,market,name,quantity\nNWHLD,US,Northwind,1\n",
-        )
-        .unwrap();
+        std::fs::write(&path, b"label,value\nNorthwind,1\n").unwrap();
         let selected = e2e_pick_override(Some(path.as_os_str())).unwrap();
         let _ = std::fs::remove_file(&path);
         assert_eq!(selected.as_deref(), path.to_str());
@@ -184,7 +173,7 @@ mod tests {
             e2e_pick_override(Some(std::ffi::OsStr::new(""))).unwrap(),
             None
         );
-        assert!(e2e_pick_override(Some(std::ffi::OsStr::new("holdings.csv"))).is_err());
+        assert!(e2e_pick_override(Some(std::ffi::OsStr::new("data.csv"))).is_err());
         assert!(e2e_pick_override(Some(std::env::temp_dir().as_os_str())).is_err());
     }
 }

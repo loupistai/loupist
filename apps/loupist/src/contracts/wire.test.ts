@@ -7,11 +7,9 @@
  * renderer-only fields, and check it here.
  */
 import type * as Wire from "./generated";
-import type * as assets from "./assets";
 import type * as chat from "./chat";
 import type * as config from "./config";
 import type * as customConnections from "./customConnections";
-import type * as earnings from "./earnings";
 import type * as knowledge from "./knowledge";
 import type * as lens from "./lens";
 import type * as loupist from "./loupist";
@@ -21,8 +19,6 @@ import type * as runtime from "./runtime";
 import type * as scheduled from "./scheduled";
 import type * as sharing from "./sharing";
 import type * as skills from "./skills";
-import type * as userContext from "./userContext";
-import type * as watch from "./watch";
 import type * as workspace from "./workspace";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
@@ -59,7 +55,6 @@ export type CompatibleContracts = [
   Expect<Compatible<config.ConfigSnapshot, Wire.ConfigSnapshot>>,
   Expect<Compatible<model.CustomModelProvider, Wire.CustomProviderView>>,
   Expect<Compatible<chat.GridDocument, Wire.GridDocument>>,
-  Expect<Compatible<userContext.HoldingsCsvPreview, Wire.HoldingsCsvPreview>>,
   Expect<Compatible<chat.HomeHandoff, Wire.HomeHandoff>>,
   Expect<Compatible<chat.HomeVocabulary, Wire.HomeVocabulary>>,
   Expect<Compatible<knowledge.JournalCheck, Wire.JournalCheck>>,
@@ -70,7 +65,6 @@ export type CompatibleContracts = [
   Expect<Compatible<lens.LensBodyView, Wire.LensBodyView>>,
   Expect<Compatible<memory.LensReceipt, Wire.LensReceipt>>,
   Expect<Compatible<sharing.LicenseConflict, Wire.LicenseConflict>>,
-  Expect<Compatible<assets.LineCrossing, Wire.LineCrossing>>,
   Expect<Compatible<loupist.LoupistSummary, Wire.LoupistSummary>>,
   Expect<Compatible<skills.ManagedSkill, Wire.ManagedSkill>>,
   Expect<Compatible<memory.MemoryRef, Wire.MemoryRefDto>>,
@@ -81,10 +75,7 @@ export type CompatibleContracts = [
   Expect<Compatible<sharing.PackUpdate, Wire.PackUpdate>>,
   Expect<Compatible<knowledge.Principle, Wire.Principle>>,
   Expect<Compatible<runtime.RunActivity, Wire.RunActivity>>,
-  Expect<Compatible<scheduled.RunSummaryItem, Wire.RunSummaryItem>>,
   Expect<Compatible<scheduled.ScheduleReceipt, Wire.ScheduleReceipt>>,
-  Expect<Compatible<chat.SensitivityCard, Wire.SensitivityCard>>,
-  Expect<Compatible<chat.SensitivityGrid, Wire.SensitivityGrid>>,
   Expect<Compatible<skills.SkillCatalog, Wire.SkillCatalog>>,
   Expect<Compatible<skills.SkillDeleteRequest, Wire.SkillDeleteRequest>>,
   Expect<Compatible<skills.SkillDocument, Wire.SkillDocument>>,
@@ -95,11 +86,6 @@ export type CompatibleContracts = [
 
 /** Hand types with the generated fields and optionality. */
 export type SameShapeContracts = [
-  Expect<SameShape<assets.AssetChangeRow, Wire.AssetChangeRow>>,
-  Expect<SameShape<assets.AssetDelta, Wire.AssetDelta>>,
-  Expect<SameShape<scheduled.BriefingAsset, Wire.BriefingAsset>>,
-  Expect<SameShape<scheduled.BriefingContext, Wire.BriefingContext>>,
-  Expect<SameShape<scheduled.BriefingEarnings, Wire.BriefingEarnings>>,
   Expect<SameShape<scheduled.BriefingSettings, Wire.BriefingSettings>>,
   Expect<SameShape<chat.ChartDataset, Wire.ChartDataset>>,
   Expect<SameShape<chat.ChatArtifactPayload, Wire.ChatArtifactPayload>>,
@@ -116,9 +102,6 @@ export type SameShapeContracts = [
   Expect<SameShape<knowledge.GraphProcessingView, Wire.GraphProcessingView>>,
   Expect<SameShape<knowledge.GrowthEvent, Wire.GrowthEvent>>,
   Expect<SameShape<knowledge.GrowthEventsPage, Wire.GrowthEventsPage>>,
-  Expect<SameShape<chat.HomeEarnings, Wire.HomeEarnings>>,
-  Expect<SameShape<chat.HomeWatch, Wire.HomeWatch>>,
-  Expect<SameShape<scheduled.InboxItem, Wire.InboxItem>>,
   Expect<SameShape<scheduled.InboxPage, Wire.InboxPage>>,
   Expect<SameShape<knowledge.JournalInputs, Wire.JournalInputs>>,
   Expect<SameShape<knowledge.JournalRecord, Wire.JournalRecord>>,
@@ -130,7 +113,6 @@ export type SameShapeContracts = [
   Expect<SameShape<chat.LoupistWorkspace, Wire.LoupistWorkspace>>,
   Expect<SameShape<memory.MemoryUpdateResult, Wire.MemoryUpdateResult>>,
   Expect<SameShape<model.ModelCatalog, Wire.ModelCatalogView>>,
-  Expect<SameShape<scheduled.ScheduledRun, Wire.Run>>,
   Expect<SameShape<scheduled.ScheduledTask, Wire.Task>>,
   Expect<SameShape<scheduled.ScheduledTaskListItem, Wire.TaskListItem>>,
   Expect<SameShape<sharing.ShareSummary, Wire.ShareSummary>>,
@@ -147,17 +129,11 @@ export type SameShapeContracts = [
 
 /** Hand request types Rust deserializes. */
 export type AcceptsContracts = [
-  Expect<Accepts<assets.AssetClassSetRequest, Wire.AssetClassSetRequest>>,
-  Expect<Accepts<assets.AssetDeltaRequest, Wire.AssetDeltaRequest>>,
-  Expect<Accepts<assets.AssetPageGetRequest, Wire.AssetPageGetRequest>>,
-  Expect<Accepts<assets.AssetRefreshRequest, Wire.AssetRefreshRequest>>,
-  Expect<Accepts<assets.AssetVerdictUndoRequest, Wire.AssetVerdictUndoRequest>>,
   Expect<Accepts<chat.ChatBranchRequest, Wire.ChatBranchRequest>>,
   Expect<Accepts<chat.ChatCreateRequest, Wire.ChatCreateRequest>>,
   Expect<Accepts<chat.ChatFeedbackRequest, Wire.ChatFeedbackRequest>>,
   Expect<Accepts<config.ConfigUpdateRequest, Wire.ConfigUpdateRequest>>,
   Expect<Accepts<model.CustomProviderRequest, Wire.CustomProviderRequest>>,
-  Expect<Accepts<earnings.EarningsSnapshotGetRequest, Wire.EarningsSnapshotGetRequest>>,
   Expect<Accepts<sharing.GalleryListingRequest, Wire.GalleryListingRequest>>,
   Expect<Accepts<knowledge.GrowthEventsQuery, Wire.GrowthEventsQuery>>,
   Expect<Accepts<knowledge.JournalCreateRequest, Wire.JournalCreateRequest>>,
@@ -181,8 +157,6 @@ export type AcceptsContracts = [
   Expect<Accepts<sharing.SharePublishRequest, Wire.SharePublishRequest>>,
   Expect<Accepts<sharing.ShareRequest, Wire.ShareRequest>>,
   Expect<Accepts<skills.SkillImportRequest, Wire.SkillImportRequest>>,
-  Expect<Accepts<assets.UpcomingEvent, Wire.UpcomingEvent>>,
-  Expect<Accepts<watch.WatchEventsListRequest, Wire.WatchEventsListRequest>>,
   Expect<Accepts<workspace.WorkspacePathRequest, Wire.WorkspacePathRequest>>,
   Expect<Accepts<workspace.WorkspaceUiTab, Wire.WorkspaceUiTab>>,
   Expect<Accepts<knowledge.WorldGraphQuery, Wire.WorldGraphQuery>>,

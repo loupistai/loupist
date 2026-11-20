@@ -185,6 +185,11 @@ pub fn run() {
         builder.plugin(tauri_plugin_wdio_webdriver::init())
     };
 
+    #[cfg(target_os = "macos")]
+    let builder = builder.on_web_content_process_terminate(|webview| {
+        // Registering this hook replaces Tauri's default macOS reload.
+        let _ = webview.reload();
+    });
     builder
         .plugin(tauri_plugin_notification::init())
         .on_window_event(|window, event| {
@@ -219,7 +224,12 @@ pub fn run() {
                     std::process::exit(1);
                 }
             };
+            // The embedding model takes seconds to load; searches before then
+            // rank by words alone, so start it now on its own thread.
+            state.graph.prewarm_semantic_model();
             if let Err(error) = tauri::async_runtime::block_on(async {
+                #[cfg(feature = "e2e")]
+                commands::handoff_fixture::prepare(&state)?;
                 if state.fresh_install {
                     #[cfg(feature = "e2e")]
                     {
@@ -257,9 +267,30 @@ pub fn run() {
                 app.cleanup_before_exit();
                 std::process::exit(1);
             }
+            // Sessions earlier runs made and no longer need go off the launch path.
+            let release_state = state.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                commands::records::release_host_sessions(&release_state);
+            });
             let update_coordinator = state.updates.clone();
             app.manage(state);
+            let catalog_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = catalog_app.state::<app::AppState>();
+                providers::connection::refresh_upgraded_models(&state, || {
+                    let _ = tauri::Emitter::emit(&catalog_app, events::MODEL_CATALOG_CHANGED, ());
+                }).await;
+            });
             pi::shell_path::prewarm();
+            // The market-data runtime takes tens of seconds to start on a busy
+            // Mac. Start it off the launch path, after the first window has
+            // had a moment to paint; nothing starts when no Loupist enables it.
+            let market_data_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let state = market_data_app.state::<app::AppState>();
+                commands::prewarm_market_data(&state).await;
+            });
             providers::status::install(app.handle());
             if let Err(error) = briefings::desktop::install(app.handle()) {
                 eprintln!("Briefing tray could not be installed: {error}");
@@ -288,6 +319,7 @@ pub fn run() {
             }
             #[cfg(feature = "webdriver")]
             webdriver_attach::require_status_endpoint();
+            commands::legacy_holdings::start(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -306,6 +338,11 @@ pub fn run() {
             commands::loupist::loupist_choose_folder,
             commands::dialog::pick_file,
             commands::export_file::export_save,
+            commands::legacy_holdings::legacy_holdings_status,
+            commands::legacy_holdings::legacy_holdings_retry,
+            commands::legacy_holdings::legacy_holdings_reveal,
+            commands::legacy_holdings::legacy_holdings_save_copy,
+            commands::legacy_holdings::legacy_holdings_dismiss,
             commands::loupist::loupist_reconnect,
             commands::loupist::loupist_delete,
             commands::loupist::agent_skill_catalog,
@@ -319,21 +356,16 @@ pub fn run() {
             commands::approvals::chat_approval_decide,
             commands::questions::chat_question_answer,
             commands::attention::attention_list,
+            commands::assets::assets_list,
+            commands::assets::asset_follow_name,
+            commands::assets::asset_unfollow,
+            commands::assets::asset_lookup,
+            commands::assets::asset_price_check,
             commands::assets::asset_page_get,
-            commands::assets::asset_delta,
-            commands::assets::upcoming_events,
-            commands::assets::asset_refresh,
-            commands::earnings::earnings_snapshot_get,
-            commands::earnings::earnings_events_list,
-            commands::earnings::earnings_prepare,
-            commands::watch::watch_defaults_apply,
-            commands::watch::watch_settings_list,
-            commands::watch::watch_setting_set,
-            commands::watch::watch_pause_set,
-            commands::watch::watch_check_now,
-            commands::watch::watch_events_list,
-            commands::watch::watch_events_seen,
-            commands::assets::asset_class_set,
+            commands::assets::asset_entity_set,
+            commands::assets::asset_follow,
+            commands::assets::watchlist_quotes,
+            commands::assets::asset_price_series,
             commands::assets::asset_verdict_undo,
             commands::assets::asset_page_seen,
             commands::attention::attention_notify,
@@ -371,6 +403,8 @@ pub fn run() {
             commands::workspace_ui::workspace_ui_read,
             commands::workspace_ui::workspace_ui_write,
             commands::chat_runtime::chat_send,
+            commands::chat_runtime::chat_watch,
+            commands::chat_runtime::chat_unwatch,
             commands::chat_runtime::chat_steer,
             commands::chat_runtime::chat_retry_last,
             commands::handoff::research_handoff_start,
@@ -404,7 +438,6 @@ pub fn run() {
             commands::knowledge::knowledge_lens_search,
             commands::knowledge::knowledge_lens_pages_for_node,
             commands::knowledge::knowledge_connection_dismiss,
-            commands::knowledge::knowledge_connection_open,
             commands::knowledge::memory_section_forget,
             commands::knowledge::memory_op_undo,
             commands::knowledge::memory_learned,
@@ -427,20 +460,7 @@ pub fn run() {
             commands::knowledge::world_schema::world_schema_undo,
             commands::knowledge::world_schema::world_schema_remove,
             commands::model_catalog_get,
-            commands::user_context::watchlist_list,
-            commands::user_context::watchlist_add,
-            commands::user_context::watchlist_remove,
-            commands::user_context::holdings_import_csv,
-            commands::user_context::holdings_commit_csv,
-            commands::user_context::holdings_import_kis,
-            commands::user_context::holdings_summary,
-            commands::user_context::holdings_import_crypto_file,
-            commands::user_context::holdings_map_columns,
-            commands::user_context::wallets_list,
-            commands::user_context::wallet_add,
-            commands::user_context::wallet_rename,
-            commands::user_context::wallet_remove,
-            commands::user_context::wallet_refresh,
+            commands::fx_display::fx_display,
             commands::app_settings::notice_settings_get,
             commands::app_settings::notice_acknowledge,
             commands::configuration::config_read,

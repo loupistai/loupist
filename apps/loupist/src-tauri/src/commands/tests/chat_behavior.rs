@@ -454,6 +454,7 @@ fn completed_chat_performance_survives_reload_and_matches_live_completion() {
     let performance = ChatPerformance {
         setup_ms: 120,
         first_text_ms: Some(480),
+        answer_text_ms: Some(600),
         generation_ms: 900,
         total_ms: 1_040,
         session_cache: ChatSessionCacheStatus::Warm,
@@ -487,6 +488,8 @@ fn completed_chat_performance_survives_reload_and_matches_live_completion() {
                 Vec::new(),
                 Some(performance.clone()),
                 Vec::new(),
+                None,
+                None,
             )?);
             Ok(())
         })
@@ -662,56 +665,8 @@ pub(in crate::commands) fn install_chat_rpc_fixture(
     directory: &Path,
     source: &str,
 ) {
-    use crate::pi::{PI_DARWIN_ARM64_ARCHIVE_SHA256, PI_VERSION};
-
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let executable = directory.join("fixture-pi");
-    let script = directory.join("fixture-pi.py");
-    fs::write(&script, source).unwrap();
-    // A native parent preserves the exact executable identity required by the
-    // process lease; its Python child inherits the same owned process group.
-    let compiler = std::process::Command::new("/usr/bin/cc")
-        .arg("-std=c11")
-        .arg("-Wall")
-        .arg("-Werror")
-        .arg(format!(
-            "-DFIXTURE_PYTHON={}",
-            serde_json::to_string("/usr/bin/python3").unwrap()
-        ))
-        .arg(format!(
-            "-DFIXTURE_SCRIPT={}",
-            serde_json::to_string(&script).unwrap()
-        ))
-        .arg(manifest.join("src/commands/tests/fixtures/native_activity_launcher.c"))
-        .arg("-o")
-        .arg(&executable)
-        .output()
-        .unwrap();
-    assert!(
-        compiler.status.success(),
-        "could not compile the RPC fixture: {}",
-        String::from_utf8_lossy(&compiler.stderr)
-    );
-    // The real Pi transport and Chat event loop still launch this child.
-    let runtime_dir = directory.join("fixture-runtime");
-    fs::create_dir(&runtime_dir).unwrap();
-    for (name, value) in [
-        (".pi-version", PI_VERSION.to_owned()),
-        (
-            ".pi-archive.sha256",
-            PI_DARWIN_ARM64_ARCHIVE_SHA256.to_owned(),
-        ),
-        (
-            ".pi-executable.sha256",
-            sha256(&fs::read(&executable).unwrap()),
-        ),
-        (
-            "package.json",
-            serde_json::json!({"version": PI_VERSION}).to_string(),
-        ),
-    ] {
-        fs::write(runtime_dir.join(name), value).unwrap();
-    }
+    let (executable, runtime_dir) =
+        crate::commands::chat_fixture::install(directory, source).unwrap();
     Arc::make_mut(&mut state.artifacts).pi = Some(pi_artifacts(executable, runtime_dir));
 }
 
@@ -796,6 +751,16 @@ async fn a_gone_model_is_retried_once_on_auto_within_the_same_turn() {
         temporary.path(),
         include_str!("fixtures/model_gone_pi.py"),
     );
+    fs::write(
+        state.artifacts.app_data_dir.join("config.toml"),
+        "[appearance]\nlanguage = 'ko'\ndisplay_currency = 'KRW'\n",
+    )
+    .unwrap();
+    fs::write(
+        temporary.path().join("retry-appearance.toml"),
+        "[appearance]\nlanguage = 'en'\ndisplay_currency = 'JPY'\n",
+    )
+    .unwrap();
     let auth = state.pi_agent_data_dir().unwrap().join("auth.json");
     crate::fs::artifact_trust::ensure_private_regular_file(&auth).unwrap();
     fs::write(
@@ -827,7 +792,17 @@ async fn a_gone_model_is_retried_once_on_auto_within_the_same_turn() {
         .unwrap();
     let profile = profile("loupist-model-gone", &workspace, 1);
     seed_profile(state.store.as_ref(), &profile);
-    let chat = chat("chat-model-gone", &profile.id, 1);
+    let mut chat = chat("chat-model-gone", &profile.id, 1);
+    chat.messages.push(crate::test_fixtures::chat_message(
+        "old-question",
+        crate::domain::ChatRole::User,
+        "Look at the prior year.",
+    ));
+    chat.messages.push(crate::test_fixtures::chat_message(
+        "old-answer",
+        crate::domain::ChatRole::Assistant,
+        "Prior-year margins were 15%.",
+    ));
     state.store.create_chat(&chat).unwrap();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen = events.clone();
@@ -851,7 +826,16 @@ async fn a_gone_model_is_retried_once_on_auto_within_the_same_turn() {
         "gone-model\ngpt-6.1-sol\n"
     );
     let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
-    assert_eq!(stored.messages.len(), 2, "one request, one answer");
+    assert_eq!(
+        stored.messages.len(),
+        4,
+        "history plus one request and one answer"
+    );
+    let first = fs::read_to_string(temporary.path().join("gone-model-prompt.txt")).unwrap();
+    let retry = fs::read_to_string(temporary.path().join("gpt-6.1-sol-prompt.txt")).unwrap();
+    assert_eq!(first, retry);
+    assert!(retry.contains("Prior-year margins were 15%."));
+    assert!(retry.contains(r#""interface":{"display_currency":"KRW"}"#));
     let answer = stored.messages.last().unwrap();
     assert_eq!(answer.status, ChatMessageStatus::Complete);
     assert_eq!(answer.content, "Answered on Auto.");
@@ -1214,12 +1198,11 @@ async fn chat_launch_failure_persists_a_sanitized_terminal_error() {
     let profile = profile("loupist-chat-launch-failure", &workspace, 1);
     seed_profile(state.store.as_ref(), &profile);
     // Exercise the real default Memory path inside a Tokio runtime.
-    crate::commands::knowledge::ensure_perspective(
+    crate::commands::knowledge::file_test_perspective(
         &state,
         &profile.id,
         "Distinguish reported facts from assumptions.",
-    )
-    .unwrap();
+    );
     let chat = chat("chat-launch-failure", &profile.id, 1);
     state.store.create_chat(&chat).unwrap();
 
@@ -1299,6 +1282,7 @@ fn cold_bootstrap_restores_history_saved_work_and_attachments() {
         url: None,
         provider: None,
         tool_name: "web_fetch".into(),
+        user_provided: false,
         calc_operation: None,
         read_ref: None,
         retrieved_at: "2026-10-11T00:00:00Z".into(),
@@ -1357,6 +1341,7 @@ fn cold_bootstrap_restores_history_saved_work_and_attachments() {
                     detail_id: None,
                     file_path: Some("notes/filing.md".into()),
                     status: ChatProgressStatus::Succeeded,
+                    failure_reason: None,
                     refusal: None,
                     started_at_ms: 1,
                     finished_at_ms: Some(2),
@@ -1372,6 +1357,7 @@ fn cold_bootstrap_restores_history_saved_work_and_attachments() {
         pi_chat_turn_prompt(
             current,
             TURN_ENVELOPE,
+            false,
             Some(ColdChatBootstrap {
                 attachments_root: root,
                 thread_id: "chat-a",
@@ -1407,7 +1393,7 @@ fn cold_bootstrap_restores_history_saved_work_and_attachments() {
     .unwrap();
     assert!(cold("Again").contains("Extracted prefix from the original note."));
 
-    let warm = pi_chat_turn_prompt("Warm follow-up", TURN_ENVELOPE, None).unwrap();
+    let warm = pi_chat_turn_prompt("Warm follow-up", TURN_ENVELOPE, false, None).unwrap();
     assert!(warm.contains("Warm follow-up"));
     assert!(!warm.contains("First answer"));
 }
@@ -1458,6 +1444,7 @@ fn native_chat_prompt_expands_current_skills_and_preserves_memory_authority() {
             let prompt = pi_chat_turn_prompt(
                 current,
                 TURN_ENVELOPE,
+                false,
                 cold.then_some(ColdChatBootstrap {
                     attachments_root: temporary.path(),
                     thread_id: "chat-native-prompt",
@@ -1811,6 +1798,17 @@ async fn finished_answers_store_number_checks_and_the_as_of_date() {
     // The as-of envelope reached the model beside the live time.
     let prompt = fs::read_to_string(temporary.path().join("prompt.txt")).unwrap();
     assert!(prompt.contains("loupist-as-of/1"), "{prompt}");
+    assert!(prompt.contains(r#""cutoff":"2026-03-03""#), "{prompt}");
+    let url = format!("#evidence-{}", answer.evidence_refs[0].id);
+    assert!(answer.content.contains(&format!("[8.42%]({url})")));
+    assert!(answer.content.contains(&format!("[9.1%]({url})")));
+    assert!(answer
+        .content
+        .contains(&format!("`[8.42%](citation_url={url})`")));
+    assert!(answer
+        .content
+        .contains(&format!("```md\n[9.1%](citation_url:{url})\n```")));
+
     // Every number link was checked against the calculation; "the calculation" is not a number.
     let checks: Vec<_> = answer
         .number_checks

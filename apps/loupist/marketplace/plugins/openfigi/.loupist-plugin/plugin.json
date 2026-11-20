@@ -1,0 +1,17 @@
+{
+  "name": "openfigi",
+  "version": "1.0.0",
+  "description": "Find a listing by name or ticker. When you search listings on the Following page, or the assistant looks one up, this computer sends the search text to OpenFIGI, which also receives your IP address. Nothing is sent while you type. A personal key is optional.",
+  "author": {
+    "name": "Loupist"
+  },
+  "interface": {
+    "displayName": "Asset lookup",
+    "shortDescription": "Find a listing by name or ticker. When you search listings on the Following page, or the assistant looks one up, this computer sends the search text to OpenFIGI, which also receives your IP address. Nothing is sent while you type. A personal key is optional.",
+    "category": "Data",
+    "capabilities": [
+      "Read"
+    ]
+  },
+  "connectors": "./connectors/"
+}

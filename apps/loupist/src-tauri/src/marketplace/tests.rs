@@ -150,14 +150,12 @@ fn add_test_openbb_runtime(state: &mut AppState, root: &std::path::Path) {
     );
 }
 
-/// Credential-free entries a new Loupist starts with; host-only wallet reads
-/// turn on with the first wallet instead.
+/// Credential-free entries a new Loupist starts with.
 fn zero_setup_catalog_ids() -> BTreeSet<String> {
     bundled_catalog()
         .unwrap()
         .entries
         .into_iter()
-        .filter(|entry| entry.id != crate::finance_data::onchain::ONCHAIN_SOURCE_ID)
         .filter(|entry| {
             entry.setup.as_ref().is_none_or(|setup| {
                 setup.config_fields.iter().all(|field| !field.required)
@@ -213,6 +211,29 @@ fn bundled_catalog_snapshot_reports_readiness_from_the_staged_runtime() {
     assert_eq!(
         after["sec.edgar"],
         MarketplaceConnectorReadiness::NeedsConfiguration
+    );
+
+    state.mcp_pool.record_openbb_connect(false);
+    assert_eq!(
+        readiness(&state)["openbb.platform"],
+        MarketplaceConnectorReadiness::RuntimeUnavailable
+    );
+    // Other connections and the next retry remain admitted.
+    assert_eq!(
+        readiness(&state)["world-bank.indicators"],
+        MarketplaceConnectorReadiness::Ready
+    );
+    let catalog = bundled_catalog().unwrap();
+    let entry = catalog
+        .entries
+        .iter()
+        .find(|e| e.id == "openbb.platform")
+        .unwrap();
+    assert!(connector_ready(entry, &state).unwrap());
+    state.mcp_pool.record_openbb_connect(true);
+    assert_eq!(
+        readiness(&state)["openbb.platform"],
+        MarketplaceConnectorReadiness::Ready
     );
 }
 
@@ -292,6 +313,11 @@ fn every_marketplace_entry_reaches_the_agent_runtime_profile() {
             .unwrap();
     for entry in catalog.entries {
         let represented = match entry.runtime.kind {
+            // Asset lookup is offered as a core tool, with execution gated by the host.
+            MarketplaceRuntimeKind::Native if entry.id == ASSET_LOOKUP_SOURCE_ID => profile
+                .core_tool_names
+                .iter()
+                .any(|name| name == "asset_lookup"),
             MarketplaceRuntimeKind::BundledMcp => profile.components.iter().any(|component| {
                 component.kind == "mcp"
                     && component.bundled
@@ -366,8 +392,8 @@ fn each_component_names_the_enabled_entries_it_serves() {
     assert_eq!(served("openbb"), ["fred.macro"]);
     assert_eq!(served("world-bank"), ["world-bank.indicators"]);
 
-    // DefiLlama's plugin also holds wallets, which its tools cannot read.
-    let onchain = ["onchain.wallets".to_string(), "defillama.tvl".to_string()];
+    // DefiLlama is the onchain plugin's one native entry.
+    let onchain = ["defillama.tvl".to_string()];
     let profile =
         crate::agent_harness::AgentRuntimeProfile::new("chat", false, false, &onchain).unwrap();
     let defillama = profile
@@ -375,18 +401,7 @@ fn each_component_names_the_enabled_entries_it_serves() {
         .iter()
         .find(|component| component.id == "defillama")
         .unwrap();
-    assert!(defillama.entry_ids.is_empty(), "{:?}", defillama.entry_ids);
-}
-
-#[test]
-fn wallet_reads_turn_on_for_every_loupist_with_the_first_wallet() {
-    let temporary = tempfile::tempdir().unwrap();
-    let state = AppState::for_test(temporary.path().join("app"));
-    seed_loupist(&state, "loupist-wallets");
-    let id = crate::finance_data::onchain::ONCHAIN_SOURCE_ID;
-    assert!(!binding(&state, "loupist-wallets", id).enabled);
-    enable_on_first_use(&state, id).unwrap();
-    assert!(binding(&state, "loupist-wallets", id).enabled);
+    assert_eq!(defillama.entry_ids, ["defillama.tvl"]);
 }
 
 #[test]
@@ -1005,7 +1020,7 @@ fn a_locked_key_shows_on_its_own_connection_and_the_rest_keep_loading() {
             .iter()
             .all(|credential| !credential.locked && credential.active));
         // Bot's connection list and every run's authority (Following,
-        // Watching, asset checks) still load.
+        // Scheduled tasks) still load.
         with_connector_lifecycle(&state, || {
             loupist_capability_list_for_state("g-locked", &state)
         })
@@ -1031,4 +1046,112 @@ fn a_locked_key_shows_on_its_own_connection_and_the_rest_keep_loading() {
     for entry_id in [locked, other] {
         crate::finance_credentials::delete(&environment, entry_id).unwrap();
     }
+}
+
+#[test]
+fn bundled_openfigi_is_an_optional_native_connector() {
+    let mut catalog = bundled_catalog().unwrap();
+    let entry = catalog
+        .entries
+        .iter_mut()
+        .find(|entry| entry.id == ASSET_LOOKUP_SOURCE_ID)
+        .expect("the OpenFIGI connector is bundled");
+    assert_eq!(entry.plugin, "openfigi");
+    assert_eq!(entry.permissions.network_hosts, ["api.openfigi.com"]);
+    entry.setup.as_mut().unwrap().credential_fields[0].required = true;
+    assert!(validate_catalog(&catalog)
+        .unwrap_err()
+        .contains("one optional native API key"));
+}
+
+#[test]
+fn asset_lookup_is_enabled_in_new_and_existing_loupists_without_a_saved_choice() {
+    let root = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(root.path().join("app"));
+    seed_loupist(&state, "new-lookup");
+    seed_loupist(&state, "legacy-lookup");
+    let fresh = binding(&state, "new-lookup", ASSET_LOOKUP_SOURCE_ID);
+    assert!(fresh.enabled);
+    assert!(crate::commands::binding_grants_execute(&fresh));
+
+    state
+        .store
+        .lock_loupist("legacy-lookup")
+        .unwrap()
+        .execute(
+            "DELETE FROM loupist_capability_bindings WHERE entry_id = ?1",
+            [ASSET_LOOKUP_SOURCE_ID],
+        )
+        .unwrap();
+    let lookup = loupist_capability_list_for_state("legacy-lookup", &state)
+        .unwrap()
+        .into_iter()
+        .find(|binding| binding.entry_id == ASSET_LOOKUP_SOURCE_ID)
+        .unwrap();
+    assert!(lookup.enabled && lookup.available);
+    assert_eq!(lookup.granted_permissions, ["execute"]);
+    assert!(execute_ids(&state, "legacy-lookup")
+        .iter()
+        .any(|id| id == ASSET_LOOKUP_SOURCE_ID));
+
+    set_binding(&state, "legacy-lookup", ASSET_LOOKUP_SOURCE_ID, false).unwrap();
+    assert!(!execute_ids(&state, "legacy-lookup")
+        .iter()
+        .any(|id| id == ASSET_LOOKUP_SOURCE_ID));
+}
+
+#[test]
+fn optional_lookup_key_is_active_on_save_and_deletion_preserves_grants() {
+    let root = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(root.path().join("app"));
+    seed_loupist(&state, "lookup-on");
+    seed_loupist(&state, "lookup-off");
+    set_binding(&state, "lookup-off", ASSET_LOOKUP_SOURCE_ID, false).unwrap();
+
+    let key = "synthetic-optional-lookup-key";
+    let status = credentials::save_credential_for_state(
+        MarketplaceCredentialSaveRequest {
+            entry_id: ASSET_LOOKUP_SOURCE_ID.into(),
+            secrets: BTreeMap::from([("api_key".to_owned(), key.to_owned())]),
+        },
+        &state,
+    )
+    .unwrap();
+    assert!(status[0].stored && status[0].active && !status[0].pending);
+    assert_eq!(
+        status[0].verification,
+        MarketplaceCredentialVerification::Never
+    );
+    assert_eq!(status[0].verified_at, None);
+    assert!(!serde_json::to_string(&status).unwrap().contains(key));
+    let saved = crate::finance_credentials::lookup_key(&state.credential_environment)
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.get("api_key"), Some(key));
+
+    let enabled = binding(&state, "lookup-on", ASSET_LOOKUP_SOURCE_ID);
+    let disabled = binding(&state, "lookup-off", ASSET_LOOKUP_SOURCE_ID);
+    assert!(enabled.enabled);
+    assert!(!disabled.enabled);
+    let status = delete_credential_for_state(
+        MarketplaceCredentialRequest {
+            entry_id: ASSET_LOOKUP_SOURCE_ID.into(),
+        },
+        &state,
+    )
+    .unwrap();
+    assert!(!status[0].stored);
+    assert!(
+        crate::finance_credentials::lookup_key(&state.credential_environment)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        binding(&state, "lookup-on", ASSET_LOOKUP_SOURCE_ID),
+        enabled
+    );
+    assert_eq!(
+        binding(&state, "lookup-off", ASSET_LOOKUP_SOURCE_ID),
+        disabled
+    );
 }

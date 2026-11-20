@@ -11,6 +11,8 @@
 .settings-page :is(input, textarea, select, button) { scroll-margin-block: 24px; }
 .settings-heading { margin-bottom: var(--gg-space-7); }
 .settings-heading .page-description { max-width: 56ch; margin-top: 10px; }
+/* The window's page header names the section, so the column opens with its lead line. */
+.settings-heading[data-title-hidden] .page-description { margin-top: 0; }
 .settings-stack { display: grid; gap: var(--gg-space-5); min-width: 0; }
 .settings-stack > .settings-stack { width: 100%; }
 .settings-navigation [data-slot="sidebar-header"] { padding: var(--gg-space-4) var(--gg-space-4) var(--gg-space-2); gap: var(--gg-space-5); }
@@ -32,7 +34,6 @@
 @media (forced-colors: active) {
   .settings-search:has(input:focus-visible) { outline-color: CanvasText; }
 }
-.settings-search input::-webkit-search-cancel-button { display: none; }
 .settings-search-empty { padding: var(--gg-space-4) var(--gg-space-6); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
 .settings-section, .settings-stack > [data-slot="card"] {
   border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); box-shadow: none;
@@ -48,12 +49,17 @@
 .settings-general { display: grid; gap: var(--gg-space-3); }
 .settings-general-block { display: grid; gap: var(--gg-space-2); }
 .settings-general .settings-row > div { flex: 1 1 18rem; min-width: 0; }
+/* Two actions stay together when the row wraps under its text. */
+.settings-row-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
 /* Compact rows so the whole page fits a 1280×820 window (direction T11). */
 .settings-general .settings-row { padding-block: var(--gg-space-3); }
 .settings-caption-label { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
 .settings-caption-label:lang(ko) { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); letter-spacing: 0; text-transform: none; }
 .settings-privacy { padding: var(--gg-space-3) var(--gg-space-5); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); container: settings-privacy / inline-size; }
 .settings-privacy h3 { margin: 0 0 var(--gg-space-1); font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); }
+.settings-privacy-summary { margin: 0 0 var(--gg-space-2); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); color: var(--gg-color-text-secondary); }
+.settings-privacy-detail { border-top: 0; }
+.settings-privacy-detail > summary { padding-block: var(--gg-space-2); }
 .settings-privacy-list { margin: 0; }
 .settings-privacy-list > div { display: grid; gap: var(--gg-space-1); padding-block: var(--gg-space-2); }
 .settings-privacy-list > div + div { border-top: 1px solid var(--gg-color-border-subtle); }
@@ -219,6 +225,9 @@
 }
 .agent-config-plan-line { margin-top: calc(-1 * var(--gg-space-2)); }
 .settings-model-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); }
+/* The search keeps a usable width; on a narrow card the three actions wrap under it together instead of crushing it. */
+.settings-model-search { flex: 1 1 14rem; min-width: min(100%, 12rem); }
+.settings-model-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); }
 .settings-model-list { max-height: var(--gg-size-inspector); overflow-y: auto; overflow-x: hidden; }
 .settings-model-row { display: flex; align-items: center; gap: var(--gg-space-3); padding: 14px var(--gg-space-1); }
 .settings-model-row.has-divider { border-top: 1px solid var(--gg-color-border-subtle); }
@@ -226,9 +235,14 @@
 .settings-provider-empty { padding: var(--gg-space-8) var(--gg-space-6); text-align: center; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
 /* Tiny workspace previews use explicit palettes, independent of the active theme. */
 .theme-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.theme-card { position: relative; min-width: 0; display: grid; gap: var(--gg-space-4); padding: 10px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); color: var(--gg-color-text-primary); background: var(--gg-color-bg-app); cursor: pointer; text-align: left; }
+/* Display currency: one select, then the rate status, which wraps under it. */
+.display-currency-setting { display: grid; gap: var(--gg-space-2); max-width: 28rem; min-width: 0; }
+.display-currency-status { min-width: 0; overflow-wrap: anywhere; }
+.display-currency-status:empty { display: none; }
+.display-currency-action { height: auto; padding: 0; vertical-align: baseline; }
+.theme-card { position: relative; min-width: 0; display: grid; align-content: start; gap: var(--gg-space-4); padding: 10px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); color: var(--gg-color-text-primary); background: var(--gg-color-bg-app); cursor: pointer; text-align: left; }
 .theme-card:hover { border-color: var(--gg-color-text-secondary); }
-.theme-card[data-active="true"] { border-color: var(--gg-color-text-primary); box-shadow: 0 0 0 1px var(--gg-color-text-primary); background: var(--gg-color-bg-selected); }
+.theme-card[data-active="true"] { border-color: var(--gg-color-accent); box-shadow: 0 0 0 1px var(--gg-color-accent); background: var(--gg-color-accent-soft); }
 .theme-preview { display: flex; height: 132px; gap: 14px; overflow: hidden; border-radius: 7px; background: var(--gg-color-bg-app); border: 1px solid var(--gg-color-border-subtle); }
 .theme-preview > i { width: 25%; display: flex; flex-direction: column; gap: var(--gg-space-2); padding: var(--gg-space-4) 7px; background: var(--gg-color-bg-sidebar); border-right: 1px solid var(--gg-color-border-subtle); }
 .theme-preview > i em { width: 100%; height: var(--gg-space-1); border-radius: 3px; background: var(--gg-color-border-default); }
@@ -238,13 +252,15 @@
 .theme-preview b:nth-child(1) { height: 6px; width: 50%; margin-bottom: var(--gg-space-2); background: var(--gg-color-text-disabled); }
 .theme-preview b:nth-child(3) { width: 75%; }
 .theme-preview > span > em { height: 18px; border: 1px solid var(--gg-color-border-default); border-radius: 5px; margin-top: auto; }
-.theme-preview[data-theme-preview="system"] { background: linear-gradient(120deg, var(--gg-color-action-ink) 50%, var(--gg-color-action) 50%); }
+.theme-preview[data-theme-preview="system"] { background: linear-gradient(120deg, var(--gg-color-bg-app) 50%, var(--gg-color-text-primary) 50%); }
 .theme-option-label { display: flex; align-items: flex-start; gap: 7px; padding: 0 3px var(--gg-space-1); }
+/* Each price-colour choice samples a rise and a fall in its own colours. */
+.price-colors-sample { display: flex; flex-wrap: wrap; gap: var(--gg-space-1); padding: var(--gg-space-3) var(--gg-space-2); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-raised); border: 1px solid var(--gg-color-border-subtle); }
 .theme-option-label svg { width: 14px; height: 14px; margin-top: 2px; flex-shrink: 0; }
 .theme-option-label > span { flex: 1; min-width: 0; }
 .theme-option-label strong { font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
 .theme-option-label small { display: block; margin-top: 5px; font-size: var(--gg-text-caption); line-height: 1.5; color: var(--gg-color-text-secondary); }
-.theme-card[data-active="true"] .theme-option-label > svg:last-child { color: var(--gg-color-text-primary); }
+.theme-card[data-active="true"] .theme-option-label > svg:last-child { color: var(--gg-color-accent-ink); }
 .settings-page .world-processing-status { padding: var(--gg-space-3) 14px; margin: 0 0 22px; background: var(--gg-color-bg-hover); border-radius: var(--gg-radius-sm); }
 .settings-page .world-processing-opt-in { padding-bottom: 22px; border-bottom: 1px solid var(--gg-color-border-subtle); font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); gap: var(--gg-space-3); }
 .settings-page .world-processing-model { gap: var(--gg-space-3); margin-block: var(--gg-space-6); }

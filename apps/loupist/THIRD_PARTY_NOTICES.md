@@ -59,7 +59,7 @@ offline workspace text search, copyright Andrew Gallant and contributors, under
 the MIT License or the Unlicense. Both upstream license texts are included in
 `pi-runtime/workspace-tools/`.
 
-Loupist bundles Pi coding agent 1.5.0, copyright (c) 2025 Mario Zechner,
+Loupist bundles Pi coding agent 1.5.2, copyright (c) 2025 Mario Zechner,
 under the MIT License:
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -79,6 +79,16 @@ under the MIT License:
 > LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
+
+Pi's bundled terminal diagram renderer uses [lovely-mermaid](https://github.com/xl0/lovely-mermaid)
+0.3.3 by Alexey Zaytsev under the Apache License 2.0. The complete license text
+is included in the bundle at `loupist-agent/skills/licenses/Apache-2.0-financial-services.txt`.
+
+## Unicode text segmentation
+
+Display previews use unicode-segmentation 1.13.3, copyright (c) 2015 The Rust
+Project Developers. The crate is distributed under the MIT or Apache-2.0
+license. Its MIT license uses the terms reproduced above.
 
 ## keyring
 
@@ -212,10 +222,18 @@ License 2.0. The templates and their notice are kept in
 `src-tauri/src/knowledge/world_extract/prompts/`; only placeholder slots were
 added.
 
-Local English embeddings use MinishLab potion-base-4M under the MIT License.
-The tokenizer originates from BAAI/bge-base-en-v1.5, also MIT. The staged
-`embed_assets/NOTICE` records both. The app loads those files and does not
-download a model at runtime.
+Local embeddings use MinishLab
+[blink-multilingual-64M](https://huggingface.co/minishlab/blink-multilingual-64M)
+at revision `a7198ef875b9a756b8b641ab064542f7408e50f3`, copyright The Minish Lab,
+under the MIT License as its model card declares; the repository carries no
+LICENSE file. Its token embeddings were initialized from BAAI/bge-m3 (MIT) and
+trained on minishlab/tokenlearn-c4-multilingual-bge-m3, derived from multilingual
+C4, and on public retrieval pairs from hotchpotch/bekko-embedding-v1-unsupervised.
+Loupist stores the embedding table as int8 with one scale per row; the tokenizer
+and configuration are unchanged. The model2vec-rs runtime that loads it is
+copyright (c) 2025 The Minish Lab, under the MIT License. The staged
+`embed_assets/NOTICE` records the model's terms. The app loads those files and
+does not download a model at runtime. The MIT terms reproduced above apply.
 
 ## Offline Python runtime
 

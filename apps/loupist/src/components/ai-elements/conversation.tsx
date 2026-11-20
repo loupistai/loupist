@@ -100,6 +100,12 @@ export type ConversationProps = ComponentProps<"div"> & {
 /** The viewport's height, for the latest turn's reserve (chat.css `--turn-viewport`). */
 const writeViewport = (element: HTMLElement) => element.style.setProperty("--turn-viewport", `${element.clientHeight}px`);
 
+/**
+ * Behind a full-page Map or Lens the thread is `display: none`: it has no box, every measure reads zero and the
+ * browser may drop its scroll position. Nothing is measured or moved then; the reader's place comes back when it shows.
+ */
+const laidOut = (element: HTMLElement) => element.clientHeight > 0;
+
 const markScrolled = (element: HTMLElement) => element.toggleAttribute("data-scrolled", element.scrollTop > 0);
 
 const latestTurn = (element: HTMLElement) => element.querySelector<HTMLElement>("[data-turn][data-turn-latest]");
@@ -148,6 +154,14 @@ export const Conversation = ({
   const glideTarget = useRef(0);
   const follow = useRef<number | undefined>(undefined);
   const lastResetKey = useRef(scrollResetKey);
+  /** The thread has had a box. One that never had one has no place to keep; it opens when it shows. */
+  const seen = useRef(false);
+  /** The thread was last seen without a box, hidden behind a full-page view. */
+  const unseen = useRef(false);
+  /** A question sent, or a running chat opened, while the thread was hidden goes to the top once it shows. */
+  const anchorWhenShown = useRef(false);
+  /** The `autoScroll` this thread last opened with. */
+  const openedFor = useRef<boolean | null>(null);
   const runningRef = useRef(running);
   runningRef.current = running;
   const [state, setState] = useState<ConversationState>({ away: false, moreBelow: false });
@@ -187,6 +201,8 @@ export const Conversation = ({
     }
     const start = performance.now();
     const step = (now: number) => {
+      // Hidden mid-glide: the thread shows again where the glide would have ended.
+      if (!laidOut(element)) { lastTop.current = to; glide.current = undefined; return; }
       const progress = Math.min(1, (now - start) / GLIDE_MS);
       const eased = 1 - (1 - progress) ** 3;
       element.scrollTop = from + (to - from) * eased;
@@ -212,6 +228,52 @@ export const Conversation = ({
     if (missing > 0) turn.style.minHeight = `${turn.getBoundingClientRect().height + missing}px`;
   }, []);
 
+  /** The latest question 16 px under the top (or a tall one's bottom at 40%), with room made below it. */
+  const anchorQuestion = useCallback(() => {
+    const element = scrollRef.current;
+    const turn = element && latestTurn(element);
+    const question = turn?.querySelector<HTMLElement>(".message.user");
+    if (!element || !turn || !question) return;
+    // A divider above the question is part of the turn; the reserve counts from the question.
+    turn.style.setProperty("--turn-lead", `${layoutBox(question, element).top - layoutBox(turn, element).top}px`);
+    const delta = anchorDelta(layoutBox(question, element), element.getBoundingClientRect());
+    reserve(delta);
+    glideBy(delta);
+  }, [glideBy, reserve]);
+
+  const toBottom = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+    lastTop.current = element.scrollTop;
+    markScrolled(element);
+  }, []);
+
+  /**
+   * True while the thread has no box, and on the first frame it has one again, once the reader is back where they
+   * were: a thread kept at its end or following the reply returns to its end, a question sent meanwhile goes to the
+   * top, anything else returns to the position it had. Zero-sized measures never reach the reserve or the position.
+   */
+  const keepPlaceWhileHidden = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return false;
+    if (!laidOut(element)) { if (seen.current) unseen.current = true; return true; }
+    seen.current = true;
+    if (!unseen.current) return false;
+    unseen.current = false;
+    edge.current = element.getBoundingClientRect().top;
+    writeViewport(element);
+    if (mode.current === "bottom" || following.current) toBottom();
+    else {
+      element.scrollTop = lastTop.current;
+      lastTop.current = element.scrollTop;
+      markScrolled(element);
+      if (anchorWhenShown.current) anchorQuestion();
+    }
+    anchorWhenShown.current = false;
+    return true;
+  }, [anchorQuestion, toBottom]);
+
   /**
    * Context above the thread (the inline rail's rows) grows or shrinks and moves the thread's top edge,
    * for example when a question is answered or the reply commits. The scroll position moves with that
@@ -222,6 +284,7 @@ export const Conversation = ({
   const keepContentStill = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return false;
+    if (keepPlaceWhileHidden()) return true;
     const top = element.getBoundingClientRect().top;
     const before = edge.current;
     edge.current = top;
@@ -238,15 +301,7 @@ export const Conversation = ({
     markScrolled(element);
     if (gliding !== null && gliding > to) glideTo(gliding);
     return true;
-  }, [glideTo, reserve, stopGlide]);
-
-  const toBottom = useCallback(() => {
-    const element = scrollRef.current;
-    if (!element) return;
-    element.scrollTop = element.scrollHeight;
-    lastTop.current = element.scrollTop;
-    markScrolled(element);
-  }, []);
+  }, [glideTo, keepPlaceWhileHidden, reserve, stopGlide]);
 
   const followFrame = useCallback(() => {
     follow.current = undefined;
@@ -300,7 +355,8 @@ export const Conversation = ({
   useLayoutEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
-    const write = () => writeViewport(element);
+    // Hidden, the thread keeps the room it had, so it shows again with the same layout.
+    const write = () => { if (laidOut(element)) writeViewport(element); };
     write();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(write);
@@ -309,9 +365,12 @@ export const Conversation = ({
   }, []);
 
   // Opening: a settled chat opens at its end; a chat whose reply is in flight opens with the latest question at the top.
+  // A Suspense boundary that showed its fallback (a lazy page opening) re-runs layout effects when it shows this
+  // thread again, often while a full-page view still hides it: that is not an opening, and the reader keeps their place.
   useLayoutEffect(() => {
     const element = scrollRef.current;
-    if (!element) return;
+    if (!element || openedFor.current === autoScroll) return;
+    openedFor.current = autoScroll;
     edge.current = element.getBoundingClientRect().top;
     if (!autoScroll) {
       element.scrollTop = 0;
@@ -321,6 +380,7 @@ export const Conversation = ({
     if (runningRef.current) {
       mode.current = "anchored";
       touched.current = true;
+      if (!laidOut(element)) { unseen.current = true; anchorWhenShown.current = true; return; }
       const turn = latestTurn(element);
       const question = turn?.querySelector<HTMLElement>(".message.user");
       if (turn && question) {
@@ -329,7 +389,7 @@ export const Conversation = ({
         lastTop.current = element.scrollTop;
         markScrolled(element);
       }
-    } else toBottom();
+    } else if (laidOut(element)) toBottom();
     measure();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- only the first layout of this thread opens it.
   }, [autoScroll]);
@@ -343,15 +403,9 @@ export const Conversation = ({
     mode.current = "anchored";
     touched.current = false;
     stopFollowing();
-    const turn = latestTurn(element);
-    const question = turn?.querySelector<HTMLElement>(".message.user");
-    if (!turn || !question) return;
-    // A divider above the question is part of the turn; the reserve counts from the question.
-    turn.style.setProperty("--turn-lead", `${layoutBox(question, element).top - layoutBox(turn, element).top}px`);
-    const delta = anchorDelta(layoutBox(question, element), element.getBoundingClientRect());
-    reserve(delta);
-    glideBy(delta);
-  }, [autoScroll, glideBy, reserve, scrollResetKey, stopFollowing]);
+    if (!laidOut(element)) { unseen.current = true; anchorWhenShown.current = true; return; }
+    anchorQuestion();
+  }, [anchorQuestion, autoScroll, scrollResetKey, stopFollowing]);
 
   // Images, tables and late renderers change height after their commit: a thread opened at its end stays there,
   // a followed reply keeps following, and anything else stays put.
@@ -361,6 +415,7 @@ export const Conversation = ({
     if (!autoScroll || !element || !content || typeof ResizeObserver === "undefined") return;
     const changed = () => {
       keepContentStill();
+      if (!laidOut(element)) return;
       if (mode.current === "bottom") toBottom();
       else if (following.current && follow.current === undefined && typeof requestAnimationFrame === "function") follow.current = requestAnimationFrame(followFrame);
       measure();

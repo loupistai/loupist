@@ -119,7 +119,6 @@ pub(crate) struct InboxItem {
     pub title: String,
     pub status: RunStatus,
     pub summary: String,
-    pub summary_items: Vec<crate::scheduled_tasks::types::RunSummaryItem>,
     pub started_at_ms: i64,
     pub finished_at_ms: Option<i64>,
     pub read_at_ms: Option<i64>,
@@ -138,7 +137,6 @@ impl From<Run> for InboxItem {
             title: r.task_title,
             status: r.status,
             summary: r.summary,
-            summary_items: r.summary_items,
             started_at_ms: r.started_at_ms,
             finished_at_ms: r.finished_at_ms,
             read_at_ms: r.read_at_ms,
@@ -198,7 +196,6 @@ pub(crate) fn settings_set(
         .maintenance
         .admit_kind(MaintenanceActivityKind::ChatMutation)?;
     state.ensure_loupist_available(&request.loupist_id)?;
-    crate::commands::watch::consent_mode(state, &request.loupist_id)?;
     let previous = settings_get(state, &request.loupist_id)?;
     // A schedule saved while briefings are off still needs a (paused) task to live in.
     let create = request.enabled || request.schedule.is_some();

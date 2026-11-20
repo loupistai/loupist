@@ -486,84 +486,6 @@ async fn schedule_change_wakes_a_waiter_and_retains_an_early_notification() {
     ));
 }
 
-#[tokio::test]
-async fn briefing_refresh_requires_a_new_admitted_occurrence() {
-    let temporary = tempfile::tempdir().unwrap();
-    let state = AppState::for_test(temporary.path().join("app"));
-    state.store.create_loupist(&loupist("loupist-a")).unwrap();
-    let task = state
-        .store
-        .scheduled_task_create_kind(
-            "loupist-a",
-            "briefing-a",
-            TaskDraft {
-                target: TaskTarget::Dedicated,
-                update_memory: true,
-                ..draft()
-            },
-            TaskKind::Briefing,
-            1_000,
-        )
-        .unwrap();
-    let claim = claim_task(&state.store, "loupist-a", &task.id, 2_000, true)
-        .unwrap()
-        .unwrap();
-    assert!(state
-        .scheduled
-        .dispatch(&state, "loupist-a", &task.id, true)
-        .await
-        .unwrap()
-        .is_none());
-    assert_eq!(
-        state
-            .scheduled
-            .inner
-            .briefing_refreshes
-            .load(Ordering::SeqCst),
-        0
-    );
-    state
-        .store
-        .scheduled_task_finish(
-            "loupist-a",
-            &claim.run.run_id,
-            RunStatus::Succeeded,
-            None,
-            3_000,
-        )
-        .unwrap();
-    // The missing Pi runtime fails after admission, without a provider call.
-    let run = state
-        .scheduled
-        .dispatch(&state, "loupist-a", &task.id, true)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(run.status, RunStatus::Failed);
-    assert_eq!(
-        state
-            .scheduled
-            .inner
-            .briefing_refreshes
-            .load(Ordering::SeqCst),
-        1
-    );
-    assert!(state
-        .scheduled
-        .dispatch(&state, "loupist-a", &task.id, false)
-        .await
-        .unwrap()
-        .is_none());
-    assert_eq!(
-        state
-            .scheduled
-            .inner
-            .briefing_refreshes
-            .load(Ordering::SeqCst),
-        1
-    );
-}
-
 #[test]
 fn batched_lists_preserve_missing_and_foreign_chat_rejection() {
     for status in [TaskStatus::Active, TaskStatus::Paused] {
@@ -993,38 +915,6 @@ fn deliberate_stops_and_quits_do_not_count_or_reset_real_failures() {
         let saved = finish_occurrence(&store, &task.id, status, error, 2_000 + index * 1_000);
         assert_eq!(saved.status == TaskStatus::Paused, index == 6, "{error}");
     }
-}
-
-#[test]
-fn automatic_earnings_rescheduling_preserves_the_failure_streak_boundary() {
-    let store = fixture();
-    let task = store
-        .scheduled_task_create_kind(
-            "loupist-a",
-            "earnings-a",
-            draft(),
-            TaskKind::Earnings,
-            1_000,
-        )
-        .unwrap();
-    let reset = store
-        .scheduled_task_update("loupist-a", &task.id, task.revision, task.draft(), 2_000)
-        .unwrap();
-    store
-        .scheduled_task_reschedule("loupist-a", &task.id, 10_000)
-        .unwrap();
-    let data: String = store
-        .lock_loupist("loupist-a")
-        .unwrap()
-        .query_row(
-            "SELECT data_json FROM scheduled_tasks WHERE id=?1",
-            [&task.id],
-            |row| row.get(0),
-        )
-        .unwrap();
-    let data: serde_json::Value = serde_json::from_str(&data).unwrap();
-    assert_eq!(data["failure_streak_started_at_ms"], 2_000);
-    assert_eq!(data["failure_streak_started_revision"], reset.revision);
 }
 
 #[test]

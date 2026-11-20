@@ -25,7 +25,9 @@ describe("WorkspaceTabBar", () => {
   it("keeps close actions outside the tablist and restores focus after a keyboard close", async () => {
     const user = userEvent.setup();
     render(<TabBar />);
-    expect(within(screen.getByRole("tablist")).queryByRole("button", { name: /Close .* tab/ })).toBeNull();
+    expect(within(screen.getByRole("tablist", { name: "Panel tabs" })).queryByRole("button", { name: /Close .* tab/ })).toBeNull();
+    // The close buttons are their own group, named for what they do rather than repeating the tab list's name.
+    expect(within(screen.getByRole("group", { name: "Close tabs" })).getAllByRole("button")).toHaveLength(2);
     screen.getByRole("button", { name: "Close First page tab" }).focus();
     await user.keyboard("{Enter}");
     expect(screen.queryByRole("tab", { name: "First page" })).not.toBeInTheDocument();
@@ -35,7 +37,7 @@ describe("WorkspaceTabBar", () => {
     const user = userEvent.setup();
     const onNewBrowser = vi.fn();
     render(<TabBar onNewBrowser={onNewBrowser} />);
-    const trigger = screen.getByLabelText("Open workspace item");
+    const trigger = screen.getByLabelText("Add a tab");
     await user.click(trigger);
     await user.click(screen.getByRole("menuitem", { name: /New browser tab/ }));
     expect(onNewBrowser).toHaveBeenCalledOnce();
@@ -46,7 +48,7 @@ describe("WorkspaceTabBar", () => {
     const user = userEvent.setup();
     const onNewBrowser = vi.fn();
     render(<TabBar onNewBrowser={onNewBrowser} />);
-    const trigger = screen.getByLabelText("Open workspace item");
+    const trigger = screen.getByLabelText("Add a tab");
     trigger.focus();
     await user.keyboard("{ArrowDown}");
     await waitFor(() => expect(screen.getByRole("menuitem", { name: /New browser tab/ })).toHaveFocus());

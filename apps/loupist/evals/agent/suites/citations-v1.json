@@ -29,7 +29,8 @@
                     "assert": "cites_result",
                     "tool": "workspace_capture",
                     "near": [
-                      "18420"
+                      "18420",
+                      "18,420"
                     ],
                     "metric": "task_success"
                   }
@@ -59,7 +60,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "C-002",
@@ -88,7 +90,8 @@
                     "assert": "cites_result",
                     "tool": "workspace_capture",
                     "near": [
-                      "18420"
+                      "18420",
+                      "18,420"
                     ],
                     "metric": "task_success"
                   }
@@ -111,7 +114,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     }
   ]
 }

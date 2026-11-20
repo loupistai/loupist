@@ -85,7 +85,7 @@ it("keeps World and Lens pack sharing out of the user app", async () => {
   expect(within(apple).queryByRole("button", { name: "About this shared Loupist" })).toBeNull();
 
   await user.click(screen.getByRole("button", { name: "Search" }));
-  const palette = await screen.findByRole("combobox", { name: "Command palette" });
+  const palette = await screen.findByRole("combobox", { name: "Search" });
   const actions = [...document.querySelectorAll<HTMLElement>('[data-palette-row^="action:"]')];
   expect(actions.map(row => row.getAttribute("data-palette-row"))).toEqual(expect.arrayContaining(["action:export-chat", "action:print-chat", "action:lens", "action:map"]));
   for (const row of actions) expect(row.textContent ?? "").not.toMatch(/gallery|shared loupist|browse the gallery|use a link/i);
@@ -94,6 +94,7 @@ it("keeps World and Lens pack sharing out of the user app", async () => {
   await user.keyboard("{Escape}");
 
   await user.click(await mainTab(/Settings/));
+  await user.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Loupists" }));
   await screen.findByRole("heading", { name: "Loupists", level: 1 });
   const rows = document.querySelector(".settings-loupists");
   if (!rows) throw new Error("missing Loupist rows");

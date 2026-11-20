@@ -17,6 +17,13 @@ const advice = {
 const particle = {
   ko: /\}\}[”’"']?(?:이|가|은|는|을|를|와|과|으로|로|이에요|예요)(?![가-힣(])|루피스트(?:이|은|을|과|으로)(?![가-힣])/g,
 };
+// Korean copy is formal (src/i18n/README.md): no word may end in the 해요체
+// "요" (…해요, …예요, …세요, …까요, and 죠 for 지요). A noun that merely ends
+// in 요 is allowed, and so is 아니요, the standard "No" paired with 예.
+const register = { ko: /[가-힣]*[요죠](?![가-힣])/g };
+export const koreanNounsEndingInYo = ["필요", "중요", "주요", "개요", "수요", "소요", "강요", "동요", "아니요"];
+const isSpeechEnding = (rule, term) => rule !== "ui-copy/register"
+  || !koreanNounsEndingInYo.some((noun) => term.endsWith(noun));
 
 export function validateAllowlist(entries) {
   if (!Array.isArray(entries) || entries.some((entry) =>
@@ -39,9 +46,10 @@ export function inspectCatalog(file, text, locale, namespace, entries = []) {
   function visit(node, keys) {
     if (ts.isStringLiteral(node)) {
       const key = [locale, namespace, ...keys].join(".");
-      const rules = [["ui-copy/advice", advice[locale]], ["ui-copy/jargon", jargon], ["ui-copy/particle", particle[locale]]];
+      const rules = [["ui-copy/advice", advice[locale]], ["ui-copy/jargon", jargon], ["ui-copy/particle", particle[locale]], ["ui-copy/register", register[locale]]];
       for (const [rule, pattern] of rules.filter(([, pattern]) => pattern)) {
         for (const match of node.text.matchAll(pattern)) {
+          if (!isSpeechEnding(rule, match[0])) continue;
           const exception = rule === "ui-copy/jargon" && entries.find((entry) =>
             entry.key === key && entry.term.toLowerCase() === match[0].toLowerCase());
           findings.push({ file, line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,

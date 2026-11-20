@@ -18,7 +18,7 @@ async function fixture() {
 it.each(["created", "refined"] as const)("announces a %s event, highlights its World entities, and opens the learned document in Lens", async status => {
   const { bridge, review, node, appliedIds } = await fixture();
   render(<App bridge={bridge} />);
-  await screen.findByRole("button", { name: /Panel kind/ });
+  await screen.findByRole("button", { name: "Activity" });
   await userEvent.click(await mainTab(/Map/));
   await screen.findByTestId("learning-canvas");
   act(() => bridge.emitLearningReview({ ...review, status }));
@@ -38,7 +38,7 @@ it("announces learning away from Map without starting a hidden glow", async () =
   const { bridge, review, node } = await fixture();
   function State() { const state = useLearningState(bridge, "loupist-quality"); return <output data-testid="glow-state">{state.glow?.recordId ?? "none"}</output>; }
   render(<><App bridge={bridge} /><State /></>);
-  await screen.findByRole("button", { name: /Panel kind/ });
+  await screen.findByRole("button", { name: "Activity" });
   act(() => bridge.emitLearningReview(review));
   await screen.findByText(`Your Loupist learned a method: ${node.label}`);
   expect(screen.getByTestId("glow-state")).toHaveTextContent("none");

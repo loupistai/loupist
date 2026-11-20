@@ -22,7 +22,7 @@ const LOUPIST: &str = "loupist-extract";
 const AT: i64 = 1_760_000_000_000;
 
 fn assets() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../src/knowledge/embed_assets")
+    crate::knowledge::staged_embed_assets()
 }
 
 fn runtime() -> tokio::runtime::Runtime {
@@ -190,6 +190,8 @@ struct Script {
     same_as: HashMap<String, String>,
     /// Required evidence and policy text on a scripted relation extraction.
     required_edge_text: Vec<String>,
+    /// The messages of each relation resolution call, in order.
+    resolution_messages: Vec<String>,
 }
 
 impl Script {
@@ -209,8 +211,7 @@ impl Script {
                 .map(|item| item.as_str().unwrap().to_string())
                 .collect();
             let vectors =
-                crate::knowledge::graph_inference::embed_local_english_batch(&assets(), &inputs)
-                    .unwrap();
+                crate::knowledge::graph_inference::embed_local_batch(&assets(), &inputs).unwrap();
             return InferenceReply {
                 disposition: InferenceDisposition::Completed,
                 body: json!({"status": "ok", "json_object": null, "vectors": vectors}),
@@ -221,6 +222,10 @@ impl Script {
             .unwrap_or("")
             .to_string();
         self.calls.push(title.clone());
+        if title == "EdgeDuplicate" || title == "EdgeResolutionBatch" {
+            self.resolution_messages
+                .push(request["messages"].to_string());
+        }
         if title == "ExtractedEdges" {
             let messages = request["messages"].to_string();
             for text in &self.required_edge_text {
@@ -235,6 +240,20 @@ impl Script {
         }
         let value = match title.as_str() {
             "NodeResolutions" => resolve_by_name(request, &self.same_as),
+            // A batch of relation resolutions finds nothing to merge or end unless scripted.
+            "EdgeResolutionBatch" if !self.replies.contains_key(&title) => request
+                ["response_schema"]["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|case| {
+                    (
+                        case.as_str().unwrap().to_string(),
+                        json!({"duplicate_facts": [], "contradicted_facts": []}),
+                    )
+                })
+                .collect::<serde_json::Map<_, _>>()
+                .into(),
             _ => self
                 .replies
                 .get_mut(&title)
@@ -526,6 +545,80 @@ impl Fixture {
             })
             .unwrap()
     }
+}
+
+#[test]
+fn a_relationship_whose_ends_resolve_to_one_asset_is_dropped_and_its_reported_values_stay() {
+    let mut fixture = Fixture::new();
+    let script = Arc::new(Mutex::new(Script::default()));
+    let first = "Bitcoin reported net ETF inflows of USD 750 million on 2026-11-07.";
+    {
+        let mut script = script.lock().unwrap();
+        script.reply("ExtractedEntities", entities(&["Bitcoin"]));
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [relation("Bitcoin", "Bitcoin", "REPORTS", first)]}),
+        );
+        script.reply("CoreAttributeBatch", json!({"entities": []}));
+    }
+    let job = fixture.queue("ETF flows", first);
+    assert_eq!(
+        drive(&mut fixture, &job, &script, "fixture").status,
+        graph_jobs::JOB_COMPLETED
+    );
+    // A Farside table names the asset by its Upbit market; the resolver says it is Bitcoin.
+    let flows = [
+        "KRW-BTC reported US spot ETF net inflows of USD 120 million on 2026-11-10.",
+        "KRW-BTC reported US spot ETF net outflows of USD 80 million on 2026-11-11.",
+    ];
+    let tracks = "KRW-BTC tracks Bitcoin.";
+    {
+        let mut script = script.lock().unwrap();
+        script.same_as.insert("KRW-BTC".into(), "Bitcoin".into());
+        script.reply("ExtractedEntities", entities(&["KRW-BTC", "Bitcoin"]));
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [
+                relation("KRW-BTC", "KRW-BTC", "REPORTS", flows[0]),
+                relation("KRW-BTC", "KRW-BTC", "REPORTS", flows[1]),
+                relation("KRW-BTC", "Bitcoin", "TRACKS", tracks),
+            ]}),
+        );
+        for _ in 0..3 {
+            script.reply(
+                "EdgeDuplicate",
+                json!({"duplicate_facts": [], "contradicted_facts": []}),
+            );
+        }
+        script.reply("CoreAttributeBatch", json!({"entities": []}));
+    }
+    let job = fixture.queue("Farside flows", &flows.join(" "));
+    assert_eq!(
+        drive(&mut fixture, &job, &script, "fixture").status,
+        graph_jobs::JOB_COMPLETED
+    );
+    let body = fixture.body();
+    assert_eq!(body.nodes.len(), 1);
+    let bitcoin = &body.nodes[0].id;
+    let mut published: Vec<&str> = body
+        .claims
+        .iter()
+        .map(|claim| claim.proposition.as_str())
+        .collect();
+    published.sort();
+    assert_eq!(published, [first, flows[0], flows[1]]);
+    assert!(body.claims.iter().all(|claim| claim.relation == "REPORTS"
+        && claim
+            .endpoints
+            .iter()
+            .all(|endpoint| &endpoint.node_id == bitcoin)));
+    // Dropped before relation resolution, so no call is spent on it.
+    assert!(script
+        .lock()
+        .unwrap()
+        .resolution_messages
+        .iter()
+        .all(|messages| !messages.contains(tracks)));
 }
 
 #[test]
@@ -873,6 +966,69 @@ fn world_search_ranks_claims_and_entity_neighborhoods_without_a_worker() {
         .unwrap()
         .is_empty());
     assert_eq!(fixture.stamp(), Some(head));
+    assert_eq!(fixture.index_rows(), (3, 2, 2));
+}
+
+/// A folder indexed by an earlier model (another fingerprint and vector
+/// width) is rebuilt on its first search; no earlier vector is compared.
+#[test]
+fn an_index_from_an_earlier_model_is_rebuilt_at_the_current_width() {
+    let mut fixture = Fixture::new();
+    two_sources(&mut fixture);
+    let head = fixture.head();
+    let search = |query: &str| {
+        world_extract::query_world(
+            &fixture.store,
+            LOUPIST,
+            &fixture.world,
+            &head,
+            query,
+            &assets(),
+        )
+        .unwrap()
+        .unwrap()
+    };
+    search("Acme Corp");
+    let earlier: Vec<u8> = [0.5_f32; 128]
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect();
+    fixture
+        .store
+        .transact(|write| {
+            write.tx.execute(
+                "UPDATE world_index_state SET model = 'world-index/v1/trigram-fb1/earlier'",
+                [],
+            )?;
+            write
+                .tx
+                .execute("UPDATE world_index_nodes SET vector = ?1", [&earlier])?;
+            write
+                .tx
+                .execute("UPDATE world_index_claims SET vector = ?1", [&earlier])?;
+            Ok(())
+        })
+        .unwrap();
+    let found = search("solid-state partnership with Gamma");
+    assert_eq!(found["view"]["view"]["edges"][0]["proposition"], PARTNER);
+    let width = crate::knowledge::local_model(&assets())
+        .unwrap()
+        .dimension();
+    let (stamp, vectors) = fixture
+        .store
+        .read(|read| {
+            Ok((
+                index::stamp(read.tx, LOUPIST, &fixture.world)?,
+                index::load_vectors(read.tx, LOUPIST, &fixture.world)?,
+            ))
+        })
+        .unwrap();
+    assert_eq!(stamp, Some((head, index::model_stamp(&assets()).unwrap())));
+    assert!(vectors
+        .nodes
+        .values()
+        .chain(vectors.claims.values())
+        .all(|vector| vector.len() == width));
     assert_eq!(fixture.index_rows(), (3, 2, 2));
 }
 

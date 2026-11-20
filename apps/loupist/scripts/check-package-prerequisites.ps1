@@ -24,8 +24,8 @@ function Assert-X64Pe([string]$Path) {
 }
 
 $target = "x86_64-pc-windows-msvc"
-$piVersion = "1.5.0"
-$archiveSha256 = "12d58a70e80b16ba9f764950b7a42bdeb07959495c0db68396cf2988c0b71af3"
+$piVersion = "1.5.2"
+$archiveSha256 = "e6adb8cb8c84eca14391ad24b363de9d2be98a89ca3ba3fdee1fa4de32b7f2e8"
 $scriptDir = $PSScriptRoot
 $appRoot = Split-Path -Parent $scriptDir
 $repoRoot = (Resolve-Path (Join-Path $appRoot "..\..")).Path
@@ -199,6 +199,9 @@ Get-Content -LiteralPath (Join-Path $tauriRoot "tauri.package-smoke.conf.json") 
     --verify `
     --runtime (Join-Path $tauriRoot "resources\python-runtime")
 if ($LASTEXITCODE -ne 0) { throw "Python runtime verification failed." }
+
+& $pythonBinary (Join-Path $scriptDir "stage-embed-assets.py") --verify
+if ($LASTEXITCODE -ne 0) { throw "Embedding asset verification failed." }
 
 & $pythonBinary (Join-Path $scriptDir "check-sidecars.py") `
     --pi $piBinary `

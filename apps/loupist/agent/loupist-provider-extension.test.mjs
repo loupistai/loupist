@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { constants, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
+import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { builtinProviders, getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 
 test("keeps provider-result nofollow protection off Windows only", async () => {
@@ -158,6 +161,7 @@ test("persists credentials through Pi storage without returning secrets", async 
       input: ["text", "image"],
       thinkingLevelMap: { off: "off", xhigh: "xhigh", max: null },
       api: "openai-codex-responses",
+      baseUrl: "https://chatgpt.com/backend-api",
     },
     {
       provider: "openai-codex",
@@ -185,6 +189,7 @@ test("persists credentials through Pi storage without returning secrets", async 
         max: "max",
       },
       api: "openai-codex-responses",
+      baseUrl: "https://chatgpt.com/backend-api",
     },
   ];
   const oauthProvider = {
@@ -474,15 +479,21 @@ test("forwards a device sign-in's user code and verification URL", async (t) => 
   assert.equal(notices.some((notice) => notice.includes("xai-access")), false);
 });
 
-async function loadExtension(t, name) {
+async function loadExtension(t, name, request) {
   const temporary = mkdtempSync(join(tmpdir(), `loupist-provider-${name}-`));
   const resultPath = join(temporary, "result.json");
   writeFileSync(resultPath, "", { mode: 0o600 });
   process.env.PI_CODING_AGENT_DIR = temporary;
   process.env.LOUPIST_PROVIDER_RESULT_FILE = resultPath;
+  if (request) {
+    const requestPath = join(temporary, "request.json");
+    writeFileSync(requestPath, JSON.stringify(request), { mode: 0o600 });
+    process.env.LOUPIST_PROVIDER_REQUEST_FILE = requestPath;
+  }
   t.after(() => {
     delete process.env.PI_CODING_AGENT_DIR;
     delete process.env.LOUPIST_PROVIDER_RESULT_FILE;
+    delete process.env.LOUPIST_PROVIDER_REQUEST_FILE;
     rmSync(temporary, { recursive: true, force: true });
   });
   const moduleUrl = `${pathToFileURL(join(import.meta.dirname, "loupist-provider-extension.mjs"))}?${name}=${Date.now()}`;
@@ -655,6 +666,8 @@ test("sign-in failures map to fixed reasons", async () => {
   for (const [message, reason] of [
     ["OpenAI OAuth grant did not include chatgpt.tokens.use.direct", "plan_permission_declined"],
     ["403 subscription_sharing_user_not_eligible", "plan_not_eligible"],
+    ['OpenAI OAuth token request failed (400): {"error":"invalid_grant","detail":"private account text"}', "chatgpt_connection_rejected"],
+    ["Other provider token request failed (400): invalid_grant", "other"],
     ["ChatGPT authorization failed: access_denied", "denied"],
     ["Port 1455 is in use, probably by an unfinished login", "port_in_use"],
     ["xAI device code expired", "timed_out"],
@@ -719,9 +732,140 @@ test("Sign in with ChatGPT receives a stable installation ID from Pi's settings"
   assert.equal(settings.deviceId, ids[0]);
 });
 
+test("discovery awaits only the requested public catalog refresh", async (t) => {
+  const { commands, resultPath } = await loadExtension(t, "public-catalog");
+  const discover = commands.get("loupist-provider-models");
+  let refreshed = false;
+  const context = {
+    modelRegistry: {
+      getProvider: (id) => ({ id, refreshModelsAuth: id === "openai-codex" ? "configured" : "credential" }),
+      getAvailable: () => refreshed ? getBuiltinModels("openai-codex") : [],
+      refresh: async ({ providers, allowNetwork, signal }) => {
+        assert.deepEqual(providers, ["openai-codex"]);
+        assert.equal(allowNetwork, true);
+        assert.equal(signal.aborted, false);
+        await Promise.resolve();
+        refreshed = true;
+      },
+    },
+  };
+  await discover.handler("openrouter", context);
+  assert.equal(refreshed, false);
+  assert.deepEqual(JSON.parse(readFileSync(resultPath, "utf8")).models, []);
+  await discover.handler("openai-codex", context);
+  assert.ok(JSON.parse(readFileSync(resultPath, "utf8")).models.some((model) => model.id === "gpt-6.1-sol"));
+});
+
+test("public discovery admits same-origin rows and reports foreign endpoints", async (t) => {
+  const { commands, resultPath, temporary } = await loadExtension(t, "catalog-origin");
+  const model = getBuiltinModels("openai")[0];
+  const seen = [];
+  const server = createServer((request, response) => {
+    seen.push({ url: request.url, authorization: request.headers.authorization });
+    response.writeHead(200, { "last-modified": "Thu, 01 Jan 2099 00:00:00 GMT" });
+    response.end(JSON.stringify([
+      { ...model, id: "same-origin-model" },
+      { ...model, id: "foreign-model", baseUrl: "https://untrusted.example/v1" },
+      { ...model, id: "untrusted-headers-model", headers: { "OpenAI-Organization": "fixture-other-account" } },
+    ]));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const credentials = new InMemoryCredentialStore();
+  await credentials.modify("openai", async () => ({ type: "api_key", key: "fixture-only" }));
+  const options = { credentials, modelsPath: join(temporary, "models.json"), refreshOnCreate: false };
+  const runtime = await ModelRuntime.create({ ...options, catalogBaseUrl: `http://127.0.0.1:${server.address().port}` });
+  await commands.get("loupist-provider-models").handler("openai", { modelRegistry: new ModelRegistry(runtime) });
+  const result = JSON.parse(readFileSync(resultPath, "utf8"));
+  assert.ok(result.models.some(row => row.id === "same-origin-model"));
+  assert.ok(!result.models.some(row => row.id === "foreign-model"));
+  assert.ok(!result.models.some(row => row.id === "untrusted-headers-model"));
+  assert.equal(result.dropped_endpoints.length, 2);
+  const expectedRequest = { url: "/api/models/providers/openai?types=chat%2Cimage%2Cclassifier", authorization: undefined };
+  assert.deepEqual(seen, [expectedRequest]);
+  await commands.get("loupist-provider-models").handler("openai --refresh-public", { modelRegistry: new ModelRegistry(runtime) });
+  assert.deepEqual(seen, [expectedRequest, expectedRequest]);
+  assert.equal(JSON.parse(readFileSync(resultPath, "utf8")).public_refresh_failed, false);
+
+  const offline = await ModelRuntime.create({ ...options, refreshOnCreate: true, allowModelNetwork: false });
+  assert.equal(offline.getModel("openai", "same-origin-model").baseUrl, model.baseUrl);
+});
+
+test("native search refuses foreign model routes restored from a loopback catalog", async (t) => {
+  const { commands, resultPath, temporary } = await loadExtension(t, "search-overlay", {
+    protocol: "loupist-provider/1", type: "search", provider: "openai",
+    query: "public report", limit: 3,
+  });
+  const foreign = "https://untrusted.example/v1";
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "last-modified": "Thu, 01 Jan 2099 00:00:00 GMT" });
+    response.end(JSON.stringify(getBuiltinModels("openai").map(model => ({ ...model, baseUrl: foreign }))));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const credentials = new InMemoryCredentialStore();
+  await credentials.modify("openai", async () => ({ type: "api_key", key: "fixture-only" }));
+  const options = { credentials, modelsPath: join(temporary, "models.json") };
+  const runtime = await ModelRuntime.create({ ...options, refreshOnCreate: false, catalogBaseUrl: `http://127.0.0.1:${server.address().port}` });
+  await runtime.refresh({ providers: ["openai"], allowNetwork: true });
+  const offline = await ModelRuntime.create({ ...options, allowModelNetwork: false });
+  const modelRegistry = new ModelRegistry(offline);
+  assert.equal(modelRegistry.find("openai", "gpt-6-luna").baseUrl, foreign);
+  const request = t.mock.method(globalThis, "fetch", () => { throw new Error("unexpected provider request"); });
+  const auth = t.mock.method(modelRegistry, "getProviderAuth", () => { throw new Error("unexpected credential resolution"); });
+
+  await commands.get("loupist-provider-search").handler("", { modelRegistry });
+  assert.equal(JSON.parse(readFileSync(resultPath, "utf8")).error_kind, "unavailable");
+  assert.equal(auth.mock.callCount(), 0);
+  assert.equal(request.mock.callCount(), 0);
+});
+
+test("upgrade discovery returns only plan models and never refreshes an expired token", async (t) => {
+  const { commands, resultPath, temporary } = await loadExtension(t, "upgrade-plan-auth");
+  const available = getBuiltinModels("openai");
+  const planModel = available[0];
+  const modelRegistry = {
+    getProvider: () => ({ refreshModelsAuth: "configured" }),
+    refresh: t.mock.fn(async () => ({ aborted: false, errors: new Map() })),
+    getAvailable: () => available,
+    getProviderAuth: t.mock.fn(async () => { throw new Error("upgrade must not refresh OAuth"); }),
+  };
+  let reply = Response.json({ data: [{ id: planModel.id }] });
+  const outbound = t.mock.method(globalThis, "fetch", async (url, init) => {
+    assert.equal(url, "https://api.openai.com/v1/models");
+    assert.equal(init.headers.authorization, "Bearer fixture-access");
+    return reply;
+  });
+  const load = async (expires) => {
+    writeFileSync(join(temporary, "auth.json"), JSON.stringify({
+      openai: { type: "oauth", expires, access: "fixture-access", refresh: "fixture-refresh" },
+    }), { mode: 0o600 });
+    await commands.get("loupist-provider-models").handler("openai --live --refresh-public --read-only-auth", { modelRegistry });
+    return JSON.parse(readFileSync(resultPath, "utf8"));
+  };
+
+  const current = Date.now() + 60_000;
+  const listed = await load(current);
+  assert.equal(listed.live_filtered, true);
+  assert.deepEqual(listed.models.map(model => model.id), [planModel.id]);
+  for (const [expires, response] of [
+    [Date.now() - 60_000, undefined],
+    [current, new Response(null, { status: 401 })],
+    [current, Response.json({ data: [{ id: "outside-pi-catalog" }] })],
+  ]) {
+    reply = response;
+    const unavailable = await load(expires);
+    assert.equal(unavailable.live_filtered, false);
+    assert.deepEqual(unavailable.models, []);
+  }
+  assert.equal(outbound.mock.callCount(), 3);
+  assert.equal(modelRegistry.getProviderAuth.mock.callCount(), 0);
+  assert.equal(modelRegistry.refresh.mock.callCount(), 4);
+});
+
 test("a ChatGPT sign-in lists only the models its plan offers", async (t) => {
   const { module, commands, resultPath } = await loadExtension(t, "live-models");
-  const known = (id, name) => ({ provider: "openai", id, name, reasoning: true, contextWindow: 272_000, maxTokens: 128_000, input: ["text"], api: "openai-responses" });
+  const known = (id, name) => ({ provider: "openai", id, name, baseUrl: "https://api.openai.com/v1", reasoning: true, contextWindow: 272_000, maxTokens: 128_000, input: ["text"], api: "openai-responses" });
   const available = [known("gpt-6.1-sol", "GPT-6.1 Sol"), known("gpt-5.6-luna", "GPT-5.6 Luna"), known("gpt-4.1-mini", "GPT-4.1 mini")];
   const requests = [];
   const originalFetch = globalThis.fetch;
@@ -907,12 +1051,13 @@ test("search command runs through Pi and publishes only sanitized sources", asyn
   const commands = new Map();
   extension({ registerCommand: (name, command) => commands.set(name, command) });
   let payload;
+  const searchModel = getBuiltinModels("anthropic").find(model => model.id === "claude-haiku-4-5");
   const context = {
     modelRegistry: {
       getProvider: () => ({ id: "anthropic", name: "Anthropic" }),
-      getAvailable: () => [{ provider: "anthropic", id: "claude-haiku-4-5" }],
+      getAvailable: () => [searchModel],
       getProviderAuth: async () => ({ auth: { apiKey: "sk-ant-secret", headers: { "x-api-key": "sk-ant-secret" } } }),
-      find: (provider, id) => ({ provider, id }),
+      find: () => searchModel,
       complete: async (_model, _context, options) => {
         payload = options.onPayload({});
         const response = await options.fetch("https://api.anthropic.com/v1/messages", { method: "POST" });

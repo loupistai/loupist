@@ -436,6 +436,7 @@ mod tests {
             exact: None,
             pointer: None,
             span: None,
+            context: None,
             fields: vec![],
             calc: None,
         }

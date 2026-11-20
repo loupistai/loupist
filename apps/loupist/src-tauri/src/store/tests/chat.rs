@@ -169,55 +169,13 @@ fn dropping_pi_caches_on_reconnect_or_import_keeps_every_chat_writable() {
 }
 
 /// Chat reads in `store.rs` address the stored JSON by serde name
-/// (`chats_ending_in_refusals`, `chats_ending_in_answer`, the artifact
+/// (`chats_ending_in_refusals`, the artifact
 /// listing's title) and reconnection clears `$.piSessionCache` in place. A
 /// serde rename must fail here rather than silently empty those queries.
 #[test]
 fn sql_json_paths_name_fields_a_chat_serializes() {
-    use crate::domain::{ChatToolRefusalReason, HomeAlert, HomeDelivery, HomeEarnings, HomeWatch};
     let answer = ChatMessage {
-        tool_refusals: vec![refusal(ChatToolRefusalReason::NeedsApproval)],
-        host_composed: true,
-        delivery: Some(HomeDelivery {
-            run_id: "run-1".into(),
-            task_id: "task-1".into(),
-            task_title: "Morning notes".into(),
-            task_kind: crate::scheduled_tasks::types::TaskKind::Custom,
-            schedule: None,
-            run_thread_id: None,
-            status: crate::scheduled_tasks::types::RunStatus::Succeeded,
-            finished_at_ms: 1,
-            learned: None,
-        }),
-        alert: Some(HomeAlert {
-            asset_id: "asset-1".into(),
-            move_id: "move-1".into(),
-            name: "Example".into(),
-            symbol: "EXM".into(),
-            market: "US".into(),
-            claim: "Margin above 20%".into(),
-            value: "27%".into(),
-            set_at_ms: 1,
-            fact_date: "2026-10-11".into(),
-            source_url: None,
-            source_title: "Filing".into(),
-        }),
-        watch: Some(HomeWatch {
-            event_ids: vec!["event-1".into()],
-            events: Vec::new(),
-            more: 0,
-        }),
-        earnings: Some(HomeEarnings {
-            asset_id: "asset-1".into(),
-            event_id: "event-1".into(),
-            name: "Example".into(),
-            symbol: "EXM".into(),
-            market: "US".into(),
-            period: "Q3".into(),
-            outcome: "reported".into(),
-            side: None,
-            measures: Vec::new(),
-        }),
+        tool_refusals: vec![refusal(crate::domain::ChatToolRefusalReason::NeedsApproval)],
         ..chat_message("answer", ChatRole::Assistant, "Margins rose.")
     };
     let chat = ChatSession {
@@ -239,37 +197,17 @@ fn sql_json_paths_name_fields_a_chat_serializes() {
         "$.title",
         "$.piSessionCache",
         "$.messages[#-1]",
-        "$.messages[#-1].content",
         "$.messages[#-1].toolRefusals",
-        "$.messages[#-1].hostComposed",
-        "$.messages[#-1].delivery",
-        "$.messages[#-1].alert",
-        "$.messages[#-1].watch",
-        "$.messages[#-1].earnings",
     ] {
         assert!(extract(path).0.is_some(), "{path}");
     }
-    for (path, value) in [
-        ("$.messages[#-1].role", "assistant"),
-        ("$.messages[#-1].status", "complete"),
-    ] {
+    {
+        let (path, value) = ("$.messages[#-1].role", "assistant");
         assert_eq!(
             extract(path).1,
             rusqlite::types::Value::Text(value.into()),
             "{path}"
         );
-    }
-    // The answer query relies on absent markers for an ordinary answer.
-    let plain = serde_json::to_value(chat_message("plain", ChatRole::Assistant, "Done.")).unwrap();
-    for key in [
-        "toolRefusals",
-        "hostComposed",
-        "delivery",
-        "alert",
-        "watch",
-        "earnings",
-    ] {
-        assert!(plain.get(key).is_none(), "{key}");
     }
 }
 
@@ -281,6 +219,7 @@ fn chat_messages_round_trip_memory_provenance_status_and_progress_without_loss()
         status: MemoryUpdateStatus::Applied,
         commit_id: Some("commit-1".into()),
         changes: vec![MemoryUpdateChange {
+            user_provided: false,
             outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,
@@ -439,9 +378,10 @@ fn chat_artifact_replaces_current_content_and_deletes_with_its_session() {
     assert_eq!(loaded.messages[0].artifact_refs[0].revision, 1);
     assert_eq!(loaded.messages[1].artifact_refs[0].revision, 2);
     let current = store
-        .get_chat_artifact_current("artifact-1")
+        .read_chat_artifact("artifact-1", None)
         .unwrap()
-        .unwrap();
+        .unwrap()
+        .revision;
     assert_eq!(current.revision, 2);
     assert!(matches!(
         current.payload,
@@ -455,7 +395,7 @@ fn chat_artifact_replaces_current_content_and_deletes_with_its_session() {
     store.delete_chat(&chat).unwrap();
     assert_eq!(store.get_chat(&chat.id).unwrap(), None);
     assert_eq!(store.get_chat_artifact("artifact-1").unwrap(), None);
-    assert_eq!(store.get_chat_artifact_current("artifact-1").unwrap(), None);
+    assert_eq!(store.read_chat_artifact("artifact-1", None).unwrap(), None);
 }
 
 #[test]
@@ -478,9 +418,10 @@ fn one_assistant_message_can_persist_distinct_artifact_commits() {
     for id in ["artifact-note", "artifact-chart-note"] {
         assert_eq!(
             store
-                .get_chat_artifact_current(id)
+                .read_chat_artifact(id, None)
                 .unwrap()
                 .unwrap()
+                .revision
                 .revision,
             1
         );
@@ -632,13 +573,18 @@ fn older_answer_reads_its_own_chart_data_and_restore_appends_a_new_current_revis
     assert_eq!(restored.restored_from_revision_id, Some(1));
     assert_eq!(
         store
-            .get_chat_artifact_current("chart-history")
+            .read_chat_artifact("chart-history", None)
             .unwrap()
-            .unwrap(),
+            .unwrap()
+            .revision,
         restored.revision
     );
     assert_eq!(
-        store.get_chart_dataset("chart-dataset").unwrap(),
+        store
+            .read_chat_artifact("chart-history", None)
+            .unwrap()
+            .unwrap()
+            .chart_dataset,
         original.chart_dataset
     );
     assert_eq!(
@@ -745,9 +691,10 @@ fn artifact_history_seeds_existing_current_content_and_rolls_back_with_the_answe
         .is_err());
     assert_eq!(
         store
-            .get_chat_artifact_current("existing")
+            .read_chat_artifact("existing", None)
             .unwrap()
             .unwrap()
+            .revision
             .revision,
         1
     );
@@ -835,11 +782,17 @@ fn review_storage_unavailable_bound_folder_does_not_break_other_records() {
         std::slice::from_ref(&artifact)
     );
     assert_eq!(
-        store.get_chat_artifact_current(&artifact.id).unwrap(),
+        store
+            .read_chat_artifact(&artifact.id, None)
+            .unwrap()
+            .map(|snapshot| snapshot.revision),
         Some(revision.clone())
     );
     assert_eq!(
-        store.get_chart_dataset(&dataset.id).unwrap(),
+        store
+            .read_chat_artifact(&artifact.id, None)
+            .unwrap()
+            .and_then(|snapshot| snapshot.chart_dataset),
         Some(dataset.clone())
     );
     let snapshot = store

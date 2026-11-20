@@ -24,6 +24,8 @@ it("uses the shared model catalog and controls while leaving automatic processin
   render(<WorldProcessingSettings {...props} />);
   const user = userEvent.setup();
   expect(await screen.findByRole("checkbox", { name: "Build the Map from saved sources automatically" })).not.toBeChecked();
+  // The unchecked box says it is off; no badge repeats it.
+  expect(screen.queryByText("Map building is off")).toBeNull();
   await selection(user);
   expect(autoProcess()).not.toBeChecked();
   expect(save).not.toHaveBeenCalled();
@@ -91,7 +93,7 @@ it("words the host's readiness note in the interface language", async () => {
   expect(readiness).toHaveTextContent("Waiting for a supported AI account. A recommended map-building model will be selected when one is connected.");
   await act(async () => { await i18n.changeLanguage("ko"); });
   try {
-    expect(readiness).toHaveTextContent("지원되는 AI 서비스를 기다리는 중이에요. 연결되면 추천 지도 구성 모델을 골라 드려요.");
+    expect(readiness).toHaveTextContent("지원되는 AI 서비스를 기다리는 중입니다. 연결되면 추천 지도 구성 모델을 자동으로 선택합니다.");
     expect(readiness).not.toHaveTextContent("Waiting for a supported AI account");
   } finally {
     await act(async () => { await i18n.changeLanguage("en"); });

@@ -23,8 +23,6 @@
   min-width: 0;
   min-height: 0;
 }
-.chat-workspace[data-rail="rail"] .chat-body,
-.chat-workspace[data-rail="rail"] > .workspace-heading { padding-inline-end: 324px; }
 .chat-reading-pane {
   position: relative;
   display: flex;
@@ -87,6 +85,16 @@
 .message.assistant .message-content { width: 100%; max-width: 100%; min-width: 0; white-space: normal; font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); }
 /* Reading measure: prose stops near 72 characters while tables, code and charts keep the full column. */
 .message.assistant .message-content :is(p, ul, ol, blockquote, [data-streamdown^="heading-"]) { max-width: var(--gg-size-prose-measure); }
+/* A selection in an answer paints its text only. WebKit fills a selection out to the edge of the block that draws it
+   (each body part here): line ends, the space between paragraphs and, once the selection passes the block, all of it.
+   It leaves a translated block's gaps unpainted. */
+.message.assistant .message-content > * { translate: 0; }
+/* Checked numbers, citations and links are buttons, which the shell keeps out of selections (shell.css). Their labels
+   are the answer's own words: a selection paints them, and its text, the quote and the copy keep them. */
+.app-shell .message-content :is(.number-chip, .loupist-citation, [data-streamdown="link"]) { -webkit-user-select: text; user-select: text; }
+/* Where a drag that leaves the last message ends: the first selectable point after the thread, so a selection
+   never runs on into the composer or a panel after it. */
+.thread-selection-end { position: absolute; bottom: 0; left: 0; width: 1px; height: 1px; pointer-events: none; -webkit-user-select: text; user-select: text; }
 /* A turn reads down the column in the order it happened: notes, one ledger, cards, questions, then the answer. */
 .message.assistant > [data-turn-item] + [data-turn-item] { margin-top: var(--gg-space-3); }
 .turn-block > :is(.chat-artifact-block, .grid-card) { margin-top: 0; }
@@ -103,43 +111,9 @@
 .morning-bullets > li::marker { color: var(--gg-color-text-tertiary); }
 .morning-bullets > li > span { margin-right: var(--gg-space-2); }
 .morning-late { color: var(--gg-color-warning); font-weight: var(--gg-weight-medium); }
-.morning-chips { display: inline-flex; flex-wrap: wrap; gap: var(--gg-space-1); margin-right: var(--gg-space-2); vertical-align: middle; }
-.morning-name-chip { display: inline-flex; align-items: center; gap: 6px; min-height: var(--gg-size-control-sm); padding: 0 var(--gg-space-3); border: 0; border-radius: var(--gg-radius-full); color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); font: inherit; font-size: var(--gg-text-control); line-height: 1.2; cursor: pointer; }
-.morning-name-chip:hover { background: var(--gg-color-bg-selected); }
-.morning-name-chip .map-swatch { width: 8px; height: 8px; }
 .morning-link { display: inline; min-height: var(--gg-size-control-sm); padding: 0; border: 0; background: transparent; font: inherit; cursor: pointer; color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
 .morning-link:hover { text-decoration-color: currentColor; }
-/* "See all in Map" closes the list of names on a line of its own, wherever the chips wrap. */
-.morning-link[data-line] { display: block; width: fit-content; margin-top: var(--gg-space-1); }
-.morning-skeleton { display: inline-block; width: min(320px, 70%); height: 10px; border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-hover); vertical-align: middle; }
 .morning-ask { margin-top: var(--gg-space-5); }
-.morning-setup { margin-top: var(--gg-space-5); }
-.morning-setup-head { display: flex; align-items: center; gap: var(--gg-space-2); margin-bottom: var(--gg-space-1); }
-.morning-setup-label { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); }
-.morning-setup-count { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; }
-.morning-setup-hide { min-height: var(--gg-size-control-sm); margin-left: auto; padding: 0 var(--gg-space-1); border: 0; border-radius: var(--gg-radius-xs); background: transparent; color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
-.morning-setup-hide:hover { text-decoration: underline; }
-.morning-setup-rows { display: grid; margin: 0; padding: 0; list-style: none; }
-.morning-setup-rows > li + li { border-top: 1px solid var(--gg-color-border-subtle); }
-.morning-setup-row { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: var(--gg-space-2); width: 100%; min-height: 40px; padding: var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); text-align: left; }
-button.morning-setup-row { cursor: pointer; }
-button.morning-setup-row:not([aria-disabled="true"]):is(:hover, :focus-visible) { background: var(--gg-color-bg-hover); }
-button.morning-setup-row:not([aria-disabled="true"]):is(:hover, :focus-visible) .morning-question-go { opacity: 1; }
-.morning-setup-row[data-setup="connect"] strong { font-weight: var(--gg-weight-medium); }
-.morning-setup-row[data-setup="connect"] .morning-question-go { opacity: 1; }
-.morning-setup-mark { width: 16px; height: 16px; color: var(--gg-color-border-strong); }
-.morning-setup-text { display: grid; min-width: 0; }
-.morning-setup-text small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
-.morning-setup-rows > li[data-done] .morning-setup-row { min-height: 32px; color: var(--gg-color-text-secondary); }
-.morning-setup-rows > li[data-done] .morning-setup-mark { color: var(--gg-color-text-secondary); }
-button.morning-setup-row[aria-disabled="true"] { color: var(--gg-color-text-disabled); cursor: default; }
-.morning-setup-hint { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); white-space: nowrap; }
-.morning-setup-holdings { margin: var(--gg-space-2) 0 0 calc(var(--gg-space-2) + 16px + var(--gg-space-2)); font-size: var(--gg-text-control); }
-.morning-message .morning-lead[data-home-first] { font-size: var(--gg-text-title); line-height: var(--gg-leading-title); font-weight: var(--gg-weight-medium); }
-.morning-home-line { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
-.morning-setup-chip { min-height: var(--gg-size-control-sm); padding: var(--gg-space-1) var(--gg-space-3); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); line-height: var(--gg-leading-control); text-align: left; cursor: pointer; }
-.morning-setup-chip:hover { border-color: var(--gg-color-border-strong); background: var(--gg-color-bg-hover); }
-.morning-setup-chip:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
 .morning-ask-label { margin: 0 0 var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
 .morning-ask ul { list-style: none; margin: 0; padding: 0; display: grid; }
 .morning-ask li + li { border-top: 1px solid var(--gg-color-border-subtle); }
@@ -151,19 +125,6 @@ button.morning-setup-row[aria-disabled="true"] { color: var(--gg-color-text-disa
 .morning-question-go { flex: none; align-self: center; width: 16px; height: 16px; color: var(--gg-color-text-secondary); opacity: 0; }
 .morning-question:is(:hover, :focus-visible) .morning-question-go { opacity: 1; }
 @media (prefers-reduced-motion: no-preference) { .morning-question-go { transition: opacity var(--gg-motion-fast) var(--gg-ease-out); } }
-/* The event strip above the lead: one line per event (date · asset · event), the columns aligned across rows. */
-.morning-upcoming { margin: 0 0 var(--gg-space-3); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
-.morning-upcoming-label { margin: 0 0 var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
-.morning-upcoming ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: max-content minmax(0, max-content) minmax(0, 1fr); column-gap: var(--gg-space-3); }
-.morning-upcoming li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
-.morning-upcoming-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; min-height: var(--gg-size-control-sm); margin: 0 calc(-1 * var(--gg-space-2)); padding: 0 var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); color: var(--gg-color-text-primary); background: transparent; font: inherit; text-align: left; }
-button.morning-upcoming-row { cursor: pointer; }
-button.morning-upcoming-row:hover { background: var(--gg-color-bg-hover); }
-.morning-upcoming-row time { color: var(--gg-color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.morning-upcoming-name { overflow: hidden; font-weight: var(--gg-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-.morning-upcoming-event { overflow: hidden; color: var(--gg-color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
-/* A check with no asset gives its claim the asset's column too. */
-.morning-upcoming-event[data-wide] { grid-column: 2 / -1; }
 
 /* MathML-only Mermaid labels need no positioned HTML layout. WebKit paints
    positioned descendants outside transformed foreignObjects (bug 23113). */
@@ -183,6 +144,14 @@ svg foreignObject .katex:has(> math) {
   word-break: break-word;
 }
 
+/* A hand-off's note sits under the request it came with, quieter than the bubble and never one itself. */
+.message.user .message-handoff-note { margin-top: var(--gg-space-1); border-top: 0; }
+.message-handoff-note > summary { justify-content: flex-end; padding-block: var(--gg-space-1); font-size: var(--gg-text-caption); }
+.message-handoff-note > .ui-disclosure-body { gap: var(--gg-space-2); padding: var(--gg-space-2) var(--gg-space-3); border-left: 2px solid var(--gg-color-border-subtle); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+.message-handoff-note > .ui-disclosure-body > p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.message-handoff-note > .ui-disclosure-body > ol { margin: 0; padding-inline-start: 1.5em; overflow-wrap: anywhere; }
+.message-handoff-note-title { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); }
+
 .message-user-context { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
 .message-tool-label { display: inline-flex; align-items: center; gap: var(--gg-space-1); overflow-wrap: anywhere; }
 .message-tool-label svg { width: 13px; height: 13px; flex: none; }
@@ -200,10 +169,26 @@ svg foreignObject .katex:has(> math) {
 }
 
 .chat-pending-hold {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--gg-space-2);
   margin: 0;
   color: var(--gg-color-text-secondary);
   font-size: var(--gg-text-caption);
 }
+
+.chat-pending-resume {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gg-color-accent-ink);
+  font: inherit;
+  font-weight: var(--gg-weight-medium);
+  cursor: pointer;
+}
+
+.chat-pending-resume:hover { text-decoration: underline; }
 
 .chat-pending-list {
   display: grid;
@@ -308,6 +293,10 @@ svg foreignObject .katex:has(> math) {
 .chat-pending-menu [role="menuitem"] {
   min-height: var(--gg-size-control-sm);
 }
+
+/* Send now, unavailable: its reason reads under it. */
+.chat-pending-menu .chat-pending-send-now { flex-direction: column; align-items: flex-start; gap: 0; }
+.chat-pending-send-now small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); white-space: normal; }
 
 .message.assistant .message-content [data-streamdown^="heading-"] {
   margin: var(--gg-space-7) 0 var(--gg-space-2);
@@ -451,7 +440,7 @@ svg foreignObject .katex:has(> math) {
 
 .message.assistant .message-content [data-streamdown="link"],
 .workspace-file-content [data-streamdown="link"] {
-  color: var(--gg-color-text-primary);
+  color: var(--gg-color-accent-ink);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -528,10 +517,6 @@ svg foreignObject .katex:has(> math) {
   margin: 6px 0 2px var(--gg-space-2);
   padding: 2px var(--gg-space-1) 2px var(--gg-space-4);
   border-left: 1px solid var(--gg-color-border-subtle);
-}
-
-.chat-progress-elapsed {
-  font-variant-numeric: tabular-nums;
 }
 
 .chat-progress-entry {
@@ -771,288 +756,10 @@ button.chat-progress-names:hover { text-decoration: underline; }
   font-size: var(--gg-text-control);
 }
 
-.composer .inline-error {
-  margin-bottom: 7px;
-}
-
 :root[data-theme="dark"] .inline-error {
   color: var(--gg-color-negative);
   background: var(--gg-color-negative-soft);
   border-color: color-mix(in srgb, var(--gg-color-negative) 32%, var(--gg-color-border-subtle));
-}
-
-/* Composer */
-.composer-shell { position: relative; flex: 0 0 auto; width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); margin: 0 auto var(--gg-space-2); container: composer / inline-size; }
-.composer { width: 100%; margin: 0; padding: 0; border: 0; border-radius: var(--gg-radius-md); background: transparent; box-shadow: none; }
-.composer [data-slot="input-group"] { height: auto; border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); box-shadow: var(--gg-shadow-xs); }
-/* Calm focus: the edge takes the focus color and a soft halo, without a second contour from the textarea. */
-.composer .composer-prompt textarea:focus-visible { outline: none !important; }
-.composer [data-slot="input-group"]:has(.composer-prompt textarea:focus-visible) { border-color: var(--gg-color-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gg-color-focus) 22%, transparent); }
-@media (forced-colors: active) {
-  .composer [data-slot="input-group"]:has(.composer-prompt textarea:focus-visible) { outline: 2px solid CanvasText; outline-offset: -2px; }
-}
-.composer textarea { width: 100%; min-height: 60px; max-height: min(180px, 24dvh); resize: none; padding: 14px var(--gg-space-4) var(--gg-space-2); border: 0; outline: 0; background: transparent; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: 1.55; }
-.composer-error { margin-bottom: var(--gg-space-2); max-height: 120px; overflow: auto; }
-.composer-footer { gap: var(--gg-space-2); padding: var(--gg-space-1) 10px 10px; }
-.composer-chip-tray { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; margin: 0; padding: var(--gg-space-2) var(--gg-space-3) 0; list-style: none; }
-.message-mention { display: inline-flex; align-items: center; gap: var(--gg-space-1); max-width: 100%; margin: 0 2px; border-radius: var(--gg-radius-full); padding: 1px var(--gg-space-2); background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); }
-.composer-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: var(--gg-space-6); padding: 0 2px 0 var(--gg-space-2); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); }
-.composer-chip > svg { width: var(--gg-space-3); height: var(--gg-space-3); flex: none; color: var(--gg-color-text-secondary); }
-.composer-chip[data-kind="connection"] > svg { color: var(--gg-color-focus); }
-.composer-chip[data-kind="skill"] > svg { color: var(--gg-color-text-primary); }
-.composer-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-chip small { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-regular); white-space: nowrap; }
-.composer-chip[data-kind="context"] > svg { color: var(--gg-color-text-secondary); }
-.composer-chip button { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: var(--gg-radius-full); background: transparent; color: var(--gg-color-text-secondary); }
-.composer-chip button svg { width: var(--gg-space-3); height: var(--gg-space-3); }
-.composer-chip button:hover { color: var(--gg-color-text-primary); background: var(--gg-color-bg-selected); }
-.composer-chip[data-kind="quote"] > span { font-style: italic; }
-.composer-chip-more { height: var(--gg-space-6); padding: 0 var(--gg-space-2); border: 1px dashed var(--gg-color-border-default); border-radius: var(--gg-radius-full); background: transparent; color: var(--gg-color-text-secondary); font: inherit; font-size: var(--gg-text-meta); cursor: pointer; }
-.composer-chip-more:hover { color: var(--gg-color-text-primary); background: var(--gg-color-bg-hover); }
-.composer-running [data-slot="input-group"] { border-color: color-mix(in srgb, var(--gg-color-text-primary) 50%, var(--gg-color-border-subtle)); }
-.composer-tools { min-width: 0; flex-wrap: wrap; gap: var(--gg-space-1); }
-.composer-private [data-slot="input-group"] { border-color: var(--gg-color-border-strong); }
-.composer-private-status { align-self: flex-start; max-width: 100%; padding: var(--gg-space-2) var(--gg-space-3) 0; }
-.composer-private-chip { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-height: 24px; padding: 0 var(--gg-space-1) 0 var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
-.composer-private-chip > svg { width: 12px; height: 12px; flex: none; }
-.composer-private-chip button { position: relative; display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: var(--gg-radius-full); background: transparent; color: inherit; cursor: pointer; }
-.composer-private-chip button::after { content: ""; position: absolute; inset: -4px; }
-.composer-private-chip button:hover { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
-.composer-private-chip button svg { width: 12px; height: 12px; }
-.composer-private-item { align-items: flex-start; }
-.composer-private-item > svg { margin-top: 2px; }
-.composer-private-item-copy { display: grid; min-width: 0; }
-.composer-private-item-copy small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); white-space: normal; }
-/* Change 5: an empty composer's Send is a quiet tile; typing turns it the action color.
-   Its arrow stays at least 3:1 against the tile in both themes (tertiary: 4.9:1 light, 5.4:1 dark). */
-.composer-submit:disabled { opacity: 1; background: var(--gg-color-bg-hover); color: var(--gg-color-text-tertiary); }
-/* Change 6: without an AI account, Connect takes the send slot as the one filled button. */
-.composer-footer > .composer-model-menu { margin-left: auto; padding-inline: var(--gg-space-3); background: var(--gg-color-action); color: var(--gg-color-action-ink); font-weight: var(--gg-weight-medium); }
-.composer-footer > .composer-model-menu:hover { background: var(--gg-color-action); color: var(--gg-color-action-ink); opacity: .9; }
-.composer-disclosure { display: flex; align-items: center; justify-content: center; min-height: var(--gg-space-5); margin: 0; text-align: center; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
-.model-menu-advanced { display: flex; justify-content: space-between; }
-.model-menu-advanced[aria-expanded="true"] > svg { transform: rotate(180deg); }
-.composer-add-menu { width: 270px; border: 1px solid var(--gg-color-border-default); }
-
-.composer-prompt {
-  position: relative;
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 0;
-}
-
-.composer-prompt-highlight,
-.composer .composer-prompt textarea {
-  margin: 0;
-  font: inherit;
-  font-size: var(--gg-text-body);
-  line-height: 1.55;
-  letter-spacing: inherit;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-}
-
-.composer-prompt-highlight {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  padding: 14px var(--gg-space-4) var(--gg-space-2);
-  color: var(--gg-color-text-primary);
-  pointer-events: none;
-  user-select: none;
-  scrollbar-width: none;
-}
-
-.composer-prompt-highlight::-webkit-scrollbar {
-  display: none;
-}
-
-.composer .composer-prompt textarea {
-  position: relative;
-  z-index: var(--gg-z-sticky);
-  color: transparent;
-  caret-color: var(--gg-color-text-primary);
-  -webkit-text-fill-color: transparent;
-}
-
-.composer .composer-prompt textarea::placeholder {
-  color: var(--gg-color-text-secondary);
-  -webkit-text-fill-color: var(--gg-color-text-secondary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-/* The empty hint names @, / and $. It wraps instead of shortening, including under 420px. */
-.composer .composer-prompt textarea:placeholder-shown {
-  min-height: calc(14px + 2 * 1.55 * var(--gg-text-body) + var(--gg-space-2));
-}
-@container composer (max-width: 420px) {
-  .composer .composer-prompt textarea:placeholder-shown {
-    min-height: calc(14px + 3 * 1.55 * var(--gg-text-body) + var(--gg-space-2));
-  }
-}
-
-.composer .composer-prompt textarea::selection {
-  color: transparent;
-  background: color-mix(in srgb, var(--gg-color-text-primary) 28%, transparent);
-}
-
-.composer-prompt.is-composing textarea {
-  color: var(--gg-color-text-primary);
-  -webkit-text-fill-color: var(--gg-color-text-primary);
-}
-
-.composer-prompt.is-composing .composer-prompt-highlight {
-  visibility: hidden;
-}
-
-.composer-prompt-highlight [data-mention="skill"],
-.composer-assist [data-mention="skill"] {
-  color: var(--gg-color-text-primary);
-}
-
-.composer-prompt-highlight [data-mention="connection"],
-.composer-assist [data-mention="connection"] {
-  color: var(--gg-color-focus);
-}
-
-.composer-model-menu {
-  min-width: 0;
-  max-width: min(280px, 46vw);
-}
-
-.composer-model-menu-panel {
-  width: 340px;
-  min-width: 280px;
-  max-width: calc(100vw - var(--gg-space-6));
-  max-height: min(640px, var(--radix-dropdown-menu-content-available-height));
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-radius: 14px;
-}
-
-.composer-model-menu > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* A chosen model reads as a chip; "Auto" stays plain text. */
-.composer-model-menu > .composer-model-chip {
-  padding: 1px var(--gg-space-2);
-  border-radius: var(--gg-radius-xs);
-  background: var(--gg-color-bg-hover);
-  font-size: var(--gg-text-caption);
-}
-
-.composer-footer {
-  flex-wrap: wrap;
-}
-
-.composer-run-actions {
-  display: inline-flex;
-  flex-wrap: nowrap;
-  flex: 0 0 auto;
-  margin-left: auto;
-  align-items: center;
-  gap: 3px;
-}
-.composer-run-help { margin: 0; padding: 0 var(--gg-space-3) var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: 1.5; }
-.composer-guidance {
-  margin: var(--gg-space-2) var(--gg-space-3) 0;
-  padding: var(--gg-space-1) var(--gg-space-2);
-  border-radius: var(--gg-radius-sm);
-  font-size: var(--gg-text-meta);
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.composer-guidance[data-state="pending"] {
-  background: var(--gg-color-warning-soft);
-  color: var(--gg-color-text-primary);
-}
-.composer-guidance[data-state="admitted"] {
-  background: var(--gg-color-bg-hover);
-  color: var(--gg-color-text-secondary);
-}
-
-.composer-run-actions button {
-  caret-color: transparent;
-}
-
-.composer-run-actions svg {
-  width: 14px;
-  height: 14px;
-}
-
-.composer-queue-action,
-.composer-steer-action,
-.composer-stop-action {
-  width: var(--gg-size-control-sm);
-  height: var(--gg-size-control-sm);
-  padding-inline: 0;
-}
-
-.composer-steer-action {
-  color: var(--gg-color-text-secondary);
-  background: transparent;
-}
-
-.composer-steer-action:hover:not(:disabled) {
-  color: var(--gg-color-text-primary);
-  background: transparent;
-}
-
-.composer-queue-action,
-.composer-stop-action {
-  color: var(--gg-color-action-ink);
-  background: var(--gg-color-action);
-}
-
-.composer-queue-action:hover,
-.composer-stop-action:hover {
-  color: var(--gg-color-action-ink);
-  background: var(--gg-color-action);
-}
-
-/* Send and Stop are one 28 px tile at the trailing edge: the same button, its two icons cross-fading in place. */
-.composer-tile {
-  position: relative;
-  width: var(--gg-size-control-sm);
-  height: var(--gg-size-control-sm);
-  padding: 0;
-  transition: background-color var(--gg-motion-fast) var(--gg-ease-out), color var(--gg-motion-fast) var(--gg-ease-out), opacity var(--gg-motion-fast) var(--gg-ease-out), box-shadow var(--gg-motion-fast) var(--gg-ease-out);
-}
-.composer-tile-icon {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-  transition: opacity var(--gg-motion-fast) var(--gg-ease-out), transform var(--gg-motion-fast) var(--gg-ease-out);
-}
-.composer-tile-icon > svg { width: 14px; height: 14px; }
-.composer-tile-icon[data-icon="stop"] > svg { fill: currentColor; }
-.composer-tile[data-state="send"] > [data-icon="stop"],
-.composer-tile[data-state="stop"] > [data-icon="send"] { opacity: 0; transform: scale(0.8); }
-.composer-run-actions > :not(.composer-tile) { animation: turn-fade-in var(--gg-motion-fast) var(--gg-ease-out) both; }
-/* After a press the tile dims and ignores presses until the host confirms the stop. */
-.composer-stopping .composer-stop-action { opacity: 0.55; pointer-events: none; }
-
-/* Once Send next is the primary control, Stop stays a square outline beside it. */
-.composer-run-actions:has(.composer-queue-action) .composer-stop-action {
-  color: var(--gg-color-text-primary);
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--gg-color-border-strong);
-}
-
-.composer-run-actions:has(.composer-queue-action) .composer-stop-action:hover {
-  color: var(--gg-color-text-primary);
-  background: var(--gg-color-bg-hover);
 }
 
 .memory-row {
@@ -1574,6 +1281,9 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .turn-live-text > * { display: flex; align-items: baseline; gap: var(--gg-space-2); min-width: 0; }
 .turn-live-label { flex: none; font-weight: var(--gg-weight-medium); color: var(--gg-color-text-secondary); }
 .turn-live-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--gg-color-text-tertiary); }
+/* A note's sentence or a batch between steps: one line, cut with an ellipsis; the whole text stays in the element. */
+.turn-live:is([data-kind="note"], [data-kind="batch"]) .turn-live-text { grid-template-columns: minmax(0, 1fr); }
+.turn-live:is([data-kind="note"], [data-kind="batch"]) .turn-live-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .turn-live[data-tone="you"] .turn-live-label { color: var(--gg-color-accent-ink); }
 .turn-live-more { flex: none; height: 18px; padding: 0 6px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-full); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: 16px; font-variant-numeric: tabular-nums; }
 .turn-live-clock { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-variant-numeric: tabular-nums; }
@@ -1653,13 +1363,6 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .message-diagram-pending > i { border-bottom: 1px solid var(--gg-color-border-subtle); }
 .message-diagram-pending > i:last-child { border-bottom: 0; }
 .message-content [data-streamdown="mermaid-block"] { min-height: 240px; }
-/* A sensitivity card holds a ruled frame of its reserved height while the reply streams; the card fills it at commit. */
-.sensitivity-slot { --sensitivity-reserve: 408px; }
-.sensitivity-pending { display: grid; grid-template-rows: 36px repeat(5, 1fr); box-sizing: border-box; height: var(--sensitivity-reserve); margin-block: var(--gg-space-3); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
-.sensitivity-pending > i { border-bottom: 1px solid var(--gg-color-border-subtle); }
-.sensitivity-pending > i:first-child { border-bottom-color: var(--gg-color-border-default); }
-.sensitivity-pending > i:last-child { border-bottom: 0; }
-.sensitivity-slot[data-held] > .sensitivity-card { box-sizing: border-box; min-height: var(--sensitivity-reserve); }
 /* Headings and tables arrive whole, with one fade. */
 .message.assistant .message-content[data-streaming] :is([data-streamdown^="heading-"], [data-streamdown="table-wrapper"]) { animation: turn-fade-in var(--gg-motion-word) var(--gg-ease-out) both; }
 /* The receipt shares the row with Sources and Copy; its lists open below the line. */
@@ -1818,6 +1521,9 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 /* Settings and detail surfaces opened from Chat. */
 .model-menu-header { flex: none; display: grid; gap: 10px; padding: 14px var(--gg-space-3) 10px; border-bottom: 1px solid var(--gg-color-border-subtle); }
 .model-menu-header > strong { font-size: var(--gg-text-control); font-weight: var(--gg-weight-semibold); }
+.model-menu-search { position: relative; min-width: 0; }
+.model-menu-search input { padding-right: var(--gg-size-control-md); }
+.model-menu-search > button { position: absolute; top: 50%; right: var(--gg-space-1); transform: translateY(-50%); }
 .model-menu-catalog { min-height: 60px; max-height: min(240px, 30dvh); overflow-y: auto; padding: var(--gg-space-1) 6px; flex: 1 1 auto; }
 .model-menu-catalog [role="menuitemradio"] { min-height: 34px; }
 .model-menu-catalog [aria-checked="true"] { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
@@ -1855,9 +1561,6 @@ div.message-action-bar > .message-actions { margin-top: 0; }
   .morning-question { flex-direction: column; align-items: stretch; gap: 2px; }
   .morning-question small { max-width: 100%; }
   .morning-question-go { display: none; }
-  .composer-tools { flex: 1 1 auto; }
-  .composer-footer { align-items: center; }
-  .composer-model-menu { max-width: 190px; }
 }
 .chat-dialog { width: min(500px, calc(100vw - var(--gg-space-7))); max-height: calc(100dvh - var(--gg-space-8)); padding: 0; gap: 0; border-radius: 14px; overflow-y: auto; }
 .chat-dialog > [data-slot="dialog-header"] { padding: 26px var(--gg-size-control-sm) var(--gg-space-5); }
@@ -1901,14 +1604,17 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 }
 .chat-status-pill:not(:has(.chat-status-pill-label)) { padding-left: 2px; }
 .chat-status-pill-label[data-tone="you"] { display: inline-flex; align-items: center; gap: 6px; color: var(--gg-color-accent-ink); }
+/* The label truncates with an ellipsis; the clock after it always stays visible. */
 .chat-status-pill-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
   max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chat-status-pill-clock { font-variant-numeric: tabular-nums; }
+.chat-status-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chat-status-pill-clock { flex: none; font-variant-numeric: tabular-nums; }
 .chat-status-pill-jump {
   min-height: var(--gg-size-control-sm);
   display: inline-flex;
@@ -1951,9 +1657,10 @@ div.message-action-bar > .answer-correction { order: 1; }
 
 .message-schedules { display: grid; gap: var(--gg-space-2); max-width: 440px; margin: var(--gg-space-3) 0; }
 .message-schedule-open { display: flex; align-items: center; gap: var(--gg-space-3); width: 100%; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); padding: var(--gg-space-3) 14px; background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); text-align: left; }
-.message-schedule-open:not(:disabled) { cursor: pointer; }
-.message-schedule-open:not(:disabled):hover { background: var(--gg-color-bg-hover); }
+button.message-schedule-open:not(:disabled) { cursor: pointer; }
+button.message-schedule-open:not(:disabled):hover { background: var(--gg-color-bg-hover); }
 .message-schedule-open > svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--gg-color-text-secondary); }
+.message-schedule-gone { color: var(--gg-color-text-secondary); }
 .message-schedule-summary { flex: 1; min-width: 0; }
 .message-schedule-heading { display: flex; align-items: center; gap: var(--gg-space-3); margin-bottom: 3px; }
 .message-schedule-heading strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1975,7 +1682,7 @@ div.message-action-bar > .answer-correction { order: 1; }
 .saved-principle .message-actions button:hover { color: var(--gg-color-text-primary); background: transparent; text-decoration-color: currentColor; }
 .memory-principle { min-width: 0; }
 
-/* Quote to ask: one small control above the end of a selection in an answer. */
+/* Quote to ask: one small control under the end of a selection in an answer, or over its start (QuoteAsk.tsx). */
 .quote-ask { position: fixed; z-index: var(--gg-z-popover); height: var(--gg-size-control-sm); padding: 0 var(--gg-space-3); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-raised); box-shadow: var(--gg-shadow-sm); color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); cursor: pointer; }
 .quote-ask:hover { background: var(--gg-color-bg-hover); }
 
@@ -1985,6 +1692,14 @@ div.message-action-bar > .answer-correction { order: 1; }
 .chat-guiding-row svg { flex: none; width: 14px; height: 14px; }
 /* Guidance a finished reply accepted: the same row, between the question and its answer. */
 .chat-guided { width: fit-content; max-width: 100%; margin: 0 0 var(--gg-space-3); }
+/* A scheduled run's request names its task in the same row; a custom task's saved prompt is behind Request. */
+.chat-scheduled-turn { display: grid; justify-items: start; gap: var(--gg-space-1); margin: 0 0 var(--gg-space-3); }
+.chat-scheduled-turn > .chat-guiding-row { max-width: 100%; }
+.chat-scheduled-turn time { color: var(--gg-color-text-tertiary); }
+.chat-scheduled-request { width: 100%; border-top: 0; }
+.chat-scheduled-request > summary { padding-block: var(--gg-space-1); font-size: var(--gg-text-caption); }
+.chat-scheduled-request > .ui-disclosure-body { padding: var(--gg-space-2) var(--gg-space-3); border-left: 2px solid var(--gg-color-border-subtle); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+.chat-scheduled-request > .ui-disclosure-body > p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 
 /* Next steps (S7): up to three follow-up questions after the latest answer; they fill the composer. */
 .next-step-chips { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); margin-top: var(--gg-space-3); }
@@ -2009,10 +1724,7 @@ div.message-action-bar > .answer-correction { order: 1; }
 .thread-delivery[data-status="failed"] .thread-delivery-text { color: var(--gg-color-text-secondary); }
 .thread-delivery-source { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
 .thread-delivery-source .morning-link { font-size: var(--gg-text-meta); }
-.thread-link-path { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gg-space-1); margin: 0; text-align: left; }
-.thread-link-hop { display: inline-flex; gap: var(--gg-space-1); align-items: baseline; }
-.thread-link-name { font-weight: 600; }
-.thread-link-relation { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.thread-delivery-source .morning-link:disabled { cursor: default; color: var(--gg-color-text-tertiary); }
 /* An empty topic Chat greets and offers questions, centered in the space above the composer. */
 .morning-ask-only { display: flex; flex: 1 1 auto; flex-direction: column; justify-content: center; width: min(100%, 560px); margin-inline: auto; padding-bottom: var(--gg-space-8); }
 .morning-ask-only .morning-ask { margin-top: 0; }
@@ -2025,63 +1737,6 @@ div.message-action-bar > .answer-correction { order: 1; }
   .message.assistant:not([data-latest]) .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
   .message.assistant:not([data-latest]):is(:hover, :focus-within) .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 1; }
 }
-/* Context owns space in the chat body, leaving title, transcript and composer unobscured. */
-.chat-rail {
-  position: absolute; top: var(--gg-space-2); right: var(--gg-space-3);
-  width: 300px; max-height: calc(100% - 2 * var(--gg-space-2));
-  overflow: auto; overscroll-behavior: contain; scrollbar-width: thin;
-  border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised);
-}
-.chat-rail[data-placement="inline"] {
-  position: relative; inset: auto; flex: 0 1 auto; align-self: flex-end;
-  width: min(300px, calc(100% - 2 * var(--chat-gutter)));
-  max-height: min(240px, 30%); margin: var(--gg-space-2) var(--chat-gutter) var(--gg-space-2);
-}
-.chat-rail-card { min-width: 0; }
-.chat-rail-card + .chat-rail-card { border-top: 1px solid var(--gg-color-border-subtle); }
-.chat-rail-card-header { display: flex; align-items: center; gap: var(--gg-space-2); width: 100%; min-height: 44px; padding: var(--gg-space-2) var(--gg-space-4); border: 0; background: transparent; color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer; }
-div.chat-rail-card-header { cursor: default; }
-button.chat-rail-card-header:hover { background: var(--gg-color-bg-hover); }
-.chat-rail-processing { display: inline-flex; align-items: center; gap: var(--gg-space-1); vertical-align: middle; }
-.chat-rail-card-header svg { flex: none; width: 16px; height: 16px; color: var(--gg-color-text-tertiary); }
-.chat-rail-card-title { flex: none; font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
-.chat-rail-card-summary { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; text-align: right; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
-.chat-rail-card-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gg-space-2); padding: var(--gg-space-2) var(--gg-space-4) var(--gg-space-4); }
-.chat-rail-card-body[hidden] { display: none; }
-.chat-rail-thumbs { display: grid; grid-template-columns: repeat(4, 48px); gap: var(--gg-space-2); }
-.chat-rail-thumb, .chat-rail-thumb-more { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; padding: 0; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); background: var(--gg-color-bg-hover); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); overflow: hidden; cursor: pointer; }
-.chat-rail-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.chat-rail-thumb svg { width: 16px; height: 16px; }
-.chat-rail-rows { list-style: none; margin: 0; padding: 0; display: grid; }
-.chat-rail-row { display: flex; align-items: center; gap: var(--gg-space-2); width: 100%; min-height: 28px; padding: 0; border: 0; background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); text-align: left; cursor: pointer; }
-/* A file with nothing to open still reads as a file, not as a disabled control. */
-.chat-rail-row:disabled { cursor: default; color: var(--gg-color-text-primary); opacity: 1; }
-.chat-rail-row:not(button) { cursor: default; }
-button.chat-rail-row:not(:disabled):hover .chat-rail-row-label { text-decoration: underline; }
-.chat-rail-row svg { flex: none; width: 16px; height: 16px; color: var(--gg-color-text-secondary); }
-.chat-rail-row-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-rail-card[data-card="using"] .chat-rail-row-label { white-space: normal; overflow-wrap: anywhere; }
-.chat-rail-row-kind { flex: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
-.chat-rail-row small { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
-.chat-rail-row .chat-rail-from-loupist { color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
-.chat-rail-more { justify-self: start; padding: 0; border: 0; background: transparent; font: inherit; font-size: var(--gg-text-meta); cursor: pointer; color: var(--gg-color-text-primary); text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
-.chat-rail-map-link { display: inline-flex; align-items: center; gap: var(--gg-space-1); justify-self: start; min-height: var(--gg-size-control-sm); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
-.chat-rail-map-link:hover { color: var(--gg-color-text-primary); text-decoration: underline; }
-.chat-rail-map-link svg { width: var(--gg-space-3); height: var(--gg-space-3); }
-.chat-rail-chips { display: flex; flex-wrap: wrap; gap: var(--gg-space-1); }
-.chat-rail-chip { display: inline-flex; align-items: center; gap: var(--gg-space-1); max-width: 100%; min-width: 0; min-height: var(--gg-size-control-sm); padding-inline: var(--gg-space-2); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-sunken); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); }
-.chat-rail-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-rail-chip:hover { background: var(--gg-color-bg-hover); border-color: var(--gg-color-border-default); }
-.chat-rail-chip .map-swatch { width: 8px; height: 8px; }
-/* "Needs your OK": one row that leads to the approval card in the answer, where the buttons are. */
-.chat-rail-needs { background: var(--gg-color-accent-soft); }
-.chat-rail-needs-row { display: flex; align-items: center; gap: var(--gg-space-2); width: 100%; min-height: 44px; padding: var(--gg-space-2) var(--gg-space-4); border: 0; background: transparent; color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer; }
-.chat-rail-needs-row:hover .chat-rail-needs-show { text-decoration: underline; }
-.chat-rail-needs-dot { flex: none; width: 8px; height: 8px; border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
-.chat-rail-needs-title { flex: none; color: var(--gg-color-accent-ink); font-size: var(--gg-text-control); font-weight: var(--gg-weight-medium); }
-.chat-rail-needs-row .chat-rail-card-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; text-align: left; }
-.chat-rail-needs-show { flex: none; color: var(--gg-color-accent-ink); font-size: var(--gg-text-meta); }
-/* Compact context lives in the header, where it cannot cover an answer or chart. */
 
 /* The composer tray (context-rail.md R2): square thumbnails and compact file chips, then the count and Clear all. */
 .composer-attachments { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); width: 100%; padding: 10px var(--gg-space-3) 0; }
@@ -2178,12 +1833,6 @@ button.sent-image { cursor: zoom-in; }
 .approval-card-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
 .approval-card:focus { outline: none; }
 .approval-card:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
-/* Under the step that waits (S8, D3): indented with the step's text; a waiting card lifts the list's height cap. */
-.chat-progress-approvals { grid-column: 1 / -1; padding-left: calc(var(--gg-space-4) + var(--gg-space-2)); }
-.chat-progress-approvals[data-folded] { padding-left: 0; }
-.chat-progress-approvals .approval-cards { margin: var(--gg-space-1) 0 var(--gg-space-2); }
-/* The step list is quiet meta text; the card inside it reads at body size like the answer. */
-.chat-progress-approvals .approval-card { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 /* Question card (ask_user): the agent asks one thing mid-reply; options, the recommended one marked, and free text. It settles into one line. */
 .question-cards { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 var(--gg-space-3); }
 .question-card { display: grid; gap: var(--gg-space-3); max-width: none; padding: var(--gg-space-4); border: 1px solid var(--gg-color-accent); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
@@ -2204,8 +1853,6 @@ button.sent-image { cursor: zoom-in; }
 .question-line { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); overflow-wrap: anywhere; }
 .question-card:focus { outline: none; }
 .question-card:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 2px; }
-.chat-progress-approvals .question-cards { margin: var(--gg-space-1) 0 var(--gg-space-2); }
-.chat-progress-approvals .question-card { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 /* A step the untrusted-text rule paused (B92): a calm note under it, not an error, with nothing to override. */
 .chat-step-paused { grid-column: 2 / -1; display: grid; gap: 2px; min-width: 0; margin: var(--gg-space-1) 0 var(--gg-space-2); padding: var(--gg-space-2) var(--gg-space-3); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-sm); background: var(--gg-color-bg-sunken); }
 .chat-step-paused p { margin: 0; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
@@ -2227,20 +1874,24 @@ button.sent-image { cursor: zoom-in; }
 .provider-plan-line .connect-link { font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .provider-plan-line .connect-link svg { width: 14px; height: 14px; }
 
-.answer-map-preview {
-  display: flex;
+/* The relation this answer added, as one pill that opens it on the Map. Scoped past `.memory-row button`, which would underline each label. */
+.memory-row .answer-map-preview {
+  display: inline-flex;
   align-items: center;
-  gap: .5rem;
-  padding: .75rem;
+  gap: var(--gg-space-2);
+  width: fit-content;
   max-width: 100%;
-  border: 1px solid var(--gg-color-border-default);
-  border-radius: .5rem;
+  min-height: var(--gg-size-control-sm);
+  padding: 0 var(--gg-space-3);
+  border: 1px solid var(--gg-color-border-subtle);
+  border-radius: var(--gg-radius-full);
+  color: var(--gg-color-text-primary);
+  text-decoration: none;
 }
-.answer-map-preview small {
-  padding: 0 .5rem;
-  border-bottom: 1px solid currentColor;
-  color: var(--gg-color-text-secondary);
-}
+.memory-row .answer-map-preview:hover { background: var(--gg-color-bg-hover); }
+.memory-row .answer-map-preview svg { flex: none; width: 14px; height: 14px; color: var(--gg-color-text-tertiary); }
+.memory-row .answer-map-preview > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-row .answer-map-preview small { flex: none; color: var(--gg-color-text-secondary); font-size: inherit; }
 
 /* References share the textarea's exact text metrics, so native caret, wrapping and IME stay aligned. */
 .composer-prompt-highlight [data-inline-reference] {
@@ -2262,18 +1913,6 @@ button.sent-image { cursor: zoom-in; }
 /* Small glyph buttons keep their look but take a 28 px hit area (design rubric). */
 .composer-chip button, .composer-inline-reference-controls button, .execution-copy-button { position: relative; }
 .composer-chip button::after, .composer-inline-reference-controls button::after, .execution-copy-button::after { content: ""; position: absolute; top: 50%; left: 50%; width: max(100%, var(--gg-size-control-sm)); height: max(100%, var(--gg-size-control-sm)); transform: translate(-50%, -50%); }
-
-/* Watch all n: one press watches what you follow with its class defaults. */
-.watch-all-offer { margin: var(--gg-space-3) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); line-height: var(--gg-leading-control); }
-/* An offer, not "waiting on you": a neutral bordered block with one filled button (chat design change 33). */
-.follow-watch-offer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-3); padding: var(--gg-space-3) var(--gg-space-4); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); }
-.follow-watch-offer p { flex: 1 1 320px; max-width: 62ch; margin: 0; }
-/* The memory row styles its buttons as links; the offer keeps one filled action button. */
-.memory-row .follow-watch-offer [data-slot="button"] { padding: 0 var(--gg-space-3); border-radius: var(--gg-radius-md); background: var(--gg-color-action); color: var(--gg-color-action-ink); font-weight: var(--gg-weight-medium); text-decoration: none; }
-.memory-row .follow-watch-offer [data-slot="button"]:hover { background: var(--gg-color-action); color: var(--gg-color-action-ink); opacity: .9; text-decoration: none; }
-.follow-watch-offer .inline-error { flex-basis: 100%; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
-.watch-all-offer > p { margin: 0; }
-.watch-all-needs { display: grid; gap: var(--gg-space-1); margin: var(--gg-space-1) 0 0; padding: 0; list-style: none; font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 
 /* The recommended answer is an outlined option with a primary edge, not a filled slab (chat design change 12). */
 .question-card .question-card-option[data-recommended] { border-color: var(--gg-color-text-primary); }

@@ -224,8 +224,8 @@ Keep screenshots, recordings, traces and machine-specific reports under the igno
 root `output/` or `apps/loupist/output/` directory. Review any artifact before moving
 it into shared documentation. Build output, Python/Vite caches and Tauri's
 `src-tauri/gen/` schemas are disposable; `tauri-build` regenerates the schemas during
-the native build. App assets, embedding models and golden fixtures are maintained
-inputs and remain versioned. Eval baseline reports stay local and Git-ignored.
+the native build. App assets and golden fixtures are maintained inputs and remain
+versioned. The embedding model is a pinned download, like the runtimes below. Eval baseline reports stay local and Git-ignored.
 Delete known output paths
 explicitly; a blanket ignored-file cleanup would also delete installed development
 dependencies and staged runtimes.
@@ -253,8 +253,12 @@ checksum and normal staging verification; permission, missing-file, checksum and
 validation failures are not retried.
 
 Stage missing/stale runtimes before a requested native or packaging flow.
-World extraction and search run in Rust; only their local embedding assets need
-staging. Pi staging verifies its pinned archive and executable regressions.
+World extraction and search run in Rust; only their local embedding model needs
+staging. `stage-embed-assets.py` downloads it from Hugging Face at the revision in
+`src/knowledge/embed_assets/pin.json` (about 265 MB, once), checks every file's
+sha256, derives the int8 table and checks that too. `--ensure` keeps assets that
+already match the pins, `--verify` only checks them, and `--upstream DIR` uses
+already-downloaded upstream files. The Rust tests need it staged. Pi staging verifies its pinned archive and executable regressions.
 Keep the Pi package family on the same exact version and follow the pins in
 `scripts/pi-security.json` when updating dependencies.
 Dependency security floors and platform-specific findings are recorded in
@@ -262,7 +266,7 @@ Dependency security floors and platform-specific findings are recorded in
 dependency set requires Rust 1.97 or newer; use CI's pinned toolchain.
 
 ```sh
-python3 apps/loupist/scripts/stage-embed-assets.py
+python3 apps/loupist/scripts/stage-embed-assets.py --ensure
 python3 apps/loupist/scripts/stage_python_runtime.py --ensure
 # Complete platform staging also includes embeddings and the Python runtime:
 sh apps/loupist/scripts/stage-macos-arm64.sh

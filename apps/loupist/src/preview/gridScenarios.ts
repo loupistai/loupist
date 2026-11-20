@@ -9,6 +9,7 @@ import { GRID_SCHEMA } from "../contracts/chat";
 import { prepareFixture, previewKo, type PreviewBridge } from "./fixtures";
 import { prepareConflictsFixture } from "./fixtures/conflicts";
 import type { PreviewScenario } from "./scenarios";
+import { asSession } from "./scenarios/kit";
 
 type Helpers = {
   base: (id: string, title: string, landmark: PreviewScenario["landmark"], enter?: PreviewScenario["enter"]) => PreviewScenario;
@@ -101,13 +102,13 @@ function gridFixture(variant: Variant): { title: string; grid: AssetsGrid; evide
     const debtCheck: NumberCheck = { ...dataCheck(company, multipleText, "net_debt_to_ebitda", multiple, 3, index(3)), status: "matched" };
     delete debtCheck.exact;
     const debt: GridCell = company.id === "iseul"
-      ? empty("not_reported", ko() ? "별도 재무제표만 있어 순부채를 계산하지 않았어요." : "Separate statements only; no consolidated net debt.")
+      ? empty("not_reported", ko() ? "별도 재무제표만 있어 순부채를 계산하지 않았습니다." : "Separate statements only; no consolidated net debt.")
       : value(multipleText, debtCheck, multiple);
     const base: GridCell[] = [
       value(revenue, { ...dataCheck(company, revenue, "revenue", revenueValue, 0, index(0)), ...(variant === "rounded" ? { status: "matched" as const } : {}) }, revenueValue),
       value(shown, marginCheck(company, "operating", shown, index(1), shown !== operating), (company.income / company.revenue) * 100),
       variant === "empty" && company.id === "hanbit"
-        ? empty("unavailable", ko() ? "한빛화학의 순이익을 가져오지 못했어요." : "Hanbit Chem's net income could not be read.")
+        ? empty("unavailable", ko() ? "한빛화학의 순이익을 가져오지 못했습니다." : "Hanbit Chem's net income could not be read.")
         : value(net, marginCheck(company, "net", net, index(2)), (company.net / company.revenue) * 100),
       debt,
     ];
@@ -116,7 +117,7 @@ function gridFixture(variant: Variant): { title: string; grid: AssetsGrid; evide
     return [...base,
       empty("not_checked"),
       value(revenue, dataCheck(company, revenue, "revenue", company.revenue, 0, index(5)), company.revenue),
-      empty("not_applicable", ko() ? "배당을 하지 않아요." : "Pays no dividend."),
+      empty("not_applicable", ko() ? "배당을 하지 않습니다." : "Pays no dividend."),
       value(operating, marginCheck(company, "operating", operating, index(7)), (company.income / company.revenue) * 100),
     ];
   });
@@ -140,13 +141,93 @@ function gridFixture(variant: Variant): { title: string; grid: AssetsGrid; evide
       layout: "assets",
       subtitle: ko() ? "별도 표시가 없으면 연결 기준 · 각 회사 통화" : "Consolidated unless noted · values in each company's own currency",
       // Models name a note's source by its citation target; the card draws it as a citation.
-      notes: [ko() ? "이슬물류는 별도 재무제표만 공시해요 (#evidence-ev_iseul_statements)." : "Iseul Logistics files separate statements only (#evidence-ev_iseul_statements)."],
+      notes: [ko() ? "이슬물류는 별도 재무제표만 공시합니다 (#evidence-ev_iseul_statements)." : "Iseul Logistics files separate statements only (#evidence-ev_iseul_statements)."],
       rows: COMPANIES.map((company) => ({ symbol: company.symbol, market: "KRX", label: company.name(), asset_id: `ast_${company.id.padEnd(16, "0").slice(0, 16)}` })),
       columns,
       cells,
       ...(variant === "asof" ? { as_of: AS_OF } : {}),
     },
     evidence,
+  };
+}
+
+/**
+ * Two comparison shapes: two companies on seven FY2025 consolidated measures
+ * (the owner's comparison, which reads with measures as rows when it does not
+ * fit), and three companies on three measures of different periods.
+ */
+function comparisonFixture(shape: "pair" | "periods"): { title: string; grid: AssetsGrid; evidence: ChatEvidenceRef[]; question: string; answer: string } {
+  const companies = shape === "pair" ? [COMPANIES[0]!, COMPANIES[2]!] : COMPANIES;
+  const evidence = companies.flatMap((company) => [statements(company), calcEvidence(company, "operating"), calcEvidence(company, "net")]);
+  const value = (text: string, check: NumberCheck, sort: number): GridCell => ({ value: text, evidence_id: check.evidence_id, check, sort });
+  const percent = (part: number, whole: number) => `${((part / whole) * 100).toFixed(2)}%`;
+  const basis = ko() ? "연결" : "Consolidated";
+  const rows = companies.map((company) => ({ symbol: company.symbol, market: "KRX", label: company.name(), asset_id: `ast_${company.id.padEnd(16, "0").slice(0, 16)}` }));
+  if (shape === "pair") {
+    const columns: AssetsGrid["columns"] = [
+      { id: "revenue", label: ko() ? "매출" : "Revenue", unit: "amount" },
+      { id: "operating_income", label: ko() ? "영업이익" : "Operating income", unit: "amount" },
+      { id: "net_income", label: ko() ? "순이익" : "Net income", unit: "amount" },
+      { id: "operating_margin", label: ko() ? "영업이익률" : "Operating margin", unit: "percent" },
+      { id: "net_margin", label: ko() ? "순이익률" : "Net margin", unit: "percent" },
+      { id: "net_debt_ebitda", label: ko() ? "순부채/EBITDA" : "Net debt/EBITDA", unit: "multiple" },
+      { id: "payout", label: ko() ? "배당성향" : "Payout (earnings)", unit: "percent" },
+    ].map((column) => ({ ...column, period: "FY2025", basis })) as AssetsGrid["columns"];
+    const cells = companies.map((company, row): GridCell[] => {
+      const index = (column: number) => row * 8 + column;
+      const multiple = company.id === "solsup" ? 1.2 : 0.4;
+      const multipleText = ko() ? `${multiple}배` : `${multiple}×`;
+      const debt: NumberCheck = { ...dataCheck(company, multipleText, "net_debt_to_ebitda", multiple, 3, index(5)), status: "matched" };
+      delete debt.exact;
+      const payout = company.id === "solsup" ? 31.5 : 24.8;
+      const payoutCheck: NumberCheck = { ...dataCheck(company, `${payout}%`, "payout_ratio", payout, 3, index(6)), status: "matched" };
+      delete payoutCheck.exact;
+      return [
+        value(amount(company.revenue), dataCheck(company, amount(company.revenue), "revenue", company.revenue, 0, index(0)), company.revenue),
+        value(amount(company.income), dataCheck(company, amount(company.income), "operating_income", company.income, 1, index(1)), company.income),
+        value(amount(company.net), dataCheck(company, amount(company.net), "net_income", company.net, 2, index(2)), company.net),
+        value(percent(company.income, company.revenue), marginCheck(company, "operating", percent(company.income, company.revenue), index(3)), company.income / company.revenue),
+        value(percent(company.net, company.revenue), marginCheck(company, "net", percent(company.net, company.revenue), index(4)), company.net / company.revenue),
+        value(multipleText, debt, multiple),
+        value(`${payout}%`, payoutCheck, payout),
+      ];
+    });
+    return {
+      title: ko() ? "솔숲식품과 한빛화학 FY2025 비교" : "Solsup Foods and Hanbit Chem: FY2025",
+      grid: { layout: "assets", rows, columns, cells },
+      evidence,
+      question: ko() ? "솔숲식품과 한빛화학을 FY2025 실적과 재무 지표 일곱 가지로 비교해 줘." : "Compare Solsup Foods and Hanbit Chem on seven FY2025 results and balance-sheet measures.",
+      answer: ko()
+        ? "두 회사를 FY2025 연결 기준으로 비교했습니다. 한빛화학은 매출이 작지만 이익률이 더 높고 순부채 부담도 가볍습니다."
+        : "Both companies, FY2025 on a consolidated basis. Hanbit Chem is smaller but earns wider margins and carries less net debt.",
+    };
+  }
+  const columns: AssetsGrid["columns"] = [
+    { id: "revenue", label: ko() ? "매출" : "Revenue", period: "FY2025", unit: "amount" },
+    { id: "operating_margin", label: ko() ? "영업이익률" : "Operating margin", period: ko() ? "2025년 3분기" : "Q3 2025", unit: "percent" },
+    { id: "dividend_yield", label: ko() ? "배당수익률" : "Dividend yield", period: ko() ? "10월 31일 기준" : "as of Oct 31", unit: "percent" },
+  ];
+  const cells = companies.map((company, row): GridCell[] => {
+    const index = (column: number) => row * 8 + column;
+    const yieldValue = company.id === "solsup" ? 2.4 : company.id === "iseul" ? 1.1 : 3.2;
+    const yieldCheck: NumberCheck = { ...dataCheck(company, `${yieldValue}%`, "dividend_yield", yieldValue, 3, index(2)), status: "matched" };
+    delete yieldCheck.exact;
+    return [
+      value(amount(company.revenue), dataCheck(company, amount(company.revenue), "revenue", company.revenue, 0, index(0)), company.revenue),
+      value(percent(company.income, company.revenue), marginCheck(company, "operating", percent(company.income, company.revenue), index(1)), company.income / company.revenue),
+      company.id === "iseul"
+        ? { empty: "not_applicable", note: ko() ? "배당을 하지 않습니다." : "Pays no dividend." }
+        : value(`${yieldValue}%`, yieldCheck, yieldValue),
+    ];
+  });
+  return {
+    title: ko() ? "솔숲식품·이슬물류·한빛화학: 매출, 이익률, 배당" : "Solsup, Iseul and Hanbit: revenue, margin and yield",
+    grid: { layout: "assets", rows, columns, cells },
+    evidence,
+    question: ko() ? "세 회사의 매출, 최근 분기 영업이익률, 배당수익률을 표로 보여 줘." : "Show the three companies' revenue, latest-quarter operating margin and dividend yield in a table.",
+    answer: ko()
+      ? "기간이 서로 다른 세 항목이라 각 열에 기준 기간을 적었습니다. 이슬물류는 배당을 하지 않습니다."
+      : "The three measures cover different periods, so each column carries its own. Iseul Logistics pays no dividend.",
   };
 }
 
@@ -188,10 +269,10 @@ function conflictFixture(mapLink: boolean): { title: string; grid: ConflictGrid;
       ],
       reason: "preliminary_vs_final",
       explanation: ko()
-        ? "기사는 3월 공시 전에 나온 잠정 수치를 전했고, 공시는 일회성 반품 충당금을 반영한 확정 수치예요."
+        ? "기사는 3월 공시 전에 나온 잠정 수치를 전했고, 공시는 일회성 반품 충당금을 반영한 확정 수치입니다."
         : "The news report carried the preliminary figure from February; the March filing is final and books a one-off returns allowance.",
       used: 0,
-      used_reason: ko() ? "Quality Compounder는 공시된 확정 수치인 FY2025 재무제표 값을 썼어요." : "Quality Compounder uses the FY2025 statements because they are the filed figure.",
+      used_reason: ko() ? "Quality Compounder는 공시된 확정 수치인 FY2025 재무제표 값을 썼습니다." : "Quality Compounder uses the FY2025 statements because they are the filed figure.",
       ...(mapLink ? { world_entity_id: "hanul", map_link: true } : {}),
     },
     evidence: [filed, news, broker],
@@ -226,8 +307,12 @@ function answer(id: string, title: string, content: string, asOf?: string): Chat
 
 const question = (text: string, asOf?: string): ChatMessage => ({ id: "grid-question", role: "user", status: "complete", created_at: "2026-03-20T06:00:00Z", content: text, ...(asOf ? { as_of: asOf } : {}) });
 
-/** The home Thread holds one question and its answer; the artifact read returns the stored grid. */
-function install(bridge: PreviewBridge, messages: () => ChatMessage[], artifacts: () => ChatArtifactView[]) {
+/**
+ * The conversation holds one question and its answer; the artifact read returns the stored grid.
+ * A research session by default: the home Thread's morning post arrives after the card is revealed
+ * and, in a thread opened at its end, takes the page back down to it.
+ */
+function install(bridge: PreviewBridge, messages: () => ChatMessage[], artifacts: () => ChatArtifactView[], session = true) {
   const select = bridge.loupistSelect.bind(bridge);
   bridge.loupistSelect = async (loupistId) => {
     const workspace = await select(loupistId);
@@ -242,18 +327,28 @@ function install(bridge: PreviewBridge, messages: () => ChatMessage[], artifacts
     ...artifacts().map((item): LoupistArtifactItem => ({ artifact: item.artifact, chat_title: ko() ? "배당주 비교" : "Comparing dividend payers" })),
     ...await list(request),
   ];
+  if (session) asSession(bridge);
 }
 
 const gridAnswerText = () => ko()
-  ? "세 회사를 FY2025 기준으로 나란히 놓았어요. 한빛화학의 이익률이 가장 높고, 이슬물류는 별도 재무제표만 있어 순부채는 비워 뒀어요."
+  ? "세 회사를 FY2025 기준으로 나란히 놓았습니다. 한빛화학의 이익률이 가장 높고, 이슬물류는 별도 재무제표만 있어 순부채는 비워 두었습니다."
   : "Here are the three side by side for FY2025. Hanbit Chem has the widest margins; Iseul Logistics files separate statements only, so its net debt stays empty.";
 const gridQuestion = () => (ko() ? "솔숲식품, 이슬물류, 한빛화학의 FY2025 매출과 이익률을 표로 비교해 줘." : "Compare Solsup Foods, Iseul Logistics and Hanbit Chem on FY2025 revenue and margins in a table.");
 
-async function prepareGrid(bridge: PreviewBridge, variant: Variant) {
+async function prepareGrid(bridge: PreviewBridge, variant: Variant, session = true) {
   await prepareFixture(bridge, "answer");
   const fixture = () => gridFixture(variant);
   const asOf = variant === "asof" ? AS_OF : undefined;
   install(bridge, () => [question(gridQuestion(), asOf), answer(GRID_ID, fixture().title, gridAnswerText(), asOf)], () => {
+    const { title, grid, evidence } = fixture();
+    return [view(GRID_ID, title, grid, evidence)];
+  }, session);
+}
+
+async function prepareComparison(bridge: PreviewBridge, shape: "pair" | "periods") {
+  await prepareFixture(bridge, "answer");
+  const fixture = () => comparisonFixture(shape);
+  install(bridge, () => [question(fixture().question), answer(GRID_ID, fixture().title, fixture().answer)], () => {
     const { title, grid, evidence } = fixture();
     return [view(GRID_ID, title, grid, evidence)];
   });
@@ -263,7 +358,7 @@ async function prepareConflict(bridge: PreviewBridge, mapLink: boolean) {
   await prepareFixture(bridge, "answer");
   const fixture = () => conflictFixture(mapLink);
   const text = () => ko()
-    ? "출처마다 솔숲식품의 FY2025 매출이 달라요. 공시된 확정 수치인 4,523억 원을 기준으로 답했어요."
+    ? "출처마다 솔숲식품의 FY2025 매출이 다릅니다. 공시된 확정 수치인 4,523억 원을 기준으로 답했습니다."
     : "Sources give different FY2025 revenue for Solsup Foods. This answer uses the filed figure.";
   install(bridge, () => [question(ko() ? "솔숲식품 FY2025 매출이 기사마다 다르던데 뭐가 맞아?" : "Why do I see different FY2025 revenue for Solsup Foods?"), answer(CONFLICT_ID, fixture().title, text())], () => {
     const { title, grid, evidence } = fixture();
@@ -313,7 +408,13 @@ export function gridScenarios({ base, select, until, click, selectPanel, hasLayo
       cell.focus();
     }),
     gridScenario("chat-grid-rounded", "Amounts the table rounds keep one number of decimals per column", '.grid-card[data-layout="assets"] .number-chip', "rounded"),
-    gridScenario("chat-grid-wide-scroll", "Eight measures scroll inside the card", ".grid-card-table thead th:nth-child(9)", "wide"),
+    // Eight measures on three assets: asset rows where all eight fit, measures as rows where they do not.
+    gridScenario("chat-grid-wide-scroll", "Eight measures on three assets read without a hidden column",
+      '.grid-card-table[data-rows="assets"] thead th:nth-child(9), .grid-card-table[data-rows="measures"] tbody tr:nth-child(8)', "wide"),
+    { ...base("chat-grid-comparison", "Two companies on seven measures: the shared period and basis said once, every measure readable",
+      () => select('.grid-card .grid-card-shared-period'), async (root) => { await cardLoaded(root); }), setup: (bridge) => prepareComparison(bridge, "pair") },
+    { ...base("chat-grid-periods", "Three companies on three measures of different periods: each column carries its own",
+      () => select('.grid-card-table thead .grid-card-period'), async (root) => { await cardLoaded(root); }), setup: (bridge) => prepareComparison(bridge, "periods") },
     gridScenario("chat-grid-differs", "A cell that differs from its calculation is marked", '.number-chip-popover .number-chip-status[data-status="differs"]', "differs", async (root) => {
       await cardLoaded(root);
       await click(".grid-card .grid-card-check", root);
@@ -333,7 +434,7 @@ export function gridScenarios({ base, select, until, click, selectPanel, hasLayo
       await selectPanel("materials");
       await click("#workspace-tab-work");
       await click(".work-list button.work-row");
-    }), setup: (bridge) => prepareGrid(bridge, "card") },
+    }), setup: (bridge) => prepareGrid(bridge, "card", false) },
     { ...base("chat-conflict-card", "Where sources disagree, linked to the Map", () => select(".conflict-card [data-conflict-map]"), async (root) => {
       await cardLoaded(root, ".conflict-card");
     }), setup: (bridge) => prepareConflict(bridge, true) },

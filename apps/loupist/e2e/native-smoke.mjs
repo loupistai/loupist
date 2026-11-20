@@ -6,13 +6,16 @@ import { remote } from "webdriverio";
 import { createWebdriverHelpers } from "./webdriver-helpers.mjs";
 import { minimumWindowSize, setWindowSize, withWindowSize } from "./window-geometry.mjs";
 import { focusNativeWindow } from "./native-window-focus.mjs";
-import { assertFormLegendsFit } from "./native-forms.mjs";
+import { assertComposerGrows, assertFormLegendsFit, assertNewLoupistPreviewShows } from "./native-forms.mjs";
 import { verifyNativeBrowserNavigation } from "./native-browser.mjs";
+import { assertShellLayout, measureShellLayout } from "./shell-layout.mjs";
+import { assertMapOverlays, measureMapOverlays } from "./map-layout.mjs";
 import {
   coldStartMark,
   clickControl,
   dialogByTitle,
   mapNameCount,
+  loupistSwitcherAction,
   measureLoupistSwitch,
   measureMapDrawProbe,
   measureMapProbe,
@@ -21,6 +24,7 @@ import {
   preferEnglish,
   scrub,
   selectedLoupistTitle,
+  switcherLoupists,
   selectLoupistTemplate,
   waitForOnboardingStep,
   openMainTab,
@@ -91,11 +95,7 @@ async function openSettings(sectionId) {
 }
 
 async function visibleLoupistTitles() {
-  return browser.execute(() =>
-    [...document.querySelectorAll("button[data-testid=loupist-header-identity]")]
-      .filter((button) => button.getClientRects().length > 0)
-      .map((button) => button.querySelector("strong")?.textContent?.trim() ?? ""),
-  );
+  return (await switcherLoupists(browser)).map((item) => item.name);
 }
 
 async function removeUntilOnboarding() {
@@ -103,7 +103,7 @@ async function removeUntilOnboarding() {
     if ((await onboardingStep(browser)) === "1") return;
     const [removed] = await visibleLoupistTitles();
     if (!removed) break;
-    await (await displayed("[data-header-loupist-settings]")).click();
+    await loupistSwitcherAction(browser, "settings");
     const sheet = await displayed("[data-testid=loupist-settings-page]");
     await clickButton("Remove Loupist", sheet);
     const dialog = await dialogByTitle(browser, "Remove Loupist?");
@@ -116,6 +116,131 @@ async function removeUntilOnboarding() {
     });
   }
   await waitForOnboardingStep(browser, 1, 20_000);
+}
+
+// A hand-off Bot runs on its own (`LOUPIST_E2E_SLOW_HANDOFF`, macOS Apple Silicon debug builds;
+// run-native-smoke.sh sets it there with the knowledge fixture, README "Deterministic native suites").
+// The fixture's Pi child takes four steps two seconds apart, then stays open twelve seconds more.
+const slowHandoff = process.env.LOUPIST_E2E_SLOW_HANDOFF === "1";
+const BOT_ROW = "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]";
+// Bot posts a hand-off only once its session ends; nothing while it works.
+/** Bot's post for the hand-off titled `title`; the fixture also holds an older stopped hand-off. */
+const handoffPost = (title) => `#main-panel-chat article[aria-label=${JSON.stringify(`Research: ${title}`)}]`;
+const GUIDE = "Put the delivery dates first.";
+
+const visibleText = (selector) => browser.execute((sel) => {
+  const element = [...document.querySelectorAll(sel)].find((node) => node instanceof HTMLElement && node.offsetParent !== null);
+  return element ? element.textContent?.trim() ?? "" : null;
+}, selector);
+
+async function waitForChange(selector, label, timeout) {
+  const before = await visibleText(selector);
+  await browser.waitUntil(async () => {
+    const now = await visibleText(selector);
+    return now !== null && now !== before;
+  }, { timeout, interval: 200, timeoutMsg: `${label} did not change from “${before}”` });
+}
+
+async function openBot() {
+  await openMainTab(browser, "chat");
+  if (await browser.$(BOT_ROW).getAttribute("aria-current") !== "page") await clickControl(browser, BOT_ROW);
+  await displayed(`${BOT_ROW}[aria-current="page"]`);
+}
+
+/** The sidebar row of the session titled `title`, once the host has listed it. */
+async function sessionRow(title) {
+  // Match the title alone: a running row also carries its "Running" status inside the button.
+  const label = await childWithText(browser, "[data-testid=loupist-chat-button] [data-testid=loupist-chat-title]", title, 30_000);
+  const thread = await browser.execute((element) => element.closest("[data-testid=loupist-chat-button]")?.getAttribute("data-thread-id") ?? "", label);
+  return `[data-testid=loupist-chat-button][data-thread-id=${JSON.stringify(thread)}]`;
+}
+
+/** Opens the running hand-off's session from its sidebar row and waits for its live work. */
+async function openRunningSession(row) {
+  await clickControl(browser, row);
+  await displayed(`${row}[aria-current="page"]`, 10_000);
+  await displayed('#main-panel-chat [data-turn-latest] [data-testid="turn-live"]', 15_000);
+  await displayed('#main-panel-chat button[aria-label="Stop response"]');
+}
+
+/** WebKit sometimes leaves a Radix menu shut after a WebDriver click; the keyboard opens it (as agent-driver does). */
+async function openComposerModelMenu() {
+  const trigger = await displayed("[data-testid=composer-model-menu]");
+  const opened = async () => {
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      await browser.pause(100);
+      for (const menu of await browser.$$('[data-slot="dropdown-menu-content"]')) {
+        if (await menu.isDisplayed().catch(() => false)) return true;
+      }
+    }
+    return false;
+  };
+  await trigger.click();
+  for (const key of ["Space", "Enter"]) {
+    if (await opened()) return;
+    await browser.keys("Escape");
+    await browser.keys(key);
+  }
+  if (!(await opened())) throw new Error("The Bot composer's model menu did not open");
+}
+
+async function runSlowHandoffJourney() {
+  await preferEnglish(browser);
+  await waitForShell(browser);
+  await openBot();
+  // Look into it sends the Bot composer's choices; the fixture's model runs the scripted child.
+  await openComposerModelMenu();
+  await (await childWithText(browser, '[role="menuitemradio"]', "Fixture research model")).click();
+  await browser.keys("Escape");
+  await browser.waitUntil(async () => (await browser.$("[data-testid=composer-model-menu]").getAttribute("aria-label"))?.startsWith("Fixture research model"), {
+    timeout: 5_000, timeoutMsg: "The Bot composer did not keep the fixture model",
+  });
+  const draft = await (await displayed("[data-chat-composer]")).getValue();
+  const linkLabel = await (await displayed('#main-panel-chat article[aria-label^="New link: "]', 30_000)).getAttribute("aria-label");
+  const link = `#main-panel-chat article[aria-label=${JSON.stringify(linkLabel)}]`;
+  // The session is titled for both ends of the link ("Link: A and B").
+  const title = linkLabel.replace(/^New link: /, "Link: ");
+  await clickButton("Look into it", await displayed(link));
+
+  // Bot posts nothing while the session works: the link says it is being researched, and the
+  // session's row in the sidebar is the way in.
+  await waitForText(await displayed(link), "Researching it. The result will arrive here.", 10_000);
+  const row = await sessionRow(title);
+  assert.equal(await browser.$(handoffPost(title)).isExisting(), false, "Bot posted the hand-off while its session worked");
+  await capture("handoff-running-bot");
+
+  // The row joins the run: the work so far, then each step as it arrives.
+  await openRunningSession(row);
+  await waitForChange('#main-panel-chat [data-turn-latest] [data-testid="turn-live"]', "The session's live step", 10_000);
+  // Leaving does not stop it; coming back joins it again.
+  await openBot();
+  assert.equal(await (await displayed("[data-chat-composer]")).getValue(), draft, "Opening the session changed Bot's draft");
+  await waitForText(await displayed(link), "Researching it. The result will arrive here.");
+  assert.equal(await browser.$(handoffPost(title)).isExisting(), false, "Bot posted the hand-off while its session worked");
+  await openRunningSession(row);
+  await capture("handoff-running-session");
+
+  // Guidance reaches the run from the session's composer.
+  const composer = await displayed("[data-chat-composer]");
+  await composer.setValue(GUIDE);
+  await (await displayed('#main-panel-chat button[aria-label="Guide this response"]')).click();
+  await browser.waitUntil(async () => (await composer.getValue()) === "", { timeout: 10_000, timeoutMsg: "The guidance was not accepted" });
+  await waitForText(await displayed("#main-panel-chat [data-turn-latest]"), GUIDE, 10_000);
+
+  // Stop ends the run in its session; Bot then posts it once, Stopped with Open, and the link
+  // offers to look again.
+  await (await displayed('#main-panel-chat button[aria-label="Stop response"]')).click();
+  await browser.waitUntil(async () => !(await browser.$('#main-panel-chat button[aria-label="Stop response"]').isDisplayed().catch(() => false)), {
+    timeout: 20_000, timeoutMsg: "Stop did not end the hand-off's run",
+  });
+  await openBot();
+  const stopped = await displayed(`#main-panel-chat article[aria-label=${JSON.stringify(`Research: ${title}`)}][data-status="stopped"]`, 20_000);
+  await waitForText(stopped, "Stopped");
+  assert.equal((await browser.$$(handoffPost(title))).length, 1, "Bot posted the hand-off more than once");
+  assert.equal(await stopped.$("button=Stop").isExisting(), false, "Bot's post of a stopped hand-off offers Stop");
+  assert.ok(await (await stopped.$("button=Open")).isDisplayed(), "The stopped hand-off lost Open");
+  await childWithText(await displayed(link), "button", "Look into it again", 20_000);
+  await capture("handoff-stopped-card");
 }
 
 async function selectOption(triggerSelector, optionText) {
@@ -179,6 +304,10 @@ try {
     });
   });
 
+  // The knowledge fixture's Loupist holds the Map link; the next step removes it.
+  if (slowHandoff) await step("a Bot hand-off runs on its own with nothing in Bot, streams into its session, takes guidance, stops and is posted once", runSlowHandoffJourney);
+  else console.log("• a Bot hand-off journey ... skipped: LOUPIST_E2E_SLOW_HANDOFF needs a macOS Apple Silicon debug build");
+
   await step("English interface and a clear onboarding start", async () => {
     await preferEnglish(browser);
     await removeUntilOnboarding();
@@ -193,9 +322,13 @@ try {
     await clickButton("Get started");
     await waitForOnboardingStep(browser, 3, 20_000);
     await selectLoupistTemplate(browser, "My portfolio");
-    assert.equal(await (await displayed("#onboarding-name")).getValue(), "Portfolio Loupist");
     assert.equal(await browser.$("#onboarding-focus").isExisting(), false);
     assert.equal(await browser.$("[data-loupist-tone]").isExisting(), false);
+    await (await displayed("[data-onboarding-next]")).click();
+    // The name step: the template suggests a name, and the face colour is chosen beside it.
+    await waitForOnboardingStep(browser, 4, 20_000);
+    assert.equal(await (await displayed("#onboarding-name")).getValue(), "Portfolio Loupist");
+    await displayed('main[data-onboarding="4"] [data-loupist-identity] .loupist-face');
     await (await displayed("[data-onboarding-create]")).click();
     await waitForShell(browser, 30_000);
     assert.equal(await selectedLoupistTitle(browser), "Portfolio Loupist");
@@ -217,9 +350,10 @@ try {
     // An unsent research session shows as one draft row under Bot; a second New research reuses it.
     assert.ok(afterFirst <= before + 1, "An unsent research session shows at most one draft row");
     assert.equal((await browser.$$("[data-testid=loupist-chat-button]")).length, afterFirst, "A second New research must reuse the unsent research session");
-    await (await displayed("[data-header-loupist-settings]")).click();
+    await loupistSwitcherAction(browser, "settings");
     const sheet = await displayed("[data-testid=loupist-settings-page]");
-    await waitForText(sheet, "Loupist settings");
+    // The page header says Loupist settings; the page's own heading names the Loupist.
+    await waitForText(sheet, "Portfolio Loupist");
     await clickButton("Remove Loupist", sheet);
     const dialog = await dialogByTitle(browser, "Remove Loupist?");
     await capture("loupist-settings");
@@ -243,7 +377,7 @@ try {
   await step("Loupist switch", async () => {
     let titles = (await visibleLoupistTitles()).filter(Boolean);
     if (titles.length < 2) {
-      await (await displayed('button[aria-label="New Loupist"]')).click();
+      await loupistSwitcherAction(browser, "new");
       const dialog = await displayed('[role="dialog"]');
       await clickTemplate("Dividend income");
       await assertFormLegendsFit(browser, { selector: "[data-loupist-tone]" });
@@ -274,7 +408,7 @@ try {
   await step("Settings Data connections", async () => {
     await openSettings("connections");
     const panel = await displayed("#main-panel-settings");
-    await waitForText(panel, "Data connections");
+    // The page header names the section; the page opens with its description and the list.
     await waitForText(panel, "Available connections");
     await openCustomConnections(browser);
     await displayed("[data-custom-connections] [data-custom-add]");
@@ -290,6 +424,19 @@ try {
     await clickButton("Back");
     await waitForShell(browser);
   });
+
+  // A Settings list taller than the window once pushed Back below it, and focus then scrolled the whole app.
+  await step("Settings at the minimum window keeps Back in the window and the shell in place", () => withWindowSize(browser, minimumWindowSize, async () => {
+    await openSettings("agent");
+    const advanced = await displayed("[data-testid=agent-config-advanced]");
+    if ((await advanced.getAttribute("open")) === null) await (await advanced.$(":scope > summary")).click();
+    for (let press = 0; press < 12; press += 1) await browser.keys("Tab");
+    const shell = await browser.execute(measureShellLayout);
+    assertShellLayout(shell, { label: "settings-minimum-window" });
+    await capture("settings-minimum-window");
+    await clickButton("Back");
+    await waitForShell(browser);
+  }));
 
   await step("Map tab", async () => {
     await openMainTab(browser, "map");
@@ -313,7 +460,45 @@ try {
     });
     if (surface === "canvas") {
       assert.ok(count?.text, "Map status did not render beside the canvas");
-      performanceReport.mapTab = { surface: "canvas", stats: count.text };
+      // WKWebView: the opening camera frames the drawing, never in a corner of the canvas.
+      let framing = null;
+      await browser.waitUntil(async () => {
+        framing = await browser.execute(() => {
+          const canvas = document.querySelector("[data-testid=map-view] [data-testid=map-canvas] canvas");
+          const stage = document.querySelector("[data-testid=map-view] .map-stage");
+          const context = canvas?.getContext("2d");
+          const background = stage && getComputedStyle(stage).backgroundColor.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+          if (!canvas || !context || !background || !canvas.width || !canvas.height) return null;
+          const { width, height } = canvas;
+          const pixels = context.getImageData(0, 0, width, height).data;
+          let minX = width, minY = height, maxX = -1, maxY = -1;
+          for (let y = 0; y < height; y += 3) for (let x = 0; x < width; x += 3) {
+            const at = (y * width + x) * 4;
+            if (Math.abs(pixels[at] - background[0]) + Math.abs(pixels[at + 1] - background[1]) + Math.abs(pixels[at + 2] - background[2]) > 60) {
+              minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+            }
+          }
+          return maxX < 0 ? null : { x: (minX + maxX) / 2 / width, y: (minY + maxY) / 2 / height };
+        });
+        return Boolean(framing && framing.x > .2 && framing.x < .8 && framing.y > .15 && framing.y < .85);
+      }, { timeout: 10_000, timeoutMsg: `The Map drawing was not framed in its canvas: ${JSON.stringify(framing)}` });
+      // WKWebView, motion on: once What's new or the Library has slid in, the controls over the canvas sit beside it.
+      for (const control of ["data-map-whats-new", "data-map-library"]) {
+        const button = `[data-testid=map-view] button[${control}]`;
+        await clickControl(browser, button);
+        await displayed("[data-testid=map-view] aside[data-testid=map-library]");
+        let maps = [];
+        await browser.waitUntil(async () => {
+          maps = await browser.execute(measureMapOverlays);
+          try { assertMapOverlays(maps, { label: control }); } catch { return false; }
+          return maps.some((map) => map.covers.length > 0);
+        }, { timeout: 5_000, timeoutMsg: `Map controls stayed under the panel ${button} opened: ${JSON.stringify(maps)}` });
+        await clickControl(browser, button);
+        await browser.waitUntil(async () => !await browser.$("[data-testid=map-view] aside[data-testid=map-library]").isDisplayed().catch(() => false), {
+          timeout: 5_000, timeoutMsg: `The panel ${button} opened did not close`,
+        });
+      }
+      performanceReport.mapTab = { surface: "canvas", stats: count.text, framing };
     } else {
       assert.equal(count, null, "An empty Map should show guidance without a zero-count status");
       await waitForText(panel, "Your Loupist's map grows as you research");
@@ -330,7 +515,7 @@ try {
   if (full) await step("Connections filtering and Web Research", async () => {
     await openSettings("connections");
     const panel = await displayed("#main-panel-settings");
-    await displayed('[aria-label="Details Market data platform"]');
+    await displayed('[aria-label="Market data platform details"]');
     const openbbCard = await browser.execute(() => {
       const heading = [...document.querySelectorAll("[data-testid=marketplace-card] [id^=\"connection-\"]")].find(
         (element) => element.textContent === "Market data platform",
@@ -349,13 +534,13 @@ try {
     await waitForTextGone(panel, "SEC EDGAR");
     await search.setValue("");
     await waitForText(panel, "SEC EDGAR");
-    await (await displayed('[aria-label="Settings Web Research"]')).click();
+    await (await displayed('[aria-label="Web Research settings"]')).click();
     let dialog = await displayed('[role="dialog"]');
     await selectOption('[aria-label="Search provider"]', "Exa only");
     await clickButton("Save setup", dialog);
     await waitForText(dialog, "Settings saved");
     await clickButton("Close", dialog);
-    await (await displayed('[aria-label="Settings Web Research"]')).click();
+    await (await displayed('[aria-label="Web Research settings"]')).click();
     dialog = await displayed('[role="dialog"]');
     assert.equal(await (await displayed('[aria-label="Search provider"]')).getText(), "Exa only");
     await selectOption('[aria-label="Search provider"]', "Automatic");
@@ -449,6 +634,15 @@ try {
     assert.ok(audit.documentWidth <= audit.viewportWidth + 1, JSON.stringify(audit));
     assert.deepEqual(audit.unnamed, []);
     await capture("minimum-window");
+    // New Loupist at the minimum window: the templates, then the whole preview card above the fold.
+    await loupistSwitcherAction(browser, "new");
+    const dialog = await displayed('[role="dialog"]');
+    await assertNewLoupistPreviewShows(browser);
+    await capture("minimum-window-new-loupist");
+    await clickButton("Cancel", dialog);
+    await browser.waitUntil(async () => !(await browser.$('[role="dialog"]').isDisplayed().catch(() => false)), {
+      timeout: 5_000, timeoutMsg: "New Loupist dialog did not close",
+    });
   }));
 
   await step("removing the last Loupist returns to onboarding", async () => {
@@ -504,6 +698,21 @@ try {
     assert.match(decoration.line, /underline/, `Number chips have no underline in WebKit: ${JSON.stringify(decoration)}`);
     assert.equal(decoration.style, "dotted", `Number chips lost their dotted underline: ${JSON.stringify(decoration)}`);
     await capture("number-chip-underline");
+  });
+
+  // WKWebView has no `field-sizing: content`; the composer sizes its message itself.
+  await step("the composer grows with its text, then scrolls with the caret in view", async () => {
+    for (const size of [null, minimumWindowSize]) {
+      const check = async () => {
+        const url = `${String(session.devUrl).replace(/\/$/, "")}/preview.html?scenario=composer-compact&composerProbe=${size ? "minimum" : "default"}`;
+        await browser.url(url);
+        await browser.waitUntil(() => browser.execute(() => document.documentElement.dataset.previewReady === "true"),
+          { timeout: 60_000, interval: 250, timeoutMsg: "The composer preview did not become ready" });
+        await assertComposerGrows(browser, { onCapped: () => capture(`composer-capped${size ? "-minimum" : ""}`) });
+      };
+      if (size) await withWindowSize(browser, size, check);
+      else await check();
+    }
   });
 
   await step("native browser preserves the article while blocking unsafe navigation", async () => {

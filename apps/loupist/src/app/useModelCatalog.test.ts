@@ -12,6 +12,27 @@ async function emptyConnectedCatalog() {
 }
 
 describe("startup model discovery", () => {
+  it("shows the saved catalog and reloads it when the background pass publishes", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const saved = await bridge.modelCatalogGet();
+    const updated = { ...saved, models: saved.models.map(model => ({ ...model, name: "Updated model" })) };
+    const read = vi.spyOn(bridge, "modelCatalogGet").mockResolvedValueOnce(saved).mockResolvedValue(updated);
+    let publish!: () => void;
+    const source = Object.assign(bridge, {
+      onModelCatalogChanged(handler: () => void, onListening: () => void) {
+        publish = handler;
+        onListening();
+        return () => {};
+      },
+    });
+    const { result } = renderHook(() => useModelCatalog(source));
+    await waitFor(() => expect(result.current.resolved).toBe(true));
+    expect(result.current.catalog).toEqual(saved);
+    expect(read).toHaveBeenCalledTimes(1);
+    act(() => publish());
+    await waitFor(() => expect(result.current.catalog).toEqual(updated));
+  });
+
   it("makes a saved sign-in usable without visiting Settings", async () => {
     const { bridge, populated } = await emptyConnectedCatalog();
     const discover = vi.spyOn(bridge, "providerModels").mockResolvedValue(populated);
@@ -20,6 +41,24 @@ describe("startup model discovery", () => {
     expect(discover).toHaveBeenCalledOnce();
     expect(result.current.catalog).toEqual(populated);
     expect(result.current.needsVisibleModels).toBe(false);
+  });
+
+  it("restores a second connected account even when the first already has models", async () => {
+    const { bridge, populated } = await emptyConnectedCatalog();
+    const first = populated.providers.find(provider => provider.credential_source !== "missing")!;
+    const second = populated.providers.find(provider => provider.id !== first.id)!;
+    const initial = {
+      ...populated,
+      providers: populated.providers.map(provider => provider.id === second.id ? { ...provider, credential_source: "saved" as const } : provider),
+      models: populated.models.filter(model => model.provider !== second.id),
+    };
+    const grok = { ...populated.models[0]!, id: `${second.id}/restored`, provider: second.id, name: "Restored model" };
+    vi.mocked(bridge.modelCatalogGet).mockResolvedValue(initial);
+    const discover = vi.spyOn(bridge, "providerModels").mockResolvedValue({ ...initial, models: [...initial.models, grok] });
+    const { result } = renderHook(() => useModelCatalog(bridge));
+    await waitFor(() => expect(result.current.resolved).toBe(true));
+    expect(discover).toHaveBeenCalledWith(second.id);
+    expect(result.current.catalog?.models).toContainEqual(grok);
   });
 
   it("preserves deliberately hidden models without rediscovery", async () => {

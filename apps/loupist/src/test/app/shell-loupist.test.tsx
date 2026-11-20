@@ -55,9 +55,9 @@ describe("Loupist · Shell and Loupist", () => {
     const bridge = await openApp();
     const create = vi.spyOn(bridge, "chatCreate");
     fireEvent.keyDown(window, { key: ",", metaKey: true, isComposing: true });
-    expect(screen.queryByRole("heading", { name: "Loupists" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "General" })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: ",", ctrlKey: true });
-    await screen.findByRole("heading", { name: "Loupists" });
+    await screen.findByRole("heading", { name: "General" });
     await user.click(screen.getByRole("button", { name: "Back" }));
     await user.click(screen.getByRole("button", { name: "Options for How should we read the margin decline?" }));
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
@@ -69,15 +69,20 @@ describe("Loupist · Shell and Loupist", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("collapses and restores the sidebar from the titlebar toggle", async () => {
+  it("folds the sidebar with ⌘B or the View menu and restores it from the page header", async () => {
     const user = userEvent.setup();
-    await openApp();
-    const toggle = screen.getByRole("button", { name: "Show or hide sidebar" });
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const bridge = await openApp();
+    const sidebar = document.querySelector<HTMLElement>("[data-slot='sidebar'][data-state]")!;
+    // The expanded sidebar has no toggle button: its edge resizes it, ⌘B folds it.
+    expect(screen.queryByRole("button", { name: "Show or hide sidebar" })).toBeNull();
+    fireEvent.keyDown(window, { key: "b", metaKey: true });
+    expect(sidebar).toHaveAttribute("data-state", "collapsed");
+    const toggle = screen.getByRole("button", { name: "Show or hide sidebar", expanded: false });
     await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(sidebar).toHaveAttribute("data-state", "expanded");
+    expect(screen.queryByRole("button", { name: "Show or hide sidebar" })).toBeNull();
+    act(() => bridge.emitMenuAction("toggle-sidebar"));
+    expect(sidebar).toHaveAttribute("data-state", "collapsed");
   });
 
   it("creates, renames and deletes Chats from the Loupist list", async () => {
@@ -167,7 +172,7 @@ describe("Loupist · Shell and Loupist", () => {
     const createLoupist = vi.spyOn(bridge, "loupistCreate");
     await user.click(headerAction("New Loupist"));
     await user.click(await screen.findByRole("button", { name: "Create Loupist" }));
-    await waitFor(() => expect(createLoupist).toHaveBeenCalledWith({ name: "Portfolio Loupist", focus: "Companies I hold and follow", avatar: "loupist-01", template: "portfolio", tone: "balanced" }));
+    await waitFor(() => expect(createLoupist).toHaveBeenCalledWith({ name: "Portfolio Loupist", focus: "Companies I follow", avatar: "loupist-01", template: "portfolio", tone: "balanced" }));
     expect(selectedLoupistButton()).toHaveTextContent("Portfolio Loupist");
     expect(screen.getByRole("button", {name:"Bot",current:"page"})).toBeVisible();
   });
@@ -180,6 +185,7 @@ describe("Loupist · Shell and Loupist", () => {
     render(<App bridge={bridge} />);
     await user.click(await screen.findByRole("checkbox", { name: "I understand" }));
     await user.click(await screen.findByRole("button", { name: "Get started" }));
+    await user.click(await screen.findByRole("button", { name: "Continue" }));
     await user.click(await screen.findByRole("button", { name: "Create Loupist" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "New Loupist" })).not.toBeInTheDocument());
@@ -275,7 +281,7 @@ describe("Loupist · Model providers", () => {
     const card = await screen.findByRole("article", { name: "Anthropic" });
     expect(card).toHaveTextContent("API key saved on this Mac");
     await user.click(within(card).getByRole("button", { name: /Models \(1\)/u }));
-    expect(await within(card).findByRole("switch", { name: "Show Claude Sonnet 4.5 in Chat" })).toBeChecked();
+    expect(await within(card).findByRole("switch", { name: "Show Claude Sonnet 4.5 in menu" })).toBeChecked();
     expect(screen.queryByDisplayValue("write-only-secret")).toBeNull();
   });
 
@@ -283,12 +289,12 @@ describe("Loupist · Model providers", () => {
     const user = userEvent.setup();
     const bridge = await openApp();
     const connect = vi.spyOn(bridge, "providerConnect");
-    await openProviderPicker(user, /^Sign in with SuperGrok/u);
+    await openProviderPicker(user, /^Continue with SuperGrok/u);
     await waitFor(() => expect(connect).toHaveBeenCalledWith("xai", expect.any(Function)));
     const card = await screen.findByRole("article", { name: "SuperGrok" });
-    expect(card).toHaveTextContent(/Signed in with SuperGrok · since/u);
+    expect(card).toHaveTextContent(/Signed in since/u);
     await user.click(within(card).getByRole("button", { name: /Models \(1\)/u }));
-    expect(await within(card).findByRole("switch", { name: "Show xai default in Chat" })).toBeChecked();
+    expect(await within(card).findByRole("switch", { name: "Show xai default in menu" })).toBeChecked();
   });
 
   it("cancels an abandoned browser sign-in and allows a clean retry", async () => {
@@ -325,7 +331,7 @@ describe("Loupist · Model providers", () => {
     const bridge = await openApp();
     const disconnect = vi.spyOn(bridge, "providerDisconnect");
     await openModelSettings(user);
-    const connected = await screen.findByRole("list", { name: "Connected providers" });
+    const connected = await screen.findByRole("list", { name: "Connected AI accounts" });
     expect(within(connected).getByRole("heading", { name: "ChatGPT" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "More actions for ChatGPT" }));
     await user.click(await screen.findByRole("menuitem", { name: "Disconnect ChatGPT" }));
@@ -342,7 +348,7 @@ describe("Loupist · Model providers", () => {
     await openModelSettings(user);
     const chatgpt = await screen.findByRole("article", { name: "ChatGPT" });
     await user.click(within(chatgpt).getByRole("button", { name: /Models \(1\)/u }));
-    await user.click(await within(chatgpt).findByRole("switch", { name: "Show GPT-5.6 Luna in Chat" }));
+    await user.click(await within(chatgpt).findByRole("switch", { name: "Show GPT-5.6 Luna in menu" }));
     await waitFor(() => expect(updateVisibility).toHaveBeenCalledWith({ model_profile_id: "model-test", visible_in_chat: false }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     await user.hover(await screen.findByRole("button", { name: /Model settings for this message/ }));
@@ -355,7 +361,7 @@ describe("Loupist · Model providers", () => {
     await openModelSettings(user);
     const gemini = await screen.findByRole("article", { name: "Google Gemini" });
     await user.click(within(gemini).getByRole("button", { name: /Models \(1\)/u }));
-    await user.click(await within(gemini).findByRole("switch", { name: "Show google default in Chat" }));
+    await user.click(await within(gemini).findByRole("switch", { name: "Show google default in menu" }));
     await waitFor(() => expect(updateVisibility).toHaveBeenCalledWith({ model_profile_id: "google/google-default", visible_in_chat: false }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByText(/Show or load a model in Settings to send messages/)).toBeVisible();

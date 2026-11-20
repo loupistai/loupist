@@ -4,12 +4,10 @@ use super::*;
 fn runtime_tools_require_their_native_vendor_capability() {
     use crate::{agent_harness::AgentRuntimeProfile, broker::tools::TOOL_CATALOG};
     let market = crate::marketplace::bundled_plugins().unwrap();
-    // Compare every catalog tool against the previous plugin-level rule.
-    // Only DefiLlama under the wallet-only plugin must lose visibility.
+    // Compare every catalog tool for empty, DefiLlama and complete selections.
     for capabilities in [
-        vec!["onchain.wallets".to_owned()],
+        vec![],
         vec!["defillama.tvl".to_owned()],
-        vec!["onchain.wallets".to_owned(), "defillama.tvl".to_owned()],
         market
             .entries
             .iter()

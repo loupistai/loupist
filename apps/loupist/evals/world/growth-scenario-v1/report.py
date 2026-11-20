@@ -24,9 +24,12 @@ def usage_total(rows):
 def write_report(rows, source, output):
     text = ['# Recorded growth scenario', '',
             f'Raw session evidence: `{source}`.', '',
-            'All inputs are fictional; model `openai-codex/gpt-6.1-sol`, effort `medium`. '
+            'All inputs are fictional. '
             'Automatic method learning is off in sessions 1–2 and enabled before session 3. '
             'No method or World is manually seeded. Costs are not estimated.', '']
+    profiles = sorted({(row['model'], row['thinking']) for row in rows})
+    text.extend(f'Model `{model}` at `{thinking}` effort.' for model, thinking in profiles)
+    text.append('')
     previous = {}
     for row in rows:
         s = row['snapshot']

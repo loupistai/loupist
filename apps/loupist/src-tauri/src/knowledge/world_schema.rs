@@ -235,11 +235,21 @@ pub(crate) fn live_extension(
     connection: &rusqlite::Connection,
     loupist_id: &str,
 ) -> KnowledgeResult<WorldExtension> {
+    live_extension_in(connection, loupist_id, "main")
+}
+
+pub(super) fn live_extension_in(
+    connection: &rusqlite::Connection,
+    loupist_id: &str,
+    schema: &str,
+) -> KnowledgeResult<WorldExtension> {
     validate_loupist_id(loupist_id)?;
     let json: Option<String> = connection
         .query_row(
-            "SELECT after_json FROM knowledge_schema_changes WHERE loupist_id = ?1
-             ORDER BY rowid DESC LIMIT 1",
+            &format!(
+                "SELECT after_json FROM {schema}.knowledge_schema_changes WHERE loupist_id = ?1
+             ORDER BY rowid DESC LIMIT 1"
+            ),
             [loupist_id],
             |row| row.get(0),
         )

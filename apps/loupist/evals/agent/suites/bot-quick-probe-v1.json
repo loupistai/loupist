@@ -1,0 +1,373 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "bot-quick-probe",
+  "version": 1,
+  "description": "Opt-in live timing and tool-economy probe using real tickers; excluded from graded suites and never scored on facts. Two answer checks on every turn find a sign or a currency written twice beside a linked figure (\"down [-1.1%]\", \"[$962억] 달러\"); they limit no length, heading or table and prescribe no wording, only that the same thing is not said twice, and they are expected to fail until the paid baseline's number-writing finding is fixed. The attribution criterion is reviewed manually, without a paid judge.",
+  "scenarios": [
+    {
+      "id": "BQ-PROBE-001",
+      "title": "Five quick asks in one continuing Bot session",
+      "split": "capability",
+      "tags": [
+        "timing-probe",
+        "live-market-data"
+      ],
+      "connections": [
+        "openbb.platform"
+      ],
+      "seed": {
+        "watchlist": [
+          {
+            "name": "NVIDIA",
+            "reference": {
+              "ticker": "NVDA"
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "NVDA 간단 브리핑해 줘",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "price_read_save",
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 5,
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "lens_file",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "source_save",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "world_search",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "lens_search",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "conversation_memory",
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "(?<!-)(?<!\\b(?:not|never)\\s+)(?<!n['’]t\\s+)\\b(?:down|f(?:ell|alls?|allen|alling)|drop(?:s|ped)?|declin(?:e|es|ed)|below|off|lost|sl(?:id|ipped))(?:\\s+by)?\\s+\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)",
+                      "(?<!-)(?<!\\b(?:not|never)\\s+)(?<!n['’]t\\s+)\\blower(?:\\s+by)?\\s+\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)(?!\\s+(?:bound|limit|end)\\b)",
+                      "\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)\\s+(?:below|lower(?!\\s+(?:bound|limit|end)\\b)|down|under)\\b",
+                      "\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)\\s*(?:(?:만큼|만|가량|정도|이나|나|이|가|은|는|도|씩)\\s*)?(?:하락|낮|내렸|떨어|빠졌|감소|줄었|줄어)(?![^.!?\\n]{0,8}(?:않|아[니닙닌님]))",
+                      "(?:하락|떨어진|빠진|감소|줄어든|내린)(?:한|했던|된|률|폭)?\\s*\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)"
+                    ],
+                    "metric": "number_writing"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "\\[[^\\]]*[$＄][^\\]]*\\]\\([^)]*\\)[\\s,]*(?:달러|(?:US )?dollars?\\b)",
+                      "\\[[^\\]]*[₩￦][^\\]]*\\]\\([^)]*\\)[\\s,]*(?:원(?=[^가-힣]|$|으로|[이은을의에과와대입])|won\\b(?!\\s+(?:back|approval|the|an?|board)\\b))",
+                      "\\[(?=[^\\]]*\\]\\()[^\\]]*(?:[$＄][^\\]]*(?:달러|dollars?\\b)|[₩￦][^\\]]*(?:원(?=[^가-힣]|$|으로|[이은을의에과와대입])|won\\b))[^\\]]*\\]\\([^)]*\\)"
+                    ],
+                    "metric": "number_writing"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "count": 0,
+                    "metric": "efficiency"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "PER은?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 1,
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "(?<!-)(?<!\\b(?:not|never)\\s+)(?<!n['’]t\\s+)\\b(?:down|f(?:ell|alls?|allen|alling)|drop(?:s|ped)?|declin(?:e|es|ed)|below|off|lost|sl(?:id|ipped))(?:\\s+by)?\\s+\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)",
+                      "(?<!-)(?<!\\b(?:not|never)\\s+)(?<!n['’]t\\s+)\\blower(?:\\s+by)?\\s+\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)(?!\\s+(?:bound|limit|end)\\b)",
+                      "\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)\\s+(?:below|lower(?!\\s+(?:bound|limit|end)\\b)|down|under)\\b",
+                      "\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)\\s*(?:(?:만큼|만|가량|정도|이나|나|이|가|은|는|도|씩)\\s*)?(?:하락|낮|내렸|떨어|빠졌|감소|줄었|줄어)(?![^.!?\\n]{0,8}(?:않|아[니닙닌님]))",
+                      "(?:하락|떨어진|빠진|감소|줄어든|내린)(?:한|했던|된|률|폭)?\\s*\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)"
+                    ],
+                    "metric": "number_writing"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "\\[[^\\]]*[$＄][^\\]]*\\]\\([^)]*\\)[\\s,]*(?:달러|(?:US )?dollars?\\b)",
+                      "\\[[^\\]]*[₩￦][^\\]]*\\]\\([^)]*\\)[\\s,]*(?:원(?=[^가-힣]|$|으로|[이은을의에과와대입])|won\\b(?!\\s+(?:back|approval|the|an?|board)\\b))",
+                      "\\[(?=[^\\]]*\\]\\()[^\\]]*(?:[$＄][^\\]]*(?:달러|dollars?\\b)|[₩￦][^\\]]*(?:원(?=[^가-힣]|$|으로|[이은을의에과와대입])|won\\b))[^\\]]*\\]\\([^)]*\\)"
+                    ],
+                    "metric": "number_writing"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "AAPL 지금 어때?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 5,
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "lens_file",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "source_save",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "world_search",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "lens_search",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "conversation_memory",
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "(?<!-)(?<!\\b(?:not|never)\\s+)(?<!n['’]t\\s+)\\b(?:down|f(?:ell|alls?|allen|alling)|drop(?:s|ped)?|declin(?:e|es|ed)|below|off|lost|sl(?:id|ipped))(?:\\s+by)?\\s+\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)",
+                      "(?<!-)(?<!\\b(?:not|never)\\s+)(?<!n['’]t\\s+)\\blower(?:\\s+by)?\\s+\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)(?!\\s+(?:bound|limit|end)\\b)",
+                      "\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)\\s+(?:below|lower(?!\\s+(?:bound|limit|end)\\b)|down|under)\\b",
+                      "\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)\\s*(?:(?:만큼|만|가량|정도|이나|나|이|가|은|는|도|씩)\\s*)?(?:하락|낮|내렸|떨어|빠졌|감소|줄었|줄어)(?![^.!?\\n]{0,8}(?:않|아[니닙닌님]))",
+                      "(?:하락|떨어진|빠진|감소|줄어든|내린)(?:한|했던|된|률|폭)?\\s*\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)"
+                    ],
+                    "metric": "number_writing"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "\\[[^\\]]*[$＄][^\\]]*\\]\\([^)]*\\)[\\s,]*(?:달러|(?:US )?dollars?\\b)",
+                      "\\[[^\\]]*[₩￦][^\\]]*\\]\\([^)]*\\)[\\s,]*(?:원(?=[^가-힣]|$|으로|[이은을의에과와대입])|won\\b(?!\\s+(?:back|approval|the|an?|board)\\b))",
+                      "\\[(?=[^\\]]*\\]\\()[^\\]]*(?:[$＄][^\\]]*(?:달러|dollars?\\b)|[₩￦][^\\]]*(?:원(?=[^가-힣]|$|으로|[이은을의에과와대입])|won\\b))[^\\]]*\\]\\([^)]*\\)"
+                    ],
+                    "metric": "number_writing"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "count": 0,
+                    "metric": "efficiency"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Quick take on MSFT?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 5,
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "lens_file",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "source_save",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "web_fetch",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "world_search",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "lens_search",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "conversation_memory",
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "(?<!-)(?<!\\b(?:not|never)\\s+)(?<!n['’]t\\s+)\\b(?:down|f(?:ell|alls?|allen|alling)|drop(?:s|ped)?|declin(?:e|es|ed)|below|off|lost|sl(?:id|ipped))(?:\\s+by)?\\s+\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)",
+                      "(?<!-)(?<!\\b(?:not|never)\\s+)(?<!n['’]t\\s+)\\blower(?:\\s+by)?\\s+\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)(?!\\s+(?:bound|limit|end)\\b)",
+                      "\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)\\s+(?:below|lower(?!\\s+(?:bound|limit|end)\\b)|down|under)\\b",
+                      "\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)\\s*(?:(?:만큼|만|가량|정도|이나|나|이|가|은|는|도|씩)\\s*)?(?:하락|낮|내렸|떨어|빠졌|감소|줄었|줄어)(?![^.!?\\n]{0,8}(?:않|아[니닙닌님]))",
+                      "(?:하락|떨어진|빠진|감소|줄어든|내린)(?:한|했던|된|률|폭)?\\s*\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)"
+                    ],
+                    "metric": "number_writing"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "\\[[^\\]]*[$＄][^\\]]*\\]\\([^)]*\\)[\\s,]*(?:달러|(?:US )?dollars?\\b)",
+                      "\\[[^\\]]*[₩￦][^\\]]*\\]\\([^)]*\\)[\\s,]*(?:원(?=[^가-힣]|$|으로|[이은을의에과와대입])|won\\b(?!\\s+(?:back|approval|the|an?|board)\\b))",
+                      "\\[(?=[^\\]]*\\]\\()[^\\]]*(?:[$＄][^\\]]*(?:달러|dollars?\\b)|[₩￦][^\\]]*(?:원(?=[^가-힣]|$|으로|[이은을의에과와대입])|won\\b))[^\\]]*\\]\\([^)]*\\)"
+                    ],
+                    "metric": "number_writing"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "efficiency"
+                  },
+                  {
+                    "assert": "committed",
+                    "kind": "source",
+                    "count": 0,
+                    "metric": "efficiency"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "엔비디아 왜 빠졌어?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "max_tool_calls",
+                    "n": 4,
+                    "metric": "efficiency"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "(?<!-)(?<!\\b(?:not|never)\\s+)(?<!n['’]t\\s+)\\b(?:down|f(?:ell|alls?|allen|alling)|drop(?:s|ped)?|declin(?:e|es|ed)|below|off|lost|sl(?:id|ipped))(?:\\s+by)?\\s+\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)",
+                      "(?<!-)(?<!\\b(?:not|never)\\s+)(?<!n['’]t\\s+)\\blower(?:\\s+by)?\\s+\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)(?!\\s+(?:bound|limit|end)\\b)",
+                      "\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)\\s+(?:below|lower(?!\\s+(?:bound|limit|end)\\b)|down|under)\\b",
+                      "\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)\\s*(?:(?:만큼|만|가량|정도|이나|나|이|가|은|는|도|씩)\\s*)?(?:하락|낮|내렸|떨어|빠졌|감소|줄었|줄어)(?![^.!?\\n]{0,8}(?:않|아[니닙닌님]))",
+                      "(?:하락|떨어진|빠진|감소|줄어든|내린)(?:한|했던|된|률|폭)?\\s*\\[[^\\]\\d]*[-−–][^\\]\\d]*\\d[^\\]]*\\]\\([^)]*\\)"
+                    ],
+                    "metric": "number_writing"
+                  },
+                  {
+                    "assert": "answer_not_matching",
+                    "patterns": [
+                      "\\[[^\\]]*[$＄][^\\]]*\\]\\([^)]*\\)[\\s,]*(?:달러|(?:US )?dollars?\\b)",
+                      "\\[[^\\]]*[₩￦][^\\]]*\\]\\([^)]*\\)[\\s,]*(?:원(?=[^가-힣]|$|으로|[이은을의에과와대입])|won\\b(?!\\s+(?:back|approval|the|an?|board)\\b))",
+                      "\\[(?=[^\\]]*\\]\\()[^\\]]*(?:[$＄][^\\]]*(?:달러|dollars?\\b)|[₩￦][^\\]]*(?:원(?=[^가-힣]|$|으로|[이은을의에과와대입])|won\\b))[^\\]]*\\]\\([^)]*\\)"
+                    ],
+                    "metric": "number_writing"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "headline-attribution",
+                    "metric": "efficiency",
+                    "criterion": "Attribute at least one headline to its publisher and date; distinguish that report from a verified cause of the price move. Review attribution and shape only, never grade the live facts."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "language": "ko"
+    }
+  ]
+}

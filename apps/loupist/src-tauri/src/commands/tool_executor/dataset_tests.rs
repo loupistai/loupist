@@ -8,6 +8,7 @@ fn policy() -> ToolPolicy {
         propose_memory_updates: false,
         memory_proposal_budget: 0,
         as_of: None,
+        display_currency: None,
     }
 }
 fn executor(temporary: &tempfile::TempDir) -> AppToolExecutor {

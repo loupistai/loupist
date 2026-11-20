@@ -11,7 +11,8 @@ it("keeps profile, chat, learning and skills on one page with changes scoped to 
   const user = userEvent.setup();
   await openApp(bridge);
   await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Keep this research draft");
-  const opener = screen.getByRole("button", { name: "Loupist settings" });
+  // Opened from the switcher, the page returns focus to the Loupist at the top of the sidebar.
+  const opener = selectedLoupistButton();
   await user.click(headerAction("Loupist settings"));
   const page = await screen.findByRole("region", { name: "Loupist settings" });
   expect(screen.queryByRole("dialog", { name: "Loupist settings" })).toBeNull();
@@ -44,7 +45,7 @@ it("keeps profile, chat, learning and skills on one page with changes scoped to 
   await screen.findByRole("region", { name: "Loupist settings" });
   act(() => bridge.emitMenuAction("map"));
   expect(screen.queryByRole("region", { name: "Loupist settings" })).toBeNull();
-  expect(screen.getByRole("button", { name: /Panel kind/ })).toHaveTextContent("Map");
+  expect(within(document.querySelector<HTMLElement>('[data-sidebar-place="map"]')!).getByRole("button")).toHaveAttribute("aria-current", "page");
   expect(await screen.findByRole("region", { name: "Map" })).toBeVisible();
 });
 
@@ -52,16 +53,26 @@ it("opens the same page for the chosen Loupist from app settings", async () => {
   const user = userEvent.setup();
   await openApp();
   await user.click(await mainTab(/Settings/));
+  // Settings opens on General; Loupists is one section of it.
+  await screen.findByRole("heading", { name: "General", level: 1 });
+  await user.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Loupists" }));
   await screen.findByRole("heading", { name: "Loupists", level: 1 });
   const rows = document.querySelector(".settings-loupists")!;
   const target = within(rows as HTMLElement).getByText("Contrarian Value").closest("li")!;
   await user.click(within(target).getByRole("button", { name: /^Settings: / }));
   const page = await screen.findByRole("region", { name: "Loupist settings" });
+  // The window's page header keeps the Settings section; the page's own heading names the Loupist.
+  expect(document.querySelector(".app-header-title")).toHaveTextContent("Loupists");
+  expect(within(page).getByRole("heading", { level: 1 })).toHaveTextContent("Contrarian Value");
   expect(within(page).getByRole("textbox", { name: "Name" })).toHaveValue("Contrarian Value");
   await user.click(within(page).getByRole("button", { name: "Back" }));
   expect(await screen.findByRole("heading", { name: "Loupists", level: 1 })).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Chat defaults" }));
-  expect(await screen.findByRole("heading", { name: "Chat defaults", level: 1 })).toBeVisible();
+  // The window's page header names the section; on screen the page opens with its description, not the name again.
+  const heading = await screen.findByRole("heading", { name: "Chat defaults", level: 1 });
+  expect(heading).toHaveClass("sr-only");
+  expect(document.querySelector(".app-header-title")).toHaveTextContent("Chat defaults");
+  expect(heading.closest("header")!.querySelector(".page-description")).toHaveTextContent("Set the chat defaults every Loupist starts with.");
   expect(screen.queryByRole("combobox", { name: "Settings apply to" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Map building" })).toBeNull();
 });

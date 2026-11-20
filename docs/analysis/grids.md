@@ -1,6 +1,10 @@
 # Grids and conflict cards
 
-A grid is a checked table. A conflict card shows disagreeing sources instead of averaging them.
+A published grid checks each cell and supports sorting and export for asset
+comparisons. The conflict layout puts the sources side by side. Prose and
+Markdown tables can also compare assets or explain a disagreement. In any form,
+cite comparable values with their periods and bases, explain gaps, and give the
+reason for using one source or for leaving the choice open.
 
 ### Grid cells
 
@@ -14,7 +18,9 @@ or payload (`matched` or `not_found`). The result returns `cell_checks`, `empty_
 and, when a cell `differs` or is `not_found`, a hint to fix it.
 
 Layout `assets` takes 2–12 rows (symbol, market and label, each identity once; an
-exchange-style identity also names its asset page) and 1–8 columns (id, label, optional
+exchange-style identity also names its asset page, opened with the stored id,
+pair and name as of the table's message or displayed revision, see
+[saved links](../knowledge/asset-pages.md#saved-links)) and 1–8 columns (id, label, optional
 period and basis, unit `amount`, `percent`, `multiple`, `number` or `date`), cells in
 row-then-column order and at most three notes. An empty cell names `not_reported`,
 `not_applicable`, `unavailable` or `not_checked` with an optional note; it is never a
@@ -26,9 +32,11 @@ characters; a number in it is checked against that source), a reason (`basis`,
 and optionally `world_entity_id`, which must be a node this turn's `world_read` delivered;
 reports that agree within rounding, or say the same words, are refused. A report's date
 comes from its evidence's publication date, the matched row's filing date or the
-result's own, never retrieval time. A stored grid is at most 256 KiB; publishing counts
-toward the four documents, charts or tables a turn may publish and commits with the reply, and a revision
-needs `artifact_read`'s edit token and the whole table. `chat_artifact_read` returns the
+result's own, never retrieval time. A stored grid is at most 256 KiB. A turn may publish
+four distinct documents, charts or tables, saved only with the completed reply.
+A revision uses the edit token from its delivered publish result or `artifact_read`
+and the whole table. Revising a delivered draft replaces it at the same revision
+number without using another slot; only the final draft is stored. `chat_artifact_read` returns the
 grid's evidence from its source message, so chips and exports work after a reload.
 Exports keep sources: CSV with sources has one row per cell (asset, symbol, market,
 measure, period, basis, value, unit, currency, status, source, source date, and the
@@ -43,8 +51,10 @@ one number of decimals, the most any money value in that column shows (at most t
 wrote with two decimals or fewer stays exactly as written (`gridDecimals`, `grid.ts`).
 Percents, multiples and other values show as written.
 A measure column is 112–168 px wide and never narrower than its widest value or period
-line, so a long amount ("333,605,938,000,000원") never runs into the next column: the
-table scrolls sideways instead, with the next column peeking in.
+line, so a long amount ("333,605,938,000,000원") never runs into the next column.
+When the columns do not fit, a table with more measures than assets turns, with
+measures as rows and assets as columns; any other table scrolls sideways with the
+next column peeking in.
 
 ## Code
 

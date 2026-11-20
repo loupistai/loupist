@@ -1,6 +1,6 @@
 import type { ChatMessage, KnowledgeReference } from "../types";
 import type { GrowthEvent, KnowledgeMap } from "../contracts/knowledge";
-import { claimIdForEdge } from "../knowledge/mapItems";
+import { claimIdForEdge, isDrawnRelation } from "../knowledge/mapItems";
 
 /** Receipts identify this chat's jobs. Older receipts can only be followed through growth events. */
 export function chatSourceWork(messages: readonly ChatMessage[]) {
@@ -21,16 +21,21 @@ export function chatSourceWork(messages: readonly ChatMessage[]) {
 export function addedMapItems(map: KnowledgeMap, events: readonly GrowthEvent[]) {
   const nodeIds = new Set<string>();
   const edgeIds = new Set<string>();
+  const claimEdges = new Set<string>();
   for (const event of events) {
     if (!event.subjectId) continue;
     if (event.kind === "entity_added") {
       if (map.nodes.some(node => node.kind === "entity" && node.id === event.subjectId)) nodeIds.add(event.subjectId);
     } else if (event.kind === "claim_added") {
-      for (const edge of map.edges) if (edge.kind === "claim" && claimIdForEdge(edge) === event.subjectId) edgeIds.add(edge.id);
+      for (const edge of map.edges) if (edge.kind === "claim" && claimIdForEdge(edge) === event.subjectId) claimEdges.add(edge.id);
     }
   }
+  // A value reported about one name still marks that name, but counts as no relationship.
   const highlightIds = new Set(nodeIds);
-  for (const edge of map.edges) if (edgeIds.has(edge.id)) { highlightIds.add(edge.source); highlightIds.add(edge.target); }
+  for (const edge of map.edges) if (claimEdges.has(edge.id)) {
+    highlightIds.add(edge.source); highlightIds.add(edge.target);
+    if (isDrawnRelation(edge)) edgeIds.add(edge.id);
+  }
   return { nodeIds, edgeIds, highlightIds, count: nodeIds.size + edgeIds.size };
 }
 

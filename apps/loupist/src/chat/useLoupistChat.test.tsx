@@ -7,6 +7,7 @@ import { createMockBridgeState } from "../bridge/mock/state";
 import type { LoupistWorkspace } from "../types";
 import { toLoupistUIMessage, type LoupistUIMessage } from "./ai-sdk";
 import { useLoupistChat } from "./useLoupistChat";
+import { currentVisit, useLoupistVisit } from "../app/loupistVisit";
 
 vi.mock("@ai-sdk/react", () => ({ useChat: vi.fn() }));
 
@@ -56,6 +57,7 @@ it.each([
   vi.mocked(useChat).mockReturnValue({ messages: chat.messages, sendMessage: vi.fn(), setMessages: vi.fn(), stop: vi.fn(), status: "ready", error: undefined } as unknown as ReturnType<typeof useChat>);
   let threads = [structuredClone(thread)];
   const setThreads = vi.fn(update => { threads = typeof update === "function" ? update(threads) : update; });
+  const visit = renderHook(() => useLoupistVisit("loupist-quality", true));
   const { result } = renderHook(() => useLoupistChat({ bridge, chat, loupistId: "loupist-quality", activeThread: thread, setThreads }));
   await act(async () => {
     expect(await result.current.retryLast()).toEqual({
@@ -64,6 +66,9 @@ it.each([
     });
   });
   expect(retry).toHaveBeenCalledOnce();
+  // A retry is a message the user sent: the visit is a working one.
+  expect(currentVisit("loupist-quality")?.active).toBe(true);
+  visit.unmount();
   if (restore) {
     expect(read).toHaveBeenCalledOnce();
     expect(attachmentRead).toHaveBeenCalledExactlyOnceWith("loupist-quality", thread.id, "question", "attachment-report");
@@ -72,6 +77,33 @@ it.each([
   expect(chat.messages.map(message => message.id)).toEqual(["steer"]);
   expect(threads[0].messages).toHaveLength(1);
   expect(threads[0].messages[0]).toMatchObject(steer);
+});
+
+it("marks the Loupist's visit active on an accepted send and a steer, never on a refused send", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const workspace = await bridge.loupistSelect("loupist-quality");
+  const thread = workspace.threads[0]!;
+  const chat = { id: "visit-chat", messages: [] } as unknown as Chat<LoupistUIMessage>;
+  let accepted = false;
+  const sendMessage = vi.fn((_message: unknown, options: { body: { onAdmission: (receipt: unknown) => void } }) => {
+    options.body.onAdmission(accepted ? { accepted: true, runId: "run" } : { accepted: false, error: "Refused" });
+    return new Promise<void>(() => {});
+  });
+  vi.mocked(useChat).mockReturnValue({ messages: [], sendMessage, setMessages: vi.fn(), stop: vi.fn(), status: "ready", error: undefined } as unknown as ReturnType<typeof useChat>);
+  vi.spyOn(bridge, "chatSteer").mockResolvedValue({ mode: "steer", message_id: "steer", prompt: "Guidance", created_at: "2026-11-01T00:00:00Z" });
+  const visit = renderHook(() => useLoupistVisit("loupist-quality", true));
+  const { result } = renderHook(() => useLoupistChat({ bridge, chat, loupistId: "loupist-quality", activeThread: thread, setThreads: vi.fn() }));
+  await act(async () => { await result.current.submit(thread.id, "Request", false, "model", "medium", {}, []); });
+  expect(currentVisit("loupist-quality")?.active).toBe(false);
+  accepted = true;
+  await act(async () => { await result.current.submit(thread.id, "Request", false, "model", "medium", {}, []); });
+  expect(currentVisit("loupist-quality")?.active).toBe(true);
+  visit.unmount();
+  const next = renderHook(() => useLoupistVisit("loupist-quality", true));
+  expect(currentVisit("loupist-quality")?.active).toBe(false);
+  await act(async () => { await result.current.steer("Guidance"); });
+  expect(currentVisit("loupist-quality")?.active).toBe(true);
+  next.unmount();
 });
 
 describe("Stop reconciliation", () => {
@@ -175,7 +207,8 @@ describe("Chat operation scope", () => {
     expect(chatA.messages).toHaveLength(1);
     expect(chatA.messages[0]).toMatchObject({ id: "old-steer", role: "user", parts: [{ type: "text", text: "Old guidance" }] });
     expect(chatB.messages).toEqual([]);
-    expect(result.current.announcement).not.toBe("Guidance sent to the active response.");
+    // A steer announces nothing here; the Guiding row the conversation log adds says it once.
+    expect(result.current.announcement).toBe("");
   });
 });
 
@@ -211,4 +244,20 @@ it("keeps the key a settled answer was drawn under when a rewritten thread repla
   act(() => result.current.replaceThread({ ...workspace.threads[0], messages: [answer] }));
   const update = setMessages.mock.lastCall?.[0] as (current: LoupistUIMessage[]) => LoupistUIMessage[];
   expect(update([live]).map((message) => [message.id, message.metadata?.answer_key])).toEqual([["native-answer", "commentary-9"]]);
+});
+
+it("says a running reply's start once, not each step: the turn's own region names the steps", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const workspace = await bridge.loupistSelect("loupist-quality");
+  const thread = workspace.threads[0]!;
+  const step = (id: string, status: "running" | "succeeded") => ({ id, kind: "tool" as const, toolName: "web_search", category: "web" as const, operation: "search" as const, action: "Searched the web", running: "Searching the web", target: "Hanul", status, href: null, startedAtMs: 0, finishedAtMs: null });
+  const running = (items: ReturnType<typeof step>[]) => toLoupistUIMessage({ id: "answer", role: "assistant", content: "", status: "streaming", created_at: "2026-11-01T00:00:00Z", progress: { startedAtMs: 0, items, finishedAtMs: null } });
+  const chat = { id: "running-chat", messages: [] } as unknown as Chat<LoupistUIMessage>;
+  const mock = (messages: LoupistUIMessage[]) => vi.mocked(useChat).mockReturnValue({ messages, sendMessage: vi.fn(), setMessages: vi.fn(), stop: vi.fn(), status: "streaming", error: undefined } as unknown as ReturnType<typeof useChat>);
+  mock([running([step("one", "running")])]);
+  const { result, rerender } = renderHook(() => useLoupistChat({ bridge, chat, loupistId: "loupist-quality", activeThread: thread, setThreads: vi.fn() }));
+  expect(result.current.announcement).toBe("Loupist is generating a response.");
+  mock([running([step("one", "succeeded"), step("two", "running")])]);
+  rerender();
+  expect(result.current.announcement).toBe("Loupist is generating a response.");
 });

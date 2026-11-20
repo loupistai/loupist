@@ -1,4 +1,3 @@
-import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import type { KnowledgeMapEdge, KnowledgeMapNode, KnowledgeRecordSummary } from "../../contracts/knowledge";
 
 /** Empty philosophy body. It is a placeholder, not a learned insight. */
@@ -22,21 +21,19 @@ function standingFlag(lens: KnowledgeRecordSummary | undefined): boolean | undef
   return typeof value === "boolean" ? value : undefined;
 }
 
-/** Standing selection. Catalog `isStanding` wins; otherwise a perspective, or the exact host title when no row says otherwise. */
+/** Standing selection. Catalog `isStanding` wins; otherwise any perspective in the catalog. */
 export function isBasePerspective(node: KnowledgeMapNode, lenses: readonly KnowledgeRecordSummary[]): boolean {
   if (node.kind !== "lens_perspective") return false;
   const catalog = catalogLens(lenses, node);
   const standing = standingFlag(catalog);
   if (standing === false) return false;
   if (catalog?.lensKind && catalog.lensKind !== "perspective") return false;
-  if (standing === true || catalog?.lensKind === "perspective") return true;
-  return (catalog?.title ?? node.label) === HOST_PERSPECTIVE_TITLE;
+  return standing === true || catalog?.lensKind === "perspective";
 }
 
-/** Localized default only for the untouched host title. A chosen title stays. */
+/** The base perspective shows its catalog title; any other Lens its map label. */
 export function lensDisplayTitle(node: KnowledgeMapNode, lenses: readonly KnowledgeRecordSummary[]): string {
-  const stored = catalogLens(lenses, node)?.title ?? node.label;
-  return isBasePerspective(node, lenses) ? displayPageTitle("perspective", stored) : node.label;
+  return isBasePerspective(node, lenses) ? catalogLens(lenses, node)?.title ?? node.label : node.label;
 }
 
 export function isStandingPlaceholder(text: string | undefined): boolean {

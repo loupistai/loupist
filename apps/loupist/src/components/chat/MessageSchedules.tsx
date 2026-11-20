@@ -1,11 +1,12 @@
 import i18n, { useTranslation } from "@/i18n";
 import { useGo } from "../navigation/Open";
 import { formatDateTime } from "@/i18n/format";
-import { useEffect, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import type { ScheduleReceipt, ScheduledTask } from "../../types";
-import { cadenceLabel } from "../briefings/scheduledPresentation";
+import { cadenceLabel, scheduledTaskTitle } from "../briefings/scheduledPresentation";
 import { Button } from "../ui/button";
+import { BotScheduleTasks } from "./BotScheduleTasks";
 import { useChatExecution } from "./ChatExecutionContext";
 
 const t = i18n.getFixedT(null, "chat");
@@ -22,6 +23,7 @@ export function MessageSchedules({ receipts }: {
   const go = useGo();
   const onOpen = go ? (taskId: string) => go({ kind: "schedule", taskId }) : undefined;
   const scope = useChatExecution();
+  const { tasks: botTasks, refresh } = useContext(BotScheduleTasks);
   const status = (receipt: TaskReceipt) => scope?.surface === "session" && receipt.action === "created" && receipt.task_id.startsWith("bot-handoff-")
     ? t("messageSchedules.handedToBot", { status: receiptStatus(receipt) }) : receiptStatus(receipt);
   if (!receipts.length) return null;
@@ -29,10 +31,26 @@ export function MessageSchedules({ receipts }: {
     {receipts.map((receipt) => "question" in receipt ? <article className="message-schedule" key={receipt.task_id}>
       <button type="button" className="message-schedule-open" disabled={!onOpen} onClick={() => onOpen?.(receipt.task_id)}>
         <strong>{receipt.title}</strong><span>{t("messageSchedules.needsTime")}</span><ChevronRightIcon aria-hidden="true" />
-      </button></article> : receipt.action === "created" && receipt.awaiting_confirmation
+      </button></article> : scope?.surface === "bot"
+      ? <BotTaskCard key={receipt.task_id} receipt={receipt} onChanged={refresh} task={botTasks ? botTasks.get(receipt.task_id) ?? null : undefined} onOpen={onOpen} />
+      : receipt.action === "created" && receipt.awaiting_confirmation
       ? <ProposedSchedule key={receipt.task_id} receipt={receipt} onOpen={onOpen} />
       : <ScheduleCard key={receipt.task_id} receipt={receipt} onOpen={onOpen} status={status(receipt)} detail={receipt.next_run_at_ms && receipt.status === "active" ? t("messageSchedules.nextRun", { date: formatDateTime(receipt.next_run_at_ms) }) : undefined} />)}
   </div>;
+}
+
+function BotTaskCard({ receipt, task, onOpen, onChanged }: {
+  onChanged?: () => void; receipt: TaskReceipt; task?: ScheduledTask | null; onOpen?: (taskId: string) => void;
+}) {
+  if (task === null) return <ScheduleCard receipt={receipt} status={t("messageSchedules.deleted")} gone />;
+  if (!task) return <ScheduleCard receipt={receipt} onOpen={onOpen} showCadence={false} gone={false} />;
+  const current = { ...receipt, title: scheduledTaskTitle(task.kind, task.title), schedule: task.schedule };
+  if (task.awaiting_confirmation && receipt.action === "created" && receipt.awaiting_confirmation) {
+    return <ProposedSchedule receipt={current} onOpen={onOpen} onChanged={onChanged} awaiting />;
+  }
+  const next = task.status === "active" && task.next_run_at_ms != null
+    ? t("messageSchedules.nextRun", { date: formatDateTime(task.next_run_at_ms) }) : undefined;
+  return <ScheduleCard receipt={current} onOpen={onOpen} status={statuses()[task.status]} detail={next} gone={false} />;
 }
 
 function receiptStatus(receipt: TaskReceipt) {
@@ -42,19 +60,20 @@ function receiptStatus(receipt: TaskReceipt) {
   return statuses()[receipt.status];
 }
 
-function ScheduleCard({ receipt, onOpen, status, gone = receipt.action === "deleted", detail, children }: {
-  receipt: TaskReceipt; onOpen?: (taskId: string) => void; status: string; gone?: boolean; detail?: string; children?: ReactNode;
+function ScheduleCard({ receipt, onOpen, status, gone = receipt.action === "deleted", detail, showCadence = true, children }: {
+  receipt: TaskReceipt; onOpen?: (taskId: string) => void; status?: string; gone?: boolean; detail?: string; showCadence?: boolean; children?: ReactNode;
 }) {
+  const summary = <span className="message-schedule-summary">
+    <span className="message-schedule-heading"><strong title={receipt.title}>{receipt.title}</strong>{status && <span>{status}</span>}</span>
+    {showCadence && !gone && <span className="message-schedule-cadence">{cadenceLabel(receipt.schedule)}</span>}
+    {detail && <span className="message-schedule-cadence">{detail}</span>}
+  </span>;
   return <article className="message-schedule" aria-label={t("messageSchedules.taskLabel", { title: receipt.title })}>
-    <button type="button" className="message-schedule-open" disabled={gone || !onOpen}
-      onClick={() => onOpen?.(receipt.task_id)} title={t("messageSchedules.openTask", { title: receipt.title })}>
-      <span className="message-schedule-summary">
-        <span className="message-schedule-heading"><strong title={receipt.title}>{receipt.title}</strong><span>{status}</span></span>
-        <span className="message-schedule-cadence">{cadenceLabel(receipt.schedule)}</span>
-        {detail ? <span className="message-schedule-cadence">{detail}</span> : null}
-      </span>
-      {!gone && <ChevronRightIcon aria-hidden="true" />}
-    </button>
+    {gone ? <div className="message-schedule-open message-schedule-gone">{summary}</div>
+      : <button type="button" className="message-schedule-open" disabled={!onOpen}
+        onClick={() => onOpen?.(receipt.task_id)} title={t("messageSchedules.openTask", { title: receipt.title })}>
+        {summary}<ChevronRightIcon aria-hidden="true" />
+      </button>}
     {children}
   </article>;
 }
@@ -70,22 +89,22 @@ const proposalFrom = (task: ScheduledTask | null): Proposal => !task ? { status:
  * until the user taps Turn on, so a misread time never runs on its own. The
  * card reads the task's current state, so it is right after a reload too.
  */
-function ProposedSchedule({ receipt, onOpen }: { receipt: TaskReceipt; onOpen?: (taskId: string) => void }) {
+function ProposedSchedule({ receipt, onOpen, awaiting, onChanged }: { receipt: TaskReceipt; awaiting?: boolean; onChanged?: () => void; onOpen?: (taskId: string) => void }) {
   const scope = useChatExecution();
-  const [proposal, setProposal] = useState<Proposal>({ status: scope ? "loading" : "awaiting" });
+  const [proposal, setProposal] = useState<Proposal>({ status: scope && !awaiting ? "loading" : "awaiting" });
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const identity = scope ? { loupist_id: scope.loupistId, task_id: receipt.task_id } : null;
 
   useEffect(() => {
-    if (!scope) return undefined;
+    if (!scope || awaiting) return undefined;
     let live = true;
     void scope.bridge.scheduledTaskGet({ loupist_id: scope.loupistId, task_id: receipt.task_id })
       .then((task) => { if (live) setProposal(proposalFrom(task)); })
       .catch(() => { if (live) setProposal({ status: "awaiting" }); });
     return () => { live = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the scope's fields; a new scope object for the same thread must not re-read.
-  }, [scope?.bridge, scope?.loupistId, receipt.task_id]);
+  }, [scope?.bridge, scope?.loupistId, receipt.task_id, awaiting]);
 
   const act = async (action: "confirm" | "discard") => {
     if (!scope || !identity || busy) return;
@@ -94,6 +113,7 @@ function ProposedSchedule({ receipt, onOpen }: { receipt: TaskReceipt; onOpen?: 
     try {
       if (action === "confirm") setProposal(proposalFrom(await scope.bridge.scheduledTaskConfirm(identity)));
       else { await scope.bridge.scheduledTaskDiscard(identity); setProposal({ status: "discarded" }); }
+      onChanged?.();
     } catch {
       setFailed(true);
       // The task may have changed elsewhere; show what is true now. A failed

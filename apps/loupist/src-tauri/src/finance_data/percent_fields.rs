@@ -50,6 +50,8 @@ mod tests {
             assert!(is_percent_field(key), "{key}");
         }
         for key in [
+            "to_per_from",
+            "KRW_per_EUR",
             "current_ratio",
             "price_to_earnings_ratio",
             "TDD_CLSPRC",

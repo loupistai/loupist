@@ -35,7 +35,7 @@ impl WindowsPinnedLoupistRoot {
 
     fn open(path: PathBuf, expected: &RootFilesystemIdentity) -> Result<Self, std::io::Error> {
         let pinned = Self::open_unbound(path)?;
-        if &pinned.identity != expected {
+        if !pinned.identity.matches_binding(expected) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "Loupist root filesystem identity changed",

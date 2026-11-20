@@ -11,22 +11,11 @@ Read the requested earnings release and filing. Use a transcript or supplemental
 presentation when it can explain an important change. A release's reporting
 period is different from its publication time.
 
-Build a compact actual / prior comparable / prior guidance / consensus table
-only for material metrics. Each comparison needs a consistent definition.
+For material metrics, compare actual results with the prior comparable period,
+prior guidance and consensus. Each comparison needs a consistent definition.
 Consensus must be dated before the announcement to establish a surprise.
 A later estimate cannot become the pre-release expectation. If the comparator
 is unavailable, report the change you can establish instead of inventing a beat.
-
-## Results snapshot (before and after)
-
-For an asset the user follows, the app keeps one snapshot per results date.
-Before the report date, record company guidance first, then consensus with its
-provider and date (FMP or Intrinio only), with `earnings_snapshot_save` side
-`expected`. After the release, record the reported figures (stage `preliminary`
-for a release or 잠정실적, `final` for the quarterly or annual report) and any
-guidance for a later period (`guidance_new`). Cite the evidence that prints each
-value in its unit and scale. Never invent a comparison or write a difference:
-the app computes differences, ranges and revisions and shows them on the card.
 
 ## Explain what changed
 

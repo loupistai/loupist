@@ -14,6 +14,7 @@ pub(super) struct StreamedChatTurn {
     pub pending_controls: HashMap<u64, (u64, ChatControlRequest)>,
     pub settled_controls: BTreeMap<u64, (ChatControlRequest, bool)>,
     pub first_text_ms: Option<u64>,
+    pub answer_text_ms: Option<u64>,
     pub generation_ms: Option<u64>,
     pub token_usage: AssistantTokenUsage,
     pub progress: ChatProgressProjection,
@@ -63,6 +64,7 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
     let mut next_control_sequence = 0_u64;
     let mut next_control_to_persist = 0_u64;
     let mut first_text_ms: Option<u64> = None;
+    let mut answer_text_ms: Option<u64> = None;
     let mut generation_ms: Option<u64> = None;
     let mut token_usage = AssistantTokenUsage::default();
     let mut progress = carried_progress.take().unwrap_or_else(|| {
@@ -228,6 +230,7 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
                                 settled_controls: &mut settled_controls,
                                 next_control_to_persist: &mut next_control_to_persist,
                                 first_text_ms: &mut first_text_ms,
+                                answer_text_ms: &mut answer_text_ms,
                                 generation_ms: &mut generation_ms,
                                 token_usage: &mut token_usage,
                                 progress: &mut progress,
@@ -301,6 +304,7 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
         pending_controls,
         settled_controls,
         first_text_ms,
+        answer_text_ms,
         generation_ms,
         token_usage,
         progress,
@@ -316,18 +320,14 @@ fn upsert_card(progress: &mut ChatProgressProjection, call_id: Option<&str>, car
     };
 }
 
-/// The Loupist's asset pages by symbol, for step labels; a failed read leaves
-/// the steps showing their symbols.
+/// Catalog names for progress labels.
 fn asset_names(state: &AppState, loupist_id: &str) -> crate::chat::progress::AssetNames {
-    crate::commands::assets::with_assets(state, loupist_id, false, |tx| {
-        crate::knowledge::assets::list_pages(tx, loupist_id)
-    })
-    .map(|pages| {
-        crate::chat::progress::AssetNames::new(
-            pages
-                .into_iter()
-                .map(|page| (page.symbol, page.market, page.name)),
-        )
-    })
-    .unwrap_or_default()
+    let rows = state
+        .store
+        .assets_list(loupist_id, false)
+        .unwrap_or_default();
+    crate::chat::progress::AssetNames::new(rows.iter().map(|row| {
+        let item = crate::store::user_context::MapContextItem::from(row);
+        (item.symbol, item.market, row.name.clone())
+    }))
 }

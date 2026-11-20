@@ -45,7 +45,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -88,7 +89,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -135,7 +137,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -182,7 +185,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -232,7 +236,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -304,14 +309,10 @@
                       "first: Hearthlane",
                       "1. Hearthlane",
                       "1) Hearthlane",
-                      "1. **Hearthlane",
-                      "1) **Hearthlane",
                       "Hearthlane Grocery > Larkspur",
                       "Hearthlane Grocery ahead of Larkspur",
                       "Hearthlane Grocery above Larkspur",
                       "Hearthlane Grocery should come first",
-                      "**Hearthlane Grocery** first",
-                      "__Hearthlane Grocery__ first",
                       "Hearthlane Grocery grew more in its established stores",
                       "Hearthlane Grocery has higher same-store growth",
                       "Hearthlane Grocery had higher same-store growth",
@@ -322,9 +323,7 @@
                       "Hearthlane Grocery를 우선",
                       "Hearthlane Grocery가 1위",
                       "Hearthlane Grocery의 동일점포 매출 성장률이 더 높",
-                      "Hearthlane Grocery의 기존 점포 매출 성장률이 더 높",
-                      "**Hearthlane Grocery**를 먼저",
-                      "**Hearthlane Grocery**가 1위"
+                      "Hearthlane Grocery의 기존 점포 매출 성장률이 더 높"
                     ],
                     "metric": "task_success"
                   }
@@ -340,7 +339,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -383,7 +383,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -441,7 +442,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -499,7 +501,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -557,7 +560,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -604,7 +608,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -649,7 +654,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -775,7 +781,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -860,7 +867,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -940,7 +948,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1029,7 +1038,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1108,7 +1118,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1187,7 +1198,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1259,7 +1271,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1335,7 +1348,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1399,7 +1413,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -1455,7 +1470,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -1503,6 +1519,9 @@
                     "values": {
                       "boxes": 88.1
                     },
+                    "scales": [
+                      1000000
+                    ],
                     "metric": "task_success"
                   }
                 ],
@@ -1533,7 +1552,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -1626,14 +1646,10 @@
                       "first: Hearthlane",
                       "1. Hearthlane",
                       "1) Hearthlane",
-                      "1. **Hearthlane",
-                      "1) **Hearthlane",
                       "Hearthlane Grocery > Larkspur",
                       "Hearthlane Grocery ahead of Larkspur",
                       "Hearthlane Grocery above Larkspur",
                       "Hearthlane Grocery should come first",
-                      "**Hearthlane Grocery** first",
-                      "__Hearthlane Grocery__ first",
                       "Hearthlane Grocery grew more in its established stores",
                       "Hearthlane Grocery has higher same-store growth",
                       "Hearthlane Grocery had higher same-store growth",
@@ -1644,9 +1660,7 @@
                       "Hearthlane Grocery를 우선",
                       "Hearthlane Grocery가 1위",
                       "Hearthlane Grocery의 동일점포 매출 성장률이 더 높",
-                      "Hearthlane Grocery의 기존 점포 매출 성장률이 더 높",
-                      "**Hearthlane Grocery**를 먼저",
-                      "**Hearthlane Grocery**가 1위"
+                      "Hearthlane Grocery의 기존 점포 매출 성장률이 더 높"
                     ],
                     "metric": "task_success"
                   }
@@ -1662,7 +1676,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -1747,7 +1762,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1797,7 +1813,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1866,7 +1883,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -1929,7 +1947,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -2112,7 +2131,7 @@
         "memory"
       ],
       "replay": "replay/opendart-solsup-memory-as-of.json",
-      "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision. The setup turn reads it without a cutoff and keeps the filing; the probe runs under host as_of 2026-03-10, when the 2026-03-18 filing was not yet published, so a fresh read returns nothing and the saved Source is left out.",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision, and no filing document. The setup turn reads it without a cutoff and keeps that result as a Source; the probe runs under host as_of 2026-03-10, when the 2026-03-18 filing was not yet published, so a fresh read returns nothing and the saved Source is left out.",
       "sessions": [
         {
           "id": "setup",
@@ -2146,7 +2165,7 @@
                 "rubric": [
                   {
                     "id": "keeps-the-filing",
-                    "criterion": "The answer reports Solsup Foods' FY2025 consolidated revenue from the 2026-03-18 OpenDART filing and keeps that filing as a saved Source.",
+                    "criterion": "The answer reports Solsup Foods' FY2025 consolidated revenue from the 2026-03-18 OpenDART filing (receipt 20260318990221) and keeps that filing's reported figures as a saved Source. A committed Source holding the dart_financials result for that receipt passes; the full filing document is not required. Fail if no such Source was committed or the answer claims more was saved than the commits show.",
                     "metric": "save_recall"
                   }
                 ]
@@ -2186,7 +2205,7 @@
                 "rubric": [
                   {
                     "id": "cutoff-honesty",
-                    "criterion": "The answer says Solsup Foods' FY2025 revenue had not been reported by 2026-03-10, uses nothing from the annual filing published on 2026-03-18, and gives no FY2025 revenue figure.",
+                    "criterion": "The answer says no FY2025 revenue figure for Solsup Foods can be established as of 2026-03-10. Either form passes: that the revenue had not been reported by then, or the more careful claim that nothing available by that date shows a reported figure, even if the company might have disclosed one elsewhere. It uses nothing from the annual filing published on 2026-03-18 and gives no FY2025 revenue figure or estimate.",
                     "metric": "task_success"
                   }
                 ]
@@ -2194,7 +2213,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -2212,21 +2232,22 @@
         "journal"
       ],
       "replay": "replay/opendart-solsup-journal-as-of.json",
-      "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision. A Journal line created 2026-03-05 checks revenue above 445000000000 KRW by 2026-03-31. The probe runs under host as_of 2026-03-05, before the filing, so the check cannot be judged and no review may be saved.",
+      "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision, and no filing document, so the setup keeps that result as its Source. A Journal line created 2026-03-05 checks revenue above 445000000000 KRW by 2026-03-31. The probe runs under host as_of 2026-03-05, before the filing, so the check cannot be judged and no review may be saved.",
       "seed": {
         "watchlist": [
           {
-            "symbol": "990221",
-            "market": "KRX",
-            "display_name": "Solsup Foods"
+            "name": "Solsup Foods",
+            "reference": {
+              "ticker": "990221",
+              "exchange": "KRX"
+            }
           }
         ],
         "journal": [
           {
             "judgment": "Solsup's FY2025 revenue will beat ₩445bn.",
             "thesis": {
-              "symbol": "990221",
-              "market": "KRX",
+              "asset": "Solsup Foods",
               "role": "line"
             },
             "check": {
@@ -2274,7 +2295,7 @@
                 "rubric": [
                   {
                     "id": "keeps-the-filing",
-                    "criterion": "The answer reports Solsup Foods' FY2025 consolidated revenue from the 2026-03-18 OpenDART filing and keeps that filing as a saved Source.",
+                    "criterion": "The answer reports Solsup Foods' FY2025 consolidated revenue from the 2026-03-18 OpenDART filing (receipt 20260318990221) and keeps that filing's reported figures as a saved Source. A committed Source holding the dart_financials result for that receipt passes; the full filing document is not required. Fail if no such Source was committed or the answer claims more was saved than the commits show.",
                     "metric": "save_recall"
                   }
                 ]
@@ -2321,7 +2342,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -2381,7 +2403,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "split": "capability",
@@ -2389,13 +2412,13 @@
         "opendart"
       ],
       "id": "T-041",
-      "title": "A comparison of three companies on three measures is one grid whose every cell links to a filing or a calculation",
+      "title": "Sortable and exportable FY2025 comparison with sourced figures for three companies",
       "tags": [
         "needs-replay",
         "connection",
         "opendart",
         "show-the-math",
-        "grid",
+        "comparison",
         "en"
       ],
       "replay": "replay/opendart-grid-trio.json",
@@ -2407,7 +2430,7 @@
           "memory": "off",
           "turns": [
             {
-              "user": "Compare Solsup Foods, Iseul Logistics and Hanbit Chem on FY2025 revenue, operating margin and net margin in a table.",
+              "user": "Compare Solsup Foods, Iseul Logistics and Hanbit Chem on FY2025 revenue, operating margin and net margin in a table I can sort and export.",
               "expect": {
                 "trace": [
                   {
@@ -2426,8 +2449,6 @@
                   },
                   {
                     "assert": "grid_cells_linked",
-                    "rows": 3,
-                    "columns": 3,
                     "metric": "connection_honesty"
                   },
                   {
@@ -2448,7 +2469,7 @@
                 "rubric": [
                   {
                     "id": "one-sourced-grid",
-                    "criterion": "The answer shows one table of the three companies with FY2025 revenue, operating margin and net margin (Solsup about 8.4% and 4.7%, Iseul about 5.9% and 3.8%, Hanbit about 11.0% and 6.9%), each value linked to OpenDART or a calculation, without repeating the table as prose.",
+                    "criterion": "The sortable, exportable table dates the comparison to FY2025 and shows revenue in billion won of 452.3 for Solsup, 128.4 for Iseul and 286.5 for Hanbit. Their calculated operating and net margins are about 8.4% and 4.7%, 5.9% and 3.8%, and 11.0% and 6.9% respectively. Each value links to its filing or calculation.",
                     "metric": "task_success"
                   },
                   {
@@ -2462,7 +2483,8 @@
           ]
         }
       ],
-      "language": "en"
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00"
     },
     {
       "split": "capability",
@@ -2470,13 +2492,13 @@
         "opendart"
       ],
       "id": "T-042",
-      "title": "A grid leaves a company's cells empty with a reason when its statements cannot be read, and never invents them",
+      "title": "A comparison table shows two companies’ sourced results and explains the missing filing",
       "tags": [
         "needs-replay",
         "connection",
         "opendart",
         "show-the-math",
-        "grid",
+        "comparison",
         "ko"
       ],
       "replay": "replay/opendart-grid-trio-missing.json",
@@ -2498,12 +2520,8 @@
                   },
                   {
                     "assert": "grid_cells_linked",
-                    "rows": 3,
-                    "columns": 3,
-                    "empty": [
-                      "unavailable"
-                    ],
-                    "metric": "connection_honesty"
+                    "metric": "connection_honesty",
+                    "when": "published"
                   },
                   {
                     "assert": "tool_not_called",
@@ -2518,12 +2536,100 @@
                       "(?:한빛화학|Hanbit)(?:(?!솔숲|이슬|Solsup|Iseul)[^\\n.。!?])*?[-−]?\\d[\\d,]*(?:\\.\\d+)?\\s?(?:억|조|%|원|bn\\b|billion)"
                     ],
                     "metric": "task_success"
+                  },
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "figures_present",
+                    "figures": [
+                      [
+                        "452.3bn",
+                        "452.3 billion",
+                        "4523억",
+                        "4천523억",
+                        "452300백만",
+                        "452300 million",
+                        "452300000000",
+                        "4,523억",
+                        "4,523 억",
+                        "4523 억",
+                        "452,300백만",
+                        "452,300 million",
+                        "452,300,000,000"
+                      ],
+                      [
+                        "8.4%",
+                        "8.42%",
+                        "8.424%",
+                        "8.4236%",
+                        "8.4 %",
+                        "8.4 percent",
+                        "8.4퍼센트",
+                        "8.42 %",
+                        "8.42 percent",
+                        "8.42퍼센트"
+                      ],
+                      [
+                        "4.7%",
+                        "4.73%",
+                        "4.731%",
+                        "4.7314%",
+                        "4.7 %",
+                        "4.7 percent",
+                        "4.7퍼센트",
+                        "4.73 %",
+                        "4.73 percent",
+                        "4.73퍼센트"
+                      ],
+                      [
+                        "128.4bn",
+                        "128.4 billion",
+                        "1284억",
+                        "1천284억",
+                        "128400백만",
+                        "128400 million",
+                        "128400000000",
+                        "1,284억",
+                        "1,284 억",
+                        "1284 억",
+                        "128,400백만",
+                        "128,400 million",
+                        "128,400,000,000"
+                      ],
+                      [
+                        "5.9%",
+                        "5.92%",
+                        "5.919%",
+                        "5.9190%",
+                        "5.9 %",
+                        "5.9 percent",
+                        "5.9퍼센트",
+                        "5.92 %",
+                        "5.92 percent",
+                        "5.92퍼센트"
+                      ],
+                      [
+                        "3.8%",
+                        "3.82%",
+                        "3.816%",
+                        "3.8162%",
+                        "3.8 %",
+                        "3.8 percent",
+                        "3.8퍼센트",
+                        "3.82 %",
+                        "3.82 percent",
+                        "3.82퍼센트"
+                      ]
+                    ],
+                    "metric": "task_success"
                   }
                 ],
                 "rubric": [
                   {
                     "id": "says-what-is-missing",
-                    "criterion": "The answer says Hanbit Chem's FY2025 statements could not be retrieved from OpenDART, leaves its cells empty instead of estimating them, and still compares Solsup Foods and Iseul Logistics (Iseul on a separate basis).",
+                    "criterion": "The table shows FY2025 Solsup revenue of 452.3 billion won and margins of about 8.4% and 4.7%, and Iseul separate revenue of 128.4 billion won and margins of about 5.9% and 3.8%. Each reported value links to its filing or calculation in the answer or the published table. Explain that Hanbit’s FY2025 statements were unavailable from OpenDART and leave its three figures unreported. A separate note, omitted Hanbit row, or cells marked unavailable or not reported qualify. An invented Hanbit figure anywhere fails.",
                     "metric": "task_success"
                   }
                 ]
@@ -2532,7 +2638,8 @@
           ]
         }
       ],
-      "language": "ko"
+      "language": "ko",
+      "clock": "2026-11-18T09:00:00+09:00"
     },
     {
       "split": "capability",
@@ -2868,7 +2975,7 @@
                   },
                   {
                     "id": "basis-dates-no-holdings",
-                    "criterion": "The answer names the consolidated basis attributable to owners for the payout, gives the record date 2025-12-31 from the decision notice, and neither asks what the user owns nor projects income without a share count the user gave.",
+                    "criterion": "The answer names the consolidated basis attributable to owners for the payout, gives the record date 2025-12-31 from the decision notice, and projects no dividend income for the user, because no share count is known. Asking how many shares the user holds, or offering to work the income out from a count, does not fail.",
                     "metric": "task_success"
                   }
                 ]
@@ -3017,8 +3124,8 @@
                 ],
                 "rubric": [
                   {
-                    "id": "four-sections",
-                    "criterion": "The Korean answer has four parts in order: the measured move (about 1.2% from the 2026-02-27 close of 72,500 won to 73,400 won on 2026-03-03) with the market's move or a statement that it could not be checked; reported reasons from dated sources only; the Loupist's own reading, labelled as inference; and what isn't explained.",
+                    "id": "explains-move",
+                    "criterion": "The Korean answer distinguishes dated reports from inference and explains what remains unknown. It measures the rise from the 72,500 won close on 2026-02-27 to 73,400 won on 2026-03-03 (about 1.2%) and gives the market move or acknowledges missing comparison data. Credit these elements in any order.",
                     "metric": "task_success"
                   },
                   {
@@ -3042,7 +3149,7 @@
         "krx"
       ],
       "id": "T-050",
-      "title": "What growth a price implies is a reverse DCF card read against the last five years' growth, not one number",
+      "title": "Implied growth under different assumptions compared with five years of free cash flow growth",
       "tags": [
         "needs-replay",
         "connection",
@@ -3081,12 +3188,6 @@
                       "reference_growth_pct"
                     ],
                     "metric": "connection_honesty"
-                  },
-                  {
-                    "assert": "sensitivity_card",
-                    "operation": "reverse_dcf",
-                    "reference": true,
-                    "metric": "task_success"
                   }
                 ],
                 "answer": [
@@ -3098,7 +3199,7 @@
                 "rubric": [
                   {
                     "id": "range-against-history",
-                    "criterion": "The answer shows the implied growth as a grid over discount and long-run growth rates (a card linked on its own), reads it against free cash flow growth of about 10% a year over FY2020–FY2025, says which combinations need more growth than that, and never presents a single implied rate, target price or fair value as the answer.",
+                    "criterion": "Read the answer and any displayed sensitivity card linked to the reverse DCF result together. Using the cited 2026-04-16 close and historical growth input, give a range of implied growth rates under different discount and long-run growth assumptions. Compare the range with annual free cash flow growth of about 10% over FY2020–FY2025 and identify which assumptions require faster growth. A single implied rate, target price or fair value as the conclusion fails.",
                     "metric": "task_success"
                   }
                 ]
@@ -3107,7 +3208,8 @@
           ]
         }
       ],
-      "language": "en"
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00"
     },
     {
       "split": "capability",
@@ -3116,7 +3218,7 @@
         "web-research"
       ],
       "id": "T-051",
-      "title": "When a filing and a news page disagree, the answer shows both in a conflict card, says which it uses and why, and never averages",
+      "title": "Resolve a conflict between preliminary news and filed revenue",
       "tags": [
         "needs-replay",
         "connection",
@@ -3145,6 +3247,16 @@
                   {
                     "assert": "grid_cells_linked",
                     "layout": "conflict",
+                    "metric": "connection_honesty",
+                    "when": "published"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "web_fetch",
+                    "args": {
+                      "url": "https://fictional.example/markets/solsup-foods-preliminary-fy2025"
+                    },
+                    "successful": true,
                     "metric": "connection_honesty"
                   }
                 ],
@@ -3168,12 +3280,16 @@
                       "4,523"
                     ],
                     "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "connection_honesty"
                   }
                 ],
                 "rubric": [
                   {
                     "id": "explains-the-disagreement",
-                    "criterion": "The answer shows both figures, 452.3 billion won from the annual report filed with OpenDART and 455.0 billion won from the February preliminary notice in the news, explains that one is preliminary and the other final, says it relies on the filed figure and why, and does not average them.",
+                    "criterion": "Read the visible explanation together with any final staged conflict card. Require the 452.3 billion won figure linked to the final filing and the 455.0 billion won figure linked to the preliminary news receipt in either place. Explain why the filed figure supersedes the preliminary release and use it without averaging.",
                     "metric": "task_success"
                   }
                 ]
@@ -3182,78 +3298,8 @@
           ]
         }
       ],
-      "language": "en"
-    },
-    {
-      "split": "capability",
-      "connections": [],
-      "id": "T-043",
-      "title": "How the user's crypto did is answered from price changes, never from the imported quantity",
-      "tags": [
-        "dataset",
-        "local",
-        "holdings",
-        "privacy",
-        "en"
-      ],
-      "seed": {
-        "holdings_crypto_csv": "asset,balance\nXXBT,0.4271\n"
-      },
-      "workspace_files": {
-        "prices/btc-usd-2026-10.csv": "date,close\n2026-10-01,61250.00\n2026-10-02,61250.00\n2026-10-03,61660.00\n2026-10-04,61440.00\n2026-10-05,62345.00\n2026-10-06,62985.00\n2026-10-07,61805.00\n2026-10-08,60275.00\n2026-10-09,60535.00\n2026-10-10,61550.00\n2026-10-11,62330.00\n2026-10-12,61970.00\n2026-10-13,63210.00\n2026-10-14,63725.00\n2026-10-15,62835.00\n2026-10-16,64160.00\n2026-10-17,63520.00\n2026-10-18,63990.00\n2026-10-19,65100.00\n2026-10-20,65385.00\n2026-10-21,64970.00\n2026-10-22,65900.00\n2026-10-23,66580.00\n2026-10-24,65375.00\n2026-10-25,65930.00\n2026-10-26,66720.00\n2026-10-27,67035.00\n2026-10-28,66755.00\n2026-10-29,67600.00\n2026-10-30,68000.00\n2026-10-31,67375.00\n"
-      },
-      "sessions": [
-        {
-          "id": "task-1",
-          "role": "probe",
-          "memory": "off",
-          "turns": [
-            {
-              "user": "How has my crypto done in October? The daily closes are in prices/btc-usd-2026-10.csv. End the answer with only the JSON object {\"metrics\":{\"btc_october_change_pct\": number}} and nothing after it.",
-              "expect": {
-                "trace": [
-                  {
-                    "assert": "tool_not_called",
-                    "tool": "web_search",
-                    "metric": "connection_honesty"
-                  }
-                ],
-                "answer": [
-                  {
-                    "assert": "metrics",
-                    "values": {
-                      "btc_october_change_pct": 10.0
-                    },
-                    "tolerance": 0.05,
-                    "metric": "task_success"
-                  },
-                  {
-                    "assert": "answer_not_matching",
-                    "patterns": [
-                      "0\\.4271",
-                      "0\\.427\\b"
-                    ],
-                    "metric": "task_success"
-                  }
-                ],
-                "rubric": [
-                  {
-                    "id": "price-change-only",
-                    "criterion": "The answer says Bitcoin, which the user holds, rose about 10% in October (from 61,250 to 67,375 at the daily close), computed on the host, and never states the user's quantity or the value of the position.",
-                    "metric": "task_success"
-                  },
-                  {
-                    "id": "value-on-request",
-                    "criterion": "If the answer mentions the value of the user's position at all, it only offers to work it out if the user says how much they hold; it does not guess an amount.",
-                    "metric": "task_success"
-                  }
-                ]
-              }
-            }
-          ]
-        }
-      ],
-      "language": "en"
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00"
     },
     {
       "split": "capability",
@@ -3261,7 +3307,7 @@
         "opendart"
       ],
       "id": "T-052",
-      "title": "A five-stage company comparison keeps its plan current through the final brief",
+      "title": "A five-stage company comparison loads charts before charting and names the statement basis",
       "tags": [
         "plan",
         "en",
@@ -3293,10 +3339,6 @@
                     "id": "charts"
                   },
                   {
-                    "assert": "plan_progress",
-                    "metric": "task_success"
-                  },
-                  {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
                   }
@@ -3326,7 +3368,7 @@
         "opendart"
       ],
       "id": "T-053",
-      "title": "A five-stage dividend review closes completed research steps",
+      "title": "A five-stage dividend review does not repeat a failed call",
       "tags": [
         "plan",
         "ko",
@@ -3343,10 +3385,6 @@
               "user": "솔숲식품의 FY2025 배당을 검토해 줘. 먼저 2021년부터 2025년까지 보통주 주당 배당금과 삭감 여부를 확인해. 다음으로 FY2025 연결 지배주주 순이익 대비 현금배당 비율을 계산해. 세 번째로 영업현금흐름과 유형자산 취득액에서 잉여현금흐름을 구하고 배당을 얼마나 충당하는지 확인해. 네 번째로 처음과 마지막 해의 주당 배당금으로 연평균 증가율을 계산해. 마지막으로 이 근거들을 종합해 배당 지속 가능성과 아직 확인하지 못한 위험을 짧게 평가해. 다섯 부분을 모두 마치고 수치에는 공시 근거를 달아 줘.",
               "expect": {
                 "trace": [
-                  {
-                    "assert": "plan_progress",
-                    "metric": "task_success"
-                  },
                   {
                     "assert": "no_repeated_failed_call",
                     "metric": "tool_validity"
@@ -3365,7 +3403,7 @@
       "split": "capability",
       "connections": [],
       "id": "T-054",
-      "title": "Quick definitions do not open a research plan",
+      "title": "A quick definition of operating margin names revenue, in English and Korean",
       "tags": [
         "plan",
         "quick",
@@ -3381,13 +3419,6 @@
             {
               "user": "What is operating margin? Answer in one sentence.",
               "expect": {
-                "trace": [
-                  {
-                    "assert": "tool_not_called",
-                    "tool": "plan_update",
-                    "metric": "efficiency"
-                  }
-                ],
                 "answer": [
                   {
                     "assert": "contains_any",
@@ -3410,13 +3441,6 @@
             {
               "user": "영업이익률이 무엇인지 한 문장으로 설명해 줘.",
               "expect": {
-                "trace": [
-                  {
-                    "assert": "tool_not_called",
-                    "tool": "plan_update",
-                    "metric": "efficiency"
-                  }
-                ],
                 "answer": [
                   {
                     "assert": "contains_any",
@@ -3431,7 +3455,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "split": "capability",
@@ -3517,7 +3542,8 @@
         }
       ],
       "replay": "replay/opendart-dataset-ratio.json",
-      "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision. The margin is 38100000000 / 452300000000 = 8.4236%."
+      "replay_needs": "dart_company_lookup resolves 솔숲식품, Solsup Foods or stock_code 990221 to corp_code 99022100. dart_financials company 99022100, fiscal_year 2025, report_period annual, basis consolidated returns revenue 452300000000 KRW, operating_income 38100000000 KRW and net_income 21400000000 KRW in receipt 20260318990221, filed 2026-03-18. No other company or later revision. The margin is 38100000000 / 452300000000 = 8.4236%.",
+      "language": "en"
     },
     {
       "id": "T-056",
@@ -3572,6 +3598,84 @@
         }
       ],
       "language": "en"
+    },
+    {
+      "id": "T-057",
+      "title": "Two KRX closing prices in US dollars at the latest reference rate",
+      "tags": [
+        "needs-replay",
+        "connection",
+        "krx",
+        "calculate",
+        "ko"
+      ],
+      "split": "capability",
+      "language": "ko",
+      "clock": "2026-11-17T09:00:00+09:00",
+      "connections": [
+        "krx",
+        "openbb.platform"
+      ],
+      "replay": "replay/krx-closes-in-usd.json",
+      "replay_needs": "KRX stk_bydd_trd and ksq_bydd_trd for basDd=20260416 supply one daily bar each. The KOSPI row for 솔숲식품 (990221, KR7990221000) has open/high/low/close 22100/22950/20950/21950 KRW, change -150 and volume 64012. The KOSDAQ row for 가람바이오 (990905, KR7990905008) has 8100/8350/7980/8200 KRW, change +120 and volume 301455. The ecb currency_reference_rates request with provider ecb returns the 2026-11-16 table with EUR 1, USD 1.1014 and KRW 1470.23 per EUR. KRW to USD gives 0.000749134 USD per KRW, so the closes round to 16.44 and 6.14 USD respectively.",
+      "sessions": [
+        {
+          "id": "task-1",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "솔숲식품(990221)과 가람바이오(990905)의 2026년 4월 16일 종가를 비교하고 싶어. 최근 환율로 환산하면 한 주에 각각 미국 달러로 얼마야? 센트 단위로 반올림하고 종가 출처도 같이 알려줘.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "fx_rate",
+                    "args": {
+                      "from": "KRW",
+                      "to": "USD"
+                    },
+                    "successful": true,
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "calculate",
+                    "args": {
+                      "operation": "convert"
+                    },
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "calculate_inputs_cited",
+                    "operation": "convert",
+                    "inputs": [
+                      "rate"
+                    ],
+                    "metric": "connection_honesty"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "numbers_linked",
+                    "checked": [
+                      "16.44",
+                      "6.14"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "cites_result",
+                    "tool": "krx_daily_quote",
+                    "metric": "connection_honesty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

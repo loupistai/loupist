@@ -1,3 +1,4 @@
+import { useId } from "react";
 import i18n, { useTranslation } from "@/i18n";
 import { RefreshCwIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -66,4 +67,3 @@ export function LoupistAvailabilityBoundary({
     </section>
   );
 }
-import { useId } from "react";

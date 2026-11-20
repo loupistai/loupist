@@ -9,7 +9,7 @@ import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { SafeMessageResponse } from "../chat/SafeMessageResponse";
 import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
-import { displayPageTitle, displaySectionHeading } from "../../knowledge/hostDefaults";
+import { displaySectionHeading } from "../../knowledge/hostDefaults";
 import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
@@ -21,8 +21,6 @@ import "@/styles/page-reader.css";
 const WORLD_LINK = /\]\(world:([^)\s]+)\)/gu;
 const WORLD_PREFIX = "world~";
 const SHARABLE: ReadonlySet<LensKind> = new Set(["principle", "perspective", "method"]);
-
-export const pageTitle = (page: Pick<PageView, "title" | "kind">) => displayPageTitle(page.kind, page.title);
 
 function withMapLinks(markdown: string, nodeIds: string[]) {
   return markdown.replace(WORLD_LINK, (_, nodeId: string) => {
@@ -147,7 +145,11 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
           : <span key={index} className="page-chip" data-chip="source">{label}</span>;
       }
       case "said": return <span key={index} className="page-chip" data-chip="said">{t("pageReader.chip.said")}</span>;
-      case "page": return <button key={index} type="button" className="page-chip" data-chip="page" onClick={() => onOpenPage(ref.recordId)}>{t("pageReader.chip.page", { title: known.get(ref.recordId) ?? t("pageReader.chip.pageUnknown") })}</button>;
+      case "page": {
+        // A page title can be a whole sentence: the chip shortens it and keeps it whole in its name and tooltip.
+        const label = t("pageReader.chip.page", { title: known.get(ref.recordId) ?? t("pageReader.chip.pageUnknown") });
+        return <button key={index} type="button" className="page-chip" data-chip="page" title={label} onClick={() => onOpenPage(ref.recordId)}><span className="page-chip-label">{label}</span></button>;
+      }
     }
   };
 
@@ -172,7 +174,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
     <header className="page-reader-head">
       <p className="page-reader-meta"><span>{t(`pageReader.kind.${page.kind}`)}</span>{usage ? <span>{usage}</span> : null}{page.updatedAtMs ? <span>{t("pageReader.updated", { date: formatDate(page.updatedAtMs, { year: undefined, month: "short", day: "numeric" }) })}</span> : null}
         {idea ? <span className="page-idea-status" data-status={idea.status}>{t(`pageReader.ideaStatus.${idea.status}`)}</span> : null}</p>
-      <h2 ref={heading} tabIndex={-1}>{pageTitle(page)}</h2>
+      <h2 ref={heading} tabIndex={-1}>{page.title}</h2>
       <SharedOrigin bridge={bridge} loupistId={loupistId} subjectId={page.recordId} onAbout={showSharing ? () => onOpen({ loupistId, surface: "lens", recordId: SHARED_SECTION_ITEM }) : undefined} />
       {body.kind !== "principle" && body.summary ? <p className="page-reader-summary">{body.summary}</p> : null}
     </header>
@@ -211,7 +213,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
       {changed.length > 5 ? <Button variant="link" size="sm" aria-expanded={allHistory} onClick={() => setAllHistory(value => !value)}>{allHistory ? t("pageReader.history.less") : t("pageReader.history.more", { count: changed.length - 5, formattedCount: formatNumber(changed.length - 5) })}</Button> : null}
     </section> : null}
     <div className="page-reader-actions">
-      {onAsk ? <Button variant="outline" onClick={() => onAsk(pinForLens(loupistId, page))}><MessageSquareIcon />{t("lensWorkspace.discussInChat")}</Button> : null}
+      {onAsk ? <Button variant="outline" size="sm" onClick={() => onAsk(pinForLens(loupistId, page))}><MessageSquareIcon />{t("lensWorkspace.discussInChat")}</Button> : null}
       {showSharing && SHARABLE.has(page.kind) && page.kind !== "perspective" ? <Button variant="outline" size="sm" data-share-item onClick={() => setShareOpen(true)}>{i18n.t("sharing:share")}</Button> : null}
     </div>
     {children}

@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 pub(crate) enum PrivateClass {
     Credential,
     Account,
-    Holding,
     Personal,
 }
 
@@ -22,28 +21,18 @@ impl PrivateClass {
     }
 }
 
-/// One held position, with the exact amounts that make a mention private.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct HeldPosition {
-    pub symbol: String,
-    pub names: Vec<String>,
-    pub amounts: Vec<String>,
-}
-
-/// What Rust knows is private: secrets it holds, account numbers, holdings,
+/// What Rust knows is private: secrets it holds, account numbers,
 /// and the person's name and home path.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PrivateContext {
     pub secrets: Vec<String>,
     pub accounts: Vec<String>,
-    pub holdings: Vec<HeldPosition>,
     pub personal: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct PrivateHit {
     pub class: PrivateClass,
-    pub symbol: Option<String>,
 }
 
 const EXTRA_KEY_PREFIXES: [(&str, usize); 4] = [
@@ -317,96 +306,6 @@ fn account(text: &str, accounts: &[String]) -> bool {
     }) || iban(text)
 }
 
-fn normalized_amount(value: &str) -> Option<String> {
-    let value = value.trim().replace(',', "");
-    let value = value.strip_prefix('-').unwrap_or(&value).to_owned();
-    if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
-        return None;
-    }
-    let value = if value.contains('.') {
-        value.trim_end_matches('0').trim_end_matches('.').to_owned()
-    } else {
-        value
-    };
-    let value = value.trim_start_matches('0');
-    Some(if value.is_empty() || value.starts_with('.') {
-        format!("0{value}")
-    } else {
-        value.to_owned()
-    })
-}
-
-fn amounts_in(text: &str) -> Vec<(usize, usize, String)> {
-    let mut found = Vec::new();
-    let bytes = text.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        if !bytes[index].is_ascii_digit() || (index > 0 && bytes[index - 1].is_ascii_alphanumeric())
-        {
-            index += 1;
-            continue;
-        }
-        let start = index;
-        while index < bytes.len()
-            && (bytes[index].is_ascii_digit()
-                || (matches!(bytes[index], b',' | b'.')
-                    && bytes.get(index + 1).is_some_and(u8::is_ascii_digit)))
-        {
-            index += 1;
-        }
-        if let Some(amount) = normalized_amount(&text[start..index]) {
-            found.push((start, index, amount));
-        }
-    }
-    found
-}
-
-fn holdings(text: &str, positions: &[HeldPosition]) -> Vec<String> {
-    let amounts = amounts_in(text);
-    let lower = text.to_lowercase();
-    let mut symbols = Vec::new();
-    for position in positions {
-        let wanted: BTreeSet<String> = position
-            .amounts
-            .iter()
-            .filter_map(|amount| normalized_amount(amount))
-            .collect();
-        if wanted.is_empty() || position.symbol.is_empty() {
-            continue;
-        }
-        let mut mentions: Vec<(usize, usize)> = text
-            .match_indices(position.symbol.as_str())
-            .filter(|(index, matched)| {
-                word_start(text, *index) && word_end(text, index + matched.len())
-            })
-            .map(|(index, matched)| (index, index + matched.len()))
-            .collect();
-        for name in position
-            .names
-            .iter()
-            .filter(|name| name.chars().count() >= 2)
-        {
-            let name = name.to_lowercase();
-            mentions.extend(
-                lower
-                    .match_indices(name.as_str())
-                    .map(|(index, matched)| (index, index + matched.len())),
-            );
-        }
-        let near = mentions.iter().any(|(start, end)| {
-            amounts.iter().any(|(amount_start, amount_end, amount)| {
-                wanted.contains(amount)
-                    && (amount_start.saturating_sub(*end) <= 40
-                        && start.saturating_sub(*amount_end) <= 40)
-            })
-        });
-        if near {
-            symbols.push(position.symbol.clone());
-        }
-    }
-    symbols
-}
-
 fn personal(text: &str, names: &[String]) -> bool {
     let email = tokens(text, |c| {
         c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '%' | '+' | '-' | '@')
@@ -445,31 +344,22 @@ fn personal(text: &str, names: &[String]) -> bool {
             .any(|name| lower.contains(&name.to_lowercase()))
 }
 
-/// Classes found in one exported string. One hit per class (per symbol for holdings).
+/// Classes found in one exported string. One hit per class.
 pub(crate) fn scan_private(text: &str, context: &PrivateContext) -> Vec<PrivateHit> {
     let mut hits = BTreeSet::new();
     if credential(text, &context.secrets) {
         hits.insert(PrivateHit {
             class: PrivateClass::Credential,
-            symbol: None,
         });
     }
     if account(text, &context.accounts) {
         hits.insert(PrivateHit {
             class: PrivateClass::Account,
-            symbol: None,
-        });
-    }
-    for symbol in holdings(text, &context.holdings) {
-        hits.insert(PrivateHit {
-            class: PrivateClass::Holding,
-            symbol: Some(symbol),
         });
     }
     if personal(text, &context.personal) {
         hits.insert(PrivateHit {
             class: PrivateClass::Personal,
-            symbol: None,
         });
     }
     hits.into_iter().collect()
@@ -1098,11 +988,6 @@ mod tests {
         PrivateContext {
             secrets: vec!["fixture-secret-value-123".into()],
             accounts: vec!["12345678".into()],
-            holdings: vec![HeldPosition {
-                symbol: "BLUEH".into(),
-                names: vec!["Bluehaven Memory".into()],
-                amounts: vec!["1234.5".into(), "98765.43".into()],
-            }],
             personal: vec!["Kim Juno".into(), "/Users/kimj".into()],
         }
     }
@@ -1135,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn private_scan_blocks_credentials_accounts_and_holdings_and_warns_on_personal() {
+    fn private_scan_blocks_credentials_and_accounts_and_warns_on_personal() {
         for text in [
             "use sk-ant-fixture-notarealkey-abcdefgh",
             "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlLXZhbHVl",
@@ -1153,16 +1038,6 @@ mod tests {
         ] {
             assert_eq!(classes(text), vec![PrivateClass::Account], "{text}");
         }
-        let hits = scan_private("I hold 1,234.5 shares of BLUEH since May", &context());
-        assert_eq!(
-            hits,
-            vec![PrivateHit {
-                class: PrivateClass::Holding,
-                symbol: Some("BLUEH".into())
-            }]
-        );
-        assert!(classes("BLUEH reported 1234.6 in revenue").is_empty());
-        assert!(classes("Bluehaven Memory is worth watching; 77 days of inventory").is_empty());
         for text in [
             "write to kim@example.com",
             "call 010-9876-5432",

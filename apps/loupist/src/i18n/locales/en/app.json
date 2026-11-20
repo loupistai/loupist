@@ -29,7 +29,16 @@
     "workspaceUnavailableDescription": "<0>Workspace folder unavailable.</0> Reconnect the original or copied Loupist folder to open its saved chats, Map and Lens.",
     "couldNotExport": "Couldn’t export this chat.",
     "couldNotPrint": "Couldn’t open printing. Try again.",
-    "correctThis": "Correct this: "
+    "correctThis": "Correct this: ",
+    "legacyHoldings": {
+      "label": "Holdings notice",
+      "exported": "Holdings are no longer part of Loupist. What was stored has been saved to a file on this computer, and the assets are still in Following.",
+      "failed": "Holdings are no longer part of Loupist. The stored data has not been deleted, but the copy could not be saved yet.",
+      "showFile": "Show file",
+      "saveCopy": "Save a copy…",
+      "showFailed": "Couldn’t show the file.",
+      "saveFailed": "Couldn’t save the copy."
+    }
   },
   "useConfiguration": {
     "couldNotReadConfiguration": "Could not read configuration.",
@@ -71,7 +80,7 @@
   "loupistChatItem": {
     "rename": "Rename",
     "delete": "Delete",
-    "isRunning": "{{title}} is running",
+    "running": "Running",
     "optionsFor": "Options for {{title}}",
     "export": "Export chat…",
     "print": "Print or save as PDF…",
@@ -83,8 +92,7 @@
     "hasActiveSessions": "{{label}} has active sessions"
   },
   "macTitlebarControls": {
-    "showOrHideSidebar": "Show or hide sidebar",
-    "sidebarShortcut": "Show or hide sidebar ({{shortcut}})"
+    "showOrHideSidebar": "Show or hide sidebar"
   },
   "viewBoundary": {
     "couldNotDisplay": "Could not display {{name}}",
@@ -114,10 +122,10 @@
     "worldProcessingCaption": "How new sources become map knowledge",
     "appearance": "Appearance",
     "themeLightDarkSystemDisplay": "theme light dark system display",
-    "makeYourWorkspaceFeelAtHome": "Make your workspace feel at home.",
+    "makeYourWorkspaceFeelAtHome": "Choose the theme, the language and how prices are shown.",
     "updates": "Updates",
     "versionReleaseInstallDownload": "version release install download",
-    "keepLoupistUpToDate": "Keep Loupist up to date.",
+    "keepLoupistUpToDate": "Check here for new versions. Nothing installs until you approve it.",
     "keyboard": "Keyboard",
     "keyboardKeywords": "shortcuts keys hotkeys command palette",
     "keyboardDescription": "Shortcuts for working without the mouse."
@@ -133,7 +141,7 @@
     "thisLoupistSFolderWasMovedOrIs": "This Loupist’s folder was moved or is unavailable. Reconnect the original or copied folder to open its chats, Map and Lens.",
     "reconnectFolder": "Reconnect folder",
     "earlierVersion": "Made by an earlier version",
-    "earlierVersionBody": "This Loupist was made by an earlier version and can't be opened. Create a new Loupist.",
+    "earlierVersionBody": "This Loupist was made by an earlier version and can't be opened. Remove it from the app, then create a new Loupist; its folder stays on this Mac.",
     "newerVersion": "Saved by a newer version",
     "newerVersionBody": "This Loupist was saved by a newer version of Loupist and can’t be opened here. Update Loupist to open it; its folder is unchanged.",
     "removeLoupist": "Remove Loupist"
@@ -141,12 +149,6 @@
   "shell": {
     "chatMaterials": "Chat materials",
     "chatMaterialsHint": "This chat's map, evidence and outputs",
-    "lensHint": "Your research principles and methods",
-    "worldHint": "Map of companies, people and links",
-    "panelKind": "Panel kind",
-    "workspaceControls": "Workspace panels",
-    "splitTopBottom": "Split top and bottom",
-    "splitLeftRight": "Split left and right",
     "sessions": "Research sessions",
     "sessionsEmpty": "Start new research to dig into one question. Briefings and alerts stay in Bot.",
     "newResearch": "New research",
@@ -172,11 +174,18 @@
       "schedule": "Schedule",
       "following": "Following"
     },
+    "backToChat": "Back to chat",
     "searchShortcut": "Search {{shortcut}}",
     "unreadBriefings": "{{count}} unread briefings",
     "needsAttention": "Needs attention",
     "panel": "Panel",
-    "togglePanel": "Show or hide the panel ({{shortcut}})"
+    "togglePanel": "Show or hide the panel ({{shortcut}})",
+    "switchLoupist": "Switch Loupist, its settings or a new one",
+    "working": "Working",
+    "splitTopBottom": "Split top and bottom",
+    "splitLeftRight": "Split left and right",
+    "resizeSidebar": "Resize sidebar",
+    "resizeSidebarHint": "Drag to resize. Double-click for the default width."
   },
   "loupistProfile": {
     "profile": "Profile",
@@ -186,33 +195,24 @@
     "save": "Save",
     "discard": "Discard",
     "saved": "Saved",
-    "avatar": "Avatar",
+    "avatar": "Face color",
     "tryAgain": "Try again",
     "saveError": "Could not save this profile. Try again.",
     "counter": "{{count}} / {{limit}}",
-    "avatars": {
-      "initial": "Initial",
-      "cpu": "CPU",
-      "coins": "Coins",
-      "globe": "Globe",
-      "line-chart": "Line chart",
-      "landmark": "Landmark",
-      "factory": "Factory",
-      "compass": "Compass",
-      "book-open": "Open book",
-      "sparkles": "Sparkles",
-      "loupist-01": "Loupe",
-      "loupist-02": "Caravel",
-      "loupist-03": "Compass",
-      "loupist-04": "Nautical chart",
-      "loupist-05": "Spyglass",
-      "loupist-06": "Astrolabe",
-      "loupist-07": "Anchor",
-      "loupist-08": "Hourglass",
-      "loupist-09": "Quill and ink",
-      "loupist-10": "Ship’s lantern"
-    },
-    "tone": "Tone"
+    "tone": "Tone",
+    "identity": "Name and face",
+    "faces": {
+      "loupist-01": "Violet",
+      "loupist-02": "Teal",
+      "loupist-03": "Olive",
+      "loupist-04": "Sky",
+      "loupist-05": "Orange",
+      "loupist-06": "Slate",
+      "loupist-07": "Ochre",
+      "loupist-08": "Orchid",
+      "loupist-09": "Rose",
+      "loupist-10": "Brown"
+    }
   },
   "learning": {
     "switch": "Learn methods from new information",
@@ -262,19 +262,6 @@
     "actionError": "Couldn't save that change."
   },
   "marketStatus": {
-    "label": "Market status",
-    "description": "Holidays and early closes as the exchanges publish them ({{covered}}). Other markets and later dates use regular trading hours.",
-    "through": "{{market}} through {{year}}",
-    "open": "{{market}} open",
-    "opensIn": "{{market}} opens in {{time}}",
-    "closed": "{{market}} closed",
-    "holiday": "{{market}} closed today (holiday)",
-    "closesEarly": "{{market}} closes early at {{time}}",
-    "always": "Crypto 24h",
-    "minutes_one": "{{formattedCount}}m",
-    "minutes_other": "{{formattedCount}}m",
-    "hours_one": "{{formattedCount}}h",
-    "hours_other": "{{formattedCount}}h",
     "market": {
       "KRX": "Korea",
       "US": "US",
@@ -286,8 +273,7 @@
       "EURONEXT": "Euronext",
       "TSX": "Toronto",
       "ASX": "Australia"
-    },
-    "more": "+{{formattedCount}} more"
+    }
   },
   "attention": {
     "approval": "{{loupistSubject}} wants your OK to use {{connection}}",
@@ -302,9 +288,7 @@
     "more_one": "{{formattedCount}} more",
     "more_other": "{{formattedCount}} more",
     "finishedHidden": "Finished while you were away",
-    "lineCrossed": "Line crossed · {{name}}",
-    "watchAlerts_one": "{{formattedCount}} new alert",
-    "watchAlerts_other": "{{formattedCount}} new alerts"
+    "lineCrossed": "Line crossed · {{name}}"
   },
   "notifications": {
     "finished": "{{loupist}} finished",
@@ -314,14 +298,16 @@
     "title": "Bot"
   },
   "palette": {
-    "title": "Command palette",
+    "title": "Search",
+    "results": "Results",
     "placeholder": "Search research sessions, names, principles, briefings…",
-    "empty": "Nothing matches.",
+    "empty": "Nothing matches. Try another word, a ticker or a session title.",
+    "nothingWaiting": "Nothing needs attention right now.",
     "moreIn": "More from {{group}}",
     "groups": {
       "attention": "Needs attention",
       "chats": "Research sessions",
-      "following": "What you follow",
+      "following": "Following",
       "map": "Map",
       "principles": "Principles",
       "briefings": "Briefings",
@@ -332,8 +318,7 @@
       "openChat": "Open Bot",
       "openMap": "Open Map",
       "openLens": "Open Lens",
-      "openSchedule": "Open schedule",
-      "importHoldings": "Import holdings…",
+      "openSchedule": "Open Schedule",
       "newJournalEntry": "New Journal entry",
       "allChats": "All research sessions",
       "togglePanel": "Show or hide the panel",

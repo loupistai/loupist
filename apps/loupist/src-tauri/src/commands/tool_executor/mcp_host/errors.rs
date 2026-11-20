@@ -73,6 +73,11 @@ pub(super) fn map_mcp_error(error: McpError) -> BrokerError {
             "The MCP request timed out",
             "Reduce the requested date range, symbols, or page size. Do not repeat the identical request in a loop.",
         ),
+        // Only the bundled runtime reaches this mapping, before any request ran.
+        McpError::StartupTimeout => (
+            "Market data was still starting and did not become ready in time",
+            "This computer may be busy. Do not load it again in this turn: continue with your other sources, and tell the user that market data was still starting and that they can ask again shortly.",
+        ),
         McpError::FrameTooLarge => (
             "The MCP response exceeded the size limit",
             "Load this capability again, then request a smaller date range or page. Do not repeat the oversized request.",
@@ -96,14 +101,50 @@ pub(super) fn map_mcp_error(error: McpError) -> BrokerError {
     BrokerError::Execution(message.into()).with_next(next)
 }
 
+/// What the agent is told when Yahoo Finance cannot serve the price as traded.
+const YAHOO_ADJUSTMENT_EXPECTED: &str = "splits_only or splits_and_dividends. Yahoo Finance restates its prices for later share splits, so it gives the price as traded only for a daily bar with no split after it. Read the adjusted price and say that it is adjusted, or read the price as traded from a connected source that serves unadjusted prices.";
+
 pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerError {
-    if result
+    match result
         .structured_content
         .as_ref()
         .and_then(|value| value.pointer("/loupist_error/kind"))
-        == Some(&json!("offline"))
+        .and_then(Value::as_str)
     {
-        return BrokerError::Offline("market data provider".into());
+        Some("invalid_destination") => {
+            let field = result
+                .structured_content
+                .as_ref()
+                .and_then(|value| value.pointer("/loupist_error/field"))
+                .and_then(Value::as_str);
+            let (field, expected) = match field {
+                Some("bill_url") => (
+                    "bill_url",
+                    "A bill as congress/type/number, such as 118/hr/1, or its address under https://api.congress.gov/v3/bill/. No other address is read.",
+                ),
+                Some("amendment_url") => (
+                    "amendment_url",
+                    "An amendment as congress/type/number, such as 119/hamdt/2, or its address under https://api.congress.gov/v3/amendment/. No other address is read.",
+                ),
+                Some("congress_gov") => (
+                    "congress_gov",
+                    "Document addresses on https://www.congress.gov/, or for bill text also https://www.govinfo.gov/, as the text_urls tool returns them. No other site is read.",
+                ),
+                _ => (
+                    "url",
+                    "A filing address on https://www.sec.gov/. No other site is read; web_fetch reads other public pages.",
+                ),
+            };
+            return BrokerError::invalid(field, expected);
+        }
+        Some("unsupported_adjustment") => {
+            return BrokerError::invalid("adjustment", YAHOO_ADJUSTMENT_EXPECTED);
+        }
+        Some("offline") => return BrokerError::Offline("market data provider".into()),
+        Some("alpha_vantage_paid_plan_required") => {
+            return BrokerError::Execution("This needs a paid Alpha Vantage plan.".into());
+        }
+        _ => {}
     }
     // MCP tools commonly put a JSON error inside a text content block.
     // Decode one layer only; never return this provider-controlled body.
@@ -221,6 +262,49 @@ mod tests {
     }
 
     #[test]
+    fn yahoo_adjustment_refusal_keeps_the_same_providers_supported_options() {
+        let result = serde_json::from_value(json!({
+            "isError": true, "content": [],
+            "structuredContent": {"loupist_error": {"kind": "unsupported_adjustment"}},
+        }))
+        .unwrap();
+        let error = super::super::provider_failure(
+            rejected_mcp_result(&result),
+            Some("yfinance"),
+            &Default::default(),
+        );
+        assert!(
+            matches!(error, BrokerError::InvalidArguments { field, expected }
+            if field == "adjustment" && expected == YAHOO_ADJUSTMENT_EXPECTED)
+        );
+    }
+
+    #[test]
+    fn refused_destination_is_an_argument_error_without_remote_text() {
+        let result = serde_json::from_value(json!({
+            "isError": true, "content": [],
+            "structuredContent": {"loupist_error": {"kind": "invalid_destination", "field": "bill_url"}},
+        })).unwrap();
+        assert!(
+            matches!(rejected_mcp_result(&result), BrokerError::InvalidArguments { field, .. } if field == "bill_url")
+        );
+    }
+
+    #[test]
+    fn a_paid_alpha_request_names_the_plan_without_reconnecting() {
+        let result = serde_json::from_value(json!({
+            "isError": true,
+            "content": [{"type":"text", "text":"fixture-private-detail"}],
+            "structuredContent": {"loupist_error": {"kind": "alpha_vantage_paid_plan_required"}},
+        }))
+        .unwrap();
+        let error = rejected_mcp_result(&result);
+        assert!(error.to_string().contains("paid Alpha Vantage plan"));
+        assert!(!error.to_string().contains("fixture-private-detail"));
+        assert!(mcp_error_next(&error).is_none());
+    }
+
+    #[test]
     fn mcp_failures_offer_recovery_without_exposing_provider_or_transport_details() {
         let private = "fixture-private-detail";
         let rate_limited: crate::mcp::McpCallResult = serde_json::from_value(json!({
@@ -252,5 +336,20 @@ mod tests {
                 .contains(mcp_error_next(&error).unwrap()));
             assert!(!response.to_string().contains(private));
         }
+    }
+
+    #[test]
+    fn a_runtime_that_never_finished_starting_says_market_data_was_starting() {
+        let error = map_mcp_error(McpError::StartupTimeout);
+        let message = error.to_string();
+        assert!(
+            message.contains("Market data was still starting"),
+            "{message}"
+        );
+        assert!(!message.contains("timed out"), "{message}");
+        let next = mcp_error_next(&error).unwrap();
+        // Nothing was requested yet, so request-narrowing advice does not apply.
+        assert!(!next.contains("date range"), "{next}");
+        assert!(next.contains("Do not load it again in this turn"), "{next}");
     }
 }

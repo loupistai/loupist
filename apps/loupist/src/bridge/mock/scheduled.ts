@@ -26,6 +26,8 @@ export class MockScheduledTasks {
   private events = new Map<string, ChatStreamEvent[]>();
   private observers = new Map<string, Set<StreamObserver<ChatStreamEvent>>>();
   private baselines = new Map<string, ScheduledTaskWatch["thread"]>();
+  /** Sessions runs made, as Rust's `scheduled-chat-` prefix marks them. */
+  private made = new Set<string>();
 
   constructor(private state: MockBridgeState, private changed: (loupistId: string) => void = () => {}) {}
 
@@ -55,7 +57,7 @@ export class MockScheduledTasks {
     const start = cursor ? runs.findIndex(run => run.run_id === cursor) + 1 : 0;
     if (cursor && start === 0) throw new Error("Inbox cursor not found.");
     const page = runs.slice(start, start + limit);
-    const items: InboxItem[] = page.map(run => ({ briefingContext: run.briefing_context, error: run.error, runId: run.run_id, taskId: run.task_id, kind: run.kind, title: run.task_title, status: run.status, summary: run.summary, summaryItems: run.summary_items ?? [], startedAtMs: run.started_at_ms, finishedAtMs: run.finished_at_ms ?? null, readAtMs: run.read_at_ms, threadId: run.thread_id, messageId: run.message_id, skippedTools: run.skipped_tools }));
+    const items: InboxItem[] = page.map(run => ({ briefingContext: run.briefing_context, error: run.error, runId: run.run_id, taskId: run.task_id, kind: run.kind, title: run.task_title, status: run.status, summary: run.summary, startedAtMs: run.started_at_ms, finishedAtMs: run.finished_at_ms ?? null, readAtMs: run.read_at_ms, threadId: run.thread_id, messageId: run.message_id, skippedTools: run.skipped_tools }));
     return clone({ items, nextCursor: page.length === limit ? page.at(-1)!.run_id : null });
   }
   async inboxMarkRead({ loupistId, runIds }: { loupistId: string; runIds: string[] }) {
@@ -124,10 +126,24 @@ export class MockScheduledTasks {
   async delete(request: ScheduledTaskIdentity & { expected_revision: number }) {
     const task = this.task(request);
     if (task.kind === "briefing") throw new Error("Turn the briefing off instead of deleting it.");
-    if (task.kind === "earnings") throw new Error("The results task can be paused, not deleted.");
     if (task.revision !== request.expected_revision) throw new Error("The task changed. Reload and try again.");
+    const sessions = new Set([...this.runs.values()].filter((run) => run.task_id === task.id).map((run) => run.thread_id));
+    if (task.session_thread_id) sessions.add(task.session_thread_id);
+    for (const run of [...this.runs.values()]) if (run.task_id === task.id) this.runs.delete(run.run_id);
     this.tasks.delete(task.id);
+    this.release(task.loupist_id, sessions);
     this.changed(task.loupist_id);
+  }
+  /** Mirrors Rust: a session a run made goes once nothing in Schedule points at it, unless the user wrote in it. */
+  private release(loupistId: string, sessions: Iterable<string | null | undefined>) {
+    for (const id of sessions) {
+      if (!id || !this.made.has(id)) continue;
+      if ([...this.runs.values()].some((run) => run.thread_id === id) || [...this.tasks.values()].some((task) => task.session_thread_id === id)) continue;
+      const threads = this.state.threads[loupistId] ?? [];
+      if (threads.find((item) => item.id === id)?.messages.some((message) => message.role === "user" && !message.scheduled)) continue;
+      this.state.threads[loupistId] = threads.filter((item) => item.id !== id);
+      this.made.delete(id);
+    }
   }
   async taskRuns(request: ScheduledTaskIdentity) {
     this.task(request);
@@ -154,23 +170,19 @@ export class MockScheduledTasks {
   async runNow(request: ScheduledTaskIdentity, send: (request: ChatSendRequest, observer: StreamObserver<ChatStreamEvent>) => Promise<{ run_id: string }>) {
     const task = this.task(request);
     if ([...this.runs.values()].some((run) => run.task_id === task.id && run.status === "running")) throw new Error("This task is already running.");
-    if (task.kind === "earnings") {
-      // The results task needs no model call: a host capture finishes in place.
-      const now = Date.now();
-      const run: ScheduledRun = { briefing_context: null, kind: "earnings", summary: "", summary_items: [{ kind: "earnings_nothing" }], read_at_ms: now, message_id: null, skipped_tools: [], id: makeId("scheduled-run"), task_id: task.id, loupist_id: task.loupist_id, task_revision: task.revision, task_title: task.title, thread_id: null, run_id: makeId("earnings-run"), scheduled_for_ms: now, started_at_ms: now, finished_at_ms: now, status: "succeeded", error: null };
-      this.runs.set(run.run_id, run);
-      task.last_run_at_ms = now;
-      this.changed(task.loupist_id);
-      return clone(run);
-    }
     const thread = task.target.kind === "new_chat" || (task.target.kind === "dedicated_chat" && !task.session_thread_id)
       ? await chatCreate(this.state, { loupist_id: task.loupist_id, title: task.title })
       : this.state.threads[task.loupist_id]?.find((item) => item.id === (task.target.kind === "existing_chat" ? task.target.thread_id : task.session_thread_id));
     if (thread && task.target.kind === "dedicated_chat") task.session_thread_id = thread.id;
     if (!thread) throw new Error("The target Chat is unavailable.");
+    if (task.target.kind !== "existing_chat") this.made.add(thread.id);
     const now = Date.now();
-    const run: ScheduledRun = { briefing_context: task.kind === "briefing" ? { symbols: [], principlesChecked: 0, newFacts: 0, disputedEntityIds: [], changed: { names: 0, relations: 0, conflicts: 0, rows: [] }, ahead: [], assets: [] } : null, kind: task.kind, summary: "", read_at_ms: null, message_id: null, skipped_tools: [], id: makeId("scheduled-run"), task_id: task.id, loupist_id: task.loupist_id, task_revision: task.revision, task_title: task.title, thread_id: thread.id, run_id: makeId("chat-scheduled"), scheduled_for_ms: now, started_at_ms: now, status: "running", finished_at_ms: null, error: null };
+    const run: ScheduledRun = { quiet: false, briefing_context: task.kind === "briefing" ? { symbols: [], principlesChecked: 0, newFacts: 0, disputedEntityIds: [], changed: { names: 0, relations: 0, conflicts: 0, rows: [] }, ahead: [] } : null, kind: task.kind, summary: "", read_at_ms: null, message_id: null, skipped_tools: [], id: makeId("scheduled-run"), task_id: task.id, loupist_id: task.loupist_id, task_revision: task.revision, task_title: task.title, thread_id: thread.id, run_id: makeId("chat-scheduled"), scheduled_for_ms: now, started_at_ms: now, status: "running", finished_at_ms: null, error: null };
     this.runs.set(run.run_id, run);
+    // As in Rust, history keeps 50 runs per task and a run leaving it takes its session along.
+    const pruned = [...this.runs.values()].filter((item) => item.task_id === task.id).sort((a, b) => b.started_at_ms - a.started_at_ms).slice(50);
+    for (const old of pruned) this.runs.delete(old.run_id);
+    this.release(task.loupist_id, pruned.map((old) => old.thread_id));
     this.events.set(run.run_id, []);
     task.last_run_at_ms = now;
     task.updated_at_ms = now;
@@ -179,7 +191,11 @@ export class MockScheduledTasks {
         this.events.get(run.run_id)?.push(clone(event));
         // Mock Chat saves its user message just after started, before the first progress event.
         if (event.type !== "started" && !this.baselines.has(run.run_id)) {
-          this.baselines.set(run.run_id, clone(this.state.threads[task.loupist_id]!.find((item) => item.id === thread.id)!));
+          const saved = this.state.threads[task.loupist_id]!.find((item) => item.id === thread.id)!;
+          // As in Rust, the request names the run that sent it.
+          const request = [...saved.messages].reverse().find((message) => message.role === "user");
+          if (request) request.scheduled = { task_id: task.id, run_id: run.run_id, task_title: task.title, task_kind: task.kind };
+          this.baselines.set(run.run_id, clone(saved));
         }
         for (const observer of this.observers.get(run.run_id) ?? []) observer(clone(event));
         if (event.type === "completed" || event.type === "error" || event.type === "aborted") {

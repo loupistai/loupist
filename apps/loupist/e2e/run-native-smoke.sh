@@ -39,6 +39,11 @@ fi
 # No secret and no network: the e2e catalog marker lets this credential-free
 # suite pass the ChatGPT step and open the shell. Live journeys do not set it.
 export LOUPIST_E2E_PROVIDER_READY=1
+# macOS Apple Silicon debug builds script a slow hand-off on the knowledge fixture's
+# Map link for the smoke's Bot hand-off journey; other hosts skip that journey.
+if [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ]; then
+    export LOUPIST_E2E_KNOWLEDGE_SEED=1 LOUPIST_E2E_SLOW_HANDOFF=1
+fi
 
 cleanup() {
     status=$?

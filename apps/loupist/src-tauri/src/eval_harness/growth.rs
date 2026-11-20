@@ -1,6 +1,6 @@
 //! Opt-in five-session product-growth proof. Never seeds a learned method or World.
 use super::*;
-const MODEL: &str = "openai-codex/gpt-6.1-sol";
+const MODEL: &str = "openai-codex/gpt-6.2-sol";
 #[derive(Deserialize)]
 struct Fixture {
     schema: String,
@@ -269,21 +269,25 @@ async fn live_growth_scenario_v1() -> Result<()> {
         state.maintenance.clone(),
         Some(inference.clone()),
     );
-    if !state.graph.runtime_available() {
+    if !state.graph.runtime_available() || !state.graph.wait_for_semantic_model() {
         return Err("Graph runtime unavailable".into());
     }
     let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace).await?;
     state.store.update_loupist_profile(&loupist.id, crate::store::LoupistProfileEdit { name: Some(&fixture.loupist), focus: Some("Fictional semiconductor capacity ramps, margins, inventory and cash conversion"), instructions: Some("Research only the retained fictional Sources; no external data. Apply saved principles and relevant learned methods. Provide information, not investment advice."), ..Default::default() }, crate::commands::now_ms())?;
     enable_connections(&state, &loupist.id, &[])?;
     for watch in &fixture.watchlist {
-        state
-            .store
-            .watchlist_add(&watch.symbol, &watch.market, watch.display_name.as_deref())?;
+        state.store.asset_follow_name(
+            &loupist.id,
+            &watch.name,
+            watch.reference.clone(),
+            crate::commands::assets::wire::AssetReferenceOrigin::Imported,
+            crate::commands::now_ms(),
+        )?;
     }
     let config = GraphProcessingSettings {
         enrichment_enabled: true,
         helper_provider: Some("openai-codex".into()),
-        helper_model: Some("gpt-6.1-sol".into()),
+        helper_model: Some(model.model.clone()),
         helper_model_profile_id: Some(MODEL.into()),
         thinking_level: "medium".into(),
         timeout_ms: 120_000,

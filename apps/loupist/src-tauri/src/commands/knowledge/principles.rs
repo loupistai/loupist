@@ -204,6 +204,7 @@ pub(in crate::commands) fn persist_principles(
         )
         .map_err(map_knowledge)?;
         changes.push(crate::domain::MemoryUpdateChange {
+            user_provided: false,
             outcomes: Vec::new(),
             world_job_id: None,
             world_status: None,

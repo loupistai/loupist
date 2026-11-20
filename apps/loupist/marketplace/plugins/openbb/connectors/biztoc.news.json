@@ -1,7 +1,7 @@
 {
   "id": "biztoc.news",
   "name": "Biztoc",
-  "summary": "Business and financial news.",
+  "summary": "Business and financial news. The RapidAPI Basic plan requires a payment card and may charge for excess bandwidth.",
   "publisher": "Loupist",
   "data_authority": "Biztoc",
   "kind": "data_source",
@@ -40,7 +40,7 @@
     "Current"
   ],
   "attribution": "Biztoc",
-  "terms_url": "https://biztoc.com/api",
+  "terms_url": "https://rapidapi.com/thma/api/biztoc/pricing",
   "permissions": {
     "network_hosts": [
       "biztoc.p.rapidapi.com"
@@ -60,7 +60,7 @@
         "required": true,
         "min_length": 8,
         "max_length": 512,
-        "help_url": "https://biztoc.com/api"
+        "help_url": "https://rapidapi.com/thma/api/biztoc/pricing"
       }
     ]
   }

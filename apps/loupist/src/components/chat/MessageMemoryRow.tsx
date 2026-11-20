@@ -1,24 +1,25 @@
-import { claimIdForEdge, entityLabel } from "../../knowledge/mapItems";
+import { claimIdForEdge, entityLabel, oneName } from "../../knowledge/mapItems";
 import { relationName } from "../map/relations";
 import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useId, useState } from "react";
+import { NetworkIcon } from "lucide-react";
 import { requestLibrary } from "../map/libraryState";
 import type { LoupistBridge, ChatMessage, GraphJobView, LensKind, MemoryUpdateChange } from "../../types";
+import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { memoryChangeVerb } from "../../chat/memoryActivity";
 import { knowledgeLocationFromMemoryChange } from "../../knowledge/location";
 import { chatReceipt, savesMemory, showsReceipt, thesisMovesFor, type SavedReceiptGroup } from "../../chat/receipt";
 import { useGo } from "../navigation/Open";
+import { savedAssetTarget } from "../../chat/navigation";
 import { useAssetNames } from "../assets/assetName";
 import { declinedSensitiveMemory, useChatSetAside } from "../../chat/chatSetAside";
-import { WatchAllOffer } from "./WatchAllOffer";
 import { ChatReceipt } from "./ChatReceipt";
-import { revealFirstNumberToCheck } from "./NumberChip";
+import { useRevealNumberToCheck } from "./NumberChip";
 import { useChatMap } from "../workspace/ChatMapContext";
 import { addedMapItems } from "../../chat/chatMapData";
 import { SavedPrinciple } from "./SavedPrinciple";
 import { useLearnedDigest } from "../../chat/useLearnedDigest";
 import { LearnedCard } from "./LearnedCard";
-import { pageTitle } from "../memory/PageReader";
 import { WorldProcessingStatus } from "./WorldProcessingStatus";
 
 const t = i18n.getFixedT(null, "chat");
@@ -44,12 +45,21 @@ export function MessageMemoryRow({
 }: Props) {
   useTranslation("chat");
   const go = useGo();
+  const revealNumberToCheck = useRevealNumberToCheck();
   const chatMap = useChatMap();
   const additions = chatMap?.map && chatMap.loupistId === loupistId && chatMap.chatId === chatId
     ? addedMapItems(chatMap.map, chatMap.events.filter(event => event.originChatId === chatId && event.originMessageId === message.id)) : undefined;
-  const edge = chatMap?.map?.edges.find(item => additions?.edgeIds.has(item.id));
-  const source = chatMap?.map?.nodes.find(node => node.id === edge?.source);
-  const target = chatMap?.map?.nodes.find(node => node.id === edge?.target);
+  const nodeById = (id: string) => chatMap?.map?.nodes.find(node => node.id === id);
+  // The first added relation between two different things: never "NVDA → NVDA".
+  const edge = chatMap?.map?.edges.find(item => additions?.edgeIds.has(item.id) && distinctEnds(nodeById(item.source), nodeById(item.target)));
+  const source = edge && nodeById(edge.source);
+  const target = edge && nodeById(edge.target);
+  // The pill is named by what it opens, read as one phrase rather than three run-together labels.
+  const relation = edge && source && target ? t("messageMemoryRow.showRelation", {
+    source: entityLabel(source, i18n.language),
+    relation: edge.relation ? relationName(edge.relation, i18n.getFixedT(null, "knowledge")) : "→",
+    target: entityLabel(target, i18n.language),
+  }) : null;
   const update = message.memory_update;
   const changes = update?.status === "applied" ? update.changes : [];
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -100,12 +110,14 @@ export function MessageMemoryRow({
     finally { setPendingId(null); }
   };
   return (
-    <div className="memory-row" data-testid="memory-row" data-expanded={expanded}>
-      {go && edge && source && target && <button className="answer-map-preview" onClick={() => go({ kind: "page", location: {
+    <div className="memory-row" data-testid="memory-row" data-expanded={expanded || usedExpanded || learnedExpanded}>
+      {go && edge && source && target && relation ? <button type="button" className="answer-map-preview" aria-label={relation} title={relation} onClick={() => go({ kind: "page", location: {
         loupistId, surface: "world", view: { followCurrent: true }, selection: { kind: "claim", id: claimIdForEdge(edge) },
       } })}>
+        {/* The Map's own glyph: the pill opens this relation there. */}
+        <NetworkIcon aria-hidden="true" />
         <span>{entityLabel(source, i18n.language)}</span><small>{edge.relation ? relationName(edge.relation, i18n.getFixedT(null, "knowledge")) : "→"}</small><span>{entityLabel(target, i18n.language)}</span>
-      </button>}
+      </button> : null}
       <ChatReceipt
         receipt={receipt}
         showNothingNew={savesMemory(message, saveOff)}
@@ -119,10 +131,13 @@ export function MessageMemoryRow({
         learnedExpanded={learnedExpanded}
         onToggleLearned={() => setLearnedExpanded(current => !current)}
         onSaved={openSavedGroup}
-        onOpenThesis={go ? move => go({ kind: "asset", target: { loupistId, assetId: move.assetId, name: move.name, section: "history" } }) : undefined}
-        onCheckNumbers={() => revealFirstNumberToCheck(message.id)}
+        onOpenThesis={go ? move => {
+          // The receipt's page at the thesis history.
+          const target = savedAssetTarget(loupistId, { assetId: move.assetId, name: move.name }, { section: "history" });
+          if (target) go({ kind: "asset", target });
+        } : undefined}
+        onCheckNumbers={() => revealNumberToCheck(message.id)}
       />
-      {receipt.setup.some(change => change.change === "followed") ? <WatchAllOffer bridge={bridge} loupistId={loupistId} refreshKey={message.id} onOpenFollowing={go ? () => go({ kind: "following" }) : undefined} onOpenConnections={go ? () => go({ kind: "settings", section: "connections" }) : undefined} /> : null}
       {learnedExpanded && digest ? <LearnedCard id={learnedId} bridge={bridge} loupistId={loupistId} digest={digest}
         onChanged={onWorldChanged} /> : null}
       {usedExpanded ? <UsedMemory id={usedId} bridge={bridge} loupistId={loupistId} refreshKey={chatMap?.map} pages={receipt.usedPages}
@@ -140,6 +155,7 @@ export function MessageMemoryRow({
             <div className="memory-change-title">
               <span className="memory-chip-verb">{memoryChangeVerb(change)}</span>
               {location && go ? <button type="button" onClick={() => openSaved(change)}>{change.title}</button> : <span>{change.title}</span>}
+              {change.userProvided ? <small className="memory-chip-verb" data-testid="memory-change-provided">{t("messageMemoryRow.userProvided")}</small> : null}
             </div>
             {learned ? <>
               {change.lesson ? <span>{change.lesson}</span> : null}
@@ -156,6 +172,11 @@ export function MessageMemoryRow({
       {declined}
     </div>
   );
+}
+
+/** Both ends exist and are not one thing (`oneName`). */
+function distinctEnds(source: KnowledgeMapNode | undefined, target: KnowledgeMapNode | undefined) {
+  return !!source && !!target && !oneName(source, target, i18n.language);
 }
 
 type UsedItem = { recordId: string; title: string; kind: LensKind };
@@ -190,11 +211,11 @@ function UsedMemory({ id, bridge, loupistId, refreshKey, pages, onEdit, onChange
   const row = (item: UsedItem) => {
     const aside = setAside?.ids.has(item.recordId) ?? false;
     return <li key={item.recordId} className="used-memory-item" data-set-aside={aside || undefined}>
-      <span className="used-memory-label">{t("usedMemory.pageLabel", { kind: i18n.t(`knowledge:pageReader.kind.${item.kind}`) })}</span>
-      {available && !available.has(item.recordId) ? <p className="used-memory-aside"><s>{pageTitle(item)}</s> · {t("usedMemory.removed")}</p> : aside ? <p className="used-memory-aside" role="status">{t("usedMemory.setAside")} · <button type="button" disabled={pending !== null} onClick={() => void run(item.recordId, () => setAside!.toggle(item.recordId, false))}>{t("usedMemory.undo")}</button></p>
-        : archived.has(item.recordId) ? <p className="used-memory-aside" role="status">{t("messageMemoryRow.dismissed")}</p>
+      <span className="used-memory-label">{item.kind === "principle" ? t("usedMemory.principleLabel") : t("usedMemory.pageLabel", { kind: i18n.t(`knowledge:pageReader.kind.${item.kind}`) })}</span>
+      {available && !available.has(item.recordId) ? <p className="used-memory-aside"><s>{item.title}</s> · {t("usedMemory.removed")}</p> : aside ? <p className="used-memory-aside" role="status">{t("usedMemory.setAside")} · <button type="button" disabled={pending !== null} onClick={() => void run(item.recordId, () => setAside!.toggle(item.recordId, false))}>{t("usedMemory.undo")}</button></p>
+        : archived.has(item.recordId) ? <p className="used-memory-aside" role="status">{t("usedMemory.archived")}</p>
           : <>
-            <blockquote>{pageTitle(item)}</blockquote>
+            <blockquote>{item.title}</blockquote>
             <div className="used-memory-actions">
               {setAside ? <button type="button" disabled={pending !== null} onClick={() => void run(item.recordId, () => setAside.toggle(item.recordId, true))}>{t("usedMemory.notThisTime")}</button> : null}
               {onEdit ? <button type="button" onClick={() => onEdit(item.recordId)}>{t("usedMemory.edit")}</button> : null}

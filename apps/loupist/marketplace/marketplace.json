@@ -29,6 +29,17 @@
       "category": "Data"
     },
     {
+      "name": "openfigi",
+      "source": {
+        "source": "local",
+        "path": "./plugins/openfigi"
+      },
+      "policy": {
+        "installation": "INSTALLED_BY_DEFAULT"
+      },
+      "category": "Data"
+    },
+    {
       "name": "opendart",
       "source": {
         "source": "local",

@@ -1,7 +1,7 @@
 {
   "share": "Share",
   "sheetTitle": "Share {{name}}",
-  "sheetBody": "Others get your methods and map. Never your holdings, what you follow, Journal, chats or saved files.",
+  "sheetBody": "Others get your methods and map. Never what you follow, Journal, chats or saved files.",
   "included": "What's included",
   "profile": "Profile",
   "profileNote": "Name, focus and tone",
@@ -17,7 +17,6 @@
   "checkTitle": "Check before sharing ({{formattedCount}})",
   "findingKey": "{{kind}} “{{item}}” contains what looks like a password or API key.",
   "findingAccount": "{{kind}} “{{item}}” contains what looks like an account or card number.",
-  "findingHolding": "{{kind}} “{{item}}” mentions how much you hold of {{symbol}}.",
   "findingPersonal": "{{kind}} “{{item}}” contains an email, phone number or your name.",
   "itemKind": {
     "profile": "Profile",
@@ -104,6 +103,7 @@
   "galleryTitle": "Gallery",
   "galleryBody": "Loupists shared by the community. Anyone can list one, so you review everything before it's added.",
   "search": "Search by name, focus or author",
+  "clearSearch": "Clear search",
   "language": "Language",
   "covers": "What it covers",
   "all": "All",

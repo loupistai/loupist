@@ -70,12 +70,12 @@ impl KisAccountProfile {
     }
 }
 impl FinanceDataService {
-    /// How the reviewed catalog treats one KIS operation (holdings redaction).
+    /// How the reviewed catalog treats one KIS operation (account-field redaction).
     pub(crate) fn kis_account_review(
         &self,
         operation_id: &str,
-    ) -> Option<crate::privacy::holdings::AccountReview> {
-        use crate::privacy::holdings::AccountReview;
+    ) -> Option<crate::privacy::account_fields::AccountReview> {
+        use crate::privacy::account_fields::AccountReview;
         let operation = self.kis_manifest.operation(operation_id)?;
         Some(match operation.scope {
             KisOperationScope::Market => AccountReview::Market,
@@ -84,27 +84,6 @@ impl FinanceDataService {
                 None => AccountReview::Unreviewed,
             },
         })
-    }
-
-    /// Explicit user-initiated factual import through the existing read-only adapter.
-    pub(crate) async fn kis_holdings_read(
-        &self,
-        environment: &str,
-        app_key: &str,
-        app_secret: &str,
-        profile: &KisAccountProfile,
-    ) -> Result<Vec<crate::store::user_context::HoldingsPosition>, FinanceDataError> {
-        let result = self
-            .kis_read_data(
-                kis_holdings_query(),
-                environment,
-                app_key,
-                app_secret,
-                Some(profile),
-                &fixed_request_spacing,
-            )
-            .await?;
-        kis_holdings_positions(&result)
     }
 
     pub(crate) fn kis_operation_search(
@@ -433,49 +412,6 @@ impl FinanceDataService {
         cache.issuance_blocked_until.remove(&fingerprint);
         Ok(token)
     }
-}
-
-fn kis_holdings_query() -> Value {
-    json!({"operation_id":"domestic_stock.inquire_balance","params":{
-        "afhr_flpr_yn":"N", "inqr_dvsn":"02", "unpr_dvsn":"01",
-        "fund_sttl_icld_yn":"N", "fncg_amt_auto_rdpt_yn":"N", "prcs_dvsn":"00"
-    }})
-}
-
-fn kis_holdings_positions(
-    result: &Value,
-) -> Result<Vec<crate::store::user_context::HoldingsPosition>, FinanceDataError> {
-    use crate::store::user_context::{decimal, HoldingsPosition, MAX_HOLDINGS_ROWS};
-    // A read stopped by the page or byte bound is partial. Never store it as a complete portfolio.
-    if result.pointer("/page/truncated").and_then(Value::as_bool) != Some(false) {
-        return Err(FinanceDataError::InvalidResponse);
-    }
-    let rows = result
-        .pointer("/data/response/output1")
-        .and_then(Value::as_array)
-        .ok_or(FinanceDataError::InvalidResponse)?;
-    if rows.len() > MAX_HOLDINGS_ROWS {
-        return Err(FinanceDataError::InvalidResponse);
-    }
-    rows.iter()
-        .map(|row| {
-            let get = |key| {
-                row.get(key)
-                    .and_then(Value::as_str)
-                    .ok_or(FinanceDataError::InvalidResponse)
-            };
-            let exact = |key| decimal(get(key)?).map_err(|_| FinanceDataError::InvalidResponse);
-            Ok(HoldingsPosition {
-                symbol: get("pdno")?.to_owned(),
-                market: "KRX".into(),
-                display_name: Some(get("prdt_name")?.to_owned()),
-                quantity: exact("hldg_qty")?,
-                cost_basis: Some(exact("pchs_avg_pric")?),
-                market_value: Some(exact("evlu_amt")?),
-                currency: "KRW".into(),
-            })
-        })
-        .collect()
 }
 
 #[cfg(test)]

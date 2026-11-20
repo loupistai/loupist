@@ -347,7 +347,7 @@ where
     let attempt = attempt_id.clone();
     let assets = assets.to_path_buf();
     let committed = blocking(store, settings, move |store, settings| {
-        let followed = store.followed_items();
+        let followed = store.followed_items(&owned_job.loupist_id);
         store.transact(|write| {
             let finished = graph_jobs::publish_and_complete(
                 write,

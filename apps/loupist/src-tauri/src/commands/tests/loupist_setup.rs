@@ -42,14 +42,15 @@ fn policy(save: bool) -> ToolPolicy {
         propose_memory_updates: save,
         memory_proposal_budget: 1,
         as_of: None,
+        display_currency: None,
     }
 }
 
 fn setup() -> Value {
     json!({
         "follow": [
-            {"symbol": "NVDA", "market": "NASDAQ", "name": "Nvidia"},
-            {"symbol": "000660", "name": "SK hynix"}
+            {"name": "Nvidia", "reference": {"ticker":"NVDA","exchange":"NASDAQ"}},
+            {"name": "SK hynix"}
         ],
         "focus": "Semiconductor supply chain",
         "preset": "semiconductors"
@@ -67,12 +68,27 @@ async fn an_interactive_turn_stages_the_setup_with_unknown_markets_left_unknown(
             .unwrap();
         assert_eq!(result["status"], "staged");
         let staged = executor.capture.staged_setup.lock().await.clone().unwrap();
-        assert_eq!(staged.follow[0].market.as_deref(), Some("NASDAQ"));
-        assert_eq!(staged.follow[1].symbol, "000660");
-        assert_eq!(staged.follow[1].market, None, "never invented");
+        assert_eq!(
+            staged.follow[0]
+                .reference
+                .as_ref()
+                .unwrap()
+                .fields
+                .exchange
+                .as_deref(),
+            Some("NASDAQ")
+        );
+        assert_eq!(staged.follow[1].name, "SK hynix");
+        assert_eq!(result["follow"][1]["assetId"], staged.follow[1].asset_id);
+        assert_eq!(staged.follow[1].reference, None, "never invented");
         assert_eq!(staged.preset, Some(LoupistTemplate::Semiconductors));
         assert!(
-            executor.state.store.watchlist_list().unwrap().is_empty(),
+            executor
+                .state
+                .store
+                .assets_list("loupist-a", true)
+                .unwrap()
+                .is_empty(),
             "nothing applies before the reply commits"
         );
     }
@@ -115,30 +131,14 @@ async fn invalid_arguments_and_saving_off_are_refused_by_field() {
     let temporary = tempfile::tempdir().unwrap();
     let executor = executor(&temporary, Some(ChatSurface::Bot), false);
     let eleven: Vec<Value> = (0..11)
-        .map(|index| json!({"symbol": format!("T{index}")}))
+        .map(|index| json!({"name": format!("T{index}")}))
         .collect();
     for (arguments, field) in [
         (json!({"preset": "moon"}), "preset"),
         (json!({"focus": "x".repeat(281)}), "focus"),
         (json!({"focus": "   "}), "focus"),
-        (json!({"follow": eleven}), "follow"),
-        (json!({"follow": [{"symbol": "NV DA"}]}), "follow[0].symbol"),
-        (
-            json!({"follow": [{"symbol": "AMD"}, {"symbol": "NVDA", "ticker": "NVDA"}]}),
-            "follow[1]",
-        ),
-        (
-            json!({"unfollow": [{"symbol": "NVDA", "name": "Nvidia"}]}),
-            "unfollow[0]",
-        ),
-        (
-            json!({"follow": [{"symbol": "NVDA", "market": "NAS DAQ"}]}),
-            "follow[0].market",
-        ),
-        (
-            json!({"follow": [{"symbol": "NVDA"}], "unfollow": [{"symbol": "nvda"}]}),
-            "unfollow[0].symbol",
-        ),
+        (json!({"follow": eleven}), "assets"),
+        (json!({"follow": [{"symbol":"NVDA"}]}), "loupist_setup"),
         (json!({}), "loupist_setup"),
         (json!({"focus": "Chips", "theme": "dark"}), "loupist_setup"),
     ] {
@@ -158,6 +158,93 @@ async fn invalid_arguments_and_saving_off_are_refused_by_field() {
         Err(BrokerError::MemoryDisabled)
     ));
     assert!(executor.capture.staged_setup.lock().await.is_none());
+}
+
+#[tokio::test]
+async fn setup_follows_and_unfollows_only_this_loupists_list() {
+    use crate::commands::assets::wire::AssetReferenceOrigin::User;
+    use crate::commands::tool_executor::apply_setup_watchlist;
+    let temporary = tempfile::tempdir().unwrap();
+    let a = executor(&temporary, Some(ChatSurface::Bot), false);
+    let workspace = temporary.path().join("workspace-b");
+    fs::create_dir_all(&workspace).unwrap();
+    seed_profile(a.state.store.as_ref(), &profile("loupist-b", &workspace, 1));
+    a.state
+        .store
+        .create_chat(&chat("home-loupist-b", "loupist-b", 1))
+        .unwrap();
+    let b = AppToolExecutor {
+        state: a.state.clone(),
+        capture: Arc::new({
+            let mut capture = ToolCapture::for_chat("message-b".into());
+            capture.surface = Some(ChatSurface::Bot);
+            capture
+        }),
+        loupist_id: "loupist-b".into(),
+        capability_ids: BTreeSet::new(),
+    };
+    let store = &a.state.store;
+    let hynix = store
+        .asset_follow_name("loupist-b", "SK hynix", None, User, 1)
+        .unwrap();
+    store
+        .asset_follow_name("loupist-a", "Nvidia", None, User, 1)
+        .unwrap();
+    let followed = |loupist| {
+        store
+            .assets_list(loupist, true)
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.name, row.followed_at_ms))
+            .collect::<Vec<_>>()
+    };
+
+    // A follows what B follows (the same catalog asset) and stops following its own.
+    a.execute(
+        &policy(true),
+        ToolMethod::LoupistSetup,
+        json!({"follow": [{"name": "sk HYNIX"}], "unfollow": [{"asset": "Nvidia"}]}),
+    )
+    .await
+    .unwrap();
+    let staged = a.capture.staged_setup.lock().await.clone().unwrap();
+    assert_eq!(staged.follow[0].asset_id, hynix.asset_id);
+    assert_eq!(
+        staged.follow[0].followed_at_ms, None,
+        "A does not follow it yet"
+    );
+    assert_eq!(
+        apply_setup_watchlist(&a.state, "loupist-a", &staged).len(),
+        2
+    );
+    assert_eq!(followed("loupist-a").len(), 1);
+    assert_eq!(followed("loupist-a")[0].0, "SK hynix");
+    assert_eq!(followed("loupist-b"), [("SK hynix".to_owned(), Some(1))]);
+
+    // B's unfollow finds nothing it follows by that name; its follow is its own.
+    let policy_b = ToolPolicy {
+        loupist_id: "loupist-b".into(),
+        session_id: "home-loupist-b".into(),
+        ..policy(true)
+    };
+    b.execute(
+        &policy_b,
+        ToolMethod::LoupistSetup,
+        json!({"follow": [{"name": "Harbor Fund"}], "unfollow": [{"asset": "Nvidia"}]}),
+    )
+    .await
+    .unwrap();
+    let staged = b.capture.staged_setup.lock().await.clone().unwrap();
+    assert!(staged.unfollow.is_empty());
+    apply_setup_watchlist(&b.state, "loupist-b", &staged);
+    assert_eq!(followed("loupist-a").len(), 1);
+    assert_eq!(
+        followed("loupist-b")
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>(),
+        ["Harbor Fund", "SK hynix"]
+    );
 }
 
 #[test]
@@ -280,10 +367,13 @@ mod turns {
         fn watchlist(&self) -> BTreeSet<(String, String, Option<String>)> {
             self.state
                 .store
-                .watchlist_list()
+                .assets_list(&self.loupist_id, true)
                 .unwrap()
                 .into_iter()
-                .map(|entry| (entry.symbol, entry.market, entry.display_name))
+                .map(|entry| {
+                    let item = crate::store::user_context::MapContextItem::from(&entry);
+                    (item.symbol, item.market, item.display_name)
+                })
                 .collect()
         }
 
@@ -299,27 +389,15 @@ mod turns {
             (profile.focus, settings.research_focus)
         }
 
-        /// The perspective page's `focus` section, when the page exists.
-        fn page_focus(&self) -> Option<String> {
-            let knowledge = crate::knowledge::KnowledgeStore::for_loupist(
+        /// The perspective page, when one exists.
+        fn perspective(&self) -> Option<String> {
+            crate::knowledge::KnowledgeStore::for_loupist(
                 self.state.store.clone(),
                 &self.loupist_id,
             )
-            .unwrap();
-            knowledge
-                .read(|write| {
-                    let Some(record_id) = write.active_perspective(&self.loupist_id)? else {
-                        return Ok(None);
-                    };
-                    Ok(write
-                        .read_page(&self.loupist_id, &record_id)?
-                        .body
-                        .sections()
-                        .iter()
-                        .find(|section| section.key.as_str() == "focus")
-                        .map(|section| section.markdown.clone()))
-                })
-                .unwrap()
+            .unwrap()
+            .read(|write| write.active_perspective(&self.loupist_id))
+            .unwrap()
         }
 
         fn preset_changes(&self) -> Vec<(String, Option<String>)> {
@@ -354,15 +432,15 @@ mod turns {
             fixture.watchlist(),
             BTreeSet::from([
                 ("NVDA".into(), "NASDAQ".into(), Some("Nvidia".into())),
-                ("000660".into(), "UNKNOWN".into(), Some("SK hynix".into())),
+                ("".into(), "".into(), Some("SK hynix".into())),
             ])
         );
         let focus = "Semiconductor supply chain".to_owned();
         assert_eq!(fixture.focus(), (focus.clone(), focus.clone()));
         assert_eq!(
-            fixture.page_focus(),
-            Some(focus.clone()),
-            "the Lens page shows the same focus"
+            fixture.perspective(),
+            None,
+            "the focus stays on the profile; it files no Lens page"
         );
         let home = home_thread_id(&fixture.loupist_id);
         assert_eq!(
@@ -381,7 +459,7 @@ mod turns {
             receipt[..3],
             [
                 json!({"change": "followed", "symbol": "NVDA", "market": "NASDAQ", "name": "Nvidia"}),
-                json!({"change": "followed", "symbol": "000660", "name": "SK hynix"}),
+                json!({"change": "followed", "symbol": "SK hynix", "name": "SK hynix"}),
                 json!({"change": "focus", "focus": "Semiconductor supply chain"}),
             ]
         );
@@ -438,7 +516,7 @@ mod turns {
         assert_eq!(fixture.reply().status, ChatMessageStatus::Aborted);
         assert!(fixture.watchlist().is_empty());
         assert_eq!(fixture.focus(), (String::new(), String::new()));
-        assert_eq!(fixture.page_focus(), None);
+        assert_eq!(fixture.perspective(), None);
         assert!(fixture.preset_changes().is_empty());
     }
 }

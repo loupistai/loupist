@@ -1,20 +1,19 @@
+import { MockLegacyHoldings } from "./mock/legacyHoldings";
 import type { AttentionItem, AttentionNotifyRequest } from "../contracts/attention";
 import { CURRENT_NOTICE_VERSION } from "./notice";
 import type { PrincipleListRequest, PrincipleCreateRequest, PrincipleUpdateRequest, PrincipleArchiveRequest } from "../contracts/knowledge";
-import { MockUserContext } from "./mock/userContext";
 import { MockCustomConnections } from "./mock/customConnections";
 import { MockAssets } from "./mock/assets";
-import { MockEarnings } from "./mock/earnings";
-import { MockWatch } from "./mock/watch";
-import type { AssetPageGetRequest, AssetDeltaRequest, AssetRefreshRequest, AssetClassSetRequest, AssetVerdictUndoRequest, AssetPageSeenRequest, UpcomingEventsRequest } from "../contracts/assets";
+import type { AssetEntitySetRequest, AssetFollowNameRequest, AssetIdRequest, AssetLookupRequest, AssetOpenRequest, AssetVerdictUndoRequest, AssetsListRequest } from "../contracts/assets";
+import { MockFxDisplay } from "./mock/fxDisplay";
 import type { CustomConnectionsBridge } from "../contracts/customConnections";
 import { MockSharing } from "./mock/sharing";
 import type { SharingBridge } from "../contracts/sharing";
-import type { WatchlistAddRequest } from "../contracts/userContext";
 import { workspaceFolderName } from "../lib/loupistFolder";
 import { AGENT_SKILLS, DEFAULT_AGENT_SKILL_IDS, FIXED_AGENT_SKILLS } from "../lib/agentSkills";
 import type * as Contract from "../types";
 import {
+  ASSET_LOOKUP_SOURCE_ID,
   createMockLoupistCapabilityBindings,
   createMockMarketplaceSnapshot,
   isValidMockSetupValue,
@@ -96,57 +95,58 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   }
   emitMenuAction(action: string) { this.menuHandlers.forEach(handler => handler(action)); }
 
-  private readonly userContext = new MockUserContext(() => {
-    const entryId = "koreainvestment.market-data";
-    const fields = this.financeCredentialFields.get(entryId);
-    return this.financeCredentials.has(entryId) && !!fields?.has("account_number") && fields.has("account_product_code");
-  });
-  watchlistList() { return this.userContext.watchlistList(); }
-  watchlistRemove(request: { symbol: string; market: string }) { return this.userContext.watchlistRemove(request); }
   async exportSave(request: Parameters<Contract.LoupistBridge["exportSave"]>[0]): Promise<string | null> { return `/mock/${request.suggestedName}`; }
   async pickFile(_request: { title: string; filters: { name: string; extensions: string[] }[] }): Promise<string | null> { return "/mock/holdings.csv"; }
-  watchlistAdd(request: WatchlistAddRequest) { return this.userContext.watchlistAdd(request); }
-  holdingsImportCsv(request: { path: string }) { return this.userContext.holdingsImportCsv(request); }
-  holdingsCommitCsv(request: { previewId: string }) { return this.userContext.holdingsCommitCsv(request); }
-  holdingsImportKis() { return this.userContext.holdingsImportKis(); }
-  holdingsSummary() { return this.userContext.holdingsSummary(); }
-  holdingsImportCryptoFile(request: { path: string }) { return this.userContext.holdingsImportCryptoFile(request); }
-  holdingsMapColumns(request: { previewId: string; asset: string; balance: string }) { return this.userContext.holdingsMapColumns(request); }
-  walletsList() { return this.userContext.walletsList(); }
-  walletAdd(request: { address: string; name?: string | null }) { return this.userContext.walletAdd(request); }
-  walletRename(request: { walletId: string; name?: string | null }) { return this.userContext.walletRename(request); }
-  walletRemove(request: { walletId: string }) { return this.userContext.walletRemove(request); }
-  walletRefresh(request?: { walletId?: string }) { return this.userContext.walletRefresh(request); }
 
-  /** Asset pages; previews install fixtures here. */
+  private admitAssetLoupist(loupistId: string) {
+    if (!this.state.loupists.some(item => item.id === loupistId && item.availability.status === "available")) {
+      throw commandError("loupist_storage_unavailable", "Loupist storage is unavailable.");
+    }
+  }
+
+  /** The asset catalog, pages and stored prices; previews and tests install fixtures here. */
   readonly assets = new MockAssets(
     loupistId => (this.state.knowledgeStores[loupistId] as { journals?: Contract.JournalRecord[] } | undefined)?.journals ?? [],
-    () => this.watchlistList(),
+    loupistId => this.admitAssetLoupist(loupistId),
+    () => this.state.loupists.map(loupist => loupist.id),
   );
-  assetPageGet(request: AssetPageGetRequest) { return this.assets.assetPageGet(request); }
-  assetDelta(request: AssetDeltaRequest) { return this.assets.assetDelta(request); }
-  assetRefresh(request: AssetRefreshRequest) { return this.assets.assetRefresh(request); }
-  assetClassSet(request: AssetClassSetRequest) { return this.assets.assetClassSet(request); }
+  assetsList(request: AssetsListRequest) { return this.assets.assetsList(request); }
+  assetLookup(request: AssetLookupRequest) { return this.assets.assetLookup(request); }
+  assetFollowName(request: AssetFollowNameRequest) { return this.assets.assetFollowName(request); }
+  assetFollow(request: AssetIdRequest) { return this.assets.assetFollow(request); }
+  assetUnfollow(request: AssetIdRequest) { return this.assets.assetUnfollow(request); }
+  assetPageGet(request: AssetOpenRequest) { return this.assets.assetPageGet(request); }
+  assetPriceCheck(request: AssetIdRequest) { return this.assets.assetPriceCheck(request); }
+  assetPriceSeries(request: AssetIdRequest) { return this.assets.assetPriceSeries(request); }
+  watchlistQuotes(request: AssetsListRequest) { return this.assets.watchlistQuotes(request); }
+  assetPageSeen(request: AssetIdRequest) { return this.assets.assetPageSeen(request); }
+  assetEntitySet(request: AssetEntitySetRequest) { return this.assets.assetEntitySet(request); }
   assetVerdictUndo(request: AssetVerdictUndoRequest) { return this.assets.assetVerdictUndo(request); }
-  assetPageSeen(request: AssetPageSeenRequest) { return this.assets.assetPageSeen(request); }
-  upcomingEvents(request: UpcomingEventsRequest) { return this.assets.upcomingEvents(request); }
+  onAssetsChanged(handler: () => void) { return this.assets.onAssetsChanged(handler); }
 
-  /** Results snapshots; previews and tests install them here. */
-  readonly earnings = new MockEarnings();
-  earningsSnapshotGet(request: Parameters<Contract.LoupistBridge["earningsSnapshotGet"]>[0]) { return this.earnings.earningsSnapshotGet(request); }
-  earningsEventsList(request: Parameters<Contract.LoupistBridge["earningsEventsList"]>[0]) { return this.earnings.earningsEventsList(request); }
-  earningsPrepare(request: Parameters<Contract.LoupistBridge["earningsPrepare"]>[0]) { return this.earnings.earningsPrepare(request); }
+  /** Legacy export notice previews configure status and retry outcomes here. */
+  readonly legacyHoldings = new MockLegacyHoldings();
+  legacyHoldingsStatus() { return this.legacyHoldings.legacyHoldingsStatus(); }
+  legacyHoldingsRetry() { return this.legacyHoldings.legacyHoldingsRetry(); }
+  legacyHoldingsReveal() { return this.legacyHoldings.legacyHoldingsReveal(); }
+  legacyHoldingsSaveCopy() { return this.legacyHoldings.legacyHoldingsSaveCopy(); }
+  legacyHoldingsDismiss() { return this.legacyHoldings.legacyHoldingsDismiss(); }
+  onLegacyHoldingsChanged(...args: Parameters<Contract.LoupistBridge["onLegacyHoldingsChanged"]>) { return this.legacyHoldings.onLegacyHoldingsChanged(...args); }
 
-  /** Local watchers; previews and tests install settings and alerts here. */
-  readonly watch = new MockWatch(() => this.watchlistList());
-  watchSettingsList(request: { loupistId: string }) { return this.watch.watchSettingsList(request); }
-  watchSettingSet(request: Parameters<Contract.LoupistBridge["watchSettingSet"]>[0]) { return this.watch.watchSettingSet(request); }
-  watchPauseSet(request: { loupistId: string; paused: boolean }) { return this.watch.watchPauseSet(request); }
-  watchDefaultsApply(request: { loupistId: string }) { return this.watch.watchDefaultsApply(request); }
-  watchCheckNow(request: { loupistId: string }) { return this.watch.watchCheckNow(request); }
-  watchEventsList(request: Parameters<Contract.LoupistBridge["watchEventsList"]>[0]) { return this.watch.watchEventsList(request); }
-  watchEventsSeen(request: { loupistId: string; eventIds: string[] }) { return this.watch.watchEventsSeen(request); }
-  onWatchChanged(handler: (event: { loupistId: string }) => void) { return this.watch.onWatchChanged(handler); }
+  /** Shared FX fixtures and an invalidation publisher for tests and previews. */
+  readonly fxDisplayControl = new MockFxDisplay();
+  async fxDisplay({ loupistId }: Contract.FxDisplayRequest): Promise<Contract.FxDisplay> {
+    this.admitAssetLoupist(loupistId);
+    const { display_currency: currency } = this.configuration.read({ kind: "global" }).effective.appearance;
+    if (!currency) return { state: "unset" };
+    const bindings = await this.loupistCapabilityList(loupistId);
+    const granted = bindings.some(binding => binding.entry_id === "openbb.platform"
+      && binding.enabled && binding.available && binding.granted_permissions.includes("execute"));
+    return this.fxDisplayControl.read(currency, granted);
+  }
+  onFxChanged(handler: (event: Contract.FxChanged) => void, onListening?: () => void) {
+    return this.fxDisplayControl.subscribe(handler, onListening);
+  }
 
   private readonly configuration = new MockConfig();
   async configRead({ scope }: { scope: Contract.ConfigScope }) {
@@ -158,7 +158,11 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     const scope = request.scope;
     const workspace = scope.kind === "project" ? this.state.loupists.find((loupist) => loupist.id === scope.loupistId)?.workspace_path : undefined;
     if (scope.kind === "project" && !workspace) throw new Error("Loupist not found.");
+    const previousCurrency = this.configuration.read(scope, workspace).effective.appearance.display_currency;
     const result = this.configuration.update(request, workspace);
+    if (scope.kind === "global" && result.effective.appearance.display_currency !== previousCurrency) {
+      this.fxDisplayControl.invalidate();
+    }
     this.modelCatalog.hidden_model_profile_ids = result.effective.models.hidden_model_profile_ids;
     for (const loupist of this.state.loupists) {
       const config = this.configuration.read({ kind: "project", loupistId: loupist.id }, loupist.workspace_path).effective;
@@ -506,11 +510,14 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   }
 
   async loupistCapabilityEnable(request: Contract.LoupistCapabilityRequest) {
+    const fxChanged = request.entry_id === "openbb.platform"
+      && this.disabledCapabilities.get(request.loupist_id)?.has(request.entry_id);
     this.disabledCapabilities.get(request.loupist_id)?.delete(request.entry_id);
     const enabled =
       this.enabledCapabilities.get(request.loupist_id) ?? new Set<string>();
     enabled.add(request.entry_id);
     this.enabledCapabilities.set(request.loupist_id, enabled);
+    if (fxChanged) this.fxDisplayControl.invalidate();
     const binding = (await this.loupistCapabilityList(request.loupist_id)).find(
       (candidate) => candidate.entry_id === request.entry_id,
     );
@@ -579,9 +586,11 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   async loupistCapabilityDisable(request: Contract.LoupistCapabilityRequest) {
     const disabled =
       this.disabledCapabilities.get(request.loupist_id) ?? new Set<string>();
+    const fxChanged = request.entry_id === "openbb.platform" && !disabled.has(request.entry_id);
     disabled.add(request.entry_id);
     this.disabledCapabilities.set(request.loupist_id, disabled);
     this.enabledCapabilities.get(request.loupist_id)?.delete(request.entry_id);
+    if (fxChanged) this.fxDisplayControl.invalidate();
     const binding = (await this.loupistCapabilityList(request.loupist_id)).find(
       (candidate) => candidate.entry_id === request.entry_id,
     );
@@ -615,8 +624,13 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     ) {
       throw new Error("Credentials do not match the connector setup contract.");
     }
-    this.pendingFinanceCredentials.add(request.entry_id);
-    this.pendingFinanceCredentialFields.set(request.entry_id, mergedFields);
+    if (request.entry_id === ASSET_LOOKUP_SOURCE_ID) {
+      this.financeCredentials.add(request.entry_id);
+      this.financeCredentialFields.set(request.entry_id, new Set(submittedIds));
+    } else {
+      this.pendingFinanceCredentials.add(request.entry_id);
+      this.pendingFinanceCredentialFields.set(request.entry_id, mergedFields);
+    }
     return (await this.marketplaceSnapshot()).connectors.find(
       (connector) => connector.entry_id === request.entry_id,
     )!
@@ -626,6 +640,9 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   async marketplaceCredentialVerify(
     request: Contract.MarketplaceCredentialRequest,
   ) {
+    if (request.entry_id === ASSET_LOOKUP_SOURCE_ID) {
+      throw new Error("The optional OpenFIGI key is used when you search for a listing.");
+    }
     if (
       !this.pendingFinanceCredentials.has(request.entry_id) &&
       !this.financeCredentials.has(request.entry_id)
@@ -671,12 +688,14 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     this.pendingFinanceCredentials.delete(request.entry_id);
     this.financeCredentialFields.delete(request.entry_id);
     this.pendingFinanceCredentialFields.delete(request.entry_id);
-    for (const [loupistId, enabled] of this.enabledCapabilities) {
-      enabled.delete(request.entry_id);
-      const disabled =
-        this.disabledCapabilities.get(loupistId) ?? new Set<string>();
-      disabled.add(request.entry_id);
-      this.disabledCapabilities.set(loupistId, disabled);
+    if (request.entry_id !== ASSET_LOOKUP_SOURCE_ID) {
+      for (const [loupistId, enabled] of this.enabledCapabilities) {
+        enabled.delete(request.entry_id);
+        const disabled =
+          this.disabledCapabilities.get(loupistId) ?? new Set<string>();
+        disabled.add(request.entry_id);
+        this.disabledCapabilities.set(loupistId, disabled);
+      }
     }
     return (await this.marketplaceSnapshot()).connectors.find(
       (connector) => connector.entry_id === request.entry_id,
@@ -799,6 +818,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   async loupistDelete(request: Contract.LoupistDeleteRequest) {
     await loupistChat.loupistDelete(this.state, request);
     this.disabledCapabilities.delete(request.loupist_id);
+    this.assets.forgetLoupist(request.loupist_id);
   }
 
   async chatCreate(request: Contract.ChatCreateRequest): Promise<Contract.ChatThread> {
@@ -962,17 +982,19 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return loupistChat.chatArtifactRestore(this.state, request);
   }
 
-  researchHandoffStart(request: Contract.ResearchHandoffRequest) { return loupistChat.researchHandoffStart(this.state, request); }
-  private connections = new Map<string, import("../contracts/knowledge").ConnectionView>();
-  private async connectionSetStatus(request: { loupistId: string; connectionId: string }, status: import("../contracts/knowledge").ConnectionStatus) {
-    const found = this.connections.get(request.connectionId);
-    if (!found) throw new Error("No such link.");
-    const next = { ...found, status };
-    this.connections.set(request.connectionId, next);
-    return next;
+  researchHandoffStart(request: Contract.ResearchHandoffRequest) {
+    return loupistChat.researchHandoffStart(this.state, request, this.modelCatalog, () => {
+      const profile = this.state.loupists.find((item) => item.id === request.loupistId);
+      return this.configuration.read({ kind: "project", loupistId: request.loupistId }, profile?.workspace_path).effective.chat;
+    });
   }
-  knowledgeConnectionDismiss(request: { loupistId: string; connectionId: string }) { return this.connectionSetStatus(request, "dismissed"); }
-  knowledgeConnectionOpen(request: { loupistId: string; connectionId: string }) { return this.connectionSetStatus(request, "opened"); }
+  async knowledgeConnectionDismiss(request: { loupistId: string; connectionId: string }) {
+    return loupistChat.dismissHandoffLink(this.state, request.loupistId, request.connectionId);
+  }
+  async chatWatch(_request: Contract.ChatWatchRequest, _observer: Contract.StreamObserver<Contract.ChatStreamEvent>): Promise<Contract.ChatWatchSnapshot | null> {
+    return null;
+  }
+  async chatUnwatch(_request: Contract.ChatWatchRequest): Promise<void> {}
   chatSend(
     request: Contract.ChatSendRequest,
     observer: Contract.StreamObserver<Contract.ChatStreamEvent>,
@@ -1143,7 +1165,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   /** The mock Map is static, so a followed list counts as read once World processing can run. */
   async knowledgeFollowedStatus(request: { loupistId: string }): Promise<Contract.FollowedStatus> {
-    const [watchlist, view] = await Promise.all([this.watchlistList(), this.knowledgeGraphSettingsGet(request)]);
+    const [watchlist, view] = await Promise.all([this.assetsList(request), this.knowledgeGraphSettingsGet(request)]);
     if (!watchlist.length) return { state: "none", assets: 0 };
     const state = view.readiness.status === "ready" ? "done" : view.readiness.status === "disabled" || view.readiness.status === "paused" ? "off" : "waiting";
     return { state, assets: watchlist.length };
@@ -1212,11 +1234,12 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   private enableReadyConnectorForAllLoupists(entryId: string) {
     for (const loupist of this.state.loupists) {
-      this.disabledCapabilities.get(loupist.id)?.delete(entryId);
+      const wasDisabled = this.disabledCapabilities.get(loupist.id)?.delete(entryId);
       const enabled =
         this.enabledCapabilities.get(loupist.id) ?? new Set<string>();
       enabled.add(entryId);
       this.enabledCapabilities.set(loupist.id, enabled);
+      if (entryId === "openbb.platform" && wasDisabled) this.fxDisplayControl.invalidate();
     }
   }
 

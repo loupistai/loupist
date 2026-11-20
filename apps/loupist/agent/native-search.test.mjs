@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import { runNativeSearch, selectSearchModel } from "./loupist-native-search.mjs";
 import {
   buildAnthropicBody,
@@ -8,7 +9,7 @@ import {
   parsePageAge,
 } from "./native-search/anthropic.mjs";
 import { completedCodexTransportPrefix, parseCodexSearchPayload } from "./native-search/codex.mjs";
-import { classifyHttpFailure, toSearchErrorResult, toSearchResult } from "./native-search/common.mjs";
+import { classifyHttpFailure, completeThroughPi, toSearchErrorResult, toSearchResult } from "./native-search/common.mjs";
 import { parseXaiSearchResponse } from "./native-search/xai.mjs";
 
 // One SSE frame per event; the stream ends right after its terminal frame.
@@ -89,9 +90,10 @@ const ANTHROPIC_SEARCH_SSE = sse([
 /** A Pi model registry whose `complete` serializes through the host's onPayload
  * hook and sends one request through the per-request fetch, like Pi does. */
 function piContext(provider, captured, basePayload = {}) {
+  const bundled = getBuiltinModels(provider)[0];
   return {
     modelRegistry: {
-      find: (requested, model) => (requested === provider ? { provider, id: model } : undefined),
+      find: (requested, model) => (requested === provider ? { ...bundled, id: model } : undefined),
       complete: async (_model, _context, options) => {
         captured.options = options;
         captured.body = await options.onPayload(basePayload);
@@ -105,6 +107,17 @@ function piContext(provider, captured, basePayload = {}) {
     },
   };
 }
+
+test("Pi completion rechecks the selected Anthropic search model at dispatch", async () => {
+  const selected = { ...getBuiltinModels("anthropic")[0], baseUrl: "https://untrusted.example" };
+  let dispatched = false;
+  const ctx = { modelRegistry: {
+    find: () => selected,
+    complete: async () => { dispatched = true; },
+  } };
+  await assert.rejects(completeThroughPi(ctx, { provider: "anthropic", model: selected.id }), { kind: "unavailable" });
+  assert.equal(dispatched, false);
+});
 
 test("Codex parsing keeps hosted sources and usage across stream shapes, never the answer", () => {
   const completedOnly = {
@@ -385,9 +398,9 @@ test("xAI search uses the Responses API with bounded filters and keeps only cite
     },
     {
       availableModelIds: ["grok-4.6", "grok-4.5"],
-      resolveAuth: async () => ({ apiKey: "xai-redacted-test" }),
+      resolveAuth: async () => ({ apiKey: "xai-redacted-test", baseUrl: "https://untrusted.example" }),
       fetchImpl: async (url, init) => {
-        captured = { url: String(url), headers: init.headers, body: JSON.parse(init.body) };
+        captured = { url: String(url), redirect: init.redirect, headers: init.headers, body: JSON.parse(init.body) };
         return Response.json({
           id: "resp_xai_mock",
           model: "grok-4.5",
@@ -396,7 +409,8 @@ test("xAI search uses the Responses API with bounded filters and keeps only cite
       },
     },
   );
-  assert.match(captured.url, /api\.x\.ai\/v1\/responses$/);
+  assert.equal(captured.url, "https://api.x.ai/v1/responses");
+  assert.equal(captured.redirect, "error");
   assert.equal(captured.headers.authorization, "Bearer xai-redacted-test");
   assert.equal(captured.body.model, "grok-4.6");
   assert.deepEqual(captured.body.reasoning, { effort: "low" });

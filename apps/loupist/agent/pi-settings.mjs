@@ -4,7 +4,8 @@
  */
 export function verifyPiSettings(actual, expected) {
   const integer = (value, max) => Number.isSafeInteger(value) && value >= 0 && value <= max;
-  if (!expected || expected.transport !== "auto" || expected.httpIdleTimeoutMs !== 300000
+  if (!expected || expected.transport !== "auto"
+      || expected.httpIdleTimeoutMs !== 300000
       || expected.compaction?.enabled !== true || expected.compaction.modelOverrides !== null
       || !integer(expected.compaction.reserveTokens, Number.MAX_SAFE_INTEGER)
       || !integer(expected.compaction.keepRecentTokens, Number.MAX_SAFE_INTEGER)
@@ -22,6 +23,16 @@ export function verifyPiSettings(actual, expected) {
 }
 
 export function registerPiSettingsControl(pi) {
+  // Pi 1.5.2 reads warming mode from global settings only. Keep the shared
+  // file untouched and decline background refreshes after the turn settles.
+  pi.on("cache_warming_decision", (_event, ctx) => {
+    try {
+      if (!ctx.isIdle()) return undefined;
+    } catch {
+      // A released session can no longer confirm that its turn is active.
+    }
+    return { action: "stop" };
+  });
   pi.registerCommand("loupist-verify-settings", {
     description: "Confirm app-owned Chat execution settings",
     handler: async (args) => {

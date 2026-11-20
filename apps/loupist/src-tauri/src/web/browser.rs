@@ -282,7 +282,7 @@ impl BrowserManager {
     fn update_title(&self, tab_id: &str, title: &str) {
         if let Ok(mut registry) = self.registry.lock() {
             if let Some(record) = registry.tabs.get_mut(tab_id) {
-                record.title = title.chars().take(240).collect();
+                record.title = crate::util::shorten(title, 240);
             }
         }
     }
@@ -464,7 +464,7 @@ pub async fn browser_tab_open(
                 title_events.clone(),
                 BrowserTabEvent::TitleChanged {
                     tab_id: title_tab_id.clone(),
-                    title: title.chars().take(240).collect(),
+                    title: crate::util::shorten(&title, 240),
                 },
             );
         })

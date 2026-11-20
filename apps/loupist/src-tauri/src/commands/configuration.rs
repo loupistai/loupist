@@ -48,8 +48,14 @@ fn update_config(
     state: &AppState,
 ) -> Result<ConfigSnapshot, CommandError> {
     let project = project_directory(state, &request.scope)?;
-    let snapshot =
-        scoped_config::update_scope(&state.artifacts.app_data_dir, project.as_deref(), &request)?;
+    let (snapshot, display_changed) = scoped_config::update_scope_with_display_change(
+        &state.artifacts.app_data_dir,
+        project.as_deref(),
+        &request,
+    )?;
+    if display_changed {
+        state.fx_reference.invalidate_display();
+    }
     // Saving is complete before reconciliation. If invalidation fails the new
     // file remains the source of truth and the connection stays blocked.
     if matches!(request.scope, ConfigScope::Global) {

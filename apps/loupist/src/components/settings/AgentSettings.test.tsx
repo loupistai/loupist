@@ -75,6 +75,20 @@ describe("Agent configuration", () => {
     expect(screen.queryByText("Saved · Applies to new responses")).not.toBeInTheDocument();
   });
 
+  it("turns retrying failed requests off and on with a switch, like the other on/off setting", async () => {
+    const user = userEvent.setup();
+    const fixture = await setup();
+    render(<Settings {...fixture} />);
+    await user.click(await screen.findByText("Advanced"));
+    const retry = await screen.findByRole("switch", { name: "Retry failed requests" });
+    expect(retry).toBeChecked();
+    await user.click(retry);
+    await waitFor(async () => expect((await fixture.bridge.configRead({ scope: { kind: "global" } })).explicit?.pi?.retry?.enabled).toBe(false));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Retry failed requests" })).not.toBeChecked());
+    await user.click(screen.getByRole("switch", { name: "Retry failed requests" }));
+    await waitFor(async () => expect((await fixture.bridge.configRead({ scope: { kind: "global" } })).effective.pi.retry.enabled).toBe(true));
+  });
+
   it("inherits global defaults, saves a project override and removes it with Use inherited", async () => {
     const user = userEvent.setup();
     const fixture = await setup();

@@ -34,7 +34,7 @@ export function ScheduleTaskControls({ bridge, task, title, running, onChanged, 
   const statusLabel = task.awaiting_confirmation ? t("schedule.turnOn") : nextStatus === "paused" ? t("schedule.pause") : t("schedule.resume");
   // A completed one-time task cannot be reactivated without an edit; that edit is a conversation.
   const canToggle = task.status !== "completed";
-  // The briefing is turned off, not deleted; the results task is paused, not deleted.
+  // The briefing is turned off, not deleted.
   const canDelete = task.kind === "custom";
   // A proposed task is not running yet: turning it on is its primary action, as Resume is.
   const paused = nextStatus === "active";
@@ -59,7 +59,7 @@ export function ScheduleTaskControls({ bridge, task, title, running, onChanged, 
       </DropdownMenu> : null}
     </div>
     {error && !confirming ? <p className="inline-error" role="alert">{error}</p> : null}
-    <p className="briefings-meta schedule-task-change">{t("schedule.changeHint")}{onAskHome ? <> <Button variant="link" className="schedule-task-ask" onClick={() => onAskHome(t("schedule.changePrompt", { title }))}>{t("schedule.changeAsk")}</Button></> : null}</p>
+    <p className="briefings-meta schedule-task-change">{t(task.kind === "briefing" ? "schedule.briefingChangeHint" : "schedule.changeHint")}{onAskHome ? <> <Button variant="link" className="schedule-task-ask" onClick={() => onAskHome(t("schedule.changePrompt", { title }))}>{t("schedule.changeAsk")}</Button></> : null}</p>
     <Dialog open={confirming} onOpenChange={value => { if (busy !== "delete") setConfirming(value); }}>
       <DialogContent size="sm" className="dialog-form" showCloseButton={busy !== "delete"}>
         <DialogHeader><DialogTitle>{t("schedule.deleteTitle", { title })}</DialogTitle><DialogDescription>{t("schedule.deleteBody")}</DialogDescription></DialogHeader>

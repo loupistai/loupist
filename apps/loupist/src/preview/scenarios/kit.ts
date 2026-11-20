@@ -1,4 +1,5 @@
 /** Shared preview scenario helpers: landmarks, waits, navigation and the `base` scenario. */
+import type { ReactElement } from "react";
 import { prepareFixture, PreviewBridge, previewKo } from "../fixtures";
 import type { ChatApproval, ChatProgressItem } from "../../contracts/chat";
 import type { GrowthEvent, KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
@@ -15,6 +16,8 @@ export type PreviewScenario = {
   selection?: boolean;
   /** "print": the capture emulates print media, as the print dialog draws the page. */
   media?: "print";
+  /** Renders this in place of the app: a gallery of shared components no screen uses yet. */
+  render?: () => ReactElement;
 };
 
 // Check rendered visibility without requiring layout geometry (jsdom has none).
@@ -76,18 +79,55 @@ export async function clickMapAction(selector: string, root: ParentNode = docume
   await click(`[role="menu"] ${selector}`);
 }
 
+/** Folds or restores the sidebar as ⌘B does; the expanded sidebar has no toggle button. */
+export function toggleSidebar() {
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "b", metaKey: true, ctrlKey: true, bubbles: true }));
+}
+
+/** Shows a sidebar control: the rail's header toggle or the drawer opens the labelled sidebar when it is hidden. */
 export async function openNavigation(selector: string) {
-  if (!select(selector)) await click('[data-slot="sidebar-trigger"]');
+  if (await until(() => select(selector), "", 1500).catch(() => null)) return;
+  if (select('[data-slot="sidebar-trigger"]')) await click('[data-slot="sidebar-trigger"]');
+  else toggleSidebar();
+}
+
+/** Opens the Loupist switcher at the top of the sidebar. */
+export async function openLoupistMenu() {
+  if (select(".loupist-switcher-menu")) return;
+  await openNavigation(".loupist-header-identity");
+  pressMenu(await until(() => select(".loupist-header-identity"), "Loupist did not initialize"));
+  await until(() => select(".loupist-switcher-menu"), "Loupist switcher did not open");
 }
 
 export async function openLoupistSettings() {
-  await until(() => select(".loupist-header-identity"), "Loupist did not initialize");
+  await openLoupistMenu();
   await click("[data-header-loupist-settings]");
 }
 
+/** New Loupist, from the switcher. */
+export async function newLoupist() {
+  await openLoupistMenu();
+  await click(".loupist-header-new");
+}
+
+/** Map and Lens are sidebar pages; the chat's materials open beside it from the activity sheet's In use tab. */
 export async function selectPanel(kind: "lens" | "world" | "materials") {
-  pressMenu(await until(() => select(".header-panel-toggle"), "Panel control did not initialize"));
-  await click(`[data-workspace-kind="${kind}"]`);
+  if (kind === "materials") {
+    if (select("#workspace-panel")) return;
+    const toggle = await until(() => select("[data-header-activity]"), "Activity control did not initialize");
+    if (toggle.getAttribute("aria-pressed") !== "true") toggle.click();
+    await click('[data-activity-tab="using"]');
+    await click("[data-activity-materials]");
+    await until(() => select("#workspace-panel"), "Chat materials did not open");
+    // The sheet steps aside once it has opened the materials. Under a panel that covers a narrow
+    // stage it is already out of view, and its close button out of reach.
+    if (select("[data-activity-close]")) await click("[data-activity-close]");
+    await until(() => !select(".activity-sheet"), "The activity sheet did not close");
+    return;
+  }
+  const place = `[data-sidebar-place="${kind === "world" ? "map" : "lens"}"] button`;
+  await openNavigation(place);
+  await click(place);
 }
 
 export async function navigate(root: HTMLElement, tab: "map" | "lens" | "following" | "schedule" | "settings") {
@@ -166,6 +206,20 @@ export async function inlineChartFixture(bridge: PreviewBridge) {
   bridge.chatArtifactRead = (loupistId, chatId, artifactId, revisionId) => read(loupistId, storedId(chatId), artifactId, revisionId);
 }
 
+/**
+ * Opens the fixture's conversation as a research session instead of the home Thread.
+ * Bot keeps steps, plans and approvals in the activity sheet; a session keeps them inline,
+ * with the outline and the "new since you left" divider. Install it after the scenario's
+ * other `loupistSelect` overrides that look the home Thread up.
+ */
+export function asSession(bridge: PreviewBridge) {
+  const select = bridge.loupistSelect.bind(bridge);
+  bridge.loupistSelect = async (loupistId) => {
+    const workspace = await select(loupistId);
+    return { ...workspace, threads: workspace.threads.map((thread, index) => index ? thread : { ...thread, home: false }) };
+  };
+}
+
 /** The saved answer three times, so the thread overflows even at 1680×1050 and the reader can scroll away. */
 export function longThread(bridge: PreviewBridge) {
   const select = bridge.loupistSelect.bind(bridge);
@@ -192,7 +246,7 @@ export function chatResearchMap(bridge: PreviewBridge, events: () => GrowthEvent
   const readMap = bridge.knowledgeMap.bind(bridge);
   bridge.knowledgeMap = async request => {
     const map = await readMap(request);
-    map.nodes = names.map((label, index) => ({ id: `chat-node-${index}`, kind: "entity", label, entityKind: index < 2 ? "Organization" : "Entity", degree: index === 0 ? 3 : 1, watched: false, held: false }));
+    map.nodes = names.map((label, index) => ({ id: `chat-node-${index}`, kind: "entity", label, entityKind: index < 2 ? "Organization" : "Entity", degree: index === 0 ? 3 : 1, watched: false }));
     map.edges = [1, 2, 3].map(index => ({ id: `chat-edge-${index}`, kind: "claim", source: "chat-node-0", target: `chat-node-${index}`, relation: "related_to", status: "active" }));
     map.worldRevisionId = "chat-research-map";
     return map;
@@ -223,12 +277,12 @@ export function localViewMap(bridge: PreviewBridge, { lens = false } = {}) {
   bridge.knowledgeMap = async request => {
     const map = await original(request);
     const start = Date.now() - 30 * 86_400_000;
-    const node = (id: string, label: string, entityKind: string, index: number, extra: Partial<KnowledgeMapNode> = {}): KnowledgeMapNode => ({ id, label, kind: "entity", entityKind, degree: 0, watched: false, held: false, firstSeenAtMs: start + (index % 30) * 86_400_000, ...extra });
+    const node = (id: string, label: string, entityKind: string, index: number, extra: Partial<KnowledgeMapNode> = {}): KnowledgeMapNode => ({ id, label, kind: "entity", entityKind, degree: 0, watched: false, firstSeenAtMs: start + (index % 30) * 86_400_000, ...extra });
     const suppliers = ["ASML", "Applied Materials", "Tokyo Electron", "Shin-Etsu Chemical", "SUMCO"];
     const customers = ["Apple", "NVIDIA", "AMD", "Qualcomm", "Broadcom"];
     const peers = ["Samsung Foundry", "Intel Foundry"];
     const ring = [...suppliers, ...customers, ...peers];
-    const nodes: KnowledgeMapNode[] = [node("local-tsmc", "TSMC", "Organization", 0, { watched: true }), ...ring.map((label, index) => node(`local-ring-${index}`, label, "Organization", index + 1, { held: label === "NVIDIA" })), node("local-kioxia", "Kioxia", "Organization", 13)];
+    const nodes: KnowledgeMapNode[] = [node("local-tsmc", "TSMC", "Organization", 0, { watched: true }), ...ring.map((label, index) => node(`local-ring-${index}`, label, "Organization", index + 1, { watched: label === "NVIDIA" })), node("local-kioxia", "Kioxia", "Organization", 13)];
     const edges: KnowledgeMapEdge[] = ring.map((_, index) => {
       const id = `local-ring-${index}`;
       const relation = index < suppliers.length ? "SUPPLIES" : index < suppliers.length + customers.length ? "SUPPLIES" : "COMPETES_WITH";
@@ -242,8 +296,8 @@ export function localViewMap(bridge: PreviewBridge, { lens = false } = {}) {
     }
     if (lens) {
       const ko = previewKo();
-      nodes.push({ id: "local-lens-cash", recordId: "local-lens-cash", label: ko ? "이익보다 현금흐름 먼저" : "Cash flow first", kind: "lens_principle", degree: 0, watched: false, held: false },
-        { id: "local-lens-moat", recordId: "local-lens-moat", label: ko ? "경쟁우위 비교" : "Moat comparison", kind: "lens_method", degree: 0, watched: false, held: false });
+      nodes.push({ id: "local-lens-cash", recordId: "local-lens-cash", label: ko ? "이익보다 현금흐름 먼저" : "Cash flow first", kind: "lens_principle", degree: 0, watched: false },
+        { id: "local-lens-moat", recordId: "local-lens-moat", label: ko ? "경쟁우위 비교" : "Moat comparison", kind: "lens_method", degree: 0, watched: false });
       edges.push({ id: "local-applies-cash", kind: "applies_to", source: "local-lens-cash", target: "local-tsmc" }, { id: "local-applies-moat", kind: "applies_to", source: "local-lens-moat", target: "local-tsmc" });
     }
     for (const edge of edges) for (const id of [edge.source, edge.target]) nodes.find(item => item.id === id)!.degree++;

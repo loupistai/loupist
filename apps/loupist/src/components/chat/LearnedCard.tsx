@@ -5,8 +5,8 @@ import { learnedSummary } from "../../chat/receipt";
 import { errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
 import { useFixMemory } from "../memory/fixMemory";
-import { pageTitle } from "../memory/PageReader";
 import { useGo } from "../navigation/Open";
+import { joinMeta } from "./BotPost";
 
 const t = i18n.getFixedT(null, "chat");
 const CHANGED = ["added", "replaced", "retired"] as const;
@@ -74,8 +74,8 @@ export function LearnedCard({ id, bridge, loupistId, digest, onChanged }: {
       const changes: Change[] = page.outcomes.flatMap(outcome => CHANGED.includes(outcome.outcome as Change["outcome"]) && outcome.key ? [{ opId: outcome.opId, key: outcome.key, outcome: outcome.outcome as Change["outcome"] }] : []);
       return <section key={page.recordId} className="learned-page" data-learned-page={page.recordId}>
         <header>
-          <button type="button" className="learned-page-title" onClick={() => go?.({ kind: "lens", recordId: page.recordId })}>{pageTitle(view ?? page)}</button>
-          <span className="learned-page-kind">{i18n.t(`knowledge:pageReader.kind.${page.kind}`)}{page.created ? ` · ${t("learnedCard.new")}` : ""}</span>
+          <button type="button" className="learned-page-title" onClick={() => go?.({ kind: "lens", recordId: page.recordId })}>{(view ?? page).title}</button>
+          <span className="learned-page-kind">{joinMeta([i18n.t(`knowledge:pageReader.kind.${page.kind}`), page.created && t("learnedCard.new")])}</span>
         </header>
         <ul>
           {changes.map(change => {
@@ -92,7 +92,7 @@ export function LearnedCard({ id, bridge, loupistId, digest, onChanged }: {
               </div>
               <div className="learned-actions">
                 {gone ? <Button variant="ghost" size="sm" disabled={pending} onClick={() => undo(page.recordId, change.key)}>{t("learnedCard.undo")}</Button> : section ? <>
-                  {fix && view ? <Button variant="ghost" size="sm" aria-label={t("learnedCard.fixSection", { heading })} onClick={() => fix({ kind: "lens", loupistId, recordId: page.recordId, revisionId: view.revisionId, objectId: page.recordId, label: `${pageTitle(view)} · ${heading}` })}>{t("learnedCard.fix")}</Button> : null}
+                  {fix && view ? <Button variant="ghost" size="sm" aria-label={t("learnedCard.fixSection", { heading })} onClick={() => fix({ kind: "lens", loupistId, recordId: page.recordId, revisionId: view.revisionId, objectId: page.recordId, label: `${view.title} · ${heading}` })}>{t("learnedCard.fix")}</Button> : null}
                   {bridge ? <Button variant="ghost" size="sm" disabled={pending} aria-label={t("learnedCard.forgetSection", { heading })} onClick={() => forget(page.recordId, change.key, heading)}>{t("learnedCard.forget")}</Button> : null}
                 </> : null}
               </div>

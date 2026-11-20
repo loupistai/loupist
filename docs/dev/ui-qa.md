@@ -81,7 +81,11 @@ state, including while the camera moves.
 accents, status/Map colors, typography, spacing, radii and motion. Primitive palette
 values stay private to that file; feature styles use semantic tokens. Do not add
 decorative icons above headings/empty states, in feature lists, as card avatars or
-as icon tiles. Icons belong in controls and inline status at 16 px. `EmptyState`
+as icon tiles. Icons belong in controls and inline status at 16 px. Two identity
+marks are not icons and are the only exceptions: the Loupist's face
+(`components/app/LoupistAvatar.tsx`, 20 to 64 px, including above the Bot greeting
+and as a message avatar) and an asset's monogram tile (`components/market/AssetTile.tsx`).
+The face's ten colours are `--gg-color-face-01` to `-10`, one per stored portrait id. `EmptyState`
 accepts title, description and action; it has no icon prop.
 Use shared `PageHeader`, `Button`, `Input`, `Textarea`, `NativeSelect`, dialog,
 disclosure and empty-state components. `page.css` owns shared page layout;
@@ -89,7 +93,9 @@ disclosure and empty-state components. `page.css` owns shared page layout;
 Use `SegmentedControl` for one-of-many choices and list filters: these are radio
 groups, with arrow-key selection. Reserve `Tabs` for views with real `TabsContent`
 panels. A search field or action button is not a menu item; the model picker is a
-dialog containing its search, model menus and account actions. Keep visible button
+dialog containing its search, model menus and account actions. A search field's clear
+control is the app's own ghost × button, shown while the field has text; WebKit's
+native cancel button and decoration never draw (`shell.css`), so the two never overlap. Keep visible button
 labels in accessible names, and put supplementary explanations in descriptions.
 Ordinary dropdown menus are non-modal; the model picker explicitly opts into its
 modal focus scope. Opening an ordinary menu must not hide still-focusable app chrome
@@ -102,8 +108,24 @@ reopen a menu after selecting Files or a browser tab.
 The native minimum is 700×560. Preserve keyboard focus, scroll, light/dark themes and
 reduced-motion behavior. Menus never ring their container; a trigger or item a press
 reached carries `data-input="pointer"` (`lib/inputModality`) and shows no ring, since
-WebKit counts focus a script moved from a text field as keyboard focus. Keep ordinary chrome neutral; burnt amber `#a4530c`
-is the focus/identity accent, while data and error states retain semantic colors.
+WebKit counts focus a script moved from a text field as keyboard focus. Keep ordinary chrome neutral. The iris-violet
+accent (`--gg-color-accent`, `#5b45e0` light and `#6a55f2` dark; `--gg-color-accent-ink` for text and focus) is worn
+by primary actions (`--gg-color-action` and shadcn `--primary` point at it), focus rings, selected choices, links and
+identity. Data and error states keep semantic colors. Up and down are `--gg-color-price-up/-down` (and `-soft`
+fills), which `data-price-colors` on the root sets from global `appearance.price_colors` (`auto`, `red-up` or
+`green-up`; Settings › Appearance). Auto follows the interface language's convention (red-up for Korean, Chinese and
+Japanese; the system's first language when the language follows the system). They mean price direction only, and a
+change is never shown by colour alone: `ChangePill` carries a direction glyph that is its sign (the figures after it are magnitudes, "▼ 3.34 · 2.01%", never an arrow and a minus together) and a spoken direction. The type scale adds
+`--gg-text-figure` (38 px) for a headline price and the weights `--gg-weight-strong` (650) and `--gg-weight-bold`
+(700); radii are 10 for controls (`--gg-radius-md`), 16 for cards (`--gg-radius-lg`) and `--gg-radius-bubble` (20) for
+a message bubble. A light card carries a hairline and `--gg-shadow-card`; a dark card only the hairline. The face
+tokens (`--gg-color-face`, `-face-ink`, `-face-detail`) are reserved for the Loupist's avatar.
+
+Shared market primitives live in `src/components/market/` with `src/styles/market.css`: `PriceText` (a price
+through `formatPrice` with tabular figures), `ChangePill`, `Sparkline` (a trend line sized by its attributes, with
+an accessible summary) and `AssetTile` (a monogram from the name in the interface language). They take plain props
+and fetch nothing. The `market-primitives` preview scenario shows them in both price conventions. The monogram tile
+is an asset's identity, not a decorative icon tile.
 
 The shell's implemented destinations and reader behavior are described in
 [Sidebar](../ui/sidebar.md#sidebar), [Map and Library](../ui/map-lens.md#map-and-library)
@@ -121,6 +143,22 @@ persists global `appearance.language` as `system`, `en` or `ko`; system follows
 `navigator.languages` with an English fallback. The development/preview-only
 `en-XA` pseudo-locale is not persisted. English and Korean catalogs share keys and placeholders; the pseudo-locale
 exercises text expansion in previews.
+
+Appearance also holds the optional global `appearance.display_currency`. Its select
+lists As listed, then the euro and the 29 ECB reference currencies in the table's
+order, each named by `Intl.DisplayNames` in the interface language with the code as
+fallback; nothing is chosen from the locale or market. As listed removes the key.
+A hand-set code outside the table stays selected and is named as such. The status
+line under it (`appearance.displayCurrency.status.*`) words the host's `fx_display`
+state for the open Loupist and is empty when the setting is unset or no Loupist is
+open. `app/useDisplayFx.ts` is the window's one query: it reads only after its
+`fx-changed` listener reports it is attached, rereads on every hint (a window on As
+listed reloads the committed configuration instead), on becoming visible and once at
+a ready table's `usable_until`, when it also hides the figure. It is shared with the asset page's
+`ConvertedAmount` line: "≈", the ISO code or the locale's own word from
+`currencyName`, never a symbol, then the rate with both codes and every digit the
+host sent, then the source and the rate's own date. Previews:
+`settings-appearance-currency-*` and `asset-page-display-*`.
 
 Use these helpers for newly localized surfaces and preserve Source/Lens text.
 `scripts/check-i18n-parity.mjs` checks catalog parity and placeholders.

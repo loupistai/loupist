@@ -1,5 +1,3 @@
-#[cfg(any(test, feature = "e2e", not(target_os = "macos")))]
-use std::env;
 use std::{
     collections::{BTreeMap, HashMap},
     fs::File,
@@ -59,6 +57,9 @@ pub(crate) const LIVE_PI_AGENT_DATA_DIR_ENV: &str = "LOUPIST_LIVE_PI_AGENT_DATA_
 pub struct CommandError {
     pub code: CommandErrorCode,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub detail: Option<serde_json::Value>,
 }
 
 impl CommandError {
@@ -66,6 +67,19 @@ impl CommandError {
         Self {
             code: code.into(),
             message: message.into(),
+            detail: None,
+        }
+    }
+
+    pub fn with_detail(
+        code: impl Into<CommandErrorCode>,
+        message: impl Into<String>,
+        detail: serde_json::Value,
+    ) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            detail: Some(detail),
         }
     }
 
@@ -155,6 +169,9 @@ impl PiArtifacts {
 #[derive(Clone)]
 pub struct AppArtifacts {
     pub app_data_dir: PathBuf,
+    /// Holds `run_python`'s compiled-module cache: `app_data_dir`, except that
+    /// an eval run shares one warmed cache across its disposable app profiles.
+    pub python_cache_root: PathBuf,
     pub broker_dir: PathBuf,
     pub process_lease_dir: PathBuf,
     pub deletion_root: Arc<SecureDeletionRoot>,
@@ -260,7 +277,9 @@ pub struct AppState {
     pub artifacts: Arc<AppArtifacts>,
     pub(crate) mcp_pool: crate::mcp::pool::McpProcessPool,
     pub finance_data: Arc<FinanceDataService>,
+    pub(crate) fx_reference: Arc<crate::finance_data::fx::FxService>,
     pub run_coordinator: RunCoordinator,
+    pub(crate) live_handoffs: crate::chat::live::LiveChats,
     pub provider_support: ProviderSupportCoordinator,
     pub(crate) provider_model_cache: ProviderModelDiscoveryCache,
     pub maintenance: MaintenanceCoordinator,
@@ -272,6 +291,7 @@ pub struct AppState {
     pub(crate) fresh_install: bool,
     pub graph: crate::knowledge::GraphSupervisor,
     /// Writes what the user follows to every Loupist once a burst of follows settles.
+    pub(crate) price_setup: crate::commands::assets::setup::PriceSetup,
     pub(crate) followed: crate::commands::knowledge::FollowedSync,
     /// What sharing commands remember between calls: saved copies, sign-in, update checks.
     pub(crate) sharing: crate::sharing::commands::SharingSession,
@@ -326,7 +346,7 @@ impl AppState {
                     "the E2E build requires the isolated E2E app identifier",
                 ));
             }
-            e2e_app_data_dir(env::var_os("LOUPIST_E2E_APP_DATA_DIR").map(PathBuf::from))?
+            e2e_app_data_dir(std::env::var_os("LOUPIST_E2E_APP_DATA_DIR").map(PathBuf::from))?
         };
         #[cfg(not(feature = "e2e"))]
         let requested_app_data_dir =
@@ -437,6 +457,7 @@ impl AppState {
             process_lease_dir,
             deletion_root,
             app_data_dir: app_data_dir.clone(),
+            python_cache_root: app_data_dir.clone(),
             pi,
             mcp_runtimes,
         });
@@ -455,8 +476,12 @@ impl AppState {
             credential_environment: credential_environment.into(),
             artifacts,
             mcp_pool,
+            fx_reference: Arc::new(crate::finance_data::fx::FxService::with_cache(
+                app_data_dir.join("cache/fx-reference"),
+            )),
             finance_data,
             run_coordinator: RunCoordinator::new(maintenance.clone()),
+            live_handoffs: Default::default(),
             provider_support,
             provider_model_cache: ProviderModelDiscoveryCache::default(),
             maintenance: maintenance.clone(),
@@ -474,6 +499,7 @@ impl AppState {
                 Some(inference),
             ),
             followed: Default::default(),
+            price_setup: Default::default(),
             sharing: Default::default(),
         };
         // Invalid editable configuration must leave Settings available. Every
@@ -900,6 +926,7 @@ impl AppState {
             process_lease_dir,
             deletion_root,
             app_data_dir: app_data_dir.clone(),
+            python_cache_root: app_data_dir.clone(),
             pi: None,
             mcp_runtimes: BTreeMap::new(),
         });
@@ -918,8 +945,12 @@ impl AppState {
             credential_environment: credential_environment.into(),
             artifacts,
             mcp_pool,
+            fx_reference: Arc::new(crate::finance_data::fx::FxService::with_cache(
+                app_data_dir.join("cache/fx-reference"),
+            )),
             finance_data,
             run_coordinator: RunCoordinator::new(maintenance.clone()),
+            live_handoffs: Default::default(),
             provider_support,
             provider_model_cache: ProviderModelDiscoveryCache::default(),
             maintenance: maintenance.clone(),
@@ -937,8 +968,12 @@ impl AppState {
                 Some(inference),
             ),
             followed: Default::default(),
+            price_setup: Default::default(),
             sharing: Default::default(),
         };
+        // Tests rank with the embedding model from their first search; the
+        // app never waits for it (`prewarm_semantic_model`).
+        state.graph.wait_for_semantic_model();
         let _ = crate::marketplace::connector_config::reconcile_connector_configs(&state);
         state
     }
@@ -1163,11 +1198,11 @@ fn transient_broker_directory() -> PathBuf {
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        env::temp_dir().join(format!("loupist-{}", unsafe { libc::geteuid() }))
+        std::env::temp_dir().join(format!("loupist-{}", unsafe { libc::geteuid() }))
     }
     #[cfg(not(unix))]
     {
-        env::temp_dir().join("loupist")
+        std::env::temp_dir().join("loupist")
     }
 }
 

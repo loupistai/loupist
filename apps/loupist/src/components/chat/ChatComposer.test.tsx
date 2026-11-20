@@ -6,7 +6,8 @@ import { AGENT_SKILLS, FIXED_AGENT_SKILLS } from "@/lib/agentSkills";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatComposer } from "./ChatComposer";
 
-function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), onAbort = vi.fn(), isRunning = true, onSearchContext, chips, modelCount = 1, skills = [{ id: "research", name: "Research", description: "Research a topic" }] }: {
+function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), onAbort = vi.fn(), isRunning = true, onSearchContext, chips, layerOpen, modelCount = 1, skills = [{ id: "research", name: "Research", description: "Research a topic" }] }: {
+  layerOpen?: boolean;
   modelCount?: number;
   skills?: ComponentProps<typeof ChatComposer>["skills"];
   onFollowUp?: ComponentProps<typeof ChatComposer>["onFollowUp"];
@@ -28,6 +29,7 @@ function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), onAbort = vi.
     onSend={onSend} onFollowUp={onFollowUp} onAbort={onAbort}
     onSearchContext={onSearchContext}
     chips={chips}
+    layerOpen={layerOpen}
   /></TooltipProvider>;
 }
 
@@ -50,6 +52,58 @@ describe("ChatComposer input", () => {
     view.rerender(<RunningComposer onAbort={onAbort} isRunning={false} />);
     await user.keyboard("{Escape}");
     expect(onAbort).toHaveBeenCalledOnce();
+  });
+
+  it("leaves Esc to a layer over the conversation before it stops the reply", async () => {
+    const user = userEvent.setup();
+    const onAbort = vi.fn();
+    const view = render(<RunningComposer onAbort={onAbort} layerOpen />);
+    await user.click(screen.getByRole("textbox", { name: "Message Loupist" }));
+    await user.keyboard("{Escape}");
+    expect(onAbort).not.toHaveBeenCalled();
+    view.rerender(<RunningComposer onAbort={onAbort} layerOpen={false} />);
+    await user.keyboard("{Escape}");
+    expect(onAbort).toHaveBeenCalledOnce();
+  });
+
+  it("keeps its status region out of a busy container while a reply runs, so stops and guidance are spoken", () => {
+    render(<RunningComposer />);
+    for (const region of screen.getAllByRole("status")) expect(region.closest('[aria-busy="true"]')).toBeNull();
+  });
+
+  it("returns focus to the message after Stop pressed from the keyboard", async () => {
+    const user = userEvent.setup();
+    const onAbort = vi.fn();
+    render(<RunningComposer onAbort={onAbort} />);
+    const stop = screen.getByRole("button", { name: "Stop response" });
+    stop.focus();
+    await user.keyboard("{Enter}");
+    expect(onAbort).toHaveBeenCalledOnce();
+    expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveFocus();
+  });
+
+  it("names private chat in the / menu and says what choosing it does", async () => {
+    const user = userEvent.setup();
+    render(<RunningComposer isRunning={false} />);
+    const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
+    await user.type(textarea, "/private");
+    expect(screen.getByRole("option", { name: "Private chat" })).toHaveAccessibleDescription("Doesn't use or add to what your Loupist remembers");
+    await user.keyboard("{Enter}");
+    expect(screen.getByText("Private · memory off")).toBeVisible();
+    // The old name still finds it, now offering to turn it off.
+    await user.type(textarea, "/memory");
+    expect(screen.getByRole("option", { name: "Private chat" })).toHaveAccessibleDescription("Turn off private chat");
+  });
+
+  it("keeps focus in the message when an attachment is removed by its button", async () => {
+    const user = userEvent.setup();
+    render(<RunningComposer isRunning={false} />);
+    await user.upload(screen.getByLabelText("Upload files"), new File(["notes"], "notes.txt", { type: "text/plain" }));
+    const remove = screen.getByRole("button", { name: "Remove notes.txt" });
+    remove.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.queryByText("notes.txt")).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveFocus();
   });
 
   it("folds many Skill modes in the production composer and expands them on request", () => {
@@ -130,7 +184,7 @@ describe("ChatComposer input", () => {
     const user = userEvent.setup();
     render(<div style={{ width: 280 }}><RunningComposer isRunning={false} /></div>);
     const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
-    expect(textarea).toHaveAttribute("placeholder", "Ask Loupist…");
+    expect(textarea).toHaveAttribute("placeholder", "Message Loupist");
 
     await user.type(textarea, "@");
     const context = screen.getByRole("listbox", { name: "Prompt shortcuts" });
@@ -146,16 +200,46 @@ describe("ChatComposer input", () => {
     await user.type(textarea, "/");
     const commands = screen.getByRole("listbox", { name: "Prompt shortcuts" });
     expect(commands).toHaveAttribute("data-symbol", "/");
-    expect(commands).toHaveTextContent("Commands");
+    // One heading names the menu; its sections (Commands, Skills, Actions) are not named twice above them.
+    expect(within(commands).getByText("Commands and skills")).toBeVisible();
+    expect(within(commands).getAllByText("Commands")).toHaveLength(1);
     expect(screen.getByRole("option", { name: /\/brief/ })).toBeVisible();
     expect(textarea).toHaveAccessibleName("Message Loupist");
+  });
+
+  it("grows the message with each line it holds, without relying on field-sizing", async () => {
+    // jsdom has no layout: a line is 22 px and the padding 14 px, as in composer.css.
+    Object.defineProperty(HTMLTextAreaElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLTextAreaElement) { return 14 + 22 * this.value.split("\n").length; },
+    });
+    try {
+      const user = userEvent.setup();
+      render(<RunningComposer isRunning={false} />);
+      const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
+      const height = () => parseFloat(textarea.style.height);
+      // One line and the padding, plus whatever border jsdom's default style gives a textarea.
+      const oneLine = height();
+      expect(oneLine).toBeGreaterThanOrEqual(36);
+      await user.type(textarea, "First line{Shift>}{Enter}{/Shift}second line");
+      expect(textarea).toHaveValue("First line\nsecond line");
+      expect(height()).toBe(oneLine + 22);
+      await user.type(textarea, "{Shift>}{Enter}{/Shift}third{Shift>}{Enter}{/Shift}fourth");
+      expect(height()).toBe(oneLine + 66);
+      // Measured with the scrollbar hidden, then handed back to the stylesheet's overflow.
+      expect(textarea.style.overflowY).toBe("");
+      await user.clear(textarea);
+      expect(height()).toBe(oneLine);
+    } finally {
+      delete (HTMLTextAreaElement.prototype as { scrollHeight?: number }).scrollHeight;
+    }
   });
 
   it("localizes the short composer prompt in Korean", async () => {
     render(<RunningComposer isRunning={false} />);
     await act(async () => { await i18n.changeLanguage("ko"); });
     const textarea = screen.getByRole("textbox", { name: "루피스트에게 메시지" });
-    expect(textarea).toHaveAttribute("placeholder", "Loupist에게 질문…");
+    expect(textarea).toHaveAttribute("placeholder", "Loupist에게 메시지");
   });
 
   it("turns private chat on from the + menu, shows its chip and keeps the AI notice visible", async () => {
@@ -333,10 +417,15 @@ describe("ChatComposer input", () => {
     const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
     await user.type(textarea, "Focus on cash");
     await user.click(screen.getByRole("button", { name: "Guide this response" }));
-    expect(await screen.findByText(/Waiting to reach this reply: “Focus on cash”/)).toBeVisible();
+    // Waiting is said by the note itself.
+    expect(await screen.findByText(/Waiting to reach this reply: “Focus on cash”/)).toHaveAttribute("role", "status");
     expect(textarea).toHaveValue("Focus on cash");
     await act(async () => { resolveSend(true); });
-    expect(await screen.findByText(/Guiding this reply: “Focus on cash”/)).toBeVisible();
+    // Once accepted, the conversation's Guiding row says it; the note shows it without saying it again.
+    const accepted = await screen.findByText(/Guiding this reply: “Focus on cash”/);
+    expect(accepted).toBeVisible();
+    expect(accepted).not.toHaveAttribute("role");
+    expect(screen.queryAllByRole("status").filter((region) => region.textContent?.includes("Focus on cash"))).toEqual([]);
     expect(screen.queryByText(/Waiting to reach this reply/)).toBeNull();
   });
 

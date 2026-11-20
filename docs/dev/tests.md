@@ -43,6 +43,29 @@ The in-process job tests exercise extraction, atomic publication/indexing,
 uncertain-call quarantine, local recovery and hybrid search with deterministic
 model replies and real local embeddings.
 
+### Search recall
+
+`src-tauri/src/knowledge/tests/search_recall.rs` runs a synthetic corpus of
+English and Korean Sources and an English Map (`search_recall.json`) through
+knowledge search and the Map index with the staged embedding model, the one the
+app ships. Its 112 queries go Korean to English, English to Korean and within
+each language; the test reports recall@5 and MRR per query kind and path, and
+fails below the floors recorded for blink-multilingual-64M with rank fusion. To
+compare another model2vec directory, set `LOUPIST_RECALL_MODELS=name=/dir` and
+run it with `--nocapture`; `LOUPIST_RECALL_REPORT=/file.json` also writes misses
+and raw cosines. A directory the model loader rejects is skipped.
+[Names across languages](../knowledge/world-search.md#names-across-languages)
+records the measured results and the ranking decision they support.
+
+Rust tests that need real vectors read the staged model from
+`src-tauri/resources/embed_assets/` (`setup.sh` stages it; otherwise run
+`python3 apps/loupist/scripts/stage-embed-assets.py`). A test process loads it
+once and shares it: about 4 seconds in a debug build, because the dev profile
+optimizes `tokenizers` and `model2vec-rs`. Test `AppState`s wait for that load so
+their first search ranks with the model. Tests of how models are verified, shared
+and reloaded use `fixture_model`, a generated eight-word model that loads in
+milliseconds.
+
 ### Bridge contracts
 
 Rust types are the source of truth for the bridge. Every type a command takes or
@@ -97,13 +120,9 @@ development warning) instead of failing the reply.
 commands registered in `generate_handler!` in `apps/loupist/src-tauri/src/lib.rs`
 and that every registered command has a bridge caller. It runs with the renderer
 tests in `scripts/verify.sh`; add the bridge method in the same change as a new
-command. `apps/loupist/src/contracts/assetRequests.example.json` lists the asset
-requests the renderer sends; `apps/loupist/src/components/assets/AssetPage.test.tsx`
-and the Rust `commands::assets` test both check it, since those Rust requests deny
-unknown fields. `apps/loupist/src/contracts/financeRequests.example.json` does the same
-for the earnings, watch and follow requests, checked by
-`apps/loupist/src/components/briefings/Watching.test.tsx` and the Rust `commands::watch`
-test.
+command. Rust's `bridge_contract` test generates the asset request and response
+types and the command names. The asset command handlers and their tests cover
+saved price reads, follows and data-store upgrades.
 
 ## Code
 

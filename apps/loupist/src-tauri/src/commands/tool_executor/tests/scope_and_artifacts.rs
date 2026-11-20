@@ -185,12 +185,10 @@ async fn artifact_revisions_need_an_exact_read_stay_in_their_chat_and_are_bounde
             .await
             .unwrap();
     }
-    assert!(matches!(
-        executor
-            .execute(&policy, ToolMethod::ArtifactPublish, markdown("Note extra"))
-            .await,
-        Err(BrokerError::Execution(_))
-    ));
+    assert!(executor
+        .execute(&policy, ToolMethod::ArtifactPublish, markdown("Note extra"))
+        .await
+        .is_err());
     let first = capture.artifacts.lock().await[0].clone();
     save_artifact_turn(&state, &first);
 
@@ -233,10 +231,32 @@ async fn artifact_revisions_need_an_exact_read_stay_in_their_chat_and_are_bounde
         .execute(&policy, ToolMethod::ArtifactPublish, revise.clone())
         .await
         .unwrap();
-    assert!(next_executor
-        .execute(&policy, ToolMethod::ArtifactPublish, revise)
+    // The first revision of stored content increments once; replacing that draft
+    // uses the delivered revision without another read or another increment.
+    let mut replacement = revise;
+    replacement["expected_revision"] = json!(2);
+    replacement["payload"]["markdown"] = json!("# Revised again");
+    next_executor
+        .execute(&policy, ToolMethod::ArtifactPublish, replacement)
         .await
-        .is_err());
+        .unwrap();
+    assert_eq!(next.artifacts.lock().await[0].revision.revision, 2);
+    assert_eq!(
+        next_executor
+            .execute(&policy, ToolMethod::ArtifactList, json!({}))
+            .await
+            .unwrap()["artifacts"][0]["current_revision"],
+        2
+    );
+    let historical = next_executor
+        .execute(
+            &policy,
+            ToolMethod::ArtifactRead,
+            json!({"artifact_id":first.artifact.id,"revision_id":1}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(historical["revision"]["payload"]["markdown"], "# Note 1");
     assert_eq!(next.artifacts.lock().await.len(), 1);
     let other_chat = ToolPolicy {
         session_id: "chat-b".into(),
@@ -891,4 +911,296 @@ async fn broker_refuses_broken_drawing_labels_before_publication_and_accepts_pla
     assert_eq!(accepted["ok"], true, "{accepted}");
     assert_eq!(capture.artifacts.lock().await.len(), 1);
     broker.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn delivered_drafts_are_current_reads_but_pending_and_other_chats_are_not() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    state
+        .store
+        .create_chat(&chat("chat-b", "loupist-a", 1))
+        .unwrap();
+    let policy = policy(false, false);
+    let capture = Arc::new(ToolCapture::for_chat("assistant-drafts".into()));
+    let executor = executor_for(&state, capture.clone());
+    let published = executor
+        .execute(&policy, ToolMethod::ArtifactPublish, markdown("Draft note"))
+        .await
+        .unwrap();
+    let id = published["artifact"]["artifact_id"].as_str().unwrap();
+    let list = executor
+        .execute(&policy, ToolMethod::ArtifactList, json!({}))
+        .await
+        .unwrap();
+    assert_eq!(list["artifacts"][0]["artifact_id"], id);
+    let read = executor
+        .execute(&policy, ToolMethod::ArtifactRead, json!({"artifact_id":id}))
+        .await
+        .unwrap();
+    assert_eq!(read["revision"]["payload"]["markdown"], "# Draft note");
+    let other = ToolPolicy {
+        session_id: "chat-b".into(),
+        ..policy.clone()
+    };
+    assert!(executor
+        .execute(&other, ToolMethod::ArtifactRead, json!({"artifact_id":id}))
+        .await
+        .is_err());
+    assert_eq!(
+        executor
+            .execute(&other, ToolMethod::ArtifactList, json!({}))
+            .await
+            .unwrap()["artifacts"],
+        json!([])
+    );
+    let pending = executor
+        .execute_for_delivery(
+            &policy,
+            ToolMethod::ArtifactPublish,
+            markdown("Pending"),
+            "pending",
+        )
+        .await
+        .unwrap();
+    assert!(executor
+        .execute(
+            &policy,
+            ToolMethod::ArtifactRead,
+            json!({"artifact_id":pending["artifact"]["artifact_id"]})
+        )
+        .await
+        .is_err());
+    executor.discard_delivery(&policy, "pending").await;
+
+    let reference = delivered(
+        &capture,
+        provider_result(),
+        json!({"rows":[{"date":"2026-08-01","close":100}]}),
+    )
+    .await;
+    let chart = executor
+        .execute(
+            &policy,
+            ToolMethod::ChartPublish,
+            line_chart_from(json!({"from_result": {
+                "result_ref":reference, "rows_pointer":"/rows", "columns":price_columns()
+            }})),
+        )
+        .await
+        .unwrap();
+    let id = chart["artifact"]["artifact_id"].as_str().unwrap();
+    executor
+        .execute(&policy, ToolMethod::ArtifactRead, json!({"artifact_id":id}))
+        .await
+        .unwrap();
+    let query = executor
+        .execute(
+            &policy,
+            ToolMethod::ChartQuery,
+            json!({"artifact_id":id,"revision":1,"limit":1}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(query["rows"], json!([["2026-08-01", 100]]));
+    assert!(state
+        .store
+        .list_chat_artifacts(&policy.session_id)
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn chart_and_document_drafts_revise_from_publish_results_at_the_same_revision() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let policy = policy(false, false);
+    let capture = Arc::new(ToolCapture::for_chat("assistant-revise-drafts".into()));
+    let executor = executor_for(&state, capture.clone());
+    let published = executor
+        .execute(&policy, ToolMethod::ArtifactPublish, markdown("Draft"))
+        .await
+        .unwrap();
+    let id = published["artifact"]["artifact_id"].as_str().unwrap();
+    for index in 0..3 {
+        let mut revision = markdown(&format!("Draft {index}"));
+        revision["mode"] = json!("revise");
+        revision["artifact_id"] = json!(id);
+        revision["expected_revision"] = published["artifact"]["revision"].clone();
+        let result = executor
+            .execute(&policy, ToolMethod::ArtifactPublish, revision)
+            .await
+            .unwrap();
+        assert_eq!(result["artifact"]["revision"], 1);
+    }
+    let source = delivered(
+        &capture,
+        provider_result(),
+        json!({"rows":[{"date":"2026-08-01","close":100}]}),
+    )
+    .await;
+    let published = executor
+        .execute(
+            &policy,
+            ToolMethod::ChartPublish,
+            line_chart_from(json!({"from_result": {
+                "result_ref":source, "rows_pointer":"/rows", "columns":price_columns()
+            }})),
+        )
+        .await
+        .unwrap();
+    let id = published["artifact"]["artifact_id"].as_str().unwrap();
+    let params = |token: &Value, note: &str| json!({"mode":"revise", "artifact_id":id, "edit_token":token, "title":"Chart", "note":note});
+    let revision = executor
+        .execute(
+            &policy,
+            ToolMethod::ChartPublish,
+            params(&published["edit_token"], "Corrected"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(revision["artifact"]["revision"], 1);
+    assert_ne!(revision["edit_token"], published["edit_token"]);
+    assert!(executor
+        .execute(
+            &policy,
+            ToolMethod::ChartPublish,
+            params(&published["edit_token"], "Stale")
+        )
+        .await
+        .is_err());
+    executor
+        .execute(
+            &policy,
+            ToolMethod::ChartPublish,
+            params(&revision["edit_token"], "Again"),
+        )
+        .await
+        .unwrap();
+    let read = executor
+        .execute(&policy, ToolMethod::ArtifactRead, json!({"artifact_id":id}))
+        .await
+        .unwrap();
+    assert_eq!(read["chart"]["note"], "Again");
+    assert_eq!(capture.artifacts.lock().await.len(), 2);
+    let cutoff = ToolPolicy {
+        as_of: Some("2020-01-01".into()),
+        ..policy.clone()
+    };
+    assert!(executor
+        .execute(&cutoff, ToolMethod::ArtifactRead, json!({"artifact_id":id}))
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("as_of_unsupported"));
+    let document_id = capture.artifacts.lock().await[0].artifact.id.clone();
+    assert!(executor
+        .execute(
+            &cutoff,
+            ToolMethod::ArtifactRead,
+            json!({"artifact_id":document_id})
+        )
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("as_of_later"));
+    assert!(state
+        .store
+        .list_chat_artifacts("chat-a")
+        .unwrap()
+        .is_empty());
+}
+
+async fn assert_chart_draft_token_freshness(restore_payload: bool) {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let policy = policy(false, false);
+    let capture = Arc::new(ToolCapture::for_chat("assistant-chart-token".into()));
+    let executor = executor_for(&state, capture.clone());
+    let source = delivered(
+        &capture,
+        provider_result(),
+        json!({"rows":[{"date":"2026-08-01","close":100}]}),
+    )
+    .await;
+    let mut create = line_chart_from(json!({"from_result": {
+        "result_ref":source, "rows_pointer":"/rows", "columns":price_columns()
+    }}));
+    create["note"] = json!("A");
+    let original = executor
+        .execute(&policy, ToolMethod::ChartPublish, create)
+        .await
+        .unwrap();
+    let id = original["artifact"]["artifact_id"].as_str().unwrap();
+    let mut latest = original.clone();
+    let notes: &[&str] = if restore_payload { &["B", "A"] } else { &["A"] };
+    for note in notes {
+        let mut params = json!({"mode":"revise", "artifact_id":id,
+            "edit_token":latest["edit_token"], "title":"Corrected title"});
+        if restore_payload {
+            params["note"] = json!(note);
+        }
+        latest = executor
+            .execute(&policy, ToolMethod::ChartPublish, params)
+            .await
+            .unwrap();
+        assert_eq!(latest["artifact"]["revision"], 1);
+    }
+    // Both paths finish with the original payload; freshness must distinguish
+    // individual drafts even when the payload digest is identical.
+    assert_eq!(latest["artifact"]["digest"], original["artifact"]["digest"]);
+    let revise = |token: &Value| {
+        json!({"mode":"revise", "artifact_id":id,
+        "edit_token":token, "title":"Latest title"})
+    };
+    let error = executor
+        .execute(
+            &policy,
+            ToolMethod::ChartPublish,
+            revise(&original["edit_token"]),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("edit_token does not match"),
+        "{error}"
+    );
+    let current = executor
+        .execute(&policy, ToolMethod::ArtifactRead, json!({"artifact_id":id}))
+        .await
+        .unwrap();
+    assert_eq!(current["artifact"]["title"], "Corrected title");
+    assert_eq!(current["artifact"]["edit_token"], latest["edit_token"]);
+    latest = executor
+        .execute(
+            &policy,
+            ToolMethod::ChartPublish,
+            revise(&latest["edit_token"]),
+        )
+        .await
+        .unwrap();
+    let commit = capture.artifacts.lock().await[0].clone();
+    save_artifact_turn(&state, &commit);
+    let next = executor_for(
+        &state,
+        Arc::new(ToolCapture::for_chat("assistant-chart-next".into())),
+    );
+    let retained = next
+        .execute(&policy, ToolMethod::ArtifactRead, json!({"artifact_id":id}))
+        .await
+        .unwrap();
+    assert_eq!(
+        retained["artifact"]["edit_token"], latest["edit_token"],
+        "a retained revision's token stays stable across turns"
+    );
+}
+
+#[tokio::test]
+async fn chart_draft_tokens_reject_title_only_predecessors() {
+    assert_chart_draft_token_freshness(false).await;
+}
+
+#[tokio::test]
+async fn chart_draft_tokens_reject_restored_payload_predecessors() {
+    assert_chart_draft_token_freshness(true).await;
 }

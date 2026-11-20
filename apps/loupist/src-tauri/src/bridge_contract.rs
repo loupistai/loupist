@@ -28,7 +28,12 @@ fn roots(collector: &mut Collector<'_>) {
         crate::chat::chart::AnalyticChartType,
         crate::app::CommandError,
         crate::events::LearningReviewFinished,
-        crate::events::WatchChanged,
+        crate::commands::assets::wire::AssetOpenRequest,
+        crate::commands::assets::wire::AssetLookupCandidate,
+        crate::commands::assets::wire::AssetPricePoint,
+        crate::commands::assets::wire::StoredAssetQuote,
+        crate::events::FxChanged,
+        crate::commands::legacy_holdings::LegacyHoldingsStatus,
         crate::events::WorldSchemaChanged,
         crate::agent_harness::AgentSkillSummary,
         crate::briefings::commands::BriefingSettings,
@@ -47,21 +52,14 @@ fn roots(collector: &mut Collector<'_>) {
         crate::chat::artifacts::ChatArtifactVersion,
         crate::commands::ModelVisibilityUpdateRequest,
         crate::commands::approvals::ApprovalDecideRequest,
-        crate::commands::assets::AssetClassSetRequest,
-        crate::commands::assets::AssetDeltaRequest,
-        crate::commands::assets::AssetPageGetRequest,
-        crate::commands::assets::AssetPageSeenRequest,
-        crate::commands::assets::AssetRefreshRequest,
+        crate::commands::assets::wire::AssetsListRequest,
+        crate::commands::assets::wire::AssetIdRequest,
         crate::commands::assets::AssetVerdictUndoRequest,
-        crate::commands::assets::UpcomingEventsRequest,
         crate::commands::attention::AttentionItem,
         crate::commands::attention::NotifyRequest,
         crate::commands::chat_runtime::ChatRetryReceipt,
         crate::commands::chat_runtime::ChatRetryRequest,
         crate::commands::dialog::PickFileRequest,
-        crate::commands::earnings::EarningsEventsListRequest,
-        crate::commands::earnings::EarningsPrepareRequest,
-        crate::commands::earnings::EarningsSnapshotGetRequest,
         crate::commands::export_file::ExportRequest,
         crate::commands::handoff::ResearchHandoffReceipt,
         crate::commands::handoff::ResearchHandoffRequest,
@@ -141,6 +139,8 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::types::ChatStreamEvent,
         crate::commands::types::ChatThreadDto,
         crate::commands::types::ChatVersionSwitchRequest,
+        crate::commands::types::ChatWatchRequest,
+        crate::commands::types::ChatWatchSnapshot,
         crate::commands::types::LoupistArtifactItemDto,
         crate::commands::types::LoupistArtifactListRequest,
         crate::commands::types::LoupistCreateRequest,
@@ -151,25 +151,8 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::types::LoupistSummary,
         crate::commands::types::LoupistWorkspace,
         crate::commands::types::RunStarted,
-        crate::commands::user_context::CsvCommitRequest,
-        crate::commands::user_context::CsvImportRequest,
-        crate::commands::user_context::MapColumnsRequest,
-        crate::commands::user_context::WalletAddRequest,
-        crate::commands::user_context::WalletIdRequest,
-        crate::commands::user_context::WalletRefreshRequest,
-        crate::commands::user_context::WalletRenameRequest,
-        crate::commands::user_context::WatchlistAddRequest,
-        crate::commands::user_context::WatchlistRemoveRequest,
-        crate::commands::watch::WatchCheckNowRequest,
-        crate::commands::watch::WatchCheckResult,
-        crate::commands::watch::WatchDefaultsApplyRequest,
-        crate::commands::watch::WatchDefaultsApplyResult,
-        crate::commands::watch::WatchEventsListRequest,
-        crate::commands::watch::WatchEventsSeenRequest,
-        crate::commands::watch::WatchPauseSetRequest,
-        crate::commands::watch::WatchSettingSetRequest,
-        crate::commands::watch::WatchSettingsListRequest,
-        crate::commands::watch::WatchSettingsView,
+        crate::commands::fx_display::FxDisplayRequest,
+        crate::finance_data::fx::FxDisplay,
         crate::commands::workspace::ChatActivityRequest,
         crate::commands::workspace::WorkspacePathRequest,
         crate::commands::workspace_ui::DraftAttachment,
@@ -191,11 +174,6 @@ fn roots(collector: &mut Collector<'_>) {
         crate::domain::ChatFeedback,
         crate::fs::workspace_files::WorkspaceDirectory,
         crate::fs::workspace_files::WorkspaceFile,
-        crate::knowledge::assets::AssetDelta,
-        crate::knowledge::assets::AssetPageView,
-        crate::knowledge::assets::upcoming::UpcomingEvent,
-        crate::knowledge::earnings::EventSummary,
-        crate::knowledge::earnings::SnapshotView,
         crate::knowledge::FollowedStatus,
         crate::knowledge::GraphJobView,
         crate::knowledge::GraphProcessingView,
@@ -216,7 +194,6 @@ fn roots(collector: &mut Collector<'_>) {
         crate::knowledge::WorkingNote,
         crate::knowledge::WorldGraphQuery,
         crate::knowledge::principles::Principle,
-        crate::knowledge::watch::WatchEventView,
         crate::knowledge::ConnectionView,
         crate::knowledge::WorldSchemaView,
         crate::marketplace::LoupistCapabilityBindingDto,
@@ -283,12 +260,6 @@ fn roots(collector: &mut Collector<'_>) {
         crate::skills::SkillCatalog,
         crate::skills::SkillDocument,
         crate::store::app_settings::AppSettings,
-        crate::store::user_context::HoldingsCsvPreview,
-        crate::store::user_context::HoldingsOverview,
-        crate::store::user_context::HoldingsSnapshot,
-        crate::store::user_context::WatchlistEntry,
-        crate::store::user_context::crypto_file::CryptoFilePreview,
-        crate::store::user_context::wallets::WalletView,
         crate::updater::UpdateInstallRequest,
         crate::updater::UpdateInstallResult,
         crate::updater::UpdateStateDto,
@@ -328,31 +299,34 @@ commands! {
         notice_acknowledge: () => crate::store::app_settings::AppSettings;
         notice_settings_get: () => crate::store::app_settings::AppSettings;
         chat_approval_decide: crate::commands::approvals::ApprovalDecideRequest => ();
-        asset_class_set: crate::commands::assets::AssetClassSetRequest => crate::knowledge::assets::AssetPageView;
-        asset_delta: crate::commands::assets::AssetDeltaRequest => Vec<crate::knowledge::assets::AssetDelta>;
-        asset_page_get: crate::commands::assets::AssetPageGetRequest => crate::knowledge::assets::AssetPageView;
-        asset_page_seen: crate::commands::assets::AssetPageSeenRequest => ();
-        asset_refresh: crate::commands::assets::AssetRefreshRequest => crate::knowledge::assets::AssetPageView;
-        asset_verdict_undo: crate::commands::assets::AssetVerdictUndoRequest => crate::knowledge::assets::AssetPageView;
-        upcoming_events: crate::commands::assets::UpcomingEventsRequest => Vec<crate::knowledge::assets::upcoming::UpcomingEvent>;
+        assets_list: crate::commands::assets::wire::AssetsListRequest => Vec<crate::commands::assets::wire::AssetRow>;
+        asset_follow_name: crate::commands::assets::wire::AssetFollowNameRequest => crate::commands::assets::wire::AssetRow;
+        asset_unfollow: crate::commands::assets::wire::AssetIdRequest => ();
+        asset_lookup: crate::commands::assets::wire::AssetLookupRequest => Vec<crate::commands::assets::wire::AssetLookupCandidate>;
+        asset_price_check: crate::commands::assets::wire::AssetIdRequest => crate::commands::assets::wire::ThinAssetPageView;
+        asset_follow: crate::commands::assets::wire::AssetIdRequest => crate::commands::assets::wire::AssetRow;
+        asset_entity_set: crate::commands::assets::AssetEntitySetRequest => crate::commands::assets::wire::ThinAssetPageView;
+        asset_page_get: crate::commands::assets::wire::AssetOpenRequest => crate::commands::assets::wire::ThinAssetPageView;
+        asset_page_seen: crate::commands::assets::wire::AssetIdRequest => ();
+        watchlist_quotes: crate::commands::assets::wire::AssetsListRequest => Vec<crate::commands::assets::wire::StoredAssetQuote>;
+        asset_price_series: crate::commands::assets::wire::AssetPriceSeriesRequest => Vec<crate::commands::assets::wire::AssetPricePoint>;
+        asset_verdict_undo: crate::commands::assets::AssetVerdictUndoRequest => crate::commands::assets::wire::ThinAssetPageView;
         attention_list: () => Vec<crate::commands::attention::AttentionItem>;
         attention_notify: crate::commands::attention::NotifyRequest => bool;
         chat_abort: () => ();
         chat_retry_last: crate::commands::chat_runtime::ChatRetryRequest => crate::commands::chat_runtime::ChatRetryReceipt;
         chat_send: crate::commands::types::ChatSendRequest => crate::commands::types::RunStarted;
         chat_steer: crate::commands::types::ChatControlRequestDto => crate::commands::types::ChatControlReceiptDto;
+        chat_unwatch: crate::commands::types::ChatWatchRequest => ();
+        chat_watch: crate::commands::types::ChatWatchRequest => Option<crate::commands::types::ChatWatchSnapshot>;
         config_read: crate::scoped_config::ConfigReadRequest => crate::scoped_config::ConfigSnapshot;
         config_reveal: crate::scoped_config::ConfigReadRequest => ();
         config_update: crate::scoped_config::ConfigUpdateRequest => crate::scoped_config::ConfigSnapshot;
         pick_file: crate::commands::dialog::PickFileRequest => Option<String>;
-        earnings_events_list: crate::commands::earnings::EarningsEventsListRequest => Vec<crate::knowledge::earnings::EventSummary>;
-        earnings_prepare: crate::commands::earnings::EarningsPrepareRequest => crate::knowledge::earnings::SnapshotView;
-        earnings_snapshot_get: crate::commands::earnings::EarningsSnapshotGetRequest => Option<crate::knowledge::earnings::SnapshotView>;
         export_save: crate::commands::export_file::ExportRequest => Option<String>;
         research_handoff_start: crate::commands::handoff::ResearchHandoffRequest => crate::commands::handoff::ResearchHandoffReceipt;
         knowledge_catalog: crate::commands::knowledge::KnowledgeCatalogRequest => crate::commands::knowledge::KnowledgeCatalogDto;
         knowledge_connection_dismiss: crate::commands::knowledge::KnowledgeConnectionRequest => crate::knowledge::ConnectionView;
-        knowledge_connection_open: crate::commands::knowledge::KnowledgeConnectionRequest => crate::knowledge::ConnectionView;
         knowledge_graph_job: crate::commands::knowledge::KnowledgeGraphJobRequest => crate::knowledge::GraphJobView;
         knowledge_graph_pause: crate::commands::knowledge::KnowledgeGraphPauseRequest => crate::knowledge::GraphProcessingView;
         knowledge_graph_retry_source: crate::commands::knowledge::KnowledgeGraphRetrySourceRequest => crate::knowledge::GraphJobView;
@@ -438,27 +412,12 @@ commands! {
         skills_read: crate::commands::skills::SkillReadRequest => crate::skills::SkillDocument;
         skills_reveal: crate::commands::skills::SkillReadRequest => ();
         skills_save: crate::commands::skills::SkillSaveRequest => crate::skills::SkillCatalog;
-        holdings_commit_csv: crate::commands::user_context::CsvCommitRequest => crate::store::user_context::HoldingsSnapshot;
-        holdings_import_crypto_file: crate::commands::user_context::CsvImportRequest => crate::store::user_context::crypto_file::CryptoFilePreview;
-        holdings_import_csv: crate::commands::user_context::CsvImportRequest => crate::store::user_context::HoldingsCsvPreview;
-        holdings_import_kis: () => crate::store::user_context::HoldingsSnapshot;
-        holdings_map_columns: crate::commands::user_context::MapColumnsRequest => crate::store::user_context::crypto_file::CryptoFilePreview;
-        holdings_summary: () => crate::store::user_context::HoldingsOverview;
-        wallet_add: crate::commands::user_context::WalletAddRequest => Vec<crate::store::user_context::wallets::WalletView>;
-        wallet_refresh: Option<crate::commands::user_context::WalletRefreshRequest> => Vec<crate::store::user_context::wallets::WalletView>;
-        wallet_remove: crate::commands::user_context::WalletIdRequest => ();
-        wallet_rename: crate::commands::user_context::WalletRenameRequest => crate::store::user_context::wallets::WalletView;
-        wallets_list: () => Vec<crate::store::user_context::wallets::WalletView>;
-        watchlist_add: crate::commands::user_context::WatchlistAddRequest => crate::store::user_context::WatchlistEntry;
-        watchlist_list: () => Vec<crate::store::user_context::WatchlistEntry>;
-        watchlist_remove: crate::commands::user_context::WatchlistRemoveRequest => ();
-        watch_defaults_apply: crate::commands::watch::WatchDefaultsApplyRequest => crate::commands::watch::WatchDefaultsApplyResult;
-        watch_check_now: crate::commands::watch::WatchCheckNowRequest => crate::commands::watch::WatchCheckResult;
-        watch_events_list: crate::commands::watch::WatchEventsListRequest => Vec<crate::knowledge::watch::WatchEventView>;
-        watch_events_seen: crate::commands::watch::WatchEventsSeenRequest => ();
-        watch_pause_set: crate::commands::watch::WatchPauseSetRequest => crate::commands::watch::WatchSettingsView;
-        watch_setting_set: crate::commands::watch::WatchSettingSetRequest => crate::commands::watch::WatchSettingsView;
-        watch_settings_list: crate::commands::watch::WatchSettingsListRequest => crate::commands::watch::WatchSettingsView;
+        fx_display: crate::commands::fx_display::FxDisplayRequest => crate::finance_data::fx::FxDisplay;
+        legacy_holdings_status: () => crate::commands::legacy_holdings::LegacyHoldingsStatus;
+        legacy_holdings_retry: () => crate::commands::legacy_holdings::LegacyHoldingsStatus;
+        legacy_holdings_reveal: () => ();
+        legacy_holdings_save_copy: () => bool;
+        legacy_holdings_dismiss: () => crate::commands::legacy_holdings::LegacyHoldingsStatus;
         chat_activity_read: crate::commands::workspace::ChatActivityRequest => crate::chat::activity::ChatActivityDetail;
         workspace_list: crate::commands::workspace::WorkspacePathRequest => crate::fs::workspace_files::WorkspaceDirectory;
         workspace_read: crate::commands::workspace::WorkspacePathRequest => crate::fs::workspace_files::WorkspaceFile;
@@ -554,6 +513,34 @@ commands! {
 /// returns the response its `commands!` row names.
 #[allow(dead_code, clippy::diverging_sub_expression)]
 async fn command_signatures() {
+    use crate::commands::assets::{self, wire};
+    let _: Result<wire::ThinAssetPageView, CommandError> = assets::asset_entity_set(any(), any());
+    let _: Result<wire::AssetRow, CommandError> = assets::asset_follow(any(), any());
+    let _: Result<Vec<wire::AssetRow>, CommandError> = assets::assets_list(any(), any());
+    let _: Result<wire::AssetRow, CommandError> = assets::asset_follow_name(any(), any());
+    let _: Result<(), CommandError> = assets::asset_unfollow(any(), any());
+    let _: Result<Vec<wire::AssetLookupCandidate>, CommandError> =
+        assets::asset_lookup(any(), any()).await;
+    let _: Result<wire::ThinAssetPageView, CommandError> =
+        assets::asset_price_check(any(), any()).await;
+    let _: Result<crate::finance_data::fx::FxDisplay, CommandError> =
+        crate::commands::fx_display::fx_display(any(), any()).await;
+    let _: Result<
+        crate::commands::legacy_holdings::LegacyHoldingsStatus,
+        crate::app::CommandError,
+    > = crate::commands::legacy_holdings::legacy_holdings_status(any()).await;
+    let _: Result<
+        crate::commands::legacy_holdings::LegacyHoldingsStatus,
+        crate::app::CommandError,
+    > = crate::commands::legacy_holdings::legacy_holdings_retry(any()).await;
+    let _: Result<(), crate::app::CommandError> =
+        crate::commands::legacy_holdings::legacy_holdings_reveal(any()).await;
+    let _: Result<bool, crate::app::CommandError> =
+        crate::commands::legacy_holdings::legacy_holdings_save_copy(any()).await;
+    let _: Result<
+        crate::commands::legacy_holdings::LegacyHoldingsStatus,
+        crate::app::CommandError,
+    > = crate::commands::legacy_holdings::legacy_holdings_dismiss(any()).await;
     use crate::app::CommandError;
     fn any<T>() -> T {
         unreachable!()
@@ -587,7 +574,7 @@ async fn command_signatures() {
             any(),
         );
     let _: Result<crate::providers::catalog::ModelCatalogView, CommandError> =
-        crate::commands::model_catalog_get(any());
+        crate::commands::model_catalog_get(any()).await;
     let _: Result<crate::providers::catalog::ModelCatalogView, CommandError> =
         crate::commands::model_visibility_update(
             any::<crate::commands::ModelVisibilityUpdateRequest>(),
@@ -604,40 +591,29 @@ async fn command_signatures() {
         any::<crate::commands::approvals::ApprovalDecideRequest>(),
         any(),
     );
-    let _: Result<crate::knowledge::assets::AssetPageView, CommandError> =
-        crate::commands::assets::asset_class_set(
-            any(),
-            any::<crate::commands::assets::AssetClassSetRequest>(),
+    let _: Result<Vec<crate::commands::assets::wire::StoredAssetQuote>, CommandError> =
+        crate::commands::assets::watchlist_quotes(
+            any::<tauri::State<'_, crate::app::AppState>>(),
+            any::<crate::commands::assets::wire::AssetsListRequest>(),
         );
-    let _: Result<Vec<crate::knowledge::assets::AssetDelta>, CommandError> =
-        crate::commands::assets::asset_delta(
-            any(),
-            any::<crate::commands::assets::AssetDeltaRequest>(),
-        );
-    let _: Result<crate::knowledge::assets::AssetPageView, CommandError> =
-        crate::commands::assets::asset_page_get(
-            any(),
-            any::<crate::commands::assets::AssetPageGetRequest>(),
-        );
-    let _: Result<(), CommandError> = crate::commands::assets::asset_page_seen(
-        any(),
-        any::<crate::commands::assets::AssetPageSeenRequest>(),
-    );
-    let _: Result<crate::knowledge::assets::AssetPageView, CommandError> =
-        crate::commands::assets::asset_refresh(
-            any(),
-            any::<crate::commands::assets::AssetRefreshRequest>(),
+    let _: Result<Vec<wire::AssetPricePoint>, CommandError> =
+        crate::commands::assets::asset_price_series(
+            any::<tauri::State<'_, crate::app::AppState>>(),
+            any::<crate::commands::assets::wire::AssetPriceSeriesRequest>(),
         )
         .await;
-    let _: Result<crate::knowledge::assets::AssetPageView, CommandError> =
+    let _: Result<wire::ThinAssetPageView, CommandError> = crate::commands::assets::asset_page_get(
+        any(),
+        any::<crate::commands::assets::wire::AssetOpenRequest>(),
+    );
+    let _: Result<(), CommandError> = crate::commands::assets::asset_page_seen(
+        any(),
+        any::<crate::commands::assets::wire::AssetIdRequest>(),
+    );
+    let _: Result<wire::ThinAssetPageView, CommandError> =
         crate::commands::assets::asset_verdict_undo(
             any(),
             any::<crate::commands::assets::AssetVerdictUndoRequest>(),
-        );
-    let _: Result<Vec<crate::knowledge::assets::upcoming::UpcomingEvent>, CommandError> =
-        crate::commands::assets::upcoming_events(
-            any(),
-            any::<crate::commands::assets::UpcomingEventsRequest>(),
         );
     let _: Result<Vec<crate::commands::attention::AttentionItem>, CommandError> =
         crate::commands::attention::attention_list(any(), any()).await;
@@ -665,6 +641,9 @@ async fn command_signatures() {
             any(),
         )
         .await;
+    let _: Result<(), CommandError> = crate::commands::chat_runtime::chat_unwatch(any(), any());
+    let _: Result<Option<crate::commands::types::ChatWatchSnapshot>, CommandError> =
+        crate::commands::chat_runtime::chat_watch(any(), any(), any()).await;
     let _: Result<crate::scoped_config::ConfigSnapshot, CommandError> =
         crate::commands::configuration::config_read(
             any::<crate::scoped_config::ConfigReadRequest>(),
@@ -682,23 +661,6 @@ async fn command_signatures() {
         .await;
     let _: Result<Option<String>, CommandError> =
         crate::commands::dialog::pick_file(any::<crate::commands::dialog::PickFileRequest>()).await;
-    let _: Result<Vec<crate::knowledge::earnings::EventSummary>, CommandError> =
-        crate::commands::earnings::earnings_events_list(
-            any(),
-            any::<crate::commands::earnings::EarningsEventsListRequest>(),
-        );
-    let _: Result<crate::knowledge::earnings::SnapshotView, CommandError> =
-        crate::commands::earnings::earnings_prepare(
-            any(),
-            any::<crate::commands::earnings::EarningsPrepareRequest>(),
-        )
-        .await;
-    let _: Result<Option<crate::knowledge::earnings::SnapshotView>, CommandError> =
-        crate::commands::earnings::earnings_snapshot_get(
-            any(),
-            any::<crate::commands::earnings::EarningsSnapshotGetRequest>(),
-        )
-        .await;
     let _: Result<Option<String>, CommandError> = crate::commands::export_file::export_save(
         any(),
         any::<crate::commands::export_file::ExportRequest>(),
@@ -717,11 +679,6 @@ async fn command_signatures() {
         );
     let _: Result<crate::knowledge::ConnectionView, CommandError> =
         crate::commands::knowledge::knowledge_connection_dismiss(
-            any::<crate::commands::knowledge::KnowledgeConnectionRequest>(),
-            any(),
-        );
-    let _: Result<crate::knowledge::ConnectionView, CommandError> =
-        crate::commands::knowledge::knowledge_connection_open(
             any::<crate::commands::knowledge::KnowledgeConnectionRequest>(),
             any(),
         );
@@ -1148,104 +1105,6 @@ async fn command_signatures() {
         any::<crate::commands::skills::SkillSaveRequest>(),
         any(),
     );
-    let _: Result<crate::store::user_context::HoldingsSnapshot, CommandError> =
-        crate::commands::user_context::holdings_commit_csv(
-            any::<crate::commands::user_context::CsvCommitRequest>(),
-            any(),
-        );
-    let _: Result<crate::store::user_context::crypto_file::CryptoFilePreview, CommandError> =
-        crate::commands::user_context::holdings_import_crypto_file(
-            any::<crate::commands::user_context::CsvImportRequest>(),
-            any(),
-        )
-        .await;
-    let _: Result<crate::store::user_context::HoldingsCsvPreview, CommandError> =
-        crate::commands::user_context::holdings_import_csv(
-            any::<crate::commands::user_context::CsvImportRequest>(),
-            any(),
-        )
-        .await;
-    let _: Result<crate::store::user_context::HoldingsSnapshot, CommandError> =
-        crate::commands::user_context::holdings_import_kis(any()).await;
-    let _: Result<crate::store::user_context::crypto_file::CryptoFilePreview, CommandError> =
-        crate::commands::user_context::holdings_map_columns(
-            any::<crate::commands::user_context::MapColumnsRequest>(),
-            any(),
-        );
-    let _: Result<crate::store::user_context::HoldingsOverview, CommandError> =
-        crate::commands::user_context::holdings_summary(any());
-    let _: Result<Vec<crate::store::user_context::wallets::WalletView>, CommandError> =
-        crate::commands::user_context::wallet_add(
-            any::<crate::commands::user_context::WalletAddRequest>(),
-            any(),
-        )
-        .await;
-    let _: Result<Vec<crate::store::user_context::wallets::WalletView>, CommandError> =
-        crate::commands::user_context::wallet_refresh(
-            any::<Option<crate::commands::user_context::WalletRefreshRequest>>(),
-            any(),
-        )
-        .await;
-    let _: Result<(), CommandError> = crate::commands::user_context::wallet_remove(
-        any::<crate::commands::user_context::WalletIdRequest>(),
-        any(),
-    );
-    let _: Result<crate::store::user_context::wallets::WalletView, CommandError> =
-        crate::commands::user_context::wallet_rename(
-            any::<crate::commands::user_context::WalletRenameRequest>(),
-            any(),
-        );
-    let _: Result<Vec<crate::store::user_context::wallets::WalletView>, CommandError> =
-        crate::commands::user_context::wallets_list(any());
-    let _: Result<crate::store::user_context::WatchlistEntry, CommandError> =
-        crate::commands::user_context::watchlist_add(
-            any::<crate::commands::user_context::WatchlistAddRequest>(),
-            any(),
-        );
-    let _: Result<Vec<crate::store::user_context::WatchlistEntry>, CommandError> =
-        crate::commands::user_context::watchlist_list(any());
-    let _: Result<(), CommandError> = crate::commands::user_context::watchlist_remove(
-        any::<crate::commands::user_context::WatchlistRemoveRequest>(),
-        any(),
-    );
-    let _: Result<crate::commands::watch::WatchDefaultsApplyResult, CommandError> =
-        crate::commands::watch::watch_defaults_apply(
-            any(),
-            any::<crate::commands::watch::WatchDefaultsApplyRequest>(),
-        );
-    let _: Result<crate::commands::watch::WatchCheckResult, CommandError> =
-        crate::commands::watch::watch_check_now(
-            any(),
-            any::<crate::commands::watch::WatchCheckNowRequest>(),
-        )
-        .await;
-    let _: Result<Vec<crate::knowledge::watch::WatchEventView>, CommandError> =
-        crate::commands::watch::watch_events_list(
-            any(),
-            any::<crate::commands::watch::WatchEventsListRequest>(),
-        );
-    let _: Result<(), CommandError> = crate::commands::watch::watch_events_seen(
-        any(),
-        any::<crate::commands::watch::WatchEventsSeenRequest>(),
-    );
-    let _: Result<crate::commands::watch::WatchSettingsView, CommandError> =
-        crate::commands::watch::watch_pause_set(
-            any(),
-            any::<crate::commands::watch::WatchPauseSetRequest>(),
-        )
-        .await;
-    let _: Result<crate::commands::watch::WatchSettingsView, CommandError> =
-        crate::commands::watch::watch_setting_set(
-            any(),
-            any::<crate::commands::watch::WatchSettingSetRequest>(),
-        )
-        .await;
-    let _: Result<crate::commands::watch::WatchSettingsView, CommandError> =
-        crate::commands::watch::watch_settings_list(
-            any(),
-            any::<crate::commands::watch::WatchSettingsListRequest>(),
-        )
-        .await;
     let _: Result<crate::chat::activity::ChatActivityDetail, CommandError> =
         crate::commands::workspace::chat_activity_read(
             any::<crate::commands::workspace::ChatActivityRequest>(),

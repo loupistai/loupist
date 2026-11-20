@@ -1,18 +1,23 @@
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from "d3-force";
 import type { KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
 import { nodeRadius } from "../../knowledge/mapKinds";
+import { isDrawnRelation } from "../../knowledge/mapItems";
 export type MapPoint = { x: number; y: number };
 export type PositionedNode = KnowledgeMapNode & MapPoint & { fx: number; fy: number };
 // Coordinates only, never canonical data. The bounded cache survives route changes.
 const layouts = new Map<string, Map<string, MapPoint>>();
 const latest = new Map<string, Map<string, MapPoint>>();
+/** How far, in layout units, one name's repulsion reaches: five link lengths. */
+const MAX_PUSH = 200;
 const hash = (id: string) => [...id].reduce((n, c) => Math.imul(n ^ c.charCodeAt(0), 16777619) >>> 0, 2166136261);
 export function frozenLayout(loupistId: string, revision: string | null, nodes: KnowledgeMapNode[], edges: KnowledgeMapEdge[]): PositionedNode[] {
   const key = JSON.stringify([loupistId, revision]);
   const cached = layouts.get(key);
   const previous = cached ?? latest.get(loupistId);
   const ids = new Set(nodes.map((n) => n.id));
-  const links = edges.filter((e) => ids.has(e.source) && ids.has(e.target)).map((e) => ({ source: e.source, target: e.target }));
+  // A value reported about one name links it to itself and pulls it nowhere. As a link of length zero,
+  // with this fixed random source, it made d3's link force divide by zero and put the name at NaN.
+  const links = edges.filter((e) => isDrawnRelation(e) && ids.has(e.source) && ids.has(e.target)).map((e) => ({ source: e.source, target: e.target }));
   const seeds = nodes.map((node, index) => {
     const saved = previous?.get(node.id);
     if (saved) return { ...node, ...saved, fx: saved.x, fy: saved.y };
@@ -23,7 +28,10 @@ export function frozenLayout(loupistId: string, revision: string | null, nodes: 
   });
   if (seeds.some((n) => n.fx === undefined)) {
     const simulation = forceSimulation(seeds).stop().randomSource(() => .5)
-      .force("charge", forceManyBody().strength(-60))
+      // Names push only on names within MAX_PUSH. Unbounded, every name pushes on all the others: a
+      // large drawing's rim thins out and names without links sit in a ring about half as far out again
+      // as most linked names, so Fit frames mostly empty space around a small knot of lines.
+      .force("charge", forceManyBody().strength(-60).distanceMax(MAX_PUSH))
       .force("link", forceLink(links).id((n) => (n as KnowledgeMapNode).id).distance(40))
       .force("collide", forceCollide<(typeof seeds)[number]>((n) => nodeRadius(n) + 4))
       .force("center", previous ? null : forceCenter(0, 0))

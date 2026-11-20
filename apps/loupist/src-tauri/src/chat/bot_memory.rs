@@ -1457,7 +1457,7 @@ mod tests {
         };
         let fetch = |taint: &TurnTaint, text: &str| {
             taint.mark_untrusted_text();
-            taint.web_fetch_target(&url(text), &[])
+            taint.web_fetch_target(&url(text))
         };
         assert_eq!(fetch(&TurnTaint::default(), entry), WebFetchTarget::Allowed);
         // ...unless it carries the user's words this turn received.

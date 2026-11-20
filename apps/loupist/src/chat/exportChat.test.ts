@@ -20,6 +20,40 @@ it("writes a Markdown transcript with roles, times, citations as footnotes and t
   expect(markdown.trim().split("\n").at(-1)).toBe("_AI can be wrong. Not a licensed financial adviser._");
 });
 
+it("names a scheduled run's request by its task, and leaves the briefing's host request out", () => {
+  const at = "2026-11-19T08:00:00Z";
+  const thread = (kind: string, title: string, content: string): ChatThread => ({
+    id: "scheduled-chat-1", loupist_id: "loupist", title, updated_at: at, use_memory: true, update_memory: true,
+    messages: [
+      { id: "q", role: "user", content, created_at: at, status: "complete", scheduled: { task_id: "task", run_id: "run", task_title: title, task_kind: kind } },
+      { id: "a", role: "assistant", content: "Neither crossed today.", created_at: at, status: "complete" },
+    ],
+  });
+  const custom = chatMarkdown(thread("custom", "Daily chip check", "Check the chip makers."), "Quality Compounder");
+  expect(custom).toContain("## Scheduled run: Daily chip check · ");
+  expect(custom).toContain("Check the chip makers.");
+  expect(custom).not.toContain("## You");
+  const briefing = chatMarkdown(thread("briefing", "Briefings", "This is a scheduled briefing. {\"followed\":[]}"), "Quality Compounder");
+  expect(briefing).toContain("## Scheduled run: Briefing · ");
+  expect(briefing).not.toContain("This is a scheduled briefing.");
+  expect(briefing).toContain("Neither crossed today.");
+});
+
+it("footnotes each number link with its own check, by its place among the links Rust counted", () => {
+  const evidence = { id: "e1", title: "Q3 operating review", kind: "original" as const, url: "https://hanul.example/q3", provider: "IR", tool_name: "web_fetch", retrieved_at: "2026-10-28T00:00:00Z", published_at: "2026-10-27", excerpt: "", excerpt_truncated: false, content_sha256: "a".repeat(64), warnings: [] };
+  const thread: ChatThread = {
+    id: "chat", loupist_id: "loupist", title: "Margins", updated_at: "2026-10-28T00:00:00Z", use_memory: true, update_memory: true,
+    messages: [{ id: "a", role: "assistant", status: "complete", created_at: "2026-10-28T00:00:12Z", evidence_refs: [evidence],
+      // Code holds no link; of the two links, only the second has a check.
+      content: "  Code `[0.5%](#evidence-e1)`; margin [0.5%](#evidence-e1), again [0.5%](#evidence-e1).",
+      number_checks: [{ link_index: 1, text: "0.5%", evidence_id: "e1", kind: "passage", status: "matched" }] }],
+  };
+  const markdown = chatMarkdown(thread, "Quality Compounder", Date.parse("2026-10-28T00:00:00Z"));
+  expect(markdown).toContain("Code `[0.5%](#evidence-e1)`; margin [0.5%](#evidence-e1), again 0.5%[^1].");
+  expect(markdown).toContain("[^1]: Q3 operating review — 2026-10-27 — https://hanul.example/q3");
+  expect(markdown).not.toContain("[^2]");
+});
+
 it("quotes CSV cells that need it and keeps file names safe", () => {
   expect(datasetCsv([{ label: "Name" }, { label: "Note" }], [["Hanul", 'Said "up", then down'], ["Morrow", null]]))
     .toBe('Name,Note\r\nHanul,"Said ""up"", then down"\r\nMorrow,');

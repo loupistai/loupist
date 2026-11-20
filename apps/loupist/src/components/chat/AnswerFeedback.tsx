@@ -37,7 +37,16 @@ export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false,
   const busyReasonId = useId();
   const mounted = useRef(true);
   const busy = useRef(false);
+  const correctButton = useRef<HTMLButtonElement>(null);
+  // Closing the editor from inside it hands focus back to the control that opened it.
+  const returnFocus = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    if (editing || !returnFocus.current) return;
+    returnFocus.current = false;
+    correctButton.current?.focus();
+  }, [editing]);
+  const closeEditor = () => { returnFocus.current = true; setEditing(false); };
   useEffect(() => { setFeedback(message.feedback); }, [message.feedback]);
   const unavailable = feedbackBusy || pending;
   const save = async (rating: ChatFeedback["rating"], correction: string | null, close = false) => {
@@ -50,7 +59,7 @@ export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false,
       if (!mounted.current) return;
       if (saved.correction !== feedback?.correction) { setSavedPrinciple(undefined); setPrincipleForm(false); }
       setFeedback(saved);
-      if (close) setEditing(false);
+      if (close) closeEditor();
     } catch (cause) {
       if (mounted.current) setError(errorMessage(cause, t("answerFeedback.couldNotSaveFeedback")));
     } finally {
@@ -77,17 +86,20 @@ export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false,
         {feedbackBusy ? <span id={busyReasonId} className="sr-only">{busyReason()}</span> : null}
         <button type="button" aria-label={t("answerFeedback.helpful")} title={feedbackBusy ? busyReason() : t("answerFeedback.helpful")} aria-pressed={feedback?.rating === "up"} aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={() => void save(feedback?.rating === "up" ? null : "up", feedback?.correction ?? null)}><ThumbsUpIcon /></button>
         <button type="button" aria-label={t("answerFeedback.notHelpful")} title={feedbackBusy ? busyReason() : t("answerFeedback.notHelpful")} aria-pressed={feedback?.rating === "down"} aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={() => void save(feedback?.rating === "down" ? null : "down", feedback?.correction ?? null)}><ThumbsDownIcon /></button>
-        <button type="button" aria-expanded={editing} aria-describedby={feedbackBusy ? busyReasonId : undefined} title={feedbackBusy ? busyReason() : t("answerFeedback.correct")} {...(editing ? { "aria-controls": editorId } : {})} disabled={unavailable} onClick={() => { if (!editing) setDraft(feedback?.correction ?? ""); setEditing(true); }}>{t("answerFeedback.correct")}</button>
+        <button ref={correctButton} type="button" aria-expanded={editing} aria-describedby={feedbackBusy ? busyReasonId : undefined} title={feedbackBusy ? busyReason() : t("answerFeedback.correct")} {...(editing ? { "aria-controls": editorId } : {})} disabled={unavailable}
+          // It opens and closes the editor it controls; closing keeps nothing that was not saved.
+          onClick={() => { if (editing) { setEditing(false); return; } setDraft(feedback?.correction ?? ""); setEditing(true); }}>{t("answerFeedback.correct")}</button>
       </div>
     </div>
     {showCorrection ? <div className="answer-correction" data-testid="answer-correction" id={editing ? editorId : undefined}>
       {editing ? <>
         <label htmlFor={`${editorId}-text`}>{t("answerFeedback.yourCorrection")}</label>
-        <textarea id={`${editorId}-text`} value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} disabled={unavailable} autoFocus />
+        <textarea id={`${editorId}-text`} value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} disabled={unavailable} autoFocus
+          onKeyDown={(event) => { if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); closeEditor(); } }} />
         <small>{t("answerFeedback.characterCount", { count: [...draft.trim()].length, formattedCount: formatNumber([...draft.trim()].length) })}</small>
         <div className="message-actions">
           <button type="button" aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable || [...draft.trim()].length > 4000} onClick={() => void save(feedback?.rating ?? null, draft, true)}>{pending ? t("answerFeedback.saving") : t("answerFeedback.saveCorrection")}</button>
-          <button type="button" aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={() => setEditing(false)}>{t("answerFeedback.cancel")}</button>
+          <button type="button" aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={closeEditor}>{t("answerFeedback.cancel")}</button>
         </div>
       </> : null}
       {feedback?.correction && !editing ? <>

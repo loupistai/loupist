@@ -2,7 +2,79 @@ use super::*;
 use crate::commands::tool_executor::{StagedResearch, StagedResearchJournal};
 
 #[test]
-fn finalized_learning_report_opens_canonical_sources_lens_and_journal() {
+fn quiet_finalize_preserves_the_chat_timestamp_and_hides_a_fresh_scheduled_session() {
+    use crate::scheduled_tasks::types::{Schedule, TaskDraft, TaskStatus, TaskTarget};
+    let directory = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(directory.path().join("app"));
+    let store = &state.store;
+    let loupist = "loupist-a";
+    store.create_loupist(&loupist_profile(loupist)).unwrap();
+    let task = store
+        .scheduled_task_create(
+            loupist,
+            TaskDraft {
+                title: "Price alert".into(),
+                prompt: "Check the threshold.".into(),
+                schedule: Schedule::Interval { every_minutes: 5 },
+                target: TaskTarget::NewChat,
+                model_profile_id: "fixture".into(),
+                thinking_level: "off".into(),
+                run_options: Default::default(),
+                use_memory: false,
+                update_memory: false,
+                status: TaskStatus::Active,
+            },
+            100,
+        )
+        .unwrap();
+    let (claim, ()) = store
+        .scheduled_task_claim_with(loupist, &task.id, 200, true, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+    let expected = store
+        .get_chat(claim.run.thread_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    let mut provisional = expected.clone();
+    provisional.messages.push(message("quiet-reply", 300));
+    provisional.updated_at_ms = 300;
+    store
+        .replace_chat_with(&expected, &provisional, |tx| {
+            write_chat_learning_report(
+                tx,
+                &provisional,
+                "quiet-reply",
+                false,
+                vec![],
+                vec![],
+                vec![],
+                None,
+                vec![],
+                Some((&claim.run.run_id, expected.updated_at_ms)),
+                None,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let chat = store.get_chat(&expected.id).unwrap().unwrap();
+    assert_eq!(chat.updated_at_ms, expected.updated_at_ms);
+    assert_eq!(chat.messages.last().unwrap().id, "quiet-reply");
+    assert!(
+        crate::commands::types::chat_dto(&chat)
+            .unwrap()
+            .hide_from_recent
+    );
+    assert!(
+        store
+            .scheduled_task_run_get(loupist, &claim.run.run_id)
+            .unwrap()
+            .unwrap()
+            .quiet
+    );
+}
+
+#[test]
+fn finalized_learning_report_opens_canonical_sources_lens_and_journal_even_when_quiet_fails() {
     let directory = tempfile::tempdir().unwrap();
     let state = AppState::for_test(directory.path().join("app"));
     state
@@ -61,6 +133,7 @@ fn finalized_learning_report_opens_canonical_sources_lens_and_journal() {
     let performance = crate::domain::ChatPerformance {
         setup_ms: 10,
         first_text_ms: Some(50),
+        answer_text_ms: Some(70),
         generation_ms: 90,
         total_ms: 140,
         session_cache: crate::domain::ChatSessionCacheStatus::Warm,
@@ -96,12 +169,15 @@ fn finalized_learning_report_opens_canonical_sources_lens_and_journal() {
                 Vec::new(),
                 Some(performance.clone()),
                 Vec::new(),
+                Some(("no-longer-running", original.updated_at_ms)),
+                None,
             )?);
             Ok(())
         })
         .unwrap();
     let emitted = emitted.unwrap();
     let persisted = state.store.get_chat("chat-1").unwrap().unwrap();
+    assert_eq!(persisted.updated_at_ms, provisional.updated_at_ms);
     assert_eq!(emitted.performance.as_ref(), Some(&performance));
     assert_eq!(
         serde_json::to_value(persisted.messages.last().unwrap()).unwrap(),

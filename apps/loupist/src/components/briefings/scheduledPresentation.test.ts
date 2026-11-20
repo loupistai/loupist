@@ -16,8 +16,6 @@ it("keeps a saved task name and localizes only the host defaults", () => {
   expect(scheduledTaskTitle("briefing", "Briefings")).toBe("Briefing");
   expect(scheduledTaskTitle("briefing", "Monday research")).toBe("Monday research");
   expect(scheduledTaskTitle("custom", "Supplier update")).toBe("Supplier update");
-  expect(scheduledTaskTitle("earnings", "Results before and after")).toBe("Results before and after");
-  expect(scheduledTaskTitle("earnings", "Results check")).toBe("Results check");
 });
 
 it("names a time zone in words and drops the IANA id", () => {

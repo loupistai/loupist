@@ -1,10 +1,10 @@
 import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useState } from "react";
 import type { LoupistBridge } from "../../types";
-import type { AssetDelta } from "../../contracts/assets";
+import type { AssetPage } from "../../contracts/assets";
 import { Button } from "../ui/button";
 import { useAssetPageOpener } from "./assetOpener";
-import { crossedReason, midSentence, shortDay, verdictLabel } from "./assetText";
+import { readSentence } from "./assetText";
 import { VerdictChip } from "./VerdictChip";
 
 /**
@@ -14,28 +14,29 @@ import { VerdictChip } from "./VerdictChip";
 export function InspectorThesis({ bridge, loupistId, loupistName, entityId }: { bridge: LoupistBridge; loupistId: string; loupistName?: string; entityId: string }) {
   useTranslation(["assets", "knowledge"]);
   const open = useAssetPageOpener();
-  const [page, setPage] = useState<AssetDelta | null>(null);
+  const [page, setPage] = useState<AssetPage | null>(null);
   useEffect(() => {
     let live = true;
     setPage(null);
-    // Read-only: every page's read; matching is Rust's (`entityId`).
-    void (bridge.assetDelta?.({ loupistId, sinceMs: Date.now() }) ?? Promise.resolve([]))
-      .then(deltas => { if (live) setPage(deltas.find(delta => delta.entityId === entityId && delta.verdict) ?? null); })
-      .catch(() => undefined);
-    return () => { live = false; };
+    const refresh = () => {
+      void bridge.assetPageGet({ loupistId, entityId })
+        .then(next => { if (live) setPage(next); })
+        .catch(() => { if (live) setPage(null); });
+    };
+    refresh();
+    const unsubscribe = bridge.onAssetsChanged(refresh);
+    return () => { live = false; unsubscribe(); };
   }, [bridge, loupistId, entityId]);
-  if (!page?.verdict) return null;
-  const move = page.latestMove;
-  const sentence = move
-    ? `${i18n.t("assets:verdict.since", { verdict: verdictLabel(page.verdict), date: shortDay(page.verdictSince) })} — ${move.line?.crossed ? crossedReason(move.line, move.factDate) : midSentence(move.reason)}`
-    : i18n.t("assets:verdict.started", { date: shortDay(page.verdictSince) });
+  if (!page?.read) return null;
+  // The page's own sentence, so an undone move reads the same here as on the page.
+  const sentence = readSentence(page.read).text;
   return <section className="asset-thesis-summary" aria-label={i18n.t("knowledge:map.thesis")}>
     <div className="asset-thesis-summary-head">
       {/* Styled like the inspector's other headings ("Key facts"). */}
       <h3>{i18n.t("knowledge:map.thesis")}</h3>
-      <VerdictChip verdict={page.verdict} loupist={loupistName} />
+      <VerdictChip verdict={page.read.verdict} loupist={loupistName} />
     </div>
     <p>{sentence}</p>
-    {open ? <Button type="button" variant="link" size="sm" onClick={() => open({ loupistId, assetId: page.assetId, name: page.name })}>{i18n.t("knowledge:map.openAssetPage")}</Button> : null}
+    {open ? <Button type="button" variant="link" size="sm" onClick={() => open({ loupistId, assetId: page.asset.assetId, name: page.asset.name })}>{i18n.t("knowledge:map.openAssetPage")}</Button> : null}
   </section>;
 }

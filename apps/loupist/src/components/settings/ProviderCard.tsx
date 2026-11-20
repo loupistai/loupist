@@ -82,7 +82,7 @@ export function ProviderCard({ option, models, hiddenModels, chatModel, loading,
   const credential = option.custom
     ? t(status.credential_kind === "local" ? "providers.viaLocal" : "providers.viaCustom", { address: hostOf(option.custom.base_url) })
     : status.credential_kind === "environment" ? t("providers.viaEnvironment")
-      : plan ? (status.connected_at_ms !== null ? t("providers.viaSignIn", { provider: title, date: formatDate(status.connected_at_ms) }) : title)
+      : plan ? (status.connected_at_ms !== null ? t("providers.viaSignIn", { date: formatDate(status.connected_at_ms) }) : t("providers.signedIn"))
         : t("providers.viaKey");
   const notice = status.notice;
   const lastLimit = !notice && status.last_limit_at_ms !== null && now - status.last_limit_at_ms < LAST_LIMIT_WINDOW_MS ? status.last_limit_at_ms : null;
@@ -135,15 +135,17 @@ export function ProviderCard({ option, models, hiddenModels, chatModel, loading,
         {expanded ? (
           <div id={`provider-models-${option.id}`} className="provider-card-models">
             <div className="settings-model-toolbar">
-              <div className="relative min-w-0 flex-1">
+              <div className="settings-model-search relative">
                 <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                 <Input aria-label={t("modelSettingsPanel.searchLabelModels", { label: title })} className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("modelSettingsPanel.searchModels")} />
               </div>
-              <Button type="button" size="sm" variant="ghost" disabled={locked || !models.length} onClick={() => onSetAllVisible(true)}>{t("modelSettingsPanel.showAll")}</Button>
-              <Button type="button" size="sm" variant="ghost" disabled={locked || !models.length} onClick={() => onSetAllVisible(false)}>{t("modelSettingsPanel.hideAll")}</Button>
-              <Button type="button" size="sm" variant="ghost" aria-label={t("modelSettingsPanel.reloadModelsForLabel", { label: title })} disabled={reloadDisabled} onClick={onReload}>
-                {loading ? <LoaderCircleIcon className="animate-spin" /> : <RefreshCwIcon />}{t("modelSettingsPanel.reloadModels")}
-              </Button>
+              <div className="settings-model-actions">
+                <Button type="button" size="sm" variant="ghost" disabled={locked || !models.length} onClick={() => onSetAllVisible(true)}>{t("modelSettingsPanel.showAll")}</Button>
+                <Button type="button" size="sm" variant="ghost" disabled={locked || !models.length} onClick={() => onSetAllVisible(false)}>{t("modelSettingsPanel.hideAll")}</Button>
+                <Button type="button" size="sm" variant="ghost" aria-label={t("modelSettingsPanel.reloadModelsForLabel", { label: title })} disabled={reloadDisabled} onClick={onReload}>
+                  {loading ? <LoaderCircleIcon className="animate-spin" /> : <RefreshCwIcon />}{t("modelSettingsPanel.reloadModels")}
+                </Button>
+              </div>
             </div>
             <div className="settings-model-list" aria-label={t("modelSettingsPanel.labelModels", { label: title })}>
               {filtered.map((model, index) => (
@@ -155,7 +157,7 @@ export function ProviderCard({ option, models, hiddenModels, chatModel, loading,
                   {visibilityBusyId === model.id ? <LoaderCircleIcon className="size-4 animate-spin text-muted-foreground" /> : null}
                   <label className="provider-card-switch">
                     <span>{t("providers.inMenu")}</span>
-                    <Switch aria-label={t("modelSettingsPanel.showNameInChat", { name: model.name })} checked={!hiddenModels.has(model.id)} disabled={locked} onCheckedChange={(checked) => onSetVisibility(model.id, checked)} />
+                    <Switch aria-label={t("modelSettingsPanel.showNameInMenu", { name: model.name })} checked={!hiddenModels.has(model.id)} disabled={locked} onCheckedChange={(checked) => onSetVisibility(model.id, checked)} />
                   </label>
                 </div>
               ))}

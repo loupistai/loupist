@@ -32,7 +32,9 @@ it("shows a ChatGPT sign-in as Connected with its date, the plan line and Chat's
   const { card, onOpenUsage, onConnect } = renderCard({ option: option("openai") });
   expect(within(card).getByRole("heading", { name: "ChatGPT" })).toBeInTheDocument();
   expect(card).toHaveTextContent("Connected");
-  expect(card).toHaveTextContent("Signed in with ChatGPT · since Oct 31, 2026");
+  // The card's heading names ChatGPT; the line under it does not repeat the name.
+  expect(card).toHaveTextContent("Signed in since Oct 31, 2026");
+  expect(card).not.toHaveTextContent("Signed in with");
   expect(card).toHaveTextContent("Using your ChatGPT plan");
   // Auto is not repeated on every card.
   expect(card).not.toHaveTextContent("Chat default");
@@ -62,7 +64,7 @@ it("names the key, the local server and an Anthropic key by credential", async (
   const claude = renderCard({ option: option("anthropic", { status: status({ credential_kind: "api_key" }) }) });
   expect(within(claude.card).getByRole("heading", { name: "Anthropic" })).toBeVisible();
   expect(claude.card).toHaveTextContent("API key saved on this Mac");
-  expect(claude.card).not.toHaveTextContent(/extra usage|Signed in with/);
+  expect(claude.card).not.toHaveTextContent(/extra usage|Signed in/);
   await user.click(within(claude.card).getByRole("button", { name: "More actions for Anthropic" }));
   await user.click(await screen.findByRole("menuitem", { name: "Change key…" }));
   expect(claude.onConnect).toHaveBeenCalledWith({ kind: "provider", provider: "anthropic", method: "api_key" });
@@ -98,7 +100,7 @@ it("offers Connect and Remove for a disconnected account that schedules still us
   const user = userEvent.setup();
   const { card, onConnect, onRemove } = renderCard({ option: option("openai", { credential_source: "missing", status: status({ state: "disconnected", credential_kind: "none", connected_at_ms: null, used_by: { schedules: 2, chat_default: false, world_models: 0 } }) }) });
   expect(card).toHaveTextContent("Disconnected");
-  expect(card).toHaveTextContent("2 schedules still use this account.");
+  expect(card).toHaveTextContent("2 schedules still use this account. Connect it again so they can run.");
   await user.click(within(card).getByRole("button", { name: "Connect" }));
   expect(onConnect).toHaveBeenCalledWith({ kind: "provider", provider: "openai", method: "sign_in" });
   await user.click(within(card).getByRole("button", { name: "Remove" }));
@@ -112,8 +114,9 @@ it("lists models with their context and an In menu switch, keeping raw IDs in th
   await user.click(within(card).getByRole("button", { name: /Models \(1\)/u }));
   const row = card.querySelector(".settings-model-row")!;
   expect(row).toHaveAttribute("title", "gpt-6.1-sol");
-  expect(row).toHaveTextContent("GPT-6.1 Sol272,000 contextIn menu");
+  expect(row).toHaveTextContent("GPT-6.1 Sol272,000-token contextIn menu");
   expect(row).not.toHaveTextContent("gpt-6.1-sol");
-  await user.click(within(card).getByRole("switch", { name: "Show GPT-6.1 Sol in Chat" }));
+  // The switch's name holds its visible label, In menu.
+  await user.click(within(card).getByRole("switch", { name: "Show GPT-6.1 Sol in menu" }));
   expect(onSetVisibility).toHaveBeenCalledWith("openai/gpt-6.1-sol", false);
 });

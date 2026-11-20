@@ -225,7 +225,7 @@ impl Default for GraphProcessingSettings {
             paused: false,
             helper_provider: None,
             helper_model: None,
-            embedding_profile: "local-en-128".to_string(),
+            embedding_profile: super::graph_inference::LOCAL_EMBEDDING_PROFILE.to_string(),
             max_llm_calls: 16,
             max_embedding_calls: 64,
             timeout_ms: DEFAULT_TIMEOUT_MS,
@@ -270,10 +270,18 @@ pub fn load_settings(
     connection: &rusqlite::Connection,
     loupist_id: &str,
 ) -> KnowledgeResult<GraphProcessingSettings> {
+    load_settings_in(connection, loupist_id, "main")
+}
+
+fn load_settings_in(
+    connection: &rusqlite::Connection,
+    loupist_id: &str,
+    schema: &str,
+) -> KnowledgeResult<GraphProcessingSettings> {
     validate_loupist_id(loupist_id)?;
     let data: Option<String> = connection
         .query_row(
-            "SELECT data_json FROM app_settings WHERE id = ?1",
+            &format!("SELECT data_json FROM {schema}.app_settings WHERE id = ?1"),
             [format!("world_processing:{loupist_id}")],
             |row| row.get(0),
         )
@@ -282,7 +290,7 @@ pub fn load_settings(
         .map(|value| serde_json::from_str(&value))
         .transpose()?
         .unwrap_or_default();
-    settings.extension = super::world_schema::live_extension(connection, loupist_id)?;
+    settings.extension = super::world_schema::live_extension_in(connection, loupist_id, schema)?;
     settings.validate()?;
     Ok(settings)
 }
@@ -292,10 +300,19 @@ pub fn store_settings(
     loupist_id: &str,
     settings: &GraphProcessingSettings,
 ) -> KnowledgeResult<()> {
+    store_settings_in(connection, loupist_id, settings, "main")
+}
+
+fn store_settings_in(
+    connection: &rusqlite::Connection,
+    loupist_id: &str,
+    settings: &GraphProcessingSettings,
+    schema: &str,
+) -> KnowledgeResult<()> {
     validate_loupist_id(loupist_id)?;
     settings.validate()?;
     connection.execute(
-        "INSERT INTO app_settings (id, data_json) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json",
+        &format!("INSERT INTO {schema}.app_settings (id, data_json) VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json"),
         params![format!("world_processing:{loupist_id}"), serde_json::to_string(settings)?],
     )?;
     Ok(())
@@ -1147,7 +1164,7 @@ fn insert_world_load(
             model_profile: "none".into(),
             thinking_level: "off".into(),
             run_options: Default::default(),
-            embedding_profile: "local-en-128".into(),
+            embedding_profile: super::graph_inference::LOCAL_EMBEDDING_PROFILE.into(),
             max_llm_calls: 0,
             max_embedding_calls: settings.max_embedding_calls,
             timeout_ms: settings.timeout_ms,
@@ -1651,9 +1668,25 @@ pub fn retry_source_processing(
 /// ([`host_interrupted`]), then once more (`retry_once`); any other dispatched
 /// or uncertain call is never replayed.
 pub(crate) fn recover_interrupted(tx: &Transaction<'_>) -> KnowledgeResult<u32> {
+    recover_interrupted_in(tx, "main")
+}
+
+pub(crate) fn pause_copied_processing(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    schema: &str,
+) -> KnowledgeResult<()> {
+    let mut settings = load_settings_in(tx, loupist, schema)?;
+    settings.paused = true;
+    store_settings_in(tx, loupist, &settings, schema)?;
+    recover_interrupted_in(tx, schema)?;
+    Ok(())
+}
+
+fn recover_interrupted_in(tx: &Transaction<'_>, schema: &str) -> KnowledgeResult<u32> {
     let mut changed = 0;
-    for job in list_running(tx)? {
-        let mut settings = load_settings(tx, &job.loupist_id)?;
+    for job in list_running(tx, schema)? {
+        let mut settings = load_settings_in(tx, &job.loupist_id, schema)?;
         let mut document = job.document.clone();
         let retried = host_interrupted(&mut document) || retry_once(&mut document);
         let uncertain = !retried
@@ -1665,11 +1698,11 @@ pub(crate) fn recover_interrupted(tx: &Transaction<'_>) -> KnowledgeResult<u32> 
             requeued(&settings, &document)
         };
         clear_lease(&mut document);
-        if write_status(tx, &job.job_id, JOB_RUNNING, next, &document)? {
+        if write_status_in(tx, &job.job_id, JOB_RUNNING, next, &document, schema)? {
             changed += 1;
         }
         if uncertain {
-            store_settings(tx, &job.loupist_id, &settings)?;
+            store_settings_in(tx, &job.loupist_id, &settings, schema)?;
         }
     }
     Ok(changed)
@@ -1683,7 +1716,7 @@ pub(super) fn recover_expired(
     live_loupists: &std::collections::HashSet<String>,
 ) -> KnowledgeResult<Vec<String>> {
     let mut reclaimed = Vec::new();
-    for job in list_running(tx)? {
+    for job in list_running(tx, "main")? {
         if live_loupists.contains(&job.loupist_id)
             || job
                 .document
@@ -2255,7 +2288,7 @@ impl GraphProcessingSettings {
             || self.max_embedding_calls > 256
             || self.timeout_ms < 1_000
             || self.timeout_ms > MAX_TIMEOUT_MS
-            || self.embedding_profile != "local-en-128"
+            || self.embedding_profile != super::graph_inference::LOCAL_EMBEDDING_PROFILE
         {
             return Err(KnowledgeError::Invalid(
                 "World processing bounds are invalid",
@@ -2643,10 +2676,23 @@ fn write_status(
     status: &str,
     document: &JobDocument,
 ) -> KnowledgeResult<bool> {
+    write_status_in(tx, job_id, expected, status, document, "main")
+}
+
+fn write_status_in(
+    tx: &Transaction<'_>,
+    job_id: &str,
+    expected: &str,
+    status: &str,
+    document: &JobDocument,
+    schema: &str,
+) -> KnowledgeResult<bool> {
     let payload = serde_json::to_string(document)?;
     let changed = tx.execute(
-        "UPDATE knowledge_graph_outbox SET status = ?1, payload_json = ?2
-         WHERE job_id = ?3 AND status = ?4",
+        &format!(
+            "UPDATE {schema}.knowledge_graph_outbox SET status = ?1, payload_json = ?2
+         WHERE job_id = ?3 AND status = ?4"
+        ),
         params![status, payload, job_id, expected],
     )?;
     Ok(changed == 1)
@@ -2668,12 +2714,12 @@ fn list_jobs_with_status(
         .map_err(KnowledgeError::from)
 }
 
-fn list_running(tx: &Transaction<'_>) -> KnowledgeResult<Vec<GraphJobView>> {
-    let mut statement = tx.prepare(
+fn list_running(tx: &Transaction<'_>, schema: &str) -> KnowledgeResult<Vec<GraphJobView>> {
+    let mut statement = tx.prepare(&format!(
         "SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
                 payload_digest, created_at_ms
-         FROM knowledge_graph_outbox WHERE status = ?1 ORDER BY created_at_ms, job_id",
-    )?;
+         FROM {schema}.knowledge_graph_outbox WHERE status = ?1 ORDER BY created_at_ms, job_id"
+    ))?;
     let rows = statement.query_map([JOB_RUNNING], row_to_job)?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(KnowledgeError::from)

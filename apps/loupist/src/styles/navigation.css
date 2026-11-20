@@ -1,55 +1,90 @@
+/*
+ * The sidebar, top to bottom: the window-control row, the Loupist (face, name, focus,
+ * switcher), Search, the places (Bot, Following, Map, Lens, Schedule), research sessions
+ * under their own heading, then the market status line and Settings at the foot.
+ */
 .app-navigation { background: var(--gg-color-bg-sidebar); border-color: var(--gg-color-border-subtle); }
-.navigation-toolbar { display: flex; align-items: center; min-width: 0; min-height: var(--gg-size-control-md); }
-.navigation-command { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: flex-start; gap: var(--gg-space-2); height: var(--gg-size-control-md); padding-inline: var(--gg-space-2); border-radius: var(--gg-radius-md); color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); }
+.app-navigation [data-slot="sidebar-container"] { border-right: 1px solid var(--gg-color-border-subtle); }
+.app-navigation [data-slot="sidebar-header"] { gap: 2px; padding: var(--gg-space-2) 10px 0; }
+
+/* The first row exists on macOS only: an empty drag region under the native window controls. */
+.navigation-toolbar { display: none; }
+html[data-desktop-platform="macos"] .navigation-toolbar { display: block; min-height: calc(var(--gg-titlebar-height) - var(--gg-space-2)); }
+.settings-navigation .navigation-toolbar { display: none; }
+html[data-desktop-platform="macos"] .settings-navigation .navigation-toolbar { display: flex; margin-top: calc(var(--gg-space-3) * -1); }
+
+/* The Loupist: the switcher's trigger. */
+.loupist-header-selector { display: block; min-width: 0; margin-bottom: var(--gg-space-1); }
+.loupist-header-identity { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: var(--gg-space-2); border: 0; border-radius: 12px; background: transparent; color: var(--gg-color-text-primary); text-align: left; cursor: pointer; }
+.loupist-header-identity:hover, .loupist-header-identity[data-state="open"] { background: var(--gg-color-bg-hover); }
+.loupist-header-identity:focus-visible { outline: 2px solid var(--gg-color-accent-ink); outline-offset: 1px; }
+.loupist-identity-text { display: grid; flex: 1 1 auto; min-width: 0; line-height: 1.25; }
+.loupist-identity-text strong { overflow: hidden; font-size: var(--gg-text-body); font-weight: var(--gg-weight-strong); text-overflow: ellipsis; white-space: nowrap; }
+.loupist-identity-text small { overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); text-overflow: ellipsis; white-space: nowrap; }
+.loupist-switcher-icon { flex: none; width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-tertiary); }
+/* Another Loupist has unread results. */
+.loupist-switcher-unread { position: absolute; top: -1px; right: -1px; width: 9px; height: 9px; border: 2px solid var(--gg-color-bg-sidebar); border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
+.loupist-switcher-menu { min-width: 248px; max-width: min(320px, calc(100vw - var(--gg-space-6))); }
+.loupist-switcher-menu [data-loupist-option] { gap: var(--gg-space-2); }
+.loupist-switcher-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Search: a quiet field-shaped button that opens the command palette. */
+.navigation-command { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: flex-start; gap: 10px; height: 34px; padding-inline: 10px; border-radius: 9px; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); }
 .navigation-command span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.navigation-command kbd { margin-left: auto; flex: none; font: inherit; font-size: var(--gg-text-meta); color: var(--gg-color-text-tertiary); }
-.navigation-search:hover, .navigation-new:hover:not(:disabled) { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
-.app-navigation [data-slot="sidebar-header"] { gap: var(--gg-space-1); padding: var(--gg-space-2); }
-.loupist-navigation { padding: 0 var(--gg-space-2); }
-.loupist-list-heading { display: flex; align-items: center; justify-content: space-between; min-height: var(--gg-size-control-sm); margin-inline: var(--gg-space-2) 0; }
-.loupist-list-heading [data-slot="sidebar-group-label"] { height: auto; padding: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: 0; text-transform: none; }
-.loupist-avatar { display: inline-flex; flex: 0 0 var(--gg-size-control-sm); width: var(--gg-size-control-sm); height: var(--gg-size-control-sm); align-items: center; justify-content: center; border-radius: var(--gg-radius-full); background: var(--gg-color-accent-soft); color: var(--gg-color-accent-ink); font-size: var(--gg-text-control); font-weight: var(--gg-weight-semibold); }
-.loupist-avatar { overflow: hidden; }
-.loupist-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.navigation-command kbd { margin-left: auto; flex: none; font: inherit; font-size: var(--gg-text-caption); color: var(--gg-color-text-tertiary); }
+.navigation-search { margin: 6px 0 var(--gg-space-2); border: 1px solid var(--gg-color-border-subtle); background: var(--gg-color-bg-raised); }
+.navigation-search:hover { background: var(--gg-color-bg-raised); border-color: var(--gg-color-border-default); color: var(--gg-color-text-primary); }
+
+/* Places and sessions. */
+.loupist-navigation { padding: 0 10px; }
+.loupist-places { gap: 1px; }
 .loupist-chat-row { position: relative; }
-.loupist-chat-button { height: var(--gg-size-control-md); border-radius: var(--gg-radius-md); padding: 0 var(--gg-space-7) 0 var(--gg-space-2); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); color: var(--gg-color-text-secondary); }
+.loupist-chat-button { gap: 10px; height: 34px; border-radius: 9px; padding: 0 var(--gg-space-7) 0 10px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); }
 .loupist-chat-button:hover { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
-.loupist-chat-button[data-selected="true"] { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); background: var(--gg-color-bg-selected); }
-.loupist-home-icon { flex: none; width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); }
+.loupist-home-icon { flex: none; width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-tertiary); }
+/* The place on screen is a raised row with an accent icon. */
+.loupist-places .loupist-chat-button:is([data-active="true"], [data-selected="true"]) { background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); font-weight: var(--gg-weight-semibold); box-shadow: 0 0 0 1px var(--gg-color-border-subtle), var(--gg-shadow-card); }
+.loupist-places .loupist-chat-button:is([data-active="true"], [data-selected="true"]) .loupist-home-icon { color: var(--gg-color-accent-ink); }
+/* With Map or Lens open beside the conversation, that row is the current place, not Bot. */
+.loupist-sessions { gap: 1px; }
+.loupist-sessions .loupist-chat-button { height: var(--gg-size-control-md); padding-inline-start: 10px; }
+.loupist-sessions .loupist-chat-button[data-selected="true"] { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); }
 /* Destination rows: the ⌘ key shows on hover or keyboard focus only (chat design change 16). */
 .loupist-place-key { margin-left: auto; color: var(--gg-color-text-tertiary); font: inherit; font-size: var(--gg-text-caption); opacity: 0; }
 .loupist-chat-button:is(:hover, :focus-visible) .loupist-place-key { opacity: 1; }
-.loupist-chat-button[data-panel-open] { color: var(--gg-color-text-primary); }
-.loupist-chat-button[data-panel-open] .loupist-home-icon { color: var(--gg-color-text-primary); }
 /* Only the title stretches; the draft dot, status dot and private mark keep their own size at the row's end. */
 .loupist-chat-button > .loupist-chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* A running reply: a still ring, open at one quarter like the header's run indicator. Never animated:
-   while a reply runs, its live line's sheen is the one thing that loops. */
-.thread-running { flex: none; box-sizing: border-box; width: calc(var(--gg-space-2) + var(--gg-space-1) / 2); height: calc(var(--gg-space-2) + var(--gg-space-1) / 2); border: 2px solid var(--gg-color-accent); border-inline-start-color: transparent; border-radius: var(--gg-radius-full); }
-@media (forced-colors: active) { .thread-running { border-color: Highlight; border-inline-start-color: transparent; } }
-.loupist-chat-menu { position: absolute; right: 0; top: 0; opacity: 0; }
+/* A running reply: the app's spinner in the accent ink of the face's run ring, the private mark's
+   size so the slot keeps its width. Reduced motion stops it (tokens.css): an open ring, still. */
+.loupist-chat-button > .thread-running { flex: none; width: 14px; height: 14px; color: var(--gg-color-accent-ink); }
+@media (forced-colors: active) { .loupist-chat-button > .thread-running { color: Highlight; } }
+.loupist-chat-menu { position: absolute; right: 0; top: 1px; opacity: 0; }
 .loupist-chat-row:hover .loupist-chat-menu, .loupist-chat-row:focus-within .loupist-chat-menu { opacity: 1; }
-.navigation-footer { flex-shrink: 0; border-top: 1px solid var(--gg-color-border-subtle); padding: var(--gg-space-2); }
-.navigation-footer [data-slot="sidebar-menu-button"] { height: var(--gg-size-control-md); border-radius: var(--gg-radius-md); color: var(--gg-color-text-secondary); font-weight: var(--gg-weight-regular); }
+
+/* "Research sessions" with its plus. */
+.loupist-list-heading { display: flex; align-items: center; justify-content: space-between; min-height: 22px; margin: var(--gg-space-4) 0 var(--gg-space-1); padding-inline: 10px 4px; }
+.loupist-list-heading [data-slot="sidebar-group-label"] { height: auto; padding: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-semibold); letter-spacing: 0; text-transform: none; }
+.loupist-list-heading .navigation-new { width: 22px; height: 22px; min-width: 22px; border-radius: var(--gg-radius-xs); color: var(--gg-color-text-tertiary); }
+.loupist-list-heading .navigation-new:hover:not(:disabled) { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.loupist-sessions-empty { margin: var(--gg-space-1) 10px 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+
+/* The foot: market status, then Settings. */
+.navigation-footer { flex-shrink: 0; gap: var(--gg-space-1); padding: var(--gg-space-2) 10px 10px; }
+.navigation-footer [data-slot="sidebar-menu-button"] { gap: 10px; height: 34px; border-radius: 9px; padding-inline: 10px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); font-weight: var(--gg-weight-regular); }
 .navigation-footer [data-slot="sidebar-menu-button"]:hover { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
+.navigation-footer [data-slot="sidebar-menu-button"] svg { color: var(--gg-color-text-tertiary); }
 .shell-update-dot { margin-left: auto; width: var(--gg-space-2); height: var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
-.shell-unread { display: inline-flex; justify-content: center; align-items: center; min-width: calc(var(--gg-space-4) + var(--gg-space-1) / 2); height: calc(var(--gg-space-4) + var(--gg-space-1) / 2); padding: 0 var(--gg-space-1); border-radius: var(--gg-radius-full); background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-semibold); font-variant-numeric: tabular-nums; }
+.shell-unread { display: inline-flex; justify-content: center; align-items: center; min-width: 18px; height: 18px; margin-inline-start: auto; padding: 0 5px; border-radius: var(--gg-radius-full); background: var(--gg-color-accent); color: var(--gg-color-text-on-accent); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-strong); font-variant-numeric: tabular-nums; }
+
+/* Settings navigation. Its sidebar is the column itself, not the kit's wrapper that the shell
+   shows as a block: it stays a column so the section list scrolls and Back keeps the window's foot. */
+.app-body > .settings-navigation[data-slot="sidebar"]:not([data-mobile="true"]) { display: flex; min-height: 0; overflow: hidden; }
 .settings-search { display: flex; align-items: center; gap: var(--gg-space-2); padding: var(--gg-space-2); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-sm); }
 .settings-search svg { width: var(--gg-space-4); height: var(--gg-space-4); flex-shrink: 0; }
 .settings-search input { min-width: 0; width: 100%; background: transparent; color: var(--gg-color-text-primary); font-size: var(--gg-text-control); }
 .settings-search-empty { padding: var(--gg-space-3); font-size: var(--gg-text-meta); }
-[data-collapsible="icon"] :is(.navigation-command span,.navigation-command kbd,.loupist-list-heading [data-slot="sidebar-group-label"]) { display: none; }
-[data-collapsible="icon"] [data-slot="sidebar-header"] { align-items: center; }
-[data-collapsible="icon"] .navigation-command { flex: none; width: var(--gg-size-control-md); padding: 0; justify-content: center; }
-[data-collapsible="icon"] .loupist-list-heading { justify-content: center; margin-inline: 0; }
-[data-collapsible="icon"] .loupist-chat-button { justify-content: center; padding-inline: 0; }
-[data-collapsible="icon"] .loupist-chat-row :is(.loupist-draft-dot, .loupist-status-dot, .thread-running, .loupist-private-mark) { position: absolute; top: var(--gg-space-1); right: var(--gg-space-1); margin: 0; }
 
-.shell-unread { margin-inline-start: var(--gg-space-2); }
-.loupist-schedule-row .shell-unread { margin-inline-start: auto; }
-.loupist-sessions-empty { margin: var(--gg-space-1) var(--gg-space-2) 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
-
-/* Needs attention (E1): rows above the Loupists with a status dot; hidden when empty. */
+/* Needs attention (E1): rows with a status dot; hidden when empty. */
 .needs-attention ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .needs-attention-row { display: flex; align-items: flex-start; gap: var(--gg-space-2); width: 100%; min-width: 0; max-width: 100%; overflow: hidden; min-height: 36px; padding: var(--gg-space-2); border: 0; border-radius: var(--gg-radius-sm); background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); text-align: left; cursor: pointer; }
 .needs-attention-row:hover { background: var(--gg-color-bg-hover); }
@@ -58,12 +93,16 @@
 .needs-attention-text strong { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); }
 .needs-attention-dot { flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: var(--gg-radius-full); background: var(--gg-color-text-tertiary); }
 .needs-attention-row:is([data-kind="approval"], [data-kind="question"], [data-kind="lineCrossed"]) .needs-attention-dot { background: var(--gg-color-accent); }
-/* Unread results take the info color so they never read as the amber "waiting on you" dot. */
-.needs-attention-row:is([data-kind="briefingConflict"], [data-kind="unreadResults"], [data-kind="watchAlerts"]) .needs-attention-dot { background: var(--gg-color-info); }
+/* Unread results take the info color so they never read as the "waiting on you" dot. */
+.needs-attention-row:is([data-kind="briefingConflict"], [data-kind="unreadResults"]) .needs-attention-dot { background: var(--gg-color-info); }
 .needs-attention-more { display: block; margin: var(--gg-space-1) 0 0; padding: 0 var(--gg-space-2); border: 0; background: transparent; color: var(--gg-color-text-tertiary); font: inherit; font-size: var(--gg-text-meta); text-align: left; }
 button.needs-attention-more { cursor: pointer; }
 button.needs-attention-more:hover { color: var(--gg-color-text-primary); }
-[data-collapsible="icon"] .needs-attention { display: none; }
+.needs-attention [data-slot="sidebar-group-label"] { height: auto; padding: var(--gg-space-3) 10px var(--gg-space-1); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-semibold); letter-spacing: 0; text-transform: none; }
+/* On a short window "Needs attention" gives up height first and scrolls inside its group, so the
+   places stay in view above the Settings footer. The group keeps its label and a row. */
+[data-slot="sidebar-content"] > .needs-attention { flex: 0 1 auto; min-height: calc(var(--gg-space-9) * 2); overflow: hidden; padding-inline: 10px; }
+.needs-attention > [data-slot="sidebar-group-content"] { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 /* Loupist and chat status dots: amber waits for you, grey finished while you were away. */
 .loupist-status-dot { flex: none; width: 8px; height: 8px; margin-right: var(--gg-space-3); border-radius: var(--gg-radius-full); background: var(--gg-color-text-tertiary); }
 .loupist-status-dot[data-state="waiting"] { background: var(--gg-color-accent); }
@@ -73,34 +112,40 @@ button.needs-attention-more:hover { color: var(--gg-color-text-primary); }
 .loupist-private-mark { display: inline-flex; flex: none; margin-left: auto; color: var(--gg-color-text-tertiary); }
 .loupist-private-mark svg { width: 14px; height: 14px; }
 
-/* Sidebar dimming (E4): no hard border; a faint inset line sets the sidebar one step back from the content. */
-.app-navigation [data-slot="sidebar-container"] { border-right-color: transparent; box-shadow: inset -1px 0 0 color-mix(in srgb, var(--gg-color-border-subtle) 60%, transparent); }
-:root[data-theme="dark"] .app-navigation [data-slot="sidebar-container"] { box-shadow: inset -1px 0 0 color-mix(in srgb, var(--gg-color-border-subtle) 40%, transparent); }
-/* "Needs attention" reads like the Loupists label above the Loupist list. */
-.needs-attention [data-slot="sidebar-group-label"] { height: auto; padding: var(--gg-space-4) var(--gg-space-3) var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); font-weight: var(--gg-weight-medium); letter-spacing: 0; text-transform: none; }
-.needs-attention [data-slot="sidebar-group-label"]:lang(ko) { letter-spacing: 0; text-transform: none; }
-/* On a short window "Needs attention" gives up height first and scrolls inside its group, so the Loupists,
-   "What … knows" and New Loupist stay in view above the Settings footer. The group keeps its label and a row. */
-[data-slot="sidebar-content"] > .needs-attention { flex: 0 1 auto; min-height: calc(var(--gg-space-9) * 2); overflow: hidden; }
-.needs-attention > [data-slot="sidebar-group-content"] { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-
-/* The icon rail has a single centerline regardless of the expanded section padding. */
-[data-collapsible="icon"] :is([data-slot="sidebar-header"], .loupist-navigation, .navigation-footer) {
-  padding-inline: 0;
-  align-items: center;
-}
-[data-collapsible="icon"] :is(.loupist-chat-button, #main-tab-settings, .navigation-new, .navigation-search) {
-  width: var(--gg-size-control-md);
-  height: var(--gg-size-control-md);
-  min-height: var(--gg-size-control-md);
-  justify-content: center;
-  padding: 0;
-}
-[data-collapsible="icon"] :is(.loupist-place-key, #main-tab-settings > span) { display: none; }
+/*
+ * The icon rail (76 px): the face, Search, the places, the plus and Settings on one centerline.
+ * The window controls keep the first row; the toggle moves to the page header.
+ */
+[data-collapsible="icon"] :is([data-slot="sidebar-header"], .loupist-navigation, .navigation-footer) { padding-inline: 0; align-items: center; }
+[data-collapsible="icon"] [data-slot="sidebar-header"] { padding-top: var(--gg-space-2); }
+[data-collapsible="icon"] .loupist-header-selector { display: flex; justify-content: center; width: 100%; }
+[data-collapsible="icon"] .loupist-header-identity { justify-content: center; width: 44px; height: 44px; padding: 0; }
+[data-collapsible="icon"] :is(.navigation-command span, .navigation-command kbd, .loupist-list-heading [data-slot="sidebar-group-label"], .loupist-place-key, #main-tab-settings > span) { display: none; }
+[data-collapsible="icon"] .navigation-search { flex: none; justify-content: center; width: 40px; padding: 0; }
+[data-collapsible="icon"] .loupist-list-heading { justify-content: center; margin-inline: 0; padding: 0; }
+[data-collapsible="icon"] :is(.loupist-chat-button, #main-tab-settings) { position: relative; justify-content: center; width: 40px !important; height: 34px !important; min-height: 34px; padding: 0 !important; }
+[data-collapsible="icon"] :is(.loupist-navigation, .navigation-footer) [data-slot="sidebar-menu"] { width: fit-content; align-self: center; }
+[data-collapsible="icon"] .loupist-chat-row :is(.loupist-draft-dot, .loupist-status-dot, .thread-running, .loupist-private-mark) { position: absolute; top: var(--gg-space-1); right: var(--gg-space-1); margin: 0; }
+/* In the rail's corner the spinner takes the status dot's 8 px, clear of the icon, with a heavier stroke. */
+[data-collapsible="icon"] .loupist-chat-button > .thread-running { width: var(--gg-space-2); height: var(--gg-space-2); stroke-width: 3; }
 /* The rail keeps the unread count as a dot inside the button's rounded corner, so the icon stays centred and whole. */
-[data-collapsible="icon"] .loupist-chat-button { position: relative; }
-[data-collapsible="icon"] .loupist-chat-button .shell-unread { position: absolute; top: 4px; right: 4px; width: 6px; min-width: 6px; height: 6px; padding: 0; margin: 0; overflow: hidden; color: transparent; background: var(--gg-color-text-secondary); }
-[data-collapsible="icon"] :is(.loupist-navigation, .navigation-footer) [data-slot="sidebar-menu"] {
-  width: fit-content;
-  align-self: center;
-}
+[data-collapsible="icon"] .loupist-chat-button .shell-unread { position: absolute; top: 4px; right: 4px; width: 6px; min-width: 6px; height: 6px; padding: 0; margin: 0; overflow: hidden; color: transparent; }
+[data-collapsible="icon"] .needs-attention { display: none; }
+
+/*
+ * The resize handle on the sidebar's right edge: 8 px to aim at, a 2 px accent line on hover,
+ * focus or drag. While dragging, nothing animates and the whole window shows the resize cursor.
+ */
+.sidebar-resize-handle { position: absolute; inset-block: 0; right: 0; z-index: var(--gg-z-sticky); width: 8px; cursor: col-resize; touch-action: none; outline: none; }
+/* The accent line is the handle's only focus mark: the app-wide ring would draw a box over the
+   sidebar's own content and run up beside the window controls. The line starts below them. */
+.sidebar-resize-handle:focus-visible { outline: none !important; }
+.sidebar-resize-handle::after { content: ""; position: absolute; inset-block: var(--gg-titlebar-height, 0px) 0; right: 0; width: 2px; background: transparent; transition: background var(--gg-motion-fast) var(--gg-ease-out); }
+.sidebar-resize-handle:is(:hover, :focus-visible)::after, html[data-sidebar-resizing] .sidebar-resize-handle::after { background: var(--gg-color-accent); }
+html[data-sidebar-resizing], html[data-sidebar-resizing] * { cursor: col-resize !important; -webkit-user-select: none; user-select: none; }
+html[data-sidebar-resizing] :is([data-slot="sidebar-gap"], [data-slot="sidebar-container"]) { transition: none !important; }
+
+/* Below the minimum window the sidebar is a drawer; nothing may force it wider than the sheet. */
+[data-mobile="true"][data-slot="sidebar"] { width: calc(var(--gg-size-sidebar) + var(--gg-space-7)); max-width: none; }
+[data-mobile="true"][data-slot="sidebar"] [data-slot="sidebar-header"],
+[data-mobile="true"][data-slot="sidebar"] .navigation-command { max-width: 100%; }

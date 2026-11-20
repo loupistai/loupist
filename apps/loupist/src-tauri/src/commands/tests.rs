@@ -17,6 +17,7 @@ use crate::{
     web::browser::validated_http_url as validated_external_url,
 };
 
+mod artifact_revise;
 mod bot_memory;
 pub(super) mod chat_behavior;
 mod connection_setup;
@@ -27,6 +28,8 @@ mod home_vocabulary;
 mod loupist;
 mod loupist_setup;
 mod research_handoff;
+mod run_session_release;
+mod scheduled_sessions;
 mod support;
 
 pub(super) use support::{chat, initialized_workspace, profile, seed_profile};

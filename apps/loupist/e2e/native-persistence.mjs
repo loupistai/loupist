@@ -3,12 +3,21 @@
  *
  *   seed     Fresh app data plus the e2e knowledge fixture (a sealed World and a
  *            saved Chat turn). Through the UI the user creates a Loupist, a Chat,
- *            a Source, a principle, a Journal entry, Loupist instructions and
- *            global/project settings.
- *   restart  The same app data in a new process shows all of it.
+ *            a Source, a principle, two assets followed by name as typed (one
+ *            then unfollowed, the other with a reason on its page), a Journal
+ *            entry, Loupist instructions and global/project settings. Bot's
+ *            pre-update hand-off is stopped with its reason, the hand-off sessions
+ *            show the request whole with the note closed, and Look into it on
+ *            the retained link is pressed once.
+ *   restart  The same app data in a new process shows all of it; the other
+ *            Loupist follows none of the folder Loupist's assets.
  *   copy     A fresh app opens a copy of the Loupist folder. Folder data follows
- *            the copy; app data (the other Loupist, global settings, the launch
- *            notice acknowledgment) does not.
+ *            the copy; app data (the other Loupist, each Loupist's follows, global
+ *            settings, the launch notice acknowledgment) does not.
+ *   fork     A second copy opens on its own fresh app data, like copy.
+ *   reconnect
+ *            The second copy is put at the first copy's registered path; the
+ *            copy's app reconnects it and finds the folder's data.
  */
 import assert from "node:assert/strict";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
@@ -22,19 +31,23 @@ import {
   acknowledgeLaunchNotice,
   clickControl,
   dialogByTitle,
+  loupistSwitcherAction,
+  openLoupistSwitcher,
   openMainTab,
   openMapLibrary,
   preferEnglish,
   readVisibleMapStats,
   scrub,
+  selectedLoupistTitle,
+  switcherLoupists,
   waitForShell,
 } from "./native-shell.mjs";
 
 const e2eRoot = dirname(fileURLToPath(import.meta.url));
 const [sessionPath, phase, stateArg] = process.argv.slice(2);
 assert.ok(
-  sessionPath && ["seed", "restart", "copy"].includes(phase) && stateArg && isAbsolute(stateArg),
-  "usage: node native-persistence.mjs <session.json> <seed|restart|copy> <absolute-phase-state-root>",
+  sessionPath && ["seed", "restart", "copy", "fork", "reconnect"].includes(phase) && stateArg && isAbsolute(stateArg),
+  "usage: node native-persistence.mjs <session.json> <seed|restart|copy|fork|reconnect> <absolute-phase-state-root>",
 );
 
 // run-app.sh registers <state>/workspace as the first Loupist; its name is the folder name.
@@ -46,6 +59,15 @@ const FIXTURE = { chat: "Authoring chat", reply: "The sealed note was read.", so
 const SOURCE = { title: "Persistence source", text: "persistence-anchor sentence: delivered margins beat guidance." };
 const PRINCIPLE = { statement: "Compare guidance with delivered results before trusting it." };
 const JOURNAL = { judgment: "Margins stay above guidance through next year.", reasoning: "Recorded by the persistence suite." };
+// Saved by the host's hand-off fixture beside the knowledge fixture: a retained Bot link, a Bot-origin
+// session (a request over 2,000 characters with a note), a link-origin session and a receipt-less
+// Created hand-off, which the seed launch stops before it runs.
+const HANDOFF = {
+  link: "New link: Lamppost Test Works and Newpost Test Works",
+  botSession: { title: "Sealed supply check", lastSentence: "Answer in one table and skip any forecasts.", noteQuestion: "Who else supplies the sealed part?" },
+  linkSession: { title: "Link: Sealed Hub and Lamppost Test Works" },
+  legacy: { title: "Pre-update research", reason: "Opened before an update. Ask again to run it." },
+};
 const INSTRUCTIONS = "Cite the saved persistence source before answering.";
 const RETRIES = { global: 5, appDefault: 3 };
 
@@ -117,21 +139,20 @@ const realFile = async (path) => resolve(await realpath(dirname(path)).catch(() 
 // Loupists and Chats ------------------------------------------------------------
 
 async function sidebarLoupists() {
-  return browser.execute(() => [...document.querySelectorAll("button[data-testid=loupist-header-identity]")].map((item) => ({
-    id: item.getAttribute("data-loupist-id"),
-    name: item.querySelector("strong")?.textContent?.trim() ?? "",
-  })));
+  return switcherLoupists(browser);
 }
 
 async function selectLoupist(name) {
   if (await browser.$("#main-panel-settings").isDisplayed().catch(() => false)) await openMainTab(browser, "chat");
   const target = (await sidebarLoupists()).find((item) => item.name === name);
-  assert.ok(target?.id, `Loupist was not in the sidebar: ${name}`);
-  const selector = `button[data-testid=loupist-header-identity][data-loupist-id=${JSON.stringify(target.id)}]`;
-  const button = await displayed(selector);
-  if ((await button.getAttribute("aria-pressed")) !== "true") await button.click();
-  await browser.waitUntil(async () => (await browser.$(selector).getAttribute("aria-pressed")) === "true"
-    && (await browser.$("[data-testid=loupist-header-identity][aria-pressed='true'] strong").getText().catch(() => "")) === name, {
+  assert.ok(target?.id, `Loupist was not in the switcher: ${name}`);
+  const current = "[data-testid=loupist-header-identity]";
+  if ((await browser.$(current).getAttribute("data-loupist-id")) !== target.id) {
+    await openLoupistSwitcher(browser);
+    await (await displayed(`[data-loupist-option=${JSON.stringify(target.id)}]`)).click();
+  }
+  await browser.waitUntil(async () => (await browser.$(current).getAttribute("data-loupist-id")) === target.id
+    && (await selectedLoupistTitle(browser)) === name, {
     timeout: 20_000, timeoutMsg: `Loupist was not selected: ${name}`,
   });
 }
@@ -143,7 +164,7 @@ async function chatTitles() {
 }
 
 async function createLoupist() {
-  await (await displayed("button[data-testid=loupist-header-new]")).click();
+  await loupistSwitcherAction(browser, "new");
   const dialog = await dialogByTitle(browser, "New Loupist");
   await (await childWithText(dialog, "button[data-testid=loupist-template-card] strong", "Dividend income")).click();
   await setField("#new-loupist-name", NEW_LOUPIST);
@@ -193,13 +214,125 @@ async function renameChat(from, to) {
 async function verifyChats() {
   const titles = await chatTitles();
   assert.ok(titles.includes(CHAT) && titles.includes(FIXTURE.chat), `Chats for ${FOLDER_LOUPIST}: ${titles.join(", ")}`);
-  await (await displayed(chatRow(FIXTURE.chat))).click();
+  await openChat(FIXTURE.chat);
   await waitForText(await displayed("#main-panel-chat"), FIXTURE.reply);
   await (await displayed(chatRow(CHAT))).click();
   await browser.waitUntil(async () => (await browser.$(chatRow(CHAT)).getAttribute("aria-current")) === "page"
     && (await browser.$$("#main-panel-chat [data-message-id]")).length === 0, {
     timeout: 10_000, timeoutMsg: "The empty saved Chat did not open",
   });
+}
+
+// Research hand-offs ------------------------------------------------------------
+
+const chatCount = async (title) => (await chatTitles()).filter((item) => item === title).length;
+
+async function openBot() {
+  await openMainTab(browser, "chat");
+  const selector = "[data-testid=loupist-chat-row][data-home] [data-testid=loupist-chat-button]";
+  if (await browser.$(selector).getAttribute("aria-current") !== "page") {
+    await clickControl(browser, selector);
+  }
+  await displayed(`${selector}[aria-current="page"]`);
+}
+
+/** Bot's card for the pre-update hand-off: stopped with its reason, Open kept, and no session in its place. */
+async function verifyLegacyHandoff() {
+  await openBot();
+  const card = await displayed(`.thread-delivery[aria-label=${JSON.stringify(`Research: ${HANDOFF.legacy.title}`)}]`, 30_000);
+  assert.equal(await card.getAttribute("data-status"), "stopped", "The pre-update hand-off is not stopped");
+  await waitForText(card, HANDOFF.legacy.reason);
+  assert.ok(await (await card.$("button=Open")).isDisplayed(), "The stopped hand-off lost Open");
+  assert.equal(await chatCount(HANDOFF.legacy.title), 1, "The stopped hand-off has a replacement session");
+}
+
+/** Opens a research session from the sidebar, or from Search when it is no longer among the recent ones. */
+async function openChat(title) {
+  const row = await browser.$(chatRow(title));
+  if (await row.isDisplayed().catch(() => false)) {
+    await row.click();
+  } else {
+    await clickControl(browser, "button.navigation-search");
+    const input = await displayed(".command-palette-input");
+    await input.setValue(title);
+    const option = await visibleWithText('[role="option"]', title);
+    await option.click();
+  }
+  await browser.waitUntil(async () => (await browser.$(chatRow(title)).getAttribute("aria-current")) === "page", {
+    timeout: 10_000, timeoutMsg: `The research session did not open: ${title}`,
+  });
+}
+
+async function openSession(title) {
+  await openChat(title);
+  await browser.waitUntil(async () => (await browser.$(chatRow(title)).getAttribute("aria-current")) === "page", {
+    timeout: 10_000, timeoutMsg: `The session did not open: ${title}`,
+  });
+  return displayed("#main-panel-chat .message.user");
+}
+
+const isOpen = async (details) => (await details.getAttribute("open")) !== null;
+
+/** The Bot-origin session: the whole request with its last sentence, the note closed until Enter on its summary. */
+async function verifyBotHandoffSession() {
+  const first = await openSession(HANDOFF.botSession.title);
+  const request = (await (await first.$(".message-user-text")).getText()).trim();
+  assert.ok(request.length > 2_000 && request.endsWith(HANDOFF.botSession.lastSentence), "The request is not shown whole");
+  const note = await first.$("details.message-handoff-note");
+  assert.equal(await (await note.$("summary")).getText(), "From Bot");
+  assert.equal(await isOpen(note), false, "The Bot's note was not closed");
+  // The note is never a question from the user.
+  const questions = await browser.execute((text) => [...document.querySelectorAll("#main-panel-chat .message.user .message-user-text")].filter((node) => node.textContent?.includes(text)).length, HANDOFF.botSession.noteQuestion);
+  assert.equal(questions, 0, "The Bot's note became a user message");
+  // WebDriver key events are synthesized and do not run a summary's default action, so the
+  // suite toggles it by pointer; the keyboard path is a hand check on the Mac.
+  await (await note.$("summary")).click();
+  await browser.waitUntil(() => isOpen(note), { timeout: 5_000, timeoutMsg: "The Bot's note did not open" });
+  await waitForText(note, HANDOFF.botSession.noteQuestion);
+  await (await note.$("summary")).click();
+  await browser.waitUntil(async () => !(await isOpen(note)), { timeout: 5_000, timeoutMsg: "The Bot's note did not close" });
+}
+
+/** The link-origin session: the chosen action instead of the host's caption, and the link's details closed. */
+async function verifyLinkHandoffSession() {
+  const first = await openSession(HANDOFF.linkSession.title);
+  await waitForText(first, "You chose “Look into it” on a link in Bot.");
+  const note = await first.$("details.message-handoff-note");
+  assert.equal(await (await note.$("summary")).getText(), "Link details");
+  assert.equal(await isOpen(note), false, "The link's details were not closed");
+  assert.equal(await (await first.$("button=Edit")).isExisting(), false, "A chosen action offers Edit");
+  await (await note.$("summary")).click();
+  await waitForText(note, "Start: Sealed Hub");
+  await waitForText(note, "Lamppost Test Works → supplies → Sealed Hub");
+  await waitForText(note, "End: Lamppost Test Works");
+}
+
+/** Clicking the retained link must create one session in the credential-free profile. */
+async function lookIntoSeededLink() {
+  await openBot();
+  const before = await chatTitles();
+  const card = await displayed(`article.thread-link[aria-label=${JSON.stringify(HANDOFF.link)}]`, 30_000);
+  await clickButton("Look into it", card);
+  const title = "Link: Lamppost Test Works and Newpost Test Works";
+  let status;
+  await browser.waitUntil(async () => {
+    const alert = await card.$("[role=alert]");
+    if (await alert.isDisplayed().catch(() => false)) assert.fail(await alert.getText());
+    const line = await card.$("[role=status]");
+    status = await line.isDisplayed().catch(() => false) ? await line.getText() : null;
+    return Boolean(status) && (await chatTitles()).includes(title);
+  }, { timeout: 30_000, interval: 250, timeoutMsg: "Look into it showed no outcome" });
+  const added = (await chatTitles()).filter((title) => !before.includes(title));
+  assert.deepEqual(added, [title], "Look into it must add exactly one session");
+  return { status, session: title };
+}
+
+/** Everything the hand-off fixture keeps, read again after a launch. */
+async function verifyHandoffs(record) {
+  await verifyLegacyHandoff();
+  await verifyBotHandoffSession();
+  await verifyLinkHandoffSession();
+  if (record.linkLookInto?.session) assert.equal(await chatCount(record.linkLookInto.session), 1, "The link's session was not kept exactly once");
 }
 
 // Map and its Library ---------------------------------------------------------
@@ -267,10 +400,6 @@ async function openLibrary(tabLabel) {
 }
 
 async function openMemorySegment(segment) {
-  if (segment === "about") {
-    await openMainTab(browser, "following");
-    return displayed("[data-testid=memory-about]");
-  }
   await openMainTab(browser, "lens");
   const page = await displayed('section[data-testid=memory-page]');
   const tabIndex = { pages: 1, history: 2 }[segment];
@@ -310,7 +439,7 @@ async function verifySource(id) {
 
 async function addPrinciple() {
   await openMainTab(browser, "chat");
-  await (await displayed(chatRow(FIXTURE.chat))).click();
+  await openChat(FIXTURE.chat);
   const answer = await displayed("article.message.assistant[data-latest]");
   await clickButton("Suggest a correction", answer);
   await setField("[data-testid=answer-correction] textarea", PRINCIPLE.statement);
@@ -338,65 +467,107 @@ async function verifyPrinciple() {
   assert.equal((await history.$$("h4")).length, 2, "The revised method did not show Then and Now");
 }
 
-/** Following lists each followed asset as a Watching row (or, when it cannot be watched, in the list above the add field). */
-const FOLLOWED = "[data-testid=following-page] .following-main";
+/** Following: one search field over the selected Loupist's own followed list. */
+const FOLLOWING = "[data-testid=following-page]";
+// Followed by the name as typed: no listing search, so the suite sends nothing over the network.
+const ALREADY_FOLLOWED = "Lamppost Test Works";
+const TYPED = [
+  { name: "Persistence Quarry Works" },
+  { name: "Persistence Harbor Fund — Class B", reason: "Distributions covered every capital call so far." },
+];
+const NAME_ONLY = "Name only";
+const NO_PRICE = '[data-price-note="none"]';
+const typedPage = `[aria-label=${JSON.stringify(`${TYPED[1].name} asset page`)}]`;
+const typedRow = (assetId) => `${FOLLOWING} li.following-row[data-row-key=${JSON.stringify(assetId)}]`;
 
-async function verifyFollowedAndHoldings({ copied }) {
-  await openMemorySegment("about");
-  const followedNames = async () => {
-    const list = await browser.$(FOLLOWED);
-    return (await list.isExisting()) ? await list.getText() : "";
-  };
-  // The rows arrive with the Watching settings, after the page and the holdings line.
-  if (!copied) {
-    await browser.waitUntil(async () => (await followedNames()).includes("NWHLD"), { timeout: 10_000, timeoutMsg: "The followed asset did not survive the restart" });
-  }
-  assert.equal((await followedNames()).includes("NWHLD"), !copied, "Followed assets belong to app data, not a copied Loupist folder");
-  const summary = await (await displayed("[data-holdings-kinds]")).getText();
-  if (copied) assert.doesNotMatch(summary, /3 assets/u, "Global holdings followed a copied folder");
-  else assert.match(summary, /3 assets/u, "The committed holdings snapshot did not survive");
+/** Opens Following and returns the names of its rows once the list has been read. */
+async function followedNames() {
+  if (!(await browser.$(`${FOLLOWING} .following-input`).isDisplayed().catch(() => false))) await openMainTab(browser, "following");
+  await displayed(`${FOLLOWING} .following-input`);
+  await browser.waitUntil(async () => !(await browser.$(`${FOLLOWING} [data-following-loading]`).isExisting()), {
+    timeout: 10_000, timeoutMsg: "Following did not finish reading what is followed",
+  });
+  return browser.execute((page) => [...document.querySelectorAll(`${page} li.following-row .following-open .following-name`)].map((name) => name.textContent), FOLLOWING);
 }
 
-async function followAndImportHoldings() {
-  await openMemorySegment("about");
-  const follow = async symbol => {
-    await setField("[data-testid=memory-follow-add] input", `${symbol}:US`);
-    await (await displayed('[data-testid=memory-follow-add] button[type="submit"]')).click();
-    await waitForText(await displayed(FOLLOWED), symbol);
-  };
-  await follow("LMHLD");
-  // Each followed row's menu: Open asset page, Stop following.
-  await displayed('button[aria-label="More actions for LMHLD"]');
-  await clickControl(browser, 'button[aria-label="More actions for LMHLD"]');
-  await (await visibleWithText('[role="menuitem"]', "Stop following LMHLD")).click();
-  await browser.waitUntil(async () => {
-    const list = await browser.$(FOLLOWED);
-    return !(await list.isExisting()) || !(await list.getText()).includes("LMHLD");
-  }, { timeout: 10_000, timeoutMsg: "LMHLD stayed in what you follow" });
-  await follow("NWHLD");
-  await (await displayed("button[data-testid=memory-holdings-update]")).click();
-  const sheet = await displayed("[data-holdings-sheet]");
-  const stockSource = '.holdings-section[aria-labelledby="holdings-stocks"] .holdings-source';
-  await writeFile(resolve(stateRoot, "holdings.csv"), "symbol,market,name,quantity\nBAD,US,Invalid holding,not-a-number\n");
-  await clickButton("Import file", await displayed(stockSource));
-  let preview = await displayed('[data-holdings-preview="stocks"]');
-  assert.ok((await preview.$$("[role=alert]")).length > 0, "Invalid quantity produced no validation error");
-  const importButton = await preview.$(".holdings-actions button:last-child");
-  assert.equal(await importButton.isEnabled(), false, "An invalid preview can be committed");
-  await clickButton("Cancel", preview);
-  await writeFile(resolve(stateRoot, "holdings.csv"), await readFile(resolve(e2eRoot, "fixtures/journeys/holdings.csv")));
-  await clickButton("Import file", await displayed(stockSource));
-  preview = await displayed('[data-holdings-preview="stocks"]');
-  assert.equal((await preview.$$("tbody tr")).length, 3);
-  // Previewing a valid file is not a commit; dismiss and check the source.
-  await clickButton("Cancel", preview);
-  assert.match(await (await displayed(stockSource)).getText(), /not imported/iu);
-  await clickButton("Import file", await displayed(stockSource));
-  preview = await displayed('[data-holdings-preview="stocks"]');
-  await clickButton("Import 3 assets", preview);
-  await browser.waitUntil(async () => (await (await displayed(stockSource)).getText()).includes("3 assets"), { timeout: 10_000 });
-  await clickButton("Done", sheet);
-  await verifyFollowedAndHoldings({ copied: false });
+/** Back from an asset page to the tab under it. */
+async function leaveAssetPage(page) {
+  await clickButton("Back", page);
+  await waitGone(page, "The asset page did not close");
+}
+
+/**
+ * Opens a fixture asset from its exact-name option, follows two new names as typed,
+ * stops following the first, and adds a reason to the second's page.
+ */
+async function followTypedAssets() {
+  await selectLoupist(FOLDER_LOUPIST);
+  await followedNames();
+  await setField(`${FOLLOWING} [role="combobox"]`, ALREADY_FOLLOWED.toLowerCase());
+  const typedOpen = await displayed(`${FOLLOWING} [role="option"][data-kind="typed"][aria-label=${JSON.stringify(`Open ${ALREADY_FOLLOWED}, already followed`)}]`);
+  await waitForText(typedOpen, "Already followed");
+  await typedOpen.click();
+  const fixturePage = await displayed(`[aria-label=${JSON.stringify(`${ALREADY_FOLLOWED} asset page`)}]`);
+  await waitForText(fixturePage, "LMPST");
+  await leaveAssetPage(fixturePage);
+
+  for (const { name } of TYPED) {
+    await setField(`${FOLLOWING} [role="combobox"]`, name);
+    // Present before any search: typing sends nothing.
+    await (await displayed(`${FOLLOWING} [role="option"][data-kind="typed"]`)).click();
+    await browser.waitUntil(async () => (await browser.$(`${FOLLOWING} .following-input`).getValue()) === "" && (await followedNames()).includes(name), {
+      timeout: 10_000, timeoutMsg: `${name} was not followed as typed`,
+    });
+  }
+  // Each row has a visible Stop following; it acts at once, with no confirmation.
+  await (await displayed(`${FOLLOWING} button[aria-label=${JSON.stringify(`Stop following ${TYPED[0].name}`)}]`)).click();
+  await browser.waitUntil(async () => !(await followedNames()).includes(TYPED[0].name), { timeout: 10_000, timeoutMsg: `${TYPED[0].name} stayed in what you follow` });
+  const assetId = await browser.execute((page, name) => [...document.querySelectorAll(`${page} li[data-row-key]`)]
+    .find((row) => row.querySelector(".following-name")?.textContent === name)?.getAttribute("data-row-key") ?? null, FOLLOWING, TYPED[1].name);
+  assert.match(assetId ?? "", /^ast_[0-9a-f]{16}$/, "Following did not list the asset followed as typed");
+  await waitForText(await displayed(typedRow(assetId)), NAME_ONLY);
+  await (await displayed(`${typedRow(assetId)} .following-open`)).click();
+  const page = await displayed(typedPage);
+  await displayed(`${typedPage} ${NO_PRICE}`);
+  await clickButton("Add a reason", page);
+  const reasonForm = await displayed(`${typedPage} form[aria-label="Add a reason"]`);
+  await (await reasonForm.$("textarea")).setValue(TYPED[1].reason);
+  await clickButton("Save entry", reasonForm);
+  await waitGone(reasonForm, "The reason form did not close after saving");
+  await waitForText(page, TYPED[1].reason);
+  await leaveAssetPage(page);
+  assert.equal((await followedNames()).filter(name => name === ALREADY_FOLLOWED).length, 1, "Opening a followed asset by name added a second follow");
+  return assetId;
+}
+
+/**
+ * After a restart Following lists the typed asset by name alone, the unfollowed one stays gone, and the
+ * page keeps the reason and its no-price line. Follows are per Loupist, so the other Loupist follows
+ * neither. A copied folder keeps the reason (the page's Journal entry) while the follow stays with the
+ * original app's record of this Loupist.
+ */
+async function verifyTypedAsset(assetId, { copied }) {
+  if (!copied) {
+    await selectLoupist(NEW_LOUPIST);
+    const other = await followedNames();
+    assert.ok(!other.includes(TYPED[1].name) && !other.includes(ALREADY_FOLLOWED), "Another Loupist listed this Loupist's follows");
+  }
+  await selectLoupist(FOLDER_LOUPIST);
+  const names = await followedNames();
+  assert.ok(!names.includes(TYPED[0].name), "An asset that was unfollowed came back");
+  assert.equal(names.includes(TYPED[1].name), !copied, copied ? "A follow came with the copied folder" : "The asset followed as typed was not listed after restart");
+  if (copied) {
+    await waitForText(await openLibrary("Journal"), TYPED[1].reason);
+    await closeLibrary();
+    return;
+  }
+  const row = await displayed(typedRow(assetId));
+  await waitForText(row, NAME_ONLY);
+  await (await row.$(".following-open")).click();
+  const page = await displayed(typedPage);
+  await waitForText(page, TYPED[1].reason);
+  await displayed(`${typedPage} ${NO_PRICE}`);
+  await leaveAssetPage(page);
 }
 
 async function addJournalEntry() {
@@ -460,7 +631,7 @@ async function replayMap() {
 
 async function saveInstructions() {
   await openMainTab(browser, "chat");
-  await (await displayed("[data-header-loupist-settings]")).click();
+  await loupistSwitcherAction(browser, "settings");
   const field = "#loupist-profile-instructions";
   await setField(field, INSTRUCTIONS);
   await clickButton("Save", await displayed("[data-testid=loupist-profile-form]"));
@@ -472,7 +643,7 @@ async function saveInstructions() {
 
 async function verifyInstructions() {
   await openMainTab(browser, "chat");
-  await (await displayed("[data-header-loupist-settings]")).click();
+  await loupistSwitcherAction(browser, "settings");
   await browser.waitUntil(async () => (await (await displayed("#loupist-profile-instructions")).getValue()) === INSTRUCTIONS, {
     timeout: 10_000, timeoutMsg: "Loupist instructions were not restored",
   });
@@ -495,7 +666,7 @@ async function chatPreferences(scope) {
   if (scope === "global") await settingsSection("agent");
   else {
     await openMainTab(browser, "chat");
-    await (await displayed("[data-header-loupist-settings]")).click();
+    await loupistSwitcherAction(browser, "settings");
     await expand('[data-loupist-section="chat"]');
   }
   await expand("[data-testid=agent-config-file-details]");
@@ -516,6 +687,17 @@ async function configValue(path, expected) {
     actual = await (await displayed(`[id="config-${path}"]`)).getValue();
     return actual === String(expected);
   }, { timeout: 10_000, timeoutMsg: `${path} showed ${actual}, expected ${expected}` }).catch((error) => {
+    throw new Error(`${error.message}; shown=${actual}`);
+  });
+}
+
+/** An on/off setting is a switch: its state is `aria-checked`, not a value. */
+async function configSwitch(path, expected) {
+  let actual;
+  await browser.waitUntil(async () => {
+    actual = await (await displayed(`[id="config-${path}"][role="switch"]`)).getAttribute("aria-checked");
+    return actual === String(expected);
+  }, { timeout: 10_000, timeoutMsg: `${path} was ${actual}, expected ${expected}` }).catch((error) => {
     throw new Error(`${error.message}; shown=${actual}`);
   });
 }
@@ -547,7 +729,9 @@ async function seedSettings() {
   await chatPreferences(FOLDER_LOUPIST);
   await configValue("pi.retry.max_retries", RETRIES.global);
   assert.equal(await browser.$('button[aria-label="Reset Maximum retries"]').isExisting(), false, "An inherited value has no local reset");
-  await (await displayed('[id="config-pi.retry.enabled"]')).selectByAttribute("value", "false");
+  await configSwitch("pi.retry.enabled", true);
+  await (await displayed('[id="config-pi.retry.enabled"][role="switch"]')).click();
+  await configSwitch("pi.retry.enabled", false);
   await browser.waitUntil(async () => /enabled\s*=\s*false/.test(await tomlFile(projectConfig)), {
     timeout: 10_000, timeoutMsg: "The Loupist's retry setting did not reach its folder config.toml",
   });
@@ -558,6 +742,21 @@ async function seedSettings() {
   await browser.waitUntil(async () => /theme\s*=\s*"dark"/.test(await tomlFile(globalConfig)), {
     timeout: 10_000, timeoutMsg: "The theme did not reach the global config.toml",
   });
+  // The display currency is a global appearance key; no rate is needed to save it.
+  await (await displayed("[data-display-currency-select]")).selectByAttribute("value", "KRW");
+  await browser.waitUntil(async () => /display_currency\s*=\s*"KRW"/.test(await tomlFile(globalConfig)), {
+    timeout: 10_000, timeoutMsg: "The display currency did not reach the global config.toml",
+  });
+}
+
+/** The display currency Appearance shows once the global configuration has loaded. */
+async function displayCurrency(expected) {
+  let actual;
+  await browser.waitUntil(async () => {
+    const select = await displayed("[data-display-currency-select]");
+    actual = (await select.isEnabled()) ? await select.getValue() : undefined;
+    return actual === expected;
+  }, { timeout: 10_000, timeoutMsg: `The display currency showed ${actual}, expected ${expected || "As listed"}` });
 }
 
 /** After a restart global values remain; in a copied folder only the Loupist's own values follow. */
@@ -566,9 +765,11 @@ async function verifySettings({ copied }) {
   await chatPreferences("global");
   await configValue("pi.retry.max_retries", retries);
   await chatPreferences(FOLDER_LOUPIST);
-  await configValue("pi.retry.enabled", false);
+  await configSwitch("pi.retry.enabled", false);
   await configValue("pi.retry.max_retries", retries);
   await assertPressed(await theme(copied ? "System" : "Dark"), `Theme after ${phase} did not match its owner`);
+  // Kept across a restart; a folder copied to a fresh profile does not carry the old profile's choice.
+  await displayCurrency(copied ? "" : "KRW");
   if (!copied) {
     const english = await childWithText(await displayed('#main-panel-settings [role="group"][aria-label="Language"]'), "button", "English");
     await assertPressed(english, "The interface language was not restored");
@@ -577,7 +778,8 @@ async function verifySettings({ copied }) {
 
 // Phases ----------------------------------------------------------------------------
 
-async function startShell({ fresh }) {
+/** `restored`: the app data is the seed's, so its saved language and theme apply; another profile only kept English. */
+async function startShell({ fresh, restored = !fresh }) {
   await focusNativeWindow(browser, session);
   report.window = await setWindowSize(browser);
   await waitForShell(browser, 60_000);
@@ -591,6 +793,7 @@ async function startShell({ fresh }) {
   await browser.waitUntil(async () => (await browser.execute(() => document.documentElement.lang)) === "en", {
     timeout: 20_000, timeoutMsg: "The saved interface language was not applied after restart",
   });
+  if (!restored) return;
   await browser.waitUntil(async () => (await browser.$("[data-testid=app-shell]").getAttribute("data-theme")) === "dark", {
     timeout: 10_000, timeoutMsg: "The saved theme was not applied after restart",
   });
@@ -614,17 +817,24 @@ async function seed() {
     await createChatFromComposer();
     await renameChat(EMPTY_CHAT, CHAT);
   });
+  await step("Bot stops the pre-update hand-off with its reason; hand-off sessions show the request whole with the note closed", () => verifyHandoffs(record));
+  await step("Look into it on the retained link opens exactly one session", async () => {
+    record.linkLookInto = await lookIntoSeededLink();
+    report.linkLookInto = record.linkLookInto;
+  });
   await step("save a Source from the Map Library", async () => {
     record.sourceId = await addSource();
   });
   await step("save a principle in Lens", addPrinciple);
-  await step("follow and unfollow assets; validate, preview and commit holdings", followAndImportHoldings);
+  await step("follow two names as typed in Following, stop following one and save a reason on the other's page", async () => {
+    record.typedAssetId = await followTypedAssets();
+  });
   await step("save a Journal entry in the Library", async () => {
     record.journalId = await addJournalEntry();
     assert.ok(record.journalId, "The Journal entry has no identity");
   });
   await step("save Loupist instructions", saveInstructions);
-  await step("save global and Loupist Chat defaults and the theme", seedSettings);
+  await step("save global and Loupist Chat defaults, the theme and the display currency", seedSettings);
   await step("record the Map with the World and the new Journal entry", async () => {
     await selectLoupist(FOLDER_LOUPIST);
     record.mapStats = await settledMapStats();
@@ -650,7 +860,7 @@ async function verify(record, { copied }) {
   });
   if (!copied) await step("the created Loupist keeps its template focus", async () => {
     await selectLoupist(NEW_LOUPIST);
-    await (await displayed("[data-header-loupist-settings]")).click();
+    await loupistSwitcherAction(browser, "settings");
     assert.equal(await (await displayed("#loupist-profile-focus")).getValue(), "Dividend payers and payout safety");
     await (await displayed("[data-loupist-settings-back]")).click();
   });
@@ -658,23 +868,74 @@ async function verify(record, { copied }) {
     await selectLoupist(FOLDER_LOUPIST);
     await verifyChats();
   });
+  // The launch stops nothing again and starts nothing in its place.
+  await step("the stopped hand-off, the hand-off sessions' first messages and the link's session after the launch", () => verifyHandoffs(record));
   await step("the Map keeps its World and Journal nodes", async () => {
     assert.equal(await settledMapStats(), record.mapStats);
   });
   await step("the Library keeps the Source", () => verifySource(record.sourceId));
   await step("Lens keeps the principle and learned method", verifyPrinciple);
-  await step(copied ? "global followed assets and holdings stay with the original app" : "followed assets and committed holdings survive restart", () => verifyFollowedAndHoldings({ copied }));
+  await step(copied ? "the copied folder keeps the typed asset's reason; its follow stays with the original app" : "the typed asset is listed by name in its own Loupist only and its page keeps the reason",
+    () => verifyTypedAsset(record.typedAssetId, { copied }));
   await step("the Library keeps the Journal entry", () => verifyJournal(record.journalId));
   await step("Loupist instructions", verifyInstructions);
   await step(copied ? "Loupist preferences follow the folder; global settings stay with the app" : "global and Loupist preferences", () => verifySettings({ copied }));
   await browser.saveScreenshot(resolve(artifactRoot, `${phase}.png`));
 }
 
+/**
+ * A second copy opened on its own app data, then put at the copy's registered path: the copy's app
+ * reports the folder unavailable until the user reconnects it, and the folder's data comes back.
+ */
+// Reconnect (App.tsx and app/AppDialogs.tsx): another copy put at the registered path is a new folder
+// identity, so the app reports the workspace unavailable until the user reconnects that path.
+const UNAVAILABLE = 'section.app-selection-error[role="status"][aria-label="Workspace folder unavailable"]';
+const RECONNECT_DIALOG = '[role="dialog"].loupist-workspace-dialog';
+const CHOSEN_FOLDER = `${RECONNECT_DIALOG} p.workspace-path[aria-label="Selected workspace folder"]`;
+
+/**
+ * Chat › "Workspace folder unavailable" › Reconnect folder, then the dialog: Choose folder (the e2e
+ * chooser answers with LOUPIST_E2E_WORKSPACE_DIR, this phase's folder), the chosen path, the trust
+ * checkbox and Reconnect folder. Every control is a plain button or a native checkbox, so a click opens it.
+ */
+async function reconnectFolder() {
+  await openMainTab(browser, "chat");
+  const status = await displayed(UNAVAILABLE, 30_000);
+  await clickButton("Reconnect folder", status);
+  const dialog = await displayed(RECONNECT_DIALOG);
+  await waitForText(dialog, "Reconnect workspace folder");
+  await clickButton("Choose folder", dialog);
+  const chosen = await displayed(CHOSEN_FOLDER);
+  const expected = await realpath(resolve(stateRoot, "workspace"));
+  await browser.waitUntil(async () => (await realpath((await chosen.getText()).trim()).catch(() => "")) === expected, {
+    timeout: 10_000, timeoutMsg: `The chosen folder was not this phase's workspace (${expected})`,
+  });
+  const trust = await dialog.$('label.workspace-trust input[type="checkbox"]');
+  if (!(await trust.isSelected())) await trust.click();
+  await browser.waitUntil(() => trust.isSelected(), { timeout: 5_000, timeoutMsg: "I trust this folder. did not take" });
+  await clickButton("Reconnect folder", dialog);
+  await waitGone(dialog, "The reconnect dialog did not close");
+  await browser.waitUntil(async () => !(await browser.$(UNAVAILABLE).isDisplayed().catch(() => false)), {
+    timeout: 20_000, timeoutMsg: "The workspace stayed unavailable after reconnecting its folder",
+  });
+}
+
+async function reconnected(record) {
+  await step("the copy's app reconnects another copy of the folder put at its path", async () => {
+    await startShell({ fresh: false, restored: false });
+    await selectLoupist(FOLDER_LOUPIST);
+    await reconnectFolder();
+    await verifyTypedAsset(record.typedAssetId, { copied: true });
+  });
+  await browser.saveScreenshot(resolve(artifactRoot, `${phase}.png`));
+}
+
 try {
   if (phase === "seed") await seed();
+  else if (phase === "reconnect") await reconnected(JSON.parse(await readFile(recordPath, "utf8")));
   else {
     const record = JSON.parse(await readFile(recordPath, "utf8"));
-    await verify(record, { copied: phase === "copy" });
+    await verify(record, { copied: phase === "copy" || phase === "fork" });
   }
   report.status = "passed";
   await writeFile(resolve(artifactRoot, `${phase}.json`), `${JSON.stringify(report, null, 2)}\n`);

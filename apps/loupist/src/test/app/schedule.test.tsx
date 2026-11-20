@@ -1,16 +1,15 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ChatEvidenceRef, ConflictGrid, InboxChangedEvent, InboxItem, InboxOpenEvent, ScheduledRun } from "../../types";
 import { GRID_SCHEMA } from "../../contracts/chat";
 import { scheduledRunFixture } from "../scheduledFixtures";
-import { mainTab, openApp, selectedLoupistButton } from "../renderApp";
+import { mainTab, openApp, openLoupistSwitcher, selectedLoupistButton } from "../renderApp";
 
 const context = {
   symbols: ["NVDA"], principlesChecked: 2, newFacts: 14, disputedEntityIds: [],
   changed: { names: 3, relations: 2, conflicts: 0, rows: [{ kind: "claim_added", subjectId: "c1", summary: "Hanul Precision supplies Morrow Components" }] },
   ahead: [{ journalId: "j1", title: "Inventory days below 50", byDate: "2026-11-04" }],
-  assets: [],
 };
 
 async function fixture(run: Partial<ScheduledRun> = {}) {
@@ -66,17 +65,19 @@ it("updates the tab and Loupist badge on inbox-changed, and routes inbox-open to
   const { bridge, run } = await fixture(); const listeners: Array<(event: InboxChangedEvent) => void> = []; let open!: (event: InboxOpenEvent) => void;
   vi.spyOn(bridge, "onInboxChanged").mockImplementation(handler => { listeners.push(handler); return () => {}; });
   vi.spyOn(bridge, "onInboxOpen").mockImplementation(handler => { open = handler; return () => {}; });
-  const item: InboxItem = { runId: run.run_id, taskId: run.task_id, kind: "briefing", title: "Briefings", status: "succeeded", summary: run.summary, startedAtMs: run.started_at_ms, finishedAtMs: run.finished_at_ms ?? null, readAtMs: null, threadId: null, messageId: null, skippedTools: [], briefingContext: context, error: null, summaryItems: [] };
+  const item: InboxItem = { runId: run.run_id, taskId: run.task_id, kind: "briefing", title: "Briefings", status: "succeeded", summary: run.summary, startedAtMs: run.started_at_ms, finishedAtMs: run.finished_at_ms ?? null, readAtMs: null, threadId: null, messageId: null, skippedTools: [], briefingContext: context, error: null };
   vi.spyOn(bridge, "inboxList").mockResolvedValue({ items: [item], nextCursor: null });
   const counts = vi.spyOn(bridge, "inboxUnreadCounts").mockResolvedValue([{ loupistId: "loupist-quality", count: 2 }]);
   await openApp(bridge);
-  const profile = within(screen.getByRole("navigation", { name: "Loupists" })).getByRole("button", { name: "Quality Compounder" });
-  await waitFor(() => expect(profile).toHaveAccessibleDescription("2 unread briefings"));
-  expect(within(profile).getByText("2")).toBeVisible();
+  // The switcher at the top of the sidebar counts each Loupist's unread results.
+  const profile = () => within(openLoupistSwitcher()).getByRole("menuitemradio", { name: "Quality Compounder" });
+  await waitFor(() => expect(profile()).toHaveAccessibleDescription("2 unread briefings"));
+  expect(within(profile()).getByText("2")).toBeVisible();
   counts.mockResolvedValue([{ loupistId: "loupist-quality", count: 3 }]);
   await act(async () => listeners.forEach(fn => fn({loupistId:"loupist-quality"})));
-  await waitFor(() => expect(profile).toHaveAccessibleDescription("3 unread briefings"));
-  expect(within(profile).getByText("3")).toBeVisible();
+  await waitFor(() => expect(profile()).toHaveAccessibleDescription("3 unread briefings"));
+  expect(within(profile()).getByText("3")).toBeVisible();
+  fireEvent.keyDown(openLoupistSwitcher(), { key: "Escape" });
   const other = (await bridge.loupistList()).find(loupist => loupist.id !== "loupist-quality")!;
   await act(async () => open({ loupistId: other.id, runId: item.runId }));
   expect(await screen.findByRole("heading", { name: "Briefing", level: 2 })).toBeVisible();
@@ -134,7 +135,7 @@ it("opens the Map with its conflicting evidence filter from the reader link", as
   const ids = [edge.source, edge.target];
   const settings = await bridge.briefingSettingsSet({ loupistId: "loupist-quality", enabled: true });
   vi.spyOn(bridge, "knowledgeMap").mockResolvedValue(map);
-  vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([scheduledRunFixture({ kind: "briefing", task_id: settings.task!.id, status: "succeeded", thread_id: null, briefing_context: { ...context, disputedEntityIds: ids, changed: { ...context.changed, conflicts: 1 }, assets: [] } })]);
+  vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([scheduledRunFixture({ kind: "briefing", task_id: settings.task!.id, status: "succeeded", thread_id: null, briefing_context: { ...context, disputedEntityIds: ids, changed: { ...context.changed, conflicts: 1 } } })]);
   vi.spyOn(bridge, "inboxMarkRead").mockResolvedValue();
   const user = userEvent.setup();
   await openApp(bridge); await openFirstRun(user);

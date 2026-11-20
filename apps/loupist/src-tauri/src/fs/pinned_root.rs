@@ -53,19 +53,17 @@ impl PinnedLoupistRoot {
         if FileType::from_raw_mode(metadata.st_mode) != FileType::Directory {
             return Err(PinnedRootError::NotDirectory);
         }
+        let identity = crate::fs::filesystem_identity::of_file(&descriptor)?;
         Ok(Self {
             descriptor,
-            identity: RootFilesystemIdentity {
-                device: metadata.st_dev as u64,
-                inode: metadata.st_ino as u64,
-            },
+            identity,
             opened_path: path.to_path_buf(),
         })
     }
 
     pub fn open(path: &Path, expected: &RootFilesystemIdentity) -> Result<Self, PinnedRootError> {
         let pinned = Self::open_unbound(path)?;
-        if pinned.identity() != expected {
+        if !pinned.identity().matches_binding(expected) {
             return Err(PinnedRootError::IdentityMismatch);
         }
         Ok(pinned)
@@ -101,15 +99,8 @@ mod tests {
     #[cfg(unix)]
     use rustix::io::{fcntl_getfd, FdFlags};
     #[cfg(unix)]
-    use std::os::unix::fs::MetadataExt;
-
-    #[cfg(unix)]
     fn identity(path: &Path) -> RootFilesystemIdentity {
-        let metadata = std::fs::symlink_metadata(path).unwrap();
-        RootFilesystemIdentity {
-            device: metadata.dev(),
-            inode: metadata.ino(),
-        }
+        crate::fs::filesystem_identity::of_file(&std::fs::File::open(path).unwrap()).unwrap()
     }
 
     #[cfg(unix)]
@@ -136,5 +127,32 @@ mod tests {
             PinnedLoupistRoot::open(&root, &expected),
             Err(PinnedRootError::IdentityMismatch)
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_birth_time_is_enforced_and_legacy_bindings_remain_readable() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut expected = identity(temporary.path());
+        let mut foreign = expected.clone();
+        foreign.birth_time.as_mut().unwrap().seconds -= 1;
+        assert!(matches!(
+            PinnedLoupistRoot::open(temporary.path(), &foreign),
+            Err(PinnedRootError::IdentityMismatch)
+        ));
+        crate::fs::filesystem_identity::with_birth_time(expected.inode, None, || {
+            assert!(matches!(
+                PinnedLoupistRoot::open(temporary.path(), &expected),
+                Err(PinnedRootError::IdentityMismatch)
+            ));
+        });
+        expected.birth_time = None;
+        assert!(PinnedLoupistRoot::open(temporary.path(), &expected).is_ok());
+        let json = serde_json::to_value(&expected).unwrap();
+        assert!(json.get("birthTime").is_none());
+        assert_eq!(
+            serde_json::from_value::<RootFilesystemIdentity>(json).unwrap(),
+            expected
+        );
     }
 }

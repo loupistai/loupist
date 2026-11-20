@@ -10,8 +10,6 @@ try {
   const script = join(root, "run-native-live-journeys.sh");
   await copyFile(new URL("./run-native-live-journeys.sh", import.meta.url), script);
   await mkdir(join(root, "artifacts"));
-  await mkdir(join(root, "fixtures/journeys"), { recursive: true });
-  await writeFile(join(root, "fixtures/journeys/holdings.csv"), "symbol,market\n");
   const sharedReceipt = join(root, "artifacts/current-session.json");
   await writeFile(sharedReceipt, "shared window must survive");
   // Stand-ins at the native boundary: this exercises the actual live runner's

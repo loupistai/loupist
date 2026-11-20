@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import i18n from "@/i18n";
 import type { AttentionItem } from "../contracts/attention";
-import type { LoupistSummary, LoupistBridge } from "../types";
+import type { ChatThread, LoupistSummary, LoupistBridge } from "../types";
 import { isEmptyChatThreadId } from "./emptyChat";
+
+export type AttentionRow = AttentionItem & { taskKind?: string };
 
 const REFRESH_MS = 60_000;
 
@@ -11,19 +13,38 @@ const REFRESH_MS = 60_000;
  * focus, when scheduled results change, when a run ends (`refreshKey`) and
  * once a minute so due checks roll over.
  */
-export function useAttention(bridge: LoupistBridge, refreshKey: string) {
-  const [items, setItems] = useState<AttentionItem[]>([]);
+export function useAttention(bridge: LoupistBridge, refreshKey: string, threads: Readonly<Record<string, readonly ChatThread[] | undefined>>) {
+  const [items, setItems] = useState<AttentionRow[]>([]);
+  const loaded = useRef(threads);
+  loaded.current = threads;
   useEffect(() => {
-    let live = true;
-    const read = () => void bridge.attentionList()
-      .then((next) => { if (live) setItems(next); })
-      .catch(() => undefined);
+    let generation = 0;
+    const read = async () => {
+      const request = ++generation;
+      try {
+        const next = await bridge.attentionList();
+        if (generation !== request) return;
+        // An unopened profile has no chat snapshot. Its built-in briefing owns a dedicated session.
+        const owners = new Set(next.filter(item => item.kind === "question" && item.chatId
+          && !loaded.current[item.loupistId]?.some(thread => thread.id === item.chatId && thread.messages.length > 0)).map(item => item.loupistId));
+        const briefings = new Map(await Promise.all([...owners].map(async owner => {
+          const settings = await bridge.briefingSettingsGet({ loupistId: owner }).catch(() => null);
+          return [owner, settings?.task] as const;
+        })));
+        if (generation !== request) return;
+        setItems(next.map(item => {
+          const task = briefings.get(item.loupistId);
+          return item.kind === "question" && item.chatId && task?.session_thread_id === item.chatId
+            ? { ...item, taskKind: task.kind } : item;
+        }));
+      } catch { /* Keep the last attention list while the host is unavailable. */ }
+    };
     read();
     window.addEventListener("focus", read);
     const unsubscribe = bridge.onInboxChanged(read);
     const timer = window.setInterval(read, REFRESH_MS);
     return () => {
-      live = false;
+      generation++;
       window.removeEventListener("focus", read);
       unsubscribe();
       window.clearInterval(timer);
@@ -32,11 +53,12 @@ export function useAttention(bridge: LoupistBridge, refreshKey: string) {
   return items;
 }
 
-const windowVisible = () => document.visibilityState === "visible" && document.hasFocus();
+/** A visible window behind another app still shows its chat; only a hidden one does not. */
+const windowVisible = () => document.visibilityState === "visible";
 
 /**
- * Chats whose run ended while the user was not looking at them (another chat or
- * Loupist, a hidden or unfocused window). Each gets a grey dot until opened, and an
+ * Chats whose run ended while the user was not looking at them (another chat,
+ * Loupist or page, or a hidden window). Each gets a grey dot until opened, and an
  * OS notification when the user allowed them; Rust writes the body and rate-limits.
  */
 export function useFinishedWhileHidden({ bridge, loupists, runningThreadKeys, visibleChatKey }: {

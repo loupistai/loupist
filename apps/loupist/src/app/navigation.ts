@@ -1,12 +1,11 @@
 import i18n from "@/i18n/index";
-import type { WorkspacePanelKind } from "./useWorkspacePanel";
 
 /**
- * A page the stage shows. Map and Lens are panels beside Chat, not pages.
+ * A page the stage shows. Map and Lens are full pages; a conversation's own map stays in its side panel.
  * `following` is the Following page (what you follow, shared by every Loupist); it has
  * no ⌘ key and opens from its sidebar row and the palette.
  */
-export type AppTab = "chat" | "following" | "schedule" | "settings";
+export type AppTab = "chat" | "following" | "map" | "lens" | "schedule" | "settings";
 export type SettingsSection = "model" | "loupists" | "connections" | "agent" | "skills" | "general" | "appearance" | "keyboard" | "updates";
 
 type AppPage = {
@@ -19,7 +18,9 @@ type AppPage = {
 export const APP_PAGES: Record<AppTab, AppPage> = {
   chat: { get label() { return i18n.t("app:shell.tabs.chat"); } },
   following: { get label() { return i18n.t("app:shell.tabs.following"); }, get heading() { return i18n.t("app:shell.tabs.following"); } },
-  schedule: { get label() { return i18n.t("app:shell.tabs.schedule"); }, get heading() { return i18n.t("app:shell.taskHistory"); } },
+  map: { get label() { return i18n.t("app:shell.tabs.map"); }, get heading() { return i18n.t("app:shell.tabs.map"); } },
+  lens: { get label() { return i18n.t("app:shell.tabs.lens"); }, get heading() { return i18n.t("app:shell.tabs.lens"); } },
+  schedule: { get label() { return i18n.t("app:shell.tabs.schedule"); }, get heading() { return i18n.t("app:shell.tabs.schedule"); } },
   settings: { get label() { return i18n.t("app:shell.settings"); }, get heading() { return i18n.t("app:shell.settings"); } },
 };
 
@@ -28,8 +29,7 @@ export type AppDestinationId = "chat" | "map" | "lens" | "schedule";
 
 type AppDestination = {
   readonly id: AppDestinationId;
-  /** A page, or a panel kind that opens beside Chat. */
-  readonly target: { readonly page: AppTab } | { readonly panel: Exclude<WorkspacePanelKind, "materials"> };
+  readonly page: AppTab;
   readonly label: string;
   /** The command palette's Actions row. */
   readonly action: string;
@@ -41,10 +41,10 @@ type AppDestination = {
  * row here and its page in `APP_PAGES`.
  */
 export const APP_DESTINATIONS: readonly AppDestination[] = [
-  { id: "chat", target: { page: "chat" }, get label() { return i18n.t("app:shell.tabs.chat"); }, get action() { return i18n.t("app:palette.actions.openChat"); } },
-  { id: "map", target: { panel: "world" }, get label() { return i18n.t("app:shell.tabs.map"); }, get action() { return i18n.t("app:palette.actions.openMap"); } },
-  { id: "lens", target: { panel: "lens" }, get label() { return i18n.t("app:shell.tabs.lens"); }, get action() { return i18n.t("app:shell.tabs.lens"); } },
-  { id: "schedule", target: { page: "schedule" }, get label() { return i18n.t("app:shell.tabs.schedule"); }, get action() { return i18n.t("app:shell.taskHistory"); } },
+  { id: "chat", page: "chat", get label() { return i18n.t("app:shell.tabs.chat"); }, get action() { return i18n.t("app:palette.actions.openChat"); } },
+  { id: "map", page: "map", get label() { return i18n.t("app:shell.tabs.map"); }, get action() { return i18n.t("app:palette.actions.openMap"); } },
+  { id: "lens", page: "lens", get label() { return i18n.t("app:shell.tabs.lens"); }, get action() { return i18n.t("app:shell.tabs.lens"); } },
+  { id: "schedule", page: "schedule", get label() { return i18n.t("app:shell.tabs.schedule"); }, get action() { return i18n.t("app:shell.taskHistory"); } },
 ];
 
 export const isAppDestination = (value: string): value is AppDestinationId => APP_DESTINATIONS.some((item) => item.id === value);

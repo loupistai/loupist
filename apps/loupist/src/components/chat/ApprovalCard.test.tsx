@@ -25,6 +25,8 @@ it("asks for one read-only tool and sends the user's choice to the host", async 
   rerender(<ApprovalCards approvals={[waiting("c1", { state: "allowed_once" })]} refusals={[]} bridge={bridge} loupistId="loupist-one" />);
   expect(screen.queryByRole("region", { name: "Approval for Read filings" })).not.toBeInTheDocument();
   expect(screen.getByText("Allowed once · Read filings")).toBeVisible();
+  // The buttons went with the card; the line that replaced it holds focus instead of the page.
+  expect(screen.getByText("Allowed once · Read filings")).toHaveFocus();
   rerender(<ApprovalCards approvals={[waiting("c1", { state: "declined" })]} refusals={[]} bridge={bridge} loupistId="loupist-one" />);
   expect(screen.getByText("Skipped · Read filings · the Loupist continued without it")).toBeVisible();
 });

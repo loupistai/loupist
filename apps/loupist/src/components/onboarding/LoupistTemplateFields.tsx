@@ -1,12 +1,12 @@
 import i18n, { useTranslation } from "@/i18n";
-import { useState } from "react";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import type { LoupistAvatarId, LoupistTemplateId, LoupistTone } from "@/contracts/loupist";
-import type { WatchlistAddRequest } from "@/contracts/userContext";
+import type { LoupistSummary } from "@/types";
+import { loupistPortraitId } from "@/lib/loupistAvatar";
+import { workspaceFolderName } from "@/lib/loupistFolder";
 import { LoupistToneField } from "./LoupistToneField";
-import { LoupistAvatarPicker } from "../app/LoupistAvatar";
+import { LoupistIdentityFields } from "./LoupistIdentityFields";
 import "@/styles/onboarding.css";
 
 const loupistTemplates = [
@@ -19,30 +19,33 @@ const loupistTemplates = [
   { id: "commodities", avatar: "loupist-07" },
   { id: "custom", avatar: "loupist-10" },
 ] as const satisfies readonly { id: LoupistTemplateId; avatar: LoupistAvatarId }[];
-export type LoupistDraft = { template: LoupistTemplateId; name: string; focus: string; avatar: LoupistAvatarId; tone: LoupistTone };
+/** `starters` names the template starters to follow once the Loupist exists. */
+export type LoupistDraft = { template: LoupistTemplateId; name: string; focus: string; avatar: LoupistAvatarId; tone: LoupistTone; starters: readonly string[] };
 type TemplateId = (typeof loupistTemplates)[number]["id"];
 
 /**
  * What a class template suggests following (finance-crypto-and-templates.md §3.4).
- * Nothing is added until the user taps a chip; names are stored in English.
+ * A tapped chip is picked, and tapped again is dropped; whoever creates the Loupist
+ * follows the picked ones in it, each by its English name alone, and the Loupist
+ * finds how to read its price. Choosing another template drops the picks.
  */
 export const TEMPLATE_STARTERS = {
   crypto: [
-    { key: "BTC", symbol: "BTC", market: "CRYPTO", name: "Bitcoin" },
-    { key: "ETH", symbol: "ETH", market: "CRYPTO", name: "Ethereum" },
-    { key: "SOL", symbol: "SOL", market: "CRYPTO", name: "Solana" },
-    { key: "USDC", symbol: "USDC", market: "CRYPTO", name: "USD Coin" },
+    { key: "BTC", name: "Bitcoin" },
+    { key: "ETH", name: "Ethereum" },
+    { key: "SOL", name: "Solana" },
+    { key: "USDC", name: "USD Coin" },
   ],
   macro: [
-    { key: "US10Y", symbol: "US10Y", market: "RATES", name: "US 10-year Treasury" },
-    { key: "US2Y", symbol: "US2Y", market: "RATES", name: "US 2-year Treasury" },
-    { key: "EURUSD", symbol: "EURUSD", market: "FX", name: "EUR/USD" },
-    { key: "USDKRW", symbol: "USDKRW", market: "FX", name: "USD/KRW" },
+    { key: "US10Y", name: "US 10-year Treasury" },
+    { key: "US2Y", name: "US 2-year Treasury" },
+    { key: "EURUSD", name: "EUR/USD" },
+    { key: "USDKRW", name: "USD/KRW" },
   ],
   commodities: [
-    { key: "GC", symbol: "GC", market: "COMEX", name: "Gold" },
-    { key: "CL", symbol: "CL", market: "NYMEX", name: "WTI crude" },
-    { key: "HG", symbol: "HG", market: "COMEX", name: "Copper" },
+    { key: "GC", name: "Gold" },
+    { key: "CL", name: "WTI crude" },
+    { key: "HG", name: "Copper" },
   ],
 } as const;
 
@@ -53,37 +56,36 @@ export const TEMPLATE_STARTERS = {
 export function templateDraft(id: TemplateId, tone: LoupistTone = "balanced"): LoupistDraft {
   const avatar = loupistTemplates.find(template => template.id === id)!.avatar;
   return {
-    template: id, avatar, tone,
+    template: id, avatar, tone, starters: [],
     name: id === "custom" ? "" : i18n.t(`onboarding:wizard.templates.${id}.suggestedName`),
     focus: id === "custom" ? "" : i18n.t(`onboarding:wizard.templates.${id}.focus`),
   };
 }
 
-export function LoupistTemplateFields({ draft, onChange, busy = false, idPrefix = "new-loupist", onFollow, essentials = false }: {
+/**
+ * The name step for a Loupist that existed before onboarding (a development seed, or a
+ * folder registered before the notice was accepted). Its stored name is kept unless the
+ * host only copied the folder's name, which the interface never shows as a name; then
+ * its template (or My portfolio) suggests one.
+ */
+export function existingDraft(loupist: LoupistSummary): LoupistDraft {
+  const template = loupistTemplates.find(item => item.id === loupist.template)?.id ?? "portfolio";
+  const suggested = templateDraft(template, loupist.tone);
+  const name = loupist.name.trim();
+  const folderOnly = !name || name === workspaceFolderName(loupist.workspace_path);
+  return { ...suggested, name: folderOnly ? suggested.name : name, focus: loupist.philosophy, avatar: loupistPortraitId(loupist) };
+}
+
+export function LoupistTemplateFields({ draft, onChange, busy = false, idPrefix = "new-loupist", essentials = false }: {
   draft: LoupistDraft; onChange: (draft: LoupistDraft) => void; busy?: boolean; idPrefix?: string;
   /**
-   * Onboarding's short form: templates, starters and Name, plus Focus for Custom. The
-   * template sets the avatar and tone; Loupist settings changes them later.
+   * Onboarding's short form: templates and starters, plus Focus for Custom. The name and
+   * face follow on their own step (Onboarding); the template sets the tone.
    */
   essentials?: boolean;
-  /** Adds a starter to the watchlist, which every Loupist shares; without it no starters are offered. */
-  onFollow?: (entry: WatchlistAddRequest) => Promise<void>;
 }) {
   const { t } = useTranslation("onboarding");
-  const [adding, setAdding] = useState<string | null>(null);
-  const [followed, setFollowed] = useState<readonly string[]>([]);
-  const [followError, setFollowError] = useState(false);
   const starters = draft.template in TEMPLATE_STARTERS ? TEMPLATE_STARTERS[draft.template as keyof typeof TEMPLATE_STARTERS] : null;
-  const follow = async (entry: (typeof TEMPLATE_STARTERS)[keyof typeof TEMPLATE_STARTERS][number]) => {
-    if (!onFollow || adding) return;
-    setAdding(entry.key);
-    setFollowError(false);
-    try {
-      await onFollow({ symbol: entry.symbol, market: entry.market, displayName: entry.name });
-      setFollowed(current => [...current, entry.key]);
-    } catch { setFollowError(true); }
-    finally { setAdding(null); }
-  };
   return <div className="loupist-template-fields">
     <div className="loupist-template-grid" role="group" aria-label={t("wizard.templatesLabel")}>
       {loupistTemplates.map(({ id }) => <button type="button" key={id} className="loupist-template-card" data-testid="loupist-template-card"
@@ -91,21 +93,19 @@ export function LoupistTemplateFields({ draft, onChange, busy = false, idPrefix 
         <strong>{t(`wizard.templates.${id}.title`)}</strong><span title={t(`wizard.templates.${id}.focus`)}>{t(`wizard.templates.${id}.focus`)}</span>
       </button>)}
     </div>
-    {onFollow && starters ? <div className="loupist-template-starters" data-template-starters={draft.template}>
+    {starters ? <div className="loupist-template-starters" data-template-starters={draft.template}>
       <p>{t("wizard.starters")}</p>
       <div className="onboarding-chips">{starters.map(entry => {
-        const on = followed.includes(entry.key);
+        const on = draft.starters.includes(entry.name);
         const name = t(`wizard.starter.${entry.key}`);
-        return <button type="button" key={entry.key} className="loupist-starter" aria-pressed={on} disabled={busy || adding !== null}
-          aria-label={t("wizard.followStarter", { name })} onClick={() => { if (!on) void follow(entry); }}>{name}</button>;
+        return <button type="button" key={entry.key} className="loupist-starter" aria-pressed={on} disabled={busy}
+          aria-label={t("wizard.followStarter", { name })}
+          onClick={() => onChange({ ...draft, starters: on ? draft.starters.filter(item => item !== entry.name) : [...draft.starters, entry.name] })}>{name}</button>;
       })}</div>
-      {followError ? <p className="inline-error" role="alert">{t("wizard.followFailed")}</p> : null}
     </div> : null}
-    <div className="form-field"><Label htmlFor={`${idPrefix}-name`}>{t("wizard.name")}</Label>
-      <Input id={`${idPrefix}-name`} value={draft.name} maxLength={60} disabled={busy}
-        onChange={event => onChange({ ...draft, name: event.target.value })} /></div>
     {essentials ? <p className="loupist-template-later">{t("wizard.changeLater")}</p>
-      : <LoupistAvatarPicker loupist={draft} disabled={busy} onChange={avatar => onChange({ ...draft, avatar })} />}
+      : <LoupistIdentityFields name={draft.name} avatar={draft.avatar} focus={draft.focus} busy={busy} idPrefix={idPrefix}
+        onChange={identity => onChange({ ...draft, ...identity })} />}
     {!essentials || draft.template === "custom" ? <div className="form-field"><Label htmlFor={`${idPrefix}-focus`}>{t("wizard.focus")}</Label>
       <Textarea id={`${idPrefix}-focus`} rows={2} value={draft.focus} maxLength={280} disabled={busy}
         placeholder={t("wizard.focusPlaceholder")} onChange={event => onChange({ ...draft, focus: event.target.value })} /></div> : null}

@@ -29,6 +29,25 @@ summary into authority ([context delivery](../agent/context-delivery.md#memory-a
 | ThisTurn | This turn raised the untrusted-text tier ([Untrusted text](untrusted-text.md)). |
 | Custom | This turn read a custom-connection result. File rows behave as ThisTurn. `run_python` stays allowed. |
 
+### Delegated research
+
+Typed Bot hand-offs, including `research_open`, use the Delegated tool policy.
+They inherit the Bot reply's final exposure, including reads delivered after the
+hand-off was staged. Custom exposure restores the outbound pause and carries
+Don't-save forward when the source connection applied it. The recorded connection
+identifies the source of the restriction and does not grant access to it.
+
+A verified Map link opened with **Look into it** starts at ThisTurn on the
+ordinary Session surface. It keeps the same tool policy as a user-started
+Session, subject to that exposure and the host's exclusion of `ask_user`.
+Rust applies the receipt before the broker or Pi starts. No host-started
+research run can ask a question; the user can open it and steer it instead.
+
+Only the actual stored user request supplies user-typed sites. The Bot's note
+and the Map link's names and relationships are context. A later interactive
+turn that receives retained third-party hand-off context starts at ThisTurn
+and uses the interactive tool policy.
+
 ## Path classes
 
 A target declared under the bundled `skills/` root is checked for escape before
@@ -146,7 +165,7 @@ an unreadable search root fails the call.
 
 Each call snapshots the allowed workspace files, this Chat's attachments and a scratch directory into a private host-owned tree. The guest sees `/workspace` as its relative cwd, `/attachments` for this Chat as read-only, `/scratch` for this run as writable, and `/usr/local/lib` for the runtime as read-only. Matplotlib's data directory is a separate read-only preopen. The snapshot omits dot directories recursively, app private roots, credentials, `.git`, symlinks, hard links, special files and nested instruction locations. Top-level workspace files are read-only. Writes are granted only for `outputs/`, which the host creates, and for existing non-dot top-level subdirectories the host allows. The worker never receives a live host directory as a writable WASI preopen.
 
-The worker has no network and no DNS. TCP, UDP and IP name lookup are disabled, and every socket address check fails. It does not inherit the host environment. The guest environment is only `HOME`, `TMPDIR`, `MPLCONFIGDIR`, `MPLBACKEND`, `PYTHONTZPATH` and `OPENBLAS_NUM_THREADS`. There is no shell and no process spawn. The module's `host.call` import returns failure for every argument. Linear memory is limited to 512 MiB. The parent caps captured output at 64 KiB. The parent kills and reaps the child on cancellation and on the wall timeout, including a blocked sleep or a module load, and the worker exits if its parent dies. Only one Python call runs at a time in an app process; queued calls can be cancelled and wait at most their requested timeout. A broker disconnect cancels the host-owned run without dropping its cleanup or file copy-back.
+The worker has no network and no DNS. TCP, UDP and IP name lookup are disabled, and every socket address check fails. It does not inherit the host environment. The guest environment is only `HOME`, `TMPDIR`, `MPLCONFIGDIR`, `MPLBACKEND`, `PYTHONTZPATH` and `OPENBLAS_NUM_THREADS`. There is no shell and no process spawn. The module's `host.call` import returns failure for every argument. Linear memory is limited to 512 MiB. The parent caps captured output at 64 KiB. The parent kills and reaps the child on cancellation and on the wall timeout, including a blocked sleep or a module load, and the worker exits if its parent dies. The wall timeout is the call's timeout. Until this worker and runtime have compiled once in the private cache (`python-cache/compiled`, recorded in `python-cache/compiled.id` when a worker ends by itself), it adds 180 seconds for that compile: the worker's guest clock starts only after compilation, and a first call on a busy Mac took 33-51 seconds to compile. Only one Python call runs at a time in an app process; queued calls can be cancelled and wait at most their requested timeout, plus the same 180 seconds while the cache has not compiled, since the call ahead may be that compile. A broker disconnect cancels the host-owned run without dropping its cleanup or file copy-back.
 
 The offline packages are numpy, pandas, scipy, matplotlib, statsmodels and scikit-learn. The guest cannot install a package or fetch one. macOS arm64 is the release host. Linux is a development host. Both use the same wasm snapshot and a worker built for that machine.
 

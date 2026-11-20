@@ -24,7 +24,7 @@ principles, and the Map's names, relationships and Sources, each section switcha
 Sources travel as references (title, host, URL, EDGAR or DART filing ID, DOI, publication
 date) without bytes or quotes. Record IDs never leave: items carry keys derived from the
 pack ID, and `lens:` links keep only their label. The export reads nothing else, so
-holdings, what you follow, Journal, Chats, notes, retained bytes, datasets, artifacts,
+what you follow, Journal, Chats, notes, retained bytes, datasets, artifacts,
 Skills, the Loupist's instructions, connections, schedules and settings never enter a
 pack. An oversized method stays in the selection until explicitly left out. Export validates the finished pack with the importer’s bounds and refuses content that would not import, including Markdown over 64 KiB or a JSONL record over 8 KiB; the error names the oversized items by title and key. Stored Source URLs are normalized before validation, retaining URLs with stray surrounding whitespace.
 
@@ -32,8 +32,9 @@ Source export checks both recorded authorship and the Rust
 [provider data policy](../capabilities/packs.md#provider-data-policy-for-packs).
 Only `public_record` publisher Sources, explicit user-authored statements and imported
 pack references with stored redistribution rights may leave. A user-owned capture is
-not necessarily user-authored: uploads, workspace files, brokerage reads and custom
-connections stay private. Web pages remain references only, without their text.
+not necessarily user-authored: uploads, workspace files, material pasted into a Chat
+([user-provided Sources](sources-notes.md#user-provided-sources)), brokerage reads and
+custom connections stay private. Web pages remain references only, without their text.
 Commercial, exchange, scraped and unknown provider data is restricted even when the
 capture says `publisher`. A relationship leaves with eligible Sources only; one whose
 every Source is private or restricted is left out and counted. A name leaves only with
@@ -55,10 +56,11 @@ short settings such as ports, locales and modes are not credential substrings.
 GitHub Keychain read failures also block the scan; short finance credential fields
 enter the same saved-credential matching rules instead of being discarded. Credentials
 (including every stored provider key or sign-in token, custom-connection secret,
-connector credential and the GitHub token), account numbers and a holding's exact amount
-next to its name block until that item is left out; an email, phone number, the macOS
+connector credential and the GitHub token) and account numbers from connections
+block until that item is left out; an email, phone number, the macOS
 full name or home path warns and can be accepted ("It's fine"). Export rebuilds the pack
-and refuses unresolved findings (`findings_unresolved`). The first share mints the
+and refuses unresolved findings (`findings_unresolved`). The scan has no holding class
+and reads neither stored positions nor saved wallet addresses. Findings contain no symbol. The first share mints the
 Loupist's pack ID, and the version rises when the content hash changes, including
 license and attribution changes. An unchanged saved share recovers its actual
 license from the content hash for the summary, so a nondefault license does not

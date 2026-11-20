@@ -15,17 +15,17 @@
   },
   "sidebar": {
     "sidebar": "사이드바",
-    "displaysTheMobileSidebar": "모바일 사이드바를 표시해요.",
+    "displaysTheMobileSidebar": "모바일 사이드바를 표시합니다.",
     "toggleSidebar": "사이드바 열기/닫기"
   },
   "spinner": {
     "loading": "불러오는 중"
   },
   "copyTextButton": {
-    "selectTheTextToCopyIt": "복사할 텍스트를 선택해 주세요.",
-    "copied": "복사했어요",
+    "selectTheTextToCopyIt": "복사할 텍스트를 선택하십시오.",
+    "copied": "복사했습니다",
     "copy": "{{label}} 복사",
-    "copiedLabel": "{{label}} 복사했어요"
+    "copiedLabel": "{{label}} 복사했습니다"
   },
   "time": {
     "am": "오전",
@@ -35,5 +35,19 @@
     "year": "연",
     "month": "월",
     "day": "일"
+  },
+  "market": {
+    "direction": {
+      "up": "상승",
+      "down": "하락",
+      "flat": "보합"
+    },
+    "changeWithPercent": "{{change}} · {{percent}}",
+    "trend": {
+      "up": "추세: 시작 {{first}}, 마지막 {{last}}, {{percent}} 상승",
+      "down": "추세: 시작 {{first}}, 마지막 {{last}}, {{percent}} 하락",
+      "flat": "추세: 시작 {{first}}, 마지막 {{last}}, 보합"
+    },
+    "asOf": "{{date}} 기준"
   }
 }

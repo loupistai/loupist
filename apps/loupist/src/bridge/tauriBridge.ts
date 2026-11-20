@@ -20,12 +20,18 @@ const stream = <T, E>(command: string, args: Record<string, unknown>, observer: 
   return call<T>(command, { ...args, [STREAM_CHANNEL_ARGUMENT]: channel });
 };
 
-const subscribe = <T>(event: BridgeEventName, handler: (payload: T) => void) => {
+/**
+ * `listen()` attaches the handler only when its promise resolves, and events
+ * before that are not replayed. `ready`, when given, runs once the handler is
+ * attached or attaching failed, so a status read after it cannot miss a change.
+ */
+const subscribe = <T>(event: BridgeEventName, handler: (payload: T) => void, ready?: () => void) => {
   let disposed = false;
   let stop: (() => void) | undefined;
-  void listen<T>(event, (message) => { if (!disposed) handler(message.payload); }).then((unlisten) => {
+  const attached = listen<T>(event, (message) => { if (!disposed) handler(message.payload); }).then((unlisten) => {
     if (disposed) unlisten(); else stop = unlisten;
   });
+  if (ready) attached.then(ready, ready);
   return () => { disposed = true; stop?.(); };
 };
 
@@ -42,6 +48,12 @@ type StrictBridge = { [K in keyof LoupistBridge]: LoupistBridge[K] };
 export const createLoupistBridge = (): LoupistBridge => bridge();
 
 const bridge = (): StrictBridge => ({
+  legacyHoldingsStatus: () => call("legacy_holdings_status"),
+  legacyHoldingsRetry: () => call("legacy_holdings_retry"),
+  legacyHoldingsReveal: () => call("legacy_holdings_reveal"),
+  legacyHoldingsSaveCopy: () => call("legacy_holdings_save_copy"),
+  legacyHoldingsDismiss: () => call("legacy_holdings_dismiss"),
+  onLegacyHoldingsChanged: (handler, onListening) => subscribe(BRIDGE_EVENTS.legacyHoldingsChanged, handler, onListening),
   noticeSettingsGet: () => call("notice_settings_get"),
   noticeAcknowledge: () => call("notice_acknowledge"),
   onMenuAction: (handler) => subscribe(BRIDGE_EVENTS.menuAction, handler),
@@ -60,21 +72,6 @@ const bridge = (): StrictBridge => ({
   customConnectionSignIn: request("custom_connection_sign_in"),
   customConnectionSignInCancel: request("custom_connection_sign_in_cancel"),
   customToolApprove: request("custom_tool_approve"),
-
-  watchlistList: () => call("watchlist_list"),
-  watchlistAdd: request("watchlist_add"),
-  watchlistRemove: request("watchlist_remove"),
-  holdingsImportCsv: request("holdings_import_csv"),
-  holdingsCommitCsv: request("holdings_commit_csv"),
-  holdingsImportKis: () => call("holdings_import_kis"),
-  holdingsSummary: () => call("holdings_summary"),
-  holdingsImportCryptoFile: request("holdings_import_crypto_file"),
-  holdingsMapColumns: request("holdings_map_columns"),
-  walletsList: () => call("wallets_list"),
-  walletAdd: request("wallet_add"),
-  walletRename: request("wallet_rename"),
-  walletRemove: request("wallet_remove"),
-  walletRefresh: (body = {}) => call("wallet_refresh", { request: body }),
 
   configRead: request("config_read"),
   configUpdate: request("config_update"),
@@ -105,6 +102,7 @@ const bridge = (): StrictBridge => ({
   scheduledTaskWatch: (body, observer) => stream("scheduled_task_watch", { request: body }, observer),
 
   modelCatalogGet: () => call("model_catalog_get"),
+  onModelCatalogChanged: (handler, onListening) => subscribe(BRIDGE_EVENTS.modelCatalogChanged, handler, onListening),
   modelVisibilityUpdate: request("model_visibility_update"),
   providerModels: (provider) => call("provider_models", { request: { provider } }),
   providerConfigure: request("provider_configure"),
@@ -193,11 +191,12 @@ const bridge = (): StrictBridge => ({
     call("artifact_versions", { request: { loupist_id, thread_id, artifact_id } }),
   chatArtifactRestore: (request) => call("artifact_restore", { request }),
   chatSend: (body, observer) => stream("chat_send", { request: body }, observer),
+  chatWatch: (body, observer) => stream("chat_watch", { request: body }, observer),
+  chatUnwatch: request("chat_unwatch"),
   chatSteer: request("chat_steer"),
   chatRetryLast: request("chat_retry_last"),
   researchHandoffStart: request("research_handoff_start"),
   knowledgeConnectionDismiss: request("knowledge_connection_dismiss"),
-  knowledgeConnectionOpen: request("knowledge_connection_open"),
   chatAbort: (run_id) => call("chat_abort", { run_id }),
   runActivityList: () => call("run_activity_list"),
 
@@ -252,13 +251,19 @@ const bridge = (): StrictBridge => ({
   journalUpdate: request("journal_update"),
   journalArchive: request("journal_archive"),
 
+  assetsList: request("assets_list"),
+  assetLookup: request("asset_lookup"),
+  assetFollowName: request("asset_follow_name"),
+  assetFollow: request("asset_follow"),
+  assetUnfollow: request("asset_unfollow"),
   assetPageGet: request("asset_page_get"),
-  assetDelta: request("asset_delta"),
-  assetRefresh: request("asset_refresh"),
-  assetClassSet: request("asset_class_set"),
-  assetVerdictUndo: request("asset_verdict_undo"),
+  assetPriceCheck: request("asset_price_check"),
+  assetPriceSeries: request("asset_price_series"),
+  watchlistQuotes: request("watchlist_quotes"),
   assetPageSeen: request("asset_page_seen"),
-  upcomingEvents: request("upcoming_events"),
+  assetEntitySet: request("asset_entity_set"),
+  assetVerdictUndo: request("asset_verdict_undo"),
+  onAssetsChanged: (handler) => subscribe(BRIDGE_EVENTS.assetsChanged, handler),
   // Rust recomputes allowed licenses from the current sections and exclusions.
   shareSummary: request("share_summary"),
   shareExport: request("share_export"),
@@ -291,16 +296,6 @@ const bridge = (): StrictBridge => ({
   deepLinkDismiss: () => call("deep_link_dismiss"),
   onDeepLinkImport: (handler) => subscribe(BRIDGE_EVENTS.deepLinkImport, handler),
 
-  earningsSnapshotGet: request("earnings_snapshot_get"),
-  earningsEventsList: request("earnings_events_list"),
-  earningsPrepare: request("earnings_prepare"),
-
-  watchDefaultsApply: request("watch_defaults_apply"),
-  watchSettingsList: request("watch_settings_list"),
-  watchSettingSet: request("watch_setting_set"),
-  watchPauseSet: request("watch_pause_set"),
-  watchCheckNow: request("watch_check_now"),
-  watchEventsList: request("watch_events_list"),
-  watchEventsSeen: request("watch_events_seen"),
-  onWatchChanged: (handler) => subscribe(BRIDGE_EVENTS.watchChanged, handler),
+  fxDisplay: request("fx_display"),
+  onFxChanged: (handler, onListening) => subscribe(BRIDGE_EVENTS.fxChanged, handler, onListening),
 });

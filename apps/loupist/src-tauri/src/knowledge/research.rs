@@ -478,7 +478,7 @@ fn later_notes(
                 later.push(LaterNote {
                     note_id: note.research_id.clone(),
                     chat_id: note.chat_id.clone(),
-                    title: note.title.chars().take(160).collect(),
+                    title: crate::util::shorten(&note.title, 160),
                     updated_at_ms: note.recorded_at_ms,
                 });
             }
@@ -898,7 +898,7 @@ fn journal_hit(
                 record_id: world.record_id.clone(),
                 revision_id: world.revision_id.clone(),
                 claim_id: edge.claim.id.clone(),
-                label: edge.claim.proposition.chars().take(80).collect(),
+                label: crate::util::shorten(&edge.claim.proposition, 80),
             };
             if matched {
                 claims.insert(0, pin);

@@ -1,0 +1,76 @@
+{
+  "request": {
+    "operation": "reverse_dcf",
+    "unit": "KRW",
+    "wacc_pct": [
+      8,
+      9,
+      10
+    ],
+    "terminal_growth_pct": [
+      1,
+      2,
+      3
+    ],
+    "inputs": {
+      "cash_flow": 33700000000,
+      "price": 21950,
+      "shares": 20000000,
+      "reference_growth_pct": 10.0263543025883,
+      "net_debt": 53800000000
+    }
+  },
+  "grid": {
+    "above_reference": [
+      [
+        false,
+        false,
+        false
+      ],
+      [
+        false,
+        false,
+        false
+      ],
+      [
+        false,
+        false,
+        false
+      ]
+    ],
+    "amount_unit": "KRW",
+    "column_values": [
+      1,
+      2,
+      3
+    ],
+    "columns": "terminal_growth_pct",
+    "forecast_years": 5,
+    "measure": "implied annual growth for 5 years",
+    "reference": 10.0263543025883,
+    "row_values": [
+      8,
+      9,
+      10
+    ],
+    "rows": "wacc_pct",
+    "unit": "%",
+    "values": [
+      [
+        1.30831515951968,
+        -1.39335778861778,
+        -4.53419576357419
+      ],
+      [
+        4.47379694411438,
+        2.08219539061929,
+        -0.642048889278612
+      ],
+      [
+        7.41609278840087,
+        5.26631497463086,
+        2.85471580219792
+      ]
+    ]
+  }
+}

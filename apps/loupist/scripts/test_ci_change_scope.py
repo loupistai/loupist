@@ -62,7 +62,7 @@ class ChangeScopeTests(unittest.TestCase):
                 {"python", "rust", "native", "packaging"},
             ),
             (
-                ["apps/loupist/src/contracts/assetRequests.example.json"],
+                ["apps/loupist/src/contracts/assets.ts"],
                 {"web", "rust", "native"},
             ),
             (["apps/loupist/agent/SYSTEM.md"], {"web", "rust", "native", "packaging"}),

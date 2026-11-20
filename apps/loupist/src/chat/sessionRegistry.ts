@@ -11,8 +11,21 @@ import {
   fromStoreKeepingAnswers,
   TauriChatTransport,
   toLoupistUIMessage,
+  type HostedStreamConnection,
   type LoupistUIMessage,
 } from "./ai-sdk";
+
+/** A session view's join of a host-started run: subscribing, streaming into the Chat, or not joined. */
+export type HostedWatchPhase = "attaching" | "live" | "idle";
+
+/** Host stream restarts one watch follows before it leaves the session to the stored thread. */
+const MAX_HOSTED_RESETS = 10;
+
+/** The Chat without the reply a detached stream left unfinished; the store holds the rest. */
+const withoutStreamingReply = (messages: LoupistUIMessage[]) => {
+  const last = messages.at(-1);
+  return last?.role === "assistant" && last.metadata?.status === "streaming" ? messages.slice(0, -1) : messages;
+};
 
 export type ChatSessionHandlers = {
   onArtifact: (
@@ -24,6 +37,7 @@ export type ChatSessionHandlers = {
     loupistId: string,
     threadId: string,
     messages: ChatThread["messages"],
+    preserveRecency?: boolean,
   ) => void;
   onStatus: (
     loupistId: string,
@@ -62,14 +76,17 @@ const latestAssistantTime = (messages: ChatThread["messages"]) =>
 export class ChatSessionRegistry {
   readonly #entries = new Map<string, RegistryEntry>();
   readonly #transport: TauriChatTransport;
+  readonly #bridge: LoupistBridge;
   #disposed = false;
   #lifecycleGeneration = 0;
   readonly #scheduledRuns = new Map<string, Promise<void>>();
+  readonly #scheduledThreads = new Set<string>();
 
   constructor(
     bridge: LoupistBridge,
     private readonly handlers: ChatSessionHandlers,
   ) {
+    this.#bridge = bridge;
     this.#transport = new TauriChatTransport(
       bridge,
       (loupistId, threadId, title) => {
@@ -103,11 +120,9 @@ export class ChatSessionRegistry {
       },
       onFinish: ({ messages }) => {
         if (!this.#disposed) {
-          this.handlers.onMessages(
-            loupistId,
-            threadId,
-            messages.map(fromLoupistUIMessage),
-          );
+          const settled = messages.map(fromLoupistUIMessage);
+          if (this.#scheduledThreads.has(key)) this.handlers.onMessages(loupistId, threadId, settled, true);
+          else this.handlers.onMessages(loupistId, threadId, settled);
         }
       },
     });
@@ -145,13 +160,18 @@ export class ChatSessionRegistry {
       // null reconnect could reset a newer local stream. Prepare outside it.
       const connection = await this.#transport.prepareScheduled(run);
       if (!connection) return;
+      const key = chatSessionKey(run.loupist_id, run.thread_id!);
       try {
         if (this.#disposed || this.get(run.loupist_id, run.thread_id!) !== chat || isActiveChatStatus(chat.status) || chat.messages !== baselineMessages) return;
         attached = true;
         chat.messages = connection.thread.messages.map(toLoupistUIMessage);
         this.handlers.onAttachedThread?.(connection.thread);
+        this.#scheduledThreads.add(key);
         await chat.resumeStream({ body: { scheduledConnection: connection } });
-      } finally { connection.release(); }
+      } finally {
+        if (attached) this.#scheduledThreads.delete(key);
+        connection.release();
+      }
     })().finally(() => {
       // Admission may still be preparing. A failed channel can also be retried
       // from the host's complete baseline while that exact run remains active.
@@ -162,6 +182,73 @@ export class ChatSessionRegistry {
     });
     this.#scheduledRuns.set(run.run_id, pending);
     void pending.catch(() => undefined);
+  }
+
+  /**
+   * Joins the run the host is doing on a Chat (a research hand-off) while its session is
+   * shown. The replay and the live events stream into the same Chat as a reply sent here,
+   * so the view, guidance and Stop work as they do for one. Nothing running: the stored
+   * thread is read again, since the run may have finished meanwhile. A host reset reloads
+   * and attaches again. The returned release detaches and unsubscribes; the run goes on.
+   */
+  watchHosted(loupistId: string, threadId: string, onPhase: (phase: HostedWatchPhase) => void) {
+    let released = false;
+    let current: HostedStreamConnection | null = null;
+    let resets = 0;
+    const report = (phase: HostedWatchPhase) => { if (!released && !this.#disposed) onPhase(phase); };
+    const attach = async (): Promise<void> => {
+      const chat = this.get(loupistId, threadId);
+      // A reply streaming here already shows the run.
+      if (released || this.#disposed || !chat || isActiveChatStatus(chat.status)) return report("idle");
+      report("attaching");
+      const connection = await this.#transport.prepareHosted({ loupist_id: loupistId, thread_id: threadId, subscription_id: crypto.randomUUID() })
+        .catch(() => undefined);
+      if (connection === null && !released) await this.#readStored(loupistId, threadId);
+      if (!connection) return report("idle");
+      // A refresh may have rewritten the idle Chat meanwhile; the snapshot replaces it anyway.
+      if (released || this.#disposed || this.get(loupistId, threadId) !== chat || isActiveChatStatus(chat.status)) {
+        connection.release();
+        return report("idle");
+      }
+      current = connection;
+      chat.messages = fromStoreKeepingAnswers(chat.messages, connection.thread.messages);
+      this.handlers.onAttachedThread?.(connection.thread);
+      report("live");
+      try {
+        await chat.resumeStream({ body: { hostedConnection: connection } });
+      } finally {
+        current = null;
+        connection.release();
+      }
+      if (released || connection.reset) {
+        // The run goes on without this view: drop the reply it left half drawn.
+        const kept = withoutStreamingReply(chat.messages);
+        if (kept !== chat.messages) {
+          chat.messages = kept;
+          if (!this.#disposed) this.handlers.onMessages(loupistId, threadId, kept.map(fromLoupistUIMessage), true);
+        }
+      }
+      if (connection.reset && !released && resets < MAX_HOSTED_RESETS) {
+        resets += 1;
+        return attach();
+      }
+      report("idle");
+    };
+    void attach().catch(() => report("idle"));
+    return () => {
+      released = true;
+      current?.detach();
+    };
+  }
+
+  async #readStored(loupistId: string, threadId: string) {
+    try {
+      const workspace = await this.#bridge.loupistSelect(loupistId);
+      const stored = workspace.threads.find((thread) => thread.id === threadId);
+      if (stored && !this.#disposed) this.handlers.onAttachedThread?.(this.reconcile(stored));
+    } catch {
+      // The next workspace refresh reads it again.
+    }
   }
 
   activate() {

@@ -4,23 +4,12 @@ import { ChatConversation } from "./ChatConversation";
 import { WorldProcessingStatus } from "./WorldProcessingStatus";
 import { evidencePresentation } from "../../chat/evidence";
 import type { ChatEvidenceRef, LoupistBridge } from "../../types";
-import { AppHeader } from "../app/AppHeader";
-import { SidebarProvider } from "../ui/sidebar";
-import { MOCK_LOUPISTS } from "../../bridge/mock/fixtures";
 
 afterEach(async () => {
   await act(async () => { await i18n.changeLanguage("en"); });
 });
 
-it.each(["world", "lens"] as const)("localizes the %s panel name in the app header", async kind => {
-  render(<SidebarProvider><AppHeader runningLoupists={new Set()} unreadCounts={{}} loupists={[MOCK_LOUPISTS[0]!]} loupist={MOCK_LOUPISTS[0]!}
-    tab="chat" markets={[]} workspaceOpen={false} workspaceKind={kind} workspacePlacement="side"
-    onSelect={vi.fn()} onCreate={vi.fn()} onNavigate={vi.fn()} onLoupistSettings={vi.fn()} onWorkspaceKind={vi.fn()} onWorkspaceSplit={vi.fn()} onWorkspaceToggle={vi.fn()} /></SidebarProvider>);
-  await act(async () => { await i18n.changeLanguage("en-XA"); });
-  expect(screen.getByTestId("header-panel-toggle")).toHaveTextContent(i18n.t(`chat:workspaceEvidence.kind.${kind}`));
-});
-
-it("switches the morning message language without changing the Loupist name", async () => {
+it("switches the Bot greeting language without changing the Loupist name", async () => {
   const suggest = vi.fn();
   const bridge = {
     knowledgeMap: async () => ({ nodes: [], edges: [] }),
@@ -28,17 +17,23 @@ it("switches the morning message language without changing the Loupist name", as
     inboxList: async () => ({ items: [], nextCursor: null }),
     journalList: async () => [],
     watchlistList: async () => [],
+    watchlistQuotes: async () => [],
+    briefingSettingsGet: async () => ({ enabled: true, task: null, schedule: { kind: "weekly", days: [1], hour: 8, minute: 0, timezone: "UTC" } }),
   } as unknown as LoupistBridge;
+  // The empty home Thread greets; the morning message is for a Thread the user has written in.
   render(<ChatConversation home bridge={bridge} messages={[]} messageKeys={[]} loupistId="loupist" loupistName="My research"
     onSuggestion={suggest} onReadAttachment={vi.fn()} />);
-  expect(await screen.findByRole("button", { name: "What should I know this week?" })).toBeVisible();
+  expect(await screen.findByRole("button", { name: /What matters in markets this week/ })).toBeVisible();
   await act(async () => { await i18n.changeLanguage("en-XA"); });
-  expect(screen.getByText("My research")).toBeVisible();
-  const buttons = screen.getAllByRole("button");
-  expect(buttons).toHaveLength(4);
-  expect(screen.getByRole("article").querySelector(".morning-lead")?.textContent).toMatch(/^⟦.*⟧$/);
-  for (const button of buttons) expect(button.textContent).toMatch(/^⟦.*⟧$/);
-  fireEvent.click(buttons[0]!);
+  const greeting = document.querySelector(".bot-greeting")!;
+  // The name stays as the user wrote it; the visible line under the greeting is the date only.
+  expect(greeting.getAttribute("aria-label")).toContain("My research");
+  expect(greeting.querySelector(".bot-greeting-top small")?.textContent).not.toContain("My research");
+  const asks = [...greeting.querySelectorAll<HTMLButtonElement>(".bot-ask")];
+  expect(asks).toHaveLength(1);
+  for (const ask of asks) expect(ask.querySelector("strong")?.textContent).toMatch(/^⟦.*⟧$/);
+  for (const bubble of greeting.querySelectorAll(".bot-bubble")) expect(bubble.textContent).toMatch(/^⟦.*⟧$/);
+  fireEvent.click(asks.at(-1)!);
   expect(suggest).toHaveBeenCalledWith(expect.stringMatching(/^⟦.*⟧$/));
 });
 

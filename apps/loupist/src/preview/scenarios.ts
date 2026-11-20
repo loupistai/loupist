@@ -8,9 +8,8 @@ import { readerScenarios } from "./readerScenarios";
 import { dataScenarios } from "./dataScenarios";
 import { assetScenarios } from "./assetScenarios";
 import { answerCheckScenarios } from "./answerCheckScenarios";
-import { holdingsScenarios } from "./holdingsScenarios";
+import { followingScenarios } from "./followingScenarios";
 import { gridScenarios } from "./gridScenarios";
-import { financeScenarios } from "./financeScenarios";
 import { koreaScenarios } from "./koreaScenarios";
 import { browserScenarios } from "./browserScenarios";
 import { quoteEvidenceScenarios } from "./quoteEvidenceScenarios";
@@ -19,8 +18,9 @@ import { connectionScenarios } from "./scenarios/connections";
 import { memoryScenarios, principleScenarios, receiptScenarios } from "./scenarios/memory";
 import { onboardingScenarios } from "./scenarios/onboarding";
 import { chatScenarios } from "./scenarios/chat";
+import { botScenarios } from "./scenarios/bot";
 import { chatRunScenarios } from "./scenarios/chatRun";
-import { chatRailScenarios } from "./scenarios/chatRail";
+import { activitySheetScenarios } from "./scenarios/activitySheet";
 import { chatReadingScenarios } from "./scenarios/chatReading";
 import { panelScenarios } from "./scenarios/panel";
 import { mapScenarios } from "./scenarios/map";
@@ -28,7 +28,11 @@ import { scheduleScenarios } from "./scenarios/schedule";
 import { shellScenarios } from "./scenarios/shell";
 import { settingsPageScenarios } from "./scenarios/settings";
 import { sharingScenarios } from "./scenarios/sharing";
-import { base, centerOn, click, clickMapAction, enterMap, hasLayout, navigate, select, selectPanel, settings, submitPrompt, until, type PreviewScenario } from "./scenarios/kit";
+import { marketScenarios } from "./scenarios/market";
+import { faceScenarios } from "./scenarios/faces";
+import { botCardScenarios } from "./scenarios/botCards";
+import { handoffScenarios } from "./scenarios/handoff";
+import { base, centerOn, click, clickMapAction, hasLayout, navigate, select, selectPanel, settings, submitPrompt, until, type PreviewScenario } from "./scenarios/kit";
 
 export type { PreviewScenario } from "./scenarios/kit";
 export { selectAnswerWords, until, visible } from "./scenarios/kit";
@@ -40,8 +44,9 @@ export const scenarios: readonly PreviewScenario[] = [
   ...principleScenarios,
   ...onboardingScenarios,
   ...chatScenarios,
+  ...botScenarios,
   ...chatRunScenarios,
-  ...chatRailScenarios,
+  ...activitySheetScenarios,
   ...chatReadingScenarios,
   ...memoryScenarios,
   ...panelScenarios,
@@ -53,16 +58,22 @@ export const scenarios: readonly PreviewScenario[] = [
   ...readerScenarios({ base, select, navigate, selectPanel, click, clickMapAction, until }),
   ...dataScenarios({ base, select, click, settings }),
   ...settingsPageScenarios,
-  // W16.1–W16.2: asset pages and "What changed" (finance-asset-page.md §8).
-  ...assetScenarios({ base, select, until, click, enterMap, hasLayout, centerOn }),
+  // Asset pages after the thin host: the replayed price, its states and the thesis.
+  ...assetScenarios({ base, select, until, click, hasLayout, centerOn }),
   ...answerCheckScenarios({ base, select, until, click, clickMapAction, hasLayout, submitPrompt, navigate }),
-  ...holdingsScenarios({ base, select, until, click }),
+  ...followingScenarios({ base, select, until }),
   ...sharingScenarios(),
   ...gridScenarios({ base, select, until, click, selectPanel, hasLayout, submitPrompt, navigate }),
-  // W16.6–W16.7: results before and after, local watchers (finance-earnings-snapshot.md §8, finance-watchers.md §8).
-  ...financeScenarios({ base, select, until, click, hasLayout, navigate, centerOn }),
-  // W16.4, W16.8: Korean asset-page depth and the sensitivity card (finance-korea-retail-disagreement.md §8).
-  ...koreaScenarios({ base, select, until, click, hasLayout }),
+  // An answer that links its reverse-DCF grid (finance-korea-retail-disagreement.md §8).
+  ...koreaScenarios({ base, select, until, hasLayout }),
   ...browserScenarios({ base, select, until, click }),
   ...quoteEvidenceScenarios({ base, select, until, click }),
+  // Owner redesign step 1: the shared market primitives (src/components/market/).
+  ...marketScenarios,
+  // Owner redesign step 4: the Loupist's face (src/components/app/LoupistAvatar.tsx).
+  ...faceScenarios,
+  // Bot answers as the agent wrote them: a quick answer, a table, and headings with a list and a table.
+  ...botCardScenarios,
+  // Research hand-offs: a link's Look into it, Bot's hand-off cards and a session's first message.
+  ...handoffScenarios,
 ];

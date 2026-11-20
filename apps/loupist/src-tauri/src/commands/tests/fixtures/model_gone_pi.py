@@ -21,7 +21,8 @@ def respond(request, data=None):
 session_id = argument("--session-id")
 session_file = pathlib.Path(argument("--session-dir")) / f"fixture_{session_id}.jsonl"
 model = argument("--model")
-with (pathlib.Path(__file__).parent / "launches.txt").open("a") as launches:
+root = pathlib.Path(__file__).parent
+with (root / "launches.txt").open("a") as launches:
     launches.write(model + "\n")
 entries = []
 
@@ -47,6 +48,11 @@ for line in sys.stdin:
     elif command == "prompt" and request.get("message", "").startswith("/loupist-verify-settings "):
         respond(request, {"disposition": "handled"})
     elif command == "prompt":
+        appearance = root / "retry-appearance.toml"
+        if appearance.exists():
+            (root / f"{model}-prompt.txt").write_text(request["message"])
+            if model == "gone-model":
+                (root / "app" / "config.toml").write_text(appearance.read_text())
         respond(request, {})
         emit({"type": "message_start", "message": {"role": "assistant"}})
         if model == "gone-model":

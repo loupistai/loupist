@@ -39,7 +39,7 @@ PI_BINARY="$RUNTIME_DIR/loupist-pi"
 OPENBB_RUNTIME="$RUNTIME_DIR/openbb"
 OPENBB_BINARY="$OPENBB_RUNTIME/loupist-openbb"
 EMBED_ASSETS="$RESOURCE_DIR/embed_assets"
-PI_VERSION=1.5.0
+PI_VERSION=1.5.2
 
 if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then
     echo "packaged app inspection requires macOS arm64." >&2
@@ -162,7 +162,7 @@ find "$OPENBB_RUNTIME" -type f -exec sh -c '
                         exit 1
                         ;;
                 esac
-                codesign --verify --strict --verbose=2 "$binary"
+                codesign --verify --strict --verbose=2 "$binary" || exit 1
                 ;;
         esac
     done

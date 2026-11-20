@@ -30,7 +30,7 @@ describe("the live line", () => {
   it.each<[string, ChatMessage, Partial<Omit<TurnInput, "message">>, { label: string; target?: string | null; glyph: string; sheen: boolean; more?: number }]>([
     ["no signal from the host yet", message(), {}, { label: "Starting", glyph: "phase", sheen: true }],
     ["thinking", message({ phase: "thinking" }), {}, { label: "Thinking", glyph: "phase", sheen: true }],
-    ["between steps", message({ phase: "tool", progress: { startedAtMs: start, items: [search, read], finishedAtMs: null } }), {}, { label: "Thinking", glyph: "phase", sheen: true }],
+    ["between steps, the last finished step", message({ phase: "tool", progress: { startedAtMs: start, items: [search, read], finishedAtMs: null } }), {}, { label: "Read a web source", glyph: "web", sheen: true }],
     ["a step running", message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading], finishedAtMs: null } }), {},
       { label: "Reading a web source", target: "Q3 review · hanul.example", glyph: "web", sheen: true }],
     ["a long step, 15 s without host activity", message({ phase: "tool", progress: { startedAtMs: start, items: [reading], finishedAtMs: null } }), { lastActivityAt: now - 16_000 },
@@ -70,8 +70,93 @@ describe("the live line", () => {
   it("does not count or name the plan and the question tool", () => {
     const plan = step("plan", { toolName: "plan_update", category: "system", operation: "generic", status: "running", finishedAtMs: null });
     const turn = view(message({ phase: "tool", progress: { startedAtMs: start, items: [search, plan], finishedAtMs: null } }));
-    expect(line(turn)?.label).toBe("Thinking");
+    expect(line(turn)?.label).toBe("Searched the web");
     expect(ledger(turn)).toMatchObject({ ledger: { text: "1 step" } });
+  });
+
+  describe("between steps, the last action: a note's sentence or the last finished batch, whichever came last", () => {
+    const fetched = (id: string) => step(id, { toolName: "web_fetch", operation: "read", action: "Read hanul.example" });
+    const between = (items: ChatProgressItem[], extra: Partial<Omit<TurnInput, "message">> = {}) =>
+      line(view(message({ phase: "thinking", progress: { startedAtMs: start, items, finishedAtMs: null } }), extra));
+
+    it("counts a run of web reads as one batch, in the interface's words", async () => {
+      const reads = Array.from({ length: 10 }, (_, index) => fetched(`r${index}`));
+      expect(between([search, ...reads])).toMatchObject({ kind: "batch", label: "Read a web source ×10", glyph: "web", target: null, more: 0 });
+      await i18n.changeLanguage("ko");
+      expect(between([search, ...reads])).toMatchObject({ kind: "batch", label: "웹 자료 읽음 ×10", glyph: "web" });
+    });
+
+    it("names one calculation by itself, with its glyph", async () => {
+      const calculated = step("calc", { toolName: "calculate", category: "compute", operation: "calculate", action: "Calculated the margin" });
+      expect(between([fetched("r1"), calculated])).toMatchObject({ kind: "batch", label: "Calculated", glyph: "calculate" });
+      await i18n.changeLanguage("ko");
+      expect(between([fetched("r1"), calculated])?.label).toBe("계산함");
+    });
+
+    it.each([
+      ["a reference link and its definition", "Compared with [the filing][1].\n\n[1]: https://secret.example/a", "Compared with the filing."],
+      ["a shortcut reference link", "Compared with [the filing].\n\n[the filing]: https://secret.example/a", "Compared with the filing."],
+      ["an HTML anchor", 'Read <a href="https://secret.example/h">the filing</a>.', "Read the filing."],
+      ["an autolink", "See <https://secret.example/token>.", "See secret.example."],
+      ["a bare URL", "Details are at https://www.secret.example/path?token=abc.", "Details are at secret.example."],
+      ["other HTML tags", "The margin<br/> fell <em>sharply</em>.", "The margin fell sharply."],
+      ["a tag written around another", "Rates <<b>script>held.", "Rates held."],
+      ["bold, a code span and an inline link", "The **filing** uses `EBIT` from [the review](https://secret.example/r).", "The filing uses EBIT from the review."],
+      ["a heading", "## Next I’ll compare margins.", "Next I’ll compare margins."],
+      ["a list marker", "- Next I’ll compare margins.", "Next I’ll compare margins."],
+    ])("shows only what a reader of the note sees for %s, on the line and in the announcement", (_name, text, shown) => {
+      const turn = view(message({ phase: "thinking", progress: { startedAtMs: start, items: [fetched("r1"), note("n1", text)], finishedAtMs: null } }));
+      expect(line(turn)).toMatchObject({ kind: "note", label: shown });
+      expect(turn.announce).toBe(shown);
+      expect(turn.announce).not.toMatch(/secret\.example\/|https?:|<|\]/u);
+    });
+
+    it("shows a note's last sentence when the note came after the batch", async () => {
+      const items = [fetched("r1"), fetched("r2"), note("n1", "The **filing** and [the review](https://hanul.example) agree on revenue. Next I’ll check web:abc12345 margins\nagainst last year.")];
+      expect(between(items)).toMatchObject({ kind: "note", glyph: "phase", label: "Next I’ll check margins against last year.", target: null });
+      await i18n.changeLanguage("ko");
+      expect(between([fetched("r1"), note("n1", "공시와 보고서의 매출이 일치합니다. 다음으로 작년 대비 마진을 확인하겠습니다.")])?.label).toBe("다음으로 작년 대비 마진을 확인하겠습니다.");
+    });
+
+    it("shows the batch when the note came before it, and passes over a failed step", () => {
+      expect(between([note("n1", "I’ll read both reports."), fetched("r1"), fetched("r2"), step("bad", { status: "failed" })])).toMatchObject({ kind: "batch", label: "Read a web source ×2" });
+      // A failed step of the same tool between two good ones is passed over, not counted.
+      expect(between([fetched("r1"), { ...fetched("r2"), status: "failed" }, fetched("r3")])?.label).toBe("Read a web source ×2");
+      // A different tool ends the batch.
+      expect(between([fetched("r1"), search, fetched("r2")])?.label).toBe("Read a web source");
+    });
+
+    it("ends a batch at a note: only the steps since the last note are counted", () => {
+      expect(between([fetched("r1"), note("n1", "One more source."), fetched("r2")])?.label).toBe("Read a web source");
+      expect(between([fetched("r1"), fetched("r2"), note("n1", "Two more sources."), fetched("r3"), fetched("r4")])?.label).toBe("Read a web source ×2");
+      // A failed step after the note is still passed over without ending the run.
+      expect(between([fetched("r1"), note("n1", "Two more."), fetched("r2"), { ...fetched("r3"), status: "failed" }, fetched("r4")])?.label).toBe("Read a web source ×2");
+    });
+
+    it("gives a note line the working line the reply's own footer shows when the note is on the page", () => {
+      const items = [fetched("r1"), note("n1", "Comparing the two now.")];
+      expect(between(items)?.besideNote).toMatchObject({ kind: "thinking", label: "Thinking", glyph: "phase" });
+      expect(between(items, { lastActivityAt: now - 16_000 })?.besideNote).toMatchObject({ kind: "still", label: "Still working" });
+      expect(between([fetched("r1"), fetched("r2")])?.besideNote).toBeUndefined();
+    });
+
+    it("does not become Still working after 15 s of silence", () => {
+      const stalled = { lastActivityAt: now - 16_000 };
+      expect(between([fetched("r1"), fetched("r2")], stalled)).toMatchObject({ kind: "batch", label: "Read a web source ×2" });
+      expect(between([fetched("r1"), note("n1", "Comparing the two now.")], stalled)).toMatchObject({ kind: "note", label: "Comparing the two now." });
+    });
+
+    it("with neither, reads Thinking and then Still working, as before", () => {
+      expect(between([])).toMatchObject({ kind: "thinking", label: "Thinking" });
+      expect(between([], { lastActivityAt: now - 16_000 })).toMatchObject({ kind: "still", label: "Still working" });
+      expect(between([{ ...search, status: "failed" }], { lastActivityAt: now - 16_000 })).toMatchObject({ kind: "still" });
+    });
+
+    it("leaves Writing, a running step and its Still working target as they were", () => {
+      const live = message({ phase: "tool", progress: { startedAtMs: start, items: [note("n1", "Reading the report."), reading], finishedAtMs: null } });
+      expect(line(view(live, { lastActivityAt: now - 16_000 }))).toMatchObject({ kind: "step", label: "Reading a web source", target: "Still working" });
+      expect(line(view(message({ phase: "writing", draft: writing("commentary-9"), progress: { startedAtMs: start, items: [read, draft], finishedAtMs: null } })))?.label).toBe("Writing");
+    });
   });
 
   it("agrees with the cheap status the pill redraws every second", () => {
@@ -110,13 +195,13 @@ describe("the ledger", () => {
     expect(ledger(stopped)?.ledger.text).toBe("Stopped after 12s · 1 step");
   });
 
-  it("puts the plan position in place of the count while a plan runs", () => {
+  it("counts steps while a plan item is active: the plan is not a progress bar", () => {
     const plan = { items: [
       { id: "one", label: "Read the report", status: "done" as const, activatedAtMs: start },
       { id: "two", label: "Compare inventory", status: "active" as const, activatedAtMs: start + 1 },
       { id: "three", label: "Check your rules", status: "pending" as const },
     ] };
-    expect(ledger(view(message({ phase: "tool", progress: { startedAtMs: start, plan, items: [search], finishedAtMs: null } })))?.ledger.text).toBe("Plan 2 of 3 · Compare inventory");
+    expect(ledger(view(message({ phase: "tool", progress: { startedAtMs: start, plan, items: [search], finishedAtMs: null } })))?.ledger.text).toBe("1 step");
   });
 
   it("gathers what the answer can cite as chips, in arrival order, counting repeats", () => {
@@ -130,6 +215,13 @@ describe("the ledger", () => {
     expect(ledger(turn)?.ledger.chips.map((chip) => [chip.kind, chip.label, chip.count])).toEqual([
       ["memory", "Saved notes", 1], ["source", "dart.fss.or.kr", 2], ["data", "Financial statements", 1], ["calculation", "Calculations", 1],
     ]);
+  });
+
+  it("shows a World Bank result as a source chip", () => {
+    const source = evidenceFixture({ tool_name: "worldbank_series", provider: "world-bank.indicators" });
+    const read = step("series", { toolName: source.tool_name, category: "finance", operation: "read", resultIds: [source.id] });
+    const turn = view(message({ phase: "tool", evidence_refs: [source], progress: { startedAtMs: start, items: [read], finishedAtMs: null } }));
+    expect(ledger(turn)?.ledger.chips).toMatchObject([{ kind: "source", label: "World Bank Indicators" }]);
   });
 
   it("gives no chip to loading a research tool, which reads nothing the answer can cite", () => {
@@ -242,6 +334,15 @@ describe("segments, in the order they happened", () => {
     const fetch = step("fetch", { operation: "read", resultIds: ["hit", "result", "source"] });
     const turn = view(message({ status: "complete", content: "Done.", evidence_refs: [hit, original, output], progress: { startedAtMs: start, finishedAtMs: start + 100, items: [fetch] } }));
     expect(ledger(turn)).toMatchObject({ sources: [original], evidence: [hit, output] });
+  });
+
+  it("counts in the receipt the sources the footer lists, including one no step's results name", () => {
+    const linked = evidenceFixture({ id: "linked", url: "https://hanul.example/q3", title: "Q3 review" });
+    const unlinked = evidenceFixture({ id: "unlinked", url: "https://hanul.example/ir", title: "IR deck" });
+    const fetch = step("fetch", { operation: "read", resultIds: ["linked"] });
+    const turn = view(message({ status: "complete", content: "Done.", evidence_refs: [linked, unlinked], progress: { startedAtMs: start, finishedAtMs: start + 100, items: [fetch] } }));
+    expect(turn.footer).toMatchObject({ kind: "settled", sources: [linked, unlinked] });
+    expect(ledger(turn)).toMatchObject({ sources: [linked, unlinked], ledger: { text: "Worked 1s · 1 step · 2 sources" } });
   });
 });
 

@@ -1,9 +1,14 @@
 ---
 name: why-it-moved
-description: Explain why a stock, fund or index moved on a day or over a period, keeping the measured move, reported reasons and inference apart. Use for questions like why something rose or fell; skip a plain price lookup.
+description: Explain why a stock, fund or index moved on a day or over a period, keeping the measured move, reported reasons and inference apart. Use in a research session, or when the user picks this Skill, for questions like why something rose or fell; in the Bot such a question is a quick ask answered without it. Skip a plain price lookup.
 ---
 
 # Why it moved
+
+This is the full attribution, for a research session or a user who picked this
+Skill. In the Bot, without that choice, a question about a move is a quick ask:
+answer it as one and leave this procedure; the worked-out reason goes to
+`research_open`.
 
 1. Measure the move from dated closes: the last close before the window and the
    last close in it, with `calculate` `percent_change` citing both. Say which
@@ -15,11 +20,8 @@ description: Explain why a stock, fund or index moved on a day or over a period,
    filings first (OpenDART, SEC), then timestamped news from official or keyed
    providers, then `web_search` and `web_fetch`. For a Korean stock, add Korea
    Investment investor flows for those days when connected.
-4. Answer in four short sections, titled in the user's language:
-   - "Moved {x} while the market moved {y}"
-   - "Reported reasons": only what a dated source says, cited
-   - "My reading": your inference, labelled as inference
-   - "What isn't explained"
+4. Cite dated sources for reported reasons, label your own inference as
+   inference and say what remains unexplained.
 
 Never invent a cause. Something published after the move did not cause it, and
 a source that only restates the move is not a reason. When nothing explains the

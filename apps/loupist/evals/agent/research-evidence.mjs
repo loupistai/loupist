@@ -1,54 +1,8 @@
-/** Evidence for research progress and dataset-backed calculation popovers. */
-import { planProgressAssertion, calculationChipAssertion, numberChecks, toolCalls, returnedCitationUrls, isRecord } from './eval-contract.mjs';
+/** Evidence for dataset-backed calculation popovers. */
+import { calculationChipAssertion, numberChecks, toolCalls, returnedCitationUrls, isRecord } from './eval-contract.mjs';
 import { comparableArgs } from './tool-evidence.mjs';
 
 const result = (pass, detail) => ({ pass, detail });
-const PREPARATION = new Set(['plan_update', 'capability_load', 'ls', 'find']);
-const work = call => !PREPARATION.has(call.name) && call.outcome === 'ok'
-  // Listing the folder, like loading a bundled Skill or one of its reference files, prepares the turn; it reads no research material.
-  && !(call.name === 'read' && /(?:^|\/)skills\/[^/]+\/(?:SKILL\.md|references\/[^/]+)$/u.test(call.args?.path ?? ''));
-
-
-export function planProgressEvidence(assertion, calls) {
-  const { min_items: min } = planProgressAssertion(assertion);
-  const updates = calls.map((call, index) => ({ ...call, index })).filter(call => call.name === 'plan_update' && call.outcome !== 'error');
-  if (!updates.length) return result(false, 'no successful plan_update');
-  if (updates.some(call => call.outcome !== 'ok' || comparableArgs(call.args) === null)) return result(null, 'plan outcome or arguments unavailable');
-  for (const update of updates) {
-    const items = update.args.items;
-    if (!Array.isArray(items) || items.length < min || items.length > 6
-      || items.some(item => !isRecord(item) || typeof item.id !== 'string' || !item.id || !['pending', 'active', 'done', 'not_done'].includes(item.status))
-      || new Set(items.map(item => item.id)).size !== items.length
-      || items.filter(item => item.status === 'active').length > 1) return result(false, 'invalid or undersized plan');
-  }
-  const first = updates[0];
-  if (first.args.items.some(item => !['pending', 'active'].includes(item.status))
-    || calls.slice(0, first.index).some(work)) return result(false, 'plan was created after work');
-  let progressed = false;
-  for (let i = 1; i < updates.length; i++) {
-    const previous = updates[i - 1];
-    const current = updates[i];
-    const before = new Map(previous.args.items.map(item => [item.id, item.status]));
-    const after = new Map(current.args.items.map(item => [item.id, item.status]));
-    if ([...before.keys()].some(id => !after.has(id))) return result(false, 'plan dropped an item');
-    for (const [id, status] of after) {
-      const old = before.get(id);
-      if (['done', 'not_done'].includes(old) && status !== old) return result(false, 'plan reopened a closed item');
-      if (status === 'done' && old !== 'done' && old !== 'active') return result(false, 'item closed without becoming active');
-      if (old === 'active' && status === 'pending') return result(false, 'active item returned to pending');
-    }
-    const activeChanged = [...after].some(([id, status]) => status === 'active' && before.get(id) !== 'active');
-    if (activeChanged && [...before].some(([id, status]) => status === 'active' && after.get(id) !== 'done')) return result(false, 'next step began before the active item closed');
-    const closed = [...after].some(([id, status]) => status === 'done' && before.get(id) === 'active');
-    if (closed && current.args.items.some(item => ['pending', 'active'].includes(item.status))
-      && calls.slice(previous.index + 1, current.index).some(work)
-      && calls.slice(current.index + 1).some(work)) progressed = true;
-  }
-  if (updates.at(-1).args.items.some(item => item.status !== 'done')) return result(false, 'final plan has unfinished items');
-  if (calls.slice(updates.at(-1).index + 1).some(work)) return result(false, 'research continued after the final plan closed');
-  if (!progressed) return result(false, 'no item closed between research steps');
-  return result(true, `${updates.length} plan updates; incremental completion and no unfinished items`);
-}
 
 // Pi delivers JSON either directly, in details, or in a text content block.
 function objects(value, out = []) {

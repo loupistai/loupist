@@ -56,13 +56,9 @@ const isNativeBrowserTab = (
 /** The Map opens beside the chat by itself only when both fit side by side (`side-panel.md` §3.1). */
 const MAP_REVEAL_MIN_WIDTH = 1280;
 
-export type WorkspacePanelKind = "lens" | "world" | "materials";
 
 /** Chat workspace panel: per-thread tab sessions, open state, and geometry. */
 export function useWorkspacePanel(bridge: LoupistBridge) {
-  const [kind, setKind] = useState<WorkspacePanelKind>("materials");
-  const kindRef = useRef(kind);
-  const changeKind = useCallback((next: WorkspacePanelKind) => { kindRef.current = next; setKind(next); }, []);
   const [selectedArtifacts, setSelectedArtifacts] = useState<Record<string, ChatArtifactRef | undefined>>({});
   const selectArtifactForChat = useCallback((key: string, artifact?: ChatArtifactRef) => {
     setSelectedArtifacts((current) => ({ ...current, [key]: artifact }));
@@ -207,19 +203,17 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
   const openTab = useCallback(
     (loupistId: string, threadId: string, tab: ChatWorkspaceTab) => {
       const key = chatSessionKey(loupistId, threadId);
-      changeKind("materials");
       updateSession(key, (session) => activateWorkspaceTab(session, tab));
       show(key);
     },
-    [changeKind, show, updateSession],
+    [show, updateSession],
   );
 
   const openEvidenceEntry = useCallback((loupistId: string, threadId: string, entry: EvidenceEntry) => {
     const key = chatSessionKey(loupistId, threadId);
-    changeKind("materials");
     updateSession(key, (session) => activateWorkspaceTab(session, pushEvidenceEntry(evidenceWorkspaceTab(session), entry)));
     show(key);
-  }, [changeKind, show, updateSession]);
+  }, [show, updateSession]);
 
   /** Background publish from a run: opens or marks the panel only while this chat is on screen. */
   const publishArtifact = useCallback(
@@ -232,7 +226,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
       const visible = visibleRef.current;
       const onScreen = visible.tab === "chat" && visible.loupistId === loupistId && visible.threadId === threadId;
       // The overlay sheet would take keyboard focus, so it never opens by itself.
-      const canOpen = kindRef.current === "materials" && layoutRef.current.open && onScreen && !session?.dismissed && !window.matchMedia(workspaceOverlayMedia).matches;
+      const canOpen = layoutRef.current.open && onScreen && !session?.dismissed && !window.matchMedia(workspaceOverlayMedia).matches;
       const open = layoutRef.current.open;
       const reading = open && onScreen && Date.now() - lastInteraction.current < 10_000 && session?.active_tab_id !== artifactTab.id;
       if (!canOpen || reading) {
@@ -253,7 +247,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
     const visible = visibleRef.current;
     const onScreen = visible.tab === "chat" && visible.loupistId === loupistId && visible.threadId === threadId;
     if (!onScreen || sessionsRef.current[key]?.dismissed || window.matchMedia(workspaceOverlayMedia).matches || window.innerWidth < MAP_REVEAL_MIN_WIDTH) return "none";
-    if (kindRef.current !== "materials" || (layoutRef.current.open && Date.now() - lastInteraction.current < 10_000)) return "badged";
+    if (layoutRef.current.open && Date.now() - lastInteraction.current < 10_000) return "badged";
     if (!layoutRef.current.open) setOpen(true);
     return "opened";
   }, [setOpen]);
@@ -447,13 +441,6 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
     [bridge, setOpen, updateSessions],
   );
 
-  /** Canonical header entry: switching panels never changes the active chat or its draft. */
-  const selectKind = useCallback((next: WorkspacePanelKind, key?: string) => {
-    changeKind(next);
-    const visible = visibleRef.current;
-    show(key ?? (visible.loupistId && visible.threadId ? chatSessionKey(visible.loupistId, visible.threadId) : undefined));
-  }, [changeKind, show]);
-
   /** Header split choice applies to every reader so switching content keeps the chosen split. */
   const selectSplit = useCallback((next: WorkspacePlacement, key?: string) => {
     updateLayout("dockByKind", { chart: next, reading: next });
@@ -492,8 +479,6 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
     .every((kind) => (layout.dockByKind[kind] ?? DEFAULT_DOCK[kind]) === placement);
 
   return {
-    kind,
-    selectKind,
     selectSplit,
     open,
     hydrated,

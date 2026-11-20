@@ -189,10 +189,6 @@ pub(crate) fn enable(state: &AppState) -> Result<(), CommandError> {
     enable_automatic(state, true)
 }
 
-pub(crate) fn enable_for_watching(state: &AppState) -> Result<(), CommandError> {
-    enable_automatic(state, false)
-}
-
 fn enable_automatic(state: &AppState, notifications: bool) -> Result<(), CommandError> {
     let _lock = SETTINGS_LOCK
         .lock()
@@ -250,6 +246,10 @@ pub(super) fn set_keep_running(
 }
 
 pub(crate) fn completed(state: &AppState, run: &Run) {
+    if run.quiet && run.status == crate::scheduled_tasks::types::RunStatus::Succeeded {
+        changed(&run.loupist_id);
+        return;
+    }
     // Results are read in the home Thread; a busy Thread receives them later.
     if let Err(error) = crate::chat::home::deliver_finished_runs(state, &run.loupist_id) {
         eprintln!("Scheduled result could not be posted to the Thread ({error})");

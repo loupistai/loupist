@@ -11,6 +11,7 @@
 @import "./styles/artifacts.css";
 @import "./styles/evidence.css";
 @import "./styles/charts.css";
+@import "./styles/market.css";
 @import "./styles/workspace-readers.css";
 @import "./styles/chat.css";
 @import "./styles/knowledge.css";
@@ -20,6 +21,7 @@
 @import "./styles/agents.css";
 @import "./styles/marketplace.css";
 @import "./styles/responsive.css";
+@import "./styles/composer.css";
 @import "./styles/memory.css";
 @import "./styles/lens-link.css";
 @import "tw-animate-css";
@@ -66,7 +68,7 @@
     --radius-sm: var(--gg-radius-xs);
     --radius-md: var(--gg-radius-sm);
     --radius-lg: var(--gg-radius-sm);
-    --radius-xl: var(--gg-radius-md);
+    --radius-xl: var(--gg-radius-lg);
     --radius-2xl: var(--gg-radius-lg);
     --radius-3xl: var(--gg-radius-xl);
     --radius-4xl: var(--gg-radius-xl);

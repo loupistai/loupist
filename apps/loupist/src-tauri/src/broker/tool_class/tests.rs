@@ -42,10 +42,9 @@ const NATIVE_FINANCE_READS: [ToolMethod; 12] = [
     M::DartOwnership,
     M::DartDividends,
 ];
-const SCHEDULE_CHANGES: [ToolMethod; 7] = [
+const SCHEDULE_CHANGES: [ToolMethod; 6] = [
     M::ScheduleCreate,
     M::ScheduleHandoff,
-    M::ScheduleWatch,
     M::ScheduleBriefing,
     M::ScheduleUpdate,
     M::ScheduleRunNow,
@@ -62,6 +61,8 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         .chain([
             M::McpConnect,
             M::McpCall,
+            M::FxRate,
+            M::AssetLookup,
             M::WebSearch,
             M::WebFetch,
             M::WorldJob,
@@ -85,7 +86,6 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         "dart_ownership",
         "dart_dividends",
         "run_results_list",
-        "plan_update",
         "web_search",
         "web_fetch",
         "source_save",
@@ -97,9 +97,12 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         "lens_file",
         "world_job",
         "conversation_memory",
+        "asset_lookup",
+        "price_read_save",
+        "schedule_quiet",
+        "fx_rate",
         "asset_page_read",
         "thesis_update",
-        "earnings_snapshot_save",
         "artifact_list",
         "artifact_read",
         "chart_query",
@@ -117,7 +120,7 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         M::BotMemory,
         M::WorldSchemaUpdate,
         M::ThesisUpdate,
-        M::EarningsSnapshotSave,
+        M::PriceReadSave,
     ];
     let credential_screened = [
         M::NoteSave,
@@ -129,7 +132,6 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         M::JournalSave,
         M::JournalReview,
         M::ThesisUpdate,
-        M::EarningsSnapshotSave,
     ];
     let pack_text = [M::LensRead, M::LensSearch, M::WorldRead, M::WorldSearch];
     for method in all_methods() {
@@ -151,8 +153,8 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         };
         assert_eq!(class.after_text, after_text, "{method:?} after text");
         let result_text = match method {
-            M::WebSearch | M::WebFetch | M::DartFilingRead => ResultText::ThirdParty,
             M::McpCall => ResultText::ByRoute,
+            M::DartFilingRead | M::WebSearch | M::WebFetch => ResultText::ThirdParty,
             _ => ResultText::Own,
         };
         assert_eq!(class.result_text, result_text, "{method:?} result text");
@@ -192,6 +194,8 @@ fn every_method_keeps_its_reviewed_provenance_and_retention() {
         (M::LensRead, "knowledge", SavedContext),
         (M::ConversationMemory, "knowledge", SavedContext),
         (M::AssetPageRead, "knowledge", SavedContext),
+        (M::AssetLookup, "openfigi.lookup", Discovery),
+        (M::FxRate, "fx-reference", AcquiredOriginal),
         (M::WorldbankSeries, "native-finance", AcquiredOriginal),
         (M::DefillamaRead, "native-finance", AcquiredOriginal),
         (M::KrxDailyQuote, "native-finance", AcquiredOriginal),
@@ -210,6 +214,7 @@ fn every_method_keeps_its_reviewed_provenance_and_retention() {
         (M::ArtifactRead, "artifact-store", Derived),
         (M::ChartQuery, "artifact-store", Derived),
         (M::WorkspaceCapture, "workspace", WorkspaceFile),
+        (M::PastedCapture, "chat-paste", UserProvided),
         (M::PythonRun, "python-worker", Derived),
         (M::DatasetDescribe, "dataset-store", SavedContext),
         (M::DatasetQuery, "dataset-store", SavedContext),
@@ -217,6 +222,8 @@ fn every_method_keeps_its_reviewed_provenance_and_retention() {
         (M::Calculate, "host-calculation", Derived),
     ];
     let publisher = [
+        M::AssetLookup,
+        M::FxRate,
         M::WebFetch,
         M::DartFinancials,
         M::DartFilingRead,
@@ -242,14 +249,16 @@ fn every_method_keeps_its_reviewed_provenance_and_retention() {
             Authorship::Publisher
         } else if matches!(
             method,
-            M::KisOperationSearch | M::KisRead | M::WorkspaceCapture
+            M::KisOperationSearch | M::KisRead | M::WorkspaceCapture | M::PastedCapture
         ) {
             Authorship::User
         } else {
             Authorship::Tool
         };
         assert_eq!(producer.author, author, "{method:?} author");
-        let retention = if !NATIVE_FINANCE_READS.contains(&method) {
+        let retention = if method == M::AssetLookup {
+            Retention::Dataset
+        } else if !NATIVE_FINANCE_READS.contains(&method) {
             Retention::Turn
         } else if matches!(method, M::KisOperationSearch | M::DartCompanyLookup) {
             Retention::Dataset

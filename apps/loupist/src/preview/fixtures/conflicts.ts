@@ -12,7 +12,7 @@ export async function prepareConflictsFixture(bridge: PreviewBridge) {
     id: `conflict-${index}`, relation: "SUPPLIES", endpoints, status: "disputed",
     claim: { id: `conflict-${index}`, relation: "SUPPLIES", endpoints, status: "disputed", proposition, attribution: sourceTitles[index], qualifiers: [], evidence: [{ spanId: `conflict-span-${index}`, role: "supports", attribution: sourceTitles[index] }], publicationTime: { precision: "date", value: `2026-10-${27 - index}` }, recordedAtMs: null, effectiveTime: null, validAt: null, invalidAt: null, expiredAt: null },
   }));
-  map.nodes = nodes.map(node => ({ id: node.id, label: node.name, kind: "entity", entityKind: node.kind, degree: 3, watched: node.id === nodes[0].id, held: false }));
+  map.nodes = nodes.map(node => ({ id: node.id, label: node.name, kind: "entity", entityKind: node.kind, degree: 3, watched: node.id === nodes[0].id }));
   map.edges = [...previewEdges.slice(2), ...edges].map(edge => ({ id: edge.id, kind: "claim", source: edge.endpoints[0].nodeId, target: edge.endpoints[1].nodeId, status: edge.status, relation: edge.relation }));
   map.worldRevisionId = "preview-conflicts";
   map.counts.entity = { total: nodes.length, shown: nodes.length, truncated: false };

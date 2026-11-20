@@ -2,6 +2,21 @@
 
 Bundled data tools are read-only and Loupist-scoped. Blockchain reads and the Korea Investment catalog have their own review rules below.
 
+## Asset lookup
+
+The Following search field submits its text on Enter or Search listings. The
+`asset_lookup` tool uses the same native lookup under the `openfigi.lookup` grant.
+A submitted lookup sends one bounded request to OpenFIGI. The projection keeps
+the listing's FIGI, name, ticker, exchange code, security type and market sector.
+Asset lookup is on by default for new Loupists and for existing Loupists without
+a saved choice. Each Loupist can turn it off in Connections. OpenFIGI receives
+the submitted text and this device's IP address.
+
+An optional API key raises the request limit. Saving the key activates it
+immediately in the native credential store. If OpenFIGI rejects the key, the
+lookup reports that error. Deleting the key restores the standard request limit
+and preserves each Loupist's access setting.
+
 ## Agent-facing data services
 
 The model loads an enabled connection by exact ID with `capability_load`; `@`
@@ -18,19 +33,19 @@ market data. Static contracts are in `agent/tool-catalog.json`.
 | `charts` | `chart_query`, `chart_publish`, `grid_publish` ([grid cells](../analysis/grids.md#grid-cells)) |
 | `openbb` | `mcp__openbb__*` reads; nine common price, fundamentals, dividend and filing tools are active on load, the curated rest by name through `activate_tools`, others after discovery; a warm Chat gets back exactly the set its last turn ended with |
 | `world-bank` | `worldbank_series` |
-| `onchain` | `defillama_read` (the wallet entry has no agent tool) |
+| `onchain` | `defillama_read` |
 | `krx` | `krx_daily_quote` |
 | `koreainvestment` | `kis_operation_search`, `kis_read` |
 | `opendart` | `dart_company_lookup`, `dart_filing_search`, `dart_filing_read`, `dart_financials`, `dart_major_report`, `dart_ownership`, `dart_dividends` |
 | `web-research` | `web_search`, `web_fetch` |
+| `openfigi.lookup` | `asset_lookup` (core tool, gated by the Loupist’s grant) |
 
-Each native vendor (OpenDART, KRX, Korea Investment, World Bank, DefiLlama) is one row
-of `apps/loupist/src-tauri/src/finance_data/vendor.rs`: its entry id, the hosts its
-reads reach, what setup stores and verifies, and its read tools. The bundled catalog
-does not load when a native entry's `network_hosts` or credential kinds differ from its
-row, a read's result must name the vendor that serves its tool, and tests hold the API
-roots and catalog components to the rows. It is a table, not a trait, because the
-vendors share no request shape.
+Each native vendor (OpenDART, KRX, Korea Investment, World Bank, DefiLlama,
+OpenFIGI) has one row in `apps/loupist/src-tauri/src/finance_data/vendor.rs`.
+The row records the entry ID, permitted hosts, credential requirements and native
+finance read tools. The bundled catalog checks that each connector declares the
+vendor's hosts and credential requirements. Tests check API hosts and tool
+components against the vendor rows.
 
 Market data bundles its runtime/provider packages: base `openbb` plus only the extensions the runtime manifest reaches, not `openbb[all]` ([OpenBB runtime](../../apps/loupist/openbb/README.md#development) owns the list). `openbb.platform` supplies
 keyless providers and is enabled for new Loupists; SEC additionally requires its
@@ -38,38 +53,36 @@ configured contact email. Without it, runs leave the SEC provider out and the lo
 result carries a model-visible notice that SEC is unavailable until the user adds
 the email, naming `connection_setup` with the entry id so the model can offer the
 [setup card](connections.md#connections-and-credentials). Credentialed providers have separate entries. New
-Loupists enable only keyless entries without required setup: Market data platform, World
-Bank, DefiLlama and Web Research. Public blockchains is host-only: it starts disabled and
-turns on for every Loupist when the user adds the first wallet address, and a later
-opt-out stays. KIS, KRX and OpenDART appear in the optional Korea group and start disabled, with setup
-only when the user opens their connection details. Rust
-filters read-only tools/provider choices to the Loupist's active bindings and rejects
-response-provider mismatches. Host reads for asset pages, watch checks and earnings
-share market-aware provider selection (`commands/tool_executor/assets.rs`): an
-equity/ETF candidate must interpret the symbol as that asset's listing. A bare
-Canadian symbol goes only to TMX, including when paid vendors are enabled; `.TO`
-or `.V` symbols try TMX first and may fall back only to yfinance, whose pinned
-package preserves these Yahoo listing suffixes. Explicit foreign venues from
-`knowledge/assets/class.rs` require their existing Yahoo suffix (`7203.T`,
-`SAP.DE`, `BP.L`, and the other reviewed venue mappings), and only yfinance is
-verified for these suffixes; bare foreign symbols have no candidate. Free-form,
-unrecognised venues (including NGM, PCX, OTC and empty market strings) keep the
-US bare-symbol default. Cboe and Nasdaq equity routes still require known US
-listings, and TMX is excluded outside Canada. Explicitly named providers must
-also match the listing and remain pinned. An
-unpinned read tries up to three enabled, tool-accepted candidates after failures or
-empty rows, including within a caller's allowed list; a single-provider list never
-falls back. If all later attempts fail, an earlier empty result remains a truthful
-empty result. When no provider is eligible, callers retain `needs_connection`,
-including a pinned SEC read while SEC is unavailable; this does not enter failure
-retry backoff.
-The result names the provider that served it. Each attempt keeps the
-ordinary retention and identical-request `max_age` rules.
+Loupists enable keyless entries without required setup, including the Market data
+platform, World Bank, DefiLlama, Web Research and Asset lookup. KIS, KRX and
+OpenDART start disabled in the optional Korea group. Rust filters read-only tool
+and provider choices against the Loupist's active bindings and rejects provider
+mismatches. The host sends saved provider settings only for providers in that
+run's grant. A failed platform connect marks its Settings row unavailable until
+a connect succeeds. A price setup that could not connect names the platform in
+its Bot report for assets still missing a price.
+
+Congress.gov bill and amendment lookups accept a congressional identifier or its
+official HTTPS API URL. The sidecar extracts the identifier before the provider
+constructs the request. Keyed lookups and their follow-up reads stay on
+`api.congress.gov`. Public congressional documents and SEC filings use their
+respective official sites. A redirect from a credentialed provider host may
+continue only on the same HTTPS origin, even when the run grants other providers.
+
+A [saved price read](../knowledge/asset-pages.md#saved-price-reads) reuses the
+original provider arguments and current grants. The replay keeps the provider's
+date and currency fields and the retained dataset reference. Revoking the grant
+leaves the last stored price available.
 KIS account reads require an account profile;
 its exposed inventory contains no order operations, every account operation carries a
 reviewed `holding_fields` list whose values Rust hides from every model-facing copy
-([holdings redaction](../architecture.md#trust)), and `kis_read` follows
-bounded continuation pages. KRX covers KOSPI and KOSDAQ with independent daily
+([account-field boundary](../runtime/untrusted-text.md#untrusted-text)), and `kis_read` follows
+bounded continuation pages. `privacy/account_fields.rs` applies this boundary before
+an account result reaches the model, retained datasets, result references, charts or
+exports, independently of stored positions. Its `account_fields_visible` function is
+the single decision point for a connection and always returns false. Unreviewed
+account operations are refused, and account results cannot become Sources or Memory.
+KRX covers KOSPI and KOSDAQ with independent daily
 trading service approvals. Daily reads skip provider requests for published KRX holidays while keeping them in `missing_dates`, and report unavailable dividend and split values as null.
 Setup verifies both markets and keeps their coverage
 with the verified key; one approved market is enough to enable the connection.
@@ -79,8 +92,6 @@ the next step KRX's reader puts on the error (another vendor supplies its own);
 an explicit `market` selects just that service. Every
 OpenDART tool, including the capital-decision, ownership and dividend reads, is on the
 unattended allowlist; dividend notice searches use the current Seoul date.
-`dart_major_report` and `dart_dividends` also serve asset-page
-refreshes ([Korean asset rows](../analysis/korea.md#korean-asset-rows)).
 [Financial analysis](../analysis/datasets.md#data-and-provenance) owns their result fields.
 Web search routing is the Web Research `search_policy` setting
 (`apps/loupist/src-tauri/src/web/search_provider.rs`). Automatic uses the Chat
@@ -126,8 +137,8 @@ one. Vendor keys (`x-widget_config`, provider-keyed `choices`) and titles are
 removed and description sentences marked for other providers go. Listed choices
 become the property's enum only when every enabled provider that accepts it lists
 them, so a provider without choices (TMX intervals) keeps the upstream union. When
-a provider rejects some of the union's values, the description says which
-(`yfinance rejects unadjusted`), up to twelve values in all; longer disjoint lists
+a provider rejects some of the union's values, the description names up to
+twelve rejected values. Longer disjoint lists
 such as screener industries keep the bare union. The nine default cards fall from
 21,860 to about 8,250 bytes for the keyless providers.
 No model-facing text names the runtime; the model and the user see "market
@@ -136,13 +147,32 @@ data", and the capability index lists no provider ids. Scraped providers
 effort. Their failures come from individual requests (layout changes, consent
 walls, blocking), so there is no active health probe: the first failure of one
 in a turn returns a hint naming only official providers enabled for the run, with
-the same listing-market limits. TMX is never described as generally preferred.
+the same listing-market limits. For an explicitly unadjusted Yahoo daily equity
+read, the sidecar checks split events through the present before cutting the
+chart to the requested range. It uses Yahoo's Close if the share basis is
+unchanged. A later split, missing split information, or a non-daily interval
+returns the supported adjustments `splits_only` and `splits_and_dividends`.
+TMX is never described as generally preferred.
 
 Sequential turns with matching Loupist/authority can reuse a warm OpenBB process.
 The host resets its tools to the control surface before reuse; concurrent turns
 lease separate processes. Credentials arrive through private bootstrap, and the
 worker's configuration/cache directories are private. These processes are not an
 app-global connection or a Chat transcript.
+
+OpenBB imports its provider packages before it answers `initialize`: 21-34 s at
+load 34-51 and 39-50 s at load 100-115 on an 8-core Apple Silicon Mac. The
+bundled runtime therefore has 120 s to start (custom MCP servers keep 30 s), and
+a start that runs out says market data was still starting, not that a request
+timed out. The pool (`mcp/pool.rs`) owns every start. A turn that finds a start
+with its authority under way waits for it instead of starting another, and a
+start whose turn stopped waiting stays for the next turn. Two seconds after
+launch the app starts one process for the first available Loupist whose enabled
+market-data grants map no saved key, so it never reads the keychain at launch;
+with no such grant nothing starts. A process that has served no turn may go to
+any Loupist whose authority matches; after its first turn it belongs to that
+Loupist. Unleased, it expires after the ordinary 8 idle minutes. App exit stops
+idle processes and aborts starts under way, which ends their process groups.
 
 Successful acknowledged data reads can supply turn-local result references and
 Source material. Capability administration, Skill reads and result-list discovery
@@ -155,24 +185,13 @@ owns calculation and dataset/import/chart provenance.
 
 ### Public blockchains and DefiLlama
 
-The `onchain` plugin holds two keyless entries. `onchain.wallets` (Public blockchains,
-`finance_data/onchain.rs`) reads the public balances of the wallet addresses in
-[Your holdings](../runtime/storage-authority.md#where-data-lives) from fixed https hosts: `mempool.space`
-for Bitcoin (confirmed funded minus spent), the Blockscout explorers for Ethereum, Base,
-Arbitrum, Optimism and Polygon (the native coin plus ERC-20 tokens the explorer prices;
-unpriced tokens are only counted) and Solana's mainnet RPC for SOL. Requests follow no
-redirects, responses are bounded to 2 MiB, and each host gets at most one request per
-second from the app; a failure on any network fails that wallet's read, which keeps its
-last good snapshot. The connection has no tool: addresses and balances go straight into the
-local store, and the agent sees only held symbols.
-
-`defillama.tvl` (DefiLlama, `finance_data/defillama.rs`) reaches only `api.llama.fi` and
+The `onchain` plugin's keyless `defillama.tvl` (DefiLlama, `finance_data/defillama.rs`) reaches only `api.llama.fi` and
 `stablecoins.llama.fi`. Its agent tool `defillama_read { route: protocol | chain |
 stablecoin, id, start?, end? }` returns dated daily values with `max_age` and the as-of
 cutoff ([rules](../analysis/datasets.md#data-and-provenance)); protocol and chain IDs cannot be dot path segments.
 It is on the unattended allowlist,
 a saved result is publisher material, and like other provider reads it is refused after a
-custom-connection result in the same turn, since its `id` is part of the request path. Watchers read it on the host for a coin's chain or protocol (value locked).
+custom-connection result in the same turn, since its `id` is part of the request path.
 
 ### Maintaining the Korea Investment read catalog
 
@@ -188,7 +207,7 @@ After a reviewed pin update, omit `--check` and review the generated catalog wit
 connector tests. The generator rejects a dirty/wrong revision, non-GET operations
 and unreviewed read/write inventory changes.
 
-The generator also writes the holdings review: every account operation gets a sorted
+The generator also writes the account-field review: every account operation gets a sorted
 `holding_fields` list of its response fields except identity, codes, names, dates and
 the market's own price, so a new account field is hidden until reviewed in
 `generate-kis-read-api.py`. A blank-parameter review also makes optional, with an empty

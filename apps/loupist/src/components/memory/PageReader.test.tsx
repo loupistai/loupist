@@ -23,6 +23,10 @@ it("reads sections in order, each with its basis chip, and marks a contested one
   expect(within(section("facts")).getByText("You said")).toBeVisible();
   expect(within(section("views")).getByText("Loupist’s view")).toBeVisible();
   expect(within(section("views")).getByText(/Not sure: Based on one analyst report/)).toBeVisible();
+  // A page chip may be shortened on screen; its name and tooltip keep the whole title.
+  const pageChip = within(section("views")).getByRole("button", { name: /^From / });
+  expect(pageChip.textContent!.length).toBeGreaterThan("From ".length);
+  expect(pageChip).toHaveAttribute("title", pageChip.textContent);
   const contested = within(section("risks")).getByRole("button", { name: "Sources disagree" });
   expect(section("risks")).toHaveAttribute("data-contested");
   await user.click(contested);
@@ -67,7 +71,7 @@ it("keeps an idea's status and a principle's own fields", async () => {
   expect(within(idea.page).getByText("Not checked yet")).toBeVisible();
 });
 
-it("shows the host-default perspective title and English default headings in Korean", async () => {
+it("shows English default headings in Korean and the perspective title as written", async () => {
   const { default: i18n } = await import("@/i18n");
   await i18n.changeLanguage("ko");
   try {
@@ -81,9 +85,8 @@ it("shows the host-default perspective title and English default headings in Kor
         return view;
       });
     }, "페이지");
-    expect(within(page).getByRole("heading", { level: 2 })).toHaveTextContent("관점");
+    expect(within(page).getByRole("heading", { level: 2 })).toHaveTextContent(/^Outlook$/);
     expect(within(page).getByRole("heading", { name: "신념" })).toBeVisible();
-    expect(within(page).queryByText("Outlook")).toBeNull();
     expect(within(page).queryByRole("heading", { name: "Beliefs" })).toBeNull();
   } finally {
     await i18n.changeLanguage("en");

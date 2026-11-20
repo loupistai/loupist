@@ -61,6 +61,8 @@ export type NumberCheck = {
   pointer?: string,
   /** The matched passage text (UTF-8 byte offsets into the evidence excerpt). */
   span?: ChatEvidenceMatch,
+  /** The fallback match in retained content when the excerpt has no span. */
+  context?: NumberCheckContext,
   /** Up to four fields of the matched data row. */
   fields?: Array<NumberCheckField>,
   calc?: NumberCheckCalc,
@@ -75,6 +77,14 @@ export type NumberCheckCalc = {
   inputs: Array<NumberCheckInput>,
   /** Rows × columns of a DCF or reverse-DCF grid, which has no single value. */
   grid?: [number, number],
+};
+
+/** A bounded part of the retained content that held a fallback passage match. */
+export type NumberCheckContext = {
+  text: string,
+  /** End-exclusive UTF-8 byte offsets of the matched number inside `text`. */
+  start: number,
+  end: number,
 };
 
 /** One field of a matched data row, as the provider printed it. */
@@ -94,76 +104,10 @@ export type NumberCheckInput = {
   evidence_id?: string,
   /** Rust's check of a cited input against its evidence. */
   status?: NumberCheckStatus,
+  /** Whether a conversion uses the amount currency declared in the request. */
+  currency_basis?: string,
 };
 
 export type NumberCheckKind = "calculated" | "passage" | "data" | "step";
 
 export type NumberCheckStatus = "matched" | "rounded" | "not_found" | "differs";
-
-/** A paragraph that is only a link to a grid result, shown as a card. */
-export type SensitivityCard = {
-  link_index: number,
-  evidence_id: string,
-  subject: string,
-  operation: string,
-  row_values: Array<number>,
-  column_values: Array<number>,
-  values: Array<Array<number | null>>,
-  unit: string,
-  forecast_years: number,
-  reference?: SensitivityReference,
-  above_reference?: Array<Array<boolean>>,
-  price?: SensitivityPrice,
-  amount_unit?: string,
-  inputs: Array<SensitivityInput>,
-  formulas: Array<string>,
-};
-
-/**
- * A `dcf_grid` or `reverse_dcf` result as the host computed it; never one
- * point value. Rows are discount rates, columns long-run growth rates.
- */
-export type SensitivityGrid = {
-  operation: string,
-  row_values: Array<number>,
-  column_values: Array<number>,
-  values: Array<Array<number | null>>,
-  unit: string,
-  forecast_years: number,
-  reference?: SensitivityReference,
-  above_reference?: Array<Array<boolean>>,
-  price?: SensitivityPrice,
-  amount_unit?: string,
-  inputs: Array<SensitivityInput>,
-  formulas: Array<string>,
-};
-
-/** One grid input (cash flow, shares, net debt, growth) and its source. */
-export type SensitivityInput = {
-  name: string,
-  label?: string,
-  display: string,
-  evidence_id?: string,
-  status?: NumberCheckStatus,
-};
-
-/** The price a reverse-DCF grid solves for, with its date and source. */
-export type SensitivityPrice = {
-  value: number,
-  display: string,
-  currency?: string,
-  date?: string,
-  evidence_id?: string,
-  status?: NumberCheckStatus,
-};
-
-/** The past growth a reverse-DCF grid is read against (usually a CAGR). */
-export type SensitivityReference = {
-  value_pct: number,
-  /** The period it covers, as the calculation was labelled ("FY2020–FY2025"). */
-  label?: string,
-  /** The years it spans, from a cited `cagr` result. */
-  years?: number,
-  evidence_id?: string,
-  status?: NumberCheckStatus,
-};

@@ -130,11 +130,11 @@ const listed = (id: string, source: string, name: string, focus: string, author:
   ({ id, source, name, focus, author, language, license, assetClasses, counts: { methods: counts[0], principles: counts[1], names: counts[2], links: counts[3] }, stars, forks, updatedAt, hasPreview });
 export const MOCK_GALLERY_ENTRIES: GalleryEntry[] = [
   listed("6d1f8a52-1b9c-4b8e-9b0e-2f1d7c3e5a10", "github.com/kimj/loupist-semiconductor-supply-chain", "Semiconductor supply chain", "Fabs, equipment makers and export rules.", "Kim J.", "en", ["stocks", "etfs"], [14, 6, 312, 1204], 120, 34, "2026-10-25T09:00:00Z", true, "CC-BY-4.0"),
-  listed("2a7c3e5a-6d1f-4b8e-9b0e-1b9c8a52f1d7", "github.com/hanul-lab/loupist-battery-value-chain", "2차전지 밸류체인", "양극재, 셀 제조사와 완성차 수주를 따라가요.", "한울 리서치", "ko", ["stocks"], [9, 4, 186, 540], 88, 41, "2026-10-27T02:00:00Z"),
+  listed("2a7c3e5a-6d1f-4b8e-9b0e-1b9c8a52f1d7", "github.com/hanul-lab/loupist-battery-value-chain", "2차전지 밸류체인", "양극재, 셀 제조사와 완성차 수주를 따라갑니다.", "한울 리서치", "ko", ["stocks"], [9, 4, 186, 540], 88, 41, "2026-10-27T02:00:00Z"),
   listed("9b0e2f1d-7c3e-4a10-8d1f-8a521b9c4b8e", "github.com/tidewater-notes/loupist-dividend-growers", "Dividend growers", "Companies that raise dividends through a full cycle.", "Tidewater Notes", "en", ["stocks", "etfs"], [11, 8, 140, 362], 64, 19, "2026-10-12T11:00:00Z", false, "CC-BY-SA-4.0"),
   listed("4b8e9b0e-2f1d-4c3e-9a10-6d1f8a521b9c", "github.com/quartz-desk/loupist-rate-cycle", "Rate cycle watch", "Central bank paths, curve shape and what they do to duration.", null, "en", ["bonds", "economy"], [7, 5, 64, 210], 41, 12, "2026-10-21T15:00:00Z"),
   listed("1b9c8a52-4b8e-4f1d-8c3e-5a102f1d7c3e", "github.com/opal-ledger/loupist-onchain-treasuries", "Onchain treasuries", "Stablecoin reserves, issuer reports and redemption flows.", "Opal Ledger", "en", ["crypto"], [6, 3, 92, 280], 23, 7, "2026-09-30T08:00:00Z", true, "CC0-1.0"),
-  listed("8a521b9c-5a10-4e2f-9d7c-3e6d1f4b8e9b", "github.com/morrow-fund-notes/loupist-korea-index-etfs", "국내 지수 ETF 비교", "보수, 추적오차, 분배금으로 ETF를 비교해요.", "모로우", "ko", ["etfs"], [5, 2, 48, 96], 15, 5, "2026-10-18T04:00:00Z", false, "CC-BY-NC-4.0"),
+  listed("8a521b9c-5a10-4e2f-9d7c-3e6d1f4b8e9b", "github.com/morrow-fund-notes/loupist-korea-index-etfs", "국내 지수 ETF 비교", "보수, 추적오차, 분배금으로 ETF를 비교합니다.", "모로우", "ko", ["etfs"], [5, 2, 48, 96], 15, 5, "2026-10-18T04:00:00Z", false, "CC-BY-NC-4.0"),
 ];
 
 /** A neutral node-and-link sketch standing in for a Map screenshot (preview images are PNGs in a real index). */

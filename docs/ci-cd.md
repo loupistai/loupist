@@ -193,6 +193,15 @@ linked files. The current package-prerequisite checks run on every hit; a missin
 or invalid cache rebuilds from pinned sources. Caches contain only staged resources,
 never `.venv`, credentials or user data. Signed release jobs do not use this cache:
 they stage afresh with their signing identity after full exact-commit CI.
+
+The Rust test legs on Linux and macOS and `native-e2e-linux` restore the staged
+embedding model from its own cache before staging, keyed on the OS and the hashes
+of `src/knowledge/embed_assets/pin.json`, its `NOTICE`, `stage-embed-assets.py` and
+`check_embed_assets.py`, with no fallback keys. `stage-embed-assets.py --ensure`
+then checks every restored file against the pins and downloads the 265 MB upstream
+model only on a miss or a mismatch. The Linux and macOS `tests` legs save the key
+after staging, on main pushes only. The macOS native and package jobs carry the
+model in their runtime cache above, and signed release jobs download it afresh.
 [GitHub cache access rules](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
 and the [Rust cache key contract](https://github.com/Swatinem/rust-cache#example-usage)
 explain the trusted-main writes and cache selection. Tests and eval use the same
@@ -295,8 +304,8 @@ sh apps/loupist/scripts/check-macos-app-bundle.sh "/path/to/Loupist.app"
 `native-e2e-linux` stages that runtime only when the native job is selected.
 `verify-rust` still runs the offline runtime check on Linux when native is skipped.
 
-The script checks Pi/OpenBB, the pinned Python runtime and embedding inventory,
-embedding bytes, safe links, architecture, launchers and signatures, then runs
+The script checks Pi/OpenBB, the pinned Python runtime, the embedding inventory
+and its pinned digests, safe links, architecture, launchers and signatures, then runs
 the offline Pi/OpenBB sidecar checks and the signed Python worker. The worker
 must carry the hardened runtime and its executable-memory entitlement. The
 Loupist app binary must not. The script does not download missing resources.

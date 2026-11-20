@@ -21,8 +21,5 @@ derived figure from `calculate` with its sources in `input_sources`:
 
 Read [dividend checks](references/dividend-checks.md) for coverage traps and
 Korean dividend practice, and before showing what dividend growth the price
-implies: that is a `reverse_dcf` card with the dividend `cagr` as its reference,
-linked alone in its own paragraph. Compare two or more
-companies in one `grid_publish` table. Work out yearly income only when the user
-has stated a share count; never ask what they hold. End with a conditional view:
-what supports the dividend and what would threaten it.
+implies. Work out yearly income only from a known share count. Give a
+conditional view of what supports the dividend and what would threaten it.

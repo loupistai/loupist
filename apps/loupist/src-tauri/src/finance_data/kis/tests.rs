@@ -429,51 +429,6 @@ fn token_error_bodies_are_typed_and_never_echo_the_secret() {
     ));
 }
 
-#[test]
-fn user_context_kis_recorded_balance_import() {
-    let manifest = manifest();
-    let profile = account_only_profile();
-    let query: KisToolQuery = serde_json::from_value(kis_holdings_query()).unwrap();
-    let prepared = prepare_kis_request(
-        &manifest,
-        &query,
-        KisEnvironment::Real,
-        Some(&profile),
-        KisRequestAuthority::AgentRead,
-    )
-    .unwrap();
-    let raw = RawProviderResponse {
-        bytes: include_bytes!("fixtures/holdings_balance.json").to_vec(),
-        source_url: prepared.url.to_string(),
-        retrieved_at: "2026-10-28T00:00:00Z".into(),
-        continuation: None,
-    };
-    let result =
-        normalize_kis_account_response(&prepared, &one_page(raw.clone()), Some(&profile)).unwrap();
-    let positions = kis_holdings_positions(&result).unwrap();
-    assert_eq!(positions[0].quantity, "10");
-    assert_eq!(positions[0].cost_basis.as_deref(), Some("65000.125"));
-    let store = crate::store::SqliteStore::open_in_memory().unwrap();
-    let snapshot = store
-        .save_holdings_snapshot(crate::store::user_context::HoldingsSource::Kis, positions)
-        .unwrap();
-    assert_eq!(store.holdings_latest().unwrap(), Some(snapshot));
-    let capped = KisPages {
-        pages: vec![raw],
-        stop: KisPageStop::PageCap,
-    };
-    let partial = normalize_kis_account_response(&prepared, &capped, Some(&profile)).unwrap();
-    assert!(kis_holdings_positions(&partial).is_err());
-    assert!(prepare_kis_request(
-        &manifest,
-        &query,
-        KisEnvironment::Real,
-        None,
-        KisRequestAuthority::AgentRead
-    )
-    .is_err());
-}
-
 fn prepared_for<'a>(
     manifest: &'a KisManifest,
     operation_id: &str,
@@ -745,18 +700,15 @@ async fn continuation_stops_honestly_without_a_cursor_on_a_repeat_or_a_failed_pa
 }
 
 #[tokio::test]
-async fn multi_page_balances_import_every_position() {
+async fn multi_page_account_reads_keep_every_result_row() {
     let manifest = manifest();
     let profile = account_only_profile();
-    let query: KisToolQuery = serde_json::from_value(kis_holdings_query()).unwrap();
-    let prepared = prepare_kis_request(
+    let prepared = prepared_for(
         &manifest,
-        &query,
-        KisEnvironment::Real,
+        "domestic_stock.inquire_balance",
+        &[],
         Some(&profile),
-        KisRequestAuthority::AgentRead,
-    )
-    .unwrap();
+    );
     let balance = |symbol: &str, cursor: &str| {
         json!({"rt_cd": "0", "msg_cd": "MCA00000", "msg1": "ok",
                // Real cursors can embed the account number; they never reach the result.
@@ -785,11 +737,12 @@ async fn multi_page_balances_import_every_position() {
         result["provenance"]["last_page_retrieved_at"],
         "2026-11-02T01:15:01.000Z"
     );
-    let positions = kis_holdings_positions(&result).unwrap();
     assert_eq!(
-        positions
+        result["data"]["response"]["output1"]
+            .as_array()
+            .unwrap()
             .iter()
-            .map(|position| position.symbol.as_str())
+            .map(|row| row["pdno"].as_str().unwrap())
             .collect::<Vec<_>>(),
         ["005930", "000660"]
     );

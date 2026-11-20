@@ -1,45 +1,15 @@
 import type { GrowthEvent, JournalRecord, KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode } from "../contracts/knowledge";
 import type { InboxItem } from "../contracts/scheduled";
-import type { AssetChangeRow, AssetDelta } from "../contracts/assets";
-import { nodeColorKey } from "../knowledge/mapKinds";
-import { daysUntil, firstSentence, followedBullet, morningMessage, sinceDayOptions, type MorningInputs } from "./morningMessage";
+import { botNewsDue, daysUntil, firstSentence, morningMessage, sinceDayOptions, type MorningInputs } from "./morningMessage";
 import { formatDate } from "../i18n/format";
-
-const assetRow = (kind: AssetChangeRow["kind"], factDate: string, material = true): AssetChangeRow =>
-  ({ id: `${kind}:${factDate}`, kind, factDate, recordedAtMs: 0, facts: {}, evidence: [{ tool: "dart_filing_search", title: "OpenDART", url: "https://dart.fss.or.kr/" }], new: true, material });
-const delta = (assetId: string, rows: AssetChangeRow[], flags: Partial<AssetDelta> = {}): AssetDelta =>
-  ({ assetId, symbol: assetId.toUpperCase(), market: "KRX", name: assetId, class: "equity", rows, moved: false, crossed: false, ...flags });
-
-describe("what you follow in the morning message", () => {
-  it("orders assets by a moved read, a crossed line, a filing or results row, then a material price move", () => {
-    const bullet = followedBullet([
-      delta("price-only", [assetRow("price", "2026-10-30")]),
-      delta("filing", [assetRow("price", "2026-10-30"), assetRow("filing", "2026-10-29")]),
-      delta("crossed", [assetRow("thesis", "2026-10-28")], { moved: true, crossed: true }),
-      delta("quiet", [assetRow("price", "2026-10-30", false)]),
-      delta("moved", [assetRow("results", "2026-10-29"), assetRow("thesis", "2026-10-29")], { moved: true }),
-    ])!;
-    expect(bullet.rows.map(item => item.delta.assetId)).toEqual(["moved", "crossed", "filing"]);
-    // Each asset shows its most material row: the move, then the filing before the price.
-    expect(bullet.rows.map(item => item.row.kind)).toEqual(["thesis", "thesis", "filing"]);
-    expect(bullet).toMatchObject({ more: 1, nextAssetId: "price-only" });
-  });
-
-  it("is omitted on a first visit and when nothing material changed, and counts toward the lead", () => {
-    const quiet = [delta("quiet", [assetRow("price", "2026-10-30", false)])];
-    expect(followedBullet(quiet)).toBeUndefined();
-    const moved = [delta("moved", [assetRow("thesis", "2026-10-30")], { moved: true })];
-    expect(morningMessage({ ...base, assets: moved }).lead).toEqual({ kind: "count", count: 1, sinceMs: LAST_SEEN });
-    expect(morningMessage({ ...base, lastSeenAtMs: undefined, assets: moved }).followed).toBeUndefined();
-  });
-});
+import { mockAssetId } from "../bridge/mock/assets";
 
 const NOW = new Date(2026, 9, 31, 9, 0).getTime();
 const HOUR = 3_600_000;
 const LAST_SEEN = NOW - 3 * 24 * HOUR;
 
 const node = (id: string, label: string, extra: Partial<KnowledgeMapNode> = {}): KnowledgeMapNode =>
-  ({ id, kind: "entity", label, entityKind: "Organization", degree: 1, watched: false, held: false, ...extra });
+  ({ id, kind: "entity", label, entityKind: "Organization", degree: 1, watched: false, ...extra });
 const claim = (id: string, source: string, target: string): KnowledgeMapEdge => ({ id, kind: "claim", source, target, relation: "supplies" });
 const map = (nodes: KnowledgeMapNode[], edges: KnowledgeMapEdge[] = []) => ({ nodes, edges } as unknown as KnowledgeMap);
 let sequence = 0;
@@ -65,33 +35,30 @@ const margin = node("margin", "Operating margin", { entityKind: "Metric" });
 const base: MorningInputs = { language: "en", nowMs: NOW, lastSeenAtMs: LAST_SEEN, map: map([hanul, morrow, margin], [claim("c1", "morrow", "hanul"), claim("c2", "hanul", "margin")]) };
 
 describe("morning message", () => {
-  it("summarizes what changed since the last visit with companies before metrics", () => {
-    const message = morningMessage({ ...base, events: [
-      event("entity_added", "margin", LAST_SEEN + HOUR), event("entity_added", "hanul", LAST_SEEN + 2 * HOUR),
-      event("entity_added", "hanul", LAST_SEEN + 3 * HOUR), event("claim_added", "c1"), event("schema_extended", null),
-      event("entity_added", "archived-or-missing"),
-    ] }, "Tuesday");
-    // Each chip takes the color the Map canvas fills its node with: the metric keeps the receded metric mark.
-    expect(message.changed).toEqual({ names: 2, links: 1, more: 0, chips: [
-      { id: "hanul", label: "Hanul Precision", swatch: nodeColorKey(hanul) },
-      { id: "margin", label: "Operating margin", swatch: nodeColorKey(margin) },
-    ] });
-    expect(nodeColorKey(margin)).toBe("metric");
-    expect(message.lead).toEqual({ kind: "count", count: 1, sinceMs: LAST_SEEN });
+  it("counts every line it shows: the briefing and each check; the Map's growth is not news in Bot", () => {
+    const message = morningMessage({ ...base, bot: true, events: [event("entity_added", "hanul"), event("claim_added", "c1")],
+      briefing: briefing(), journal: [check("j1", "2026-11-04")] });
+    expect(message.count).toBe(1 + 1);
   });
 
-  it("caps name chips at five and counts the rest", () => {
-    const nodes = Array.from({ length: 7 }, (_, index) => node(`n${index}`, `Company ${index}`));
-    const message = morningMessage({ ...base, map: map(nodes), events: nodes.map((item) => event("entity_added", item.id)) });
-    expect(message.changed?.chips).toHaveLength(5);
-    expect(message.changed?.more).toBe(2);
+  it("asks what changed only about a name the user follows, even when an older host still marks a name held", () => {
+    // Hosts before holdings left the app sent \`held\`; it carries no meaning now.
+    const legacy = { ...morrow, held: true } as KnowledgeMapNode;
+    const message = morningMessage({ ...base, map: map([hanul, legacy, margin]), events: [event("entity_added", "morrow"), event("entity_added", "hanul")] }, "Tuesday");
+    expect(message.questions.filter((question) => question.template === "changed").map((question) => question.params)).toEqual([{ name: "Hanul Precision", date: "Tuesday" }]);
+  });
+
+  it("asks Bot nothing built from the Map", () => {
+    const message = morningMessage({ ...base, bot: true, events: [event("entity_added", "hanul"), event("claim_added", "c1"), event("claim_disputed", "c2")],
+      watchlist: [{ assetId: mockAssetId("Apple"), name: "Apple" }] }, "Tuesday");
+    expect(message.questions.map((question) => question.template)).toEqual(["briefing", "general", "markets"]);
   });
 
   it("picks three questions in priority order without repeating a template or subject", () => {
     const message = morningMessage({ ...base,
       events: [event("entity_added", "hanul"), event("claim_added", "c1"), event("claim_added", "c2"), event("source_retained", null, LAST_SEEN + HOUR, "Q3 operating review")],
       journal: [check("j1", "2026-11-04")],
-      watchlist: [{ symbol: "AAPL", market: "US", displayName: "Apple", addedAtMs: 0 }],
+      watchlist: [{ assetId: mockAssetId("Apple"), name: "Apple" }],
     }, "Tuesday");
     expect(message.questions).toEqual([
       { template: "changed", params: { name: "Hanul Precision", date: "Tuesday" }, reason: { key: "new", params: {} } },
@@ -108,8 +75,7 @@ describe("morning message", () => {
 
   it("starts a first visit from the watchlist, the focus and what the Loupist knows", () => {
     const message = morningMessage({ ...base, lastSeenAtMs: undefined, events: [event("entity_added", "hanul")], focus: "Korean semiconductors",
-      watchlist: [{ symbol: "005930", market: "KR", displayName: null, addedAtMs: 0 }] });
-    expect(message.lead).toEqual({ kind: "toLook", count: 1 });
+      watchlist: [{ assetId: mockAssetId("005930"), name: "005930" }] });
     expect(message.questions).toEqual([
       { template: "briefing", params: { symbol: "005930" }, reason: { key: "watching", params: {} } },
       { template: "focus", params: { focus: "Korean semiconductors" } },
@@ -124,7 +90,7 @@ describe("morning message", () => {
 
   it("says nothing new when nothing changed and the briefing was already read", () => {
     const message = morningMessage({ ...base, events: [], briefing: briefing({ finishedAtMs: LAST_SEEN - HOUR, readAtMs: LAST_SEEN }) });
-    expect(message).toMatchObject({ lead: { kind: "nothingNew", sinceMs: LAST_SEEN }, changed: undefined, briefing: undefined, checks: [] });
+    expect(message).toMatchObject({ count: 0, briefing: undefined, checks: [] });
   });
 
   it("drops a date the briefing summary repeats at its start", () => {
@@ -142,11 +108,6 @@ describe("morning message", () => {
   it("asks general questions so a new Loupist still offers three", () => {
     const message = morningMessage({ language: "en", nowMs: NOW, map: map([]) });
     expect(message.questions.map((question) => question.template)).toEqual(["general", "markets", "risks"]);
-  });
-
-  it("asks what the user is researching when the Loupist knows nothing yet", () => {
-    expect(morningMessage({ language: "en", nowMs: NOW, map: map([]) }).lead).toEqual({ kind: "empty" });
-    expect(morningMessage({ language: "en", nowMs: NOW, map: map([]), watchlist: [{ symbol: "AAPL", market: "US", displayName: null, addedAtMs: 0 }] }).lead).toEqual({ kind: "firstDay" });
   });
 
   it("shows the latest succeeded briefing when it is new or unread", () => {
@@ -185,4 +146,15 @@ it("names a visit earlier today by its time, not today's weekday", () => {
   expect(since(new Date(2026, 10, 7, 2, 7).getTime())).toBe("2:07 AM");
   expect(since(new Date(2026, 10, 5, 9, 0).getTime())).toBe("Thursday");
   expect(since(new Date(2026, 9, 21, 9, 0).getTime())).toBe("Oct 21");
+});
+
+it("posts Bot's news only after a real absence or on a new day", () => {
+  const at = (day: number, hour: number, minute = 0) => new Date(2026, 9, day, hour, minute).getTime();
+  expect(botNewsDue(undefined, at(31, 9))).toBe(false);
+  expect(botNewsDue(at(31, 8, 27), at(31, 9))).toBe(false);
+  expect(botNewsDue(at(31, 5, 1), at(31, 9))).toBe(false);
+  expect(botNewsDue(at(31, 5), at(31, 9))).toBe(true);
+  // Across midnight, an hour away is the first open of the new day; ten minutes is still the same sitting.
+  expect(botNewsDue(at(30, 23, 50), at(31, 0, 0))).toBe(false);
+  expect(botNewsDue(at(30, 23), at(31, 0, 10))).toBe(true);
 });

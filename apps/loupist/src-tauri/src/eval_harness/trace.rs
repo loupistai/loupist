@@ -15,7 +15,18 @@ pub(crate) struct PiTrace {
     starts: BTreeMap<String, (usize, Instant)>,
     native_reads: BTreeMap<String, Value>,
     pub usage_seen: bool,
+    round_usage: Vec<RoundUsage>,
     error: Option<Value>,
+    /// Pi failed to start before the prompt, so the turn reached no model.
+    startup_failed: bool,
+}
+
+/// Each assistant message_end is one model round, including retries and errors.
+/// Reasoning is a provider-reported subset of output, never an extra token cost.
+#[derive(Serialize)]
+struct RoundUsage {
+    output: Option<u64>,
+    reasoning: Option<u64>,
 }
 
 /// One evaluation call, independent of the host's smaller display trace budget.
@@ -76,6 +87,24 @@ impl ToolCall {
 }
 
 impl PiTrace {
+    /// The Pi failure category, such as `startup_timeout`.
+    pub fn error(&self) -> Option<&Value> {
+        self.error.as_ref()
+    }
+
+    /// Marks a record whose Pi never started (`startup_failed: true`): an
+    /// infrastructure failure with no model call, which `--resume` reruns.
+    pub fn record_startup_failure(&self, record: &mut Value) {
+        if self.startup_failed {
+            record["startup_failed"] = json!(true);
+        }
+    }
+
+    pub fn record_round_usage(&self, record: &mut Value) {
+        record["model_rounds"] = json!(self.round_usage.len());
+        record["round_usage"] = json!(self.round_usage);
+    }
+
     /// Only the host's admitted native read supplies this evidence, never Pi.
     pub fn native_read_authorized(&mut self, call_id: &str, authorization: Value) {
         if !call_id.is_empty() {
@@ -85,15 +114,27 @@ impl PiTrace {
     }
 
     pub fn observe(&mut self, event: &Value) {
-        self.usage_seen |= event.pointer("/message/usage").is_some();
         if let Some(diagnostic) =
             crate::pi::e2e_rpc_diagnostic(event).filter(|d| d.get("category").is_some())
         {
             self.error = Some(json!(diagnostic.to_string()));
         }
         match event["type"].as_str() {
-            Some("eval_error") if self.error.is_none() => {
-                self.error = Some(bounded_json(&event["message"]));
+            Some("message_end")
+                if event.pointer("/message/role").and_then(Value::as_str) == Some("assistant") =>
+            {
+                let usage = event.pointer("/message/usage");
+                self.usage_seen |= usage.is_some();
+                self.round_usage.push(RoundUsage {
+                    output: usage.and_then(|usage| usage["output"].as_u64()),
+                    reasoning: usage.and_then(|usage| usage["reasoning"].as_u64()),
+                });
+            }
+            Some("eval_error") => {
+                self.startup_failed |= event["phase"] == "launch";
+                if self.error.is_none() {
+                    self.error = Some(bounded_json(&event["message"]));
+                }
             }
             Some("tool_execution_start") => {
                 let Some(id) = event["toolCallId"].as_str() else {
@@ -368,7 +409,7 @@ pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
         pi.usage_seen
             || p.input_tokens + p.output_tokens + p.cache_read_tokens + p.cache_write_tokens > 0
     });
-    json!({
+    let mut record = json!({
         "answer":message.content,
         "failureKind":message.failure_kind,
         "hostComposed":message.host_composed,
@@ -377,10 +418,13 @@ pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
         "status":match message.status {ChatMessageStatus::Complete=>"completed",ChatMessageStatus::Error=>"failed",ChatMessageStatus::Aborted=>"aborted"},
         "error":if message.status == ChatMessageStatus::Error { pi.error.clone().unwrap_or_else(||bounded_json(&json!(message.content))) } else { Value::Null },
         "tool_calls":tool_calls(message.tool_trace.as_ref(),pi),"memory_reads":reads,"lens_receipts":receipts,"memory_commits":commits,
-        "number_checks":message.number_checks,"sensitivity_cards":message.sensitivity_cards,"as_of_report":message.as_of_report,
+        "number_checks":message.number_checks,"as_of_report":message.as_of_report,
         "usage":{"input":usage.map(|p|p.input_tokens),"output":usage.map(|p|p.output_tokens),"cache_read":usage.map(|p|p.cache_read_tokens),"cache_write":usage.map(|p|p.cache_write_tokens)},
-        "performance":{"setup_ms":performance.map(|p|p.setup_ms),"first_text_ms":performance.and_then(|p|p.first_text_ms),"total_ms":performance.map(|p|p.total_ms)}
-    })
+        "performance":{"setup_ms":performance.map(|p|p.setup_ms),"first_text_ms":performance.and_then(|p|p.first_text_ms),"answer_text_ms":performance.and_then(|p|p.answer_text_ms),"total_ms":performance.map(|p|p.total_ms)}
+    });
+    pi.record_startup_failure(&mut record);
+    pi.record_round_usage(&mut record);
+    record
 }
 
 /// Canonical Lens pages after a turn, read from the store rather than the reply,
@@ -529,6 +573,31 @@ fn content_excerpt(title: &str, content: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_round_usage_ignores_nonterminal_events_and_preserves_unknowns() {
+        let mut pi = PiTrace::default();
+        for event in [
+            json!({"type":"message_update", "message":{"role":"assistant", "usage":{"output":999}}}),
+            json!({"type":"message_end", "message":{"role":"user", "usage":{"output":888}}}),
+            json!({"type":"message_end", "message":{"role":"assistant", "usage":{"output":0,"reasoning":0}}}),
+            json!({"type":"message_end", "message":{"role":"assistant"}}),
+            json!({"type":"message_end", "message":{"role":"assistant", "usage":{"output":42}}}),
+        ] {
+            pi.observe(&event);
+        }
+        let message = crate::test_fixtures::chat_message(
+            "rounds",
+            crate::domain::ChatRole::Assistant,
+            "Done.",
+        );
+        let trace = persisted(&message, &pi);
+        assert_eq!(trace["model_rounds"], 3);
+        assert_eq!(
+            trace["round_usage"],
+            json!([{"output":0,"reasoning":0},{"output":null,"reasoning":null},{"output":42,"reasoning":null}])
+        );
+    }
 
     #[test]
     fn persisted_trace_keeps_context_and_exact_lens_delivery_receipts() {

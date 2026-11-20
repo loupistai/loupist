@@ -42,12 +42,12 @@ describe("Loupist · Chat evidence", () => {
     expect(alert).toHaveTextContent(i18n.t("chat:useNativeBrowserTabs.couldNotOpenThisWebPage"));
     expect(alert).not.toHaveTextContent("Browser unavailable");
     expect(within(alert).getByRole("button", { name: "View saved passage" })).toBeVisible();
-    await user.click(within(alert).getByRole("button", { name: "Open in browser" }));
+    await user.click(within(alert).getByRole("button", { name: "Open in system browser" }));
     expect(external).toHaveBeenCalledExactlyOnceWith(evidence.url);
     await user.click(within(alert).getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(open).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
-    const panel = screen.getByLabelText("Chat workspace panel");
+    const panel = screen.getByLabelText("Side panel");
     expect(within(panel).queryByRole("button", { name: "View saved excerpt" })).toBeNull();
     await user.click(within(panel).getByRole("button", { name: "Saved passage" }));
     expect(await screen.findByRole("article", { name: `Research source: ${evidence.title}` })).toHaveTextContent(evidence.excerpt);
@@ -78,7 +78,7 @@ describe("Loupist · Chat evidence", () => {
     fireEvent.click(await screen.findByRole("button", { name: `Source 1: ${evidence.title}` }), { ctrlKey: true });
     await waitFor(() => expect(external).toHaveBeenCalledExactlyOnceWith(evidence.url));
     expect(browser).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText("Chat workspace panel")).toBeNull();
+    expect(screen.queryByLabelText("Side panel")).toBeNull();
   });
 
   it("announces a panel tab it opened in one polite live region, without moving focus", async () => {
@@ -106,6 +106,9 @@ describe("Loupist · Chat evidence", () => {
     await openChat();
     await user.click(await screen.findByRole("button", { name: "Source 1: Asset page: Apple" }));
     await waitFor(() => expect(page).toHaveBeenCalledWith(expect.objectContaining({ assetId: "NASDAQ:AAPL" })));
+    // The page opens by the id the read kept, and nothing else.
+    const request = page.mock.calls[0]![0];
+    expect(request).toStrictEqual({ loupistId: request.loupistId, assetId: "NASDAQ:AAPL" });
   });
 
   it("routes original sources to readers and tool results to work progress", async () => {
@@ -123,11 +126,11 @@ describe("Loupist · Chat evidence", () => {
     for (const result of [search, derived]) {
       await user.click(screen.getByRole("button", { name: `Result: ${result.title}` }));
       expect(within(screen.getByLabelText("Work progress")).getByText(result.excerpt)).toBeVisible();
-      expect(screen.queryByLabelText("Chat workspace panel")).toBeNull();
+      expect(screen.queryByLabelText("Side panel")).toBeNull();
     }
     expect(browser).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Source 1: Market source" }));
-    expect(within(await screen.findByLabelText("Chat workspace panel")).getByRole("article", { name: "Research source: Market source" })).toBeVisible();
+    expect(within(await screen.findByLabelText("Side panel")).getByRole("article", { name: "Research source: Market source" })).toBeVisible();
   });
 
   it("hides internal tool identifiers in work progress and opens web steps in the app", async () => {
@@ -198,7 +201,7 @@ describe("Loupist · Chat evidence", () => {
     await emit({ type: "delta", run_id: request.run_id, text: answer });
     const citation = await screen.findByRole("button", { name: `Source 1: ${evidence.title}` });
     await user.click(citation);
-    const panel = await screen.findByLabelText("Chat workspace panel");
+    const panel = await screen.findByLabelText("Side panel");
     expect(await within(panel).findByRole("textbox", { name: "Web address" })).toHaveValue(evidence.url);
     await waitFor(() => expect(browser).toHaveBeenCalledTimes(1));
     await user.click(citation);
@@ -228,7 +231,7 @@ describe("Loupist · Chat evidence", () => {
     render(<App bridge={bridge} />);
     await openChat();
     await user.click(await screen.findByRole("button", { name: `Source 1: ${evidence.title}` }));
-    const restored = await screen.findByLabelText("Chat workspace panel");
+    const restored = await screen.findByLabelText("Side panel");
     expect(within(restored).getByRole("textbox", { name: "Web address" })).toHaveValue(evidence.url);
     await user.click(within(restored).getByRole("tab", { name: "Evidence" }));
     expect(within(restored).getByRole("article", { name: `Research source: ${evidence.title}` })).toHaveTextContent(evidence.excerpt);
@@ -251,7 +254,7 @@ describe("Loupist · Chat evidence marking", () => {
     const other = screen.getByRole("button", { name: `Source 2: ${second.title}` });
     expect(chip).not.toHaveAttribute("aria-current");
     await user.click(chip);
-    const panel = await screen.findByLabelText("Chat workspace panel");
+    const panel = await screen.findByLabelText("Side panel");
     expect(chip).not.toHaveAttribute("aria-current");
     await user.click(within(panel).getByRole("tab", { name: "Evidence" }));
     await screen.findByRole("article", { name: `Research source: ${first.title}` });
@@ -265,7 +268,7 @@ describe("Loupist · Chat evidence marking", () => {
     expect(other).toHaveAttribute("aria-current", "true");
     expect(chip).not.toHaveAttribute("aria-current");
     // Closing the panel leaves nothing marked.
-    await user.click(screen.getByRole("button", { name: "Close workspace" }));
+    await user.click(screen.getByRole("button", { name: "Close panel" }));
     await waitFor(() => expect(other).not.toHaveAttribute("aria-current"));
   });
 });

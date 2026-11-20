@@ -25,6 +25,7 @@ fn policy() -> ToolPolicy {
         propose_memory_updates: false,
         memory_proposal_budget: 0,
         as_of: None,
+        display_currency: None,
     }
 }
 
@@ -150,9 +151,6 @@ fn every_transaction_budget_names_its_tool_and_actual_limit() {
         (ToolMethod::ConnectionSetup, MAX_CHAT_TURN_CONNECTION_SETUPS),
         (ToolMethod::AskUser, MAX_CHAT_TURN_QUESTIONS),
         (ToolMethod::LensFile, MAX_CHAT_TURN_FILINGS),
-        (ToolMethod::ArtifactPublish, MAX_CHAT_TURN_ARTIFACTS as u8),
-        (ToolMethod::ChartPublish, MAX_CHAT_TURN_ARTIFACTS as u8),
-        (ToolMethod::GridPublish, MAX_CHAT_TURN_ARTIFACTS as u8),
         (ToolMethod::ResearchOpen, 1),
     ] {
         let mut cardinality = TransactionCardinality::default();
@@ -794,15 +792,23 @@ fn turn_budgets_bound_saves_and_publications_but_rollbacks_are_free() {
         Err(BrokerError::BudgetExceeded { .. })
     ));
 
-    for _ in 0..MAX_CHAT_TURN_ARTIFACTS {
-        cardinality
-            .consume(ToolMethod::ChartPublish, &policy)
-            .unwrap();
+    // The executor owns the distinct artifact budget; repeated calls may revise
+    // the same draft, so the broker cannot count publication calls.
+    for _ in 0..8 {
+        for method in [
+            ToolMethod::ChartPublish,
+            ToolMethod::ArtifactPublish,
+            ToolMethod::GridPublish,
+        ] {
+            cardinality.consume(method, &policy).unwrap();
+            cardinality.rollback(method);
+            cardinality.consume(method, &policy).unwrap();
+        }
     }
-    assert!(matches!(
-        cardinality.consume(ToolMethod::ArtifactPublish, &policy),
-        Err(BrokerError::BudgetExceeded { .. })
-    ));
+
+    let body = error_body(&BrokerError::ArtifactLimit { limit: 4 });
+    assert_eq!(body["code"], "transaction_limit");
+    assert_eq!(body["retryable"], false);
 
     cardinality
         .consume(ToolMethod::ResearchOpen, &policy)
@@ -1211,6 +1217,35 @@ async fn every_broker_tool_keeps_its_control_free_arguments_unchanged() {
             .unwrap_or_else(|(_,error)|panic!("{}: {error}",case["method"]));
         assert_eq!(result.result,case["args"]);
     }
+}
+
+#[tokio::test]
+async fn interface_labels_uses_its_single_repair_for_invalid_text() {
+    let request = BrokerRequest {
+        protocol: PROTOCOL.into(),
+        id: "interface-labels-invalid-text".into(),
+        token: "fixture-token".into(),
+        method: "interface.labels".into(),
+        params: json!({"keys": ["bo\u{6}t"]}),
+        call_id: None,
+    };
+    let Err((id, error)) = execute_request(
+        request,
+        "fixture-token",
+        &policy(),
+        Arc::new(StdMutex::new(TransactionCardinality::default())),
+        Arc::new(UnusedExecutor),
+        "delivery",
+    )
+    .await
+    else {
+        panic!("invalid label keys must be refused");
+    };
+    assert_eq!(id, "interface-labels-invalid-text");
+    assert_eq!(
+        error_body(&error),
+        error_body(&BrokerError::invalid_interface_labels())
+    );
 }
 
 #[tokio::test]

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { ConnectionSetupCard } from "./ConnectionSetupCard";
@@ -29,6 +29,18 @@ it("offers setup for a connection without its key, opens the Connections dialog,
   expect(await within(card).findByText("FRED is ready. It works from your next message.")).toBeVisible();
   expect(snapshot.mock.calls.length).toBeGreaterThan(reads);
   expect(card).toHaveAttribute("data-state", "ready");
+  // Set up went away with the state it belonged to: the keyboard is on the card, not the page.
+  await waitFor(() => expect(card).toHaveFocus());
+});
+
+it("keeps the keyboard on the card when Use in this Loupist turns into Ask again", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  await bridge.loupistCapabilityDisable({ loupist_id: "loupist-quality", entry_id: "world-bank.indicators" });
+  renderCard(bridge, "world-bank.indicators", vi.fn());
+  const card = await screen.findByRole("region", { name: "Set up World Bank Indicators" });
+  (await within(card).findByRole("button", { name: "Use in this Loupist" })).focus();
+  await user().keyboard("{Enter}");
+  await waitFor(() => expect(within(card).getByRole("button", { name: "Ask again" })).toHaveFocus());
 });
 
 it("turns a set-up connection on for this Loupist and then offers to ask again", async () => {

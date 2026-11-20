@@ -29,31 +29,29 @@ it("keeps the Gallery under a pack review and hides another Loupist's asset page
   expect(surfaceReducer(asset, { type: "keepAssetPageFor", loupistId: "a" })).toBe(asset);
 });
 
-it("opens World and Lens as panels beside Chat and reads the destination keys from one list", () => {
+it("names the open asset page as the page shows it, and ignores a page already replaced", () => {
+  const opened = surfaceReducer(base, { type: "openAssetPage", page: { loupistId: "a", assetId: "x", name: "Hanul Precision", key: 3 } });
+  expect(surfaceReducer(opened, { type: "nameAssetPage", key: 3, name: "한울정밀" }).assetPage).toMatchObject({ assetId: "x", name: "한울정밀", key: 3 });
+  expect(surfaceReducer(opened, { type: "nameAssetPage", key: 2, name: "한울정밀" })).toBe(opened);
+  expect(surfaceReducer(opened, { type: "nameAssetPage", key: 3, name: "Hanul Precision" })).toBe(opened);
+});
+
+it("opens Map and Lens as full pages and reads the destination keys from one list", () => {
   localStorage.setItem("loupist.lastView", "schedule");
-  const selectKind = vi.fn();
-  const { result } = renderHook(() => useAppSurface({ hydrated: true, selectKind }));
+  const { result } = renderHook(() => useAppSurface());
   expect(result.current.surface.tab).toBe("schedule");
   act(() => result.current.goTo("map"));
-  expect(selectKind).toHaveBeenLastCalledWith("world");
-  expect(result.current.surface.tab).toBe("chat");
-  expect(localStorage.getItem("loupist.lastView")).toBe("chat");
+  expect(result.current.surface.tab).toBe("map");
+  expect(localStorage.getItem("loupist.lastView")).toBe("map");
+  act(() => result.current.goTo("lens"));
+  expect(result.current.surface.tab).toBe("lens");
   const epoch = result.current.navigationEpoch.current;
   act(() => result.current.goTo("schedule"));
   expect(result.current.surface.tab).toBe("schedule");
   expect(result.current.navigationEpoch.current).toBe(epoch + 1);
   expect(APP_DESTINATIONS.map((item) => item.id)).toEqual(["chat", "map", "lens", "schedule"]);
-  expect(destinationForKey("3")?.id).toBe("lens");
+  expect(destinationForKey("2")?.page).toBe("map");
+  expect(destinationForKey("3")?.page).toBe("lens");
   expect(destinationForKey("5")).toBeUndefined();
   expect(destinationForKey("0")).toBeUndefined();
-});
-
-it("moves a saved Map or Lens page into its panel once the panel state is read", () => {
-  localStorage.setItem("loupist.lastView", "lens");
-  const selectKind = vi.fn();
-  const { rerender } = renderHook(({ hydrated }) => useAppSurface({ hydrated, selectKind }), { initialProps: { hydrated: false } });
-  expect(selectKind).not.toHaveBeenCalled();
-  rerender({ hydrated: true });
-  expect(selectKind).toHaveBeenCalledExactlyOnceWith("lens");
-  expect(localStorage.getItem("loupist.lastView")).toBe("chat");
 });

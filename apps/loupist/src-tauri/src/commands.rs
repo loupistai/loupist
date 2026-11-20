@@ -4,14 +4,24 @@ mod artifact_context;
 pub(crate) mod assets;
 pub(crate) mod attachments;
 pub(crate) mod attention;
+#[cfg(all(
+    any(test, feature = "e2e"),
+    target_os = "macos",
+    target_arch = "aarch64",
+    debug_assertions
+))]
+mod chat_fixture;
 pub(crate) mod chat_runtime;
 pub(crate) mod configuration;
 pub(crate) mod dialog;
-pub(crate) mod earnings;
 pub(crate) mod export_file;
 pub(crate) mod export_trust;
+pub(crate) mod fx_display;
 pub(crate) mod handoff;
+#[cfg(feature = "e2e")]
+pub(crate) mod handoff_fixture;
 pub(crate) mod knowledge;
+pub(crate) mod legacy_holdings;
 pub(crate) mod loupist;
 mod memory_updates;
 pub(crate) mod power;
@@ -20,9 +30,8 @@ pub(crate) mod records;
 pub(crate) mod scheduled_tasks;
 pub(crate) mod skills;
 mod tool_executor;
+pub(crate) use tool_executor::prewarm_market_data;
 pub mod types;
-pub(crate) mod user_context;
-pub(crate) mod watch;
 pub(crate) mod workspace;
 pub(crate) mod workspace_ui;
 
@@ -51,7 +60,9 @@ pub(crate) const MAX_CHAT_CONTEXT_BYTES: usize = 256 * 1024;
 pub(crate) const MAX_CHAT_TITLE_BYTES: usize = 200;
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn model_catalog_get(state: State<'_, AppState>) -> Result<ModelCatalogView, CommandError> {
+pub async fn model_catalog_get(
+    state: State<'_, AppState>,
+) -> Result<ModelCatalogView, CommandError> {
     state.model_catalog_view()
 }
 
@@ -119,7 +130,7 @@ pub(crate) fn fallback_chat_title(prompt: &str) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    title.chars().take(40).collect()
+    crate::util::shorten(&title, 40)
 }
 
 pub(crate) fn map_internal(error: impl std::fmt::Display) -> CommandError {
@@ -230,7 +241,7 @@ fn chat_connector_authority_sha256(
     Ok(crate::util::sha256(&serialized))
 }
 
-fn binding_grants_execute(binding: &LoupistCapabilityBinding) -> bool {
+pub(crate) fn binding_grants_execute(binding: &LoupistCapabilityBinding) -> bool {
     binding
         .granted_permissions
         .iter()
@@ -267,10 +278,8 @@ pub(crate) fn enabled_execute_capability_ids(
     loupist_id: &str,
 ) -> Result<Vec<String>, CommandError> {
     crate::marketplace::with_connector_lifecycle(state, || {
-        let bindings = state
-            .store
-            .list_loupist_capabilities(loupist_id)
-            .map_err(map_store)?;
+        let bindings =
+            crate::marketplace::loupist_bindings(state, loupist_id).map_err(map_store)?;
         enabled_execute_capability_ids_from_bindings(state, loupist_id, &bindings)
     })
 }
@@ -283,10 +292,8 @@ pub(crate) fn capture_chat_connector_authority(
     loupist_id: &str,
 ) -> Result<ChatConnectorAuthority, CommandError> {
     crate::marketplace::with_connector_lifecycle(state, || {
-        let bindings = state
-            .store
-            .list_loupist_capabilities(loupist_id)
-            .map_err(map_store)?;
+        let bindings =
+            crate::marketplace::loupist_bindings(state, loupist_id).map_err(map_store)?;
         let capability_ids =
             enabled_execute_capability_ids_from_bindings(state, loupist_id, &bindings)?;
         let binding_seals = bindings

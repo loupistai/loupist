@@ -1,6 +1,6 @@
 [package]
 name = "loupist-desktop"
-version = "0.1.1"
+version = "0.1.2-rc.1"
 edition = "2021"
 rust-version = "1.97"
 description = "Local native app for research with durable Loupist memory"
@@ -53,7 +53,7 @@ encoding_rs = "0.8"
 futures-util = "0.3"
 fs2 = "0.4"
 hex = "0.4"
-model2vec-rs = { version = "0.2.1", default-features = false }
+model2vec-rs = { version = "0.4.0", default-features = false }
 httpdate = "1.0.3"
 htmd = "0.5"
 office_oxide = { version = "=0.1.16", default-features = false }
@@ -78,6 +78,7 @@ tokenizers = { version = "0.21", default-features = false, features = ["fancy-re
 thiserror = "2"
 # Already in the tree through pdf_oxide; NFKC for the World trigram fallback.
 unicode-normalization = "0.1"
+unicode-segmentation = "=1.13.3"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
 toml_edit = { version = "=0.20.2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
@@ -97,6 +98,8 @@ tauri-plugin-updater = "=2.14.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "=3.6.3", default-features = false, features = ["apple-native"] }
+# OpenDART serves only TLS 1.2 with RSA key exchange, which rustls does not implement.
+reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }
@@ -117,3 +120,12 @@ resolver = "2"
 # For debugger variables: CARGO_PROFILE_DEV_DEBUG=full (TEST_DEBUG for tests).
 [profile.dev]
 debug = "line-tables-only"
+
+# The embedding tokenizer registers 30,000 added words with a quadratic scan,
+# compiled into model2vec-rs (which instantiates the tokenizer) as much as into
+# tokenizers. Unoptimized, a debug model load takes over half a minute.
+[profile.dev.package.tokenizers]
+opt-level = 3
+
+[profile.dev.package.model2vec-rs]
+opt-level = 3

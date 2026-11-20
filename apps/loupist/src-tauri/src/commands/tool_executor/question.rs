@@ -41,16 +41,17 @@ fn invalid(field: &str, expected: String) -> BrokerError {
 
 fn unanswered(question: &ChatQuestion) -> Value {
     json!({"answered": false, "assumed": question.recommended_label(), "next":
-        "The user did not answer. For a research or presentation choice, use the recommended option and say which one you used. Do not delete, stop, edit or pause a schedule; disable a watch or briefing; retire a Lens section; unfollow an asset or replace the research focus; or update, resolve or forget Bot memory. Finish the reply and say what you need answered before making any of those changes. Other research, saves and work products may continue."})
+        "The user did not answer. For a research or presentation choice, use the recommended option and say which one you used. Do not delete, stop, edit or pause a schedule; disable the briefing; retire a Lens section; unfollow an asset or replace the research focus; or update, resolve or forget Bot memory. Finish the reply and say what you need answered before making any of those changes. Other research, saves and work products may continue."})
 }
 
 impl AppToolExecutor {
     pub(super) async fn ask_user_question(&self, params: Value) -> Result<Value, BrokerError> {
-        if !self
-            .capture
-            .surface
-            .as_ref()
-            .is_some_and(ChatSurface::interactive)
+        if self.capture.host_handoff
+            || !self
+                .capture
+                .surface
+                .as_ref()
+                .is_some_and(ChatSurface::interactive)
         {
             return Err(BrokerError::Execution(format!(
                 "ask_user is unavailable in a {} turn: there is no one to answer; do not treat a missing answer as permission to change anything",
@@ -101,14 +102,19 @@ impl AppToolExecutor {
         };
         let call_id = current_tool_call_id();
         let request_id = question.request_id.clone();
-        let receiver = questions::register(&request_id, &self.loupist_id, question.options.len());
+        let receiver = questions::register(
+            &request_id,
+            &self.loupist_id,
+            self.capture.bound_chat_id.as_deref(),
+            self.capture.opening_task_id.as_deref(),
+            question.options.len(),
+        );
         sink(call_id.clone(), question.clone());
         let answer = tokio::select! {
             answer = receiver => answer.ok(),
             _ = tokio::time::sleep(APPROVAL_WAIT) => None,
             _ = self.capture.search_cancel.cancelled() => None,
         };
-        questions::forget(&request_id);
         question.state = if answer.is_some() {
             QuestionState::Answered
         } else {

@@ -9,6 +9,7 @@ import { useMemoryPreview } from "../../chat/memoryPreview";
 import { parseCredentialFreeHttpUrl } from "../../lib/credentialFreeUrl";
 import { Button } from "../ui/button";
 import { useOpenProps } from "../navigation/Open";
+import { providerName } from "@/lib/marketProviderName";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -80,7 +81,7 @@ export function WorkspaceEvidence({ evidence, step, onRevealStep }: {
     {notRetained ? <div className="evidence-notices" role="alert"><p>{t("chatWorkspacePanel.sourceNotRetained")}</p></div> : null}
     <dl className="evidence-metadata">
       {step?.label ? <><dt>{t("workspaceEvidence.createdIn")}</dt><dd>{step.itemId && onRevealStep ? <Button type="button" variant="ghost" size="sm" onClick={() => onRevealStep(step.itemId!)}>{step.label}</Button> : step.label}</dd></> : null}
-      {evidence.provider ? <><dt>{t("workspaceEvidence.provider")}</dt><dd>{evidence.provider}</dd></> : null}
+      {providerName(evidence.provider) ? <><dt>{t("workspaceEvidence.provider")}</dt><dd>{providerName(evidence.provider)}</dd></> : null}
       <dt>{t("workspaceEvidence.retrieved")}</dt><dd><time dateTime={evidence.retrieved_at}>{readableTime(evidence.retrieved_at)}</time></dd>
       {evidence.published_at ? <><dt>{t("workspaceEvidence.published")}</dt><dd>{readableTime(evidence.published_at)}</dd></> : null}
       {evidence.as_of ? <><dt>{t("workspaceEvidence.dataAsOf")}</dt><dd>{evidence.as_of}</dd></> : null}

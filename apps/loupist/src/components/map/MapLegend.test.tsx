@@ -3,23 +3,26 @@ import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { LEGEND_MAX_ROWS, MapLegend, legendRows } from "./MapLegend";
 
 let serial = 0;
-const node = (kind: KnowledgeMapNode["kind"], entityKind?: string, extra: Partial<KnowledgeMapNode> = {}): KnowledgeMapNode => ({ id: `${kind}-${entityKind ?? "none"}-${serial++}`, label: kind, kind, entityKind, degree: 1, watched: false, held: false, ...extra });
+const node = (kind: KnowledgeMapNode["kind"], entityKind?: string, extra: Partial<KnowledgeMapNode> = {}): KnowledgeMapNode => ({ id: `${kind}-${entityKind ?? "none"}-${serial++}`, label: kind, kind, entityKind, degree: 1, watched: false, ...extra });
 const times = (count: number, make: () => KnowledgeMapNode) => Array.from({ length: count }, make);
 
-it("lists only the marks in the drawn view, most drawn colour first, then Lens, watchlist, holdings and disagreeing sources", () => {
+it("lists only the marks in the drawn view, most drawn colour first, then Lens, what you follow and disagreeing sources", () => {
   const view = render(<MapLegend open nodes={[node("entity", "Product"), node("entity", "Product"), node("entity", "Organization"), node("lens_method")]} onOpenChange={() => {}} />);
   const items = within(screen.getByRole("group")).getAllByRole("listitem").map((item) => item.textContent);
   // A plain line is always explained.
   expect(items).toEqual(["Product", "Company", "Line: a stated relationship"]);
-  // The legend names only the rings that are drawn: the dashed watchlist ring, the solid holdings ring, or both.
+  // One ring is drawn, the dashed one around what the user follows, and one row names it.
   view.rerender(<MapLegend open nodes={[node("entity", "Organization", { watched: true })]} onOpenChange={() => {}} />);
   expect(screen.getByText("You follow")).toBeVisible();
-  expect(screen.queryByText("In your holdings")).toBeNull();
   expect(screen.queryByText(/Lens:/)).toBeNull();
   expect(screen.queryByText("Sources disagree")).toBeNull();
   // The conflict line and dot on the canvas are explained only when a drawn relationship carries them.
-  view.rerender(<MapLegend open conflicts nodes={[node("entity", "Organization", { watched: true }), node("entity", "Organization", { held: true })]} onOpenChange={() => {}} />);
-  expect(screen.getByText("Dashed ring: you follow · Solid ring: you hold")).toBeVisible();
+  // A flag an older host sent for held names draws nothing and adds no row.
+  view.rerender(<MapLegend open conflicts nodes={[node("entity", "Organization", { watched: true }), node("entity", "Organization", { held: true } as Partial<KnowledgeMapNode>)]} onOpenChange={() => {}} />);
+  const ring = screen.getByText("You follow").closest("li")!;
+  expect(ring.querySelectorAll(".map-swatch")).toHaveLength(1);
+  expect(ring.querySelector(".is-watching")).not.toBeNull();
+  expect(within(screen.getByRole("group")).queryByText(/hold/i)).toBeNull();
   expect(screen.getByText("Sources disagree").closest("li")?.querySelector(".is-conflict-line")).not.toBeNull();
   // Highlighted names are explained while a Lens is applied, without a Lens-shape row.
   view.rerender(<MapLegend open lensLines nodes={[node("entity", "Organization"), node("lens_method")]} onOpenChange={() => {}} />);

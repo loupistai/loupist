@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from "react";
 import type { AssetPageTarget } from "../contracts/assets";
 import type { ChatArtifactRef, ChatArtifactView, ChatEvidenceRef, KnowledgeLocation } from "../types";
 import { evidenceTitle } from "../chat/evidence";
-import { evidenceTarget, externalUrl, type ChatDestination, type Open, type OpenHow } from "../chat/navigation";
+import { evidenceTarget, externalUrl, RunRecordRemoved, type ChatDestination, type Open, type OpenHow } from "../chat/navigation";
 import type { EvidenceStepLink } from "../chat/workspace";
 import { lensMemoryLocation } from "../knowledge/location";
 import { displayHost } from "../lib/displayHost";
@@ -26,6 +26,10 @@ export type AppOpenShell = {
   };
   /** Shows another chat of the selected Loupist, on the Chat tab. */
   showThread: (loupistId: string, threadId: string) => void;
+  /** Whether the host still has this chat, read again now. */
+  chatExists: (loupistId: string, threadId: string) => Promise<boolean>;
+  /** Whether the host still has this scheduled task. */
+  scheduledTaskExists: (loupistId: string, taskId: string) => Promise<boolean>;
   openKnowledgePage: (location: KnowledgeLocation) => void;
   openAssetPage: (target: AssetPageTarget) => void;
   openScheduledTask: (taskId: string) => void;
@@ -134,6 +138,11 @@ async function route(shell: AppOpenShell, host: PanelHost, to: ChatDestination, 
     case "chat":
       if (loupistId) shell.showThread(loupistId, to.threadId);
       return;
+    case "run":
+      if (!loupistId) return;
+      if (to.threadId && await shell.chatExists(loupistId, to.threadId)) { shell.showThread(loupistId, to.threadId); return; }
+      if (await shell.scheduledTaskExists(loupistId, to.taskId)) { shell.openScheduledTask(to.taskId); return; }
+      throw new RunRecordRemoved();
     case "briefing":
       if (loupistId) shell.showBriefing(loupistId, to.runId);
       return;

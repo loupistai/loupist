@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { useTranslation } from "@/i18n";
 import type { LoupistBridge } from "../../types";
-import type { AssetDelta } from "../../contracts/assets";
+import { assetTicker } from "../../contracts/assets";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 
 const KOREAN_MARKETS = new Set(["KRX", "KOSPI", "KOSDAQ", "KONEX", "KS", "KQ"]);
@@ -18,14 +18,25 @@ export const isKoreanListed = (market?: string | null) => !!market && KOREAN_MAR
 export type AssetNameInput = { name: string; assetId?: string; symbol?: string; market?: string | null; entityId?: string | null };
 export type AssetNameData = {
   nodes?: readonly Pick<KnowledgeMapNode, "id" | "kind" | "label" | "localNames" | "archived">[] | null;
-  pages?: readonly (Pick<AssetDelta, "assetId" | "symbol" | "market" | "entityId"> & { name?: string })[] | null;
+  /** The followed assets by their reference ticker and exchange; a page's Map entity comes with the asset itself. */
+  pages?: readonly { assetId: string; symbol?: string; market?: string; entityId?: string; name?: string }[] | null;
 };
 
 const same = (a?: string | null, b?: string | null) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
 
-/** The asset's name in `language` (see the module note); pure, so every surface agrees. */
+/**
+ * The asset's name in `language` (see the module note); pure, so every surface agrees.
+ * An asset known only by its ticker takes the name of the Map entity its page matched,
+ * in any language; with no match the ticker stays the name.
+ */
 export function localAssetName(asset: AssetNameInput, data: AssetNameData, language: string) {
-  if (!language.toLowerCase().startsWith("ko") || HANGUL.test(asset.name)) return asset.name;
+  const korean = language.toLowerCase().startsWith("ko");
+  const tickerOnly = !asset.name.trim() || same(asset.name, asset.symbol);
+  if (tickerOnly && asset.entityId) {
+    const node = (data.nodes ?? []).find(item => item.id === asset.entityId && item.kind === "entity" && !item.archived);
+    if (node?.label.trim()) return (korean && isKoreanListed(asset.market) ? node.localNames?.find(name => HANGUL.test(name)) : undefined) ?? node.label;
+  }
+  if (!korean || HANGUL.test(asset.name)) return asset.name;
   // A name alone (a run's summary line) finds its page by that name.
   const page = (data.pages ?? []).find(item => (asset.assetId && item.assetId === asset.assetId)
     || (!asset.assetId && same(item.symbol, asset.symbol) && (!asset.market || same(item.market, asset.market)))
@@ -41,31 +52,39 @@ export function localAssetName(asset: AssetNameInput, data: AssetNameData, langu
 /** One read of the Map and the asset pages per Loupist, shared by the surfaces on screen. */
 const FRESH_MS = 15_000;
 const loads = new WeakMap<LoupistBridge, Map<string, { atMs: number; data: Promise<AssetNameData> }>>();
-function load(bridge: LoupistBridge, loupistId: string) {
+function load(bridge: LoupistBridge, loupistId: string, withPages: boolean) {
   const byLoupist = loads.get(bridge) ?? new Map<string, { atMs: number; data: Promise<AssetNameData> }>();
   loads.set(bridge, byLoupist);
-  const cached = byLoupist.get(loupistId);
+  const key = `${loupistId}:${withPages ? "pages" : "map"}`;
+  const cached = byLoupist.get(key);
   if (cached && Date.now() - cached.atMs < FRESH_MS) return cached.data;
   const data = Promise.all([
-    readKnowledgeMap(bridge, loupistId).catch(() => null),
-    // Read-only: every page's identity; nothing is created.
-    bridge.assetDelta?.({ loupistId, sinceMs: Date.now() }).catch(() => []) ?? Promise.resolve([]),
-  ]).then(([map, pages]): AssetNameData => ({ nodes: map?.nodes ?? [], pages }));
-  byLoupist.set(loupistId, { atMs: Date.now(), data });
+    // A bridge without the Map (a narrow stub) names assets as they are.
+    Promise.resolve().then(() => readKnowledgeMap(bridge, loupistId)).catch(() => null),
+    // Read-only: the followed list, for the Korean names an asset is found by; nothing is created or replayed.
+    withPages ? Promise.resolve().then(() => bridge.assetsList({ loupistId })).catch(() => []) : Promise.resolve([]),
+  ]).then(([map, rows]): AssetNameData => ({
+    nodes: map?.nodes ?? [],
+    pages: rows.map(row => ({ assetId: row.assetId, name: row.name, symbol: assetTicker(row) ?? undefined, market: row.reference?.exchange ?? undefined })),
+  }));
+  byLoupist.set(key, { atMs: Date.now(), data });
   return data;
 }
 
-/** Names assets for the current language; reads the Map only in Korean and only when `enabled`. */
+/**
+ * Names assets for the current language when `enabled`: in Korean from the Map and the
+ * asset pages, elsewhere from the Map alone (a ticker-only page's matched entity).
+ */
 export function useAssetNames(bridge: LoupistBridge | undefined, loupistId: string, enabled = true) {
   const { i18n } = useTranslation();
   const language = i18n.language;
-  const needed = enabled && language.toLowerCase().startsWith("ko");
+  const korean = language.toLowerCase().startsWith("ko");
   const [data, setData] = useState<AssetNameData>({});
   useEffect(() => {
-    if (!needed || !bridge) return undefined;
+    if (!enabled || !bridge) return undefined;
     let live = true;
-    void load(bridge, loupistId).then(next => { if (live) setData(next); });
+    void load(bridge, loupistId, korean).then(next => { if (live) setData(next); });
     return () => { live = false; };
-  }, [bridge, loupistId, needed]);
+  }, [bridge, loupistId, enabled, korean]);
   return useCallback((asset: AssetNameInput) => localAssetName(asset, data, language), [data, language]);
 }

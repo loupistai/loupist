@@ -184,7 +184,7 @@ export function WorkspaceTabBar({
         className="workspace-tabs"
         style={{ gridTemplateColumns: `repeat(${tabIds.length}, max-content)` }}
       >
-        <div className="workspace-tab-list" role="tablist" aria-label={t("workspaceTabBar.openWorkspaceTabs")}>
+        <div className="workspace-tab-list" role="tablist" aria-label={t("workspaceTabBar.panelTabs")}>
         {chatMap ? <div className="workspace-tab workspace-tab-fixed" style={{ gridColumn: 1 }} data-active={mapSelected || undefined}><button id={workspaceTabButtonId(CHAT_MAP_TAB_ID)} type="button" role="tab" aria-selected={mapSelected} aria-controls={workspaceTabPanelId(CHAT_MAP_TAB_ID)} tabIndex={mapSelected ? 0 : -1} onClick={() => chatMap.select()} onKeyDown={event => moveTabFocus(event, CHAT_MAP_TAB_ID)}><span>{t("workspaceTabBar.map")}</span>{chatMap.badged ? <NewContentBadge title={t("workspaceTabBar.map")} /> : null}</button></div> : null}
         <div className="workspace-tab workspace-tab-fixed" style={{ gridColumn: tabIds.indexOf(EVIDENCE_TAB_ID) + 1 }} data-active={evidenceSelected || undefined}>
           <button id={workspaceTabButtonId(EVIDENCE_TAB_ID)} type="button" role="tab" aria-selected={evidenceSelected} aria-controls={workspaceTabPanelId(EVIDENCE_TAB_ID)} tabIndex={evidenceSelected ? 0 : -1}
@@ -232,7 +232,7 @@ export function WorkspaceTabBar({
         })}
         </div>
         {/* Actions share their tab's grid cell, outside the tablist's semantics. */}
-        <div className="workspace-tab-actions" role="group" aria-label={t("workspaceTabBar.openWorkspaceTabs")}>
+        <div className="workspace-tab-actions" role="group" aria-label={t("workspaceTabBar.closeTabs")}>
         {closable.map(tab => <button
                 key={tab.id}
                 type="button"
@@ -258,7 +258,7 @@ export function WorkspaceTabBar({
         open={menuOpen}
         onKeyDown={moveMenuFocus}
       >
-        <summary ref={addTriggerRef} onClick={event => { event.preventDefault(); onMenuOpenChange(!menuOpen); }} aria-label={t("workspaceTabBar.openWorkspaceItem")} title={t("workspaceTabBar.openWorkspaceItem")} aria-haspopup="menu" aria-expanded={menuOpen}>
+        <summary ref={addTriggerRef} onClick={event => { event.preventDefault(); onMenuOpenChange(!menuOpen); }} aria-label={t("workspaceTabBar.addTab")} title={t("workspaceTabBar.addTab")} aria-haspopup="menu" aria-expanded={menuOpen}>
           <PlusIcon />
         </summary>
         <div className="workspace-add-menu" role="menu">

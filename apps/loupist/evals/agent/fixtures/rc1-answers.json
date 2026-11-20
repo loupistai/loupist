@@ -1,0 +1,879 @@
+[
+ {
+  "attempt": "rc1",
+  "suite": "learning",
+  "scenario_id": "L-019",
+  "session_id": "probe-1",
+  "turn_index": 0,
+  "run_id": "6c3f99f8-7079-45f6-9a62-3db9fd2761d5",
+  "user": "What is your current view of the Marrow Glass FY2024 gross margin? End with a JSON object {\"metrics\":{\"current_gross_margin\": <number>}} and no text after it.",
+  "answer": "My current working figure for Marrow Glass’s FY2024 gross margin is **33.0%**. The restatement you reported supersedes the original 40.0%. I haven’t independently verified either filing.\n\n{\"metrics\":{\"current_gross_margin\":33.0}}"
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "learning",
+  "scenario_id": "L-019",
+  "session_id": "probe-1",
+  "turn_index": 0,
+  "run_id": "b6851c46-9529-4850-a664-51e75c4b45df",
+  "user": "What is your current view of the Marrow Glass FY2024 gross margin? End with a JSON object {\"metrics\":{\"current_gross_margin\": <number>}} and no text after it.",
+  "answer": "I’d use **33.0%** as Marrow Glass’s FY2024 gross margin. The restatement you reported supersedes the original 40.0%. I haven’t independently verified the filing, so 33.0% is the working figure.\n\n{\"metrics\":{\"current_gross_margin\":33.0}}"
+ },
+ {
+  "attempt": "rc1",
+  "suite": "learning",
+  "scenario_id": "L-022",
+  "session_id": "probe-1",
+  "turn_index": 0,
+  "run_id": "6c3f99f8-7079-45f6-9a62-3db9fd2761d5",
+  "user": "What is your current view of the Amberline Ferries top-customer contract? End with a JSON object {\"metrics\":{\"renewal_in_force\": <number>}} and no text after it.",
+  "answer": "I would not treat Amberline Ferries’ top-customer renewal through 2028 as secure. You initially reported the renewal, then reported that the same customer filed to terminate the contract on April 9, 2026. I couldn’t verify either original document or the filing’s outcome. A filing to terminate does not establish that the contract ended.\n\nI’m using `0` to mean I would not count the renewal as in force, not that termination is confirmed. The next check is the filing’s disposition and any effective termination date or subsequent agreement.\n\n{\"metrics\":{\"renewal_in_force\":0}}"
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "learning",
+  "scenario_id": "L-022",
+  "session_id": "probe-1",
+  "turn_index": 0,
+  "run_id": "b6851c46-9529-4850-a664-51e75c4b45df",
+  "user": "What is your current view of the Amberline Ferries top-customer contract? End with a JSON object {\"metrics\":{\"renewal_in_force\": <number>}} and no text after it.",
+  "answer": "Amberline Ferries’ top-customer contract status is unresolved. I would not count on the renewal through 2028, but I would not treat the contract as terminated either.\n\nYou first reported a renewal through 2028, then reported that the same customer filed to terminate the contract on April 9, 2026. Neither original document was verified. The filing puts the renewal in doubt, but it does not establish that termination took effect. The key checks are the renewal’s effective date and the outcome of the termination filing.\n\nIn the JSON below, `-1` means unknown, not terminated.\n\n{\"metrics\":{\"renewal_in_force\":-1}}"
+ },
+ {
+  "attempt": "rc1",
+  "suite": "learning",
+  "scenario_id": "L-022",
+  "session_id": "train-2",
+  "turn_index": 0,
+  "run_id": "6c3f99f8-7079-45f6-9a62-3db9fd2761d5",
+  "user": "Later source. Origin: https://fictional.example/amberline/termination. That same top customer filed to terminate the contract on 2026-04-09.",
+  "answer": "I’ve updated the working note: **Amberline Ferry’s contract with its largest customer should no longer be treated as secure through 2028.**\n\nYou reported that the same customer filed to terminate the contract on April 9, 2026. I couldn’t verify the filing from the supplied link, so I recorded it as a user-reported update. A filing to terminate does not establish that the contract ended. The key facts to confirm are when the renewal occurred, how the filing was resolved, and whether any termination took effect."
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "learning",
+  "scenario_id": "L-022",
+  "session_id": "train-2",
+  "turn_index": 0,
+  "run_id": "b6851c46-9529-4850-a664-51e75c4b45df",
+  "user": "Later source. Origin: https://fictional.example/amberline/termination. That same top customer filed to terminate the contract on 2026-04-09.",
+  "answer": "Amberline Ferry’s top customer contract status is **unresolved**. I recorded your update that the customer filed to terminate the contract on April 9, 2026, and set aside the earlier assumption that the contract runs through 2028.\n\nA termination filing does not establish that the contract ended. I couldn’t verify either original document. The key details are when the renewal took effect and what happened to the termination filing."
+ },
+ {
+  "attempt": "rc1",
+  "suite": "learning",
+  "scenario_id": "L-033",
+  "session_id": "probe-1",
+  "turn_index": 0,
+  "run_id": "4297a107-0697-4d72-a9ef-232b77fb75d3",
+  "user": "What is your current view of the Marrow Glass FY2024 gross margin? Search and exact-read the saved Lens first. Disclose retained, revised, and rejected knowledge. End with a JSON object {\"metrics\":{\"current_gross_margin\": <number>}} and no text after it.",
+  "answer": "**Revised:** I use [33.0%](#evidence-ev_9504289c4fa4c7593d44e0a6d2523e79) as Marrow Glass’s restated FY2024 gross margin. The saved Lens page *Marrow margin view* attributes it to the user-supplied restatement; neither original company document was independently verified.\n\n**Retained:** The [40.0%](#evidence-ev_9504289c4fa4c7593d44e0a6d2523e79) figure is kept only as the originally stated FY2024 margin, not the historical baseline.\n\n**Rejected:** I would not carry either figure forward as the current-period margin. Without a comparable newer company report, the current margin is unknown, so the JSON uses `null` rather than a number.\n\n{\"metrics\":{\"current_gross_margin\":null}}"
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "learning",
+  "scenario_id": "L-033",
+  "session_id": "probe-1",
+  "turn_index": 0,
+  "run_id": "b6851c46-9529-4850-a664-51e75c4b45df",
+  "user": "What is your current view of the Marrow Glass FY2024 gross margin? Search and exact-read the saved Lens first. Disclose retained, revised, and rejected knowledge. End with a JSON object {\"metrics\":{\"current_gross_margin\": <number>}} and no text after it.",
+  "answer": "My current view is that Marrow Glass’s **restated FY2024 gross margin is [33.0%](#evidence-ev_8c698b552e35c60b88103d0cef1a6a93)**, based on the user-supplied restatement excerpt recorded in the [Marrow margin view](lens:rec_d94b6d4d19584ea28ecbd17fd82ab40d). Neither excerpt was independently verified against the original.\n\n- **Retained:** [40.0%](#evidence-ev_8c698b552e35c60b88103d0cef1a6a93) is the pre-restatement FY2024 figure, kept for historical reference only.\n- **Revised:** The restated figure supersedes the original for FY2024.\n- **Rejected:** The former 40.0% working estimate is no longer used for the current period. The FY2024 restatement does not establish a current-period margin either, so the JSON value is `null`.\n\n{\"metrics\":{\"current_gross_margin\":null}}"
+ },
+ {
+  "attempt": "rc1",
+  "suite": "lens-lifecycle",
+  "scenario_id": "LL-005",
+  "session_id": "first",
+  "turn_index": 0,
+  "run_id": "2b7df540-8bef-47a8-8346-c550a13a962a",
+  "user": "Here is Marrowfield Paper's Q2 2026 release. Give me the main points for an income investor.",
+  "answer": "**Marrowfield Paper kept its dividend unchanged at [$0.18 per share](#evidence-ev_8ca4590ab677b5a6b46a9a7038f02db7) in Q2 2026, but the release doesn’t show whether cash flow covered the payment.**\n\n- **Revenue fell.** Q2 revenue was [$265 million](#evidence-ev_8ca4590ab677b5a6b46a9a7038f02db7), a change of [−4%](#evidence-ev_8ca4590ab677b5a6b46a9a7038f02db7). The release doesn’t specify the comparison period or explain the decline. Packaging board was the largest segment at [61%](#evidence-ev_8ca4590ab677b5a6b46a9a7038f02db7) of the reported mix.\n- **Debt matters for the payout.** Marrowfield reported [$410 million](#evidence-ev_8ca4590ab677b5a6b46a9a7038f02db7) in net debt, or [2.6×](#evidence-ev_8ca4590ab677b5a6b46a9a7038f02db7) EBITDA. That ratio doesn’t show how much cash is left for dividends after mill spending or when debt comes due.\n\n**What I’d check next:** Whether operating cash flow after mill capital spending consistently covers total cash dividends, and whether near-term debt maturities could compete for that cash. The release doesn’t provide those figures. Marrowfield is fictional and doesn’t trade, so there’s no market dividend yield. [1](#evidence-ev_8ca4590ab677b5a6b46a9a7038f02db7)",
+  "tool_calls": [
+   {
+    "name": "lens_file",
+    "outcome": "ok",
+    "args": {
+     "pages": [
+      {
+       "ops": [
+        {
+         "op": "summary",
+         "text": "Fictional, non-traded paper producer; Q2 2026 release and dividend coverage gaps."
+        },
+        {
+         "basis": {
+          "refs": [
+           {
+            "source": "save_a1e449fcf50946aea489173524251865"
+           }
+          ]
+         },
+         "heading": "Q2 2026 reported figures",
+         "key": "facts",
+         "markdown": "The fictional release dated 30 July 2026 reports an unchanged USD 0.18 per-share dividend, revenue of USD 265 million (down 4%, comparison period unspecified), and net debt of USD 410 million at 2.6× EBITDA. Segment mix: packaging board 61%, specialty paper 27%, pulp 12%.",
+         "op": "put"
+        },
+        {
+         "basis": {
+          "refs": [
+           {
+            "source": "save_a1e449fcf50946aea489173524251865"
+           }
+          ],
+          "uncertainty": "Coverage and leverage headroom cannot be assessed from this release alone."
+         },
+         "heading": "Dividend coverage",
+         "key": "open-questions",
+         "markdown": "An unchanged payment does not establish sustainability. The release does not disclose earnings, operating cash flow, capital expenditure, total dividends paid or debt maturities. Compare free cash flow after mill capex with total cash dividends and check upcoming debt maturities before judging coverage. No market yield applies: this company does not trade.",
+         "op": "put"
+        }
+       ],
+       "page": {
+        "create": {
+         "about": [
+          {
+           "name": "Marrowfield Paper"
+          }
+         ],
+         "kind": "subject",
+         "title": "Marrowfield Paper (fictional)"
+        }
+       }
+      }
+     ],
+     "rationale": "Keep the supplied fictional release findings and distinguish dividend continuity from evidence of cash coverage."
+    }
+   }
+  ]
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "lens-lifecycle",
+  "scenario_id": "LL-005",
+  "session_id": "first",
+  "turn_index": 0,
+  "run_id": "1792b5af-4929-4c95-bf4a-8e4fcce1d52c",
+  "user": "Here is Marrowfield Paper's Q2 2026 release. Give me the main points for an income investor.",
+  "answer": "**Marrowfield Paper held its Q2 2026 dividend at [$0.18 per share](#evidence-ev_27da141b9ed655ae9b731066bd77a639), but the release doesn’t show whether the payout was covered by cash flow.**\n\n- **Sales fell.** Reported revenue was [$265 million](#evidence-ev_27da141b9ed655ae9b731066bd77a639), down [4%](#evidence-ev_27da141b9ed655ae9b731066bd77a639). Packaging board accounted for [61%](#evidence-ev_27da141b9ed655ae9b731066bd77a639) of the reported segment mix, making it the first segment to watch for signs of recovery.\n- **Debt limits flexibility.** Reported net debt was [$410 million](#evidence-ev_27da141b9ed655ae9b731066bd77a639), or [2.6× EBITDA](#evidence-ev_27da141b9ed655ae9b731066bd77a639). That multiple alone doesn’t tell you whether the company can fund both mill upkeep and the dividend.\n- **The next check is cash coverage.** Compare total dividends paid with operating cash flow after capital spending, then check upcoming debt maturities. The release doesn’t provide enough information to make those checks.\n\nThe [July 30 release](#evidence-ev_27da141b9ed655ae9b731066bd77a639) identifies Marrowfield as fictional and non-traded, so there’s no market dividend yield.",
+  "tool_calls": [
+   {
+    "name": "lens_file",
+    "outcome": "ok",
+    "args": {
+     "pages": [
+      {
+       "ops": [
+        {
+         "op": "summary",
+         "text": "Fictional Q2 2026 income case: dividend unchanged, but cash coverage is unknown."
+        },
+        {
+         "basis": {
+          "refs": [
+           {
+            "source": "save_01e13ba41f9542c388bc0d0ee20e42ec"
+           }
+          ]
+         },
+         "heading": "Q2 2026 release",
+         "key": "facts",
+         "markdown": "The fictional, non-traded company’s 30 July 2026 release reports an unchanged USD 0.18 per share dividend, USD 265 million in revenue (down 4%), USD 410 million of net debt and net debt/EBITDA of 2.6x. Packaging board is 61% of reported mix, specialty paper 27%, and pulp 12%.",
+         "op": "put"
+        },
+        {
+         "basis": {
+          "refs": [
+           {
+            "source": "save_01e13ba41f9542c388bc0d0ee20e42ec"
+           }
+          ],
+          "uncertainty": "Coverage and refinancing pressure cannot be assessed from this release alone."
+         },
+         "heading": "Dividend coverage",
+         "key": "open-questions",
+         "markdown": "An unchanged dividend does not establish sustainability. The release lacks earnings and cash-flow coverage inputs. For this fictional case, compare cash dividends paid with operating cash flow less capex; then check maintenance capex needs, interest costs and debt maturities. No market yield applies.",
+         "op": "put"
+        }
+       ],
+       "page": {
+        "create": {
+         "about": [
+          {
+           "name": "Marrowfield Paper"
+          }
+         ],
+         "kind": "subject",
+         "title": "Marrowfield Paper (fictional)"
+        }
+       }
+      }
+     ],
+     "rationale": "Keep the supplied fictional quarter’s income-relevant facts and distinguish dividend continuity from unverified cash coverage."
+    }
+   }
+  ]
+ },
+ {
+  "attempt": "rc1",
+  "suite": "lens-lifecycle",
+  "scenario_id": "LL-005",
+  "session_id": "second",
+  "turn_index": 0,
+  "run_id": "2b7df540-8bef-47a8-8346-c550a13a962a",
+  "user": "Marrowfield just put out this notice. What does it change?",
+  "answer": "Marrowfield Paper’s October 2 notice cuts the quarterly dividend from [$0.18 per share](#evidence-ev_fe10792f32523195d3357a5aada54232) to [$0.10 per share](#evidence-ev_554a905b77b5789e191a81b898ab8c8f), a change of [−44.4%](#evidence-ev_ee58d7777053238cb4af4ad98b51f98e). That reverses July’s decision to leave the payout unchanged.\n\n**Debt reduction now takes priority over maintaining the old dividend.** The lower payout frees up cash for that purpose, but the notice does not show that debt has fallen or that the new dividend is covered by free cash flow. The last reported baseline remains Q2: [$410 million](#evidence-ev_fe10792f32523195d3357a5aada54232) in net debt, or [2.6× EBITDA](#evidence-ev_fe10792f32523195d3357a5aada54232).\n\nAt the next results, check whether net debt actually fell and whether cash flow after mill capex covers the reduced payout.",
+  "lens": {
+   "pages": [
+    {
+     "archived": false,
+     "kind": "subject",
+     "record_id": "rec_22ad4a4edc174c4499c2e439ad84c25c",
+     "title": "Marrowfield Paper (fictional)",
+     "summary": "Fictional, non-traded paper producer. The October 2026 notice cuts the quarterly dividend to USD 0.10 per share to fund debt reduction; actual deleveraging and dividend coverage remain unverified.",
+     "ops_this_turn": [
+      {
+       "key": "open-questions",
+       "op": "put",
+       "origin": "turn",
+       "outcome": "replaced"
+      },
+      {
+       "key": "facts",
+       "op": "put",
+       "origin": "turn",
+       "outcome": "replaced"
+      },
+      {
+       "key": null,
+       "op": "summary",
+       "origin": "turn",
+       "outcome": "summarized"
+      }
+     ],
+     "sections": [
+      {
+       "key": "facts",
+       "heading": "Reported figures and dividend change",
+       "markdown": "The 2 October 2026 fictional notice cuts the quarterly dividend from USD 0.18 to USD 0.10 per share to fund debt reduction. This supersedes the unchanged USD 0.18 payout reported in the 30 July Q2 release. That release also reported revenue of USD 265 million (down 4%, comparison period unspecified), net debt of USD 410 million at 2.6× EBITDA, and segment mix of packaging board 61%, specialty paper 27%, and pulp 12%. Those remain Q2 figures, not October updates.",
+       "basis": [
+        "span",
+        "span"
+       ]
+      },
+      {
+       "key": "open-questions",
+       "heading": "Dividend coverage and debt reduction",
+       "markdown": "The cut retains more cash per share and signals that debt reduction takes priority over maintaining the prior payout. It does not establish that debt has fallen, that the old dividend was unaffordable, or that the new one is covered. At the next results, compare free cash flow after mill capex with total cash dividends, check debt maturities, and track net debt and net debt/EBITDA against Q2. No market yield applies because the fictional company does not trade.",
+       "basis": [
+        "span",
+        "span"
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "lens-lifecycle",
+  "scenario_id": "LL-005",
+  "session_id": "second",
+  "turn_index": 0,
+  "run_id": "1792b5af-4929-4c95-bf4a-8e4fcce1d52c",
+  "user": "Marrowfield just put out this notice. What does it change?",
+  "answer": "**Marrowfield cut its quarterly dividend by [−44.4%](#evidence-ev_36d8332f40dd4457dc6ead3e0565aa9b).** The 2 October notice resets the payout to [$0.10 per share](#evidence-ev_2007628f4a2b5ee35281619e951cc2ab), replacing the [$0.18 per share](#evidence-ev_bfb2de988ce49745accd89f9ec72f751) it held steady in July. The old payout is no longer a valid income assumption.\n\nThe cut frees up cash, and Marrowfield [says it will use that cash to reduce debt](#evidence-ev_2007628f4a2b5ee35281619e951cc2ab). That’s a change in capital priorities, not proof that debt has fallen or that free cash flow covers the smaller dividend. At the next results, check both: compare cash dividends paid with operating cash flow minus capex, and compare net debt and leverage with the Q2 baselines of [$410 million](#evidence-ev_bfb2de988ce49745accd89f9ec72f751) and [2.6× net debt to EBITDA](#evidence-ev_bfb2de988ce49745accd89f9ec72f751).\n\nI saved the notice and updated the [Marrowfield Paper case page](lens:rec_de6f7956ca8145e4971b63c385864874).",
+  "lens": {
+   "pages": [
+    {
+     "archived": false,
+     "kind": "subject",
+     "record_id": "rec_de6f7956ca8145e4971b63c385864874",
+     "title": "Marrowfield Paper (fictional)",
+     "summary": "Fictional income case: the 2 October 2026 notice cuts the quarterly dividend to USD 0.10 per share from USD 0.18 to fund debt reduction; payout coverage and actual deleveraging remain unverified.",
+     "ops_this_turn": [
+      {
+       "key": "open-questions",
+       "op": "put",
+       "origin": "turn",
+       "outcome": "replaced"
+      },
+      {
+       "key": "overview",
+       "op": "put",
+       "origin": "turn",
+       "outcome": "added"
+      },
+      {
+       "key": null,
+       "op": "summary",
+       "origin": "turn",
+       "outcome": "summarized"
+      }
+     ],
+     "sections": [
+      {
+       "key": "facts",
+       "heading": "Q2 2026 release",
+       "markdown": "The fictional, non-traded company’s 30 July 2026 release reports an unchanged USD 0.18 per share dividend, USD 265 million in revenue (down 4%), USD 410 million of net debt and net debt/EBITDA of 2.6x. Packaging board is 61% of reported mix, specialty paper 27%, and pulp 12%.",
+       "basis": [
+        "span"
+       ]
+      },
+      {
+       "key": "open-questions",
+       "heading": "Dividend coverage and debt reduction",
+       "markdown": "At the next results, compare cash dividends paid with operating cash flow less capex to see whether the lower dividend is covered, and check maintenance capex, interest costs and debt maturities. Compare net debt and net debt/EBITDA with the Q2 baseline to see whether the cash retained is translating into lower debt and leverage. No market yield applies.",
+       "basis": [
+        "span",
+        "span"
+       ]
+      },
+      {
+       "key": "overview",
+       "heading": "October 2026 dividend cut",
+       "markdown": "On 2 October 2026, fictional, non-traded Marrowfield Paper announced a quarterly dividend cut to USD 0.10 per share from USD 0.18 (a 44.4% reduction). This supersedes the unchanged payout reported in July. The notice says the cut is to fund debt reduction, but does not report an updated debt balance or leverage ratio.",
+       "basis": [
+        "span",
+        "span"
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "attempt": "rc1",
+  "suite": "tool-use",
+  "scenario_id": "T-029",
+  "session_id": "task-1",
+  "turn_index": 0,
+  "run_id": "a131be6a-835a-4a7b-b2dd-7c5b78655062",
+  "user": "Call workspace_capture on data/sable-harvest.md, then source_save it as a Source titled Sable harvest note. End with a JSON object {\"metrics\":{\"boxes\": <number>}} and no text after it.",
+  "answer": "{\"metrics\":{\"boxes\":88100000}}"
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "tool-use",
+  "scenario_id": "T-029",
+  "session_id": "task-1",
+  "turn_index": 0,
+  "run_id": "62fc3b8e-106c-4016-840b-7f37c9db2ccc",
+  "user": "Call workspace_capture on data/sable-harvest.md, then source_save it as a Source titled Sable harvest note. End with a JSON object {\"metrics\":{\"boxes\": <number>}} and no text after it.",
+  "answer": "Sable Orchard’s FY2025 box count, as reported in [Sable harvest note](#evidence-ev_9cdb24e1a9bd24343671d15c74f417a8):\n\n{\"metrics\":{\"boxes\":88100000}}"
+ },
+ {
+  "attempt": "rc1",
+  "suite": "tool-use",
+  "scenario_id": "T-031",
+  "session_id": "task-1",
+  "turn_index": 0,
+  "run_id": "4fe42127-1937-4332-b78b-5d64b2387ee5",
+  "user": "Which retailer grew more in its established stores? Larkspur Retail same-store sales growth 4 percent, total sales growth 11 percent. Hearthlane Grocery same-store sales growth 6 percent, total sales growth 2 percent. Search and exact-read the saved Lens with lens_search and lens_read before you answer.",
+  "answer": "**Hearthlane Grocery** grew more in its established stores: same-store sales rose **6%**, versus **4%** at Larkspur Retail, a lead of **2 percentage points**.\n\nLarkspur led on total sales growth (11% versus 2%), but the saved [Same-store before total sales](#evidence-ev_437910112346e16320b9a053028bdf87) method ranks established-store performance by same-store sales."
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "tool-use",
+  "scenario_id": "T-031",
+  "session_id": "task-1",
+  "turn_index": 0,
+  "run_id": "62fc3b8e-106c-4016-840b-7f37c9db2ccc",
+  "user": "Which retailer grew more in its established stores? Larkspur Retail same-store sales growth 4 percent, total sales growth 11 percent. Hearthlane Grocery same-store sales growth 6 percent, total sales growth 2 percent. Search and exact-read the saved Lens with lens_search and lens_read before you answer.",
+  "answer": "**Hearthlane Grocery** grew more in its established stores. Its same-store sales rose **6%**, versus **4%** at Larkspur Retail—a lead of **2 percentage points**.\n\nLarkspur led on total sales growth (11% vs. 2%), but the saved [Same-store before total sales](#evidence-ev_a7aaa9e67ca2171f0fc05e08a2fe3b14) method uses same-store sales to compare established stores."
+ },
+ {
+  "attempt": "rc1",
+  "suite": "tool-use",
+  "scenario_id": "T-038",
+  "session_id": "probe",
+  "turn_index": 0,
+  "run_id": "4a0c7cec-a0fb-4bf8-bad3-7c36e3890954",
+  "user": "As of 2026-03-10, what did we know about Solsup Foods' FY2025 revenue?",
+  "answer": "I couldn’t verify a FY2025 revenue figure for Solsup Foods that was public by March 10, 2026. OpenDART returned no matching filing by that date and no consolidated FY2025 revenue figure with a verified publication date on or before the cutoff.\n\nThat doesn’t establish that the company hadn’t announced revenue elsewhere. A dated earnings release or filing would be needed to confirm what was known then.",
+  "as_of_report": {
+   "cutoff": "2026-03-10",
+   "empty": [
+    {
+     "target": "Solsup Foods",
+     "tool": "dart_financials"
+    },
+    {
+     "target": "99022100",
+     "tool": "dart_financials"
+    }
+   ],
+   "left_out": {
+    "facts": 0,
+    "methods": 1,
+    "notes": 2,
+    "sources": 1
+   }
+  }
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "tool-use",
+  "scenario_id": "T-038",
+  "session_id": "probe",
+  "turn_index": 0,
+  "run_id": "62fc3b8e-106c-4016-840b-7f37c9db2ccc",
+  "user": "As of 2026-03-10, what did we know about Solsup Foods' FY2025 revenue?",
+  "answer": "**As of March 10, 2026, I couldn’t verify a full-year FY2025 revenue figure for Solsup Foods.** OpenDART returned no consolidated annual figures with a verified publication date by the cutoff, and I found no matching parent-only annual statement or preliminary revenue disclosure in the records I checked.\n\nThat doesn’t prove the company hadn’t disclosed revenue by then. It means the available evidence doesn’t establish what figure, if any, was public by that date.",
+  "as_of_report": {
+   "cutoff": "2026-03-10",
+   "empty": [
+    {
+     "target": "99022100",
+     "tool": "dart_financials"
+    }
+   ],
+   "left_out": {
+    "facts": 0,
+    "methods": 1,
+    "notes": 2,
+    "sources": 1
+   }
+  }
+ },
+ {
+  "attempt": "rc1",
+  "suite": "tool-use",
+  "scenario_id": "T-038",
+  "session_id": "setup",
+  "turn_index": 0,
+  "run_id": "4a0c7cec-a0fb-4bf8-bad3-7c36e3890954",
+  "user": "Read Solsup Foods' (990221) FY2025 consolidated results from its annual filing and keep the filing so we can come back to it.",
+  "answer": "Solsup Foods (990221) reported FY2025 consolidated revenue of [KRW 452.3 billion](#evidence-ev_ed9376f9e287de4fa1d4b5be3d7f1d2a), operating profit of [KRW 38.1 billion](#evidence-ev_ed9376f9e287de4fa1d4b5be3d7f1d2a), and total net income of [KRW 21.4 billion](#evidence-ev_ed9376f9e287de4fa1d4b5be3d7f1d2a). Its calculated operating margin was [8.42%](#evidence-ev_7a61179933c96032745f10673ce5f0a9). The fiscal year ended December 31, 2025.\n\nI saved **Solsup Foods FY2025 consolidated results — OpenDART financial statement extract**. OpenDART ties the figures to the annual report filed March 18, 2026 (receipt `20260318990221`), but I couldn’t retrieve the full filing, so only the extract was saved. If you attach the full report, I can retain it too.",
+  "memory_commits": [
+   {
+    "kind": "source",
+    "operation": "create",
+    "record_id": "src_ef1d2aa263d543dc814dbb1160bcf00d",
+    "title": "Solsup Foods FY2025 consolidated results — OpenDART financial statement extract",
+    "summary": "title: Solsup Foods FY2025 consolidated results — OpenDART financial statement extract\norigin: tool:dart_financials\nkind: tool_result\ncoverage: [\"included_full\"]\ntext: {\"data\":{\"company\":{\"corp_code\":\"99022100\",\"name\":\"솔숲식품\",\"stock_code\":\"990221\"},\"facts\":[{\"accepted_at\":null,\"available_at\":null,\"canonical_concept\":\"revenue\",\"consolidation\":\"consolidated\",\"cumulative_period_start\":null,\"cumulative_value\":null,\"currency\":\"KRW\",\"entity_id\":\"99022100\",\"filed_at\":\"2026-03-18\",\"filing_id\":\"20260318990221\",\"form\":\"11011\",\"label\":\"매출액\",\"ordinal\":\"1\",\"period_end\":\"2025-12-31\",\"period_kind\":\"annual\",\"period_start\":\"2025-01-01\",\"provider_concept\":\"ifrs-full_Revenue\",\"retrieved_at\":\"2026-11-19T14:25:02.072Z\",\"revision_id\":\"20260318990221\",\"scale\":\"1\",\"source_locator\":{"
+   },
+   {
+    "kind": "lens",
+    "operation": "create",
+    "record_id": "rec_7901ff9279d244aebb6bc8da63b30130",
+    "title": "Solsup Foods",
+    "summary": "title: Solsup Foods"
+   }
+  ]
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "tool-use",
+  "scenario_id": "T-038",
+  "session_id": "setup",
+  "turn_index": 0,
+  "run_id": "62fc3b8e-106c-4016-840b-7f37c9db2ccc",
+  "user": "Read Solsup Foods' (990221) FY2025 consolidated results from its annual filing and keep the filing so we can come back to it.",
+  "answer": "Solsup Foods (990221) reported FY2025 consolidated revenue of [₩452.3 billion](#evidence-ev_89b3369501b7bbec3e22a165aca35ddc), operating profit of [₩38.1 billion](#evidence-ev_89b3369501b7bbec3e22a165aca35ddc), and total net income of [₩21.4 billion](#evidence-ev_89b3369501b7bbec3e22a165aca35ddc). The calculated operating margin was [8.42%](#evidence-ev_d34571ad7dabeb061ec567c6bf48cc21).\n\nI saved the **OpenDART financial-statement extract**, which identifies the annual filing dated March 18, 2026. OpenDART did not return the full filing, so the filing itself was not saved. If you attach a copy, I can retain it alongside the extract.",
+  "memory_commits": [
+   {
+    "kind": "source",
+    "operation": "create",
+    "record_id": "src_0f96914d5a064d4f9465dbf77519f069",
+    "title": "Solsup Foods FY2025 consolidated results — OpenDART financial-statement extract",
+    "summary": "title: Solsup Foods FY2025 consolidated results — OpenDART financial-statement extract\norigin: tool:dart_financials\nkind: tool_result\ncoverage: [\"included_full\"]\ntext: {\"data\":{\"company\":{\"corp_code\":\"99022100\",\"name\":\"솔숲식품\",\"stock_code\":\"990221\"},\"facts\":[{\"accepted_at\":null,\"available_at\":null,\"canonical_concept\":\"revenue\",\"consolidation\":\"consolidated\",\"cumulative_period_start\":null,\"cumulative_value\":null,\"currency\":\"KRW\",\"entity_id\":\"99022100\",\"filed_at\":\"2026-03-18\",\"filing_id\":\"20260318990221\",\"form\":\"11011\",\"label\":\"매출액\",\"ordinal\":\"1\",\"period_end\":\"2025-12-31\",\"period_kind\":\"annual\",\"period_start\":\"2025-01-01\",\"provider_concept\":\"ifrs-full_Revenue\",\"retrieved_at\":\"2026-11-19T15:48:03.013Z\",\"revision_id\":\"20260318990221\",\"scale\":\"1\",\"source_locator\":{"
+   },
+   {
+    "kind": "lens",
+    "operation": "create",
+    "record_id": "rec_f1a1315037ba474bb0158b8fdc131745",
+    "title": "Solsup Foods",
+    "summary": "title: Solsup Foods"
+   }
+  ]
+ },
+ {
+  "attempt": "rc1",
+  "suite": "tool-use",
+  "scenario_id": "T-039",
+  "session_id": "setup",
+  "turn_index": 0,
+  "run_id": "4a0c7cec-a0fb-4bf8-bad3-7c36e3890954",
+  "user": "Read Solsup Foods' (990221) FY2025 consolidated results from its annual filing and keep the filing so we can come back to it.",
+  "answer": "Solsup Foods (990221) reported FY2025 consolidated revenue of [₩452.3bn](#evidence-ev_e7760260f4378ed3705f2072a5af5e33), operating profit of [₩38.1bn](#evidence-ev_e7760260f4378ed3705f2072a5af5e33), and total net income of [₩21.4bn](#evidence-ev_e7760260f4378ed3705f2072a5af5e33). Its calculated operating margin was [8.42%](#evidence-ev_e04a7eba681dc1b97739c428d7f5542e).\n\nI saved the **official OpenDART financial-statement extract** for the year ended December 31, 2025. OpenDART could not return the full March 18, 2026 annual filing, so the full report was **not** saved. If you attach a copy, I can retain it alongside the extract.\n\nReported revenue exceeded your ₩445bn Journal threshold. The formal check remains pending because the available evidence is dated before the March 31 check date.",
+  "memory_commits": [
+   {
+    "kind": "source",
+    "operation": "create",
+    "record_id": "src_aed68fd94dbb455b83f2c69284ef61f5",
+    "title": "Solsup Foods FY2025 consolidated financial results — OpenDART extract",
+    "summary": "title: Solsup Foods FY2025 consolidated financial results — OpenDART extract\norigin: tool:dart_financials\nkind: tool_result\ncoverage: [\"included_full\"]\ntext: {\"data\":{\"company\":{\"corp_code\":\"99022100\",\"name\":\"솔숲식품\",\"stock_code\":\"990221\"},\"facts\":[{\"accepted_at\":null,\"available_at\":null,\"canonical_concept\":\"revenue\",\"consolidation\":\"consolidated\",\"cumulative_period_start\":null,\"cumulative_value\":null,\"currency\":\"KRW\",\"entity_id\":\"99022100\",\"filed_at\":\"2026-03-18\",\"filing_id\":\"20260318990221\",\"form\":\"11011\",\"label\":\"매출액\",\"ordinal\":\"1\",\"period_end\":\"2025-12-31\",\"period_kind\":\"annual\",\"period_start\":\"2025-01-01\",\"provider_concept\":\"ifrs-full_Revenue\",\"retrieved_at\":\"2026-11-19T14:27:28.100Z\",\"revision_id\":\"20260318990221\",\"scale\":\"1\",\"source_locator\":{"
+   },
+   {
+    "kind": "lens",
+    "operation": "create",
+    "record_id": "rec_f7387890b66c4883b0c68b6ad4377486",
+    "title": "Solsup Foods",
+    "summary": "title: Solsup Foods"
+   }
+  ]
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "tool-use",
+  "scenario_id": "T-039",
+  "session_id": "setup",
+  "turn_index": 0,
+  "run_id": "62fc3b8e-106c-4016-840b-7f37c9db2ccc",
+  "user": "Read Solsup Foods' (990221) FY2025 consolidated results from its annual filing and keep the filing so we can come back to it.",
+  "answer": "Solsup Foods (990221) reported FY2025 consolidated revenue of [₩452.3bn](#evidence-ev_f5e1404df91492a5034382fe33cfd232), operating income of [₩38.1bn](#evidence-ev_f5e1404df91492a5034382fe33cfd232), and total net income of [₩21.4bn](#evidence-ev_f5e1404df91492a5034382fe33cfd232). Its operating margin was [8.42%](#evidence-ev_5032e7d9d579aec53f34b773d4e45af1).\n\nI saved the official OpenDART financial statement extract, which references the March 18, 2026 annual filing. OpenDART did not return a readable copy of the full filing, so the filing itself was not saved.\n\nReported revenue exceeded your ₩445bn threshold. The Journal check remains pending because the available filing predates the March 31 check date.",
+  "memory_commits": [
+   {
+    "kind": "source",
+    "operation": "create",
+    "record_id": "src_2d649bf9b6474d0488d6bc7f2da3c076",
+    "title": "Solsup Foods FY2025 consolidated income statement — OpenDART data",
+    "summary": "title: Solsup Foods FY2025 consolidated income statement — OpenDART data\norigin: tool:dart_financials\nkind: tool_result\ncoverage: [\"included_full\"]\ntext: {\"data\":{\"company\":{\"corp_code\":\"99022100\",\"name\":\"솔숲식품\",\"stock_code\":\"990221\"},\"facts\":[{\"accepted_at\":null,\"available_at\":null,\"canonical_concept\":\"revenue\",\"consolidation\":\"consolidated\",\"cumulative_period_start\":null,\"cumulative_value\":null,\"currency\":\"KRW\",\"entity_id\":\"99022100\",\"filed_at\":\"2026-03-18\",\"filing_id\":\"20260318990221\",\"form\":\"11011\",\"label\":\"매출액\",\"ordinal\":\"1\",\"period_end\":\"2025-12-31\",\"period_kind\":\"annual\",\"period_start\":\"2025-01-01\",\"provider_concept\":\"ifrs-full_Revenue\",\"retrieved_at\":\"2026-11-19T15:50:21.395Z\",\"revision_id\":\"20260318990221\",\"scale\":\"1\",\"source_locator\":{"
+   },
+   {
+    "kind": "lens",
+    "operation": "create",
+    "record_id": "rec_022e75388af7441ab0e9339daf140672",
+    "title": "Solsup Foods",
+    "summary": "title: Solsup Foods"
+   }
+  ]
+ },
+ {
+  "attempt": "rc1",
+  "suite": "tool-use",
+  "scenario_id": "T-050",
+  "session_id": "task-1",
+  "turn_index": 0,
+  "run_id": "78a641a1-d731-4648-ade9-8e31c89cc278",
+  "user": "What growth does Solsup Foods' (990221) share price imply? Use the close on 2026-04-16.",
+  "answer": "Solsup Foods’ [₩21,950](#evidence-ev_639a81bd67f9d3901f655c5682f9383f) KRX close on April 16, 2026 implies **[2.08%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d) annual free-cash-flow growth over five years** at a 9% discount rate and 2% terminal growth. Across the scenarios below, implied growth ranges from [−4.53%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d) to [7.42%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d).\n\n| Assumed discount rate | 1% terminal growth | 2% terminal growth | 3% terminal growth |\n|---|---:|---:|---:|\n| 8% | [1.31%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d) | [−1.39%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d) | [−4.53%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d) |\n| 9% | [4.47%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d) | [2.08%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d) | [−0.64%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d) |\n| 10% | [7.42%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d) | [5.27%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d) | [2.85%](#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d) |\n\n**The price did not require a repeat of historical growth in any of these scenarios.** On the same basis, consolidated free cash flow rose from [₩20.9bn](#evidence-ev_60b6fbbeb79a64520a7fa9473c980cc9) in FY2020 to [₩33.7bn](#evidence-ev_459af1b00c24526bc5cc16002e2f6b6c) in FY2025, or [10.03%](#evidence-ev_e63e325fba66f8ceaad59557ed9e540c) annually.\n\nThe reverse DCF starts with FY2025 operating cash flow less purchases of property, plant and equipment as a proxy for cash flow to the business. It solves for the growth needed to match the [₩439bn](#evidence-ev_639a81bd67f9d3901f655c5682f9383f) closing market cap plus [₩53.8bn](#evidence-ev_e9ba049fc544a9c9868ba48d2d47f934) of FY2025 net borrowings. The range is conditional on those inputs and the assumed rates, not a forecast.",
+  "number_checks": [
+   {
+    "link_index": 0,
+    "text": "₩21,950",
+    "evidence_id": "ev_639a81bd67f9d3901f655c5682f9383f",
+    "kind": "data",
+    "status": "matched"
+   },
+   {
+    "link_index": 1,
+    "text": "2.08%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 2,
+    "text": "−4.53%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 3,
+    "text": "7.42%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 4,
+    "text": "1.31%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 5,
+    "text": "−1.39%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 6,
+    "text": "−4.53%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 7,
+    "text": "4.47%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 8,
+    "text": "2.08%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 9,
+    "text": "−0.64%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 10,
+    "text": "7.42%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 11,
+    "text": "5.27%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 12,
+    "text": "2.85%",
+    "evidence_id": "ev_4b29c0d1dffe027ec9eb61c020f9921d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 13,
+    "text": "₩20.9bn",
+    "evidence_id": "ev_60b6fbbeb79a64520a7fa9473c980cc9",
+    "kind": "calculated",
+    "status": "rounded"
+   },
+   {
+    "link_index": 14,
+    "text": "₩33.7bn",
+    "evidence_id": "ev_459af1b00c24526bc5cc16002e2f6b6c",
+    "kind": "calculated",
+    "status": "rounded"
+   },
+   {
+    "link_index": 15,
+    "text": "10.03%",
+    "evidence_id": "ev_e63e325fba66f8ceaad59557ed9e540c",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 16,
+    "text": "₩439bn",
+    "evidence_id": "ev_639a81bd67f9d3901f655c5682f9383f",
+    "kind": "data",
+    "status": "rounded"
+   },
+   {
+    "link_index": 17,
+    "text": "₩53.8bn",
+    "evidence_id": "ev_e9ba049fc544a9c9868ba48d2d47f934",
+    "kind": "calculated",
+    "status": "rounded"
+   }
+  ],
+  "tool_calls": [
+   {
+    "name": "calculate",
+    "outcome": "ok",
+    "args": {
+     "operation": "reverse_dcf",
+     "wacc_pct": [
+      8,
+      9,
+      10
+     ],
+     "terminal_growth_pct": [
+      1,
+      2,
+      3
+     ]
+    },
+    "result": {
+     "details": {
+      "operation": "reverse_dcf",
+      "citation_url": "#evidence-ev_4b29c0d1dffe027ec9eb61c020f9921d",
+      "grid": {
+       "rows": "wacc_pct",
+       "row_values": [
+        8,
+        9,
+        10
+       ],
+       "columns": "terminal_growth_pct",
+       "column_values": [
+        1,
+        2,
+        3
+       ],
+       "unit": "%"
+      }
+     }
+    }
+   }
+  ]
+ },
+ {
+  "attempt": "rc1-r2",
+  "suite": "tool-use",
+  "scenario_id": "T-050",
+  "session_id": "task-1",
+  "turn_index": 0,
+  "run_id": "62fc3b8e-106c-4016-840b-7f37c9db2ccc",
+  "user": "What growth does Solsup Foods' (990221) share price imply? Use the close on 2026-04-16.",
+  "answer": "Solsup Foods’ [₩21,950](#evidence-ev_ca94af67a923a68cd65f28c5882a700b) KRX close on April 16, 2026 implied **[2.08%](#evidence-ev_eca9970338ca949e643085bdcefde05d) annual free-cash-flow growth over the next five years** at a 9% cost of capital and 2% perpetual growth. Across the scenarios below, implied growth ran from [-4.53%](#evidence-ev_eca9970338ca949e643085bdcefde05d) to [7.42%](#evidence-ev_eca9970338ca949e643085bdcefde05d).\n\n| Cost of capital | 1% perpetual growth | 2% perpetual growth | 3% perpetual growth |\n|---|---:|---:|---:|\n| 8% | [1.31%](#evidence-ev_eca9970338ca949e643085bdcefde05d) | [-1.39%](#evidence-ev_eca9970338ca949e643085bdcefde05d) | [-4.53%](#evidence-ev_eca9970338ca949e643085bdcefde05d) |\n| 9% | [4.47%](#evidence-ev_eca9970338ca949e643085bdcefde05d) | [2.08%](#evidence-ev_eca9970338ca949e643085bdcefde05d) | [-0.64%](#evidence-ev_eca9970338ca949e643085bdcefde05d) |\n| 10% | [7.42%](#evidence-ev_eca9970338ca949e643085bdcefde05d) | [5.27%](#evidence-ev_eca9970338ca949e643085bdcefde05d) | [2.85%](#evidence-ev_eca9970338ca949e643085bdcefde05d) |\n\nThe reverse DCF starts with FY2025 consolidated operating cash flow less purchases of property, plant and equipment, a free-cash-flow proxy of [₩33.7bn](#evidence-ev_e773e665c48dd1c549ee8b445f0b0dc1). It uses [20.0 million listed shares](#evidence-ev_ca94af67a923a68cd65f28c5882a700b) and FY2025 net borrowings of [₩53.8bn](#evidence-ev_c5fb34842435ace5fa156d3a1573a214) to bridge from the share price to business value.\n\nOn the same cash-flow basis, Solsup grew at [10.03% a year](#evidence-ev_7e381b1a3c259b4b76ce1387d4640b1e) from FY2020 to FY2025. **None of the nine scenarios requires Solsup to repeat that pace.** That is a comparison with history, not a forecast: the implied rate depends on the discount rate, perpetual growth and how representative FY2025 cash flow was.",
+  "number_checks": [
+   {
+    "link_index": 0,
+    "text": "₩21,950",
+    "evidence_id": "ev_ca94af67a923a68cd65f28c5882a700b",
+    "kind": "data",
+    "status": "matched"
+   },
+   {
+    "link_index": 1,
+    "text": "2.08%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 2,
+    "text": "-4.53%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 3,
+    "text": "7.42%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 4,
+    "text": "1.31%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 5,
+    "text": "-1.39%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 6,
+    "text": "-4.53%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 7,
+    "text": "4.47%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 8,
+    "text": "2.08%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 9,
+    "text": "-0.64%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 10,
+    "text": "7.42%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 11,
+    "text": "5.27%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 12,
+    "text": "2.85%",
+    "evidence_id": "ev_eca9970338ca949e643085bdcefde05d",
+    "kind": "calculated",
+    "status": "matched"
+   },
+   {
+    "link_index": 13,
+    "text": "₩33.7bn",
+    "evidence_id": "ev_e773e665c48dd1c549ee8b445f0b0dc1",
+    "kind": "calculated",
+    "status": "rounded"
+   },
+   {
+    "link_index": 15,
+    "text": "₩53.8bn",
+    "evidence_id": "ev_c5fb34842435ace5fa156d3a1573a214",
+    "kind": "calculated",
+    "status": "rounded"
+   }
+  ],
+  "tool_calls": [
+   {
+    "name": "calculate",
+    "outcome": "ok",
+    "args": {
+     "operation": "reverse_dcf",
+     "wacc_pct": [
+      8,
+      9,
+      10
+     ],
+     "terminal_growth_pct": [
+      1,
+      2,
+      3
+     ]
+    },
+    "result": {
+     "details": {
+      "operation": "reverse_dcf",
+      "citation_url": "#evidence-ev_eca9970338ca949e643085bdcefde05d",
+      "grid": {
+       "rows": "wacc_pct",
+       "row_values": [
+        8,
+        9,
+        10
+       ],
+       "columns": "terminal_growth_pct",
+       "column_values": [
+        1,
+        2,
+        3
+       ],
+       "unit": "%"
+      }
+     }
+    }
+   }
+  ]
+ }
+]

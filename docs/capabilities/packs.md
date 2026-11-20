@@ -59,8 +59,7 @@ the Rust-selected compatible license, defaulting to BY-NC-SA. See
   shapes, high-entropy runs of 32 or more characters, and exact matches of the GitHub
   token, every value in Pi's private `auth.json`, every custom-connection secret and every
   connector credential), `account` (the saved Korea Investment account number, Luhn-valid
-  card numbers, IBANs, resident-ID shapes) and `holding` (a held symbol or name within 40
-  characters of that holding's exact quantity, cost or value) block; `personal` (an email,
+  card numbers, IBANs, resident-ID shapes) block; `personal` (an email,
   phone number, the macOS full name or home path) warns. Secret values are compared in
   Rust only; a finding names its class and the item's label, cut before the first word
   that could carry the value.

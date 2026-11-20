@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, XIcon } from "lucide-react";
 import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber, formatRelative } from "@/i18n/format";
 import type { LoupistBridge } from "../../types";
@@ -110,7 +110,8 @@ export function Gallery({ bridge, onBack, onOpened, onUseLinkOrFile }: {
       <Button variant="outline" size="sm" onClick={onUseLinkOrFile}>{t("useLinkOrFile")}</Button>
     </div> : <>
       <div className="gallery-filters">
-        <Input type="search" className="gallery-search" aria-label={t("search")} placeholder={t("search")} value={query} onChange={event => setQuery(event.target.value)} />
+        <div className="gallery-search"><Input type="search" aria-label={t("search")} placeholder={t("search")} value={query} onChange={event => setQuery(event.target.value)} />
+          {query ? <Button variant="ghost" size="icon-sm" aria-label={t("clearSearch")} onClick={() => setQuery("")}><XIcon /></Button> : null}</div>
         <label className="gallery-filter"><span>{t("language")}</span>
           <NativeSelect value={filters.language} onChange={event => update({ language: event.target.value })}>
             <option value="all">{t("all")}</option>

@@ -161,7 +161,8 @@ export const ChatArtifactBlock = memo(function ChatArtifactBlock({ block, onAsk,
           {copyError ? <span className="chat-artifact-block-error" role="alert">{t("chatBlock.couldNotCopy")}</span>
             : png.failed ? <span className="chat-artifact-block-error" role="alert">{t("chartExport.couldNotSave")}</span> : null}
           <div className="chat-artifact-block-actions">
-            {wide ? <Button type="button" variant="ghost" size="sm" aria-pressed={isExpanded} onClick={() => setExpanded((value) => !value)}>
+            {/* Its label says what a press does; a pressed state on top of it would read "Collapse, pressed". */}
+            {wide ? <Button type="button" variant="ghost" size="sm" onClick={() => setExpanded((value) => !value)}>
               {isExpanded ? <Minimize2Icon aria-hidden="true" /> : <Maximize2Icon aria-hidden="true" />}
               {isExpanded ? t("chatBlock.collapse") : t("chatBlock.expand")}
             </Button> : null}

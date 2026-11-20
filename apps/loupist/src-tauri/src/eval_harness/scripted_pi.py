@@ -40,10 +40,16 @@ def take_broker_token():
     return line[:-1].decode()
 
 
+fixture_root = pathlib.Path(__file__).parent
+sdk_fixture = fixture_root / "session-language-capture.json"
+if sdk_fixture.is_file():
+    # The real extensions consume the inherited broker token descriptor.
+    node, module = json.loads(sdk_fixture.read_text())
+    os.execv(node, [node, module, str(fixture_root.resolve()), *sys.argv[1:]])
+
 BROKER_TOKEN = take_broker_token()
 session_id = argument("--session-id")
 session_file = pathlib.Path(argument("--session-dir")) / f"fixture_{session_id}.jsonl"
-fixture_root = pathlib.Path(__file__).parent
 trace_file = fixture_root / "startup-trace.jsonl"
 
 
@@ -56,7 +62,15 @@ def trace(event, **values):
 def call_tool(name, method, args):
     call_id = str(uuid.uuid4())
     emit({"type": "message_start", "message": {"role": "assistant"}})
-    emit({"type": "message_end", "message": {"role": "assistant", "stopReason": "toolUse", "content": [{"type": "toolCall", "id": call_id, "name": name, "arguments": args}]}})
+    timing_probe = "ANSWER_TIMING_EVAL" in current_request
+    if timing_probe:
+        emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": "I will check the note."}})
+        time.sleep(0.05)
+    message = {"role": "assistant", "stopReason": "toolUse", "content": [{"type": "toolCall", "id": call_id, "name": name, "arguments": args}]}
+    if timing_probe:
+        message["content"].insert(0, {"type":"text", "text":"I will check the note."})
+        message["usage"] = {"input": 100, "output": 20, "cacheRead": 0, "cacheWrite": 0, "reasoning": 7}
+    emit({"type": "message_end", "message": message})
     emit({"type": "tool_execution_start", "toolCallId": call_id, "toolName": name, "args": args})
     if "LONG_TOOL_EVAL" in current_request:
         time.sleep(1.2)  # No Pi events while the tool owns execution.
@@ -90,6 +104,9 @@ for line in sys.stdin:
     # stream, so Stop exercises the real RPC and owned-process shutdown path.
     if (fixture_root / "hold-pi-startup").exists() and command != "abort":
         continue
+    # A Pi that dies during startup, after the host sent every startup control.
+    if (fixture_root / "exit-pi-startup").exists() and command == "get_entries":
+        sys.exit(9)
     if command == "get_available_thinking_levels":
         respond(request, {"levels": [argument("--thinking")]})
     elif command == "get_state":
@@ -111,6 +128,26 @@ for line in sys.stdin:
     elif command == "prompt":
         respond(request, {})
         envelope = json.loads(request["message"].split("<turn_envelope>\n", 1)[1].split("\n</turn_envelope>", 1)[0])
+        scheduled_script = fixture_root / "scheduled-script.json"
+        if scheduled_script.is_file():
+            script = json.loads(scheduled_script.read_text())
+            prompt = request["message"].rsplit("<current_user_message>\n", 1)[1].split("\n</current_user_message>", 1)[0]
+            assert envelope["chat_surface"]["surface"] == "scheduled"
+            if "briefing_language" in script:
+                data = json.loads(prompt.removeprefix(script["prompt"] + "\n"))
+                assert data["appLanguage"] == script["briefing_language"]
+            else:
+                assert prompt == script["prompt"]
+            with (fixture_root / "scheduled-prompts.jsonl").open("a") as output:
+                output.write(json.dumps(prompt) + "\n")
+            if script.get("stall"):
+                continue
+            message = {"role": "assistant", "stopReason": "stop", "content": [{"type": "text", "text": script["answer"]}]}
+            emit({"type": "message_start", "message": {"role": "assistant"}})
+            emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": script["answer"]}})
+            emit({"type": "message_end", "message": message})
+            emit({"type": "agent_settled"})
+            continue
         index = (envelope.get("memory_protocol") or {}).get("learned_index", [])
         learned = [entry for entry in index if entry["title"] == "Hanbit diluted-share rule"]
         provider_replay = "DART_EVAL" in request["message"]
@@ -222,6 +259,8 @@ for line in sys.stdin:
         if "PROVIDER_ERROR_EVAL" in request["message"]:
             answer = ""
             message = {"role": "assistant", "stopReason": "error", "content": [], "errorMessage": "private provider body /fixture/private sk-fixture"}
+        if "ANSWER_TIMING_EVAL" in current_request:
+            message["usage"] = {"input": 120, "output": 30, "cacheRead": 0, "cacheWrite": 0}
         entries = [{"id": "assistant-eval", "type": "message", "message": message}]
         session_file.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
         emit({"type": "message_start", "message": {"role": "assistant"}})

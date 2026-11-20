@@ -1,7 +1,7 @@
 {
   "id": "koreainvestment.market-data",
   "name": "Korea Investment Open Trading API",
-  "summary": "Prices and market data for Korean and overseas markets, plus lookups on your own account. Read-only: it cannot place orders.",
+  "summary": "Prices and market data for Korean and overseas markets, plus lookups on your own account. Read-only: it cannot place orders. A linked Korea Investment brokerage account and registered ID are required.",
   "publisher": "Korea Investment & Securities",
   "data_authority": "Korea Investment & Securities",
   "kind": "data_source",
@@ -70,7 +70,7 @@
         "required": true,
         "min_length": 4,
         "max_length": 4,
-        "help_url": "https://apiportal.koreainvestment.com/"
+        "help_url": "https://apiportal.koreainvestment.com/about-howto"
       }
     ],
     "credential_scope_fields": [
@@ -85,7 +85,7 @@
         "required": true,
         "min_length": 8,
         "max_length": 512,
-        "help_url": "https://apiportal.koreainvestment.com/"
+        "help_url": "https://apiportal.koreainvestment.com/about-howto"
       },
       {
         "id": "app_secret",
@@ -95,7 +95,7 @@
         "required": true,
         "min_length": 8,
         "max_length": 512,
-        "help_url": "https://apiportal.koreainvestment.com/"
+        "help_url": "https://apiportal.koreainvestment.com/about-howto"
       },
       {
         "id": "account_number",
@@ -105,7 +105,7 @@
         "required": false,
         "min_length": 8,
         "max_length": 8,
-        "help_url": "https://apiportal.koreainvestment.com/"
+        "help_url": "https://apiportal.koreainvestment.com/about-howto"
       },
       {
         "id": "account_product_code",
@@ -115,7 +115,7 @@
         "required": false,
         "min_length": 2,
         "max_length": 2,
-        "help_url": "https://apiportal.koreainvestment.com/"
+        "help_url": "https://apiportal.koreainvestment.com/about-howto"
       },
       {
         "id": "hts_id",
@@ -125,7 +125,7 @@
         "required": false,
         "min_length": 1,
         "max_length": 128,
-        "help_url": "https://apiportal.koreainvestment.com/"
+        "help_url": "https://apiportal.koreainvestment.com/about-howto"
       }
     ]
   }

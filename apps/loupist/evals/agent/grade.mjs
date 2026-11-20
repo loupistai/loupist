@@ -3,14 +3,20 @@ import { scoreNumerical } from '../evaluate.mjs';
 
 import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, ANSWER_ASSERTS,
   turnFields, turnCompleted, validateSuite, validateTraceRecord, locateTurn,
-  toolCalls, memoryCommits, answerEvidence, answerPatterns, validDate, executionMismatches,
+  toolCalls, memoryCommits, answerEvidence, visibleAnswerText, withoutEmphasis, numberSpellings, answerPatterns, validDate, executionMismatches,
   citationAssertion, returnedCitationUrls, citingParagraphs, numbersLinkedAssertion, asOfLeftOutAssertion,
-  asOfRefusedAssertion, calculateInputsAssertion, gridCellsAssertion, metricTolerance, numberChecks, asOfReport,
-  toolCalledAssertion, argumentsInclude, sensitivityCardAssertion, sensitivityCards, isRecord,
+  asOfRefusedAssertion, calculateInputsAssertion, metricTolerance, numberChecks, asOfReport,
+  toolCalledAssertion, argumentsInclude, isRecord,
   LENS_ASSERTS, lensAssertion, lensPages, memoryReads, isNegativeAssertion, toolOrderAssertion } from './eval-contract.mjs';
-import { analyzeToolCalls, toolValidity, comparableArgs, toolExecutionState, skillReadEvidence, capabilityLoadEvidence, firstPackUseEvidence } from './tool-evidence.mjs';
+import { analyzeToolCalls, toolValidity, comparableArgs, toolExecutionState, skillReadEvidence, capabilityLoadEvidence, firstPackUseEvidence, hostResult } from './tool-evidence.mjs';
 import { noFalseSaveClaimEvidence } from './memory-evidence.mjs';
-import { planProgressEvidence, calculationChipEvidence } from './research-evidence.mjs';
+import { scheduledDeliveryEvidence } from './scheduled-evidence.mjs';
+import { visibleLabelsEvidence, visibleLabels } from './label-evidence.mjs';
+import { answerLanguageEvidence } from './language-evidence.mjs';
+import { figuresPresentEvidence, matchingNumber } from './figure-evidence.mjs';
+import { gridCellsEvidence } from './grid-evidence.mjs';
+import { sourceSpanEvidence } from './source-evidence.mjs';
+import { calculationChipEvidence } from './research-evidence.mjs';
 
 export function trailingJsonObject(text) {
   const trimmed = String(text ?? '').trimEnd();
@@ -57,20 +63,63 @@ function predictionDetail(issues, passDetail) {
 
 const EVIDENCE_LINK = /\[[^\]\n]*\]\(#evidence-ev_[0-9a-f]{32}\)/gu;
 const NUMBER = /\d+(?:,\d{3})*(?:\.\d+)?/gu;
-const UNIT_AFTER = /^\s?(?:%p|%pt|%포인트|%|％|pp|ppt|bps?\b|basis points?|percentage points?|percent\b|pct\b|배|x\b|×|times\b|조|억|천만|백만|만|천|bn\b|billion\b|mn\b|million\b|tn\b|trillion\b|k\b|m\b|b\b|원|달러|엔|위안|krw\b|usd\b|eur\b|jpy\b|gbp\b|won\b|dollars?\b)/iu;
+const UNIT_AFTER = /^\s?(?:%p|%pt|%포인트|%|％|pp|ppt|bps?\b|basis points?|percentage points?|percent\b|pct\b|배|x\b|×|times\b|조|억|천만|백만|만|천|bn\b|billion\b|mn\b|million\b|tn\b|trillion\b|k\b|m\b|b\b)/iu;
 const DATE_OR_ORDINAL_AFTER = /^\s?(?:년|월|일|번째|분기|기(?![가-힣])|st\b|nd\b|rd\b|th\b)/u;
-const CURRENCY_BEFORE = /(?:[$₩€£¥￦]|\b(?:krw|usd|eur|jpy|gbp|cny))\s?[-−]?$/iu;
-const blank = (text) => text.replace(/[^\n]/gu, ' ');
+const PERCENT_UNIT = /^\s?(?:%|％|percent|pct)$/iu;
+const CURRENCY_CODE = /(?:krw|usd|eur|jpy|gbp|cny)/iu;
+const CURRENCY_PREFIX = new RegExp(String.raw`[$₩€£¥￦]|\b${CURRENCY_CODE.source}`, 'iu');
+const CURRENCY_BEFORE = new RegExp(String.raw`(?:${CURRENCY_PREFIX.source})\s?[-−]?$`, 'iu');
+const CURRENCY_AFTER = new RegExp(String.raw`^\s?(?:원|달러|엔|위안|ドル|(?:${CURRENCY_CODE.source}|won|dollars?)\b)`, 'iu');
+const FIGURE_AFTER = new RegExp(
+  String.raw`^[ \t]*\[?(?:${CURRENCY_PREFIX.source})?[ \t]*[+−-]?${NUMBER.source}(?!\d|[.,/:-]\d|[-_][a-z]|[a-z]\d)`, 'iu',
+);
+// Keep UTF-16 offsets into the original answer, including links with astral characters.
+const blank = (text) => text.replace(/[^\n]/g, ' ');
+
+function isRateBase(answer, match, currencyUnit) {
+  if (!currencyUnit || !/^1(?:\.00?)?$/u.test(match[0])) return false;
+  const before = answer.slice(0, match.index);
+  if (/[+−△▲-]$/u.test(before)) return false;
+  if (/\b(?:per|for[ \t]+each)[ \t]+$/iu.test(before)) return true;
+  const after = answer.slice(match.index + match[0].length + currencyUnit.length);
+  if (/^(?:당(?![가-힣])|あたり)/u.test(after)) return true;
+  // 에 can also introduce a purchase price. Require the quoted figure in that case.
+  const marker = /^(?:에|[ \t]*=)/u.exec(after);
+  return !!marker && FIGURE_AFTER.test(after.slice(marker[0].length));
+}
+
+/**
+ * The percent axes of the DCF grids a calculation returned this turn: the discount and
+ * terminal growth rates it was given, not figures read from a source.
+ */
+export function gridAxisPercents(calls) {
+  const values = new Set();
+  for (const call of calls ?? []) {
+    if (call?.name !== 'calculate' || call.outcome !== 'ok') continue;
+    const grid = hostResult(call.result)?.grid;
+    for (const [name, axis] of [[grid?.rows, grid?.row_values], [grid?.columns, grid?.column_values]]) {
+      if (typeof name === 'string' && name.endsWith('_pct') && Array.isArray(axis)) {
+        for (const value of axis) if (Number.isFinite(value)) values.add(value);
+      }
+    }
+  }
+  return values;
+}
 
 /**
  * Material numbers in an answer that are not inside an evidence link
  * (finance-show-the-math.md §3.1): amounts with a currency or scale, percents,
  * points, multiples, grouped or decimal figures and large bare numbers. Years,
- * dates, periods glued to letters (FY2025, Q3), ordinals, small counts, code
- * and the answer's trailing JSON block stay out.
+ * dates, periods glued to letters (FY2025, Q3), ordinals, small counts, code,
+ * the answer's trailing JSON block and percents equal to a value in `axisPercents`
+ * (a grid's assumed rates, sign included) stay out.
  */
-export function unlinkedNumbers(answer) {
-  let text = String(answer ?? '');
+export function unlinkedNumbers(answer, user = '', { axisPercents = new Set() } = {}) {
+  // A prompt can name a listing as either 990221 or 솔숲식품(990221).
+  // Keep only whole tokens, so a longer ID, decimal or grouped amount cannot supply a code.
+  const userCodes = new Set(typeof user === 'string' ? user.match(/\b(?<!\d[.,])\d{6}\b(?![.,]\d)/gu) : []);
+  const original = String(answer ?? '');
+  let text = original;
   const trailing = trailingJsonObject(text);
   if (trailing) text = text.slice(0, text.trimEnd().length - trailing.length);
   text = text.replace(/```[\s\S]*?```/gu, blank).replace(/`[^`\n]*`/gu, blank)
@@ -87,13 +136,20 @@ export function unlinkedNumbers(answer) {
     const before = text[start - 2] ?? '';
     if (/[A-Za-z0-9_]/u.test(previous) || (/[-/.:]/u.test(previous) && /[A-Za-z0-9_]/u.test(before))) continue;
     const rest = text.slice(end);
+    // Match the ticker forms skipped by the host's text_numbers.
+    if (/^\d{6}$/u.test(match[0]) && ((previous === '(' && rest.startsWith(')')) || /^\.[A-Z]/u.test(rest))) continue;
     if (/^[A-Za-z]\d/u.test(rest) || /^[-_][A-Za-z]/u.test(rest)) continue;
     if (DATE_OR_ORDINAL_AFTER.test(rest)) continue;
-    const unit = UNIT_AFTER.exec(rest);
+    const currencyUnit = CURRENCY_AFTER.exec(rest);
+    if (isRateBase(original, match, currencyUnit?.[0])) continue;
+    const unit = currencyUnit ?? UNIT_AFTER.exec(rest);
     const currency = CURRENCY_BEFORE.test(text.slice(Math.max(0, start - 6), start).trimEnd());
+    if (userCodes.has(match[0]) && !unit && !currency
+      && !/[+−-]/u.test(previous) && !/^(?:\w|\.[A-Za-z])/u.test(rest)) continue;
     const grouped = match[0].includes(',');
     const decimal = match[0].includes('.');
     const value = Number(match[0].replaceAll(',', ''));
+    if (unit && PERCENT_UNIT.test(unit[0]) && axisPercents.has(/[-−]/u.test(previous) ? -value : value)) continue;
     const year = !grouped && !decimal && match[0].length === 4 && value >= 1900 && value <= 2100;
     const material = currency || unit || grouped || decimal || (value >= 1000 && !year);
     if (material) found.push(`${match[0]}${unit ? unit[0].trimStart() : ''}`);
@@ -111,7 +167,7 @@ function numbersLinkedEvidence(assertion, trace, answer) {
   const problems = [];
   const flagged = checks.filter((check) => check.status === 'differs' || check.status === 'not_found');
   if (flagged.length) problems.push(`checks ${flagged.map((check) => `${check.text} ${check.status}`).join(', ')}`);
-  const unlinked = unlinkedNumbers(answer);
+  const unlinked = unlinkedNumbers(answer, trace.user, { axisPercents: gridAxisPercents(toolCalls(trace)) });
   if (unlinked.length) problems.push(`unlinked ${unlinked.slice(0, 5).join(', ')}`);
   const missing = checked.filter((value) => !checks.some((check) => (check.status === 'matched' || check.status === 'rounded')
     && comparable(check.text).includes(comparable(value))));
@@ -146,58 +202,6 @@ function calculateInputsEvidence(assertion, calls) {
   if (relevant.some(cites)) return { pass: true, detail: `calculate cites ${inputs.join(', ')}` };
   if (relevant.some((call) => comparableArgs(call.args) === null)) return { pass: null, detail: 'calculate arguments unavailable' };
   return { pass: false, detail: `calculate does not cite ${inputs.join(', ')}` };
-}
-
-/** A grid card Rust built for the answer, of the asserted operation and, when asked, with a reference. */
-function sensitivityCardEvidence(assertion, trace) {
-  const { operation, reference } = sensitivityCardAssertion(assertion);
-  const cards = sensitivityCards(trace);
-  if (cards === undefined) return { pass: null, detail: 'sensitivity cards unavailable' };
-  if (cards === null) return { pass: null, detail: 'sensitivity cards malformed' };
-  const kind = cards.filter((card) => operation === null || card.operation === operation);
-  const pass = kind.some((card) => !reference || isRecord(card.reference));
-  const what = `${operation ?? 'grid'} card${reference ? ' with a reference' : ''}`;
-  return { pass, detail: pass ? `${what} shown` : kind.length ? `${operation ?? 'grid'} card without a reference` : `no ${what}` };
-}
-
-const LINKED_CELL = new Set(['matched', 'rounded']);
-
-/**
- * A `grid_publish` call of the asserted layout that Rust staged with every
- * checked cell matched or rounded, the asserted shape and the asserted empty
- * reasons. A redacted or truncated result cannot show its checks.
- */
-function gridCellsEvidence(assertion, calls) {
-  const { layout, rows, columns, empty } = gridCellsAssertion(assertion);
-  const relevant = calls.filter((call) => call.name === 'grid_publish' && call.outcome !== 'error'
-    && (call.args?.layout ?? 'assets') === layout);
-  if (!relevant.length) return { pass: false, detail: `no ${layout} grid_publish call` };
-  const problems = [];
-  let unknown = false;
-  for (const call of relevant) {
-    const result = call.result;
-    const checks = result && typeof result === 'object' && !Array.isArray(result) && call.result_redacted !== true
-      && result.truncated !== true && Array.isArray(result.cell_checks) ? result.cell_checks : null;
-    if (checks === null || comparableArgs(call.args) === null) { unknown = true; continue; }
-    const issues = [];
-    if (!checks.length) issues.push('no checked cells');
-    const flagged = checks.filter((check) => !LINKED_CELL.has(check?.status));
-    if (flagged.length) issues.push(`cells ${flagged.slice(0, 5).map((check) => `${check?.cell ?? '?'} ${check?.status ?? 'unknown'}`).join(', ')}`);
-    if (layout === 'assets') {
-      const rowCount = Array.isArray(call.args?.rows) ? call.args.rows.length : null;
-      const columnCount = Array.isArray(call.args?.columns) ? call.args.columns.length : null;
-      if (rows !== null && rowCount !== rows) issues.push(`${rowCount ?? 'unknown'} rows, expected ${rows}`);
-      if (columns !== null && columnCount !== columns) issues.push(`${columnCount ?? 'unknown'} columns, expected ${columns}`);
-      const reasons = new Set((Array.isArray(call.args?.cells) ? call.args.cells : []).flat()
-        .flatMap((cell) => typeof cell?.empty === 'string' ? [cell.empty] : []));
-      const missing = empty.filter((reason) => !reasons.has(reason));
-      if (missing.length) issues.push(`no empty cell marked ${missing.join(', ')}`);
-    }
-    if (!issues.length) return { pass: true, detail: `${checks.length} ${layout} cells linked` };
-    problems.push(issues.join('; '));
-  }
-  if (!problems.length && unknown) return { pass: null, detail: 'grid_publish checks unavailable' };
-  return { pass: false, detail: problems.join(' | ') };
 }
 
 function resultOf(trace, assertion, pass, detail) {
@@ -252,7 +256,7 @@ export function scheduleStateEvidence(assertion, trace) {
     detail: `${tasks.length} saved tasks, expected ${assertion.count}${unmatched.length ? `; unmatched: ${unmatched.join(', ')}` : ''}${duplicates ? '; duplicate task IDs' : ''}` };
 }
 
-function evaluateTraceAssertion(assertion, trace) {
+function evaluateTraceAssertion(assertion, trace, scenario, turn, traces) {
   if (!TRACE_ASSERTS.has(assertion.assert)) throw new Error(`Unknown trace assertion ${assertion.assert}`);
   if (assertion.assert === 'scheduled_tasks') {
     const result = scheduleStateEvidence(assertion, trace);
@@ -262,18 +266,31 @@ function evaluateTraceAssertion(assertion, trace) {
     const result = asOfEvidence(assertion, trace);
     return resultOf(trace, assertion, result.pass, result.detail);
   }
-  if (assertion.assert === 'sensitivity_card') {
-    const result = sensitivityCardEvidence(assertion, trace);
+  if (assertion.assert === 'followed_names') {
+    const rows = trace.followed_assets;
+    const calls = toolCalls(trace);
+    if (!Array.isArray(rows) || !calls) return resultOf(trace, assertion, null, 'persisted follows or tool evidence unavailable');
+    const submitted = calls.filter(call => call.name === 'loupist_setup' && call.outcome === 'ok')
+      .flatMap(call => Array.isArray(call.args?.follow) ? call.args.follow.map(asset => asset?.name) : []);
+    const names = rows.map(row => row?.name);
+    const pass = names.length === assertion.names.length && assertion.names.every(name => names.includes(name) && submitted.includes(name));
+    const lookup = calls.some(call => call.name === 'asset_lookup');
+    return resultOf(trace, assertion, pass, `compared submitted and persisted names; asset_lookup called: ${lookup}`);
+  }
+  if (assertion.assert === 'replayed_price') {
+    const price = trace.replayed_price;
+    if (!isRecord(price)) return resultOf(trace, assertion, null, 'host replay evidence unavailable');
+    const pass = price.asset === assertion.asset && price.state === 'ready' && price.value === assertion.value && price.date === assertion.date;
+    return resultOf(trace, assertion, pass, 'compared the replay target, state, stored price and provider date');
+  }
+  if (assertion.assert === 'scheduled_delivery' || assertion.assert === 'scheduled_quiet') {
+    const result = scheduledDeliveryEvidence(trace, scenario, turn, traces, assertion.assert === 'scheduled_quiet');
     return resultOf(trace, assertion, result.pass, result.detail);
   }
   const calls = toolCalls(trace);
   if (calls === null) return resultOf(trace, assertion, null, 'tool call evidence unavailable');
   if (assertion.assert === 'skill_read') {
     const result = skillReadEvidence(assertion, calls);
-    return resultOf(trace, assertion, result.pass, result.detail);
-  }
-  if (assertion.assert === 'plan_progress') {
-    const result = planProgressEvidence(assertion, calls);
     return resultOf(trace, assertion, result.pass, result.detail);
   }
   if (assertion.assert === 'calculate_inputs_cited') {
@@ -311,6 +328,10 @@ function evaluateTraceAssertion(assertion, trace) {
     return resultOf(trace, assertion, unknown ? null : false, unknown ? `${tool} arguments unavailable` : `no ${tool} call with ${JSON.stringify(args)}`);
   }
   if (assertion.assert === 'tool_not_called') {
+    if (assertion.tool === 'interface_labels') {
+      const attempts = calls.filter(call => call.name === assertion.tool).length;
+      return resultOf(trace, assertion, attempts === 0, `${attempts} interface_labels attempts`);
+    }
     const states = calls.filter(call => call.name === assertion.tool).map(toolExecutionState);
     const pass = states.includes(true) ? false : states.includes(null) ? null : true;
     return resultOf(trace, assertion, pass, pass === null ? `${assertion.tool} execution unavailable` : pass ? `did not execute ${assertion.tool}` : `executed ${assertion.tool}`);
@@ -420,10 +441,14 @@ function answerForMetrics(answer) {
   return text;
 }
 
-function evaluateAnswerAssertion(assertion, trace) {
+function evaluateAnswerAssertion(assertion, trace, scenario) {
   if (!ANSWER_ASSERTS.has(assertion.assert)) throw new Error(`Unknown answer assertion ${assertion.assert}`);
   const answer = answerEvidence(trace);
   if (answer === null) return resultOf(trace, assertion, null, 'answer evidence unavailable');
+  if (assertion.assert === 'cites_source_span') {
+    const result = sourceSpanEvidence(assertion, trace, answer, scenario);
+    return resultOf(trace, assertion, result.pass, result.detail);
+  }
   if (assertion.assert === 'no_false_save_claim') {
     const result = noFalseSaveClaimEvidence(trace, answer);
     return resultOf(trace, assertion, result.pass, result.detail);
@@ -432,13 +457,33 @@ function evaluateAnswerAssertion(assertion, trace) {
     const result = calculationChipEvidence(assertion, trace, answer);
     return resultOf(trace, assertion, result.pass, result.detail);
   }
-  if (assertion.assert === 'contains_any') {
-    const hit = (assertion.values ?? []).find((value) => answer.includes(String(value)));
+  if (assertion.assert === 'visible_labels') {
+    const result = visibleLabelsEvidence(assertion, answer, scenario, trace);
+    return resultOf(trace, assertion, result.pass, result.detail);
+  }
+  if (assertion.assert === 'answer_language') {
+    const result = answerLanguageEvidence(assertion, answer, assertion.per_paragraph ? Object.values(visibleLabels(scenario.language)) : []);
+    return resultOf(trace, assertion, result.pass, result.detail);
+  }
+  if (assertion.assert === 'figures_present') {
+    const result = figuresPresentEvidence(assertion, answer, toolCalls(trace));
+    return resultOf(trace, assertion, result.pass, result.detail);
+  }
+  if (assertion.assert === 'contains_number_any') {
+    const hit = matchingNumber(numberSpellings(assertion.values), [visibleAnswerText(answer)]);
+    return resultOf(trace, assertion, Boolean(hit), hit ? `contains number ${hit}` : 'contains none of the numbers');
+  }
+  if (assertion.assert === 'contains_any' || assertion.assert === 'not_contains') {
+    // Bold or italic around part of a phrase does not change what it says.
+    const text = withoutEmphasis(answer);
+    const hit = (assertion.values ?? []).find((value) => text.includes(withoutEmphasis(value)));
+    if (assertion.assert === 'not_contains') return resultOf(trace, assertion, !hit, hit ? `contains ${hit}` : 'contains none of the forbidden values');
     return resultOf(trace, assertion, Boolean(hit), hit ? `contains ${hit}` : 'contains none of the values');
   }
-  if (assertion.assert === 'not_contains') {
-    const hit = (assertion.values ?? []).find((value) => answer.includes(String(value)));
-    return resultOf(trace, assertion, !hit, hit ? `contains ${hit}` : 'contains none of the forbidden values');
+  if (assertion.assert === 'answer_matching') {
+    const text = visibleAnswerText(answer);
+    const hit = answerPatterns(assertion).find(pattern => pattern.test(text));
+    return resultOf(trace, assertion, Boolean(hit), hit ? `matches ${hit}` : 'matches none of the required patterns');
   }
   if (assertion.assert === 'answer_not_matching') {
     const hit = answerPatterns(assertion).find((pattern) => pattern.test(answer));
@@ -497,16 +542,16 @@ export function grade(suite, traces) {
   const unmatched = [];
   for (const input of traces) {
     validateTraceRecord(input);
-    const { session, turn } = locateTurn(suite, input);
+    const { scenario, session, turn } = locateTurn(suite, input);
     if (!turn) {
       unmatched.push({ run_id: input.run_id, ...turnFields(input), detail: 'No matching suite turn' });
       continue;
     }
     const trace = executionMismatches(input, session, turn).length ? { ...input, status: 'mismatched' } : input;
     const expect = turn.expect ?? {};
-    for (const assertion of expect.trace ?? []) results.push(evaluateTraceAssertion(assertion, trace));
+    for (const assertion of expect.trace ?? []) results.push(evaluateTraceAssertion(assertion, trace, scenario, turn, traces));
     for (const assertion of expect.memory ?? []) results.push(evaluateMemoryAssertion(assertion, trace));
-    for (const assertion of expect.answer ?? []) results.push(evaluateAnswerAssertion(assertion, trace));
+    for (const assertion of expect.answer ?? []) results.push(evaluateAnswerAssertion(assertion, trace, scenario));
   }
   return { results, unmatched, tool_validity: toolValidity(traces) };
 }

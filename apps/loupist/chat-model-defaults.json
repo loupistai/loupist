@@ -8,6 +8,10 @@
           "thinking_level": "medium"
         },
         {
+          "id": "gpt-6.2-sol",
+          "thinking_level": "medium"
+        },
+        {
           "id": "gpt-6-sol",
           "thinking_level": "medium"
         },

@@ -436,3 +436,11 @@ test('trajectory reports suite and split diagnostics without changing pass/fail'
   assert.equal(unknown.trajectory.steps.unknown, 1);
   assert.equal(unknown.trajectory.redundant_success_rate, null);
 });
+
+test('latency report includes answer first text beside total duration, preserving unknowns', () => {
+  const timed = traces.map((trace, index) => ({ ...trace, performance: { ...trace.performance, answer_text_ms: [200, 400, null, -1][index] } }));
+  const report = buildReport({ suite, traces: timed });
+  assert.deepEqual(report.answer_text_ms, { n: 2, unknown: 2, p50: 200, p95: 400 });
+  assert.equal(report.latency_ms.p50, 1000);
+  assert.deepEqual(buildReport({ suite, traces: [] }).answer_text_ms, { n: 0, unknown: 0, p50: null, p95: null });
+});

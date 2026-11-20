@@ -18,7 +18,7 @@ describe("design preview scenarios", () => {
       const bridge = new PreviewBridge({ delay_ms: 0 });
       await scenario.setup(bridge);
       await configureTheme(bridge, "light");
-      const view = render(<App bridge={bridge} />);
+      const view = render(scenario.render ? scenario.render() : <App bridge={bridge} />);
       // Let React flush between DOM actions while polling asynchronously.
       const entering = scenario.enter(view.container);
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
@@ -30,20 +30,41 @@ describe("design preview scenarios", () => {
         for (const profile of profiles) expect((await bridge.loupistSelect(profile.id)).loupist).toMatchObject({ id: profile.id, name: profile.name });
       }
       if (scenario.id === "chat-empty") expect(scenario.landmark()!.querySelectorAll("button").length).toBeGreaterThanOrEqual(3);
+      // Six values one Source reported about NVIDIA are one row, and no row relates a name to itself.
+      if (scenario.id === "map-whats-new-reported") {
+        const labels = [...document.querySelectorAll(".map-whats-new-label")].map((label) => label.textContent);
+        expect(labels.filter((label) => label?.includes("NVIDIA"))).toEqual(["6 new facts about NVIDIA", "NVIDIA"]);
+      }
+      // The greeting asks about the followed asset by name and says nothing it cannot back.
       if (scenario.id === "thread-morning") {
-        expect(scenario.landmark()!.querySelectorAll(".morning-question")).toHaveLength(4);
-        expect(document.querySelectorAll(".morning-bullets > li")).toHaveLength(4);
+        expect(document.querySelector('.bot-greeting [data-ask="status"]')).toHaveTextContent("Hanul Precision");
+        expect(document.querySelector(".morning-message")).toBeNull();
       }
-      // The strip's check is not repeated as a bullet: the overdue check and the later one remain.
-      if (scenario.id === "thread-upcoming") {
-        expect(document.querySelectorAll(".morning-upcoming li")).toHaveLength(5);
-        expect(document.querySelectorAll(".morning-bullets > li")).toHaveLength(4);
+      // A tile only for an asset with a stored price; the greeting's bubble is its prompt, never a price move.
+      if (scenario.id === "bot-greeting") {
+        expect(document.querySelectorAll(".bot-greeting .bot-ask")).toHaveLength(4);
+        expect(document.querySelectorAll(".bot-greeting .bot-tile")).toHaveLength(3);
+        expect(document.querySelectorAll(".bot-greeting .bot-bubble")).toHaveLength(1);
+        expect(document.querySelector(".bot-greeting .bot-tiles")).not.toHaveTextContent(/close|%/iu);
       }
+      // The unread briefing and the two checks.
+      if (scenario.id === "thread-news") expect(document.querySelectorAll(".morning-bullets > li")).toHaveLength(3);
       if (scenario.id === "chat-streaming") await act(() => bridge.chatAbort("preview"));
       if (scenario.id === "browser-ready" || scenario.id === "browser-blocked" || scenario.id === "browser-failure") {
         expect(document.querySelector<HTMLInputElement>(".browser-toolbar input")).toHaveValue(BROWSER_ARTICLE_URL);
         expect(document.body).not.toHaveTextContent(BROWSER_RAW_ENGINE_MESSAGE);
       }
+      // Three presses start one session; the opened link offers nothing more to press.
+      if (scenario.id === "bot-link-opened") {
+        expect(document.querySelector(".thread-link .inline-error")).toBeNull();
+        expect(document.querySelectorAll(".thread-link .bot-quiet-action")).toHaveLength(1);
+      }
+      // The note stays closed and is never a second bubble; a session from before notes has none.
+      if (scenario.id === "session-handoff-note") {
+        expect(document.querySelectorAll(".message.user")).toHaveLength(1);
+        expect(document.querySelector(".message-handoff-note")).not.toHaveAttribute("open");
+      }
+      if (scenario.id === "session-handoff-legacy") expect(document.querySelector(".message-handoff-note")).toBeNull();
       if (scenario.id === "browser-ready") {
         expect(document.querySelector(".browser-error")).toBeNull();
         expect(document.querySelector(".browser-history-actions button")).toBeEnabled();

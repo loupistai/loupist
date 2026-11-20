@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 import sys
 from collections.abc import Callable
+from contextvars import ContextVar
 from fnmatch import fnmatchcase
 from functools import wraps
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from loupist_openbb.bootstrap import (
     Bootstrap,
@@ -23,8 +25,12 @@ from loupist_openbb.manifest import (
     resolve_provider_config,
     resolve_providerless_tool_policy,
 )
+from loupist_openbb.yahoo_history import RAW_DAILY_REQUEST, apply_yahoo_history
+from loupist_openbb.destinations import guard_tool_destinations
 from loupist_openbb.network import apply_network_policy
 from loupist_openbb.failures import (
+    AlphaVantagePaidPlanRequired,
+    YAHOO_ADJUSTMENT,
     CredentialRejectedError,
     call_tool_with_failures,
     classify_rest_failures,
@@ -37,6 +43,9 @@ _DISABLED_COMPONENTS = {
     "list_resources",
     "read_resource",
 }
+# Match the host's per-schema limit for compact UTF-8 JSON.
+_MAX_TOOL_SCHEMA_BYTES = 64 * 1024
+_ALPHA_RAW_DAILY = ContextVar("alpha_vantage_raw_daily", default=False)
 
 
 def _route_segments(path: str, api_prefix: str) -> list[str]:
@@ -229,6 +238,53 @@ def apply_sec_contact_email(contact_email: str | None) -> None:
             setattr(module, "make_request", sec_aware_sync_request)
 
 
+def apply_alpha_vantage_history() -> None:
+    """Use the free compact feed for raw daily prices in the pinned fetcher."""
+    from openbb_core.provider.utils import helpers
+
+    previous = helpers.amake_request
+    original = getattr(previous, "__loupist_alpha_original__", previous)
+
+    @wraps(original)
+    async def request(url: str, *args: Any, **kwargs: Any) -> Any:
+        if not isinstance(url, str) or not url.startswith(
+            "https://www.alphavantage.co/query?"
+        ):
+            return await original(url, *args, **kwargs)
+        parts = urlsplit(url)
+        query = parse_qs(parts.query)
+        if _ALPHA_RAW_DAILY.get() and query.get("function") == ["TIME_SERIES_DAILY"]:
+            query["outputsize"] = ["compact"]
+            url = parts._replace(query=urlencode(query, doseq=True)).geturl()
+        callback = kwargs.get("response_callback")
+        if callback and query.get("datatype") == ["csv"]:
+
+            async def check_plan(response: Any, session: Any) -> Any:
+                body = await response.read()
+                if body.lstrip().startswith(b"{"):
+                    try:
+                        payload = json.loads(body)
+                    except ValueError:
+                        payload = None
+                    message = (
+                        payload.get("Information")
+                        if isinstance(payload, dict)
+                        else None
+                    )
+                    if (
+                        isinstance(message, str)
+                        and "premium endpoint" in message.lower()
+                    ):
+                        raise AlphaVantagePaidPlanRequired()
+                return await callback(response, session)
+
+            kwargs["response_callback"] = check_plan
+        return await original(url, *args, **kwargs)
+
+    setattr(request, "__loupist_alpha_original__", original)
+    helpers.amake_request = request
+
+
 def apply_fred_error_guard() -> None:
     """Turn a FRED error body into a failure instead of an empty result.
 
@@ -310,9 +366,13 @@ def _canonicalize_implicit_provider_result(result: Any, provider: str) -> Any:
 
 
 def mark_registered_tools_read_only(
-    server: Any, implicit_provider: dict[str, str]
+    server: Any,
+    implicit_provider: dict[str, str],
+    *,
+    yahoo_raw_daily: bool = False,
+    provider_hosts: dict[str, frozenset[str]] | None = None,
 ) -> int:
-    """Attach MCP safety annotations to every retained OpenAPI Tool.
+    """Attach MCP safety annotations and bound generated output schemas.
 
     OpenBB MCP 1.4.1 does not emit Tool annotations.  Loupist derives this hint
     only after ``retain_read_only_routes`` has discarded every route outside
@@ -332,7 +392,29 @@ def mark_registered_tools_read_only(
         for tool in tools.values():
             if isinstance(tool, OpenAPITool):
                 tool.annotations = annotations.model_copy(deep=True)
+                schema = tool.output_schema
+                if (
+                    schema is not None
+                    and len(
+                        json.dumps(
+                            schema, ensure_ascii=False, separators=(",", ":")
+                        ).encode()
+                    )
+                    > _MAX_TOOL_SCHEMA_BYTES
+                ):
+                    # Keep FastMCP's response wrapping for non-object routes.
+                    # The backend still produces the same structured content.
+                    tool.output_schema = {"type": "object"}
+                    if schema.get("x-fastmcp-wrap-result"):
+                        tool.output_schema["x-fastmcp-wrap-result"] = True
                 provider_id = implicit_provider.get(tool.name)
+                if yahoo_raw_daily and tool.name == "equity_price_historical":
+                    adjustment = tool.parameters.get("properties", {}).get(
+                        "adjustment", {}
+                    )
+                    choices = adjustment.get("yfinance", {}).get("choices", [])
+                    if choices and "unadjusted" not in choices:
+                        choices.append("unadjusted")
                 original_run = tool.run
 
                 @wraps(original_run)
@@ -341,8 +423,47 @@ def mark_registered_tools_read_only(
                     *,
                     _original_run: Callable[[dict[str, Any]], Any] = original_run,
                     _provider_id: str | None = provider_id,
+                    _tool_name: str = tool.name,
                 ) -> Any:
-                    result = await call_tool_with_failures(_original_run, arguments)
+                    if (
+                        _tool_name in {"equity_price_historical", "etf_historical"}
+                        and arguments.get("provider") == "alpha_vantage"
+                        and arguments.get("interval", "1d") == "1d"
+                        and arguments.get("adjustment") in (None, "unadjusted")
+                    ):
+                        # Weekly and monthly reads also fetch a daily feed for resampling.
+                        # Mark only the raw daily call, including its concurrent symbol reads.
+                        token = _ALPHA_RAW_DAILY.set(True)
+                        try:
+                            result = await call_tool_with_failures(
+                                _original_run, {**arguments, "adjustment": "unadjusted"}
+                            )
+                        finally:
+                            _ALPHA_RAW_DAILY.reset(token)
+                    elif (
+                        yahoo_raw_daily
+                        and _tool_name == "equity_price_historical"
+                        and arguments.get("provider") == "yfinance"
+                        and arguments.get("adjustment") == "unadjusted"
+                    ):
+                        if arguments.get("interval", "1d") != "1d":
+                            from fastmcp.tools.tool import ToolResult
+
+                            return ToolResult(
+                                content="unsupported_adjustment",
+                                structured_content=YAHOO_ADJUSTMENT,
+                                is_error=True,
+                            )
+                        token = RAW_DAILY_REQUEST.set(arguments)
+                        try:
+                            result = await call_tool_with_failures(
+                                _original_run,
+                                {**arguments, "adjustment": "splits_only"},
+                            )
+                        finally:
+                            RAW_DAILY_REQUEST.reset(token)
+                    else:
+                        result = await call_tool_with_failures(_original_run, arguments)
                     if _provider_id is not None:
                         result = _canonicalize_implicit_provider_result(
                             result, _provider_id
@@ -351,7 +472,10 @@ def mark_registered_tools_read_only(
 
                 # OpenAPITool is a Pydantic model and rejects ordinary
                 # assignment to methods. Wrap only the trusted frozen instance.
-                object.__setattr__(tool, "run", run_with_provider)
+                guarded = guard_tool_destinations(
+                    tool, run_with_provider, provider_id, provider_hosts
+                )
+                object.__setattr__(tool, "run", guarded)
                 if provider_id is not None:
                     stamped.add(tool.name)
                 marked += 1
@@ -376,7 +500,16 @@ def create_server(bootstrap: Bootstrap) -> Any:
     # Install the process-local egress guard before importing the OpenBB app,
     # provider registry, or FastMCP. Provider modules that bind OpenBB request
     # helpers during import therefore receive the guarded functions.
-    apply_network_policy(bootstrap.settings.allowed_network_hosts)
+    provider_hosts = {
+        provider["id"]: frozenset(provider["network_hosts"])
+        for provider in manifest["providers"]
+        if any(key in credentials for key in provider["credential_mapping"].values())
+        or (provider["id"] == "sec" and provider_config.get("sec_contact_email"))
+    }
+    apply_network_policy(
+        bootstrap.settings.allowed_network_hosts,
+        frozenset().union(*provider_hosts.values()),
+    )
 
     from openbb_core.api.rest_api import app as openbb_app
     from openbb_core.app.service.system_service import SystemService
@@ -386,6 +519,10 @@ def create_server(bootstrap: Bootstrap) -> Any:
     apply_credentials(credentials)
     credentials.clear()
     apply_sec_contact_email(provider_config.get("sec_contact_email"))
+    if "alpha_vantage" in bootstrap.settings.enabled_provider_ids:
+        apply_alpha_vantage_history()
+    if "yfinance" in bootstrap.settings.enabled_provider_ids:
+        apply_yahoo_history()
     if "fred" in bootstrap.settings.enabled_provider_ids:
         apply_fred_error_guard()
     security = manifest.get("security", {})
@@ -429,6 +566,8 @@ def create_server(bootstrap: Bootstrap) -> Any:
             for tool_name, provider_id in implicit_provider.items()
             if provider_id in enabled_provider_ids
         },
+        yahoo_raw_daily="yfinance" in enabled_provider_ids,
+        provider_hosts=provider_hosts,
     )
     server.disable(names=_DISABLED_COMPONENTS)
     return server

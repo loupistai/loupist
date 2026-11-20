@@ -37,6 +37,7 @@ fn policy() -> ToolPolicy {
         propose_memory_updates: true,
         memory_proposal_budget: 1,
         as_of: None,
+        display_currency: None,
     }
 }
 
@@ -206,4 +207,35 @@ async fn only_interactive_surfaces_show_the_card() {
             .to_string();
         assert!(error.contains(said), "{error}");
     }
+}
+
+#[tokio::test]
+async fn asset_lookup_with_no_saved_binding_reports_the_default_like_connections() {
+    let temporary = tempfile::tempdir().unwrap();
+    let executor = executor(&temporary, Some(ChatSurface::Bot));
+    // A profile from before Asset lookup existed has no saved binding for it.
+    executor
+        .state
+        .store
+        .forget_loupist_capability("loupist-a", "openfigi.lookup")
+        .unwrap();
+    let state = |value: Value| value["state"].clone();
+    assert_eq!(
+        state(
+            setup(&executor, json!({"id": "openfigi.lookup"}))
+                .await
+                .unwrap()
+        ),
+        "ready"
+    );
+    // A saved choice still wins over the default.
+    bind(&executor, "openfigi.lookup", false);
+    assert_eq!(
+        state(
+            setup(&executor, json!({"id": "openfigi.lookup"}))
+                .await
+                .unwrap()
+        ),
+        "off_here"
+    );
 }

@@ -22,11 +22,9 @@ Deliver the supported value range and decisive assumptions. For a two-stage
 cash-flow model, `calculate` dcf_grid and reverse_dcf compute the WACC ×
 terminal-growth grid without a runtime. For what a price implies, give
 reverse_dcf the dated price and shares with their sources and, when the data
-allows, a `cagr` of the same cash-flow measure over the last five fiscal years
-as `reference_growth_pct` (cited in `input_sources`, its period in
-`labels.reference_growth_pct`). Show either grid as a card: a paragraph that is
-only a link whose text is the company name, `[Company](citation_url)`. Never
-present one cell as the answer or as a target price.
+allows, the `reference_growth_pct` its description defines. Compare the range
+of implied growth rates with that history when available. Never present one
+cell as the answer or as a target price.
 
 Otherwise keep a rerunnable local model, recompute each sensitivity case
 through it, and reconcile its base case with the reported result. Create a

@@ -3,10 +3,9 @@
 Adapted from Anthropic financial-services, thesis-tracker (Apache-2.0).
 See [upstream provenance](../../NOTICE.md).
 
-Use a dated evidence table when updating an investment thesis:
-
-| Pillar | Prior expectation | New observation and date | Supports / weakens / unresolved | What would resolve it |
-| --- | --- | --- | --- | --- |
+For each thesis pillar, compare the prior expectation with the new, dated
+observation. Explain whether it supports the pillar, weakens it or leaves it
+unresolved, and what evidence would resolve the question.
 
 Recover the prior thesis from exact-read Memory or a user-supplied original.
 Do not manufacture an earlier view when there is none. Identify the business

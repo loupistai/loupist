@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import i18n from "@/i18n";
 import { evidenceFixture } from "../test/evidenceFixtures";
+import { RunRecordRemoved } from "../chat/navigation";
 import { useAppOpen, type AppOpenShell } from "./useAppOpen";
 
 const shell = (): AppOpenShell => ({
@@ -10,6 +11,8 @@ const shell = (): AppOpenShell => ({
   threadId: "chat-a",
   panel: { openEvidence: vi.fn(), openBrowser: vi.fn(), openMemory: vi.fn(), openArtifact: vi.fn(), openFiles: vi.fn() },
   showThread: vi.fn(),
+  chatExists: vi.fn(async () => true),
+  scheduledTaskExists: vi.fn(async () => true),
   openKnowledgePage: vi.fn(),
   openAssetPage: vi.fn(),
   openScheduledTask: vi.fn(),
@@ -41,7 +44,7 @@ it("opens a Lens record in the Evidence reader under the interface language's na
     await act(() => hook.result.current.open({ kind: "lens", recordId: "rec-1" }));
     expect(targets.panel.openMemory).toHaveBeenCalledExactlyOnceWith("loupist-a", "chat-a", expect.objectContaining({ surface: "lens", recordId: "rec-1", selection: { kind: "lens", recordId: "rec-1" } }), i18n.t("app:shell.tabs.lens"));
     expect(announced()).toBe(i18n.t("chat:navigation.openedInPanel", { title: i18n.t("app:shell.tabs.lens") }));
-    expect(announced()).toMatch(/패널에서 열었어요$/u);
+    expect(announced()).toMatch(/패널에서 열었습니다$/u);
   } finally {
     await i18n.changeLanguage("en");
   }
@@ -112,4 +115,27 @@ it("resolves a retained artifact link in its chat to the latest saved revision",
   vi.mocked(targets.readArtifact).mockRejectedValueOnce(new Error("outside this chat"));
   await expect(hook.result.current.open({ kind: "artifact-link", artifactId: "outside" })).rejects.toThrow("outside this chat");
   expect(targets.panel.openArtifact).toHaveBeenCalledOnce();
+});
+
+it("opens a scheduled run's session, its task once the session is gone, and says when both are", async () => {
+  const { targets, hook } = router();
+  const run = { kind: "run", threadId: "scheduled-chat-a", taskId: "task-a" } as const;
+  await act(() => hook.result.current.open(run));
+  expect(targets.chatExists).toHaveBeenCalledExactlyOnceWith("loupist-a", "scheduled-chat-a");
+  expect(targets.showThread).toHaveBeenCalledExactlyOnceWith("loupist-a", "scheduled-chat-a");
+  expect(targets.openScheduledTask).not.toHaveBeenCalled();
+
+  vi.mocked(targets.chatExists).mockResolvedValue(false);
+  await act(() => hook.result.current.open(run));
+  expect(targets.scheduledTaskExists).toHaveBeenCalledExactlyOnceWith("loupist-a", "task-a");
+  expect(targets.openScheduledTask).toHaveBeenCalledExactlyOnceWith("task-a");
+  // A run that never had a session of its own goes to its task directly.
+  await act(() => hook.result.current.open({ ...run, threadId: null }));
+  expect(targets.chatExists).toHaveBeenCalledTimes(2);
+  expect(targets.openScheduledTask).toHaveBeenCalledTimes(2);
+
+  vi.mocked(targets.scheduledTaskExists).mockResolvedValue(false);
+  await expect(hook.result.current.open(run)).rejects.toBeInstanceOf(RunRecordRemoved);
+  expect(targets.showThread).toHaveBeenCalledOnce();
+  expect(targets.openScheduledTask).toHaveBeenCalledTimes(2);
 });

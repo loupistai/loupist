@@ -32,7 +32,8 @@
 /* A narrow map wraps the status so the weekly count and disagreements stay whole. The mini map keeps the one-line ellipsis. */
 .map-status-stack .map-stats { display:flex; flex-wrap:wrap; align-items:baseline; white-space:normal; overflow:visible; text-overflow:clip; }
 .map-status-stack .map-stats > * { min-width:0; overflow-wrap:anywhere; }
-.map-status-stack .map-stats > :is(strong, span):has(~ span)::after { content:"·"; margin-inline:var(--gg-space-2); font-weight:var(--gg-weight-regular); color:var(--gg-color-text-secondary); }
+/* The joining dot is spaced like the " · " inside the counts, about a space each side. */
+.map-status-stack .map-stats > :is(strong, span):has(~ span)::after { content:"·"; margin-inline:var(--gg-space-1); font-weight:var(--gg-weight-regular); color:var(--gg-color-text-secondary); }
 .map-view[data-hide-map-stats] .map-stats, .map-body[data-hide-map-stats] .map-stats { visibility:hidden; }
 .map-stats small { display:block; color:var(--gg-color-text-secondary); }
 .map-stats button { height:auto; min-height:var(--gg-size-control-sm); padding:0 0 0 var(--gg-space-2); font-size:inherit; }
@@ -54,7 +55,7 @@
 .map-swatch.is-idea { background:transparent; border:2px solid var(--gg-color-map-idea); }
 .map-swatch.is-perspective { background:var(--gg-color-map-perspective); transform:rotate(45deg) scale(.75); border-radius:0; }
 .map-swatch.is-principle { position:relative; background:var(--gg-color-map-principle); border-radius:3px; }.map-swatch.is-principle::after { content:""; position:absolute; width:6px; height:6px; border-radius:50%; background:var(--gg-color-bg-raised); top:-2px; right:-2px; }
-.map-swatch.is-watching,.map-swatch.is-holding { background:transparent; border:1.5px dashed var(--gg-color-map-holding-ring); }.map-swatch.is-holding { border:2.5px solid var(--gg-color-map-holding-ring); }
+.map-swatch.is-watching { background:transparent; border:1.5px dashed var(--gg-color-map-followed-ring); }
 .map-swatch.is-disputed { background:none; border:2px dashed var(--gg-color-map-edge-disputed); border-radius:var(--gg-radius-full); }
 .map-inspector { position:relative; z-index:var(--gg-z-panel); flex:none; width:var(--gg-size-inspector,360px); min-height:0; overflow:auto; padding:var(--gg-space-5); border-left:1px solid var(--gg-color-border-subtle); background:var(--gg-color-bg-raised); animation:map-inspector-in 180ms var(--gg-ease-out); }
 /* Sticky, not absolute: in WKWebView an absolute close scrolls with the sheet and the map clips it, so the control leaves the corner. */
@@ -111,10 +112,10 @@
 .map-inspector footer { position:sticky; bottom:-20px; padding:16px 0; background:var(--gg-color-bg-raised); }.map-inspector footer button { width:100%; height:auto; white-space:normal; }
 /* Rows scrolled or tabbed into view stop above the sticky Ask bar (its padding, button and disclosure line), not under it. */
 .map-inspector { scroll-padding-bottom:calc(var(--gg-size-control-md) + var(--gg-space-7) + var(--gg-space-8)); }
-.map-empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 20px; text-align:center; }.map-empty h2 { max-width:420px; }.map-empty p { max-width:44ch; }.map-empty h2 { font-size:var(--gg-text-heading); line-height:var(--gg-leading-heading); }.map-empty p { color:var(--gg-color-text-secondary); margin:12px 0 20px; line-height:var(--gg-leading-body); }.map-empty > div { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+.map-empty { position:absolute; inset:var(--map-covered-top, 0px) var(--map-covered-right, 0px) var(--map-overlay-bottom, var(--map-covered-bottom, 0px)) var(--map-covered-left, 0px); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 20px; text-align:center; }.map-empty h2 { max-width:420px; }.map-empty p { max-width:44ch; }.map-empty h2 { font-size:var(--gg-text-heading); line-height:var(--gg-leading-heading); }.map-empty p { color:var(--gg-color-text-secondary); margin:12px 0 20px; line-height:var(--gg-leading-body); }.map-empty > div { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
 .map-error { position:relative; z-index:var(--gg-z-panel); background:var(--gg-color-warning-soft); padding:8px 12px; }.map-error ~ .map-status-stack { top:64px; }
 .map-skeleton { position:absolute; inset:0; background:radial-gradient(ellipse at center,var(--gg-color-map-label),transparent 65%); opacity:.06; animation:map-shimmer 1.8s ease-in-out infinite alternate; }
-.map-tooltip { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); max-width:calc(100% - 32px); pointer-events:none; padding:var(--gg-space-2) var(--gg-space-3); background:var(--gg-color-bg-raised); border-radius:var(--gg-radius-sm); box-shadow:var(--gg-shadow-sm); z-index:var(--gg-z-tooltip); }.map-tooltip strong,.map-tooltip small { display:block; }.map-tooltip small { color:var(--gg-color-text-secondary); font-size:var(--gg-text-meta); }
+.map-tooltip { position:absolute; bottom:calc(var(--map-overlay-bottom, 0px) + var(--gg-space-3)); left:calc(var(--map-covered-left, 0px) + (100% - var(--map-covered-left, 0px) - var(--map-covered-right, 0px)) / 2); transform:translateX(-50%); max-width:calc(100% - var(--map-covered-left, 0px) - var(--map-covered-right, 0px) - var(--gg-space-7)); pointer-events:none; padding:var(--gg-space-2) var(--gg-space-3); background:var(--gg-color-bg-raised); border-radius:var(--gg-radius-sm); box-shadow:var(--gg-shadow-sm); z-index:var(--gg-z-tooltip); }.map-tooltip strong,.map-tooltip small { display:block; }.map-tooltip small { color:var(--gg-color-text-secondary); font-size:var(--gg-text-meta); }
 .map-list { position:absolute; inset:56px 0 0; overflow:auto; padding:12px; }.map-list table { width:100%; text-align:left; font-size:var(--gg-text-meta); }.map-list caption { text-align:left; padding:8px; }.map-list th,.map-list td { padding:4px 8px; border-bottom:1px solid var(--gg-color-border-subtle); }.map-list button { white-space:normal; text-align:left; height:auto; }
 .map-probe { position:absolute; bottom:8px; right:8px; padding:4px; background:var(--gg-color-bg-raised); font-size:var(--gg-text-caption); pointer-events:none; }
 .map-view :focus-visible { outline:2px solid var(--gg-color-focus); outline-offset:2px; }
@@ -153,6 +154,8 @@
 .map-lens-menu .map-lens-note { margin:0; padding:var(--gg-space-1) var(--gg-space-2) var(--gg-space-2); color:var(--gg-color-text-secondary); font-size:var(--gg-text-caption); }
 .map-lens-menu:not(.map-around-menu) section h3 { margin:var(--gg-space-2) var(--gg-space-2) var(--gg-space-1); color:var(--gg-color-text-tertiary); font-size:var(--gg-text-caption); font-weight:var(--gg-weight-medium); }
 .map-library { position:absolute; inset:0 auto 0 0; width:var(--gg-size-inspector); max-width:100%; z-index:var(--gg-z-sidebar); background:var(--gg-color-bg-raised); border-right:1px solid var(--gg-color-border-subtle); box-shadow:var(--gg-shadow-sm); display:flex; flex-direction:column; min-height:0; }
+/* With no names there is no canvas to measure the Library over, so the empty Map's message moves beside it by the Library's own width. */
+.map-body:has(> .map-library) > .map-stage > .map-empty { left:var(--map-covered-left, var(--gg-size-inspector)); }
 /* The default side panel is 460px. A 360px Library there leaves a strip too narrow to read the status line or the graph. Cover the canvas; closing the Library brings the map back. */
 @container map (max-width: 720px) {
   .map-library { width: 100%; border-right: 0; box-shadow: none; }
@@ -281,7 +284,8 @@
 .map-library .journal-library-section,
 .map-library .research-notes-section { padding:0; }
 .map-library .source-library-heading.library-section-label {
-  display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:var(--gg-space-2);
+  /* A space's width on each side of the count's dot ("SAVED SOURCES · 6"); the add action keeps its distance through its auto margin. */
+  display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:var(--gg-space-2) var(--gg-space-1);
   margin:0; padding:var(--gg-space-4) var(--gg-space-4) 0;
   color:var(--gg-color-text-secondary); font-size:var(--gg-text-caption); line-height:var(--gg-leading-caption);
   font-weight:var(--gg-weight-medium); text-transform:uppercase;
@@ -344,7 +348,8 @@
 .map-legend li { grid-template-columns:40px minmax(0, 1fr); }
 .map-legend .map-legend-glyphs .map-swatch { justify-self:auto; }
 .map-legend li.map-legend-more { display:block; }
-.map-legend-more summary { display:flex; align-items:center; min-height:var(--gg-size-control-sm); padding:0; border-radius:var(--gg-radius-sm); color:var(--gg-color-text-secondary); font-size:inherit; }
+/* "More…" reads at the key's size; listed under .map-legend so knowledge.css's .map-workspace summary does not win on bundle order. */
+.map-legend .map-legend-more summary { display:flex; align-items:center; min-height:var(--gg-size-control-sm); padding:0; border-radius:var(--gg-radius-sm); color:var(--gg-color-text-secondary); font-size:inherit; }
 .map-legend-more ul { padding:var(--gg-space-2) 0 0; }
 .map-whats-new [tabindex="-1"]:focus:not(:focus-visible) { outline:none; box-shadow:none; }
 .map-view[data-keyboard-focus="false"] .map-whats-new [tabindex="-1"]:focus-visible { outline:none !important; box-shadow:none; }
@@ -401,6 +406,13 @@
   .map-inspector footer { position:static; padding:var(--gg-space-3) 0 0; }
   .map-inspector { scroll-padding-bottom:0; }
 }
+/* An entity's name leads and its kind follows: above the name in the side column, after it on the
+   bottom sheet's first line, beside the close control and clear of it. */
+.map-inspector-title { display:flex; flex-direction:column-reverse; }
+@container map (max-width:900px) {
+  .map-inspector-title { flex-direction:row; flex-wrap:wrap; align-items:center; gap:var(--gg-space-1) var(--gg-space-2); min-height:var(--gg-size-control-sm); padding-right:calc(var(--gg-size-control-sm) + var(--gg-space-2)); }
+  .map-inspector-title > .map-kind-chip { margin-right:0; padding-right:0; }
+}
 .map-notes ul { display:grid; gap:var(--gg-space-1); margin:0; padding:0; list-style:none; }
 .map-notes button { display:grid; gap:2px; width:100%; padding:var(--gg-space-2) var(--gg-space-3); border:0; border-radius:var(--gg-radius-sm); background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
 .map-notes button:hover { background:var(--gg-color-bg-hover); }
@@ -417,7 +429,7 @@
 .map-legend > ul { display:flex; flex-wrap:wrap; gap:2px var(--gg-space-3); padding:0; }
 .map-legend li { display:inline-flex; align-items:center; gap:var(--gg-space-1); white-space:nowrap; }
 .map-legend-glyphs .map-swatch { width:8px; height:8px; }
-.map-legend-glyphs .map-swatch:is(.is-watching, .is-holding) { width:10px; height:10px; }
+.map-legend-glyphs .map-swatch.is-watching { width:10px; height:10px; }
 .map-legend-glyphs .map-swatch.is-claim-line { width:12px; height:0; }
 .map-legend li.map-legend-more { display:inline-flex; }
 .map-legend-more > details[open] > ul { display:flex; flex-wrap:wrap; gap:2px var(--gg-space-3); }

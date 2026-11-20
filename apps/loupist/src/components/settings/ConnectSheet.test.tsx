@@ -61,7 +61,7 @@ it("lists local models by engine, refuses too-short contexts and connects the ch
   expect(usable).toBeChecked();
   expect(short).toBeDisabled();
   expect(within(ollama).getByText("Too short for research")).toBeVisible();
-  expect(within(ollama).getByText("40,960 context")).toBeVisible();
+  expect(within(ollama).getByText("40,960-token context")).toBeVisible();
   expect(within(sheet).getByText("LM Studio isn't running")).toBeVisible();
   expect(within(sheet).getByText(/Research needs a model that can read at least 20,000 tokens/)).toBeVisible();
   await user.click(within(sheet).getByRole("button", { name: "Connect Ollama" }));
@@ -91,12 +91,12 @@ it("adds a custom endpoint only after a successful Test or typed model IDs", asy
   expect(add).toBeDisabled();
 
   bridge.customTestResult = { outcome: "not_found", models: [] };
-  await user.click(within(sheet).getByRole("button", { name: "Test" }));
+  await user.click(within(sheet).getByRole("button", { name: "Test connection" }));
   expect(await within(sheet).findByText("API path not found. Check the address and format.")).toBeVisible();
   expect(add).toBeDisabled();
 
   bridge.customTestResult = { outcome: "ok", models: ["alpha", "beta"] };
-  await user.click(within(sheet).getByRole("button", { name: "Test" }));
+  await user.click(within(sheet).getByRole("button", { name: "Test connection" }));
   expect(await within(sheet).findByText("Connected. Found 2 models.")).toBeVisible();
   expect(test).toHaveBeenLastCalledWith({ base_url: "https://gateway.example/v1", api: "openai-responses", api_key: undefined });
   expect(within(sheet).getByRole("checkbox", { name: "alpha" })).toBeChecked();
@@ -105,7 +105,7 @@ it("adds a custom endpoint only after a successful Test or typed model IDs", asy
   // Changing the address needs a new Test.
   await user.type(within(sheet).getByLabelText("Server address"), "/");
   expect(add).toBeDisabled();
-  await user.click(within(sheet).getByRole("button", { name: "Test" }));
+  await user.click(within(sheet).getByRole("button", { name: "Test connection" }));
   await within(sheet).findByText("Connected. Found 2 models.");
   await user.click(within(sheet).getByRole("checkbox", { name: "beta" }));
   await user.click(add);
@@ -113,11 +113,33 @@ it("adds a custom endpoint only after a successful Test or typed model IDs", asy
   expect(save).toHaveBeenCalledWith({ provider: undefined, name: "Office gateway", base_url: "https://gateway.example/v1/", api: "openai-responses", api_key: undefined, model_ids: ["alpha"] });
 });
 
+it("scrolls the fields, not the window, to a Test result and the models it found", async () => {
+  const { bridge, user, sheet } = await open({ kind: "custom" });
+  bridge.customTestResult = { outcome: "ok", models: ["alpha", "beta"] };
+  await user.type(within(sheet).getByLabelText("Server address"), "https://gateway.example/v1");
+  // A short window: the fields column shows 300 px; the result and the models start below it.
+  const scroller = sheet.querySelector<HTMLElement>(".connect-sheet-scroll")!;
+  let scrollTop = 0;
+  Object.defineProperty(scroller, "scrollTop", { configurable: true, get: () => scrollTop, set: (value: number) => { scrollTop = value; } });
+  const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 400, width: 400, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+  const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    if (this === scroller) return rect(0, 300);
+    if (this.classList.contains("connect-test-result")) return rect(320, 344);
+    if (this.classList.contains("connect-test-models")) return rect(352, 440);
+    return rect(0, 0);
+  });
+  await user.click(within(sheet).getByRole("button", { name: "Test connection" }));
+  expect(await within(sheet).findByText("Connected. Found 2 models.")).toBeInTheDocument();
+  // Down to the last model, which still keeps the result line in view.
+  expect(scrollTop).toBe(140);
+  layout.mockRestore();
+});
+
 it("suggests /v1 only when the custom endpoint has no path", async () => {
   const { bridge, user, sheet } = await open({ kind: "custom" });
   bridge.customTestResult = { outcome: "not_found", models: [] };
   await user.type(within(sheet).getByLabelText("Server address"), "https://gateway.example");
-  await user.click(within(sheet).getByRole("button", { name: "Test" }));
+  await user.click(within(sheet).getByRole("button", { name: "Test connection" }));
   expect(await within(sheet).findByText("The server answered, but not at this path. Try adding /v1.")).toBeVisible();
 });
 

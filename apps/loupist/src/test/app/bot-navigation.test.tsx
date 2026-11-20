@@ -1,7 +1,7 @@
 import { App } from "../../App";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { chooseLoupist, openApp, selectedLoupistButton } from "../renderApp";
+import { chooseLoupist, openApp, openLoupistSwitcher, selectedLoupistButton } from "../renderApp";
 
 it("keeps the research draft while moving between a session, Bot and its read-only schedule history", async () => {
   const user = userEvent.setup();
@@ -17,7 +17,24 @@ it("keeps the research draft while moving between a session, Bot and its read-on
   expect(within(history).queryByRole("textbox")).toBeNull();
   await user.click(screen.getByRole("button", { name: sessionTitle }));
   expect(composer()).toHaveValue("Compare inventory days");
-  expect(screen.getByRole("button", { name: "New Loupist" })).toBeVisible();
+  expect(within(openLoupistSwitcher()).getByRole("menuitem", { name: "New Loupist" })).toBeVisible();
+});
+
+it("moves focus to the Schedule page after Bot's Scheduled tasks, and back to the menu button on Escape", async () => {
+  const user = userEvent.setup();
+  await openApp();
+  await user.click(screen.getByRole("button", { name: "Bot" }));
+  const options = screen.getByRole("button", { name: "Options for Bot" });
+  await user.click(options);
+  await user.keyboard("{Escape}");
+  expect(options).toHaveFocus();
+  await user.click(options);
+  await user.click(screen.getByRole("menuitem", { name: "Scheduled tasks" }));
+  await screen.findByRole("region", { name: "Schedule" });
+  // The page's one h1, its location heading, takes focus and names the page as its header does.
+  expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  expect(screen.getByRole("heading", { level: 1, name: "Schedule" })).toHaveFocus();
+  expect(options).not.toHaveFocus();
 });
 
 it("restores the last session and unsent text when reopening the app", async () => {
@@ -55,6 +72,7 @@ it("opens a new user's Bot after the notice and skips watchlist and scheduling s
   render(<App bridge={bridge} />);
   await user.click(await screen.findByRole("checkbox", { name: "I understand" }));
   await user.click(screen.getByRole("button", { name: "Get started" }));
+  await user.click(await screen.findByRole("button", { name: "Continue" }));
   await user.click(await screen.findByRole("button", { name: "Create Loupist" }));
   expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
   expect(screen.getByRole("textbox", { name: "Message Loupist" })).toBeEnabled();

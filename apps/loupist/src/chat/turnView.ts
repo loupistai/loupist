@@ -75,15 +75,24 @@ export type LiveLine = {
   /** Other steps running beside the one named. */
   more: number;
   sheen: boolean;
-  /** `step` holds its label for a moment after the step ends, so a quick next step never reads "Thinking". */
-  kind: "starting" | "thinking" | "still" | "step" | "writing" | "waiting" | "stopping";
+  /**
+   * `step` holds its label for a moment after the step ends, so a quick next step never reads "Thinking".
+   * Between steps, `note` is the latest note's last sentence and `batch` the last finished batch of
+   * steps, whichever came last; neither turns into "Still working".
+   */
+  kind: "starting" | "thinking" | "still" | "step" | "note" | "batch" | "writing" | "waiting" | "stopping";
+  /**
+   * On a `note` line: what the reply's own footer shows when the note itself is on the page
+   * above it, so the sentence is not said twice. Thinking, then Still working after 15 s.
+   */
+  besideNote?: LiveLine;
 };
 
 /** What the answer can cite: a site read, a data series, saved notes, calculations. */
 export type LedgerChip = { key: string; kind: "source" | "data" | "memory" | "calculation"; label: string; count: number; evidence?: ChatEvidenceRef };
 
 export type LedgerView = {
-  /** The step count (or the plan position) while running; the receipt once settled. */
+  /** The step count while running; the receipt once settled. */
   text: string;
   /** " · 1 failed attempt", in both states; never an alarm. */
   failed: string | null;
@@ -256,7 +265,7 @@ function ledgerChips(actions: ActionItem[], evidenceById: Map<string, ChatEviden
     if (sources.length) {
       for (const source of sources) {
         // Saved notes read through a citation are the notes, never a product name.
-        if (source.tool_name.startsWith("world")) add({ key: `memory:${item.id}`, kind: "memory", label: capitalized(readNoun("world_read")) });
+        if (source.tool_name.startsWith("world_")) add({ key: `memory:${item.id}`, kind: "memory", label: capitalized(readNoun("world_read")) });
         else add({ key: `source:${source.id}`, kind: "source", label: sourceIdentityLabel(source), evidence: source });
       }
       continue;
@@ -279,13 +288,8 @@ function ledgerView(ledger: Ledger, state: TurnState, running: boolean, duration
   const chips = ledgerChips(actions, evidenceById);
   const steps = (count: number) => count > 0 ? t("ledger.steps", { count, formattedCount: formatNumber(count) }) : "";
   if (running) {
-    const plan = ledger.progress.plan;
-    const active = plan?.items.findIndex((item) => item.status === "active") ?? -1;
-    const done = plan ? plan.items.map((item) => item.status).lastIndexOf("done") : -1;
-    const at = active >= 0 ? active : done;
-    const text = plan && at >= 0
-      ? t("ledger.plan", { k: formatNumber(at + 1), n: formatNumber(plan.items.length), label: withoutIdentifiers(plan.items[at]!.label) || plan.items[at]!.label })
-      : steps(actions.length) || t("chatProgressTimeline.consultedNotes", { count: ledger.memoryReads.length, formattedCount: formatNumber(ledger.memoryReads.length) });
+    // The plan is not a progress bar: it stays in the expanded ledger, never in this line.
+    const text = steps(actions.length) || t("chatProgressTimeline.consultedNotes", { count: ledger.memoryReads.length, formattedCount: formatNumber(ledger.memoryReads.length) });
     return { text, failed, settled: false, chips };
   }
   const stopped = state.kind === "stopped";
@@ -339,6 +343,103 @@ function deriveState({ message, stopping, retry, holding }: TurnInput, content: 
   return { kind: "running" };
 }
 
+/** A URL as a short readable name: its host, without "www.". Nothing when it has none. */
+const shortUrl = (url: string) => {
+  try { return new URL(/^www\./iu.test(url) ? `https://${url}` : url).hostname.replace(/^www\./iu, ""); } catch { return ""; }
+};
+
+/** A bare URL becomes its host; punctuation that ends the sentence stays. */
+const bareUrl = (match: string) => {
+  const [, url = match, tail = ""] = /^(.*?)([.,;:!?]*)$/su.exec(match) ?? [];
+  return `${shortUrl(url)}${tail}`;
+};
+
+/**
+ * One line of a note as the live line shows it: only what a reader of the
+ * rendered note sees. Links show their label (a reference definition line is
+ * dropped), an HTML anchor its inner text, an autolink or a bare URL its host;
+ * other HTML tags, emphasis and block markers go; one space between words.
+ * A link's target is never shown or announced.
+ */
+const DEFINITION = /^ {0,3}\[([^\]\n]+)\]:[ \t]*\S+.*$/gmu;
+/** Removes HTML tags until none is left, so a tag written around another (`<<b>script>`) leaves no tag behind. */
+const withoutTags = (value: string) => {
+  let text = value;
+  for (let before = ""; before !== text;) {
+    before = text;
+    text = text.replace(/<\/?[A-Za-z][^>]*>/gu, "");
+  }
+  return text;
+};
+const lineText = (value: string) => {
+  const defined = new Set([...value.matchAll(DEFINITION)].map(([, label]) => label!.trim().toLowerCase()));
+  const linked = value
+    .replace(DEFINITION, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/gu, "$1")
+    .replace(/\[([^\]]+)\]\[[^\]]*\]/gu, "$1")
+    // A shortcut reference, `[label]` with a definition of its own.
+    .replace(/\[([^\]]+)\](?![[(])/gu, (match, label: string) => defined.has(label.trim().toLowerCase()) ? label : match)
+    .replace(/<a\b[^>]*>([\s\S]*?)<\/a\s*>/giu, "$1")
+    .replace(/<((?:https?|ftp):[^\s<>]+)>/giu, (_match, url: string) => shortUrl(url))
+    .replace(/<(?:mailto:)?([^\s@<>]+@[^\s@<>]+)>/giu, "$1");
+  return withoutTags(linked)
+    .replace(/\b(?:https?:\/\/|www\.)[^\s<>()]+/giu, bareUrl)
+    .replace(/\*\*|__|`/gu, "")
+    .replace(/^\s*(?:#{1,6}|[-*+>]|\d+[.)])\s+/gmu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+};
+
+/** The last sentence of a note, split by the interface language's own sentence rules. */
+function lastSentence(text: string): string {
+  const plain = lineText(text);
+  if (!plain || typeof Intl.Segmenter !== "function") return plain;
+  const sentences = [...new Intl.Segmenter(i18n.language, { granularity: "sentence" }).segment(plain)]
+    .map((part) => part.segment.trim()).filter(Boolean);
+  return sentences.at(-1) ?? plain;
+}
+
+/** Steps of one tool (or one host operation) belong to the same batch. */
+const batchKey = (item: ActionItem) => item.kind === "tool" ? `tool:${item.toolName ?? item.action}` : `system:${item.operation}`;
+
+/**
+ * The reply's last action between steps: its latest note's last sentence, or
+ * the last finished batch, whichever came last. A batch is the trailing run
+ * of steps that finished well and called the same tool, since the last note or
+ * the last step of another tool; a step that failed or stopped names nothing
+ * done and is passed over without ending the run.
+ */
+function lastAction(items: readonly ChatProgressItem[], message: ChatMessage, content: string) {
+  const { draft } = message;
+  // The answer's own draft, once its settled text has grown the answer, is not a note.
+  const noteOf = (item: Extract<ChatProgressItem, { kind: "commentary" }>) =>
+    item.id === draft?.id && draft.settled && content.length > draft.answerLength ? "" : lastSentence(withoutIdentifiers(item.text));
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index]!;
+    if (item.kind === "commentary") {
+      const sentence = noteOf(item);
+      if (sentence) return { kind: "note" as const, sentence };
+      continue;
+    }
+    if (!isCounted(item) || item.status !== "succeeded") continue;
+    const key = batchKey(item);
+    let count = 0;
+    for (let earlier = index; earlier >= 0; earlier -= 1) {
+      const other = items[earlier]!;
+      if (other.kind === "commentary") {
+        // A note the reader can see ends the run; an empty one is not there.
+        if (noteOf(other)) break;
+        continue;
+      }
+      if (!isCounted(other) || other.status !== "succeeded") continue;
+      if (batchKey(other) !== key) break;
+      count += 1;
+    }
+    return { kind: "batch" as const, item, count };
+  }
+  return null;
+}
+
 /** The live line's state table (DIRECTION 4.3); the first match wins. Dwell and the 800 ms hold are the line's own. */
 function liveLine(state: TurnState, { message, now, lastActivityAt, holding }: TurnInput, content: string): LiveLine {
   const line = (kind: LiveLine["kind"], glyph: LiveGlyph, label: string, extra: Partial<LiveLine> = {}): LiveLine => {
@@ -356,6 +457,16 @@ function liveLine(state: TurnState, { message, now, lastActivityAt, holding }: T
     return line("step", stepGlyph(newest), actionLabel(newest), { target, more: running.length - 1 });
   }
   if (holding || message.phase === "writing") return line("writing", "writing", t("turn.writing"));
+  // An accurate last action and the clock; a long model round leaves it as it is.
+  const last = lastAction(items, message, content);
+  if (last?.kind === "note") {
+    const besideNote = stalled ? line("still", "phase", t("turn.stillWorking")) : line("thinking", "phase", t("turn.thinking"));
+    return { ...line("note", "phase", last.sentence), besideNote };
+  }
+  if (last) {
+    const label = actionLabel(last.item);
+    return line("batch", stepGlyph(last.item), last.count > 1 ? t("turn.batch", { label, count: last.count, formattedCount: formatNumber(last.count) }) : label);
+  }
   if (stalled) return line("still", "phase", t("turn.stillWorking"));
   if (!message.phase && !items.length && !content) return line("starting", "phase", t("turn.starting"));
   return line("thinking", "phase", t("turn.thinking"));
@@ -496,8 +607,9 @@ export function deriveTurnView(input: TurnInput): TurnView {
   for (const question of questions) if (!placed.has(question.requestId)) segments.push({ kind: "question", key: `question:${question.requestId}`, question });
   for (const approval of approvals) if (!placed.has(approval.requestId)) segments.push({ kind: "approval", key: `approval:${approval.requestId}`, approval });
   if (ledger) {
-    const linked = new Set(ledger.progress.items.flatMap((item) => item.kind === "tool" ? item.resultIds ?? [] : []));
-    ledger.sources = citationSources(evidenceRefs.filter((source) => linked.has(source.id)));
+    // The turn's numbered sources, the list the footer's Sources (n) and the activity sheet show,
+    // so the receipt counts the same thing; a source no step's results name is still one the answer cites.
+    ledger.sources = citationSources(evidenceRefs);
     ledger.evidence = evidenceRefs.filter((result) => isInlineWorkEvidence(result, message.memory_refs));
     const durationMs = progress?.finishedAtMs != null ? progress.finishedAtMs - startedAtMs : message.performance?.totalMs;
     ledger.ledger = ledgerView(ledger, state, running, durationMs, evidenceRefs);
@@ -511,8 +623,9 @@ export function deriveTurnView(input: TurnInput): TurnView {
     : ledger ? [ledger.ledger.text, ledger.ledger.failed].filter(Boolean).join(" · ") : "";
   // Copy takes every piece of prose the page shows, in order: notes that stayed on the page, then the answer.
   // A short note that gave its place to the text after it is read in the timeline, not on the page.
+  // Each piece is copied as written: its outer indentation can be Markdown (code, a nested list).
   const settled = footer.kind === "settled"
-    ? { ...footer, copyText: segments.flatMap((segment) => segment.kind === "prose" && segment.text.trim() ? [segment.text.trim()] : []).join("\n\n") || null }
+    ? { ...footer, copyText: segments.flatMap((segment) => segment.kind === "prose" && segment.text.trim() ? [segment.text] : []).join("\n\n") || null }
     : footer;
   return { state, segments, footer: settled, announce };
 }

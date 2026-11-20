@@ -1,7 +1,9 @@
 import i18n from "@/i18n";
+import { chatTitle } from "../app/chatTitle";
 import { formatDate, formatDateTime } from "@/i18n/format";
 import type { ChatThread } from "../types";
 import { checkFor, exportFootnote } from "./numberChecks";
+import { evidenceLinkStarts } from "./evidenceLinkOrder";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -16,7 +18,7 @@ export const exportFileName = (title: string) => (title.replace(/[^\p{L}\p{N} _-
  * the footnotes the renderer gathers at the end (`notice: false`).
  */
 export function chatMarkdown(thread: ChatThread, loupistName: string, nowMs = Date.now(), { notice = true } = {}) {
-  const lines = [`# ${thread.title}`, "", `${loupistName} · ${formatDate(nowMs)}`, ""];
+  const lines = [`# ${chatTitle(thread)}`, "", `${loupistName} · ${formatDate(nowMs)}`, ""];
   // AI-produced disclosure (W17.6): the third line names the models that wrote the answers.
   const models = [...new Set(thread.messages.flatMap((message) => message.role === "assistant" && message.execution_model?.name ? [message.execution_model.name] : []))];
   if (models.length) lines.push(t("chatExport.madeWithAi", { models: models.join(", ") }), "");
@@ -24,12 +26,20 @@ export function chatMarkdown(thread: ChatThread, loupistName: string, nowMs = Da
   for (const message of thread.messages) {
     if (message.role !== "user" && message.role !== "assistant") continue;
     const time = Date.parse(message.created_at);
-    const who = message.role === "user" ? t("chatExport.you") : loupistName;
+    // A scheduled run's request is its task's, not the user's; the briefing's is the host's and is left out.
+    const turn = message.role === "user" ? message.scheduled : undefined;
+    const who = turn ? t("scheduledTurn.ran", { title: chatTitle({ title: turn.task_title, messages: [message] }) })
+      : message.role === "user" ? t("chatExport.you") : loupistName;
     lines.push(`## ${who}${Number.isFinite(time) ? ` · ${formatDateTime(time)}` : ""}`, "");
+    if (turn?.task_kind === "briefing") continue;
     let content = message.content.trim();
-    // Number links keep the number and gain a footnote with its formula or source.
-    content = content.replace(/\[([^\]\n]+)\]\(#evidence-([A-Za-z0-9_]+)\)/gu, (whole, text: string, id: string) => {
-      const check = checkFor(message.number_checks, id, text);
+    // Number links keep the number and gain a footnote with its formula or source: each occurrence
+    // its own check, found by its place among the answer's links as Rust counted them.
+    const starts = evidenceLinkStarts(message.content);
+    const lead = message.content.length - message.content.trimStart().length;
+    content = content.replace(/\[([^\]\n]+)\]\(#evidence-([A-Za-z0-9_]+)\)/gu, (whole, text: string, id: string, at: number) => {
+      const index = starts.indexOf(at + lead);
+      const check = checkFor(message.number_checks, index < 0 ? undefined : index, id, text);
       if (!check) return whole;
       const number = footnotes.length + 1;
       const evidence = message.evidence_refs?.find((item) => item.id === id);

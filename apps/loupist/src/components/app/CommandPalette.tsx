@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { scheduledTaskTitle } from "../briefings/scheduledPresentation";
 import { chatTitle } from "../../app/chatTitle";
 import { formatDate } from "@/i18n/format";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
@@ -10,8 +11,9 @@ import { nodeColorKey } from "../../knowledge/mapKinds";
 import { entityLabel } from "../../knowledge/mapItems";
 import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { attentionNamesLoupist, attentionWhat } from "./NeedsAttention";
-import type { WatchlistEntry } from "../../contracts/userContext";
+import { assetExchangeLabel, type AssetRow } from "../../contracts/assets";
 import { useAssetPageOpener } from "../assets/assetOpener";
+import { useAssetNames } from "../assets/assetName";
 import { tickerLabel } from "@/lib/market";
 
 const t = i18n.getFixedT(null, "app");
@@ -30,7 +32,7 @@ export type PaletteAction = { id: string; label: string; keys?: string; run: () 
 
 type Row = { key: string; group: PaletteGroup; label: string; caption?: string; marker?: string; run: () => void };
 type LoupistIndex = { nodes: KnowledgeMapNode[]; principles: { recordId: string; statement: string }[]; briefings: { runId: string; title: string; atMs: number }[] };
-type Loaded = { byLoupist: Readonly<Record<string, LoupistIndex>>; followed: WatchlistEntry[] };
+type Loaded = { byLoupist: Readonly<Record<string, LoupistIndex>>; followed: AssetRow[] };
 const EMPTY: Loaded = { byLoupist: {}, followed: [] };
 
 /** One Loupist's searchable names, principles and briefings, through its own read commands; null past the budget. */
@@ -77,6 +79,12 @@ type Props = {
 };
 
 const matches = (query: string, ...fields: (string | undefined)[]) => !query || fields.some((field) => field?.toLowerCase().includes(query));
+/**
+ * A row found only through its Loupist's name needs a query of two characters or more:
+ * one typed letter is in most names and would list every chat of that Loupist.
+ */
+const LOUPIST_NAME_QUERY = 2;
+const matchesLoupist = (query: string, name: string) => [...query].length >= LOUPIST_NAME_QUERY && matches(query, name);
 
 /**
  * The ⌘K palette (shell spec X7): one search across what needs attention,
@@ -89,6 +97,8 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
   onOpenAttention, onOpenThread, onOpenMapNode, onOpenPrinciple, onOpenBriefing }: Props) {
   const { i18n: instance } = useTranslation("app");
   const openAsset = useAssetPageOpener();
+  // A followed asset is listed by the name its page shows (a Korean listing in Korean) and found by either name.
+  const assetName = useAssetNames(bridge, selectedLoupistId ?? "", open && Boolean(selectedLoupistId));
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<ReadonlySet<PaletteGroup>>(new Set());
   const [active, setActive] = useState(0);
@@ -109,30 +119,34 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
   useEffect(() => {
     if (!open) return undefined;
     let live = true;
-    void (bridge.watchlistList?.().catch(() => []) ?? Promise.resolve([])).then((followed) => {
-      if (live) setLoaded((current) => ({ ...current, followed }));
-    });
+    // The followed list is the user's, read through the active Loupist.
+    if (selectedLoupistId) {
+      void Promise.resolve().then(() => bridge.assetsList({ loupistId: selectedLoupistId })).catch((): AssetRow[] => []).then((followed) => {
+        if (live) setLoaded((current) => ({ ...current, followed }));
+      });
+    }
     for (const loupistId of searchedKey ? searchedKey.split("\n") : []) {
       void readLoupist(bridge, loupistId).then((index) => {
         if (live && index) setLoaded((current) => ({ ...current, byLoupist: { ...current.byLoupist, [loupistId]: index } }));
       });
     }
     return () => { live = false; };
-  }, [open, searchedKey, bridge]);
+  }, [open, searchedKey, bridge, selectedLoupistId]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const all: Row[] = [];
     for (const item of attention) {
-      const what = attentionWhat(item);
-      if (matches(q, item.loupistName, what)) all.push({ key: `attention:${item.kind}:${item.loupistId}:${item.chatId ?? item.recordId ?? ""}`, group: "attention", label: what, caption: attentionNamesLoupist(item) ? undefined : item.loupistName, run: () => onOpenAttention(item) });
+      const what = attentionWhat(item, threadsByLoupist);
+      if (matches(q, what) || matchesLoupist(q, item.loupistName)) all.push({ key: `attention:${item.kind}:${item.loupistId}:${item.chatId ?? item.recordId ?? ""}`, group: "attention", label: what, caption: attentionNamesLoupist(item) ? undefined : item.loupistName, run: () => onOpenAttention(item) });
     }
     if (focusGroup !== "attention") {
-      const chats = loupists.flatMap((loupist) => (threadsByLoupist[loupist.id] ?? []).map((thread) => ({ thread, loupist })))
-        .filter(({ thread, loupist }) => matches(q, thread.title, loupist.name))
-        // The active Loupist first, then the most recent.
-        .sort((a, b) => Number(b.loupist.id === selectedLoupistId) - Number(a.loupist.id === selectedLoupistId) || Date.parse(b.thread.updated_at) - Date.parse(a.thread.updated_at));
-      for (const { thread, loupist } of q ? chats : chats.slice(0, RECENT_CHATS)) {
+      const chats = loupists.flatMap((loupist) => (threadsByLoupist[loupist.id] ?? []).map((thread) => ({ thread, loupist, byTitle: matches(q, chatTitle(thread)) })))
+        .filter(({ loupist, byTitle }) => byTitle || matchesLoupist(q, loupist.name))
+        // Chats found by their title first, then the active Loupist's, then the most recent.
+        .sort((a, b) => Number(b.byTitle) - Number(a.byTitle) || Number(b.loupist.id === selectedLoupistId) - Number(a.loupist.id === selectedLoupistId) || Date.parse(b.thread.updated_at) - Date.parse(a.thread.updated_at));
+      // Before typing it lists recent sessions as the sidebar does; a typed search also finds the ones kept out of it.
+      for (const { thread, loupist } of q ? chats : chats.filter(({ thread }) => !thread.hide_from_recent).slice(0, RECENT_CHATS)) {
         const date = Date.parse(thread.updated_at);
         all.push({ key: `chat:${loupist.id}:${thread.id}`, group: "chats", label: chatTitle(thread),
           caption: [loupist.name, Number.isFinite(date) ? formatDate(date, { year: undefined, month: "short", day: "numeric" }) : ""].filter(Boolean).join(" · "),
@@ -140,8 +154,12 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
       }
       if (q && selectedLoupistId && openAsset) {
         for (const asset of loaded.followed) {
-          const label = asset.displayName?.trim() || asset.symbol;
-          if (matches(q, label, asset.symbol)) all.push({ key: `following:${asset.symbol}:${asset.market}`, group: "following", label, caption: tickerLabel(asset.symbol, asset.market), run: () => openAsset({ loupistId: selectedLoupistId, symbol: asset.symbol, market: asset.market, name: label }) });
+          // An asset followed by name alone has no ticker; every asset opens by its id.
+          const ticker = asset.reference?.ticker?.trim() ?? "";
+          const label = assetName({ name: asset.name, assetId: asset.assetId, symbol: ticker || undefined, market: asset.reference?.exchange });
+          if (matches(q, label, asset.name, ticker)) all.push({ key: `following:${asset.assetId}`, group: "following", label,
+            caption: ticker ? tickerLabel(ticker, assetExchangeLabel(asset.reference)) : undefined,
+            run: () => openAsset({ loupistId: selectedLoupistId, assetId: asset.assetId, name: label }) });
         }
       }
       // Grouped by kind, then by Loupist: the active one first, each row captioned with its Loupist.
@@ -157,7 +175,8 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
         }
         for (const briefing of index.briefings) {
           const date = formatDate(briefing.atMs, { year: undefined, month: "short", day: "numeric" });
-          if (matches(q, briefing.title, date)) all.push({ key: `briefing:${loupistId}:${briefing.runId}`, group: "briefings", label: briefing.title, caption: `${name} · ${date}`, run: () => onOpenBriefing(loupistId, briefing.runId) });
+          const title = scheduledTaskTitle("briefing", briefing.title);
+          if (matches(q, title, date)) all.push({ key: `briefing:${loupistId}:${briefing.runId}`, group: "briefings", label: title, caption: `${name} · ${date}`, run: () => onOpenBriefing(loupistId, briefing.runId) });
         }
       }
       for (const action of actions) {
@@ -165,7 +184,7 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
       }
     }
     return all;
-  }, [query, attention, loupists, threadsByLoupist, selectedLoupistId, loaded, actions, focusGroup, instance.language, onOpenAttention, onOpenThread, onOpenMapNode, onOpenPrinciple, onOpenBriefing, openAsset]);
+  }, [query, attention, loupists, threadsByLoupist, selectedLoupistId, loaded, actions, focusGroup, instance.language, onOpenAttention, onOpenThread, onOpenMapNode, onOpenPrinciple, onOpenBriefing, openAsset, assetName]);
 
   // Visible rows per group, with a "More from {group}" row when cut.
   const sections = GROUP_ORDER.flatMap((group) => {
@@ -207,8 +226,12 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
       <DialogTitle className="sr-only">{t("palette.title")}</DialogTitle>
       <input className="command-palette-input" type="search" autoFocus value={query} placeholder={t("palette.placeholder")} aria-label={t("palette.title")}
         role="combobox" aria-expanded={flat.length > 0} aria-controls={listId} aria-activedescendant={flat[current] ? `${listId}-${current}` : undefined}
-        onChange={(event) => { setQuery(event.target.value); setActive(0); }} onKeyDown={onKeyDown} />
-      <ul ref={listRef} id={listId} className="command-palette-list" role="listbox" aria-label={t("palette.title")}>
+        onChange={(event) => {
+          setQuery(event.target.value); setActive(0);
+          // New results start at the top, where the highlighted first row is.
+          if (listRef.current) listRef.current.scrollTop = 0;
+        }} onKeyDown={onKeyDown} />
+      <ul ref={listRef} id={listId} className="command-palette-list" role="listbox" aria-label={t("palette.results")} hidden={!flat.length}>
         {sections.map((section) => <li key={section.group} role="presentation">
           <p className="command-palette-group" aria-hidden="true">{t(`palette.groups.${section.group}`)}</p>
           <ul role="group" aria-label={t(`palette.groups.${section.group}`)}>
@@ -225,8 +248,9 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
             })}
           </ul>
         </li>)}
-        {!flat.length ? <li role="presentation" className="command-palette-empty">{t("palette.empty")}</li> : null}
       </ul>
+      {/* Outside the list, so a screen reader hears it as the search's outcome. */}
+      <p className="command-palette-empty" role="status">{flat.length ? "" : t(focusGroup === "attention" && !query.trim() ? "palette.nothingWaiting" : "palette.empty")}</p>
     </DialogContent>
   </Dialog>;
 }

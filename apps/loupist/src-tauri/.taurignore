@@ -1,0 +1,4 @@
+# The staged runtimes under resources/ are read while the app runs (OpenBB loads
+# its package metadata on every start), and those file events would make
+# `tauri dev` rebuild and restart the app mid-run, killing the agent.
+resources/

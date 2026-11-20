@@ -1,27 +1,26 @@
+import i18n from "@/i18n";
 import type { WorldReadinessStatus } from "../knowledge/worldReadiness";
 import { knowledgePinKey } from "../knowledge/location";
-import type { ChatMessage, ChatToolRefusal, KnowledgePin } from "../types";
-import type { ChatApproval, ChatQuestion } from "../contracts/chat";
+import type { ChatEvidenceRef, ChatMessage, ChatProgressItem, ChatToolRefusal, KnowledgePin, NumberCheck } from "../types";
+import type { ChatApproval, ChatProgressCategory, ChatProgressOperation, ChatProgressStatus, ChatQuestion } from "../contracts/chat";
 import type { GrowthEvent, KnowledgeMap } from "../contracts/knowledge";
 import { addedMapItems } from "./chatMapData";
 import { entityLabel } from "../knowledge/mapItems";
 import { nodeColorKey } from "../knowledge/mapKinds";
-import type { NameChip } from "./morningMessage";
 import { chatReceipt } from "./receipt";
 import { deliveredFiles } from "./deliveredFiles";
+import { citationSources } from "./evidence";
+import { catalogStepLabel } from "./progressLabels";
+import { connectionText } from "@/lib/connectionCopy";
+import { actionLabel, visibleTarget } from "./runStatus";
 
-/** Leave a readable conversation beside the 300px context column and its outer gutter. */
-const RAIL_MIN_WIDTH = 1120;
+/** `swatch` is the node's color on the Map, so a chip and its mark match. */
+export type NameChip = { id: string; label: string; swatch: string };
+
+/** Step keys are built from the host's tool and operation names at runtime, so they are not typed literals. */
+const tDynamic = i18n.getFixedT(null, "chat") as unknown as (key: string, options?: Record<string, unknown>) => string;
+
 const MAX_LEARNED_CHIPS = 5;
-
-export type RailMode = "rail" | "inline" | "none";
-
-/** Keep context beside a wide conversation, or above it when a split leaves less room. */
-export function railMode(width: number, hasCards: boolean): RailMode {
-  if (!hasCards || width <= 0) return "none";
-  if (width >= RAIL_MIN_WIDTH) return "rail";
-  return "inline";
-}
 
 export type RailFile = {
   key: string;
@@ -73,9 +72,9 @@ export type RailData = {
 const fileName = (path: string) => path.split(/[\\/]/u).filter(Boolean).at(-1) ?? path;
 
 /**
- * "In this chat" (context-rail.md R1): files and images, what the Loupist is
- * using, what it learned here, and what waits for the user, all from data the
- * chat already holds. Nothing here reads or writes beyond the chat's messages,
+ * What the activity sheet shows about the whole chat: files and images, what the
+ * Loupist is using, what it learned here, and what waits for the user, all from
+ * data the chat already holds. Nothing here reads or writes beyond the chat's messages,
  * its growth events and the composer's pins.
  */
 export function railData({ messages, pins = [], map, events = [], learningPending = false, learningWaiting, chatId, language, workspacePath }: {
@@ -125,7 +124,7 @@ export function railData({ messages, pins = [], map, events = [], learningPendin
       const name = item.source.name.trim();
       if (!name || connections.has(name)) continue;
       connections.add(name);
-      using.push({ key: `connection:${name}`, kind: "connection", label: name });
+      using.push({ key: `connection:${name}`, kind: "connection", label: connectionText(name) });
     }
   }
 
@@ -155,3 +154,193 @@ export function railData({ messages, pins = [], map, events = [], learningPendin
   const questions = (latest?.progress?.questions ?? []).filter((question) => question.state === "waiting");
   return { files, using, learned, learningPending, learningWaiting, needs, waiting, questions, hasCards: files.length > 0 || using.length > 0 || learned !== null || learningPending || !!learningWaiting || needs.length > 0 || waiting.length > 0 || questions.length > 0 };
 }
+
+type ActionItem = Extract<ChatProgressItem, { kind: "tool" | "system" }>;
+
+/** One step of a reply as the activity sheet lists it. */
+export type ActivityStep = {
+  id: string;
+  /** What the step did, in the interface language. Never the tool's own name or the host's English. */
+  label: string;
+  /** What it read or worked on ("NVDA", a page, a file), when the host named it. */
+  target?: string;
+  href?: string;
+  status: ChatProgressStatus;
+  category: ChatProgressCategory;
+  operation: ChatProgressOperation;
+  /** Present only when the host stamped both ends of the step and they differ. */
+  durationMs?: number;
+  /** Why a step failed, stopped or was skipped, in plain words. */
+  reason?: string;
+  detailId?: string;
+  outputRevision?: number;
+  evidence: ChatEvidenceRef[];
+};
+
+/** Steps of the same kind, collapsed into one row; a step with a reason keeps a row of its own. */
+export type ActivityGroup = {
+  key: string;
+  label: string;
+  status: ChatProgressStatus;
+  steps: ActivityStep[];
+  /** The sum, only when every step in the group has a duration. */
+  durationMs?: number;
+};
+
+export type ActivityTurn = {
+  messageId: string;
+  atMs: number;
+  running: boolean;
+  durationMs?: number;
+  stepCount: number;
+  groups: ActivityGroup[];
+  sources: ChatEvidenceRef[];
+  checks: { check: NumberCheck; evidence?: ChatEvidenceRef }[];
+};
+
+/** The plan and the question line stand for these steps in the answer; they are not steps of their own. */
+const HIDDEN_TOOLS = new Set(["plan_update", "ask_user"]);
+const toolBase = (tool: string | undefined) => tool?.split("__").at(-1);
+const isIdentifier = (value: string) => /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/u.test(value);
+
+/** A data read's noun ("current quote"): the as-of catalog first, then the sheet's own. */
+function readNounFor(name: string | undefined) {
+  if (!name) return undefined;
+  if (i18n.exists(`chat:asOf.reads.${name}`)) return tDynamic(`asOf.reads.${name}`);
+  if (i18n.exists(`chat:activitySheet.reads.${name}`)) return tDynamic(`activitySheet.reads.${name}`);
+  return undefined;
+}
+
+/**
+ * A step's title in the interface language: the sheet's own label for a tool the
+ * catalog lacks, the catalog's label, a read's noun, the connection's name, or a
+ * generic label for its kind. The tool's raw name and the host's English never show.
+ */
+export function activityStepLabel(item: ActionItem, form: "running" | "done" = item.status === "running" ? "running" : "done"): string {
+  if (item.kind === "system") return item.operation === "compact" ? actionLabel(item) : tDynamic(`activitySheet.step.operation.${item.operation}`);
+  const name = toolBase(item.toolName);
+  if (name && i18n.exists(`chat:activitySheet.tools.${name}`)) return tDynamic(`activitySheet.tools.${name}.${form}`);
+  const catalog = catalogStepLabel(item.toolName, form);
+  if (catalog) return catalog;
+  const noun = readNounFor(name);
+  if (noun) return tDynamic(`readStep.${form}`, { read: noun });
+  const connection = item.source?.kind === "connector" ? connectionText(item.source.name.trim()) : "";
+  if (connection) return tDynamic(form === "running" ? "activitySheet.step.runningConnection" : "activitySheet.step.usedConnection", { name: connection });
+  return tDynamic(`activitySheet.step.operation.${item.operation}`);
+}
+
+/** The step's target without internal identifiers; tool names in it read as their nouns or drop out. */
+function activityTarget(item: ActionItem) {
+  // A connection the host names in the target ("Web Research · …") reads in the interface language.
+  const target = visibleTarget(item.target)?.split(" · ").map(connectionText).join(" · ");
+  if (!target) return undefined;
+  const parts = target.split(/\s*,\s*/u);
+  if (!parts.some(isIdentifier)) return target;
+  const named = parts.flatMap((part) => !isIdentifier(part) ? [part] : readNounFor(part) ?? []);
+  return named.length ? named.join(", ") : undefined;
+}
+
+const sameTool = (a: string, b: string | undefined) => !!b && (a === b || b.endsWith(`__${a}`) || a.endsWith(`__${b}`));
+
+const REFUSAL_REASONS = { untrusted_text_paused: "paused", protected_path: "protectedPath", outside_workspace: "outsideWorkspace" } as const;
+
+const PUBLISH_TOOLS = new Set(["grid_publish", "chart_publish", "artifact_publish"]);
+
+/**
+ * A publish or revise step that failed for an artifact the reply already shows
+ * (a staged draft while it streams, or a stored reference): the card keeps the
+ * earlier version. The target is the title, as the card reads it. A later
+ * publish of that title that succeeded is what the card shows, so the failure
+ * then left nothing on screen of its own.
+ */
+function revisionKeptEarlier(item: ActionItem, message: ChatMessage) {
+  if (item.kind !== "tool" || !PUBLISH_TOOLS.has(toolBase(item.toolName) ?? "")) return false;
+  const title = item.target?.trim();
+  if (!title) return false;
+  const steps = message.progress?.items ?? [];
+  const later = steps.slice(steps.findIndex((candidate) => candidate.id === item.id) + 1);
+  if (later.some((candidate) => candidate.kind === "tool" && candidate.status === "succeeded"
+    && PUBLISH_TOOLS.has(toolBase(candidate.toolName) ?? "") && candidate.target?.trim() === title)) return false;
+  const shown = [
+    ...(message.artifact_refs ?? []).map((artifact) => artifact.title),
+    ...(message.status === "streaming" ? (message.staged_artifacts ?? []).map((view) => view.artifact.title) : []),
+  ];
+  return shown.some((shownTitle) => shownTitle.trim() === title);
+}
+
+function stepReason(item: ActionItem, message: ChatMessage): string | undefined {
+  if (item.status === "stopped") return tDynamic("activitySheet.reason.stopped");
+  if (item.status === "skipped") return message.as_of ? tDynamic("activitySheet.reason.skipped") : undefined;
+  if (item.status !== "failed") return undefined;
+  if (item.kind === "tool" && item.refusal) return tDynamic(`activitySheet.reason.${REFUSAL_REASONS[item.refusal]}`);
+  const refusal = item.kind === "tool" ? message.tool_refusals?.find((candidate) => sameTool(candidate.tool_name, item.toolName)) : undefined;
+  if (refusal) return tDynamic(`activitySheet.reason.refusal.${refusal.reason}`);
+  if (revisionKeptEarlier(item, message)) return tDynamic("activitySheet.reason.revisionNotApplied");
+  if (item.failureReason === "unreachable") return tDynamic("activitySheet.reason.offline");
+  if (item.failureReason === "timeout") return tDynamic("chatMessageCard.provider_timeout");
+  if (message.offline_reads && (item.category === "finance" || item.category === "web" || item.source?.kind === "connector")) return tDynamic("activitySheet.reason.offline");
+  return tDynamic("activitySheet.reason.generic");
+}
+
+const stepDuration = (item: ActionItem) =>
+  item.finishedAtMs != null && item.finishedAtMs >= item.startedAtMs ? item.finishedAtMs - item.startedAtMs : undefined;
+
+/**
+ * One reply's activity: every step in order, steps of the same kind collapsed
+ * into one group at the place the first one ran, every failure on its own row
+ * with its reason, the sources it cited and the figures Rust checked. Durations
+ * and reasons show only where the host recorded them.
+ */
+export function activityTurn(message: ChatMessage): ActivityTurn {
+  const evidenceById = new Map((message.evidence_refs ?? []).map((item) => [item.id, item]));
+  const groups: ActivityGroup[] = [];
+  const byKind = new Map<string, ActivityGroup>();
+  let stepCount = 0;
+  for (const item of message.progress?.items ?? []) {
+    if (item.kind === "commentary" || (item.kind === "tool" && item.toolName && HIDDEN_TOOLS.has(item.toolName))) continue;
+    stepCount += 1;
+    const step: ActivityStep = {
+      id: item.id, label: activityStepLabel(item), target: activityTarget(item), href: item.href ?? undefined,
+      status: item.status, category: item.category, operation: item.operation, durationMs: stepDuration(item), reason: stepReason(item, message),
+      detailId: item.kind === "tool" ? item.detailId : undefined, outputRevision: item.kind === "tool" ? item.outputRevision : undefined,
+      evidence: item.kind === "tool" ? (item.resultIds ?? []).flatMap((id) => evidenceById.get(id) ?? []) : [],
+    };
+    if (step.reason) {
+      groups.push({ key: item.id, label: step.label, status: step.status, steps: [step], durationMs: step.durationMs });
+      continue;
+    }
+    const kind = activityStepLabel(item, "done");
+    const group = byKind.get(kind);
+    if (!group) {
+      const created: ActivityGroup = { key: `kind:${item.id}`, label: step.label, status: step.status, steps: [step], durationMs: step.durationMs };
+      byKind.set(kind, created);
+      groups.push(created);
+      continue;
+    }
+    group.steps.push(step);
+    const running = group.steps.find((member) => member.status === "running");
+    group.status = running ? "running" : "succeeded";
+    group.label = running ? running.label : kind;
+    group.durationMs = group.steps.every((member) => member.durationMs !== undefined)
+      ? group.steps.reduce((sum, member) => sum + member.durationMs!, 0) : undefined;
+  }
+  const progress = message.progress;
+  const durationMs = progress?.finishedAtMs != null ? progress.finishedAtMs - progress.startedAtMs : message.performance?.totalMs;
+  return {
+    messageId: message.id,
+    atMs: progress?.startedAtMs ?? Date.parse(message.created_at),
+    running: message.status === "streaming",
+    durationMs: durationMs && durationMs > 0 ? durationMs : undefined,
+    stepCount, groups,
+    sources: citationSources(message.evidence_refs ?? []),
+    checks: (message.number_checks ?? []).map((check) => ({ check, evidence: evidenceById.get(check.evidence_id) })),
+  };
+}
+
+/** Replies the sheet can show, oldest first: answers, never steers or the user's own messages. */
+export const activityMessages = (messages: readonly ChatMessage[]) =>
+  messages.filter((message) => message.role === "assistant" && !message.steer && !hostPost(message));
+
+/** A message the host posted on its own (a result, an alert, a "now also tracks" line): no reply, no steps. */
+const hostPost = (message: ChatMessage) => Boolean(message.delivery || message.alert || message.vocabulary || message.handoff || message.link)
+  || (message.host_composed === true && !message.progress?.items.length);

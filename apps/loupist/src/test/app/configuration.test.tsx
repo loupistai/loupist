@@ -102,7 +102,7 @@ it("keeps appearance current after connector configuration is saved with applica
   vi.spyOn(bridge, "marketplaceConnectorConfigure").mockImplementation(async (request) => { await configure(request); throw applyPending; });
   await openApp(bridge);
   await user.click(await mainTab(/Connections/));
-  await user.click(await screen.findByRole("button", { name: "Settings Web Research" }));
+  await user.click(await screen.findByRole("button", { name: "Web Research settings" }));
   const dialog = screen.getByRole("dialog", { name: "Web Research settings" });
   await user.click(within(dialog).getByRole("combobox", { name: "Search provider" }));
   await user.click(screen.getByRole("option", { name: "Model search only" }));

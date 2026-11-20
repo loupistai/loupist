@@ -3,26 +3,19 @@ use rusqlite::Transaction;
 use super::*;
 use crate::{
     chat::surface::ChatSurface,
+    commands::assets::wire::{AssetReferenceFields, AssetReferenceOrigin, AssetRow},
     domain::{LoupistTemplate, MapKind, SetupChange},
-    knowledge::UNKNOWN_MARKET,
-    store::user_context::{identity, name, WatchlistEntry},
+    store::user_context,
 };
 
 const MAX_ASSETS: usize = 10;
 const MAX_FOCUS_CHARS: usize = 280;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::commands) struct SetupAsset {
-    pub symbol: String,
-    pub market: Option<String>,
-    pub name: Option<String>,
-}
-
 /// One checked `loupist_setup` call, applied when the reply commits.
 #[derive(Clone, Debug, Default)]
 pub(in crate::commands) struct StagedSetup {
-    pub follow: Vec<SetupAsset>,
-    pub unfollow: Vec<SetupAsset>,
+    pub follow: Vec<AssetRow>,
+    pub unfollow: Vec<AssetRow>,
     pub focus: Option<String>,
     pub preset: Option<LoupistTemplate>,
     pub user_message_id: Option<String>,
@@ -32,19 +25,24 @@ pub(in crate::commands) struct StagedSetup {
 #[serde(deny_unknown_fields)]
 struct Input {
     #[serde(default)]
-    follow: Vec<Value>,
+    follow: Vec<FollowInput>,
     #[serde(default)]
-    unfollow: Vec<Value>,
+    unfollow: Vec<UnfollowInput>,
     focus: Option<Value>,
     preset: Option<Value>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct AssetInput {
-    symbol: String,
-    market: Option<String>,
-    name: Option<String>,
+struct FollowInput {
+    name: String,
+    reference: Option<AssetReferenceFields>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UnfollowInput {
+    asset: String,
 }
 
 fn invalid(field: impl Into<String>, expected: &str) -> BrokerError {
@@ -54,66 +52,62 @@ fn invalid(field: impl Into<String>, expected: &str) -> BrokerError {
     }
 }
 
-fn assets(list: &str, items: Vec<Value>, named: bool) -> Result<Vec<SetupAsset>, BrokerError> {
-    if items.len() > MAX_ASSETS {
-        return Err(invalid(list, "at most 10 assets"));
+fn parse(params: Value, current: &[AssetRow]) -> Result<StagedSetup, BrokerError> {
+    let request: Input = serde_json::from_value(params)
+        .map_err(|_| invalid("loupist_setup", "Use follow, unfollow, focus or preset."))?;
+    if request.follow.len() > MAX_ASSETS || request.unfollow.len() > MAX_ASSETS {
+        return Err(invalid("assets", "Use at most 10 assets per list."));
     }
-    let shape = if named {
-        "{symbol, market?, name?}"
-    } else {
-        "{symbol, market?}"
-    };
-    let mut parsed: Vec<SetupAsset> = Vec::with_capacity(items.len());
-    for (index, item) in items.into_iter().enumerate() {
-        let at = |key: &str| format!("{list}[{index}]{key}");
-        let input: AssetInput = serde_json::from_value(item).map_err(|_| invalid(at(""), shape))?;
-        if !named && input.name.is_some() {
-            return Err(invalid(at(""), shape));
-        }
-        let code = |key: &str, value: &str| {
-            identity(value).map_err(|_| invalid(at(key), "1–64 ASCII characters without spaces"))
-        };
-        let symbol = code(".symbol", &input.symbol)?;
-        let market = input
-            .market
-            .map(|market| code(".market", &market))
-            .transpose()?
-            .filter(|market| market != UNKNOWN_MARKET);
-        let display = name(input.name.as_deref())
-            .map_err(|_| invalid(at(".name"), "at most 256 characters"))?;
-        if parsed
-            .iter()
-            .any(|asset| asset.symbol == symbol && asset.market == market)
-        {
-            return Err(invalid(at(""), "each asset once"));
-        }
-        parsed.push(SetupAsset {
-            symbol,
-            market,
-            name: display,
-        });
-    }
-    Ok(parsed)
-}
-
-fn parse(params: Value) -> Result<StagedSetup, BrokerError> {
-    let request: Input = serde_json::from_value(params).map_err(|_| {
-        invalid(
-            "loupist_setup",
-            "follow, unfollow, focus or preset as the tool describes",
+    let mut planned = current.to_vec();
+    let mut follow = Vec::new();
+    for requested in request.follow {
+        let asset = user_context::plan_follow(
+            &planned,
+            &requested.name,
+            requested.reference,
+            AssetReferenceOrigin::Agent,
+            crate::commands::now_ms(),
         )
-    })?;
-    let follow = assets("follow", request.follow, true)?;
-    let unfollow = assets("unfollow", request.unfollow, false)?;
-    if let Some(index) = unfollow.iter().position(|asset| {
-        follow
+        .map_err(store_error)?;
+        if follow
             .iter()
-            .any(|followed| followed.symbol == asset.symbol)
-    }) {
-        return Err(invalid(
-            format!("unfollow[{index}].symbol"),
-            "an asset this call does not also follow",
-        ));
+            .any(|row: &AssetRow| row.asset_id == asset.asset_id)
+        {
+            return Err(invalid("follow", "List each asset once."));
+        }
+        if !planned.iter().any(|row| row.asset_id == asset.asset_id) {
+            planned.push(asset.clone());
+        }
+        follow.push(asset);
+    }
+    let current = current
+        .iter()
+        .filter(|row| row.followed_at_ms.is_some())
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut unfollow = Vec::new();
+    for requested in request.unfollow {
+        user_context::text(&requested.asset, 256).map_err(store_error)?;
+        match user_context::matching(&current, &requested.asset).as_slice() {
+            [] => {}
+            [row] => {
+                if follow.iter().any(|asset| asset.asset_id == row.asset_id) {
+                    return Err(invalid("unfollow", "This call also follows the asset."));
+                }
+                if !unfollow
+                    .iter()
+                    .any(|asset: &AssetRow| asset.asset_id == row.asset_id)
+                {
+                    unfollow.push((*row).clone());
+                }
+            }
+            candidates => {
+                return Err(invalid(
+                    "unfollow",
+                    &format!("Several assets match: {}", json!(candidates)),
+                ))
+            }
+        }
     }
     let focus = match request.focus {
         None | Some(Value::Null) => None,
@@ -175,13 +169,21 @@ impl AppToolExecutor {
         if !policy.propose_memory_updates {
             return Err(BrokerError::ProposalDisabled);
         }
-        let mut staged = parse(params)?;
+        // Follow and unfollow act on this Loupist's own list.
+        let mut staged = parse(
+            params,
+            &self
+                .state
+                .store
+                .assets_list(&self.loupist_id, false)
+                .map_err(store_error)?,
+        )?;
         staged.user_message_id = self.capture.principle_user_message_id.clone();
         let result = json!({
             "status": "staged",
             "durable": false,
-            "follow": staged.follow.iter().map(|asset| &asset.symbol).collect::<Vec<_>>(),
-            "unfollow": staged.unfollow.iter().map(|asset| &asset.symbol).collect::<Vec<_>>(),
+            "follow": staged.follow,
+            "unfollow": staged.unfollow,
             "focus": staged.focus,
             "preset": staged.preset.map(LoupistTemplate::as_str),
             "notice": "Applies when this reply finishes. Tell the user in plain words what this Loupist now follows and researches; never send them to settings.",
@@ -193,91 +195,60 @@ impl AppToolExecutor {
     }
 }
 
-fn shown_market(market: &str) -> Option<String> {
-    (market != UNKNOWN_MARKET).then(|| market.to_owned())
-}
-
-/// The watchlist lives in the app database, outside the reply's transaction.
-/// It is applied once the reply is committing, through the watchlist commands'
-/// own functions, and only the rows that changed are reported.
 pub(crate) fn apply_watchlist(
     state: &AppState,
     loupist_id: &str,
     setup: &StagedSetup,
 ) -> Vec<SetupChange> {
     let mut changes = Vec::new();
-    let Ok(mut current) = state.store.watchlist_list() else {
-        eprintln!("loupist_setup could not read the watchlist");
-        return changes;
-    };
     for asset in &setup.unfollow {
-        let matching: Vec<WatchlistEntry> = current
-            .iter()
-            .filter(|entry| {
-                entry.symbol == asset.symbol
-                    && asset
-                        .market
-                        .as_ref()
-                        .is_none_or(|market| &entry.market == market)
-            })
-            .cloned()
-            .collect();
-        for entry in matching {
-            if state
-                .store
-                .watchlist_remove(&entry.symbol, &entry.market)
-                .is_err()
-            {
-                eprintln!("loupist_setup could not stop following an asset");
-                continue;
-            }
-            current.retain(|row| row != &entry);
+        if state
+            .store
+            .set_asset_followed(loupist_id, &asset.asset_id, None)
+            .is_ok_and(|asset| asset.is_some())
+        {
+            let item = user_context::MapContextItem::from(asset);
             changes.push(SetupChange::Unfollowed {
-                symbol: entry.symbol,
-                market: shown_market(&entry.market),
+                symbol: label(&item, &asset.name),
+                market: (!item.market.is_empty()).then_some(item.market),
             });
         }
     }
     for asset in &setup.follow {
-        let followed = current.iter().any(|entry| {
-            entry.symbol == asset.symbol
-                && asset
-                    .market
-                    .as_ref()
-                    .is_none_or(|market| &entry.market == market)
-        });
-        if followed {
-            continue;
+        if let Ok(Some(asset)) =
+            state
+                .store
+                .apply_asset_follow(loupist_id, asset, crate::commands::now_ms())
+        {
+            let item = user_context::MapContextItem::from(&asset);
+            changes.push(SetupChange::Followed {
+                symbol: label(&item, &asset.name),
+                market: (!item.market.is_empty()).then_some(item.market),
+                name: Some(asset.name),
+            });
         }
-        let market = asset.market.as_deref().unwrap_or(UNKNOWN_MARKET);
-        match crate::commands::user_context::follow(
-            state,
-            &asset.symbol,
-            market,
-            asset.name.as_deref(),
-            Some(loupist_id),
-        ) {
-            Ok(entry) => {
-                current.push(entry);
-                changes.push(SetupChange::Followed {
-                    symbol: asset.symbol.clone(),
-                    market: asset.market.clone(),
-                    name: asset.name.clone(),
-                });
-            }
-            Err(_) => eprintln!("loupist_setup could not follow an asset"),
-        }
+    }
+    if !changes.is_empty() {
+        crate::commands::assets::follows_changed(state);
     }
     changes
 }
 
-/// Focus and preset kinds, inside the reply's transaction. The profile, the
-/// World settings and the perspective page's `focus` section take the same
-/// focus in one write so they cannot drift; the caller resyncs the folder
-/// registration after commit. A preset's default focus fills only an empty focus.
+fn label(item: &user_context::MapContextItem, name: &str) -> String {
+    let text = if item.symbol.is_empty() {
+        name
+    } else {
+        &item.symbol
+    };
+    text.chars().take(64).collect()
+}
+
+/// Focus and preset kinds, inside the reply's transaction. The profile and the
+/// World settings take the same focus in one write so they cannot drift; the
+/// focus files no Lens page. The caller resyncs the folder registration after
+/// commit. A preset's default focus fills only an empty focus.
 pub(crate) fn commit_turn(
     tx: &Transaction<'_>,
-    blobs: &crate::knowledge::BlobStore,
     loupist_id: &str,
     chat_id: &str,
     at_ms: i64,
@@ -305,16 +276,6 @@ pub(crate) fn commit_turn(
             })?;
             settings.research_focus = focus.to_owned();
             crate::knowledge::store_settings(tx, loupist_id, &settings).map_err(knowledge)?;
-            match crate::commands::knowledge::sync_perspective_focus(
-                &crate::knowledge::KnowledgeWrite::bind(tx, blobs),
-                loupist_id,
-                focus,
-                at_ms,
-            ) {
-                // Text a Lens page refuses still sets the Loupist's focus.
-                Ok(_) | Err(crate::knowledge::KnowledgeError::LensBodyForbidden) => {}
-                Err(error) => return Err(knowledge(error)),
-            }
             changes.push(SetupChange::Focus {
                 focus: focus.to_owned(),
             });

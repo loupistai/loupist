@@ -15,6 +15,7 @@ import { InfoIcon, Settings2Icon } from "lucide-react";
 import { Button } from "./ui/button";
 import { errorMessage } from "../lib/errors";
 import { useLoupistChat } from "../chat/useLoupistChat";
+import { runningHandoffRun, useHostedRun, type WatchHostedRun } from "../chat/useHostedRun";
 import { useChatMap } from "./workspace/ChatMapContext";
 import { stepEntityIds } from "../chat/chatMapData";
 import {
@@ -27,6 +28,7 @@ import type {
   ChatArtifactRef,
   ChatMessage,
   ChatThread,
+  HomeHandoff,
   LoupistBridge,
   LoupistSummary,
   KnowledgePin,
@@ -34,6 +36,7 @@ import type {
   ModelNotice,
   GraphJobView,
   ModelRunSelection,
+  ResearchHandoffChoices,
 } from "../types";
 import { visibleCatalogModels } from "../lib/modelSelection";
 import { quoteChip, type ComposerChip } from "../chat/composerChips";
@@ -47,6 +50,7 @@ const sameOptions = (current: ComposerOption[], next: ComposerOption[]) =>
     ? current : next;
 import { searchComposerContext } from "../chat/searchComposerContext";
 import type { RecoveredChatRun } from "../chat/loupistRunRegistry";
+import { focusComposerAtEnd } from "./chat/focusComposer";
 import { ChatComposer } from "./chat/ChatComposer";
 import type { ComposerOption } from "./chat/ComposerAssist";
 import { ChatConversation } from "./chat/ChatConversation";
@@ -55,8 +59,8 @@ import { ChatExecutionProvider } from "./chat/ChatExecutionContext";
 import { WorkspaceFileProvider } from "./workspace/WorkspaceFileContext";
 import { ArtifactReadLinksProvider } from "./chat/ArtifactReadLinks";
 import { ChatWorkingContext } from "./chat/ChatWorkingContext";
-import { ChatRail, type ChatRailActions } from "./chat/ChatRail";
-import { railData, railMode, type RailUsing } from "../chat/chatRail";
+import { ActivitySheet, useActivitySheet } from "./chat/ActivitySheet";
+import { railData, type RailUsing } from "../chat/chatRail";
 import { knowledgeLocationFromReference } from "../knowledge/location";
 import { composeMapExport } from "./map/export";
 import { formatDate, formatNumber } from "@/i18n/format";
@@ -77,6 +81,16 @@ import { ModelNoticeLine } from "./chat/ModelNoticeLine";
 import type { ChatDraft, ChatSessionDrafts } from "../app/useChatDrafts";
 
 const t = i18n.getFixedT(null, "chat");
+
+/**
+ * A control that removes itself (a dismissed notice, a cancelled edit, a failed answer's Try again)
+ * leaves focus on the page; the message takes it once the control is gone, unless the user moved on.
+ */
+const focusComposerOnceGone = () => requestAnimationFrame(() => {
+  const focused = document.activeElement;
+  if (focused && focused !== document.body && focused.isConnected) return;
+  focusComposerAtEnd();
+});
 
 const chatPins = (pins: readonly KnowledgePin[]) =>
   pins.map((pin) => ({
@@ -143,6 +157,8 @@ type Props = {
   onModelUsed: (selection: ModelRunSelection) => void;
   onResolveModelSelection?: () => Promise<ModelRunSelection & { auto?: boolean; memoryDefaults?: { use_memory: boolean; update_memory: boolean } }>;
   onAbortRecoveredRun: () => void;
+  /** Joins a run the host started on a session (a Bot hand-off) while it is shown. */
+  onWatchHostedRun?: WatchHostedRun;
   onTurnComplete?: (message: ChatMessage, threadId: string) => void;
   onRunningChange?: (running: boolean) => void;
   progressFocus?: string | null;
@@ -195,6 +211,7 @@ export function ChatView({
   onModelUsed,
   onResolveModelSelection,
   onAbortRecoveredRun,
+  onWatchHostedRun,
   onTurnComplete,
   onRunningChange,
   progressFocus,
@@ -328,20 +345,21 @@ export function ChatView({
     return () => reportLive(loupist.id, threadId, []);
   }, [reportLive, loupist.id, activeThread?.id, liveNames]);
   const activeRecoveredRun = localIsRunning ? undefined : recoveredRun;
-  const isRunning = localIsRunning || Boolean(activeRecoveredRun);
+  // A session Bot handed off streams here like a reply sent here once it is joined.
+  const handoffRunId = useMemo(() => runningHandoffRun(threads, activeThread?.id), [threads, activeThread?.id]);
+  // A link's Look into it at work reads as opened in Bot, which posts nothing for it until it ends.
+  const runningLinks = useMemo(() => new Map(threads.flatMap((thread) => {
+    const run = thread.handoff_run;
+    return run?.connection_id ? [[run.connection_id, {
+      handoffId: run.handoff_id, chatId: thread.id, title: thread.title, connectionId: run.connection_id, status: "running",
+    } satisfies HomeHandoff] as const] : [];
+  })), [threads]);
+  const hostedRun = useHostedRun(activeThread?.home ? undefined : onWatchHostedRun, activeThread?.id, handoffRunId);
+  const isRunning = localIsRunning || Boolean(activeRecoveredRun) || hostedRun.pending;
 
-  // "In this chat" (context-rail.md R1): placed by the chat column's own width, so the panel and sidebar count.
-  const chatWorkspaceRef = useRef<HTMLDivElement>(null);
-  const [chatWidth, setChatWidth] = useState(0);
-  useEffect(() => {
-    const element = chatWorkspaceRef.current;
-    if (!element) return undefined;
-    const update = () => setChatWidth(element.clientWidth);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+  // The activity sheet: what the chat's replies did, read, checked and learned, opened on demand
+  // (`loupist:open-activity`). It docks or overlays by the chat layout's own width, so the panel and sidebar count.
+  const activitySheet = useActivitySheet(active);
   const railChatId = activeThread?.id ?? "";
   const railMap = chatMap?.loupistId === loupist.id && chatMap.chatId === railChatId ? chatMap : undefined;
   const rail = useMemo(() => railData({
@@ -349,7 +367,6 @@ export function ChatView({
     map: railMap?.map, events: railMap?.events, learningPending: railMap?.learningPending, learningWaiting: railMap?.learningWaiting,
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
   }), [messages, draft?.pins, railChatId, loupist.workspace_path, railMap?.map, railMap?.events, railMap?.learningPending, railMap?.learningWaiting, i18n.language]);
-  const chatRailMode = !railChatId || isEmptyChatThreadId(railChatId) ? "none" : railMode(chatWidth, rail.hasCards);
   // Read through a ref so the opener stays stable while answers stream (earlier answers do not rerender).
   const linkMessages = useRef(activeThread?.messages ?? []);
   linkMessages.current = activeThread?.messages ?? [];
@@ -424,15 +441,12 @@ export function ChatView({
   const addToQuestion = useCallback((file: File) => {
     incomingSequence.current += 1;
     setIncomingFiles({ id: incomingSequence.current, composerKey, files: [file] });
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("[data-chat-composer]")?.focus());
+    requestAnimationFrame(() => focusComposerAtEnd());
   }, [composerKey]);
   const takeIncomingFiles = useCallback(() => setIncomingFiles(null), []);
-  const railActions: ChatRailActions = {
-    bridge, loupistId: loupist.id,
-    onOpenFile: (path) => void open({ kind: "file", path }).catch(() => undefined),
-    onOpenUsing: openRailUsing,
-    onShowLearned: (ids) => { chatMap?.select(ids); },
-  };
+  const openRailFile = useCallback((path: string) => void open({ kind: "file", path }).catch(() => undefined), [open]);
+  const selectOnMap = chatMap?.select;
+  const showOnMap = useMemo(() => selectOnMap ? (ids?: ReadonlySet<string>) => selectOnMap(ids) : undefined, [selectOnMap]);
   const isBusy = isRunning || isCreatingThread || Boolean(pendingSubmission);
   const online = useOnline();
   // Busy (rate-limited) answers in a row per Chat, for the X11 countdown; a finished answer resets it.
@@ -487,10 +501,14 @@ export function ChatView({
         : t("chatView.loupistIsContinuingAResponseStartedBeforeReload")
     : localStreamAnnouncement;
   const error = activeRecoveredRun?.error ?? localError;
+  const hostedRunId = hostedRun.pending ? hostedRun.runId : undefined;
+  const recovering = Boolean(activeRecoveredRun);
   const abortActiveRun = useCallback(() => {
     if (localIsRunning) void abort();
-    else onAbortRecoveredRun();
-  }, [abort, localIsRunning, onAbortRecoveredRun]);
+    else if (recovering || !hostedRunId) onAbortRecoveredRun();
+    // Still joining a hand-off's run: stop it by its id. Once joined, Stop works as for any reply.
+    else void bridge.chatAbort(hostedRunId).catch(() => undefined);
+  }, [abort, bridge, hostedRunId, localIsRunning, onAbortRecoveredRun, recovering]);
 
   useEffect(() => {
     if (!activeThreadId && threads[0]) setActiveThreadId(threads[0].id);
@@ -600,6 +618,17 @@ export function ChatView({
     void dispatchSubmission(threadId, item);
   }, [activeThread?.id, isRunning, pendingSubmission, dispatchSubmission]);
 
+  // Capture the same Auto intent and controls as an ordinary send.
+  const composerChoices = useCallback((): ResearchHandoffChoices => ({
+    ...(hostAuto ? { modelProfileId: "", thinkingLevel: "", runOptions: {} } : {
+      ...(selectedModelProfileId ? { modelProfileId: selectedModelProfileId } : {}),
+      ...(selectedThinkingLevel ? { thinkingLevel: selectedThinkingLevel } : {}),
+      runOptions: { ...selectedRunOptions },
+    }),
+    useMemory: !privateChat,
+    updateMemory: !privateChat,
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run options compare by value
+  }), [hostAuto, selectedModelProfileId, selectedThinkingLevel, runOptionsKey, privateChat]);
   const captureSubmission = (text: string, files: FileUIPart[], asOf: string | null | undefined = draft?.asOf): QueuedChatMessage => ({
     id: crypto.randomUUID(), text, createdAt: new Date().toISOString(),
     ...(asOf ? { asOf } : {}),
@@ -641,7 +670,9 @@ export function ChatView({
 
   const send = async (submittedPrompt?: string, files: FileUIPart[] = [], options?: { draftText?: string; preserveDraft?: boolean; asOf?: string | null }) => {
     const text = withArtifactRange(submittedPrompt ?? prompt);
-    if ((!text && files.length === 0) || !selectedModelAvailable || !workspaceAvailable) return false;
+    if ((!text && files.length === 0) || !workspaceAvailable) return false;
+    // Guidance joins the reply in progress, which keeps its own model; anything else needs one.
+    if (!isRunning && !selectedModelAvailable) return false;
     // The "Now using …" line was seen once this message goes out.
     if (modelNotice && !isRunning) onAcknowledgeModelNotice?.(modelNotice.id);
     if (isRunning) {
@@ -725,6 +756,7 @@ export function ChatView({
     void (async () => {
       const replay = await retryLast();
       if (!replay || !originThread) return;
+      focusComposerOnceGone();
       const restore = () => {
         if (originDraft) {
           originDraft.prompt = replay.prompt;
@@ -849,14 +881,19 @@ export function ChatView({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the scope reads only the thread's id and kind; a refreshed thread object must not reset execution.
   }) : null, [active, activeThread?.id, activeThread?.home, bridge, loupist.id, theme]);
   /** A question from the morning message goes into the composer; it never sends. */
+  /** A chart's or table's Ask puts its reference in the composer and hands it the keyboard, the caret after everything. */
+  const askArtifact = useMemo(() => onSelectArtifact ? (artifact: ChatArtifactRef) => {
+    onSelectArtifact(artifact);
+    requestAnimationFrame(() => focusComposerAtEnd());
+  } : undefined, [onSelectArtifact]);
   const quoteToComposer = useCallback((messageId: string, text: string) => {
     const chip = quoteChip(messageId, text);
     onChipsChange?.([...(draft?.chips ?? []).filter((existing) => existing.key !== chip.key), chip]);
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("[data-chat-composer]")?.focus());
+    requestAnimationFrame(() => focusComposerAtEnd());
   }, [draft, onChipsChange]);
   const askFromMorningMessage = useCallback((question: string) => {
     setPrompt(question);
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("[data-chat-composer]")?.focus());
+    requestAnimationFrame(() => focusComposerAtEnd());
   }, [setPrompt]);
   const editUser = useCallback((message: ChatMessage, index: number) => {
     const threadId = activeThread?.id;
@@ -864,7 +901,7 @@ export function ChatView({
     setPrompt(message.content);
     onAsOfChange?.(message.as_of);
     setEditing({ threadId, messageId: message.id, position: index, content: message.content });
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("[data-chat-composer]")?.focus());
+    requestAnimationFrame(() => focusComposerAtEnd());
   }, [activeThread?.id, onAsOfChange, setPrompt]);
   const setAsideIds = useMemo(() => new Set(activeThread?.set_aside_memory ?? []), [activeThread?.set_aside_memory]);
   const firstDeclinedMessageId = useMemo(() => activeThread?.messages.find(declinedSensitiveMemory)?.id, [activeThread?.messages]);
@@ -885,6 +922,7 @@ export function ChatView({
     messages={visibleConversation.messages}
     messageKeys={visibleConversation.messageKeys}
     loupistName={loupist.name}
+    loupistAvatar={loupist.avatar}
     workspacePath={loupist.workspace_path}
     loupistId={loupist.id}
     chatId={activeThread?.id}
@@ -901,12 +939,11 @@ export function ChatView({
     home={activeThread?.home}
     // A Look back draft already holds its question; generic starters would compete with it.
     offerQuestions={!(draft?.asOf && knowledgePins.some((pin) => pin.kind === "journal"))}
-    asOf={draft?.asOf}
     onSaveFeedback={saveFeedback}
     onTeachFeedback={teachFeedback}
     feedbackBusy={isRunning}
     run={{ running: isRunning, stopping: localIsStopping }}
-    onAskArtifact={onSelectArtifact}
+    onAskArtifact={askArtifact}
     onReadAttachment={readAttachment}
     mentionSkills={composerSkills}
     mentionPlugins={composerPlugins}
@@ -924,13 +961,16 @@ export function ChatView({
     retryAttempt={retryAttempt}
     onProviderAction={providerAction}
     onRetry={() => retryFailed()}
+    composerChoices={composerChoices}
+    researchSessions={activeThread?.home ? threads : undefined}
+    runningLinks={activeThread?.home ? runningLinks : undefined}
   /></ChatSetAsideProvider></ArtifactReadLinksProvider></WorkspaceFileProvider></ChatExecutionProvider>;
 
   return (
     <OpenProvider open={open}>
-    <section className="chat-layout" aria-label={t("chatView.chatWithLoupist")}>
-      <div className="chat-workspace" ref={chatWorkspaceRef} data-rail={chatRailMode}>
-        <ChatLightboxProvider key={viewKey} messages={visibleConversation.messages} onRead={readAttachment} onAddToQuestion={addToQuestion}>
+    <section className="chat-layout" ref={activitySheet.layoutRef} data-activity={activitySheet.open ? activitySheet.placement : undefined} aria-label={t("chatView.chatWithLoupist")}>
+      <ChatLightboxProvider key={viewKey} messages={visibleConversation.messages} onRead={readAttachment} onAddToQuestion={addToQuestion}>
+      <div className="chat-workspace" data-surface={activeThread?.home ? "bot" : "session"}>
         {activeRecoveredRun ? <header className="workspace-heading is-status">
           <div className="workspace-chat-title">
             <div className="thread-statuses">
@@ -946,7 +986,6 @@ export function ChatView({
           </div>
         </header> : null}
         <div className="chat-body">
-        <ChatRail mode={chatRailMode} data={rail} actions={railActions} />
         <div className="chat-reading-pane">
         <ChatWorkingContext
           key={`${loupist.id}:${viewKey}`}
@@ -957,7 +996,7 @@ export function ChatView({
           updateKey={`${messages.at(-1)?.id ?? ""}:${messages.at(-1)?.status ?? ""}`}
           onAskForChange={() => {
             setPrompt(prompt.trim() ? t("chatView.appendWorkingNoteRequest", { prompt: prompt }) : t("chatView.iDLikeToChangeTheWorkingNote"));
-            document.querySelector<HTMLTextAreaElement>('[data-chat-composer]' )?.focus();
+            requestAnimationFrame(() => focusComposerAtEnd());
           }}
         >
         {!online ? <p className="chat-offline-banner" role="status">{t("chatError.offline")}</p>
@@ -995,6 +1034,7 @@ export function ChatView({
             }
             onSendNow={sendQueuedNow}
             canSendNow={!isRunning && workspaceAvailable && selectedModelAvailable}
+            blockedReason={isRunning ? undefined : !workspaceAvailable ? t("chatView.reconnectTheWorkspaceFolderToSendMessages") : !selectedModelAvailable ? t("chatComposer.connectAModelProvider") : undefined}
             offline={!online}
           />
         )}
@@ -1011,10 +1051,10 @@ export function ChatView({
           </aside>
         ) : null}
 
-        {modelNotice ? <ModelNoticeLine notice={modelNotice} onChange={() => setModelMenuRequest((value) => value + 1)} onDismiss={() => onAcknowledgeModelNotice?.(modelNotice.id)} /> : null}
+        {modelNotice ? <ModelNoticeLine notice={modelNotice} onChange={() => setModelMenuRequest((value) => value + 1)} onDismiss={() => { onAcknowledgeModelNotice?.(modelNotice.id); focusComposerOnceGone(); }} /> : null}
         {editing && editing.threadId === activeThread?.id ? <p className="chat-editing-note" role="status">
           <span>{t("chatBranch.editing")}</span>
-          <button type="button" onClick={() => { setEditing(null); setPrompt(""); }}>{t("chatBranch.cancel")}</button>
+          <button type="button" onClick={() => { setEditing(null); setPrompt(""); focusComposerOnceGone(); }}>{t("chatBranch.cancel")}</button>
         </p> : null}
         <ChatComposer
           key={viewKey}
@@ -1067,11 +1107,14 @@ export function ChatView({
           onAsOfChange={onAsOfChange}
           incomingFiles={incomingFiles?.composerKey === composerKey ? incomingFiles : undefined}
           onIncomingFilesTaken={takeIncomingFiles}
+          layerOpen={activitySheet.open && activitySheet.placement === "overlay"}
         />
         </div>
         </div>
-        </ChatLightboxProvider>
       </div>
+      <ActivitySheet sheet={activitySheet} loupist={loupist} messages={messages} running={isRunning} rail={rail} bridge={bridge} execution={executionScope}
+        onOpenUsing={openRailUsing} onOpenFile={openRailFile} onShowOnMap={showOnMap} onWorldChanged={onWorldChanged} />
+      </ChatLightboxProvider>
     </section>
     </OpenProvider>
   );

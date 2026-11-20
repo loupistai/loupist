@@ -68,7 +68,7 @@ it("hides a model from the Chat menu", async () => {
   render(<ModelSettingsPanel {...props} />);
   const card = screen.getByRole("article", { name: "ChatGPT" });
   await user.click(within(card).getByRole("button", { name: /Models \(1\)/u }));
-  await user.click(within(card).getByRole("switch", { name: "Show OpenAI model in Chat" }));
+  await user.click(within(card).getByRole("switch", { name: "Show OpenAI model in menu" }));
   expect(props.onUpdateModelVisibility).toHaveBeenCalledExactlyOnceWith({ model_profile_id: "openai/model", visible_in_chat: false });
 });
 
@@ -118,7 +118,7 @@ it("edits and removes a custom endpoint from its card", async () => {
   expect(card).toHaveTextContent("Running on this Mac · localhost:11434");
   await user.click(within(card).getByRole("button", { name: "More actions for My Ollama" }));
   await user.click(await screen.findByRole("menuitem", { name: "Reconnect…" }));
-  expect(await screen.findByRole("dialog", { name: "Edit custom provider" })).toBeInTheDocument();
+  expect(await screen.findByRole("dialog", { name: "Edit custom endpoint" })).toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(within(card).getByRole("button", { name: "More actions for My Ollama" }));
@@ -127,6 +127,22 @@ it("edits and removes a custom endpoint from its card", async () => {
   await user.click(within(confirm).getByRole("button", { name: "Remove" }));
   await waitFor(() => expect(props.onRemoveCustomProvider).toHaveBeenCalledWith("custom-my-ollama"));
   expect(props.onDisconnect).not.toHaveBeenCalled();
+  expect(await screen.findByText("My Ollama was removed.")).toBeInTheDocument();
+});
+
+it("says a built-in account was disconnected, in the words of the action", async () => {
+  const user = userEvent.setup();
+  const props = panelProps();
+  render(<ModelSettingsPanel {...props} />);
+  const card = screen.getByRole("article", { name: "ChatGPT" });
+  await user.click(within(card).getByRole("button", { name: "More actions for ChatGPT" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Disconnect ChatGPT" }));
+  const confirm = await screen.findByRole("dialog", { name: "Disconnect ChatGPT?" });
+  await user.click(within(confirm).getByRole("button", { name: "Disconnect" }));
+  await waitFor(() => expect(props.onDisconnect).toHaveBeenCalledWith("openai"));
+  expect(await screen.findByText("ChatGPT was disconnected.")).toBeInTheDocument();
+  expect(screen.getByText("AI account updated")).toBeInTheDocument();
+  expect(screen.queryByText(/was removed/u)).toBeNull();
 });
 
 it("lets a ChatGPT sign-in bring its own models instead of loading them alongside it", async () => {

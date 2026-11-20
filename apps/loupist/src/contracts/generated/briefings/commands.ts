@@ -2,7 +2,7 @@
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
 import type { BriefingContext } from "../briefings";
-import type { RunStatus, RunSummaryItem, Schedule, SkippedTool, Task, TaskKind } from "../scheduled_tasks/types";
+import type { RunStatus, Schedule, SkippedTool, Task, TaskKind } from "../scheduled_tasks/types";
 
 export type BriefingSettings = { enabled: boolean, schedule: Schedule, task: Task | null };
 
@@ -23,7 +23,6 @@ export type InboxItem = {
   title: string,
   status: RunStatus,
   summary: string,
-  summaryItems: Array<RunSummaryItem>,
   startedAtMs: number,
   finishedAtMs: number | null,
   readAtMs: number | null,

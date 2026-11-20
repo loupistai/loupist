@@ -18,7 +18,7 @@ Host-handled `as_of` treats null as absent and rejects other non-string values;
 non-null optional `world_read` revision, span and center-node IDs must be bounded
 strings.
 The runtime profile advertises a native finance tool only when its vendor's exact
-capability is enabled: enabling public wallets alone does not expose DefiLlama.
+capability is enabled; `defillama_read` requires `defillama.tvl`.
 Each execution checks the Chat's live database binding without loading its
 transcript. Dataset file/query work and Lens search run on blocking workers;
 captured results reuse their measured byte size through reservation and delivery.
@@ -74,10 +74,12 @@ not taken from upstream docstrings, so edit them there. The capability index
 (`formatRuntimeIndex` in `agent/loupist-extension.mjs`) names each enabled
 connection and on-demand tool pack with a purpose cut at a sentence or word, appends
 the activation sentence only to the component Rust marks `bundled`, and replaces
-the list of off connections with one sentence that gives their display names (at
-most 24, no descriptions) and points at `connection_setup`, shown only when that
-tool is in the turn. Names are listed because a paid run showed the model naming
-the wrong connection, or none, when it had only generic examples.
+the list of off connections with one sentence that gives each display name with
+the first sentence of its purpose (at most 24) and, when `connection_setup` is in
+the turn, points at it. Names are listed because a paid run showed the model naming
+the wrong connection, or none, when it had only generic examples. Purposes were
+added after the rc1 run: from the names alone the model could not tell that Korea
+Investment serves quotes, and sent the user to a brokerage app (T-012).
 
 Native `read`, `write`, `edit`, `ls`, `find`, and `grep` keep Pi's tool descriptions. [SYSTEM.md](../../apps/loupist/agent/SYSTEM.md) states the permission rule once, under "Authority and local work". File tools are restricted to admitted workspace, scratch and attachment paths. Private app data, credentials and git metadata are refused. `run_python` is the code execution tool and stays allowed after third-party text. [Native tool permissions](../runtime/permissions.md) owns the complete boundary. `registerWorkspaceTools` in `agent/workspace-tools.mjs` does not append that sentence to each tool. It still calls the Rust `authorize` hook before every execution, wraps untrusted text with the host boundary, and passes the workspace as the tool cwd while Pi's runtime directory stays private. The two-case form for an investment view is in that same file under "Investment judgment" and in the [Journal Skill](../../apps/loupist/agent/skills/journal/SKILL.md): two compact points, for and against, each a dated observation, then its next check (metric and timing), then what would strengthen or weaken it. The system's dated, linked per-principle checklist still applies. A proposed chart level's observed anchor is date, measure, and value; the [Visualize Skill](../../apps/loupist/agent/skills/visualize/SKILL.md) says "last day" or the chart's overall range does not date that value.
 
@@ -97,14 +99,18 @@ adapter needs a resolvable credential before any request.
 once. `sum` supports addition; plain subtraction and multiplication use Python.
 One-step arithmetic on numbers the user typed needs neither tool.
 
-A `dcf_grid` or `reverse_dcf` result shows as a [sensitivity card](../analysis/calculation.md#sensitivity-cards)
-when the answer links it alone in a paragraph with the company name as the link text;
-the `calculate` description and the `valuation` Skill ask for that form. For what a price
-implies, the valuation Skill gives `reverse_dcf` the dated price and shares with their
-sources and, when the data allows, a `cagr` of the same cash-flow measure over the last
-five fiscal years as `reference_growth_pct` (cited in `input_sources`, its period in
-`labels.reference_growth_pct`); it never presents one cell as the answer or as a target
-price. `dividend-income` asks for the same card with the dividend `cagr` as reference.
+A `dcf_grid` or `reverse_dcf` result is a [sensitivity range](../analysis/calculation.md#sensitivity-ranges)
+the answer explains and cites; a link to it is a citation, also when it stands alone in a
+paragraph. The
+`calculate` description owns what a `reverse_dcf` range is read against: the `cagr` of the
+same measure as `cash_flow` over the last five fiscal years of growth, passed as
+`reference_growth_pct` (cited in `input_sources`, its period in
+`labels.reference_growth_pct`). It is stated there because a scheduled or delegated run
+loads no Skill: in the wave 11 run GPT-6.2 Sol compared a scheduled range with a shorter
+history or none. For what a price implies, the valuation Skill gives `reverse_dcf` the
+dated price and shares with their sources and that reference, and compares the implied
+range with it; it never presents one cell as the answer or as a target price.
+`dividend-income` does the same with the dividend `cagr` as reference.
 The bundled catalog in `agent_harness.rs` lists the four retail Skills
 ([list](../capabilities/skills.md#skills-management)) first among the optional
 workflows, so the Skills group under `/` shows them right after the fixed procedures,
@@ -113,8 +119,7 @@ each with its `skillBlurb` line from the Chat locale files.
 `SYSTEM.md` ("Evidence and citations") has the agent write each material number as a
 link whose text is only the number with its unit or currency and whose target is the
 exact `citation_url` it came from: a data result or passage for a figure read from a
-source (for a web page, a `web_fetch` passage whose `find` phrase contains the
-number), a `calculate` result for a derived figure, with each sourced input named in
+source, a `calculate` result for a derived figure, with each sourced input named in
 `input_sources`. Figures derived from sources use a tool; the first mention in a paragraph
 and every material table cell are linked; years, dates, counts and the user's own
 assumptions stay plain. Rust [checks those links](../analysis/number-checks.md#number-checks) when the

@@ -1,0 +1,14 @@
+{
+  "model": "minishlab/blink-multilingual-64M",
+  "revision": "a7198ef875b9a756b8b641ab064542f7408e50f3",
+  "upstream": {
+    "config.json": "c2b251ff9512d3ab9245089d3cef7e02b676b4116ff65cecf91a998a64a905ed",
+    "tokenizer.json": "169193dd66d750ee493719971bb325ecd35347fe2145d1e7eb4b863f7b5a19c0",
+    "model.safetensors": "e5709f744dde2ccdff6799e608308765cb55f7ca9287f33f38bfe2d4a965b3d0"
+  },
+  "staged": {
+    "config.json": "c2b251ff9512d3ab9245089d3cef7e02b676b4116ff65cecf91a998a64a905ed",
+    "tokenizer.json": "169193dd66d750ee493719971bb325ecd35347fe2145d1e7eb4b863f7b5a19c0",
+    "model.safetensors": "0ebde0e4c3b8e46c417de52a1aa9eab5ec2c067da365dc86c3f4387a76bc413f"
+  }
+}

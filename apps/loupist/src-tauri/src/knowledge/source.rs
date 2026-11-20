@@ -10,10 +10,10 @@ use super::model::SourceSummary;
 use super::model::{
     mint_id, validate_external_id, validate_knowledge_id, validate_loupist_id, validate_media_type,
     validate_optional_digest, validate_optional_knowledge_id, validate_text, validate_time,
-    validate_time_point, validate_title, validate_token, Authorship, Coverage, PublishedCapture,
-    PublishedRepresentation, PublishedSource, PublishedSpan, ReadPurpose, RecordKind,
-    RepresentationRole, RetainSource, RetainedSource, Selector, SourceClass, SourceReadReceipt,
-    SourceRecordPayload, MAX_BLOB_BYTES,
+    validate_time_point, validate_title, validate_token, Authorship, Coverage, ProvidedOrigin,
+    PublishedCapture, PublishedRepresentation, PublishedSource, PublishedSpan, ReadPurpose,
+    RecordKind, RepresentationRole, RetainSource, RetainedSource, Selector, SourceClass,
+    SourceReadReceipt, SourceRecordPayload, MAX_BLOB_BYTES,
 };
 #[cfg(feature = "eval-harness")]
 use super::model::{ReadCapture, ReadSpan, SpanRead};
@@ -43,7 +43,7 @@ pub(super) fn retain_source(
     blobs: &BlobStore,
     request: RetainSource,
 ) -> KnowledgeResult<RetainedSource> {
-    retain_capture(tx, blobs, request, None, None)
+    retain_capture(tx, blobs, request, None, None, None)
 }
 
 fn retain_capture(
@@ -52,8 +52,11 @@ fn retain_capture(
     request: RetainSource,
     acquisition_identity: Option<&str>,
     origin_message_id: Option<&str>,
+    provided: Option<&ProvidedOrigin>,
 ) -> KnowledgeResult<RetainedSource> {
     validate_retention(&request)?;
+    validate_provided(&request, provided)?;
+    let provided_json = provided.map(serde_json::to_string).transpose()?;
     if let Some(origin) = &request.origin {
         if origin.kind != "custom_connection"
             || origin.name.is_empty()
@@ -158,8 +161,8 @@ fn retain_capture(
         "INSERT INTO knowledge_source_captures (
             record_id, capture_id, source_id, received_at_ms, coverage, declared_digest,
             material_digest, authorship, created_at_ms, publication_time_json, acquisition_identity,
-            origin_locator, provider_identity
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            origin_locator, provider_identity, provided_json
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             module.record_id,
             capture_id,
@@ -173,7 +176,8 @@ fn retain_capture(
             publication_time_json,
             acquisition_identity,
             request.origin_locator,
-            request.provider_identity
+            request.provider_identity,
+            provided_json
         ],
     )?;
     if private_locator.is_some()
@@ -862,7 +866,7 @@ fn captures_for_source(
 ) -> KnowledgeResult<Vec<PublishedCapture>> {
     let mut statement = tx.prepare(
         "SELECT capture_id, received_at_ms, coverage, declared_digest, material_digest, authorship,
-                publication_time_json
+                publication_time_json, provided_json
          FROM knowledge_source_captures
          WHERE record_id = ?1 AND source_id = ?2
          ORDER BY received_at_ms, capture_id",
@@ -877,6 +881,7 @@ fn captures_for_source(
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, String>(5)?,
                 row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -890,6 +895,7 @@ fn captures_for_source(
         material_digest,
         authorship,
         publication_time_json,
+        provided_json,
     ) in rows
     {
         captures.push(PublishedCapture {
@@ -901,6 +907,9 @@ fn captures_for_source(
             authorship: Authorship::parse(&authorship)?,
             representations: representations_for_capture(tx, record_id, &capture_id)?,
             publication_time: publication_from_json(publication_time_json)?,
+            provided: provided_json
+                .map(|value| serde_json::from_str(&value))
+                .transpose()?,
         });
     }
     Ok(captures)
@@ -1168,6 +1177,45 @@ fn validate_retention(request: &RetainSource) -> KnowledgeResult<()> {
     }
 }
 
+/// A user-provided capture is exactly one that records where the user pasted
+/// it, and it is the user's own retained copy: never a custom connection's
+/// result and never authored by anyone the host could vouch for.
+fn validate_provided(
+    request: &RetainSource,
+    provided: Option<&ProvidedOrigin>,
+) -> KnowledgeResult<()> {
+    let user_provided = request.source_class == SourceClass::UserProvided;
+    let Some(provided) = provided else {
+        return if user_provided {
+            Err(KnowledgeError::Invalid(
+                "a user-provided Source needs its Chat message",
+            ))
+        } else {
+            Ok(())
+        };
+    };
+    if !user_provided
+        || request.authorship != Authorship::User
+        || request.origin.is_some()
+        || request.origin_chat_id.as_deref() != Some(provided.chat_id.as_str())
+    {
+        return Err(KnowledgeError::Invalid(
+            "only a user-provided Source records a pasted message",
+        ));
+    }
+    validate_external_id(&provided.chat_id, "chat id is invalid")?;
+    validate_external_id(&provided.message_id, "message id is invalid")?;
+    validate_time(provided.pasted_at_ms)?;
+    if let Some(url) = &provided.stated_url {
+        validate_text(url, 2_000, false, "stated link is invalid")?;
+        reject_locator_userinfo(url)?;
+    }
+    if let Some(publisher) = &provided.stated_publisher {
+        validate_text(publisher, 200, false, "stated publisher is invalid")?;
+    }
+    Ok(())
+}
+
 /// Idempotently retain an acquisition with its complete attribution identity.
 /// Retrieval time, tool call IDs, and display title do not change identity.
 pub(super) fn retain_new_source(
@@ -1175,7 +1223,7 @@ pub(super) fn retain_new_source(
     blobs: &BlobStore,
     request: super::model::RetainNewSource,
 ) -> KnowledgeResult<RetainedSource> {
-    retain_new_source_with_origin(tx, blobs, request, None)
+    retain_new_source_with_origin(tx, blobs, request, None, None)
 }
 
 pub(super) fn retain_new_source_with_origin(
@@ -1183,11 +1231,38 @@ pub(super) fn retain_new_source_with_origin(
     blobs: &BlobStore,
     request: super::model::RetainNewSource,
     origin_message_id: Option<&str>,
+    provided: Option<&ProvidedOrigin>,
 ) -> KnowledgeResult<RetainedSource> {
     let record_id = mint_id("rec");
     let capture = request.into_capture(record_id, None, None);
     validate_retention(&capture)?;
-    let identity = capture_identity(&capture)?;
+    validate_provided(&capture, provided)?;
+    // Recognize captures made before a correction, including existing databases.
+    // A metadata-only save has no bytes with which to identify a paste.
+    let prior_paste: Option<String> =
+        if let (Some(_), Some(material)) = (provided, &capture.material) {
+            tx.query_row(
+                "SELECT c.acquisition_identity FROM knowledge_records r
+             JOIN knowledge_sources s ON s.record_id = r.record_id
+             JOIN knowledge_source_captures c ON c.record_id = s.record_id
+             WHERE r.owner_loupist_id = ?1 AND s.source_class = 'user_provided'
+               AND c.coverage = ?2 AND c.material_digest = ?3 AND c.acquisition_identity IS NOT NULL
+             ORDER BY c.rowid DESC LIMIT 1",
+                params![
+                    capture.loupist_id,
+                    capture.coverage.as_str(),
+                    digest_bytes(&material.bytes)
+                ],
+                |row| row.get(0),
+            )
+            .optional()?
+        } else {
+            None
+        };
+    let identity = match &prior_paste {
+        Some(identity) => identity.clone(),
+        None => capture_identity(&capture)?,
+    };
     let saved = tx
         .query_row(
             "SELECT caps.record_id, caps.source_id, caps.capture_id, reps.representation_id,
@@ -1218,8 +1293,11 @@ pub(super) fn retain_new_source_with_origin(
             },
         )
         .optional()?;
-    if let Some(saved) = saved {
-        verify_acquisition_identity(tx, &capture.loupist_id, &saved, &identity)?;
+    if let Some(mut saved) = saved {
+        let payload = verify_acquisition_identity(tx, &capture.loupist_id, &saved, &identity)?;
+        if let (Some(provided), Some(_)) = (provided, prior_paste) {
+            update_paste_provenance(tx, blobs, &capture, provided, &mut saved, payload)?;
+        }
         if let Some(chat_id) = &capture.origin_chat_id {
             tx.execute("INSERT OR IGNORE INTO knowledge_chat_origins (loupist_id, chat_id, record_id, capture_id) VALUES (?1, ?2, ?3, ?4)", params![capture.loupist_id, chat_id, saved.record_id, saved.capture_id])?;
         }
@@ -1243,7 +1321,73 @@ pub(super) fn retain_new_source_with_origin(
         },
         Some(&identity),
         origin_message_id,
+        provided,
     )
+}
+
+// Keep the original capture and its cited span immutable. The current Source
+// revision carries the latest user-stated attribution for those same bytes.
+fn update_paste_provenance(
+    tx: &Transaction<'_>,
+    blobs: &BlobStore,
+    request: &RetainSource,
+    provided: &ProvidedOrigin,
+    saved: &mut RetainedSource,
+    mut payload: SourceRecordPayload,
+) -> KnowledgeResult<()> {
+    let module = require_record(tx, &request.loupist_id, &saved.record_id)?;
+    let source = &mut payload.source;
+    let capture = source
+        .captures
+        .iter_mut()
+        .find(|capture| capture.capture_id == saved.capture_id)
+        .ok_or(KnowledgeError::DigestMismatch)?;
+    if source.source_class != SourceClass::UserProvided
+        || capture.coverage != request.coverage
+        || capture.material_digest != saved.material_digest
+    {
+        return Err(KnowledgeError::DigestMismatch);
+    }
+    let (locator, _) = split_locator(&request.origin_locator)?;
+    if source.title == request.title
+        && source.origin_locator == locator
+        && capture.provided.as_ref() == Some(provided)
+        && capture.publication_time == request.publication_time
+    {
+        return Ok(());
+    }
+    capture.provided = Some(provided.clone());
+    capture
+        .publication_time
+        .clone_from(&request.publication_time);
+    source.title.clone_from(&request.title);
+    source.origin_locator.clone_from(&locator);
+    tx.execute(
+        "UPDATE knowledge_sources SET title = ?1, origin_locator = ?2, updated_at_ms = ?3 WHERE record_id = ?4",
+        params![request.title, locator, request.at_ms, saved.record_id],
+    )?;
+    let payload = to_value(&payload)?;
+    let published = publish_revision(
+        tx,
+        &module,
+        &request.loupist_id,
+        Some(&saved.revision_id),
+        &payload,
+        &[],
+        request.at_ms,
+    )?;
+    super::search_index::index_payload(
+        tx,
+        Some(blobs),
+        &saved.record_id,
+        &published.revision_id,
+        RecordKind::Source,
+        &request.title,
+        &payload,
+    )?;
+    saved.revision_id = published.revision_id;
+    saved.revision_digest = published.revision_digest;
+    Ok(())
 }
 
 // The acquisition index is an optimization, not authority. Its candidate must
@@ -1255,7 +1399,7 @@ fn verify_acquisition_identity(
     loupist_id: &str,
     saved: &RetainedSource,
     expected: &str,
-) -> KnowledgeResult<()> {
+) -> KnowledgeResult<SourceRecordPayload> {
     let payload: String = tx
         .query_row(
             "SELECT payload_json FROM knowledge_record_revisions WHERE record_id = ?1",
@@ -1274,11 +1418,11 @@ fn verify_acquisition_identity(
         .iter()
         .find(|capture| capture.capture_id == saved.capture_id)
         .ok_or(KnowledgeError::DigestMismatch)?;
-    let (locator, provider_identity): (String, String) = tx.query_row(
-        "SELECT origin_locator, provider_identity FROM knowledge_source_captures
+    let (locator, provider_identity, publication): (String, String, Option<String>) = tx.query_row(
+        "SELECT origin_locator, provider_identity, publication_time_json FROM knowledge_source_captures
          WHERE record_id = ?1 AND capture_id = ?2",
         params![saved.record_id, saved.capture_id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )?;
     let material = if let Some(representation_id) = &saved.representation_id {
         let representation = capture
@@ -1312,13 +1456,13 @@ fn verify_acquisition_identity(
         "authorship": capture.authorship,
         "coverage": capture.coverage,
         "declaredDigest": capture.declared_digest,
-        "publicationTime": capture.publication_time,
+        "publicationTime": publication_from_json(publication)?,
         "material": material,
     }))?;
     if identity != expected {
         return Err(KnowledgeError::DigestMismatch);
     }
-    Ok(())
+    Ok(payload)
 }
 
 pub(super) fn read_span_bytes_unbound(

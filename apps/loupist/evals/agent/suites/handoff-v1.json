@@ -1,0 +1,51 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "handoff",
+  "version": 1,
+  "description": "Offline scripted Bot follow-up to a completed hand-off, with Memory disabled and the exact conclusion absent from the card preview.",
+  "scenarios": [
+    {
+      "id": "H-004",
+      "title": "Bot reads the finished hand-off with Memory off",
+      "split": "regression",
+      "language": "en",
+      "tags": ["handoff", "scripted", "memory-off"],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "What did that research conclude?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "chat_history",
+                    "args": { "card_id": "handoff-fixture-alder" },
+                    "successful": true,
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "conversation_memory",
+                    "metric": "boundary"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_matching",
+                    "patterns": ["Alder Rail.{0,80}only the northern spur can cover the maintenance window"],
+                    "flags": "is",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

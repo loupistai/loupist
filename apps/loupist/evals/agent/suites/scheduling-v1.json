@@ -385,7 +385,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "id": "S-002",
@@ -440,7 +441,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "id": "S-003",
@@ -513,7 +515,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "S-004",
@@ -633,7 +636,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "S-005",
@@ -746,7 +750,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "ko"
     },
     {
       "id": "S-006",
@@ -854,7 +859,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "S-007",
@@ -959,7 +965,8 @@
             }
           ]
         }
-      ]
+      ],
+      "language": "en"
     },
     {
       "id": "S-008",
@@ -1059,6 +1066,204 @@
         }
       ],
       "language": "en"
+    },
+    {
+      "id": "S-009",
+      "title": "One alert for two names delivers only on a qualifying close",
+      "split": "capability",
+      "tags": [
+        "needs-replay",
+        "krx"
+      ],
+      "language": "en",
+      "connections": [
+        "krx"
+      ],
+      "replay": "replay/krx-alert.json",
+      "replay_needs": "KRX serves both companies on both dates. Only Solsup closes above 20,000 won on April 16; both closes are below that threshold on April 17. KRX returns HTTP 503 for both companies on April 20.",
+      "clock": "2026-04-15T08:00:00Z",
+      "seed": {
+        "watchlist": [
+          {
+            "name": "Solsup Foods",
+            "reference": {
+              "ticker": "990221",
+              "exchange": "KRX"
+            }
+          },
+          {
+            "name": "Garam Bio",
+            "reference": {
+              "ticker": "990905",
+              "exchange": "KRX"
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Every weekday at 6 pm Seoul time, alert me only if Solsup Foods or Garam Bio closed above 20,000 won that day.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 1,
+                    "tasks": [
+                      {
+                        "status": "active",
+                        "prompt_includes": [
+                          "schedule_quiet"
+                        ],
+                        "schedule": {
+                          "kind": "weekly",
+                          "hour": 18,
+                          "minute": 0,
+                          "timezone": "Asia/Seoul",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ]
+                        }
+                      }
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "alert-condition",
+                    "criterion": "The one saved task checks the closing price of either Solsup Foods or Garam Bio against a strict threshold above 20,000 won on the day of the run and suppresses delivery when neither qualifies.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Run now.",
+              "scheduled": {
+                "kind": "custom",
+                "run_existing": true,
+                "clock": "2026-04-16T09:00:00Z"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "krx_daily_quote",
+                    "successful": true,
+                    "args": {
+                      "symbol": "990221"
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "krx_daily_quote",
+                    "successful": true,
+                    "args": {
+                      "symbol": "990905"
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "dated-alert",
+                    "criterion": "The Bot delivery identifies Solsup Foods as the qualifying company, states its April 16, 2026 close of 21,950 won and does not report a threshold breach for Garam Bio.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Run now.",
+              "scheduled": {
+                "kind": "custom",
+                "run_existing": true,
+                "clock": "2026-04-17T09:00:00Z"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "krx_daily_quote",
+                    "successful": true,
+                    "args": {
+                      "symbol": "990221"
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "krx_daily_quote",
+                    "successful": true,
+                    "args": {
+                      "symbol": "990905"
+                    },
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_quiet",
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "scheduled_quiet",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Run now.",
+              "scheduled": {
+                "kind": "custom",
+                "run_existing": true,
+                "clock": "2026-04-20T09:00:00Z"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "krx_daily_quote",
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "failed-alert-check",
+                    "criterion": "The Bot delivery says KRX was unavailable and the alert condition could not be checked on April 20. It does not claim either close was below or above the threshold.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

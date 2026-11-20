@@ -72,6 +72,21 @@ it("fills the same card in place with the compact chart, copy and ask", async ()
   expect(onAsk).toHaveBeenCalledWith({ artifact_id: "chart-1", revision: 2, kind: "chart", title: "Operating margin", digest: "b".repeat(64) });
 });
 
+it("offers Expand in a wide window and names the button by what a press does next", async () => {
+  vi.mocked(window.matchMedia).mockImplementation((query: string) => ({ matches: query.includes("min-width: 1440px"), media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn() }) as MediaQueryList);
+  try {
+    render(withScope(<ChatArtifactBlock block={{ kind: "ready", key: "r", artifact: ref, updating: false }} />));
+    expect(await screen.findByText("compact-chart")).toBeVisible();
+    const expand = screen.getByRole("button", { name: "Expand" });
+    expect(expand).not.toHaveAttribute("aria-pressed");
+    fireEvent.click(expand);
+    expect(screen.getByRole("button", { name: "Collapse" })).not.toHaveAttribute("aria-pressed");
+    expect(screen.getByRole("region", { name: "Chart: Operating margin" })).toHaveAttribute("data-expanded", "true");
+  } finally {
+    vi.mocked(window.matchMedia).mockImplementation((query: string) => ({ matches: false, media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn() }) as MediaQueryList);
+  }
+});
+
 it("draws a chart the host delivered before the commit at once, and keeps it when the stored copy is read after the commit", async () => {
   const read = vi.fn().mockResolvedValue(view);
   const { rerender } = render(withScope(<ChatArtifactBlock block={{ kind: "building", key: "chart:chart-1", title: "Operating margin", stepId: "step" }} />, read));

@@ -9,7 +9,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type ReactNode,
 } from "react";
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, Maximize2Icon, MoreHorizontalIcon, PanelBottomIcon, PanelRightIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,7 +41,6 @@ import {
   type EvidenceWorkspaceTab,
   type WorkspacePlacement,
 } from "../../chat/workspace";
-import type { WorkspacePanelKind } from "../../app/useWorkspacePanel";
 import type { DockKind } from "../../app/workspaceUiState";
 import { WorkspaceWorkList, type BuildingWork } from "./WorkspaceWorkList";
 import { WorkVersionBar, WorkVersionMenu } from "./WorkspaceWorkVersions";
@@ -88,8 +86,6 @@ type Props = {
   onOpenFiles?: (filePath?: string) => void;
   onAskFile?: (file: WorkspaceFile) => void;
   open: boolean;
-  kind?: WorkspacePanelKind;
-  children?: ReactNode;
   /** Charts the visible chat is still building, shown on top of the Work list. */
   buildingWork?: readonly BuildingWork[];
   /** Changes when the visible chat publishes work, so the Work list re-reads. */
@@ -104,7 +100,7 @@ type Props = {
   onPlacementToggle: (placement: WorkspacePlacement, kind: DockKind) => void;
   /** The content kind on screen changed (side-panel.md P7): re-dock for it. */
   onDockKind?: (kind: DockKind) => void;
-  /** Every content kind docks at the current placement ("Always dock here"). */
+  /** Every content kind docks at the current placement ("Always dock at side" or "at bottom"). */
   placementPinned?: boolean;
   onPinPlacement?: (pinned: boolean) => void;
   onSelectTab: (tabId: string) => void;
@@ -163,8 +159,6 @@ function ScopedChatWorkspacePanel({
   onOpenFiles,
   onAskFile,
   open,
-  kind = "materials",
-  children,
   buildingWork = [],
   workRefreshKey = 0,
   session,
@@ -225,6 +219,10 @@ function ScopedChatWorkspacePanel({
   const [shownRevision, setShownRevision] = useState<number | null>(null);
   const [restored, setRestored] = useState<{ from: number; to: number } | null>(null);
   const versionTriggerRef = useRef<HTMLButtonElement>(null);
+  // "All work" replaces the open item with the list; the item's row takes focus back once the list is shown.
+  const allWorkRef = useRef<HTMLButtonElement>(null);
+  const [returnToWork, setReturnToWork] = useState<string | null>(null);
+  const workReturned = useCallback(() => setReturnToWork(null), []);
   // The open item's view switch and actions render into the status row (chat design change 24).
   const [statusSlot, setStatusSlot] = useState<HTMLSpanElement | null>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -265,7 +263,7 @@ function ScopedChatWorkspacePanel({
   }, [open, overlay, activeTab?.id, threadId]);
 
   const activeBrowserTab =
-    kind === "materials" && !chatMap?.active && activeTab?.kind === "browser" ? activeTab : undefined;
+    !chatMap?.active && activeTab?.kind === "browser" ? activeTab : undefined;
   const savedPassageIndex = useMemo(() => {
     const evidenceTab = session.tabs.find((tab): tab is EvidenceWorkspaceTab => tab.kind === "evidence");
     if (!activeBrowserTab || !evidenceTab) return -1;
@@ -293,14 +291,14 @@ function ScopedChatWorkspacePanel({
   // The Work tab is fixed: it may be chosen before it holds an open item.
   const workChosen = session.active_tab_id === WORK_TAB_ID;
   // With nothing selected the panel shows the chat map, or the Evidence reader's empty state.
-  const showMap = kind === "materials" && Boolean(chatMap && (chatMap.active || (!activeTab && !workChosen)));
+  const showMap = Boolean(chatMap && (chatMap.active || (!activeTab && !workChosen)));
   const workSelected = !showMap && workChosen;
   const work = workTab(session);
   const openWork = workSelected && work?.artifact && work.artifactThreadId ? { artifact: work.artifact, threadId: work.artifactThreadId } : undefined;
   const activeEvidenceTab: EvidenceWorkspaceTab | undefined = !showMap && activeTab?.kind === "evidence" ? activeTab : undefined;
   const evidenceSelected = !showMap && !workSelected && (!activeTab || activeTab.kind === "evidence");
   // Charts read best below the chat, everything else beside it (side-panel.md P7).
-  const dockKind: DockKind = kind === "materials" && openWork?.artifact.kind === "chart" ? "chart" : "reading";
+  const dockKind: DockKind = openWork?.artifact.kind === "chart" ? "chart" : "reading";
   // Only a change of kind while the panel is in use re-docks: the placement restored at start-up
   // and the user's own Dock choice are not overridden by the first render.
   const dockKindSeen = useRef<DockKind | null>(null);
@@ -494,10 +492,11 @@ function ScopedChatWorkspacePanel({
   }, [openArtifactId, openArtifactThread, openArtifactRevision, shownRevision, readArtifact]);
   const showRevision = (revision: number | null) => { setRestored(null); setShownRevision(revision); };
 
-  const openFullMap = (location: KnowledgeLocation) => { onClose(); onOpenKnowledgePage(location); };
+  // The full Map is a page: the chat keeps this panel as it was for the way back.
+  const openFullMap = (location: KnowledgeLocation) => onOpenKnowledgePage(location);
   // Expand on the Map opens the full Map on the name selected here; any other tab becomes a reading column.
   const expand = () => {
-    if (kind === "materials" && showMap && chatMap) {
+    if (showMap && chatMap) {
       const [focal] = chatMap.highlightIds.size === 1 ? [...chatMap.highlightIds] : [];
       openFullMap({ loupistId: chatMap.loupistId, surface: "world", selection: focal ? { kind: "node", id: focal } : undefined });
       return;
@@ -542,7 +541,7 @@ function ScopedChatWorkspacePanel({
     >
       {openWork ? <>
         <div className="workspace-status">
-          <Button type="button" variant="ghost" size="sm" onClick={() => onUpdateTab(WORK_TAB_ID, () => workWorkspaceTab())}><ChevronLeftIcon />{t("workList.allWork")}</Button>
+          <Button ref={allWorkRef} type="button" variant="ghost" size="sm" onClick={() => { setReturnToWork(openWork.artifact.artifact_id); onUpdateTab(WORK_TAB_ID, () => workWorkspaceTab()); }}><ChevronLeftIcon aria-hidden="true" />{t("workList.allWork")}</Button>
           {/* The row stays while another version loads, so the version control keeps focus. */}
           {view && view.artifact.id === openWork.artifact.artifact_id && !readError ? <ArtifactStatus view={view} version={
             <WorkVersionMenu key={view.artifact.id} bridge={bridge} loupistId={loupistId} threadId={openWork.threadId} view={view} triggerRef={versionTriggerRef} onChoose={showRevision} />
@@ -575,13 +574,16 @@ function ScopedChatWorkspacePanel({
             {shownRevision !== null ? <Button type="button" variant="ghost" size="sm" onClick={() => showRevision(null)}>{t("workVersions.backToCurrent")}</Button> : null}
           </div>
         ) : view ? (
-          <ArtifactContent view={view} theme={theme} workspacePath={workspacePath} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(titledExport(request))} toolbarTarget={statusSlot} />
+          <ArtifactContent view={view} theme={theme} workspacePath={workspacePath} loupistId={loupistId} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(titledExport(request))} toolbarTarget={statusSlot} />
         ) : null}
-      </> : <WorkspaceWorkList bridge={bridge} loupistId={loupistId} refreshKey={workRefreshKey} building={buildingWork}
+      </> : <WorkspaceWorkList bridge={bridge} loupistId={loupistId} refreshKey={workRefreshKey} building={buildingWork} returnTo={returnToWork} onReturned={workReturned}
         onOpen={async (item) => {
           // Read first: the reference the panel keeps carries the revision's digest.
           const opened = await bridge.chatArtifactRead(loupistId, item.artifact.chat_session_id, item.artifact.id);
-          if (scopeLive.current) onOpenArtifact(chatArtifactRef(opened), item.artifact.chat_session_id);
+          if (!scopeLive.current) return;
+          onOpenArtifact(chatArtifactRef(opened), item.artifact.chat_session_id);
+          // The pressed row gives way to the item; keyboard focus moves to the way back.
+          requestAnimationFrame(() => focusForKeyboard(allWorkRef.current));
         }} />}
     </div>
   ) : null;
@@ -617,7 +619,7 @@ function ScopedChatWorkspacePanel({
       {overlay && <button
         type="button"
         className="artifact-panel-backdrop"
-        aria-label={t("chatWorkspacePanel.closeChatWorkspace")}
+        aria-label={t("chatWorkspacePanel.closePanel")}
         aria-hidden="true"
         tabIndex={-1}
         onClick={onClose}
@@ -627,7 +629,6 @@ function ScopedChatWorkspacePanel({
         id="workspace-panel"
         className="artifact-panel workspace-panel"
         data-placement={placement}
-        data-panel-kind={kind}
         data-expanded={expanded || undefined}
         data-resizing={resizing || undefined}
         style={
@@ -636,7 +637,7 @@ function ScopedChatWorkspacePanel({
             "--artifact-panel-height": `${renderedHeight}px`,
           } as CSSProperties
         }
-        aria-label={t("chatWorkspacePanel.chatWorkspacePanel")}
+        aria-label={t("chatWorkspacePanel.panel")}
         aria-modal={overlay || undefined}
         role={overlay ? "dialog" : "complementary"}
         onPointerDownCapture={onInteract}
@@ -651,7 +652,7 @@ function ScopedChatWorkspacePanel({
         <div
           className="artifact-resize-handle"
           role="separator"
-          aria-label={t("chatWorkspacePanel.resizeChatWorkspace")}
+          aria-label={t("chatWorkspacePanel.resizePanel")}
           aria-orientation={placement === "side" ? "vertical" : "horizontal"}
           aria-valuemin={resizeBounds.min}
           aria-valuemax={resizeBounds.max}
@@ -660,7 +661,7 @@ function ScopedChatWorkspacePanel({
           onPointerDown={startResize}
           onKeyDown={resizeWithKeyboard}
         />
-        {kind !== "materials" ? <div className="workspace-kind-heading"><strong>{t(kind === "lens" ? "workspaceEvidence.kind.lens" : "workspaceEvidence.kind.world")}</strong><div className="workspace-tab-controls">{overlay ? null : <Button ref={expandButtonRef} type="button" variant="ghost" size="icon-sm" aria-label={t("chatWorkspacePanel.expand")} title={t("chatWorkspacePanel.expand")} onClick={expand}><Maximize2Icon /></Button>}<Button ref={activeLayoutButtonRef} type="button" variant="ghost" size="icon-sm" data-workspace-close aria-label={t("chatWorkspacePanel.closeWorkspace")} title={t("chatWorkspacePanel.closeWorkspace")} onClick={onClose}><XIcon /></Button></div></div> : <WorkspaceTabBar
+        <WorkspaceTabBar
           session={session}
           activeTab={activeTab}
           menuOpen={menuOpen}
@@ -674,15 +675,14 @@ function ScopedChatWorkspacePanel({
             <DropdownMenuContent align="end" className="workspace-dock-menu" onCloseAutoFocus={(event) => { if (expandOnClose.current) { expandOnClose.current = false; event.preventDefault(); } }}>
               <DropdownMenuItem data-workspace-expand onSelect={expand}><Maximize2Icon aria-hidden="true" />{t("chatWorkspacePanel.expand")}</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => onPlacementToggle(placement === "side" ? "bottom" : "side", dockKind)}>{placement === "side" ? <PanelBottomIcon aria-hidden="true" /> : <PanelRightIcon aria-hidden="true" />}{t(placement === "side" ? "chatWorkspacePanel.dockBottom" : "chatWorkspacePanel.dockSide")}</DropdownMenuItem>
-              {onPinPlacement ? <><DropdownMenuSeparator /><DropdownMenuCheckboxItem checked={placementPinned} onCheckedChange={(checked) => onPinPlacement(checked === true)}>{t("chatWorkspacePanel.alwaysDockHere")}</DropdownMenuCheckboxItem></> : null}
+              {onPinPlacement ? <><DropdownMenuSeparator /><DropdownMenuCheckboxItem checked={placementPinned} onCheckedChange={(checked) => onPinPlacement(checked === true)}>{t(placement === "side" ? "chatWorkspacePanel.alwaysDockSide" : "chatWorkspacePanel.alwaysDockBottom")}</DropdownMenuCheckboxItem></> : null}
             </DropdownMenuContent>
-          </DropdownMenu>}<Button ref={activeLayoutButtonRef} type="button" variant="ghost" size="icon-sm" data-workspace-close aria-label={t("chatWorkspacePanel.closeWorkspace")} title={t("chatWorkspacePanel.closeWorkspace")} onClick={onClose}><XIcon aria-hidden="true" /></Button></>}
-        />}
+          </DropdownMenu>}<Button ref={activeLayoutButtonRef} type="button" variant="ghost" size="icon-sm" data-workspace-close aria-label={t("chatWorkspacePanel.closePanel")} title={t("chatWorkspacePanel.closePanel")} onClick={onClose}><XIcon aria-hidden="true" /></Button></>}
+        />
         {expanded ? <div className="workspace-expanded-bar">
           <Button ref={backToChatRef} type="button" variant="ghost" onClick={() => setExpanded(false)}><ArrowLeftIcon aria-hidden="true" />{t("chatWorkspacePanel.backToChat")}</Button>
         </div> : null}
-        <div className="workspace-kind-content" hidden={kind === "materials"} inert={kind === "materials" || undefined}>{children}</div>
-        <div className="workspace-materials-content" hidden={kind !== "materials"} inert={kind !== "materials" || undefined}>
+        <div className="workspace-materials-content">
         {showMap ? <div className="workspace-tabpanel" role="tabpanel" id={workspaceTabPanelId(CHAT_MAP_TAB_ID)} aria-labelledby={workspaceTabButtonId(CHAT_MAP_TAB_ID)}><ChatMiniMap onOpenFull={openFullMap} /></div>
           // One wrapper in both modes, so expanding keeps the reader's state and scroll position.
           : <div className="workspace-reading-column">{tabPanel}</div>}

@@ -1,8 +1,8 @@
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$piVersion = "1.5.0"
-$archiveSha256 = "12d58a70e80b16ba9f764950b7a42bdeb07959495c0db68396cf2988c0b71af3"
+$piVersion = "1.5.2"
+$archiveSha256 = "e6adb8cb8c84eca14391ad24b363de9d2be98a89ca3ba3fdee1fa4de32b7f2e8"
 $archiveUrl = "https://github.com/earendil-works/pi/releases/download/v$piVersion/pi-windows-x64.zip"
 $target = "x86_64-pc-windows-msvc"
 

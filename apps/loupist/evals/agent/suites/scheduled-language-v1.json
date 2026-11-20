@@ -1,0 +1,488 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "scheduled-language",
+  "version": 1,
+  "description": "Real scheduler admissions and Bot deliveries for built-in briefings and paired saved custom requests.",
+  "scenarios": [
+    {
+      "id": "F3-RUN-BRIEF-EN",
+      "title": "Scheduled brief delivery under en appearance",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Deliver the built-in scheduled briefing.",
+              "scheduled": {
+                "kind": "briefing"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "empty-briefing",
+                    "metric": "task_success",
+                    "criterion": "Evaluate the full scheduled reply for content. The scheduled briefing conveys in the appearance language that the empty library has no followed companies or updates to report. Credit an accurate account of what the run could and could not check. Invented holdings, events, or market findings fail."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-RUN-CUSTOM-EN",
+      "title": "Scheduled custom delivery under en appearance",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Fictional Iris Mill collected 12 million credits from operations and spent 9 million on equipment in June. Explain how much cash remained after that spending.",
+              "scheduled": {
+                "kind": "custom"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saved-task-result",
+                    "criterion": "Evaluate the full scheduled reply for content. The update explains that three million credits remained after June equipment spending.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-RUN-OVERRIDE-EN",
+      "title": "Scheduled override delivery under en appearance",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Fictional Iris Mill collected 12 million credits from operations and spent 9 million on equipment in June. Explain how much cash remained after that spending. Write the update in Korean.",
+              "scheduled": {
+                "kind": "custom"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saved-task-result",
+                    "criterion": "Evaluate the full scheduled reply for content. The update explains that three million credits remained after June equipment spending.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-RUN-BRIEF-KO",
+      "title": "Scheduled brief delivery under ko appearance",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "ko",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Deliver the built-in scheduled briefing.",
+              "scheduled": {
+                "kind": "briefing"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "empty-briefing",
+                    "metric": "task_success",
+                    "criterion": "Evaluate the full scheduled reply for content. The scheduled briefing conveys in the appearance language that the empty library has no followed companies or updates to report. Credit an accurate account of what the run could and could not check. Invented holdings, events, or market findings fail."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-RUN-CUSTOM-KO",
+      "title": "Scheduled custom delivery under ko appearance",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "ko",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Fictional Iris Mill collected 12 million credits from operations and spent 9 million on equipment in June. Explain how much cash remained after that spending.",
+              "scheduled": {
+                "kind": "custom"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saved-task-result",
+                    "criterion": "Evaluate the full scheduled reply for content. The update explains that three million credits remained after June equipment spending.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-RUN-OVERRIDE-KO",
+      "title": "Scheduled override delivery under ko appearance",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "ko",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Fictional Iris Mill collected 12 million credits from operations and spent 9 million on equipment in June. Explain how much cash remained after that spending. Write the update in English.",
+              "scheduled": {
+                "kind": "custom"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saved-task-result",
+                    "criterion": "Evaluate the full scheduled reply for content. The update explains that three million credits remained after June equipment spending.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-KO-RUN-CUSTOM-EN",
+      "title": "Korean saved request under en appearance",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "가상의 아이리스 제분소는 6월 영업활동으로 1,200만 크레디트를 벌어 설비에 900만 크레디트를 썼어. 설비 지출 후 얼마가 남았는지 알려 줘.",
+              "scheduled": {
+                "kind": "custom"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saved-task-result",
+                    "criterion": "Evaluate the full scheduled reply for content. The update explains that three million credits remained after June equipment spending.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-KO-RUN-OVERRIDE-EN",
+      "title": "Korean saved request with an explicit language override under en appearance",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "en",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "가상의 아이리스 제분소는 6월 영업활동으로 1,200만 크레디트를 벌어 설비에 900만 크레디트를 썼어. 설비 지출 후 얼마가 남았는지 알려 줘. 한국어로 써 줘.",
+              "scheduled": {
+                "kind": "custom"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saved-task-result",
+                    "criterion": "Evaluate the full scheduled reply for content. The update explains that three million credits remained after June equipment spending.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-KO-RUN-CUSTOM-KO",
+      "title": "Korean saved request under ko appearance",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "ko",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "가상의 아이리스 제분소는 6월 영업활동으로 1,200만 크레디트를 벌어 설비에 900만 크레디트를 썼어. 설비 지출 후 얼마가 남았는지 알려 줘.",
+              "scheduled": {
+                "kind": "custom"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saved-task-result",
+                    "criterion": "Evaluate the full scheduled reply for content. The update explains that three million credits remained after June equipment spending.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "F3-KO-RUN-OVERRIDE-KO",
+      "title": "Korean saved request with an explicit language override under ko appearance",
+      "split": "capability",
+      "tags": [
+        "answer-language"
+      ],
+      "language": "ko",
+      "clock": "2026-11-18T09:00:00+09:00",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "가상의 아이리스 제분소는 6월 영업활동으로 1,200만 크레디트를 벌어 설비에 900만 크레디트를 썼어. 설비 지출 후 얼마가 남았는지 알려 줘. 영어로 써 줘.",
+              "scheduled": {
+                "kind": "custom"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_delivery",
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "saved-task-result",
+                    "criterion": "Evaluate the full scheduled reply for content. The update explains that three million credits remained after June equipment spending.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

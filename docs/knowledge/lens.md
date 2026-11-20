@@ -30,14 +30,12 @@ open-questions`; method `use-when, steps, checks, limits`; idea `claim, mechanis
 evidence-for, evidence-against, would-break, checks`; perspective `beliefs,
 priorities, avoid`.
 
-A new Loupist with a focus gets its perspective page at creation
-(`ensure_perspective` in `commands/knowledge/chat_reads.rs`): the title "Outlook" and
-one `focus` section headed "Focus" holding the focus text. The focus is what the
-Loupist researches, not a belief, so it is not seeded under `beliefs`. The interface
-shows the host-default title and heading in its own language. An empty focus seeds
-no page; the first filed perspective becomes it. A later focus change, from Loupist
-settings or `loupist_setup`, rewrites only that `focus` section
-(`sync_perspective_focus`); clearing the focus leaves the page as it was.
+A new Loupist has no Lens page. Its focus (what it researches) lives on the Loupist
+profile and the World settings' `research_focus`; Loupist settings and `loupist_setup`
+change it there, and every turn's context carries it from the profile
+([context assembly](../agent/context.md#context-assembly-and-bounds)). The first
+perspective the agent files creates the perspective page. The interface shows the
+English default heading of a suggested section key in its own language.
 
 Bodies link `lens:rec_…` (navigation, resolved by record id, with backlinks from the
 link index) and, on subject and idea pages, `world:<node id>` of this Loupist's
@@ -301,7 +299,7 @@ unacknowledged learned publication stays marked New for seven days.
 
 User principles are Lens records of kind `principle` with a statement, optional
 why and example, and user origin (`settings`, `feedback` or `chat`), or `shared` for one
-accepted from a [shared Loupist](sharing.md#sharing). The Lens panel shows the statement, its origin and application history. Asking your Loupist in Bot for a change uses the admitted Memory tools. A principle linked from a Map entity opens in Lens. An origin Chat
+accepted from a [shared Loupist](sharing.md#sharing). The Lens page shows the statement, its origin and application history. Asking your Loupist in Bot for a change uses the admitted Memory tools. A principle linked from a Map entity opens in Lens. An origin Chat
 link opens that conversation without changing its draft. Saved answer corrections
 can become principles. Feedback and the Memory row offer Undo, which archives, and
 View, which selects the principle in Lens. Direct creation accepts a

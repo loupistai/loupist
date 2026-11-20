@@ -265,7 +265,7 @@ impl AppToolExecutor {
             .ok_or_else(|| BrokerError::Execution("Python execution is unavailable".into()))?;
         crate::python_run::execute(
             &roots,
-            &self.state.artifacts.app_data_dir,
+            &self.state.artifacts.python_cache_root,
             &code,
             timeout,
             self.capture.search_cancel.clone(),

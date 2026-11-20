@@ -8,6 +8,37 @@ import { renderWithOpen } from "../../test/open";
 import { libraryState } from "../map/libraryState";
 import { FixMemoryProvider } from "../memory/fixMemory";
 import { ChatSetAsideProvider, type ChatSetAside } from "../../chat/chatSetAside";
+import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
+import { useChatMap } from "../workspace/ChatMapContext";
+
+vi.mock("../workspace/ChatMapContext", () => ({ useChatMap: vi.fn(() => null) }));
+
+describe("the relation this answer added", () => {
+  const node = (id: string, label: string, extra: Record<string, unknown> = {}) => ({ id, label, kind: "entity", entityKind: "Organization", degree: 1, watched: false, ...extra });
+  const claim = (id: string, source: string, target: string, relation = "SUPPLIES") => ({ id, kind: "claim", source, target, relation });
+  const added = (id: string): GrowthEvent => ({ eventId: id, loupistId: "loupist-a", atMs: 1, kind: "claim_added", subjectId: id, originChatId: "chat", originMessageId: "answer", recordId: "world", actor: "loupist", summary: "", beforeSummary: null, afterSummary: null });
+  const message: ChatMessage = { id: "answer", role: "assistant", content: "Answer.", status: "complete", created_at: new Date().toISOString() };
+  const show = (edges: ReturnType<typeof claim>[]) => {
+    const map = { nodes: [node("nvda", "NVDA"), node("nvda-2", "nvda "), node("nvidia", "NVIDIA Corporation", { localNames: ["엔비디아"] }), node("nvidia-ko", "엔비디아"), node("tsmc", "TSMC")], edges, worldRevisionId: "rev" } as unknown as KnowledgeMap;
+    vi.mocked(useChatMap).mockReturnValue({ loupistId: "loupist-a", chatId: "chat", map, events: edges.map(edge => added(edge.id)), select: vi.fn() } as unknown as ReturnType<typeof useChatMap>);
+    return renderWithOpen(<MessageMemoryRow loupistId="loupist-a" chatId="chat" message={message} />);
+  };
+  afterEach(() => { vi.mocked(useChatMap).mockReturnValue(null); });
+
+  it("skips an edge whose two ends are the same asset and shows the next one", () => {
+    show([claim("self", "nvda", "nvda"), claim("same-label", "nvda", "nvda-2"), claim("same-name", "nvidia", "nvidia-ko"), claim("real", "tsmc", "nvda")]);
+    const pills = document.querySelectorAll(".answer-map-preview");
+    expect(pills).toHaveLength(1);
+    expect(pills[0]).toHaveTextContent("TSMCsuppliesNVDA");
+    // Named as one phrase, by what it opens.
+    expect(screen.getByRole("button", { name: "Show on the map: TSMC supplies NVDA" })).toBe(pills[0]);
+  });
+
+  it("shows no relation when every added edge joins an asset to itself", () => {
+    show([claim("self", "nvda", "nvda"), claim("same-label", "nvda-2", "nvda"), claim("same-name", "nvidia-ko", "nvidia")]);
+    expect(document.querySelector(".answer-map-preview")).toBeNull();
+  });
+});
 
 it("localizes the World name inside the saved-change action", async () => {
   const change = { title: "Saved relationships", recordId: "world-1", operation: "create" as const, lesson: "", basis: "", futureUse: "" };
@@ -23,6 +54,18 @@ it("localizes the World name inside the saved-change action", async () => {
   } finally {
     await act(async () => { await i18n.changeLanguage("en"); });
   }
+});
+it("marks a saved Source the user pasted as user-provided in the receipt", async () => {
+  const source = (recordId: string, title: string, userProvided?: boolean) => ({ kind: "Source" as const, recordId, title, operation: "create" as const, lesson: "", basis: "", futureUse: "",
+    knowledge: { kind: "source" as const, recordId: `rec-${recordId}`, revisionId: "rev", objectId: recordId }, ...(userProvided ? { userProvided } : {}) });
+  const message: ChatMessage = { id: "source-answer", role: "assistant", content: "Saved.", status: "complete", created_at: new Date().toISOString(),
+    memory_update: { status: "applied", commitId: "commit", changes: [source("src-pasted", "Solsup backlog", true), source("src-web", "Issuer note")] } };
+  renderWithOpen(<MessageMemoryRow loupistId="loupist-a" message={message} />);
+  await userEvent.setup().click(screen.getByRole("button", { name: "Saved 2 sources" }));
+  const list = screen.getByRole("list", { name: "Saved in this answer" });
+  const items = within(list).getAllByRole("listitem");
+  expect(within(items[0]).getByTestId("memory-change-provided")).toHaveTextContent("User-provided");
+  expect(within(items[1]).queryByTestId("memory-change-provided")).toBeNull();
 });
 it("shows the principle statement and supports View and Undo", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -70,16 +113,16 @@ it("says when nothing new was saved, and shows nothing for a private chat or a r
 describe("what the answer learned", () => {
   const filed: ChatMessage = { id: "mock-filed-answer", role: "assistant", content: "Noted.", status: "complete", created_at: new Date().toISOString(), memory_update: { status: "applied", commitId: "commit", changes: [] } };
 
-  it("says Learned 3 · 1 idea for two filed pages and lists each section with Fix and Forget", async () => {
+  it("says Learned 3 things · 1 idea for two filed pages and lists each section with Fix and Forget", async () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const loupistId = (await bridge.loupistList())[0].id;
     const fix = vi.fn();
     const user = userEvent.setup();
     const { open: openPage } = renderWithOpen(<FixMemoryProvider value={fix}><MessageMemoryRow bridge={bridge} loupistId={loupistId} chatId="chat" message={filed} /></FixMemoryProvider>);
     const receipt = await screen.findByRole("navigation", { name: "What this answer used and saved" });
-    await waitFor(() => expect(receipt).toHaveTextContent("Learned 3"));
-    expect(receipt).toHaveTextContent("Learned 3·1 idea");
-    await user.click(within(receipt).getByRole("button", { name: "Learned 3" }));
+    await waitFor(() => expect(receipt).toHaveTextContent("Learned 3 things"));
+    expect(receipt).toHaveTextContent("Learned 3 things·1 idea");
+    await user.click(within(receipt).getByRole("button", { name: "Learned 3 things" }));
     const card = await screen.findByRole("group", { name: "Filed in this answer" });
     const pages = card.querySelectorAll("[data-learned-page]");
     expect([...pages].map(page => page.getAttribute("data-learned-page"))).toEqual(["lens-subject-tcp", "lens-idea-quic"]);

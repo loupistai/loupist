@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn folder_loupist_creation_preserves_files_and_seeds_memory_and_tools() {
+async fn folder_loupist_creation_preserves_files_keeps_the_focus_on_the_profile_and_seeds_tools() {
     let temporary = tempfile::tempdir().unwrap();
     let workspace = temporary.path().join("research");
     fs::create_dir(&workspace).unwrap();
@@ -47,9 +47,11 @@ async fn folder_loupist_creation_preserves_files_and_seeds_memory_and_tools() {
             .filter(|id| agent_harness::skill_default_enabled(id))
             .collect::<Vec<_>>()
     );
-    assert!(
-        summary.record_count > 0,
-        "the perspective filed from the focus is retained outside the user folder"
+    assert_eq!(saved.focus, "Durable cash compounders");
+    assert_eq!(summary.philosophy, "Durable cash compounders");
+    assert_eq!(
+        summary.record_count, 0,
+        "the focus stays on the profile; creation files no Lens page"
     );
 }
 

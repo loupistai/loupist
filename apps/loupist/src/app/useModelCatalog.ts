@@ -22,50 +22,68 @@ export function useModelCatalog(bridge: LoupistBridge) {
 
   useEffect(() => {
     let active = true;
-    void bridge
-      .modelCatalogGet()
-      .then(async (settings) => {
+    let initialReadFinished = false;
+    let refreshRequested = false;
+    let refreshGeneration = 0;
+    const refresh = () => {
+      if (!active) return;
+      if (!initialReadFinished) {
+        refreshRequested = true;
+        return;
+      }
+      const generation = ++refreshGeneration;
+      void bridge.modelCatalogGet().then((next) => {
+        if (!active || generation !== refreshGeneration) return;
+        setCatalog(next);
+        setSettingsError(null);
+      }).catch((cause) => {
+        if (!active || generation !== refreshGeneration) return;
+        setSettingsError(errorMessage(cause, i18n.t("app:useModelCatalog.couldNotReloadModelSettings")));
+      });
+    };
+    const readSavedCatalog = async () => {
+      if (!active) return;
+      try {
+        const settings = await bridge.modelCatalogGet();
         if (!active) return;
         setCatalog(settings);
         setSettingsError(null);
-        // A restored sign-in can precede the library's first catalog. Discover
-        // one connected provider so Chat is usable without a Settings detour.
-        // A populated catalog (including deliberately hidden models) is kept.
-        if (settings.models.length === 0) {
-          for (const provider of settings.providers) {
+        // Restore every connected provider missing from the catalog. A usable
+        // first account must not hide the others until Settings happens to open.
+        // Existing models, including deliberately hidden ones, are kept.
+        for (const provider of [...settings.providers, ...settings.custom_providers]) {
+          if (provider.credential_source === "missing" || settings.models.some(model => model.provider === provider.id)) continue;
+          try {
+            const next = await bridge.providerModels(provider.id);
             if (!active) return;
-            if (provider.credential_source === "missing") continue;
-            try {
-              const next = await bridge.providerModels(provider.id);
-              if (!active) return;
-              setCatalog(next);
-              setSettingsError(null);
-              if (visibleCatalogModels(next).length > 0) break;
-            } catch {
-              if (!active) return;
-              setSettingsError(i18n.t("app:useModelCatalog.couldNotLoadAvailableModels"));
-            }
+            setCatalog(next);
+            setSettingsError(null);
+          } catch {
+            if (!active) return;
+            setSettingsError(i18n.t("app:useModelCatalog.couldNotLoadAvailableModels"));
           }
         }
-        if (!active) return;
-        setResolved(true);
-      })
-      .catch((cause: unknown) => {
-        if (!active) return;
-        setSettingsError(errorMessage(cause, i18n.t("app:useModelCatalog.couldNotLoadModelSettings")));
-        setResolved(true);
-      });
-    return () => {
-      active = false;
+      } catch (cause) {
+        if (active) setSettingsError(errorMessage(cause, i18n.t("app:useModelCatalog.couldNotLoadModelSettings")));
+      } finally {
+        if (active) {
+          setResolved(true);
+          initialReadFinished = true;
+          if (refreshRequested) refresh();
+        }
+      }
     };
-  }, [bridge]);
-
-  useEffect(() => {
-    let active = true;
-    const refresh = () => { void bridge.modelCatalogGet().then((next) => { if (active) { setCatalog(next); setSettingsError(null); } }).catch((cause) => { if (active) setSettingsError(errorMessage(cause, i18n.t("app:useModelCatalog.couldNotReloadModelSettings"))); }); };
+    const start = () => { void readSavedCatalog(); };
+    const stop = bridge.onModelCatalogChanged?.(refresh, start);
+    if (!bridge.onModelCatalogChanged) start();
     window.addEventListener("focus", refresh);
     window.addEventListener(CONFIG_CHANGED_EVENT, refresh);
-    return () => { active = false; window.removeEventListener("focus", refresh); window.removeEventListener(CONFIG_CHANGED_EVENT, refresh); };
+    return () => {
+      active = false;
+      stop?.();
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener(CONFIG_CHANGED_EVENT, refresh);
+    };
   }, [bridge]);
 
   // Rust emits provider-status on every state or notice change; patch it in place so cards, the composer and onboarding update live.

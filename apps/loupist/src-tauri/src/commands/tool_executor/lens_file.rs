@@ -823,6 +823,7 @@ fn changes(filed: Vec<FiledPage>, rationale: &str) -> Vec<crate::domain::MemoryU
             continue;
         }
         changes.push(crate::domain::MemoryUpdateChange {
+            user_provided: false,
             world_job_id: None,
             world_status: None,
             knowledge: Some(crate::domain::KnowledgeReference {
@@ -838,7 +839,7 @@ fn changes(filed: Vec<FiledPage>, rationale: &str) -> Vec<crate::domain::MemoryU
             operation: if page.created { "create" } else { "revise" }.into(),
             title: page.title,
             lesson: lesson(&outcomes),
-            basis: rationale.chars().take(2_000).collect(),
+            basis: crate::util::shorten(rationale, 2_000),
             future_use: "Read with lens_read in later research.".into(),
             outcomes,
         });

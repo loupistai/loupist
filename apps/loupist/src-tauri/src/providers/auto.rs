@@ -1,6 +1,6 @@
 //! Auto: the Chat model Rust picks when nothing is chosen (providers spec §3.3).
 //! Reviewed choices come from `chat-model-defaults.json`; Auto never fails
-//! while any model is connected, and never moves to another paid account
+//! while any eligible model is connected, and never moves to another paid account
 //! because one hit its limit (the order ignores notices).
 use std::{
     collections::{BTreeMap, HashSet},
@@ -131,7 +131,12 @@ pub fn resolve(
         .map(String::as_str)
         .collect::<HashSet<_>>();
     let usable = |model: &&ConfiguredModelView| {
-        model.credential_source != CredentialSource::Missing && !hidden.contains(model.id.as_str())
+        model.credential_source != CredentialSource::Missing
+            && !hidden.contains(model.id.as_str())
+            && ![model.model.as_str(), model.name.as_str()]
+                .into_iter()
+                .flat_map(|value| value.split(|character: char| !character.is_ascii_alphanumeric()))
+                .any(|word| word.eq_ignore_ascii_case("astra"))
     };
     let mut order = view
         .providers
@@ -209,6 +214,37 @@ pub fn resolve(
     rest.into_iter().find_map(|model| choose(model, None))
 }
 
+/// The same model default is used on every chat surface.
+pub(crate) fn model_level(model: &ConfiguredModel) -> String {
+    let entry = DEFAULTS
+        .providers
+        .iter()
+        .find(|group| group.provider == model.provider)
+        .and_then(|group| group.models.iter().find(|entry| entry.id == model.model));
+    let preferred = entry.map(|entry| entry.thinking_level.as_str());
+    default_level(&model.thinking_levels, preferred).unwrap_or_default()
+}
+
+pub(crate) fn research_level(
+    state: &crate::app::AppState,
+    loupist_id: &str,
+    profile_id: &str,
+) -> Result<String, crate::app::CommandError> {
+    let directory = crate::commands::loupist_config_directory(state, loupist_id)?;
+    let defaults =
+        crate::scoped_config::resolve(&state.artifacts.app_data_dir, Some(&directory))?.chat;
+    let profile_id = if profile_id.is_empty() {
+        defaults.model_profile_id.as_deref().unwrap_or_default()
+    } else {
+        profile_id
+    };
+    let model = admit(state, profile_id, "", &BTreeMap::new())?.model;
+    Ok(defaults
+        .thinking_level
+        .filter(|level| model.thinking_levels.contains(level))
+        .unwrap_or_else(|| model_level(&model)))
+}
+
 /// The execution choice at admission: an explicit model that is still offered,
 /// otherwise Auto. Auto keeps the Chat defaults' thinking level and run options
 /// when the resolved model supports them, and otherwise uses the policy's and
@@ -221,16 +257,22 @@ pub fn admit(
 ) -> Result<AutoChoice, crate::app::CommandError> {
     let catalog = state.model_catalog()?;
     if let Some(model) = offered(&catalog, model_profile_id, &known_provider) {
+        let thinking_level = if thinking_level.is_empty() {
+            model_level(&model)
+        } else {
+            thinking_level.to_owned()
+        };
         return Ok(AutoChoice {
             model,
-            thinking_level: thinking_level.to_owned(),
+            thinking_level,
             run_options: run_options.clone(),
         });
     }
     let view = state.model_catalog_view()?;
     let statuses = crate::providers::status::load_all(state)?;
     let choice = resolve(&view, &catalog, &statuses).ok_or_else(|| {
-        crate::app::CommandError::invalid(
+        crate::app::CommandError::new(
+            "provider_unavailable",
             "Connect an AI account in Settings › Models & providers before chatting.",
         )
     })?;
@@ -426,6 +468,24 @@ mod tests {
     }
 
     #[test]
+    fn admission_uses_model_default_and_preserves_explicit_level() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = crate::app::AppState::for_test(temporary.path().join("app"));
+        assert_eq!(
+            admit(&state, "fixture", "", &BTreeMap::new())
+                .unwrap()
+                .thinking_level,
+            "medium"
+        );
+        assert_eq!(
+            admit(&state, "fixture", "high", &BTreeMap::new())
+                .unwrap()
+                .thinking_level,
+            "high"
+        );
+    }
+
+    #[test]
     fn policy_choice_of_the_first_connected_provider_wins() {
         let directory = tempfile::tempdir().unwrap();
         let (view, catalog) = connected_view(
@@ -481,6 +541,31 @@ mod tests {
             resolve(&view, &catalog, &BTreeMap::new()).unwrap().model.id,
             "groq/tiny"
         );
+    }
+
+    #[test]
+    fn auto_skips_astra_in_reviewed_choices_and_fallbacks() {
+        let directory = tempfile::tempdir().unwrap();
+        let (mut view, catalog) = connected_view(
+            directory.path(),
+            &[("openai", "oauth"), ("openrouter", "api_key")],
+            vec![
+                model("openai", "gpt-6.2-astra", true, 500_000),
+                model("openai", "gpt-6.2-sol", true, 272_000),
+                model("openai", "gpt-6-sol", true, 272_000),
+                model("openai", "plain", false, 8_000),
+                model("openrouter", "openai/gpt-6.2-astra", true, 500_000),
+            ],
+            &["openai/gpt-6.2-sol"],
+        );
+        for expected in ["openai/gpt-6-sol", "openai/plain"] {
+            assert_eq!(
+                resolve(&view, &catalog, &BTreeMap::new()).unwrap().model.id,
+                expected
+            );
+            view.hidden_model_profile_ids.push(expected.into());
+        }
+        assert!(resolve(&view, &catalog, &BTreeMap::new()).is_none());
     }
 
     #[test]
@@ -543,7 +628,7 @@ mod tests {
         empty.replace_provider_models("openai", vec![]).unwrap();
         assert_eq!(
             admit(&empty, "", "", &BTreeMap::new()).unwrap_err().code,
-            "invalid_request"
+            "provider_unavailable"
         );
     }
 

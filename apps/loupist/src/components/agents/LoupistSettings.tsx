@@ -2,7 +2,7 @@ import { SKILL_TOOLING_IDS, skillBlurb, skillPresentation } from "../../lib/agen
 import i18n, { useTranslation } from "../../i18n";
 import { CONFIG_CHANGED_EVENT, notifyConfigurationChanged } from "../../app/useConfiguration";
 import { Disclosure } from "../ui/disclosure";
-import { LoupistAvatarPicker } from "../app/LoupistAvatar";
+import { LoupistIdentityFields } from "../onboarding/LoupistIdentityFields";
 import { LoupistTracking } from "./LoupistTracking";
 import { LoupistLearningSettings } from "./LoupistLearningSettings";
 import { AgentSettings } from "../settings/AgentSettings";
@@ -40,7 +40,7 @@ import type {
   MarketplaceSnapshot,
 } from "../../marketplace/types";
 import { sortConnectionEntries, unavailableCapabilityNote } from "../../marketplace/readiness";
-import { connectionText } from "../marketplace/connectionCopy";
+import { connectionText } from "../../lib/connectionCopy";
 import { connectionGroups } from "../../marketplace/groups";
 import { errorMessage } from "../../lib/errors";
 import type {
@@ -56,6 +56,7 @@ import {
 } from "./AgentCapabilityList";
 
 import { LoupistAvailabilityBoundary } from "../app/LoupistAvailabilityBoundary";
+import { revealFocused } from "../../lib/revealFocused";
 
 /** A section of Loupist settings that a link elsewhere in the app can open. */
 export type LoupistSettingsSection = "chat" | "world" | "capabilities" | "connections";
@@ -356,11 +357,11 @@ export function LoupistSettings({
   // A folder made by an earlier build cannot be opened; removing it is the way forward.
   const removable = available || selectedAgent?.availability.status === "earlier_version" || selectedAgent?.availability.status === "newer_version";
   return (
-    <section className="settings-page loupist-settings-page" data-testid="loupist-settings-page" aria-label={i18n.t("app:shell.loupistSettings")} onFocus={(event) => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
+    <section className="settings-page loupist-settings-page" data-testid="loupist-settings-page" aria-label={i18n.t("app:shell.loupistSettings")} onFocus={revealFocused}>
+      {/* The window's page header names the place (Loupist settings, or Settings › Loupists); the heading names the Loupist. */}
       <header className="loupist-settings-heading">
         <Button variant="ghost" size="sm" data-loupist-settings-back onClick={onBack}><ArrowLeftIcon />{i18n.t("knowledge:memoryPage.back")}</Button>
-        <h1 ref={titleRef} tabIndex={-1}>{i18n.t("app:shell.loupistSettings")}</h1>
-        <p>{selectedAgent?.name}</p>
+        <h1 ref={titleRef} tabIndex={-1}>{selectedAgent?.name ?? i18n.t("app:shell.loupistSettings")}</h1>
       </header>
       {selectedAgent ? <nav className="loupist-settings-sections" aria-label={i18n.t("app:appNavigation.settingsSections")}>
         <Button variant="ghost" size="sm" onClick={() => openSection("profile")}>{i18n.t("app:loupistProfile.profile")}</Button>
@@ -398,7 +399,7 @@ export function LoupistSettings({
 
               {capabilityFilter !== "setup" ? manageSkills ? <div className="agent-section-heading"><h2>{i18n.t("settings:loupistSettings.skills")}</h2><Button variant="ghost" size="sm" aria-expanded onClick={() => setManageSkills(false)}>{i18n.t("settings:loupistSettings.manageSkills")}</Button></div> : <AgentCapabilityList title={i18n.t("settings:loupistSettings.skills")} action={<Button variant="ghost" size="sm" aria-expanded={manageSkills} onClick={() => setManageSkills(value => !value)}>{i18n.t("settings:loupistSettings.manageSkills")}</Button>} description={i18n.t("settings:loupistSettings.optionalResearchAndDocumentWorkflowsEnabledByDefault")} items={skillItems.filter(matchesCapability)} busyId={busyCapabilityId} error={configurationError && failedCapabilityId ? { id: failedCapabilityId, message: configurationError } : undefined} emptyLabel={configurationLoading ? i18n.t("settings:loupistSettings.loadingSkills") : capabilityQuery || capabilityFilter !== "all" ? i18n.t("settings:loupistSettings.noMatchingSkills") : i18n.t("settings:loupistSettings.noSkillsAvailable")} onToggle={(id) => void toggleSkill(id)} /> : null}
               {manageSkills && capabilityFilter !== "setup" ? <SkillsSettings bridge={bridge} loupists={[selectedAgent]} scope={{ kind: "project", loupistId: selectedAgent.id }} onDraftSkill={onDraftSkill} /> : null}
-              <AgentCapabilityList section="connections" title={i18n.t("settings:loupistSettings.connections")} description={i18n.t("settings:loupistSettings.chooseTheDataSourcesThisLoupistCanUse")} action={<Button type="button" size="sm" variant="ghost" onClick={() => onOpenMarketplace()}><StoreIcon /> {i18n.t("settings:loupistSettings.connections")}</Button>} items={toolItems.filter(matchesCapability)} busyId={busyCapabilityId} error={configurationError && failedCapabilityId ? { id: failedCapabilityId, message: configurationError } : undefined} emptyLabel={configurationLoading ? i18n.t("settings:loupistSettings.loadingConnections") : capabilityQuery || capabilityFilter !== "all" ? i18n.t("settings:loupistSettings.noMatchingConnections") : i18n.t("settings:loupistSettings.connectAServiceToGiveThisLoupistMore")} onToggle={(id) => void toggleTool(id)} onSetup={onOpenMarketplace} />
+              <AgentCapabilityList section="connections" title={i18n.t("settings:loupistSettings.connections")} description={i18n.t("settings:loupistSettings.chooseTheDataSourcesThisLoupistCanUse")} action={<Button type="button" size="sm" variant="ghost" onClick={() => onOpenMarketplace()}><StoreIcon /> {i18n.t("settings:loupistSettings.manageConnections")}</Button>} items={toolItems.filter(matchesCapability)} busyId={busyCapabilityId} error={configurationError && failedCapabilityId ? { id: failedCapabilityId, message: configurationError } : undefined} emptyLabel={configurationLoading ? i18n.t("settings:loupistSettings.loadingConnections") : capabilityQuery || capabilityFilter !== "all" ? i18n.t("settings:loupistSettings.noMatchingConnections") : i18n.t("settings:loupistSettings.connectAServiceToGiveThisLoupistMore")} onToggle={(id) => void toggleTool(id)} onSetup={onOpenMarketplace} />
             </Disclosure> : null}
             {available ? <Disclosure title={i18n.t("app:navigation.worldProcessing")} open={worldOpen} onOpenChange={setWorldOpen} data-loupist-section="world">
               <div className="world-settings-card"><WorldProcessingSettings key={selectedAgent.id} bridge={bridge} loupistId={selectedAgent.id} active={worldOpen} onChanged={onChanged} onManageProviders={onManageProviders} /></div>
@@ -473,13 +474,15 @@ function LoupistProfileEditor({ bridge, loupist, disabled, onUpdated }: { bridge
     <h2>{t("loupistProfile.profile")}</h2>
     <form className="loupist-profile-form" data-testid="loupist-profile-form" onSubmit={event => { event.preventDefault(); void save(); }}>
       <fieldset disabled={disabled || busy}>
-        <label htmlFor="loupist-profile-name">{t("loupistProfile.name")}</label>
-        <Input id="loupist-profile-name" value={draft.name} onChange={event => edit("name", event.target.value)} aria-invalid={[...draft.name.trim()].length > 60 || !draft.name.trim()} />
-        <LoupistAvatarPicker loupist={{ ...loupist, name: draft.name, avatar: draft.avatar }} onChange={avatar => edit("avatar", avatar)} />
+        {/* Who it is in one place: the face with its name, the name, the face colour and the tone. */}
+        <div className="loupist-profile-identity">
+          <LoupistIdentityFields id={loupist.id} name={draft.name} avatar={draft.avatar} focus={draft.focus} idPrefix="loupist-profile"
+            invalid={!draft.name.trim()} busy={disabled || busy} onChange={identity => { edit("name", identity.name); edit("avatar", identity.avatar); }} />
+          <LoupistToneField name="loupist-settings-tone" legend={i18n.t("onboarding:tone.title", { name: loupist.name })} value={draft.tone} busy={disabled || busy} onChange={value => edit("tone", value)} />
+        </div>
         <label htmlFor="loupist-profile-focus">{t("loupistProfile.focus")}</label>
         <Textarea id="loupist-profile-focus" rows={2} value={draft.focus} onChange={event => edit("focus", event.target.value)} aria-invalid={focusLength > 280} aria-describedby={focusLength >= 240 ? "loupist-profile-focus-count" : undefined} />
         {focusLength >= 240 ? <span className="loupist-profile-counter" id="loupist-profile-focus-count">{t("loupistProfile.counter", { count: focusLength, limit: 280 })}</span> : null}
-        <LoupistToneField name="loupist-settings-tone" legend={i18n.t("onboarding:tone.title", { name: loupist.name })} value={draft.tone} busy={disabled || busy} onChange={value => edit("tone", value)} />
         <label htmlFor="loupist-profile-instructions">{i18n.t("knowledge:memoryPage.about.instructions")}</label>
         <Textarea id="loupist-profile-instructions" rows={4} maxLength={4000} value={draft.instructions} placeholder={i18n.t("knowledge:memoryPage.about.answersPlaceholder")} onChange={event => edit("instructions", event.target.value)} />
         <p className="agent-config-description">{i18n.t("knowledge:memoryPage.about.answersHint")}</p>

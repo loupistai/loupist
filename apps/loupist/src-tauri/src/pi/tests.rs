@@ -379,6 +379,7 @@ fn support_launch_starts_on_the_manifest_bootstrap_with_only_a_placeholder_key()
     };
     let args = config.rpc_arguments();
     let value = |flag: &str| args[args.iter().position(|arg| arg == flag).unwrap() + 1].clone();
+    assert!(args.iter().any(|arg| arg == "--offline"));
     // `agent/provider-manifest.test.mjs` checks this model in the pinned Pi catalog.
     assert_eq!(
         (value("--provider"), value("--model")),

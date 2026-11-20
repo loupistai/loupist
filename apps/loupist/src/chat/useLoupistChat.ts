@@ -13,7 +13,9 @@ import {
 import type { ChatFeedback, ChatArtifactSelection, ChatKnowledgePin, ChatMessage, ChatThread, LoupistBridge } from "../types";
 import { errorMessage } from "../lib/errors";
 import type { ChatAdmission } from "./submission";
+import { markActive } from "../app/loupistVisit";
 import {
+  RUNTIME_STOP_MARKER,
   fromLoupistUIMessage,
   fromStoreKeepingAnswers,
   toLoupistUIMessage,
@@ -63,7 +65,7 @@ const markLatestAssistantAborted = (messages: LoupistUIMessage[]) => {
             ...message.parts,
             {
               type: "text" as const,
-              text: t("useLoupistChat.responseStopped"),
+              text: RUNTIME_STOP_MARKER,
               state: "done" as const,
             },
           ],
@@ -145,15 +147,12 @@ export function useLoupistChat({
   const isRunning =
     status === "submitted" || status === "streaming" || isStopping;
   const lastMessageStatus = messages.at(-1)?.status;
-  const activeProgress = [...(messages.at(-1)?.progress?.items ?? [])]
-    .reverse()
-    .find((item) => item.kind !== "commentary" && item.status === "running");
+  // Only the run's transitions are said here. Each step's label is the turn's own live
+  // region (TurnFooter), throttled; saying it here too repeated every step at once.
   const visibleAnnouncement = isStopping
     ? t("useLoupistChat.stoppingResponse")
     : isRunning
-      ? activeProgress && activeProgress.kind !== "commentary"
-        ? activeProgress.action
-        : t("useLoupistChat.loupistIsGeneratingAResponse")
+      ? t("useLoupistChat.loupistIsGeneratingAResponse")
       : lastMessageStatus === "aborted"
         ? t("useLoupistChat.responseStopped")
         : lastMessageStatus === "error" || chatError
@@ -220,6 +219,8 @@ export function useLoupistChat({
           if (settled) return;
           settled = true;
           admitted = receipt.accepted;
+          // A message the host accepted makes this a working visit: Bot's news waits.
+          if (receipt.accepted) markActive(loupistId);
           if (!receipt.accepted && mountedRef.current && chatScope.current.epoch === capturedEpoch) {
             setError(receipt.error);
           }
@@ -316,7 +317,8 @@ export function useLoupistChat({
           thread_id: activeThread.id,
           prompt: text,
         });
-        if (stillThisChat()) setAnnouncement(t("useLoupistChat.guidanceSentToTheActiveResponse"));
+        markActive(loupistId);
+        // Not announced here: the Guiding row the conversation log adds says it once.
         return {
           id: receipt.message_id,
           text: receipt.prompt,
@@ -452,6 +454,7 @@ export function useLoupistChat({
         }
       }
       const receipt = await bridge.chatRetryLast({ loupist_id: loupistId, thread_id: threadId });
+      markActive(loupistId);
       const removed = new Set([request.id, assistant.id]);
       capturedChat.messages = capturedChat.messages.filter(message => !removed.has(message.metadata?.native_message_id ?? message.id));
       setThreads((current) => current.map((thread) => thread.id === threadId ? { ...thread, messages: thread.messages.filter(message => !removed.has(message.id)) } : thread));

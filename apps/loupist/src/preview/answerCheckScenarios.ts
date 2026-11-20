@@ -8,6 +8,7 @@ import i18n from "../i18n";
 import type { AsOfReport, CalcInputUnit, ChatEvidenceRef, ChatMessage, ChatProgress, JournalRecord, NumberCheck } from "../types";
 import { prepareFixture, previewKo, type PreviewBridge } from "./fixtures";
 import type { PreviewScenario } from "./scenarios";
+import { asSession } from "./scenarios/kit";
 
 type Helpers = {
   base: (id: string, title: string, landmark: PreviewScenario["landmark"], enter?: PreviewScenario["enter"]) => PreviewScenario;
@@ -60,8 +61,12 @@ const DART: ChatEvidenceRef = {
   dataset_ref: { dataset_id: "ds_solsup_fy2025", revision: 1, digest: "d".repeat(64) },
 };
 const guidanceText = () => ko()
-  ? "2월 실적 설명회에서 경영진은 FY2025 영업이익률을 9.1%로, 매출은 4,400억 원 안팎으로 제시했어요."
+  ? "2월 실적 설명회에서 경영진은 FY2025 영업이익률을 9.1%로, 매출은 4,400억 원 안팎으로 제시했습니다."
   : "On the February call, management guided to an operating margin of 9.1% for FY2025, on revenue near ₩440bn.";
+/** The bounded excerpt of a longer guidance page: it stops before the number, so the host matched it in the full result. */
+const guidanceLead = () => ko()
+  ? "2월 실적 설명회 녹취록입니다. 경영진은 원재료 가격과 환율을 먼저 설명했습니다."
+  : "Transcript of the February call. Management first walked through raw material costs and the exchange rate.";
 const guidance = (): ChatEvidenceRef => ({
   id: "ev_solsup_guidance", title: ko() ? "2월 실적 설명회" : "February guidance call", kind: "original", url: "https://solsup.example/ir/guidance-2026-02",
   tool_name: "web_fetch", retrieved_at: RETRIEVED, published_at: "2026-02-12", excerpt: guidanceText(),
@@ -108,18 +113,18 @@ function steps(extra: ChatProgress["items"] = []): ChatProgress {
   ] };
 }
 
-type Variant = "chips" | "differs" | "unlinked" | "grid";
+type Variant = "chips" | "differs" | "unlinked" | "grid" | "context";
 
 function numberAnswer(variant: Variant): ChatMessage {
-  const guide = guidance();
+  const guide = variant === "context" ? { ...guidance(), excerpt: guidanceLead(), excerpt_truncated: true } : guidance();
   const margin = variant === "differs" ? "8.5%" : "8.4%";
   const link = (text: string, evidence: ChatEvidenceRef) => `[${text}](#evidence-${evidence.id})`;
   const content = variant === "grid"
     ? ko()
-      ? `현재 주가는 앞으로 5년간 연 ${link("4.1%", REVERSE)}~${link("7.8%", REVERSE)} 성장을 가정한 값이에요. WACC와 영구성장률에 따라 달라지는 범위예요.`
+      ? `현재 주가는 앞으로 5년간 연 ${link("4.1%", REVERSE)}~${link("7.8%", REVERSE)} 성장을 가정한 값입니다. WACC와 영구성장률에 따라 달라지는 범위입니다.`
       : `Today’s price implies growth of ${link("4.1%", REVERSE)} to ${link("7.8%", REVERSE)} a year for five years, depending on the discount rate and terminal growth.`
     : ko()
-      ? `솔숲식품의 FY2025 영업이익률은 ${link(margin, MARGIN)}였고, 매출은 ${link(revenueText(), DART)}, 영업이익은 ${link(incomeText(), DART)}이었어요. 매출은 전년보다 ${link("6.2%", GROWTH)} 늘었어요.\n\n2월에 경영진이 제시한 ${link("9.1%", guide)}보다는 낮았어요 [1](#evidence-${guide.id}).`
+      ? `솔숲식품의 FY2025 영업이익률은 ${link(margin, MARGIN)}였고, 매출은 ${link(revenueText(), DART)}, 영업이익은 ${link(incomeText(), DART)}이었습니다. 매출은 전년보다 ${link("6.2%", GROWTH)} 늘었습니다.\n\n2월에 경영진이 제시한 ${link("9.1%", guide)}보다는 낮았습니다 [1](#evidence-${guide.id}).`
       : `Solsup Foods’ FY2025 operating margin was ${link(margin, MARGIN)}, on revenue of ${link(revenueText(), DART)} and operating income of ${link(incomeText(), DART)}. Revenue grew ${link("6.2%", GROWTH)} from FY2024.\n\nMargins were thinner than the ${link("9.1%", guide)} management guided in February [1](#evidence-${guide.id}).`;
   const checks: NumberCheck[] = variant === "grid" ? ["4.1%", "7.8%"].map((text, index) => ({
     link_index: index, text, evidence_id: REVERSE.id, kind: "calculated", status: "matched",
@@ -136,7 +141,9 @@ function numberAnswer(variant: Variant): ChatMessage {
       calc: { title: "Percent change", formulas: ["revenue FY2025 − revenue FY2024 = 452,312,000,000 − 425,900,000,000 = 26,412,000,000", "(revenue FY2025 − revenue FY2024) / revenue FY2024 = 26,412,000,000 / 425,900,000,000 = 6.20%"],
         inputs: [{ name: "from", label: "revenue FY2024", unit: KRW(), display: "425,900,000,000", evidence_id: DART.id, status: "matched" },
           { name: "to", label: "revenue FY2025", unit: KRW(), display: "452,312,000,000", evidence_id: DART.id, status: "matched" }] } },
-    { link_index: 4, text: "9.1%", evidence_id: guide.id, kind: "passage", status: "matched", span: spanOf(guide.excerpt, "9.1%") },
+    variant === "context"
+      ? { link_index: 4, text: "9.1%", evidence_id: guide.id, kind: "passage", status: "matched", context: { text: guidanceText(), ...spanOf(guidanceText(), "9.1%") } }
+      : { link_index: 4, text: "9.1%", evidence_id: guide.id, kind: "passage", status: "matched", span: spanOf(guide.excerpt, "9.1%") },
   ];
   return {
     id: "solsup-answer", role: "assistant", status: "complete", created_at: "2026-03-18T06:01:00Z", content,
@@ -147,17 +154,73 @@ function numberAnswer(variant: Variant): ChatMessage {
   };
 }
 
+/**
+ * A figure converted with `calculate convert` (currency design §3.3–3.4): revenue a results page prints
+ * without a currency, declared USD in the request, at the ECB rate `fx_rate` read the day after it published.
+ * 412.6 USD millions × 1,334.87 KRW per USD = 550,767.36 KRW millions in both languages.
+ */
+const RESULTS_PAGE: ChatEvidenceRef = {
+  id: "ev_morrow_q3", title: "Morrow Components Q3 2026 results", kind: "original", url: "https://morrow.example/ir/q3-2026",
+  tool_name: "web_fetch", retrieved_at: "2026-11-17T00:40:00Z", published_at: "2026-11-05",
+  excerpt: "Third-quarter revenue was 412.6 million, up 9% from a year earlier. Figures are in millions unless noted.",
+  excerpt_truncated: false, content_sha256: "a".repeat(64), warnings: [],
+};
+const FX_USD_KRW: ChatEvidenceRef = {
+  id: "ev_fx_usd_krw", title: "USD/KRW · European Central Bank reference rates", kind: "original", provider: "ecb",
+  url: "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html",
+  tool_name: "fx_rate", retrieved_at: "2026-11-17T00:41:00Z", published_at: "2026-11-16",
+  excerpt: JSON.stringify({ from: "USD", to: "KRW", to_per_from: 1334.87, date: "2026-11-16",
+    source: { id: "ecb", name: "European Central Bank euro foreign exchange reference rates" },
+    legs: { USD_per_EUR: 1.1014, KRW_per_EUR: 1470.23 }, revision: "ecb:2026-11-16", computed: "cross rate through EUR" }, null, 2),
+  excerpt_truncated: false, content_sha256: "b".repeat(64), warnings: [],
+};
+const CONVERSION: ChatEvidenceRef = {
+  ...calcEvidence("ev_morrow_krw", "Currency conversion"), calc_operation: "convert", retrieved_at: "2026-11-17T00:41:00Z",
+  upstream_evidence_ids: [RESULTS_PAGE.id, FX_USD_KRW.id],
+};
+const convertedText = () => (ko() ? "5,508억 원" : "₩550.8bn");
+
+function convertedAnswer(): ChatMessage {
+  const link = (text: string, evidence: ChatEvidenceRef) => `[${text}](#evidence-${evidence.id})`;
+  const content = ko()
+    ? `모로 컴포넌츠의 3분기 매출은 4억 1,260만 달러입니다 ${link("1", RESULTS_PAGE)}. 유럽중앙은행이 11월 16일 고시한 기준환율(1달러당 1,334.87원)을 적용하면 약 ${link(convertedText(), CONVERSION)}입니다 ${link("2", FX_USD_KRW)}.`
+    : `Morrow Components reported third-quarter revenue of $412.6 million ${link("1", RESULTS_PAGE)}. At the European Central Bank’s November 16 reference rate of 1,334.87 won per dollar, that is about ${link(convertedText(), CONVERSION)} ${link("2", FX_USD_KRW)}.`;
+  const at = Date.parse("2026-11-17T00:40:00Z");
+  const step = (id: string, category: "finance" | "web" | "compute", operation: "read" | "calculate", toolName: string, action: string, resultIds: string[], target: string | null) =>
+    ({ id, kind: "tool" as const, toolName, category, operation, action, status: "succeeded" as const, resultIds, target, href: null, startedAtMs: at, finishedAtMs: at + 900 });
+  return {
+    id: "morrow-converted-answer", role: "assistant", status: "complete", created_at: "2026-11-17T00:42:00Z", content,
+    evidence_refs: [RESULTS_PAGE, FX_USD_KRW, CONVERSION],
+    number_checks: [{
+      link_index: 1, text: convertedText(), evidence_id: CONVERSION.id, kind: "calculated", status: "rounded", exact: "550,767,362,000", pointer: "/values/0/value",
+      calc: { operation: "convert", title: "Currency conversion",
+        formulas: ["Amount × Rate = 412.6 USD millions × 1,334.87 KRW per USD (ECB, 2026-11-16) = 550,767.36 KRW millions"],
+        inputs: [
+          // The page prints no currency, so Rust kept the request's USD and said so.
+          { name: "amount", label: "Amount", unit: { kind: "amount", currency: "USD", scale: 6 }, display: "412.6", evidence_id: RESULTS_PAGE.id, status: "matched", currency_basis: "declared" },
+          { name: "rate", label: "Rate", unit: { kind: "number", text: "KRW per USD" }, display: "1,334.87", evidence_id: FX_USD_KRW.id, status: "matched" },
+        ] },
+    }],
+    progress: { startedAtMs: at, finishedAtMs: at + 28_000, items: [
+      step("step-results", "web", "read", "web_fetch", "Read a web source", [RESULTS_PAGE.id], "morrow.example"),
+      step("step-rate", "finance", "read", "fx_rate", "Read the exchange rate", [FX_USD_KRW.id], "USD/KRW"),
+      step("step-convert", "compute", "calculate", "calculate", "Calculated", [CONVERSION.id], null),
+    ] },
+    execution_model: { profile_id: "openai/gpt-6.1-sol", name: "GPT-6.1 Sol", provider: "openai", model: "gpt-6.1-sol", thinking_level: "medium", run_options: {} },
+  };
+}
+
 const question = (text: string, asOf?: string): ChatMessage => ({ id: "solsup-question", role: "user", status: "complete", created_at: "2026-03-18T06:00:00Z", content: text, ...(asOf ? { as_of: asOf } : {}) });
 
 /** The home Thread holds one question and its answer. */
-function installThread(bridge: PreviewBridge, messages: () => ChatMessage[]) {
+function installThread(bridge: PreviewBridge, messages: () => ChatMessage[], title: () => string = () => ko() ? "솔숲식품 FY2025 이익률" : "Solsup Foods’ FY2025 margin") {
   const select = bridge.loupistSelect.bind(bridge);
   bridge.loupistSelect = async loupistId => {
     const workspace = await select(loupistId);
     const home = workspace.threads.find(thread => thread.home) ?? workspace.threads[0];
     if (home) {
       home.messages = messages();
-      home.title = ko() ? "솔숲식품 FY2025 이익률" : "Solsup Foods’ FY2025 margin";
+      home.title = title();
     }
     return workspace;
   };
@@ -173,10 +236,10 @@ function asOfAnswer(nothing: boolean): ChatMessage {
   const at = Date.parse("2026-03-18T06:00:00Z");
   const content = nothing
     ? ko()
-      ? "2026년 3월 3일 기준으로는 솔숲식품의 FY2025 매출을 알 수 없었어요. 실적 공시는 아직 나오지 않았고, 현재 시세만 알려 주는 자료는 그날 기준으로 볼 수 없어요."
+      ? "2026년 3월 3일 기준으로는 솔숲식품의 FY2025 매출을 알 수 없었습니다. 실적 공시는 아직 나오지 않았고, 현재 시세만 알려 주는 자료는 그날 기준으로 볼 수 없습니다."
       : "As of March 3, 2026, nothing yet showed Solsup Foods’ FY2025 revenue: the results had not been filed, and the sources that report only current values cannot show that day."
     : ko()
-      ? `3월 3일까지 솔숲식품은 FY2025 실적을 공시하지 않았어요. 2월 실적 설명회는 매출을 [4,400억 원](#evidence-${guide.id}) 안팎으로 제시했어요 [1](#evidence-${guide.id}).`
+      ? `3월 3일까지 솔숲식품은 FY2025 실적을 공시하지 않았습니다. 2월 실적 설명회는 매출을 [4,400억 원](#evidence-${guide.id}) 안팎으로 제시했습니다 [1](#evidence-${guide.id}).`
       : `Solsup had not filed FY2025 results by Mar 3. The February guidance pointed to [₩440bn](#evidence-${guide.id}) of revenue [1](#evidence-${guide.id}).`;
   const guideAmount = ko() ? "4,400억 원" : "₩440bn";
   return {
@@ -203,12 +266,12 @@ function journalEntries(): JournalRecord[] {
   ];
   return [
     { ...base, journalId: "journal-solsup-beat", updatedAtMs: Date.parse("2026-04-02T09:00:00+09:00"),
-      judgment: ko() ? "솔숲식품의 FY2025 매출은 4,450억 원을 넘을 거예요." : "Solsup's FY2025 revenue will beat ₩445bn.",
+      judgment: ko() ? "솔숲식품의 FY2025 매출은 4,450억 원을 넘을 것입니다." : "Solsup's FY2025 revenue will beat ₩445bn.",
       check: { claim: ko() ? "매출 4,450억 원 초과" : "Revenue above ₩445bn", metric: ko() ? "매출" : "revenue", direction: "above", threshold: 445_000_000_000, unit: "KRW", byDate: "2026-03-31" },
       outcome: { observed: 452_312_000_000, observedAt: "2026-03-18", result: "came_true" },
       inputs: { sources, worlds: [], lenses: [], earlier: [] } },
     { ...base, journalId: "journal-solsup-margin", updatedAtMs: created,
-      judgment: ko() ? "솔숲식품의 영업이익률은 9%를 넘을 거예요." : "Solsup's operating margin will stay above 9%.",
+      judgment: ko() ? "솔숲식품의 영업이익률은 9%를 넘을 것입니다." : "Solsup's operating margin will stay above 9%.",
       check: { claim: ko() ? "영업이익률 9% 초과" : "Operating margin above 9%", metric: ko() ? "영업이익률" : "operating margin", direction: "above", threshold: 9, unit: "%", byDate: "2026-09-30" },
       inputs: { sources: [], worlds: [], lenses: [], earlier: [] } },
   ] as JournalRecord[];
@@ -224,7 +287,15 @@ async function prepareJournal(bridge: PreviewBridge) {
 
 export function answerCheckScenarios({ base, select, until, click, clickMapAction, hasLayout, submitPrompt, navigate }: Helpers): PreviewScenario[] {
   const answerLoaded = (root: HTMLElement) => until(() => root.querySelector("article.message.assistant.complete .number-chip, article.message.assistant.complete .as-of-tag"), "Answer did not load");
-  const reveal = (element: Element | null) => { if (element && hasLayout()) element.scrollIntoView({ block: "center" }); };
+  /**
+   * Scrolls to `element` as a reader does: the wheel tells the thread the reader moved, so a
+   * chat opened at its end does not return there when Bot's morning post arrives a moment later.
+   */
+  const reveal = (element: Element | null) => {
+    if (!element || !hasLayout()) return;
+    element.dispatchEvent(new WheelEvent("wheel", { deltaY: -1, bubbles: true }));
+    element.scrollIntoView({ block: "center" });
+  };
   /** Pins the popover of the chip whose text is `text`. */
   const pin = async (root: HTMLElement, text: () => string) => {
     await answerLoaded(root);
@@ -262,14 +333,25 @@ export function answerCheckScenarios({ base, select, until, click, clickMapActio
     }),
     chatScenario("chat-number-calc-popover", "A calculated number shows its formula and inputs", '.number-chip-popover[data-kind="calculated"][role="dialog"]', "chips", root => pin(root, () => "8.4%")),
     chatScenario("chat-number-passage-popover", "A sourced number shows its passage", '.number-chip-popover[data-kind="passage"] mark', "chips", root => pin(root, () => "9.1%")),
+    // The excerpt lacks the number; the host's context from the full result is shown with the number marked.
+    chatScenario("chat-number-passage-context", "A number matched outside the excerpt shows its marked context", '.number-chip-popover[data-kind="passage"] mark', "context", root => pin(root, () => "9.1%")),
     chatScenario("chat-number-data-popover", "A data number shows its matched row", '.number-chip-popover[data-kind="data"] mark', "chips", root => pin(root, revenueText)),
     chatScenario("chat-number-differs", "A calculation that differs from the answer is marked", '.number-chip-popover .number-chip-status[data-status="differs"]', "differs", async root => {
       await answerLoaded(root);
-      reveal(await until(() => select('.chat-receipt [data-receipt="numbers"]'), "The receipt did not count the number to check"));
+      // Bot counts the figures to check on the answer's trace line, not in the receipt.
+      reveal(await until(() => select('[data-bot-message] .bot-trace-check'), "The trace line did not count the number to check"));
       await pin(root, () => "8.5%");
     }),
     chatScenario("chat-number-unlinked-input", "An input without a source says so", ".number-chip-popover .number-chip-unlinked", "unlinked", root => pin(root, () => "8.4%")),
     chatScenario("chat-number-grid", "A reverse DCF number is a grid, not one value", ".number-chip-popover .number-chip-grid", "grid", root => pin(root, () => "4.1%")),
+    // A saved conversion keeps its rate, the rate's day and both sources; the amount's currency came from the request.
+    { ...base("chat-number-converted", "A converted figure shows its formula, rate, dated sources and declared currency",
+      () => select('.number-chip-popover[data-kind="calculated"] .number-chip-currency-note'), root => pin(root, convertedText)),
+    setup: async bridge => {
+      await prepareFixture(bridge, "answer");
+      installThread(bridge, () => [{ ...question(ko() ? "모로 컴포넌츠의 3분기 매출 4억 1,260만 달러는 원화로 얼마입니까?" : "Morrow Components’ Q3 revenue was $412.6 million. What is that in won?"), created_at: "2026-11-17T00:39:00Z" }, convertedAnswer()],
+        () => ko() ? "모로 컴포넌츠 3분기 매출 원화 환산" : "Morrow Components’ Q3 revenue in won");
+    } },
     { ...base("chat-number-pending", "Numbers stay pending while the answer streams", () => select('.number-chip[data-status="pending"]'), async root => {
       await submitPrompt(root, ko() ? "솔숲식품 FY2025 매출은?" : "What was Solsup Foods’ FY2025 revenue?");
       reveal(await until(() => select('.number-chip[data-status="pending"]'), "No pending number"));
@@ -282,7 +364,7 @@ export function answerCheckScenarios({ base, select, until, click, clickMapActio
         observer({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: Date.now() - 6_000, items: [{ id: "step-statements", kind: "tool", toolName: "dart_financials", category: "finance", operation: "read", action: "Read financial statements", target: `${ko() ? "솔숲식품" : "Solsup Foods"} · FY2025`, status: "succeeded", resultIds: [DART.id], href: null, startedAtMs: 0, finishedAtMs: null }], finishedAtMs: null } });
         observer({ type: "phase", run_id, phase: "writing" });
         observer({ type: "delta", run_id, text: ko()
-          ? `솔숲식품의 FY2025 연결 매출은 [${revenueText()}](#evidence-${DART.id})였고, 영업이익은 [${incomeText()}](#evidence-${DART.id})예요. 이익률을 계산하고 있어요…`
+          ? `솔숲식품의 FY2025 연결 매출은 [${revenueText()}](#evidence-${DART.id})였고, 영업이익은 [${incomeText()}](#evidence-${DART.id})입니다. 이익률을 계산하고 있습니다…`
           : `Solsup Foods’ FY2025 consolidated revenue was [${revenueText()}](#evidence-${DART.id}), with operating income of [${incomeText()}](#evidence-${DART.id}). I’m calculating the margin…` });
         return { run_id };
       };
@@ -318,12 +400,15 @@ export function answerCheckScenarios({ base, select, until, click, clickMapActio
     }), setup: async bridge => {
       await prepareFixture(bridge, "answer");
       installThread(bridge, () => [question(ko() ? "3월 3일 기준으로 솔숲식품 FY2025 매출에 대해 무엇을 알 수 있었어?" : "As of Mar 3, what did we know about Solsup's FY2025 revenue?", AS_OF), asOfAnswer(false)]);
+      asSession(bridge);
     } },
     { ...base("chat-asof-nothing-known", "Nothing could be known on the as-of date", () => select(".as-of-note"), async () => {
       reveal(await until(() => select(".as-of-note"), "The as-of note did not appear"));
     }), setup: async bridge => {
       await prepareFixture(bridge, "answer");
       installThread(bridge, () => [question(ko() ? "3월 3일 기준 솔숲식품 FY2025 매출은?" : "As of Mar 3, what was Solsup's FY2025 revenue?", AS_OF), asOfAnswer(true)]);
+      // A research session, as the as-of answer above: the note stays under its answer, with no morning post after it.
+      asSession(bridge);
     } },
     { ...base("journal-then-now", "Then · Now for a judgment that came true", () => select(".journal-then-now .journal-outcome-card"), root => openJournal(root, "journal-solsup-beat")), setup: prepareJournal },
     { ...base("journal-then-now-due", "Then · Now for an overdue check", () => select(".journal-then-now .journal-then-now-late"), root => openJournal(root, "journal-solsup-margin")), setup: async bridge => {

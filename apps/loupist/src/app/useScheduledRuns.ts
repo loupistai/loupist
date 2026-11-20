@@ -1,22 +1,30 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { LoupistBridge, ScheduledRun } from "../types";
 import type { ChatSessions } from "./useChatSessions";
+import { isEmptyChatThreadId } from "./emptyChat";
 
 const windowVisible = () => document.visibilityState !== "hidden";
 
 /** Discover native work without changing the selected Chat, draft or reader. */
 export function useScheduledRuns(bridge: LoupistBridge, loupistId: string | null, chat: ChatSessions) {
   const tracked = useRef(new Map<string, ScheduledRun>());
-  const { chatRegistry, runRegistry, setThreadsForLoupist } = chat;
+  const { chatRegistry, runRegistry, setThreadsForLoupist, threadsByLoupistRef, activeThreadIdsRef, setActiveThreadForLoupist } = chat;
 
+  /** Reads the Loupist's chats again; resolves with the ids the host has now. */
   const refreshThreads = useCallback(async (id: string) => {
     const workspace = await bridge.loupistSelect(id);
+    const known = new Set(workspace.threads.map((thread) => thread.id));
+    // A session the host deleted (a scheduled run's, gone with its run or task) is not left open empty.
+    const active = activeThreadIdsRef.current[id];
+    const gone = active && !isEmptyChatThreadId(active) && !known.has(active) && !chatRegistry.isActive(id, active)
+      && (threadsByLoupistRef.current[id] ?? []).some((thread) => thread.id === active);
     setThreadsForLoupist(id, (current) => {
       const canonical = workspace.threads.map((thread) => chatRegistry.reconcile(thread));
-      const known = new Set(canonical.map((thread) => thread.id));
       return [...canonical, ...current.filter((thread) => !known.has(thread.id) && chatRegistry.isActive(id, thread.id))];
     });
-  }, [bridge, chatRegistry, setThreadsForLoupist]);
+    if (gone && activeThreadIdsRef.current[id] === active) setActiveThreadForLoupist(id, null);
+    return known;
+  }, [bridge, chatRegistry, setThreadsForLoupist, threadsByLoupistRef, activeThreadIdsRef, setActiveThreadForLoupist]);
 
   useEffect(() => {
     if (!loupistId) return;

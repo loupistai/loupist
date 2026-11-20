@@ -1,122 +1,62 @@
-//! Asset pages inside the tool executor: the host refresh's reads (no model),
-//! the model's exact page read, and staged thesis updates. A thesis update is
-//! checked here against this turn's acknowledged evidence and committed with
-//! the turn; Rust decides the step, the fact date and whether a line crossed.
+//! Asset reads and thesis updates through the ordinary tool executor.
 use std::sync::atomic::Ordering;
 
 use chrono::NaiveDate;
 
 use super::arguments::{bounded_text, optional_bounded_text};
 use super::*;
-use crate::knowledge::assets::{
-    self, observe, plan::PlannedRead, AssetEvidence, ThesisUpdate, Verdict,
-};
+use crate::commands::assets as commands;
+use crate::knowledge::assets::{self, AssetEvidence, ThesisUpdate, Verdict};
 
-/// Reuse identical host reads made in the last 30 minutes.
-pub(in crate::commands) const HOST_MAX_AGE_SECONDS: u64 = 1800;
-/// Providers tried for OpenBB reads when the tool does not name one.
-const PREFERRED_PROVIDERS: &[&str] = &[
-    "sec",
-    "fmp",
-    "intrinio",
-    "tiingo",
-    "polygon",
-    "tmx",
-    "cboe",
-    "nasdaq",
-    "federal_reserve",
-    "yfinance",
-];
-
-/// A planned native read is a retained provider read that `max_age` reuses.
-fn native_method(tool: &str) -> Option<ToolMethod> {
-    ToolMethod::from_tool_name(tool).filter(|method| {
-        method
-            .producer()
-            .is_some_and(|producer| producer.retention == Retention::DatasetMaxAge)
-    })
+fn stated_day(value: &str) -> Option<NaiveDate> {
+    let day = value.get(..10).unwrap_or(value);
+    NaiveDate::parse_from_str(day, "%Y-%m-%d")
+        .or_else(|_| NaiveDate::parse_from_str(day, "%Y%m%d"))
+        .ok()
 }
 
-/// Why a host read did not return rows.
-#[derive(Debug)]
-pub(in crate::commands) enum HostReadError {
-    /// No provider the read accepts is enabled for this Loupist.
-    NoProvider,
-    Failed(BrokerError),
-}
-
-/// All host callers share this selection, including restricted statement and
-/// calendar lists. An explicit provider is never silently replaced.
-fn host_candidates(
-    page: &assets::PageRecord,
-    read: &PlannedRead,
-    available: &[String],
-    allowed: Option<&[&str]>,
-) -> Vec<String> {
-    let enabled = |provider: &str| {
-        available.iter().any(|item| item == provider)
-            && allowed.is_none_or(|allowed| allowed.contains(&provider))
-    };
-    let market = assets::class::listing_market(&page.symbol, &page.market);
-    let compatible = |provider: &str| {
-        use assets::class::{foreign_listing_suffixes, has_listing_suffix, ListingMarket};
-        if read.tool.starts_with("equity_") || read.tool.starts_with("etf_") {
-            match market {
-                Some(ListingMarket::Canada) => {
-                    // Bare symbols are Canadian only at TMX. Only yfinance's
-                    // pinned suffix mapping is verified for a fallback vendor.
-                    return provider == "tmx"
-                        || (provider == "yfinance"
-                            && has_listing_suffix(&page.symbol, &["TO", "V"]));
-                }
-                Some(ListingMarket::Foreign) => {
-                    return provider == "yfinance"
-                        && has_listing_suffix(
-                            &page.symbol,
-                            foreign_listing_suffixes(&page.market),
-                        );
-                }
-                _ => {}
-            }
+fn latest_date(payload: &Value, today: NaiveDate) -> Option<NaiveDate> {
+    const FIELDS: &[&str] = &[
+        "filing_date",
+        "filed_at",
+        "rcept_dt",
+        "date",
+        "period_ending",
+        "period_end",
+        "report_date",
+        "ex_dividend_date",
+        "observation_date",
+        "published_at",
+    ];
+    fn walk(value: &Value, today: NaiveDate, best: &mut Option<NaiveDate>, depth: usize) {
+        if depth > 6 {
+            return;
         }
-        match provider {
-            "tmx" => market == Some(ListingMarket::Canada),
-            "cboe" | "nasdaq"
-                if read.tool.starts_with("equity_") || read.tool.starts_with("etf_") =>
-            {
-                market == Some(ListingMarket::Us)
+        match value {
+            Value::Object(map) => {
+                for (key, item) in map {
+                    if FIELDS.contains(&key.as_str()) {
+                        if let Some(date) = item
+                            .as_str()
+                            .and_then(stated_day)
+                            .filter(|date| *date <= today)
+                        {
+                            *best = Some(best.map_or(date, |current| current.max(date)));
+                        }
+                    }
+                    walk(item, today, best, depth + 1);
+                }
             }
-            _ => true,
-        }
-    };
-    if let Some(requested) = read.arguments.get("provider").and_then(Value::as_str) {
-        return if enabled(requested) && compatible(requested) {
-            vec![requested.to_owned()]
-        } else {
-            Vec::new()
-        };
-    }
-    let preferred = allowed.unwrap_or(PREFERRED_PROVIDERS);
-    let mut candidates = Vec::new();
-    let canadian = market == Some(assets::class::ListingMarket::Canada);
-    for provider in std::iter::once("tmx")
-        .filter(|_| canadian)
-        .chain(preferred.iter().copied())
-        .chain(
-            available
+            Value::Array(items) => items
                 .iter()
-                .map(String::as_str)
-                .filter(|_| allowed.is_none()),
-        )
-    {
-        if enabled(provider)
-            && compatible(provider)
-            && !candidates.iter().any(|item| item == provider)
-        {
-            candidates.push(provider.to_owned());
+                .take(2_000)
+                .for_each(|item| walk(item, today, best, depth + 1)),
+            _ => {}
         }
     }
-    candidates
+    let mut best = None;
+    walk(payload, today, &mut best, 0);
+    best
 }
 
 impl AppToolExecutor {
@@ -142,7 +82,7 @@ impl AppToolExecutor {
         self.capture.shutdown_mcp().await;
     }
 
-    async fn host_call(
+    pub(in crate::commands) async fn host_call(
         &self,
         policy: &ToolPolicy,
         method: ToolMethod,
@@ -191,253 +131,67 @@ impl AppToolExecutor {
         Ok(())
     }
 
-    /// One planned read through the ordinary executor path (connection grants,
-    /// the unattended allowlist, retention and `max_age` reuse). The asset's
-    /// listing market governs every automatic provider choice.
-    pub(in crate::commands) async fn host_read(
-        &self,
-        policy: &ToolPolicy,
-        page: &assets::PageRecord,
-        read: &PlannedRead,
-        max_age: Option<u64>,
-    ) -> Result<(Value, Option<String>), HostReadError> {
-        self.host_read_with(policy, page, read, max_age, None).await
-    }
-
-    /// Restricts automatic selection and fallback to this caller's providers.
-    /// A single allowed provider or a caller-named provider stays pinned.
-    pub(in crate::commands) async fn host_read_among(
-        &self,
-        policy: &ToolPolicy,
-        page: &assets::PageRecord,
-        read: &PlannedRead,
-        max_age: Option<u64>,
-        allowed: &[&str],
-    ) -> Result<(Value, Option<String>), HostReadError> {
-        self.host_read_with(policy, page, read, max_age, Some(allowed))
-            .await
-    }
-
-    async fn host_read_with(
-        &self,
-        policy: &ToolPolicy,
-        page: &assets::PageRecord,
-        read: &PlannedRead,
-        max_age: Option<u64>,
-        allowed: Option<&[&str]>,
-    ) -> Result<(Value, Option<String>), HostReadError> {
-        let mut arguments = read.arguments.clone();
-        if let Some(max_age) = max_age {
-            arguments["max_age"] = json!(max_age);
-        }
-        let Some(server) = read.server else {
-            let method =
-                native_method(read.tool).ok_or(HostReadError::Failed(BrokerError::MethodDenied))?;
-            if !crate::briefings::policy::allowed_method(method) {
-                return Err(HostReadError::Failed(BrokerError::MethodDenied));
-            }
-            let result = self
-                .host_call(policy, method, arguments)
-                .await
-                .map_err(HostReadError::Failed)?;
-            let payload = self.retained(&result).await.unwrap_or(result);
-            let provider = payload
-                .get("source_id")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            return Ok((payload, provider));
-        };
-        let available = self.host_providers(server, read.tool).await;
-        let candidates = host_candidates(page, read, &available, allowed);
-        if candidates.is_empty() {
-            return Err(HostReadError::NoProvider);
-        }
-        let mut empty_result = None;
-        let mut last_error = None;
-        for provider in candidates.into_iter().take(3) {
-            arguments["provider"] = json!(provider);
-            let outcome = self
-                .host_mcp_read(policy, server, read.tool, arguments.clone())
-                .await;
-            match outcome {
-                Ok(payload) => {
-                    let empty = crate::knowledge::watch::detect::rows(&payload, "")
-                        .is_some_and(|(rows, _)| rows.is_empty());
-                    if !empty {
-                        return Ok((payload, Some(provider)));
-                    }
-                    // Preserve an empty result when no later provider serves rows.
-                    empty_result = Some((payload, Some(provider)));
-                }
-                Err(error) => last_error = Some(HostReadError::Failed(error)),
-            }
-        }
-        empty_result.ok_or_else(|| last_error.expect("nonempty host provider candidates"))
-    }
-
-    /// Each attempt uses the same ordinary MCP admission, reuse and retention path.
-    async fn host_mcp_read(
-        &self,
-        policy: &ToolPolicy,
-        server: &str,
-        tool: &str,
-        arguments: Value,
-    ) -> Result<Value, BrokerError> {
-        let response = self
-            .host_call(
-                policy,
-                ToolMethod::McpCall,
-                json!({"server_id": server, "tool_name": tool, "arguments": arguments}),
-            )
-            .await?;
-        if response.get("call_error").and_then(Value::as_bool) == Some(true) {
-            return Err(BrokerError::Execution(
-                response["message"]
-                    .as_str()
-                    .unwrap_or("the market-data read failed")
-                    .to_owned(),
-            ));
-        }
-        let delivered = response.get("result").cloned().unwrap_or(response);
-        // Observations come from the retained result, not the delimited model view.
-        let payload = self.retained(&delivered).await.ok_or_else(|| {
-            BrokerError::Execution("the market-data read was not retained".into())
-        })?;
-        if payload.get("isError").and_then(Value::as_bool) == Some(true) {
-            return Err(BrokerError::Execution("the market-data read failed".into()));
-        }
-        Ok(payload)
-    }
-
-    /// The complete result a delivery acknowledged, by its `result_ref`.
-    async fn retained(&self, delivered: &Value) -> Option<Value> {
-        let reference = delivered.get("result_ref").and_then(Value::as_str)?;
-        self.capture
-            .run_result(reference)
-            .await
-            .map(|result| result.payload)
-    }
-
-    /// `asset_page_read`: the user's reasons and lines, the read, and the last
-    /// 20 dated rows with their sources. Never changes the page.
     pub(super) async fn asset_page_read(
         &self,
         policy: &ToolPolicy,
         params: Value,
-        delivery_id: &str,
+        _delivery_id: &str,
     ) -> Result<Value, BrokerError> {
-        if !policy.use_memory {
-            return Err(BrokerError::MemoryDisabled);
+        self.ensure_scope(policy)?;
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Input {
+            asset_id: Option<String>,
+            asset: Option<String>,
         }
-        let object = exact_object(&params, &[], &["assetId", "symbol", "market"])?;
-        let asset_id = match (
-            object.get("assetId").and_then(Value::as_str),
-            object.get("symbol").and_then(Value::as_str),
-            object.get("market").and_then(Value::as_str),
-        ) {
-            (Some(id), None, None) if assets::valid_asset_id(id) => id.to_owned(),
-            (None, Some(symbol), Some(market))
-                if !symbol.trim().is_empty() && !market.trim().is_empty() =>
-            {
-                assets::asset_id(symbol, market)
-            }
-            _ => {
-                return Err(BrokerError::invalid(
-                    "assetId",
-                    "pass assetId, or symbol and market",
-                ))
+        let input: Input = serde_json::from_value(params).map_err(|_| BrokerError::Malformed)?;
+        let query = match (input.asset_id, input.asset) {
+            (Some(query), None) | (None, Some(query)) => query,
+            _ => return Err(BrokerError::invalid("asset", "Supply one asset reference.")),
+        };
+        let rows = self
+            .state
+            .store
+            .assets_list(&self.loupist_id, false)
+            .map_err(store_error)?;
+        let asset = match crate::store::user_context::matching(&rows, &query).as_slice() {
+            [asset] => (*asset).clone(),
+            [] => return Ok(json!({"exists":false,"candidates":[]})),
+            candidates => {
+                return Ok(
+                    json!({"exists":false,"candidates":candidates.iter().take(20).copied().collect::<Vec<_>>()}),
+                )
             }
         };
-        // Every row carries its fact date, so an as-of turn reads only what was
-        // dated on or before its cutoff.
-        let as_of = super::market::parse_as_of_date(policy.as_of.as_deref())?;
-        let context = crate::commands::assets::view_context(&self.state).map_err(command_error)?;
-        let loupist = policy.loupist_id.clone();
-        let page = crate::commands::assets::with_assets(&self.state, &loupist, false, |tx| {
-            if assets::get_page(tx, &loupist, &asset_id)?.is_none() {
-                return Ok(json!({
-                    "assetId": asset_id,
-                    "exists": false,
-                    "note": "No asset page yet: the user has written no reasons and nothing has been checked for it."
-                }));
-            }
-            let mut value = assets::model_read(tx, &loupist, &asset_id, &context, as_of)?;
-            value["title"] = json!(format!(
-                "Asset page: {}",
-                value["name"].as_str().unwrap_or_default()
-            ));
-            // The watchers' last alerts for this asset, dated and sourced.
-            let events: Vec<Value> =
-                crate::knowledge::watch::asset_events(tx, &loupist, &asset_id, 10)?
-                    .into_iter()
-                    .filter(|event| {
-                        as_of.is_none_or(|cutoff| {
-                            observe::parse_day(&event.fact_date).is_some_and(|day| day <= cutoff)
-                        })
-                    })
-                    .map(|event| json!({"kind": event.kind, "factDate": event.fact_date, "facts": event.facts, "sources": event.evidence.iter().map(|item| json!({"title": item.title, "url": item.url})).collect::<Vec<_>>()}))
-                    .collect();
-            value["watchAlerts"] = json!(events);
-            Ok(value)
+        let as_of = effective_as_of(policy, &Value::Null)?;
+        commands::with_assets(&self.state, &self.loupist_id, false, |tx| {
+            // A first agent read can inspect an empty page without persisting it.
+            assets::ensure_asset_page(tx, &self.loupist_id, &asset, crate::commands::now_ms())?;
+            let mut result = assets::model_read(tx, &self.loupist_id, asset, as_of)?;
+            result["exists"] = json!(true);
+            Ok(result)
         })
-        .map_err(command_error)?;
-        // The latest two results snapshots, each a citable saved read whose
-        // link renders the results card in the answer. Not under an as-of date.
-        let mut value = page;
-        if as_of.is_none() && value["exists"] != false {
-            let events = crate::commands::assets::with_assets(&self.state, &loupist, false, |tx| {
-                crate::knowledge::earnings::events_for(tx, &loupist, &asset_id)
-            })
-            .map_err(command_error)?;
-            let today = chrono::Local::now().date_naive();
-            let mut results = Vec::new();
-            for event in events
-                .iter()
-                .filter(|event| event.report_date <= today + chrono::Duration::days(14))
-                .take(2)
-            {
-                let Ok(Some(snapshot)) = crate::commands::earnings::snapshot_for(
-                    &self.state,
-                    &loupist,
-                    &asset_id,
-                    Some(&event.event_id),
-                ) else {
-                    continue;
-                };
-                let model = crate::knowledge::earnings::model_view(&snapshot);
-                let payload = json!({
-                    "title": format!("Results · {} · {}", snapshot.period, snapshot.name),
-                    "readRef": format!("earnings:{}:{}", asset_id, snapshot.event_id),
-                    "text": serde_json::to_string_pretty(&model).unwrap_or_default(),
-                    "snapshot": model,
-                });
-                let reference = self
-                    .capture
-                    .stage_run_result_with_delivery(
-                        delivery_id,
-                        RunResultProducer {
-                            origin: RunResultOrigin::SavedContext,
-                            runtime_id: "knowledge".into(),
-                            tool_name: "earnings_snapshot".into(),
-                            provider: None,
-                        },
-                        &json!({"assetId": asset_id, "eventId": snapshot.event_id}),
-                        payload,
-                        vec![],
-                        None,
-                    )
-                    .await?;
-                let mut entry = model;
-                entry["citation_url"] = json!(evidence::citation_url(&reference));
-                results.push(entry);
-            }
-            value["results"] = json!(results);
-        }
-        Ok(value)
+        .map_err(command_error)
     }
 
-    /// The evidence date of one acknowledged result: a calculation takes its
-    /// inputs' latest date; anything else its own latest row or publication date.
+    pub(super) async fn asset_lookup(&self, params: Value) -> Result<Value, BrokerError> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Input {
+            query: String,
+        }
+        let input: Input = serde_json::from_value(params).map_err(|_| BrokerError::Malformed)?;
+        let source = crate::finance_data::openfigi::SOURCE_ID;
+        if !self.capability_ids.contains(source) {
+            return Err(BrokerError::MethodDenied);
+        }
+        let candidates =
+            crate::finance_data::openfigi::search(&self.state, &self.loupist_id, &input.query)
+                .await
+                .map_err(command_error)?;
+        Ok(json!({"candidates":candidates,"source_id":source,"provider":"OpenFIGI"}))
+    }
+
     pub(super) fn evidence_day(
         registry: &RunResultRegistry,
         result: &RunResult,
@@ -448,10 +202,10 @@ impl AppToolExecutor {
                 .upstream_result_refs
                 .iter()
                 .filter_map(|reference| registry.get(reference))
-                .filter_map(|upstream| observe::latest_date(&upstream.payload, today))
+                .filter_map(|upstream| latest_date(&upstream.payload, today))
                 .max();
         }
-        observe::latest_date(&result.payload, today)
+        latest_date(&result.payload, today)
     }
 
     fn is_original(registry: &RunResultRegistry, result: &RunResult) -> bool {
@@ -700,73 +454,7 @@ impl AppToolExecutor {
 }
 
 impl ToolCapture {
-    /// Whether this turn answers under an as-of date: the turn's own date, or
-    /// any tool call that ran under one.
     pub(in crate::commands) fn as_of_turn(&self) -> bool {
         self.turn_as_of.is_some() || self.as_of_turn.load(Ordering::Relaxed)
-    }
-
-    /// Observations from this turn's acknowledged reads of assets the user
-    /// follows, from the same routes the host refresh reads. Model text is
-    /// never read; each observation cites the turn's result.
-    pub(in crate::commands) async fn turn_observations(
-        &self,
-        followed: &[assets::AssetIdentity],
-    ) -> Vec<(assets::AssetIdentity, Vec<assets::NewObservation>)> {
-        let today = chrono::Local::now().date_naive();
-        let registry = self.run_results.lock().await;
-        let mut out: Vec<(assets::AssetIdentity, Vec<assets::NewObservation>)> = Vec::new();
-        for result in registry.values() {
-            let tool = result.producer.tool_name.as_str();
-            if !observe::observes(tool) {
-                continue;
-            }
-            let payload = &result.payload;
-            let mut symbols: Vec<&str> = [
-                "/query/symbol",
-                "/data/company/stock_code",
-                "/data/instrument/symbol",
-                "/data/filings/0/stock_code",
-            ]
-            .iter()
-            .filter_map(|pointer| payload.pointer(pointer).and_then(Value::as_str))
-            .collect();
-            if let Some(origin) = result
-                .origin
-                .as_deref()
-                .filter(|origin| !origin.contains(':'))
-            {
-                symbols.push(origin);
-            }
-            let Some(identity) = followed.iter().find(|asset| {
-                symbols
-                    .iter()
-                    .any(|symbol| symbol.eq_ignore_ascii_case(&asset.symbol))
-            }) else {
-                continue;
-            };
-            let read = observe::ToolRead {
-                tool,
-                provider: result.producer.provider.as_deref(),
-                payload,
-                dataset: payload
-                    .get("dataset_ref")
-                    .cloned()
-                    .and_then(|value| serde_json::from_value(value).ok()),
-                retrieved_at: Some(&result.retrieved_at),
-                citation_url: Some(evidence::citation_url(&result.result_ref)),
-                today,
-                session_day: assets::class::session_day(&identity.market, chrono::Utc::now()),
-            };
-            let observations = observe::extract(&read, &identity.symbol);
-            if observations.is_empty() {
-                continue;
-            }
-            match out.iter_mut().find(|(known, _)| known == identity) {
-                Some((_, list)) => list.extend(observations),
-                None => out.push((identity.clone(), observations)),
-            }
-        }
-        out
     }
 }

@@ -19,7 +19,7 @@ pub(super) fn require_record(
 ) -> KnowledgeResult<OwnedRecordState> {
     validate_loupist_id(loupist_id)?;
     validate_knowledge_id(record_id, "rec")?;
-    let row = tx.query_row("SELECT m.kind, m.owner_loupist_id, m.title, h.revision_id FROM knowledge_records m LEFT JOIN knowledge_record_heads h ON h.record_id = m.record_id WHERE m.record_id = ?1", [record_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, Option<String>>(3)?))).optional()?.ok_or(KnowledgeError::NotFound)?;
+    let row = tx.query_row("SELECT m.kind, m.owner_loupist_id, COALESCE(s.title, m.title), h.revision_id FROM knowledge_records m LEFT JOIN knowledge_sources s ON s.record_id = m.record_id LEFT JOIN knowledge_record_heads h ON h.record_id = m.record_id WHERE m.record_id = ?1", [record_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, Option<String>>(3)?))).optional()?.ok_or(KnowledgeError::NotFound)?;
     if row.1 != loupist_id {
         return Err(KnowledgeError::Unauthorized(
             "record belongs to another Loupist",

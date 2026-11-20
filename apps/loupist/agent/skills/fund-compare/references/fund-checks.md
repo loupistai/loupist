@@ -22,15 +22,16 @@ drawdown from `returns_summary` beside the return.
 ## Cost and structure
 
 The expense ratio is the headline yearly fee; trading spreads and tracking
-difference add to it. Korean funds publish 총보수 and a higher 실부담비용; name
+difference add to it. Korean funds publish a total fee and a higher all-in cost that adds other
+expenses; name
 which one a figure is. Small or young funds can close or trade thinly.
 Leveraged and inverse funds reset daily, so over months their return is not a
 multiple of the index return; say so whenever one is compared. Synthetic
 (swap-based) funds carry counterparty exposure that physical ones do not.
 
-## The table
+## What to compare
 
-Rows are funds. Columns: expense ratio, assets with their date, inception, the
-overlap with the other fund (two funds) or with the first fund (more), and the
-return over the shared window with its period and basis (price or total). A
-value a source does not give stays an empty cell with its reason.
+For each fund give its expense ratio, assets with their date, inception, and
+return over the shared window with its period and basis (price or total). Give
+overlap with the other fund for two funds, or with the first fund for a larger
+group. Explain why any missing value is unavailable.

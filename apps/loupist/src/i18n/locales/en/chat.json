@@ -92,8 +92,8 @@
     "stopResponse": "Stop response",
     "send": "Send",
     "messageLoupist": "Message Loupist",
-    "askLoupistToAddContextForCommands": "Ask {{loupistName}}…",
-    "askYourLoupist": "Ask your Loupist…",
+    "askLoupistToAddContextForCommands": "Message {{loupistName}}",
+    "askYourLoupist": "Message your Loupist",
     "newChat": "New research",
     "model": "Model",
     "attachFiles": "Attach files",
@@ -120,7 +120,6 @@
     "versionLabel": "Version {{version}}",
     "startAFreshConversation": "Start a research session",
     "chooseTheModel": "Choose the model",
-    "changeWhatThisMessageRemembers": "Toggle private chat",
     "chooseWhatThisLoupistCanUse": "Choose what this Loupist can use",
     "attachmentName": "attachment",
     "removeAttachment": "Remove {{value1}}",
@@ -258,8 +257,9 @@
     "saveQueuedMessage": "Save queued message",
     "cancelEdit": "Cancel edit",
     "sendQueuedMessageNow": "Send queued message now",
-    "sendNow": "Send now",
+    "sendNextNow": "Send next now",
     "waitsUntilTheCurrentResponseFinishes": "Waits until the current response finishes",
+    "waitsUntilOnline": "Waits until you're back online",
     "editQueuedMessage": "Edit queued message",
     "moveQueuedMessageUp": "Move queued message up",
     "moveQueuedMessageDown": "Move queued message down",
@@ -268,8 +268,7 @@
     "files_other": "{{formattedCount}} files",
     "pins_one": "{{formattedCount}} reference",
     "pins_other": "{{formattedCount}} references",
-    "queueHeading": "Up next <0>{{formattedCount}}</0>",
-    "hint": "Send next · {{shortcut}} Guide now"
+    "queueHeading": "Up next <0>{{formattedCount}}</0>"
   },
   "chatProgressTimeline": {
     "failed": "Failed",
@@ -351,9 +350,10 @@
   },
   "messageMemoryRow": {
     "savedInThisAnswer": "Saved in this answer",
+    "userProvided": "User-provided",
+    "showRelation": "Show on the map: {{source}} {{relation}} {{target}}",
     "basis": "Basis: {{value}}",
     "nextUse": "Next use: {{value}}",
-    "dismissed": "Dismissed",
     "openIn": "Open in {{value}}"
   },
   "chatReceipt": {
@@ -385,17 +385,18 @@
     "unfollowed": "Stopped following {{name}}",
     "focusUpdated": "Focus updated",
     "mapTracks": "Map now also tracks {{list}}",
+    "journalNotSaved": "Journal entry not saved",
     "kindNotAdded": "{{name}}: not added to the map",
     "numbersToCheck_one": "{{formattedCount}} number to check",
     "numbersToCheck_other": "{{formattedCount}} numbers to check",
-    "learned_one": "Learned {{formattedCount}}",
-    "learned_other": "Learned {{formattedCount}}",
+    "learned_one": "Learned {{formattedCount}} thing",
+    "learned_other": "Learned {{formattedCount}} things",
     "ideas_one": "{{formattedCount}} idea",
     "ideas_other": "{{formattedCount}} ideas",
     "usedPages_one": "Used {{formattedCount}} page",
     "usedPages_other": "Used {{formattedCount}} pages",
-    "usedPrinciples_one": "Used your principle",
-    "usedPrinciples_other": "Used {{formattedCount}} principles"
+    "readPrinciples_one": "Read your principle",
+    "readPrinciples_other": "Read {{formattedCount}} principles"
   },
   "messageSchedules": {
     "draftFilesFailed": "Could not save draft attachments on this Mac.",
@@ -448,6 +449,8 @@
       "failedAttempt_other": "{{count}} failed attempts"
     },
     "stillWorking": "Still working",
+    "batch_one": "{{label}} ×{{formattedCount}}",
+    "batch_other": "{{label}} ×{{formattedCount}}",
     "waitingForYou": "Waiting for you",
     "starting": "Starting",
     "thinking": "Thinking"
@@ -461,7 +464,6 @@
     "open": "Open",
     "openInSystemBrowser": "Open in system browser",
     "tryAgain": "Try again",
-    "openInBrowser": "Open in browser",
     "viewSavedPassage": "View saved passage",
     "savedPassage": "Saved passage",
     "browseInLoupist": "Browse in Loupist",
@@ -477,16 +479,16 @@
     "tryAgain": "Try again",
     "evidenceEmpty": "Click a citation or a name in the answer to read it here.",
     "sourceNotRetained": "This source is no longer retained.",
-    "closeChatWorkspace": "Close chat workspace",
-    "chatWorkspacePanel": "Chat workspace panel",
-    "resizeChatWorkspace": "Resize chat workspace",
-    "closeWorkspace": "Close workspace",
+    "panel": "Side panel",
+    "resizePanel": "Resize panel",
+    "closePanel": "Close panel",
     "expand": "Expand",
     "backToChat": "Back to chat",
     "dockBottom": "Dock at bottom",
     "dockSide": "Dock at side",
     "panelActions": "Panel menu",
-    "alwaysDockHere": "Always dock here"
+    "alwaysDockSide": "Always dock at side",
+    "alwaysDockBottom": "Always dock at bottom"
   },
   "workVersions": {
     "label": "Versions",
@@ -584,7 +586,6 @@
     "theUnfinishedFinalRecordIsOmittedFromThisPreview": "The unfinished final record is omitted from this preview. ",
     "openSourceToInspectTheLoadedText": "Open Source to inspect the loaded text.",
     "onlyColumnNamesArePresentThisFileHasNo": "Only column names are present. This file has no data rows.",
-    "localWorkspace": "Local workspace",
     "items_one": "{{formattedCount}} item",
     "items_other": "{{formattedCount}} items",
     "sourceType": "{{type}} source",
@@ -614,8 +615,9 @@
     "thisReferenceIsUnavailable": "This reference is unavailable."
   },
   "workspaceTabBar": {
-    "openWorkspaceTabs": "Open workspace tabs",
-    "openWorkspaceItem": "Open workspace item",
+    "panelTabs": "Panel tabs",
+    "closeTabs": "Close tabs",
+    "addTab": "Add a tab",
     "files": "Files",
     "newBrowserTab": "New browser tab",
     "openAnHTTPOrHTTPSAddress": "Open an HTTP or HTTPS address",
@@ -790,6 +792,9 @@
     "outputProducedFromOtherDataCheckItsInputsAnd": "Output produced from other data. Check its inputs and assumptions alongside the result.",
     "workspaceFile": "Workspace file",
     "aSavedCopyOfLocalFileContentReadDuring": "A saved copy of local file content read during this reply.",
+    "userProvided": "User-provided",
+    "userProvidedDescription": "Text you pasted into a Chat, kept exactly as you gave it. Where it came from was not verified.",
+    "pastedText": "Pasted text",
     "savedResearch": "Saved research",
     "researchThisLoupistAlreadyHadRetrievedForThisReply": "Research this Loupist already had, retrieved for this reply.",
     "files": "Files",
@@ -809,7 +814,10 @@
     "lensSearch": "Lens search",
     "numberedSource": "Source {{number}}: {{title}}",
     "memoryLabel": "Memory: {{memoryTitle}}",
-    "resultLabel": "Result: {{title}}"
+    "resultLabel": "Result: {{title}}",
+    "map": "Map",
+    "lens": "Lens",
+    "marketData": "Market data"
   },
   "memoryActivity": {
     "reviseNote": "Revised note",
@@ -817,7 +825,16 @@
     "renameNote": "Renamed note",
     "renameKind": "Renamed {{kind}}",
     "createNote": "Created note",
-    "createKind": "Created {{kind}}"
+    "createKind": "Created {{kind}}",
+    "kinds": {
+      "source": "source",
+      "lens": "Lens page",
+      "journal": "Journal entry",
+      "principle": "principle",
+      "thesis": "thesis",
+      "record": "record",
+      "world": "map entry"
+    }
   },
   "memoryPreview": {
     "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "This saved preview is incomplete. Open the related record in the Map or Lens to read its content.",
@@ -848,7 +865,6 @@
     "responseFailed": "Response failed.",
     "responseComplete": "Response complete.",
     "couldNotStartTheResponse": "Could not start the response.",
-    "guidanceSentToTheActiveResponse": "Guidance sent to the active response.",
     "couldNotSteerTheActiveResponse": "Could not steer the active response.",
     "nativeChatDidNotFinishSavingTheStoppedResponse": "The app did not finish saving the stopped response.",
     "couldNotStopTheResponse": "Could not stop the response.",
@@ -924,7 +940,6 @@
     "thisReplyGotOutOfStepWithTheConversation": "This reply got out of step with the conversation. Check the chat before trying again.",
     "couldNotStartTheResponse": "Could not start the response.",
     "theScheduledStreamBelongsToAnotherChat": "The scheduled stream belongs to another conversation.",
-    "responseStopped": "Response stopped.",
     "stoppedByUser": "Stopped by user"
   },
   "principles": {
@@ -1013,19 +1028,6 @@
     "label": "Message from {{loupist}}",
     "leadOne": "One thing since {{day}}.",
     "lead_other": "{{formattedCount}} things since {{day}}.",
-    "leadFirstDay": "Here is where your Loupist starts.",
-    "leadToLookOne": "One thing to look at.",
-    "leadToLook_other": "{{formattedCount}} things to look at.",
-    "leadNothingNew": "Nothing new for what you follow since {{day}}.",
-    "leadEmpty": "What are you researching?",
-    "namesPart_one": "+{{formattedCount}} on the map",
-    "namesPart_other": "+{{formattedCount}} on the map",
-    "linksPart_one": "{{formattedCount}} relationship",
-    "linksPart_other": "{{formattedCount}} relationships",
-    "changedBoth": "{{names}} and {{links}}:",
-    "changedOne": "{{part}}:",
-    "moreNames": "+{{formattedCount}}",
-    "seeAllInMap": "See all in Map",
     "briefingBullet": "{{title}} ({{date}}):",
     "open": "Open",
     "checkDue": "To check by {{date}}: {{claim}}",
@@ -1039,9 +1041,10 @@
       "new": "new on the map",
       "relation": "new relationship",
       "source": "from {{title}}",
-      "check": "To check by {{date}}",
+      "check": "to check by {{date}}",
+      "checkLate": "overdue since {{date}}",
       "conflict": "sources disagree",
-      "watching": "following"
+      "watching": "you follow it"
     },
     "q": {
       "changed": "What changed for {{name}} since {{date}}?",
@@ -1056,36 +1059,11 @@
       "markets": "What happened in the markets this week?",
       "risks": "What risks should I keep an eye on?"
     },
-    "assetsBullet": "What you follow:",
-    "assetsMore": "+{{formattedCount}} more",
-    "worksBest": "Works best with {{connections}} · <0>Open Connections</0>",
-    "upcoming": {
-      "label": "Coming up",
-      "resultsExpected": "Results (expected)",
-      "resultsConfirmed": "Results (confirmed)",
-      "resultsDue": "Results due (filing deadline)",
-      "exDividend": "Ex-dividend date",
-      "recordDate": "Dividend record date",
-      "check": "To check: {{claim}}"
-    },
     "setup": {
-      "label": "Get set up",
-      "count": "{{done}} of {{total}}",
-      "hide": "Hide",
-      "done": "Done",
-      "needsAccount": "Needs an AI account",
-      "holdings": "Import holdings (CSV)…",
-      "follow": {
-        "label": "Follow a few companies",
-        "insert": "Follow these for me: "
-      },
       "principle": {
-        "label": "Teach a principle",
-        "insert": "My principle: ",
-        "example": "e.g. check whether capacity costs are temporary before trusting a margin recovery"
+        "insert": "My principle: "
       },
       "briefing": {
-        "label": "Get a briefing every morning",
         "insert": "Send me a briefing every weekday at 8:00 AM."
       }
     },
@@ -1098,11 +1076,6 @@
       "macro": "macro and rates",
       "commodities": "commodities",
       "realAssets": "real assets"
-    },
-    "homeLine": "Briefings, alerts and anything that needs you will arrive in this conversation.",
-    "readTogether": {
-      "label": "Read a filing or article together",
-      "insert": "Read this with me and tell me what matters: "
     }
   },
   "toolProgress": {
@@ -1114,9 +1087,17 @@
       "running": "Reading earlier messages",
       "done": "Read earlier messages"
     },
+    "interface_labels": {
+      "running": "Reading interface labels",
+      "done": "Read interface labels"
+    },
     "workspace_capture": {
       "running": "Capturing a workspace file",
       "done": "Captured a workspace file"
+    },
+    "pasted_capture": {
+      "running": "Capturing pasted text",
+      "done": "Captured pasted text"
     },
     "read": {
       "running": "Reading a file",
@@ -1217,10 +1198,6 @@
     "run_results_list": {
       "running": "Listing results from this reply",
       "done": "Listed results from this reply"
-    },
-    "plan_update": {
-      "running": "Updating the plan",
-      "done": "Updated the plan"
     },
     "ask_user": {
       "running": "Asking you a question",
@@ -1338,6 +1315,10 @@
       "running": "Creating a scheduled task",
       "done": "Created a scheduled task"
     },
+    "schedule_quiet": {
+      "running": "Ending the run quietly",
+      "done": "Ended the run quietly"
+    },
     "schedule_handoff": {
       "running": "Creating a scheduled task",
       "done": "Created a scheduled task"
@@ -1366,19 +1347,27 @@
       "running": "Reading the asset page",
       "done": "Read the asset page"
     },
+    "price_read_save": {
+      "running": "Saving the price read",
+      "done": "Saved the price read"
+    },
+    "asset_lookup": {
+      "running": "Looking up listings",
+      "done": "Looked up listings"
+    },
     "thesis_update": {
       "running": "Updating your read on the thesis",
       "done": "Updated your read on the thesis"
     },
-    "earnings_snapshot_save": {
-      "running": "Recording the results",
-      "done": "Recorded the results"
+    "fx_rate": {
+      "running": "Reading the exchange rate",
+      "done": "Read the exchange rate"
     }
   },
   "nextSteps": {
     "label": "Next steps",
-    "more": "Tell me more about {{name}}",
-    "conflict": "Which side is right about {{name}}?"
+    "more": "More on {{name}}",
+    "conflict": "Which report on {{name}} holds"
   },
   "usedMemory": {
     "notThisTime": "Not this time",
@@ -1386,54 +1375,31 @@
     "undo": "Undo",
     "edit": "Edit",
     "archive": "Archive",
+    "archived": "Archived",
     "error": "Couldn’t change this. Try again after the reply finishes.",
     "removed": "Removed",
+    "principleLabel": "Read · Principle",
     "pageLabel": "Used · {{kind}}"
   },
   "saveProof": {
     "declined": "Skipped saving one item: it looked like a password, key or other secret."
   },
   "thread": {
-    "from": "From: {{title}}",
     "open": "Open",
-    "couldNotFinish": "{{title}} couldn't finish this time.",
+    "couldNotFinish": "This run couldn't finish.",
+    "runRemoved": "This run's record was removed.",
     "deliveryLabel": "Result from {{title}}",
-    "earningsReported": "{{name}} reported {{period}} results.",
     "handoffLabel": "Research: {{title}}",
     "researched": "Researched: {{title}}",
-    "researching": "Researching: {{title}}",
-    "handoffRunning": "Running",
-    "handoffDone": "Done",
     "handoffFailed": "Couldn't finish",
-    "handoffStopped": "Stopped"
-  },
-  "watchMessage": {
-    "filing": "{{name}} filed {{title}} ({{form}}, {{date}}).",
-    "filingShort": "{{name}} filed {{title}} ({{form}}).",
-    "results": "{{name}} reports {{period}} results on {{date}}.",
-    "resultsNoPeriod": "{{name}} reports results on {{date}}.",
-    "insiders": "{{name}}: {{count}} insiders bought shares between {{from}} and {{to}}.",
-    "insidersReports": "{{name}}: {{count}} insider ownership reports between {{from}} and {{to}} (buy or sell not checked).",
-    "holders": "{{name}}: {{holder}} now holds {{ratio}} (was {{before}}).",
-    "flowsIn": "{{name}}: foreign and institution buying turned positive over 10 trading days (to {{date}}).",
-    "flowsOut": "{{name}}: foreign and institution buying turned negative over 10 trading days (to {{date}}).",
-    "dividend": "{{name}} declared {{amount}} per share · record date {{date}}.",
-    "moveDayUp": "{{name}} rose {{change}} on {{date}}.",
-    "moveDayDown": "{{name}} fell {{change}} on {{date}}.",
-    "moveWeekUp": "{{name}} rose {{change}} over 7 days (to {{date}}).",
-    "moveWeekDown": "{{name}} fell {{change}} over 7 days (to {{date}}).",
-    "drawdown": "{{name}} closed {{drawdown}} below its 90-day high ({{date}}).",
-    "depeg": "{{name}} closed at {{price}}, off its $1 peg ({{date}}).",
-    "tvl": "{{name}}: value locked on {{target}} fell {{change}} over 7 days (to {{date}}).",
-    "positioningLong": "{{name}}: money managers turned net long (CFTC, as of {{date}}).",
-    "positioningShort": "{{name}}: money managers turned net short (CFTC, as of {{date}}).",
-    "oilInventoryUp": "{{name}}: U.S. commercial crude stocks rose {{amount}} barrels in the week to {{date}} (EIA).",
-    "oilInventoryDown": "{{name}}: U.S. commercial crude stocks fell {{amount}} barrels in the week to {{date}} (EIA).",
-    "oilInventory": "{{name}}: new EIA weekly petroleum report (week to {{date}}).",
-    "prepare": "Prepare before and after",
-    "from": "From: Watching · Open Following",
-    "more": "+{{formattedCount}} more",
-    "label": "Alerts from Watching"
+    "handoffStopped": "Stopped",
+    "handoffInterrupted": "Interrupted",
+    "stopped": {
+      "before_update": "Opened before an update. Ask again to run it.",
+      "origin_unavailable": "The request it came from is no longer available. Ask again to run it.",
+      "invalid_authority": "It couldn't start with the permissions it was given. Ask again to run it.",
+      "interrupted": "The app quit before this session finished."
+    }
   },
   "chatExport": {
     "you": "You",
@@ -1477,15 +1443,6 @@
       "files_other": "{{formattedCount}} files"
     },
     "using": {
-      "title": "Using",
-      "principles_one": "{{formattedCount}} principle",
-      "principles_other": "{{formattedCount}} principles",
-      "methods_one": "{{formattedCount}} method",
-      "methods_other": "{{formattedCount}} methods",
-      "connections_one": "{{formattedCount}} connection",
-      "connections_other": "{{formattedCount}} connections",
-      "pins_one": "{{formattedCount}} added",
-      "pins_other": "{{formattedCount}} added",
       "kind": {
         "pin": "Added",
         "principle": "Principle",
@@ -1519,9 +1476,9 @@
     }
   },
   "workList": {
-    "label": "Charts and documents",
+    "label": "Charts, tables and documents",
     "loading": "Loading your Loupist's work…",
-    "empty": "Charts and documents your Loupist makes appear here.",
+    "empty": "Charts, tables and documents your Loupist makes appear here.",
     "showOlder": "Show older",
     "allWork": "All work",
     "charts_one": "{{formattedCount}} chart",
@@ -1593,25 +1550,45 @@
   },
   "vocabulary": {
     "message": "Your map now also tracks {{list}}.",
+    "label": "New on the map: {{list}}",
     "undo": "Undo",
     "undone": "Undone. The map tracks the basics again for these.",
     "error": "Couldn't undo this. Try again."
   },
   "link": {
+    "lookAgain": "Look into it again",
+    "done": "Research complete.",
+    "failed": "The research couldn't finish.",
+    "stopped": "The research stopped.",
     "label": "New link: {{seed}} and {{far}}",
     "message": "New link: {{seed}} ↔ {{far}} through {{through}}.",
-    "pathLabel": "Show this path on the map",
     "lookInto": "Look into it",
     "notUseful": "Not useful",
     "opened": "Researching it. The result will arrive here.",
     "dismissed": "Set aside. This link won't come up again.",
     "error": "Couldn't do that. Try again.",
-    "question": "What connects {{seed}} and {{far}}? The map now links them through {{through}}. Check whether the link holds and what it would mean for {{seed}}.",
-    "title": "Link: {{seed}} and {{far}}"
+    "gone": "This link is no longer available. Ask about it in a message instead.",
+    "startError": "Couldn't start the research. Check the model in the composer, then try again.",
+    "conflict": "This link is already being researched with other settings. The result will arrive here.",
+    "showPath": "Show on the map"
+  },
+  "handoff": {
+    "linkStart": "Start: {{name}}",
+    "linkClaim": "{{from}} → {{relation}} → {{to}}",
+    "linkEnd": "End: {{name}}",
+    "linkUnavailable": "Link details are unavailable.",
+    "fromBot": "From Bot",
+    "linkDetails": "Link details",
+    "choseLink": "You chose “Look into it” on a link in Bot."
+  },
+  "scheduledTurn": {
+    "ran": "Scheduled run: {{title}}",
+    "request": "Request"
   },
   "redLine": {
     "message": "{{name}} crossed the line you set on {{date}}: {{claim}} — {{value}} ({{factDate}}). Thesis marked Broken.",
-    "review": "Review thesis"
+    "review": "Review thesis",
+    "label": "Line crossed: {{name}}"
   },
   "quoteEvidence": {
     "title": "Price quotes",
@@ -1636,9 +1613,11 @@
   "numberChip": {
     "labelCalculated": "{{value}}, calculated. Show the math",
     "labelSourced": "{{value}}, from {{source}}",
+    "labelUnmatched": "{{value}}, not found in {{source}}",
     "inputs": "Inputs",
     "calculatedHere": "Calculated on this Mac",
     "notLinked": "Not linked to a source",
+    "currencyDeclared": "Currency taken from the request, not the source",
     "grid": "A {{rows}} × {{cols}} grid, not one value",
     "fromStep": "From a step in this answer",
     "showStep": "Show step",
@@ -1668,7 +1647,8 @@
       "netDebtToEbitda": "Net debt to EBITDA",
       "freeCashFlow": "Free cash flow",
       "dcfGrid": "Value at different growth and discount rates",
-      "reverseDcf": "Value at different growth and discount rates"
+      "reverseDcf": "Value at different growth and discount rates",
+      "convert": "Currency conversion"
     },
     "term": {
       "revenue": "Revenue",
@@ -1716,6 +1696,35 @@
     "basis": {
       "consolidated": "Consolidated",
       "separate": "Company only"
+    },
+    "quoteField": {
+      "last": "Last price",
+      "close": "Close",
+      "previousClose": "Previous close",
+      "change": "Day change",
+      "changePct": "Day change",
+      "high52": "52-week high",
+      "low52": "52-week low",
+      "below52High": "Below 52-week high",
+      "ma50": "50-day average",
+      "ma200": "200-day average",
+      "fromMa50": "From 50-day average",
+      "fromMa200": "From 200-day average",
+      "marketCap": "Market value",
+      "pe": "P/E",
+      "forwardPe": "Forward P/E",
+      "operatingMargin": "Operating margin",
+      "grossMargin": "Gross margin",
+      "revenueYoy": "Revenue, year on year",
+      "revenueQoq": "Revenue, quarter on quarter",
+      "distanceFrom52High": "From 52-week high",
+      "priceToBook": "Price to book",
+      "evEbitda": "EV/EBITDA",
+      "pctAbove52High": "Above 52-week high",
+      "pctBelowMa50": "Below 50-day moving average",
+      "pctAboveMa50": "Above 50-day moving average",
+      "pctBelowMa200": "Below 200-day moving average",
+      "pctAboveMa200": "Above 200-day moving average"
     }
   },
   "grid": {
@@ -1726,6 +1735,7 @@
     "exportCsv": "CSV with sources",
     "exportMarkdown": "Markdown table",
     "asset": "Asset",
+    "measure": "Measure",
     "empty": {
       "notReported": "Not reported",
       "notApplicable": "Doesn't apply",
@@ -1733,7 +1743,7 @@
       "notChecked": "Not checked"
     },
     "emptySpoken": "{{asset}}, {{measure}}: {{reason}}",
-    "caption": "{{rows}} assets × {{columns}} measures · {{linked}} linked",
+    "caption": "{{rows}} assets × {{columns}} measures · {{linked}} values with sources",
     "toCheck_one": "{{formattedCount}} number to check",
     "toCheck_other": "{{formattedCount}} numbers to check",
     "moreColumns_one": "{{formattedCount}} more",
@@ -1898,18 +1908,9 @@
     "done": "Reviewed earlier conversation",
     "incomplete": "Could not finish reviewing earlier conversation"
   },
-  "watchAll": {
-    "actionOne": "Watch {{name}}",
-    "action_other": "Watch all {{formattedCount}}",
-    "note": "Checks public filings, results dates and dividends for the names you follow, hourly while Loupist is open. No AI usage. Only names are sent to data sources.",
-    "done_one": "Watching {{formattedCount}} name. Change it in <0>Following</0>.",
-    "done_other": "Watching {{formattedCount}} names. Change it in <0>Following</0>.",
-    "failed": "Couldn’t turn on watching. Try again."
-  },
   "ledger": {
     "steps_one": "{{formattedCount}} step",
     "steps_other": "{{formattedCount}} steps",
-    "plan": "Plan {{k}} of {{n}} · {{label}}",
     "worked": "Worked {{duration}}",
     "stoppedAfter": "Stopped after {{duration}}",
     "sources_one": "{{formattedCount}} source",
@@ -1921,5 +1922,207 @@
   },
   "citedNote": {
     "source": "source"
+  },
+  "activitySheet": {
+    "open": "Activity",
+    "openHint": "How the replies in this chat were made",
+    "label": "Activity",
+    "close": "Close activity",
+    "tabs": {
+      "activity": "Activity",
+      "learned": "Learned",
+      "using": "In use"
+    },
+    "status": {
+      "working": "Working",
+      "answeredAt": "Answered at {{time}}",
+      "noAnswer": "No answer yet"
+    },
+    "turn": {
+      "this": "This answer · {{time}}",
+      "earlier": "Earlier answers",
+      "steps_one": "{{formattedCount}} step",
+      "steps_other": "{{formattedCount}} steps",
+      "noSteps": "No steps"
+    },
+    "did": {
+      "title": "What it did",
+      "empty": "This answer did not use any tools.",
+      "running": "Running",
+      "showEach": "Show each of {{formattedCount}}",
+      "hideEach": "Hide the list"
+    },
+    "read": {
+      "title": "What it read",
+      "empty": "This answer cited no sources."
+    },
+    "checked": {
+      "title": "What it checked",
+      "empty": "This answer has no linked figures to check.",
+      "summary_one": "{{formattedCount}} figure checked against its source",
+      "summary_other": "{{formattedCount}} figures checked against their sources",
+      "status": {
+        "matched": "Matches",
+        "rounded": "Rounded",
+        "differs": "Differs",
+        "not_found": "Not in the source"
+      }
+    },
+    "learned": {
+      "saved": "Saved from this answer",
+      "map": "Added to the map in this chat",
+      "none": "Nothing has been saved from this chat yet.",
+      "openMap": "Show on the map"
+    },
+    "using": {
+      "title": "Connections and memory in use",
+      "files": "Files in this chat",
+      "materials": "Open chat materials",
+      "none": "Nothing is in use in this chat yet.",
+      "needs": "Waiting for you"
+    },
+    "step": {
+      "usedConnection": "Used {{name}}",
+      "runningConnection": "Using {{name}}",
+      "operation": {
+        "search": "Searched",
+        "read": "Read data",
+        "write": "Wrote a file",
+        "edit": "Edited a file",
+        "list": "Listed items",
+        "calculate": "Calculated",
+        "publish": "Published a result",
+        "execute": "Ran a step",
+        "submit": "Submitted a request",
+        "retry": "Tried again",
+        "compact": "Reviewed the conversation",
+        "generic": "Did a step"
+      }
+    },
+    "tools": {
+      "activate_tools": {
+        "running": "Preparing data tools",
+        "done": "Prepared data tools"
+      },
+      "available_tools": {
+        "running": "Listing data tools",
+        "done": "Listed data tools"
+      }
+    },
+    "reads": {
+      "news_company": "company news",
+      "news_world": "world news",
+      "equity_quote": "current quote",
+      "equity_calendar_earnings": "the earnings calendar",
+      "equity_calendar_dividend": "the dividend calendar",
+      "etf_holdings": "fund holdings",
+      "etf_info": "fund profiles",
+      "etf_historical": "fund prices",
+      "crypto_price_historical": "crypto prices",
+      "derivatives_futures_historical": "futures prices",
+      "equity_estimates_forward_sales": "sales estimates",
+      "equity_estimates_forward_eps": "earnings estimates",
+      "equity_ownership_insider_trading": "insider trades",
+      "currency_price_historical": "exchange rates",
+      "currency_reference_rates": "reference exchange rates",
+      "fixedincome_government_treasury_rates": "treasury rates",
+      "equity_fundamental_metrics": "key metrics",
+      "index_price_historical": "index prices",
+      "commodity_petroleum_status_report": "the petroleum status report",
+      "equity_price_performance": "price performance",
+      "equity_fundamental_transcript": "earnings call transcripts",
+      "economy_gdp_real": "real output"
+    },
+    "reason": {
+      "generic": "It ended with an error. It was not used in the answer.",
+      "offline": "The data provider could not be reached. It was not used in the answer.",
+      "revisionNotApplied": "The change was not applied. The earlier version is shown.",
+      "paused": "Paused by the safety rule after the answer read another site's text.",
+      "protectedPath": "The path is in the app's private data, so it was not opened.",
+      "outsideWorkspace": "The file is outside the Loupist folder, so it was not opened.",
+      "stopped": "Stopped before it finished.",
+      "skipped": "This source reports only current values, so it could not be used for the chosen date.",
+      "refusal": {
+        "needs_approval": "Using this connection needs your OK.",
+        "blocked_unattended": "Scheduled runs do not use this connection.",
+        "taint": "The answer had read another site's text, so this connection stayed off.",
+        "sensitive_memory": "The request held sensitive memory, so it was not sent to this connection.",
+        "declined": "You did not allow this connection.",
+        "other": "This connection could not be used."
+      }
+    }
+  },
+  "bot": {
+    "openActivity": "Open activity",
+    "activity": "Activity",
+    "working": "{{label}}. Open activity",
+    "seconds": "{{s}}s",
+    "minutes": "{{m}}m {{s}}s",
+    "figuresChecked_one": "{{formattedCount}} figure checked",
+    "figuresChecked_other": "{{formattedCount}} figures checked",
+    "sources_one": "{{formattedCount}} source",
+    "sources_other": "{{formattedCount}} sources",
+    "toCheck_one": "{{formattedCount}} figure to check",
+    "toCheck_other": "{{formattedCount}} figures to check",
+    "traceLabel": "Sources and checked figures for this answer",
+    "greeting": {
+      "label": "{{name}} greets you",
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening",
+      "prompt": "Pick an item below or type a question.",
+      "introNew": "I follow the markets you care about and answer with sources you can check.",
+      "asks": "Suggested questions",
+      "start": "Start here",
+      "following": "Following",
+      "openAsset": "Open {{name}}",
+      "ask": {
+        "status": {
+          "label": "Where {{name}} stands",
+          "hint": "Price, results and news in brief",
+          "prompt": "Where does {{name}} stand? Give me the price, results and news in brief."
+        },
+        "briefing": {
+          "label": "This morning's briefing",
+          "hint_one": "Your {{formattedCount}} followed asset",
+          "hint_other": "Your {{formattedCount}} followed assets",
+          "prompt": "Give me this morning's briefing on what I follow."
+        },
+        "earnings": {
+          "label": "{{name}}'s next earnings date",
+          "hint": "The date and last quarter",
+          "prompt": "When is {{name}}'s next earnings date, and how did the last quarter go?"
+        },
+        "movers": {
+          "label": "Biggest movers this week",
+          "hint": "Among what you follow",
+          "prompt": "Which of the assets I follow moved the most this week?"
+        },
+        "markets": {
+          "label": "What matters in markets this week",
+          "hint": "Dates and figures to watch",
+          "prompt": "What matters in markets this week? List the dates and figures to watch."
+        }
+      },
+      "setup": {
+        "connect": {
+          "label": "Connect an AI account",
+          "hint": "Needed before answers"
+        },
+        "follow": {
+          "label": "Add assets to follow",
+          "hint": "Stocks, funds or coins"
+        },
+        "briefing": {
+          "label": "Get a morning briefing",
+          "hint": "What changed, on weekday mornings"
+        },
+        "principle": "Tell {{name}} a principle to apply in every answer",
+        "hide": "Hide this suggestion"
+      }
+    }
+  },
+  "botCards": {
+    "lineCrossed": "Line crossed"
   }
 }

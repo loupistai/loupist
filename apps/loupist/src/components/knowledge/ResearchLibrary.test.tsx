@@ -30,6 +30,20 @@ it("keeps the research selection while filtering and returns keyboard focus when
   await waitFor(() => expect(screen.getByRole("button", { name: /Scope comparison/ })).toHaveFocus());
 });
 
+it("returns keyboard focus to New entry when the new-entry form is cancelled", async () => {
+  const user = userEvent.setup();
+  render(<Harness bridge={new MockLoupistBridge({ delay_ms: 0 })} />);
+  const newEntry = await screen.findByRole("button", { name: "New entry" });
+  newEntry.focus();
+  await user.keyboard("{Enter}");
+  const form = await screen.findByRole("form", { name: "New entry" });
+  expect(screen.getByRole("textbox", { name: "What do you think?" })).toHaveFocus();
+  screen.getByRole("button", { name: "Cancel" }).focus();
+  await user.keyboard("{Enter}");
+  expect(form).not.toBeInTheDocument();
+  expect(newEntry).toHaveFocus();
+});
+
 it("retries a failed research search and refuses results from another Loupist", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const search = vi.spyOn(bridge, "knowledgeResearchSearch").mockResolvedValueOnce({ loupistId: "another-loupist", records: [record] }).mockResolvedValue({ loupistId: "loupist-quality", records: [record] });

@@ -540,6 +540,45 @@ fn assistant_work_note(message: &ChatMessage) -> Option<serde_json::Value> {
     }
 }
 
+pub(super) fn handoff_note_for_model(message: &ChatMessage) -> Option<serde_json::Value> {
+    use crate::custom_connections::taint::delimited;
+
+    let note = message.handoff_note.as_ref()?;
+    Some(if message.handoff_action.is_some() {
+        json!({
+            "map_link": delimited(note.brief.as_deref()?, "Map link", note.untrusted_id.as_deref()?)
+        })
+    } else {
+        let mut body = json!({"title": note.title, "question": note.question.as_ref()?});
+        if let Some(brief) = &note.brief {
+            body["brief"] = json!(brief);
+        }
+        if let Some(id) = &note.untrusted_id {
+            body = json!(delimited(&body.to_string(), "Bot hand-off note", id));
+        }
+        json!({"bot_note": body})
+    })
+}
+
+pub(super) fn attach_handoff_note(envelope: &str, message: Option<&ChatMessage>) -> String {
+    let Some(mut note) = message.and_then(handoff_note_for_model) else {
+        return envelope.to_owned();
+    };
+    let Ok(serde_json::Value::Object(mut fields)) = serde_json::from_str(envelope) else {
+        return envelope.to_owned();
+    };
+    use crate::chat::surface::ChatSurface;
+    if note.get("bot_note").is_some() {
+        if let Some(serde_json::Value::Object(surface)) = fields.get_mut("chat_surface") {
+            surface.insert("hint".into(), json!(ChatSurface::typed_handoff_hint()));
+        }
+    } else if let Some(note) = note.as_object_mut() {
+        note.insert("hint".into(), json!(ChatSurface::link_handoff_hint()));
+    }
+    fields.insert("handoff".into(), note);
+    serde_json::Value::Object(fields).to_string()
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn bootstrap_pi_chat_session_from_sqlite(
     attachments_root: &Path,
@@ -587,6 +626,9 @@ pub(crate) fn bootstrap_pi_chat_session_from_sqlite(
             "content": message.content,
             "attachments": attachment_manifest,
         });
+        if let Some(note) = handoff_note_for_model(message) {
+            record["handoff_note"] = note;
+        }
         if let Some(work) = assistant_work_note(message) {
             record["work"] = work;
         }
@@ -718,6 +760,9 @@ pub(crate) fn bootstrap_pi_chat_session_from_sqlite(
             "content": message.content,
             "attachments": attachment_manifest,
         });
+        if let Some(note) = handoff_note_for_model(message) {
+            record["handoff_note"] = note;
+        }
         if let Some(work) = assistant_work_note(message) {
             record["work"] = work;
         }
@@ -812,6 +857,7 @@ pub(crate) struct ColdChatBootstrap<'a> {
 pub(crate) fn pi_chat_turn_prompt(
     current_prompt: &str,
     turn_envelope: &str,
+    is_handoff: bool,
     cold: Option<ColdChatBootstrap<'_>>,
 ) -> Result<String, CommandError> {
     let prompt = match cold {
@@ -830,6 +876,9 @@ pub(crate) fn pi_chat_turn_prompt(
     // Pi expands an explicit Skill only at the beginning of its input. Keep
     // the host envelope intact while forwarding the current user's selector
     // to that native entry point. Historical messages never select a Skill.
+    if is_handoff {
+        return Ok(prompt);
+    }
     let selector = current_prompt
         .split_whitespace()
         .next()

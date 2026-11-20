@@ -30,7 +30,13 @@ current canonical World and retained Source evidence. An uncertain publication
 instead keeps its extraction JSON while quarantined for reconciliation.
 Publication bounds extracted node names and descriptions, drops unreadable nodes
 and claims, and drops claims whose endpoints were discarded, so a malformed item
-does not block otherwise valid extraction.
+does not block otherwise valid extraction. It also drops a relationship whose ends
+are one entity: the same node, or nodes of one kind (or an untyped `Entity`) that
+share a name or alias once folded, as "KRW-BTC" and a Bitcoin node aliased "KRW-BTC"
+do (`relates_one_entity` in `graph_jobs/worker_output.rs`). Extraction already drops
+one before entity resolution and drops one again once resolution has merged both
+ends into one node, before any relation-resolution call is spent on it. A `REPORTS`
+claim is exempt: it is a value reported about one subject, which it names in both roles.
 
 Long Sources become bounded episodes retaining the original span as evidence.
 Each episode runs after the one before it, whose text is its extraction context; once
@@ -222,14 +228,16 @@ stored. Every change validates, applies at once and writes a `schema_extended` o
   restores the kinds it removed, so an older change can be undone after a newer
   one without touching the newer kinds. A kind a later change added or removed
   stays as that change left it, even under the same name; a change with nothing
-  else left to reverse offers no Undo. A preset or review change also posts one
-  Bot message, "Your map now also tracks ...", in the labels the user sees, with
-  Undo. A chat change, a preset applied from chat included, is already in the reply. Settings shows these under
+  else left to reverse offers no Undo. A review change also posts one Bot message,
+  "Your map now also tracks ...", in the labels the user sees, with Undo. A preset
+  applied at creation posts nothing. A chat change, a preset applied from chat
+  included, is already in the reply. Settings lists these changes, with Undo when
+  available, under
   [What the map tracks](../ui/map-lens.md#what-the-map-tracks).
 
 The Map draws an extension type in that type's
 category and labels the inspector with the type's display name. Instruments the
-user follows are an extraction hint when the episode names them, and each is also an
+job's Loupist follows are an extraction hint when the episode names them, and each is also an
 anchor ([What you follow](follow.md#what-you-follow)). A hint or anchor counts only when the
 episode names it as a whole word: a name in any case, a ticker or code (no lowercase
 letter) only as written, so ticker `A` is not every "a"; names in other scripts match
@@ -284,8 +292,8 @@ claims about a pending page only once that Source is among them. Then
 `connections::detect` walks two or three hops from each seed over claims that are
 not withdrawn, keeping each claim's direction and endpoint roles, to a name the seed
 could not reach within two hops before, with at least one hop on a claim this
-publication added. Seeds are the followed assets that `resolve_followed` matches
-exactly (an ambiguous symbol seeds nothing; the followed list and holdings are read from
+publication added. Seeds are the Loupist's followed assets that `resolve_followed` matches
+exactly (an ambiguous symbol seeds nothing; that Loupist's saved followed list is read from
 the app database before the Loupist transaction opens) plus the nodes open idea
 pages are anchored to. A middle node with more than 40 neighbours is never walked
 through, and a Place or Metric node is neither a far name nor a middle: a shared
@@ -293,9 +301,20 @@ country or a reported number is not a connection. The score prefers a far name i
 low-degree middles, parallel support and recent claims. Work is bounded (claims per
 node, expansions per publication, 50 candidates), and a result says when it was
 cut short. `knowledge_connections` keeps one row per (seed, far) pair for ever, with
-`status` moving `new → shown → opened | dismissed | filed`; Bot shows at most
-three a day ([link posts](../ui/home-thread.md#home-thread)). A link is new to this
+`status` moving `new → shown → opened | dismissed | filed`. Automatic Bot link
+posts are disabled: extraction of a company's products or segments does not establish
+personal relevance. Re-enabling delivery requires a current followed-list
+snapshot read before the Loupist transaction, exact identity resolution at both
+ends (or a followed asset linked to an event with a fact date), and at most one
+card per reply. Existing detected paths remain in the Map silently. A link is new to this
 Loupist, never a claim that the market missed it.
+
+
+An asset page retains its selected entity across ticker correction and undo
+while the node is present in the published World. Clearing the link records
+a rejection in the page's Loupist. Future matches exclude that node. If a
+linked node disappears, the matcher can choose from the remaining eligible
+nodes in the current World.
 
 ## Code
 

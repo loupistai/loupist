@@ -1,0 +1,47 @@
+{
+  "Costco": {"data": [
+    {"figi": "BBG000TZ5H89", "name": "Costco Wholesale", "ticker": "COSF=3", "exchCode": "GR", "securityType": "SINGLE STOCK FUTURE", "securityType2": "Future", "marketSector": "Equity"},
+    {"figi": "BBG000TZ5L17", "name": "Costco Wholesale", "ticker": "COSF=8", "exchCode": "GR", "securityType": "SINGLE STOCK FUTURE", "securityType2": "Future", "marketSector": "Equity"},
+    {"figi": "BBG0003KPMZ7", "name": "COSTCO WHOLESALE", "ticker": "COST 5.75 05/15/02", "exchCode": "NOT LISTED", "securityType": "US DOMESTIC", "securityType2": "Corp", "marketSector": "Corp"},
+    {"figi": "BBG000F6H910", "name": "COSTCO WHOLESALE CORP", "ticker": "COST", "exchCode": "UA", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000F6H8W8"},
+    {"figi": "BBG01SKDPDV6", "name": "HARVEST COSTCO ENHANCED", "ticker": "COSY", "exchCode": "CJ", "securityType": "ETP", "securityType2": "Mutual Fund", "marketSector": "Equity", "compositeFIGI": "BBG01SKDPDH2"},
+    {"figi": "BBG000F6H8W8", "name": "COSTCO WHOLESALE CORP", "ticker": "COST", "exchCode": "US", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000F6H8W8"},
+    {"figi": "BBG000F6HB06", "name": "COSTCO WHOLESALE CORP", "ticker": "COST", "exchCode": "UN", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000F6H8W8"},
+    {"figi": "BBG01SKDPDH2", "name": "HARVEST COSTCO ENHANCED", "ticker": "COSY", "exchCode": "CN", "securityType": "ETP", "securityType2": "Mutual Fund", "marketSector": "Equity", "compositeFIGI": "BBG01SKDPDH2"},
+    {"figi": "BBG01YTS91W4", "name": "COSTCO WHOLESALE CORP", "ticker": "CTO1", "exchCode": "GR", "securityType": "Canadian DR", "securityType2": "Depositary Receipt", "marketSector": "Equity", "compositeFIGI": "BBG01YTS91W4"}
+  ]},
+  "Deere": {"data": [
+    {"figi": "BBG000039155", "name": "DEERE & COMPANY", "ticker": "DE 8.1 05/15/30", "exchCode": "NEW YORK", "securityType": "US DOMESTIC", "securityType2": "Corp", "marketSector": "Corp"},
+    {"figi": "BBG0000K63V7", "name": "DEERE & COMPANY", "ticker": "DE 5.375 10/16/29", "exchCode": "NEW YORK", "securityType": "US DOMESTIC", "securityType2": "Corp", "marketSector": "Corp"},
+    {"figi": "BBG0006ZGCG4", "name": "JOHN DEERE BV", "ticker": "DE 5.875 04/06/06", "exchCode": "TRACE", "securityType": "US DOMESTIC", "securityType2": "Corp", "marketSector": "Corp"},
+    {"figi": "BBG000DQ7DX5", "name": "DEERE & CO", "ticker": "DCO", "exchCode": "GF", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000DQ7DR2"},
+    {"figi": "BBG000DQ7FK4", "name": "DEERE & CO", "ticker": "DCO", "exchCode": "GY", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000DQ7DR2"},
+    {"figi": "BBG00J3QH561", "name": "DEERE & CO", "ticker": "DEEUR", "exchCode": "X2", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG00J3QH561"},
+    {"figi": "BBG00J3QH5C4", "name": "DEERE & CO", "ticker": "DEEUR", "exchCode": "XF", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG00J3QH561"}
+  ]},
+  "COST": {"data": [
+    {"figi": "BBG000F6HCK2", "name": "COSTCO WHOLESALE CORP", "ticker": "COST", "exchCode": "UB", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000F6H8W8"},
+    {"figi": "BBG000F6HDS2", "name": "COSTCO WHOLESALE CORP", "ticker": "COST", "exchCode": "UX", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000F6H8W8"},
+    {"figi": "BBG000H5QWK8", "name": "COSTAIN GROUP PLC", "ticker": "COST", "exchCode": "XJ", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000H5PN38"},
+    {"figi": "BBG00Q53W932", "name": "COSTAIN GROUP PLC", "ticker": "COST", "exchCode": "EZ", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG00Q53W923"},
+    {"figi": "BBG013V1R336", "name": "COSTCO WHOLESALE CORP-CDR", "ticker": "COST", "exchCode": "CJ", "securityType": "Canadian DR", "securityType2": "Depositary Receipt", "marketSector": "Equity", "compositeFIGI": "BBG013V1QYB0"},
+    {"figi": "BBG000F6H910", "name": "COSTCO WHOLESALE CORP", "ticker": "COST", "exchCode": "UA", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000F6H8W8"},
+    {"figi": "BBG000H5PN38", "name": "COSTAIN GROUP PLC", "ticker": "COST", "exchCode": "EO", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000H5PN38"},
+    {"figi": "BBG013V1QYB0", "name": "COSTCO WHOLESALE CORP-CDR", "ticker": "COST", "exchCode": "CN", "securityType": "Canadian DR", "securityType2": "Depositary Receipt", "marketSector": "Equity", "compositeFIGI": "BBG013V1QYB0"},
+    {"figi": "BBG000F6H8W8", "name": "COSTCO WHOLESALE CORP", "ticker": "COST", "exchCode": "US", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000F6H8W8"}
+  ]},
+  "DE": {"data": [
+    {"figi": "BBG004SNMZY1", "name": "DECISIVE DIVIDEND CORP", "ticker": "DE", "exchCode": "TN", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG004SNMZC5"},
+    {"figi": "BBG013V1Q2B0", "name": "DEERE & CO", "ticker": "DE", "exchCode": "OU", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG013V1Q275"},
+    {"figi": "BBG000BH1RC5", "name": "DEERE & CO", "ticker": "DE", "exchCode": "UP", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000BH1NH9"},
+    {"figi": "BBG004SNN059", "name": "DECISIVE DIVIDEND CORP", "ticker": "DE", "exchCode": "DS", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG004SNMZC5"},
+    {"figi": "BBG026QK0W64", "name": "DEERE & CO", "ticker": "DE", "exchCode": "PE", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG026QK0W55"},
+    {"figi": "BBG000BH1SN1", "name": "DEERE & CO", "ticker": "DE", "exchCode": "UB", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000BH1NH9"},
+    {"figi": "BBG001LPP4D8", "name": "SOC DE EAUX MINERALES DU CAM", "ticker": "SEMC", "exchCode": "DE", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG001LPP4C9"},
+    {"figi": "BBG000BH1YX7", "name": "DEERE & CO", "ticker": "DE", "exchCode": "VY", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000BH1NH9"},
+    {"figi": "BBG000HF80S8", "name": "DEERE & CO-CEDEAR", "ticker": "DE", "exchCode": "AR", "securityType": "CEDEAR", "securityType2": "Depositary Receipt", "marketSector": "Equity", "compositeFIGI": "BBG000HF80S8"},
+    {"figi": "BBG000BH1NH9", "name": "DEERE & CO", "ticker": "DE", "exchCode": "US", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG000BH1NH9"},
+    {"figi": "BBG004SNMZC5", "name": "DECISIVE DIVIDEND CORP", "ticker": "DE", "exchCode": "CN", "securityType": "Common Stock", "securityType2": "Common Stock", "marketSector": "Equity", "compositeFIGI": "BBG004SNMZC5"},
+    {"figi": "BBG006D4DVC7", "name": "SOCIETE DE TRANSPORT DE", "ticker": "STLAVA 3.05 01/26/15", "exchCode": "NOT LISTED", "securityType": "CANADIAN", "securityType2": "Govt", "marketSector": "Govt"}
+  ]}
+}

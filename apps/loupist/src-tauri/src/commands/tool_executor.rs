@@ -2,20 +2,16 @@ mod approval;
 mod artifacts;
 mod as_of_turn;
 pub(super) mod assets;
-mod bot_memory;
-mod earnings;
-#[cfg(test)]
-mod earnings_tests;
-mod question;
-pub(crate) use earnings::commit_turn as commit_earnings;
+mod price_reads;
+pub(in crate::commands) use price_reads::commit_price_reads;
 mod arguments;
-#[cfg(test)]
-mod assets_tests;
 mod authority;
+mod bot_memory;
 mod calculation;
 #[cfg(test)]
 mod calculation_tests;
 mod lens_file;
+mod question;
 pub(crate) use lens_file::commit_turn as commit_filings;
 pub(super) use lens_file::StagedFiling;
 mod principles;
@@ -29,6 +25,7 @@ mod dataset_tests;
 mod datasets;
 mod errors;
 mod evidence;
+mod interface_labels;
 use errors::{command_error, command_message, knowledge_error, store_error};
 mod finance;
 mod grid;
@@ -36,13 +33,15 @@ mod grid;
 mod grid_tests;
 mod market;
 mod mcp_host;
+pub(crate) use mcp_host::prewarm_market_data;
 mod memory_reads;
 mod memory_saves;
-mod number_checks;
+pub(super) use memory_saves::finish_setup_theses;
+pub(in crate::commands) mod number_checks;
+mod pasted;
 mod research;
 mod returning;
 pub(super) mod schedules;
-pub(in crate::commands) mod sensitivity;
 mod setup;
 pub(super) use setup::StagedSetup;
 mod connection_setup;
@@ -149,8 +148,19 @@ pub(super) struct ToolCapture {
     pub(super) tool_refusals: Arc<std::sync::Mutex<Vec<crate::domain::ChatToolRefusal>>>,
     pub(super) turn_taint: crate::custom_connections::taint::TurnTaint,
     pub(crate) unattended_run_id: Option<String>,
+    pub(in crate::commands) staged_price_reads: Mutex<
+        Vec<(
+            crate::commands::assets::wire::AssetRow,
+            crate::knowledge::assets::saved_read::StagedPriceRead,
+        )>,
+    >,
+    pub(in crate::commands) quiet_schedule: std::sync::atomic::AtomicBool,
+    scheduled_data_attempted: std::sync::atomic::AtomicBool,
     pub(super) tool_trace: Arc<crate::broker::ToolTraceCapture>,
+    pub(super) price_setup_connect_failed: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub(crate) surface: Option<crate::chat::surface::ChatSurface>,
+    pub(super) host_handoff: bool,
+    pub(super) interface_locale: Option<crate::agent_harness::interface::InterfaceLocale>,
     pub(super) schedule_context: Option<schedules::ScheduleContext>,
     pub(in crate::commands) staged_handoff: Mutex<Option<crate::chat::handoff::StagedHandoff>>,
     pub(super) schedule_sink:
@@ -183,8 +193,6 @@ pub(super) struct ToolCapture {
     pub(super) staged_principles: Mutex<Vec<StagedPrinciple>>,
     /// Checked thesis updates, committed with the reply.
     pub(in crate::commands) staged_theses: Mutex<Vec<crate::knowledge::assets::ThesisUpdate>>,
-    /// Checked results saves, committed with the reply.
-    pub(in crate::commands) staged_earnings: Mutex<Vec<earnings::EarningsSave>>,
     pub(in crate::commands) staged_vocabulary: Mutex<Vec<StagedVocabulary>>,
     pub(in crate::commands) staged_filings: Mutex<Vec<StagedFiling>>,
     /// The reply's one `loupist_setup` call.
@@ -215,19 +223,26 @@ pub(super) struct ToolCapture {
     pub(super) principle_user_message_id: Option<String>,
     /// Original Chat binding captured by the host, never selected by tool input.
     pub(super) bound_chat_id: Option<String>,
+    pub(super) opening_task_id: Option<String>,
     pending_deliveries: Mutex<HashMap<String, PendingToolCapture>>,
     pub(super) web_search_policy: crate::web::WebSearchPolicy,
     /// The provider answering this turn, for model-native search. A Chat
     /// turn's Auto retry after a gone model may change it.
     chat_provider: std::sync::Mutex<String>,
     pub(super) search_cancel: crate::web::SearchCancel,
-    mcp_sessions: Mutex<mcp_host::McpTurnSessions>,
+    mcp_sessions: Arc<Mutex<mcp_host::McpTurnSessions>>,
+    fx: Mutex<finance::FxTurn>,
     pub(super) mcp_scratch_root: Option<PathBuf>,
     pub(super) mcp_pool: Option<McpProcessPool>,
 }
 
 #[derive(Default)]
 struct PendingToolCapture {
+    price_reads: Vec<(
+        crate::commands::assets::wire::AssetRow,
+        crate::knowledge::assets::saved_read::StagedPriceRead,
+    )>,
+    quiet_schedule: bool,
     memories: HashMap<String, MemoryRefSnapshot>,
     web_sources: HashMap<String, crate::web::WebSource>,
     web_fetch_snapshots: HashMap<String, RunWebFetchSnapshot>,
@@ -242,7 +257,6 @@ struct PendingToolCapture {
     thesis_pair: Option<StagedResearchJournal>,
     principles: Vec<StagedPrinciple>,
     theses: Vec<crate::knowledge::assets::ThesisUpdate>,
-    earnings: Vec<earnings::EarningsSave>,
     vocabulary: Vec<StagedVocabulary>,
     filings: Vec<StagedFiling>,
     setup: Option<StagedSetup>,
@@ -292,15 +306,6 @@ impl RunResultRegistry {
         self.results.get(result_ref)
     }
 
-    #[cfg(test)]
-    fn insert(&mut self, result: RunResult) -> Result<(), BrokerError> {
-        let payload_bytes = serde_json::to_vec(&result.payload)
-            .map_err(|_| BrokerError::Execution("tool result could not be captured".into()))?
-            .len();
-        let bytes = run_result_bytes(&result, payload_bytes);
-        self.insert_captured(CapturedRunResult { result, bytes })
-    }
-
     fn insert_captured(&mut self, captured: CapturedRunResult) -> Result<(), BrokerError> {
         let CapturedRunResult { result, bytes } = captured;
         if bytes > MAX_RUN_RESULT_BYTES
@@ -342,6 +347,8 @@ pub(super) struct StagedSource {
     pub(super) provider_identity: String,
     pub(super) document_id: String,
     pub(super) material_role: String,
+    /// The message a user-provided Source was pasted in.
+    pub(super) provided: Option<crate::knowledge::ProvidedOrigin>,
 }
 
 #[derive(Clone, Debug)]
@@ -356,6 +363,8 @@ pub(super) enum AckedPayload {
         coverage: String,
         attribution: String,
         publication_time: Option<crate::knowledge::TimePoint>,
+        /// Where a user-provided Source was pasted; `None` for every other Source.
+        provided: Option<Box<crate::knowledge::ProvidedOrigin>>,
     },
     World {
         revision_digest: String,
@@ -431,7 +440,7 @@ pub(super) struct StagedResearchJournal {
     /// A reason or line for an asset page; the page is created at commit if new.
     pub(super) thesis: Option<(
         crate::knowledge::assets::JournalThesis,
-        crate::knowledge::assets::AssetIdentity,
+        Option<crate::commands::assets::wire::AssetRow>,
     )>,
     pub(super) outcome: Option<crate::knowledge::JournalOutcomeDraft>,
     pub(super) judgment: String,
@@ -534,13 +543,14 @@ impl ToolCapture {
         }
         let result_ref = format!("result:{}", uuid::Uuid::new_v4().simple());
         let warnings = result_warnings(&payload);
-        let origin = if producer.origin == RunResultOrigin::WorkspaceFile {
-            payload
+        let origin = match producer.origin {
+            RunResultOrigin::WorkspaceFile => payload
                 .get("path")
                 .and_then(Value::as_str)
-                .map(|path| format!("workspace:{path}"))
-        } else {
-            result_origin(request)
+                .map(|path| format!("workspace:{path}")),
+            // A link the user stated is not where the host read the text.
+            RunResultOrigin::UserProvided => None,
+            _ => result_origin(request),
         };
         let result = RunResult {
             result_ref: result_ref.clone(),
@@ -647,6 +657,27 @@ impl ToolCapture {
                 .insert_captured(captured)
                 .expect("staged run result budget was checked before delivery");
         }
+        // Transfer artifact reservations while staging is excluded, so another
+        // call cannot publish this id between pending removal and replacement.
+        {
+            let mut artifacts = self.artifacts.lock().await;
+            for commit in &pending.artifacts {
+                pending
+                    .artifact_reads
+                    .insert((commit.artifact.id.clone(), commit.revision.revision));
+                if let Some(existing) = artifacts
+                    .iter_mut()
+                    .find(|existing| existing.artifact.id == commit.artifact.id)
+                {
+                    *existing = commit.clone();
+                } else {
+                    artifacts.push(commit.clone());
+                }
+            }
+        }
+        if let Some(handoff) = pending.handoff.take() {
+            *self.staged_handoff.lock().await = Some(handoff);
+        }
         drop(pending_deliveries);
         drop(registry);
         if let (Some(sink), Some(call_id)) = (&self.entity_sink, call_id.as_deref()) {
@@ -743,17 +774,21 @@ impl ToolCapture {
                 });
             }
         }
+        if !pending.price_reads.is_empty() {
+            self.staged_price_reads
+                .lock()
+                .await
+                .extend(pending.price_reads);
+        }
+        if pending.quiet_schedule {
+            self.quiet_schedule
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         if !pending.theses.is_empty() {
             self.staged_theses
                 .lock()
                 .await
                 .extend(std::mem::take(&mut pending.theses));
-        }
-        if !pending.earnings.is_empty() {
-            self.staged_earnings
-                .lock()
-                .await
-                .extend(std::mem::take(&mut pending.earnings));
         }
         if !pending.vocabulary.is_empty() {
             self.staged_vocabulary
@@ -777,18 +812,11 @@ impl ToolCapture {
         }
         if !pending.artifacts.is_empty() {
             self.show_staged_artifacts(&pending.artifacts).await;
-            self.artifacts
-                .lock()
-                .await
-                .extend(std::mem::take(&mut pending.artifacts));
         }
         self.artifact_reads
             .lock()
             .await
             .extend(pending.artifact_reads);
-        if let Some(handoff) = pending.handoff {
-            *self.staged_handoff.lock().await = Some(handoff);
-        }
     }
 
     async fn stage_research_open(
@@ -814,29 +842,22 @@ impl ToolCapture {
         }
         let request = crate::chat::handoff::HandoffRequest::parse(&params)
             .map_err(|(field, expected)| BrokerError::InvalidArguments { field, expected })?;
-        if self.staged_handoff.lock().await.is_some()
-            || self
-                .pending_deliveries
-                .lock()
-                .await
-                .values()
-                .any(|pending| pending.handoff.is_some())
-        {
-            return Err(BrokerError::Execution(
-                "This reply already opens a research session: one research session per reply."
-                    .into(),
-            ));
-        }
         let context = self
             .schedule_context
             .as_ref()
             .ok_or_else(|| BrokerError::invalid("research_open", "This reply has no research-session context. Continue in this Chat and tell the user no session was opened."))?;
+        let model = context.research_model.as_ref().ok_or_else(|| {
+            BrokerError::invalid(
+                "research_open",
+                "This reply has no admitted research model.",
+            )
+        })?;
         let staged = crate::chat::handoff::StagedHandoff {
             request,
             run: crate::chat::handoff::HandoffRun {
-                model_profile_id: context.model_profile_id.clone(),
-                thinking_level: context.thinking_level.clone(),
-                run_options: context.run_options.clone(),
+                model_profile_id: model.profile_id.clone(),
+                thinking_level: model.thinking_level.clone(),
+                run_options: model.run_options.clone(),
                 use_memory: context.use_memory,
                 update_memory: context.update_memory,
             },
@@ -847,8 +868,16 @@ impl ToolCapture {
             "requestKey": staged.request.request_key,
             "notice": "The session opens when this reply finishes and its result arrives here. Tell the user the session title; do not repeat the research in this reply."
         });
-        self.stage(delivery_id, |pending| pending.handoff = Some(staged))
-            .await;
+        let mut pending = self.pending_deliveries.lock().await;
+        if self.staged_handoff.lock().await.is_some()
+            || pending.values().any(|delivery| delivery.handoff.is_some())
+        {
+            return Err(BrokerError::Execution(
+                "This reply already opens a research session: one research session per reply."
+                    .into(),
+            ));
+        }
+        pending.entry(delivery_id.to_owned()).or_default().handoff = Some(staged);
         Ok(result)
     }
 }
@@ -962,6 +991,18 @@ pub(super) struct AppToolExecutor {
 #[async_trait]
 impl ToolExecutor for AppToolExecutor {
     fn enforce_turn_policy(&self, method: ToolMethod, params: &Value) -> Result<(), BrokerError> {
+        if self.capture.scheduled_run_id().is_some()
+            && (matches!(method, ToolMethod::McpConnect | ToolMethod::McpCall)
+                || method.producer().is_some_and(|producer| {
+                    producer.origin == RunResultOrigin::AcquiredOriginal
+                        || (producer.origin == RunResultOrigin::Discovery
+                            && method.safety().reach == crate::broker::tool_class::Reach::Outbound)
+                }))
+        {
+            self.capture
+                .scheduled_data_attempted
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         let result = self.capture.turn_taint.enforce(method, params);
         let outbound_paused = match &result {
             Err(BrokerError::WithNext { source, .. }) => {
@@ -1130,7 +1171,6 @@ impl AppToolExecutor {
             | ToolMethod::ScheduleRead
             | ToolMethod::ScheduleCreate
             | ToolMethod::ScheduleHandoff
-            | ToolMethod::ScheduleWatch
             | ToolMethod::ScheduleBriefing
             | ToolMethod::ScheduleUpdate
             | ToolMethod::ScheduleSetStatus
@@ -1144,6 +1184,9 @@ impl AppToolExecutor {
             }
             ToolMethod::BotMemory => self.stage_bot_memory(policy, params, delivery_id).await,
             ToolMethod::ChatHistory => self.chat_history(policy, params),
+            ToolMethod::InterfaceLabels => {
+                interface_labels::read(self.capture.interface_locale, params)
+            }
             ToolMethod::DatasetExport
             | ToolMethod::DatasetDescribe
             | ToolMethod::DatasetQuery
@@ -1172,9 +1215,11 @@ impl AppToolExecutor {
             ToolMethod::DartOwnership => self.dart_ownership(policy, params).await,
             ToolMethod::DartDividends => self.dart_dividends(policy, params).await,
             ToolMethod::McpConnect => self.mcp_connect(params).await,
-            ToolMethod::McpCall => self.mcp_call(policy, params, delivery_id).await,
+            ToolMethod::McpCall => {
+                self.mcp_call_with_reuse(policy, params, delivery_id, true)
+                    .await
+            }
             ToolMethod::RunResultsList => self.run_results_list(params).await,
-            ToolMethod::PlanUpdate => plan_update(&params),
             ToolMethod::WebSearch => self.web_search(policy, params, delivery_id).await,
             ToolMethod::WebFetch => self.web_fetch(policy, params, delivery_id).await,
             ToolMethod::SourceSave => self.stage_source_save(policy, params, delivery_id).await,
@@ -1185,11 +1230,12 @@ impl AppToolExecutor {
             ToolMethod::ConversationMemory => {
                 self.conversation_memory(policy, params, delivery_id).await
             }
+            ToolMethod::ScheduleQuiet => self.schedule_quiet(policy, params, delivery_id).await,
+            ToolMethod::AssetLookup => self.asset_lookup(params).await,
+            ToolMethod::PriceReadSave => self.stage_price_read(policy, params, delivery_id).await,
             ToolMethod::AssetPageRead => self.asset_page_read(policy, params, delivery_id).await,
+            ToolMethod::FxRate => Box::pin(self.fx_rate(policy, params, delivery_id)).await,
             ToolMethod::ThesisUpdate => self.stage_thesis_update(policy, params, delivery_id).await,
-            ToolMethod::EarningsSnapshotSave => {
-                self.stage_earnings_save(policy, params, delivery_id).await
-            }
             ToolMethod::JournalSave => self.stage_journal(policy, params, delivery_id, false).await,
             ToolMethod::JournalReview => {
                 self.stage_journal(policy, params, delivery_id, true).await
@@ -1206,7 +1252,7 @@ impl AppToolExecutor {
             ToolMethod::ConnectionSetup => self.connection_setup(params),
             ToolMethod::AskUser => self.ask_user_question(params).await,
             ToolMethod::LensFile => self.stage_lens_file(policy, params, delivery_id).await,
-            ToolMethod::ArtifactList => self.artifact_list(policy, params),
+            ToolMethod::ArtifactList => self.artifact_list(policy, params).await,
             ToolMethod::ArtifactRead => self.artifact_read(policy, params, delivery_id).await,
             ToolMethod::ArtifactPublish => self.artifact_publish(policy, params, delivery_id).await,
             ToolMethod::ChartQuery => self.chart_query(policy, params).await,
@@ -1219,22 +1265,30 @@ impl AppToolExecutor {
                 }
                 Ok(result)
             }
+            ToolMethod::PastedCapture => self.pasted_capture(policy, params),
             ToolMethod::PythonRun => self.python_run(params).await,
         }?;
-        // Holdings redaction over every tool result (D9): an account read
+        // Account-field redaction over every account result: an account read
         // keeps no quantity, amount or price paid in any copy below, a reused
         // dataset included, and an unreviewed account read is refused.
-        if method == ToolMethod::KisRead && crate::privacy::holdings::is_account_result(&result) {
-            match crate::privacy::holdings::operation_id(&result)
+        if method == ToolMethod::KisRead
+            && crate::privacy::account_fields::is_account_result(&result)
+        {
+            match crate::privacy::account_fields::operation_id(&result)
                 .and_then(|id| self.state.finance_data.kis_account_review(id))
             {
-                Some(crate::privacy::holdings::AccountReview::Account(fields)) => {
-                    crate::privacy::holdings::redact_fields(&mut result, &fields);
+                Some(crate::privacy::account_fields::AccountReview::Account(fields)) => {
+                    if !crate::privacy::account_fields::account_fields_visible(
+                        &self.state,
+                        crate::finance_data::KIS_SOURCE_ID,
+                    ) {
+                        crate::privacy::account_fields::redact_fields(&mut result, &fields);
+                    }
                 }
-                Some(crate::privacy::holdings::AccountReview::Market) => {}
+                Some(crate::privacy::account_fields::AccountReview::Market) => {}
                 _ => {
                     return Err(BrokerError::Execution(
-                        crate::privacy::holdings::UNREVIEWED.into(),
+                        crate::privacy::account_fields::UNREVIEWED.into(),
                     ))
                 }
             }
@@ -1250,7 +1304,13 @@ impl AppToolExecutor {
         }
         // Third-party text coming back from a saved Source or a retained
         // dataset raises it too, as when it first arrived.
-        let returning = self.returning_untrusted(method, &result)?;
+        let returning = match method {
+            ToolMethod::ArtifactList => self.returning_artifact_titles(policy, &result).await?,
+            ToolMethod::ArtifactRead | ToolMethod::ChartQuery => {
+                self.returning_artifact(policy, method, &result).await?
+            }
+            _ => self.returning_untrusted(method, &result)?,
+        };
         if returning.is_some() {
             self.capture.turn_taint.mark_untrusted_text();
         }
@@ -1342,7 +1402,9 @@ impl AppToolExecutor {
         } else {
             None
         };
-        if let Some(producer) = run_result_producer(method, &request, &result) {
+        if let Some(producer) =
+            run_result_producer(method, &request, &result).filter(|_| method != ToolMethod::FxRate)
+        {
             let result_ref = self
                 .capture
                 .stage_run_result_with_delivery(
@@ -1361,12 +1423,6 @@ impl AppToolExecutor {
         }
         // Full datasets stay in the host; large model-facing views are bounded.
         let mut delivered = model_payload.unwrap_or(result);
-        #[cfg(debug_assertions)]
-        crate::privacy::holdings::debug_scan(
-            &self.state.store,
-            "a tool result",
-            &delivered.to_string(),
-        );
         crate::custom_connections::taint::delimit_untrusted_bodies(
             method,
             &request,
@@ -1437,6 +1493,10 @@ fn run_result_producer(
 ) -> Option<RunResultProducer> {
     let native = method.producer()?;
     let provider = match method {
+        ToolMethod::FxRate => result
+            .pointer("/source/id")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
         ToolMethod::WebSearch => result
             .get("selected_provider")
             .and_then(Value::as_str)
@@ -1515,6 +1575,25 @@ fn delivered_world_node_ids(reads: &[StagedKnowledgeRead]) -> Vec<String> {
 mod tests;
 
 impl ToolCapture {
+    pub(in crate::commands) fn scheduled_run_id_for_commit(&self) -> Option<&str> {
+        self.scheduled_run_id().filter(|_| {
+            self.quiet_schedule
+                .load(std::sync::atomic::Ordering::Relaxed)
+        })
+    }
+
+    pub(in crate::commands) async fn has_data_for_quiet(&self) -> bool {
+        !self
+            .scheduled_data_attempted
+            .load(std::sync::atomic::Ordering::Relaxed)
+            || self
+                .run_results
+                .lock()
+                .await
+                .values()
+                .any(|entry| entry.producer.origin == RunResultOrigin::AcquiredOriginal)
+    }
+
     /// The scheduled run whose row records refused tools; a delegated hand-off
     /// run is unattended too but has no such row.
     fn scheduled_run_id(&self) -> Option<&str> {
@@ -1553,21 +1632,18 @@ fn refuse_sensitive_memory(
     if !method.safety().memory.screened_for_credentials() || !any_credential_text(params) {
         return Ok(());
     }
+    Err(sensitive_memory_refusal(capture, method))
+}
+
+/// Records that Memory refused credential-like text and returns the refusal.
+fn sensitive_memory_refusal(capture: &ToolCapture, method: ToolMethod) -> BrokerError {
     capture.record_tool_refusal(crate::domain::ChatToolRefusal {
         connection_id: "memory".into(),
         connection_name: "Memory".into(),
         tool_name: method.tool_name(),
         reason: crate::domain::ChatToolRefusalReason::SensitiveMemory,
     });
-    Err(BrokerError::Execution(
+    BrokerError::Execution(
         "Not saved: this looks like a credential, token or other secret, and Memory never keeps those. Continue without saving it; do not retry with the same text.".into(),
-    ))
-}
-
-/// The plan itself is projected from the call into chat progress; the tool only
-/// checks the arguments and acknowledges them.
-fn plan_update(params: &Value) -> Result<Value, BrokerError> {
-    let items = crate::chat::progress::parse_plan_update(params)
-        .map_err(|(field, expected)| BrokerError::InvalidArguments { field, expected })?;
-    Ok(serde_json::json!({ "status": "plan_updated", "items": items.len() }))
+    )
 }

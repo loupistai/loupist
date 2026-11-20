@@ -1,11 +1,11 @@
 {
   "id": "benzinga.news",
   "name": "Benzinga",
-  "summary": "Market news and corporate events.",
+  "summary": "Market news and corporate events. Getting a free key requires a phone number. News access depends on your license.",
   "publisher": "Loupist",
   "data_authority": "Benzinga",
   "kind": "data_source",
-  "free_state": "paid",
+  "free_state": "free_account",
   "trust": "first_party",
   "runtime": {
     "kind": "mcp",
@@ -61,7 +61,7 @@
         "required": true,
         "min_length": 8,
         "max_length": 512,
-        "help_url": "https://www.benzinga.com/apis/"
+        "help_url": "https://www.benzinga.com/apis/licensing/register"
       }
     ]
   }

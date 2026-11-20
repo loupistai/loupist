@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useReducer, useRef } from "react";
 import type { LoupistSettingsSection } from "../components/agents/LoupistSettings";
 import type { AssetPageTarget } from "../contracts/assets";
 import type { PackOpenResult } from "../contracts/sharing";
 import { APP_DESTINATIONS, type AppDestinationId, type AppTab } from "./navigation";
-import type { WorkspacePanelKind } from "./useWorkspacePanel";
 
 const LAST_VIEW_KEY = "loupist.lastView";
 
@@ -29,6 +28,8 @@ export type SurfaceAction =
   | { type: "closeLoupistSettings" }
   | { type: "openAssetPage"; page: AssetPageLayer }
   | { type: "closeAssetPage" }
+  /** The open asset page names its asset as it shows it (a Korean listing in Korean), so the header says the same. */
+  | { type: "nameAssetPage"; key: number; name: string }
   /** Another Loupist became current: its asset page cannot stay open. */
   | { type: "keepAssetPageFor"; loupistId: string | null }
   | { type: "openGallery" }
@@ -45,6 +46,8 @@ export function surfaceReducer(surface: AppSurface, action: SurfaceAction): AppS
     case "closeLoupistSettings": return surface.loupistSettings ? { ...surface, loupistSettings: null } : surface;
     case "openAssetPage": return { ...surface, loupistSettings: null, assetPage: action.page };
     case "closeAssetPage": return surface.assetPage ? { ...surface, assetPage: null } : surface;
+    case "nameAssetPage": return surface.assetPage?.key === action.key && action.name && surface.assetPage.name !== action.name
+      ? { ...surface, assetPage: { ...surface.assetPage, name: action.name } } : surface;
     case "keepAssetPageFor": return surface.assetPage && surface.assetPage.loupistId !== action.loupistId ? { ...surface, assetPage: null } : surface;
     case "openGallery": return surface.gallery ? surface : { ...surface, gallery: true };
     case "closeGallery": return surface.gallery ? { ...surface, gallery: false } : surface;
@@ -84,37 +87,14 @@ const initialSurface = (): AppSurface => ({
  * The shell's page and layers. Every navigation moves the epoch, so a hand-off
  * that resolves after the user went elsewhere can tell it is stale.
  */
-export function useAppSurface(workspace: { hydrated: boolean; selectKind: (kind: WorkspacePanelKind) => void }) {
+export function useAppSurface() {
   const [surface, dispatch] = useReducer(surfaceReducer, undefined, initialSurface);
   const navigationEpoch = useRef(0);
-  const { hydrated, selectKind } = workspace;
-  // Map and Lens were pages before they became panels; a saved one opens as its panel once.
-  const legacyPanel = useRef(localStorage.getItem(LAST_VIEW_KEY));
-  useEffect(() => {
-    if (!hydrated) return;
-    const previous = legacyPanel.current;
-    legacyPanel.current = null;
-    if (previous === "map" || previous === "lens") {
-      selectKind(previous === "map" ? "world" : "lens");
-      localStorage.setItem(LAST_VIEW_KEY, "chat");
-    }
-  }, [hydrated, selectKind]);
   const setTab = useCallback((tab: AppTab) => {
     navigationEpoch.current += 1;
     if (tab !== "settings") localStorage.setItem(LAST_VIEW_KEY, tab);
     dispatch({ type: "page", tab });
   }, []);
-  /** World or Lens beside the Chat. */
-  const showPanel = useCallback((kind: Exclude<WorkspacePanelKind, "materials">) => {
-    navigationEpoch.current += 1;
-    selectKind(kind);
-    localStorage.setItem(LAST_VIEW_KEY, "chat");
-    dispatch({ type: "page", tab: "chat" });
-  }, [selectKind]);
-  const goTo = useCallback((id: AppDestinationId) => {
-    const destination = APP_DESTINATIONS.find((item) => item.id === id)!;
-    if ("page" in destination.target) setTab(destination.target.page);
-    else showPanel(destination.target.panel);
-  }, [setTab, showPanel]);
-  return { surface, dispatch, navigationEpoch, setTab, showPanel, goTo };
+  const goTo = useCallback((id: AppDestinationId) => setTab(APP_DESTINATIONS.find((item) => item.id === id)!.page), [setTab]);
+  return { surface, dispatch, navigationEpoch, setTab, goTo };
 }

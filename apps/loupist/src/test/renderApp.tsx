@@ -56,10 +56,10 @@ export const mainTab = async (name: RegExp) => {
     if (settings) fireEvent.click(settings);
     return await screen.findByRole("button", { name: "Data connections" });
   }
-  if (!document.querySelector(".header-workspace-controls")) fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  if (!document.querySelector("[data-testid=loupist-navigation]")) fireEvent.click(screen.getByRole("button", { name: "Back" }));
   if (label === "Map" || label === "Lens") {
-    fireEvent.keyDown(screen.getByRole("button", { name: /Panel kind/ }), { key: "Enter" });
-    return screen.findByRole("menuitemradio", { name: label === "Map" ? "Map" : "Lens" });
+    // Map and Lens are sidebar destinations; each opens beside the conversation.
+    return within(document.querySelector<HTMLElement>(`[data-sidebar-place="${label === "Map" ? "map" : "lens"}"]`)!).getByRole("button");
   }
   if (label === APP_DESTINATIONS[0]!.label) {
     const close = document.querySelector<HTMLButtonElement>("[data-workspace-close]");
@@ -84,29 +84,57 @@ export const togglePrivateChat = async () => {
   await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
 };
 
+/** Opens the Loupist switcher at the top of the sidebar. */
+export const openLoupistSwitcher = () => {
+  if (!document.querySelector(".loupist-switcher-menu")) fireEvent.keyDown(selectedLoupistButton(), { key: "Enter" });
+  return document.querySelector<HTMLElement>(".loupist-switcher-menu")!;
+};
+
 export const chooseLoupist = async (
   user: { click: (element: Element) => Promise<unknown> },
   name: string,
 ) => {
-  const selector = screen.getByRole("navigation", { name: "Loupists" });
-  await user.click(await within(selector).findByRole("button", { name }));
+  await screen.findByRole("navigation", { name: "Loupists" });
+  await user.click(within(openLoupistSwitcher()).getByRole("menuitemradio", { name }));
 };
 
 export const loupistIsRunning = (name: string) => {
   return Boolean(screen.queryByRole("status", { name: `${name} has active sessions` }));
 };
 
+/** A chat's row in the sidebar (Bot or a research session), by its title. */
+export const sidebarRow = (title: string) =>
+  within(document.querySelector<HTMLElement>("[data-testid=loupist-navigation]")!).getByRole("button", { name: title });
+
+/** The row shows the spinner, and its description says so. */
+export const rowIsRunning = (title: string) => {
+  const row = sidebarRow(title);
+  const described = (row.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent);
+  return Boolean(row.querySelector("[data-slot=spinner].thread-running")) && described.includes("Running");
+};
+
 export const waitForLoupistRunning = async (name: string, running = true) => {
   await waitFor(() => expect(loupistIsRunning(name)).toBe(running), {timeout:15_000});
 };
 
-export const selectedLoupistButton = () => document.querySelector<HTMLButtonElement>('.loupist-header-identity[aria-pressed="true"]')!;
+export const selectedLoupistButton = () => document.querySelector<HTMLButtonElement>("[data-testid=loupist-header-identity]")!;
+
+/** The chat's materials open from the activity sheet's In use tab, as a person opens them. */
+export async function openChatMaterials(user: ReturnType<typeof userEvent.setup>) {
+  const activity = headerAction("Activity");
+  if (activity.getAttribute("aria-pressed") !== "true") await user.click(activity);
+  const sheet = await screen.findByRole("complementary", { name: "Activity" });
+  await user.click(within(sheet).getByRole("tab", { name: "In use" }));
+  const materials = within(sheet).getByRole("button", { name: "Open chat materials" });
+  await user.click(materials);
+  return materials;
+}
 
 export function headerAction(name: string) {
   const switcher = name === "New Loupist" || name === "Loupist settings";
-  if (switcher) return screen.getByRole("button", { name });
-  if (name === "Panel") return screen.getByRole("button", { name: "Split left and right" });
-  const trigger = screen.getByRole("button", { name: /Panel kind/ });
-  fireEvent.keyDown(trigger, { key: "Enter" });
-  return screen.getByRole("menuitemradio", { name });
+  if (switcher) return within(openLoupistSwitcher()).getByRole("menuitem", { name });
+  // The page header's one conversation action opens the activity sheet.
+  if (name === "Activity") return screen.getByRole("button", { name: "Activity" });
+  // Map and Lens are sidebar destinations.
+  return within(document.querySelector<HTMLElement>(`[data-sidebar-place="${name === "Map" ? "map" : "lens"}"]`)!).getByRole("button");
 }

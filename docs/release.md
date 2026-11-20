@@ -19,19 +19,21 @@ Add each exchange's holidays only from its own published calendar.
 
 Release, qualification, and promotion each use a non-cancelling serialized queue.
 `GITHUB_RUN_NUMBER` is a lower bound for the macOS `CFBundleVersion`, and the
-release workflow allocates the larger of that number and one more than every
-retained `RELEASE-METADATA.json` build counter. The product SemVer remains the
+release workflow takes the larger of that number and one more than the highest
+`RELEASE-METADATA.json` counter among up to 1,000 releases its read-only token
+can list (published releases and prereleases, excluding drafts). The product SemVer remains the
 updater version; the separate build counter is recorded in `RELEASE-METADATA.json`
-and the qualification workflow compares it to the signed candidate DMG. Every
-published release therefore gets a new build number. A rerun of a failed run may
-reuse its number, because the publish step refuses to replace an existing release,
-so the failed attempt published nothing under that number.
+and the qualification workflow compares it to the signed candidate DMG. A failed job may already
+have created the release because verification follows publication. Before recovery,
+inspect the tag’s release ID and assets and, for a published release, repeat the
+read-only check with `apps/loupist/scripts/verify-published-release.sh TAG`.
 
 1. Set the product to `X.Y.Z-rc.N`, commit it, push it to `main`, and wait for the exact commit's CI run to pass. Create `vX.Y.Z-rc.N`; the workflow publishes that non-draft prerelease.
 2. On clean machines, complete the acceptance flow in `LOUPIST.md`: ordinary Chat retains Source material or revises Lens, and a later relevant turn uses that revision. A write that never changes later work does not qualify.
-3. After RC acceptance, set the product to `X.Y.Z`, ensure the matching
-   `CHANGELOG.md` heading has its final ISO date (replace `Unreleased` if
-   present), commit, push, and wait for that exact commit's CI run to pass.
+3. After RC acceptance, set the product to `X.Y.Z`. In `CHANGELOG.md`, manually
+   rename `## Unreleased` to `## X.Y.Z - YYYY-MM-DD` using the release date.
+   The stable workflow only validates the dated heading. Commit both changes,
+   push, and wait for that exact commit's CI run to pass.
    Create `vX.Y.Z`; its workflow requires the matching published RC and creates
    the stable **draft** candidate.
 4. Qualify that stable draft: matching RC → stable for the first stable release,

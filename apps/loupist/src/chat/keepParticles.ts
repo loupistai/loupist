@@ -1,7 +1,12 @@
-import type { Element, ElementContent, Root } from "hast";
+import type { Element, ElementContent, Root, Text } from "hast";
 
-/** Hangul right after a link: a particle or ending that belongs to the linked number ("8.4%였고"). */
-const PARTICLE = /^\p{Script=Hangul}+/u;
+/**
+ * What belongs to the link it follows: a Korean particle or ending ("8.4%였고") and
+ * closing punctuation ("[price quote](#evidence-…).", "…)", "。"), in any order.
+ */
+const TRAILING = /^(?:\p{Script=Hangul}|\p{Pe}|\p{Pf}|[.,;:!?…、。，．：；！？])+/u;
+/** An opening bracket or quote right before a link: it never ends a line apart from it. */
+const LEADING = /(?:\p{Ps}|\p{Pi})+$/u;
 
 const isEvidenceLink = (node: ElementContent): node is Element =>
   node.type === "element" && node.tagName === "a" && String(node.properties?.href ?? "").startsWith("#evidence-");
@@ -10,32 +15,51 @@ const isEvidenceLink = (node: ElementContent): node is Element =>
 const isCitation = (node: Element) =>
   node.children.length === 1 && node.children[0]!.type === "text" && /^\d{1,3}$/u.test(node.children[0]!.value);
 
+const text = (value: string): Text => ({ type: "text", value });
+
 function keep(parent: Root | Element) {
   const children = parent.children as ElementContent[];
   for (let index = 0; index < children.length; index += 1) {
     const child = children[index]!;
     if (child.type !== "element") continue;
-    // A numbered citation never starts a line on its own: the space before it does not break.
-    // Code never holds a parsed link, so its spaces stay as written.
-    const previous = children[index - 1];
-    if (isEvidenceLink(child) && isCitation(child) && previous?.type === "text") previous.value = previous.value.replace(/[ \t]+$/u, " ");
-    const next = children[index + 1];
-    const particle = isEvidenceLink(child) && next?.type === "text" ? next.value.match(PARTICLE)?.[0] : undefined;
-    if (!particle || next?.type !== "text") {
+    if (!isEvidenceLink(child)) {
       keep(child);
       continue;
     }
-    const rest = next.value.slice(particle.length);
-    const group: Element = { type: "element", tagName: "span", properties: { className: ["number-keep"] }, children: [child, { type: "text", value: particle }] };
-    children.splice(index, 2, group, ...(rest ? [{ type: "text" as const, value: rest }] : []));
+    // A numbered citation never starts a line on its own: the space before it does not break.
+    // Code never holds a parsed link, so its spaces stay as written.
+    const previous = children[index - 1];
+    if (isCitation(child) && previous?.type === "text") previous.value = previous.value.replace(/[ \t]+$/u, " ");
+    const next = children[index + 1];
+    const opening = previous?.type === "text" ? previous.value.match(LEADING)?.[0] : undefined;
+    const closing = next?.type === "text" ? next.value.match(TRAILING)?.[0] : undefined;
+    // Every evidence link has its group, so the period that streams in after it joins the group
+    // and the chip keeps its place in the tree: it is never mounted again, open card and all.
+    const group: Element = { type: "element", tagName: "span", properties: { className: ["number-keep"] },
+      children: [...(opening ? [text(opening)] : []), child, ...(closing ? [text(closing)] : [])] };
+    let start = index;
+    let count = 1;
+    const after: Text[] = [];
+    if (closing && next?.type === "text") {
+      count += 1;
+      const rest = next.value.slice(closing.length);
+      if (rest) after.push(text(rest));
+    }
+    if (opening && previous?.type === "text") {
+      previous.value = previous.value.slice(0, -opening.length);
+      if (!previous.value) { start -= 1; count += 1; }
+    }
+    children.splice(start, count, group, ...after);
+    index = start;
   }
 }
 
 /**
- * A rehype step for answers: a Korean particle stays on the same line as the
- * number or citation it follows. A number chip is an inline button, so the
- * browser may otherwise break the line between "8.4%" and "였고". A numbered
- * citation also keeps the word before it.
+ * A rehype step for answers: what follows a number or citation stays on its line.
+ * A number chip or citation is an inline button, so the browser may otherwise break
+ * the line between "8.4%" and "였고", or leave the sentence's period alone at the start
+ * of the next line. A numbered citation also keeps the word before it, and an opening
+ * bracket stays with the link it opens.
  */
 export function keepNumberParticles() {
   return (tree: Root) => keep(tree);

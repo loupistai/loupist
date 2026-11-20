@@ -1,4 +1,11 @@
 import { LOUPIST_AVATAR_IDS, LOUPIST_TONES } from "../../contracts/loupist";
+import i18n from "@/i18n";
+import type { EffectiveConfig } from "../../contracts/config";
+import type { ConnectionView } from "../../contracts/knowledge";
+import type { ModelCatalog } from "../../contracts/model";
+import { commandError } from "./commandError";
+import { executionModelLock } from "./models";
+import { defaultRunOptions, defaultThinkingLevel } from "../../lib/modelSelection";
 import type {
   AgentHarnessSnapshot,
   ChatArtifact,
@@ -8,6 +15,7 @@ import type {
   ChatArtifactRevision,
   ChatArtifactView,
   ChatCreateRequest,
+  ChatEvidenceRef,
   ChatControlReceipt,
   ChatControlRequest,
   ChatDeleteRequest,
@@ -78,9 +86,14 @@ export const loupistSelect = async (
   ensureHomeThread(state, loupist_id);
   return {
     loupist: clone(loupist),
-    threads: clone(state.threads[loupist_id] ?? []),
+    threads: clone(state.threads[loupist_id] ?? []).map(listedAsRust),
   };
 };
+
+/** Rust keeps a scheduled run's session out of Research sessions until the user writes in it. */
+const listedAsRust = (thread: ChatThread): ChatThread =>
+  thread.messages.some((message) => message.scheduled) && thread.messages.every((message) => message.role !== "user" || message.scheduled)
+    ? { ...thread, hide_from_recent: true } : thread;
 
 export const loupistCreate = async (
   state: MockBridgeState,
@@ -143,23 +156,124 @@ export const chatCreate = async (
   return clone(thread);
 };
 
+function retainedLink(state: MockBridgeState, loupistId: string, connectionId: string) {
+  const home = state.threads[loupistId]?.find((thread) => thread.home);
+  const post = home?.messages.find((message) =>
+    message.role === "assistant" && message.status === "complete" &&
+    message.host_composed && message.link?.connectionId === connectionId,
+  );
+  if (!home || !post?.link) throw commandError("not_found", "Retained link not found.");
+  return { home, link: post.link, createdAtMs: Date.parse(post.created_at) };
+}
+
+const linkKey = (loupistId: string, connectionId: string) => JSON.stringify([loupistId, connectionId]);
+
+export function dismissHandoffLink(
+  state: MockBridgeState, loupistId: string, connectionId: string,
+): ConnectionView {
+  const { link, createdAtMs } = retainedLink(state, loupistId, connectionId);
+  const key = linkKey(loupistId, connectionId);
+  state.handoffLinks.set(key, { ...state.handoffLinks.get(key), status: "dismissed" });
+  return {
+    connectionId, createdAtMs, status: "dismissed", score: 0,
+    seedName: link.seedName, farName: link.farName,
+    seedNodeId: link.nodeIds[0], farNodeId: link.nodeIds.at(-1) ?? "",
+    path: link.path.map((hop, index) => ({
+      ...hop, reversed: hop.reversed ?? false, nodeId: link.nodeIds[index + 1], claimId: "", fromRole: "", toRole: "",
+    })),
+  };
+}
+
 export const researchHandoffStart = async (
   state: MockBridgeState,
   request: ResearchHandoffRequest,
+  catalog: ModelCatalog,
+  chatDefaults: () => EffectiveConfig["chat"],
 ): Promise<ResearchHandoffReceipt> => {
-  const handoffId = `handoff-${request.loupistId}-${request.requestKey}`;
-  const home = ensureHomeThread(state, request.loupistId);
-  const existing = home.messages.find((message) => message.handoff?.handoffId === handoffId);
-  if (existing?.handoff) return { chatId: existing.handoff.chatId, handoffId };
-  const session: ChatThread = {
-    id: makeId("thread"), loupist_id: request.loupistId, title: request.title, updated_at: new Date().toISOString(),
-    use_memory: true, update_memory: true,
-    messages: [{ id: makeId("message"), role: "user", content: [request.question, request.brief].filter(Boolean).join("\n\n"), status: "complete", created_at: new Date().toISOString() }],
+  const acceptedKeys = ["loupistId", "connectionId", "modelProfileId", "thinkingLevel", "runOptions", "useMemory", "updateMemory"];
+  if (Object.keys(request).some((key) => !acceptedKeys.includes(key))) {
+    throw commandError("invalid_request", "Unknown research hand-off field.");
+  }
+  const { loupistId, connectionId, modelProfileId, thinkingLevel, runOptions, useMemory, updateMemory } = request;
+  const profile = state.loupists.find((item) => item.id === loupistId);
+  if (!profile) throw commandError("not_found", "Loupist not found.");
+  const key = linkKey(loupistId, connectionId);
+  const entry = state.handoffLinks.get(key);
+  // A session at work carries its run; Bot posts nothing for it until it ends.
+  const working = state.threads[loupistId]?.find((thread) => thread.handoff_run?.connection_id === connectionId);
+  const options = {
+    loupistId, connectionId,
+    modelProfileId: modelProfileId ?? undefined, thinkingLevel: thinkingLevel ?? undefined,
+    runOptions: runOptions == null ? undefined : Object.fromEntries(Object.entries(runOptions).sort()),
+    useMemory: useMemory ?? undefined, updateMemory: updateMemory ?? undefined,
   };
-  state.threads[request.loupistId].unshift(session);
+  if (working?.handoff_run) {
+    if (JSON.stringify(entry?.options) !== JSON.stringify(options)) {
+      throw commandError("conflict", "This link already has a research request with different settings.");
+    }
+    return { chatId: working.id, handoffId: working.handoff_run.handoff_id };
+  }
+  const { home, link } = retainedLink(state, loupistId, connectionId);
+  if (entry?.status === "dismissed" || entry?.status === "filed") {
+    throw commandError("not_found", "Retained link not found.");
+  }
+  const defaults = chatDefaults();
+  const modelId = modelProfileId ?? defaults.model_profile_id ?? profile.last_model_profile_id ?? "";
+  const model = catalog.models.find((item) => item.id === modelId);
+  const validControls = (controls: Record<string, string>, selected: typeof model) =>
+    selected?.run_controls.length === Object.keys(controls).length
+      && selected.run_controls.every((control) => control.choices.some((choice) => choice.id === controls[control.id]));
+  const controls = runOptions ?? (model && !validControls(defaults.run_options, model)
+    ? defaultRunOptions(model) : defaults.run_options);
+  const level = thinkingLevel || (defaults.thinking_level && model?.thinking_levels.includes(defaults.thinking_level)
+    ? defaults.thinking_level : defaultThinkingLevel(model?.thinking_levels ?? []));
+  let execution;
+  try {
+    execution = executionModelLock(catalog, modelId, level, controls);
+  } catch {
+    throw commandError("invalid_request", "The selected Chat settings are unavailable.");
+  }
+  const admitted = catalog.models.find((item) => item.id === execution.profile_id);
+  if ((modelId && !validControls(controls, admitted))
+    || (thinkingLevel && thinkingLevel !== execution.thinking_level)
+    || (runOptions != null && Object.entries(runOptions).some(([key, value]) =>
+      execution.run_options[key] !== value || !admitted?.run_controls.some((control) =>
+        control.id === key && control.choices.some((choice) => choice.id === value))))) {
+    throw commandError("invalid_request", "The selected Chat settings are unavailable.");
+  }
+  const handoffId = makeId("handoff");
+  const title = i18n.resolvedLanguage === "ko"
+    ? `연결: ${link.seedName} ↔ ${link.farName}`
+    : `Link: ${link.seedName} and ${link.farName}`;
+  const created = new Date().toISOString();
+  const linkPath = {
+    seed: link.seedName, far: link.farName,
+    path: link.path.map((hop, index) => {
+      const prior = link.path[index - 1]?.name ?? link.seedName;
+      return { from: hop.reversed ? hop.name : prior, relation: hop.relation, to: hop.reversed ? prior : hop.name };
+    }),
+  };
+  const answer = "Research on this link is complete.";
+  const session: ChatThread = {
+    id: makeId("thread"), loupist_id: loupistId, title, updated_at: created,
+    use_memory: useMemory ?? defaults.use_memory, update_memory: updateMemory ?? defaults.update_memory,
+    messages: [
+      { id: makeId("message"), role: "user", content: "The user chose “Look into it” on this Map link.",
+        handoff_action: { kind: "link", connectionId }, handoff_note: { title, linkPath },
+        status: "complete", created_at: created },
+    ],
+    handoff_run: { handoff_id: handoffId, run_id: makeId("handoff"), connection_id: connectionId },
+  };
+  state.threads[loupistId].unshift(session);
+  state.handoffLinks.set(key, { status: "opened", options });
+  // The session answers at once here; then Bot posts its result.
+  await Promise.resolve();
+  delete session.handoff_run;
+  session.messages.push({ id: makeId("message"), role: "assistant", content: answer, status: "complete",
+    created_at: created, execution_model: execution });
   home.messages.push({
-    id: makeId("message"), role: "assistant", content: `Researched: ${request.title}.`, status: "complete", created_at: new Date().toISOString(), host_composed: true,
-    handoff: { handoffId, chatId: session.id, title: request.title, status: "done" },
+    id: makeId("message"), role: "assistant", content: answer, status: "complete", created_at: created,
+    host_composed: true, handoff: { handoffId, chatId: session.id, connectionId, title, status: "done" },
   });
   return { chatId: session.id, handoffId };
 };
@@ -453,9 +567,36 @@ const mockArtifactForPrompt = (
   return { artifact_id, revision, kind: payload.kind, title, digest };
 };
 
+/** A question about NVIDIA: the mock agent reads its quote. */
+const asksAboutNvidia = (prompt: string) => /nvidia|nvda|엔비디아/iu.test(prompt);
+
+/** NVIDIA's quote as a bundled read returns it, retained like any tool result. */
+const nvidiaQuote = (retrieved_at: string): ChatEvidenceRef => ({
+  id: "ev_quote_nvda", title: "NVDA · Quote", kind: "original", provider: "yfinance", tool_name: "mcp__openbb__equity_price_quote", retrieved_at,
+  excerpt: JSON.stringify({ results: [{ symbol: "NVDA", last_price: 162.85, prev_close: 166.19, change_percent: -2.01, currency: "USD", last_timestamp: "2026-11-13T21:00:00Z" }] }),
+  excerpt_truncated: false, content_sha256: "c".repeat(64), warnings: [],
+});
+
+/** The few formal sentences the mock agent answers with, in the interface language; the quote is its source. */
+const nvidiaAnswer = () => typeof document !== "undefined" && document.documentElement.lang.toLowerCase().startsWith("ko")
+  ? "엔비디아는 금요일 162.85달러에 마감했습니다. 하루 2.01% 하락했습니다. 하락 원인으로 확인된 회사 뉴스는 없습니다."
+  : "NVIDIA closed at $162.85 on Friday. It fell 2.01% on the day. No company news was found that explains the drop.";
+
 const mockChatTitle = (prompt: string) => {
-  const normalized = prompt.trim().replace(/\s+/g, " ");
-  return Array.from(normalized).slice(0, 40).join("");
+  const title = prompt.split("\n", 1)[0]!.trim().replace(/\s+/gu, " ");
+  const characters = Array.from(title);
+  if (characters.length <= 40) return title;
+
+  // Rust reserves the 40th code point for the ellipsis and keeps whole graphemes.
+  const budget = characters.slice(0, 39).join("").length;
+  let wordEnd: number | undefined;
+  let graphemeEnd = 0;
+  for (const { index, segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(title)) {
+    if (index > budget) break;
+    graphemeEnd = index;
+    if (segment.startsWith(" ")) wordEnd = index;
+  }
+  return title.slice(0, wordEnd ?? graphemeEnd) + "…";
 };
 
 export const chatSend = async (
@@ -543,6 +684,8 @@ export const chatRetryLast = (
   if (!assistant || assistant.role !== "assistant" || (assistant.status !== "error" && assistant.status !== "aborted") || !user || user.role !== "user") {
     throw new Error("Only the latest failed or stopped reply can be tried again.");
   }
+  // As in Rust, a scheduled run's request is run again by its task.
+  if (user.scheduled) throw new Error("Run the scheduled task again with Run now");
   const prompt = user.content;
   thread.messages = thread.messages.filter(message => message.id !== user.id && message.id !== assistant.id);
   thread.updated_at = new Date().toISOString();
@@ -711,7 +854,18 @@ const streamChat = async (
       await wait(state.delay_ms, controller.signal);
     }
 
-    const response = request.use_memory
+    // A question that names NVIDIA reads a bundled quote, as the agent would pick it; the answer cites it.
+    const read = asksAboutNvidia(request.prompt) ? nvidiaQuote(created_at) : undefined;
+    if (read) {
+      setProgress("quote-read", "Read the quote", "running");
+      await wait(state.delay_ms, controller.signal);
+      observer({ type: "evidence", run_id, evidence: clone(read) });
+      setProgress("quote-read", "Read the quote", "succeeded");
+    }
+
+    const response = read
+      ? nvidiaAnswer()
+      : request.use_memory
       ? [
           "### Assessment",
           "",
@@ -832,6 +986,7 @@ const streamChat = async (
         execution_model: clone(execution_model),
         agent_harness,
         artifact_refs: artifact ? [artifact] : undefined,
+        ...(read ? { evidence_refs: [clone(read)] } : {}),
         progress: clone(progress),
       };
       thread.messages.push(assistant);

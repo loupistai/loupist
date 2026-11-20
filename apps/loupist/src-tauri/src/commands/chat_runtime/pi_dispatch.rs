@@ -21,6 +21,7 @@ pub(super) struct PiRpcTurn<'a> {
     pub settled_controls: &'a mut BTreeMap<u64, (ChatControlRequest, bool)>,
     pub next_control_to_persist: &'a mut u64,
     pub first_text_ms: &'a mut Option<u64>,
+    pub answer_text_ms: &'a mut Option<u64>,
     pub generation_ms: &'a mut Option<u64>,
     pub token_usage: &'a mut AssistantTokenUsage,
     pub progress: &'a mut ChatProgressProjection,
@@ -57,6 +58,7 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
         settled_controls,
         next_control_to_persist,
         first_text_ms,
+        answer_text_ms,
         generation_ms,
         token_usage,
         progress,
@@ -92,6 +94,9 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                 .and_then(Value::as_str)
                 == Some("assistant")
             {
+                // This marker belongs to this assistant message. Narration in
+                // earlier tool-use rounds cannot time the eventual answer.
+                *answer_text_ms = None;
                 progress.start_assistant_turn();
             }
         }
@@ -161,6 +166,7 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                     .get("isError")
                     .and_then(Value::as_bool)
                     .unwrap_or(false)
+                    || crate::chat::progress::host_tool_failed(result)
                     || progress.attach_python_result(tool_call_id, result);
                 pending_tool_calls.remove(tool_call_id);
                 if !failed {
@@ -188,12 +194,14 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                         return PiRpcStep::Break;
                     }
                 }
-                progress.finish_tool(
-                    tool_call_id,
-                    failed,
-                    now_ms(),
-                    summarize_tool_result(result),
-                );
+                let trace = on_event.tool_trace.snapshot();
+                let error = trace
+                    .entries
+                    .iter()
+                    .rev()
+                    .find(|entry| entry.call_id.as_deref() == Some(tool_call_id))
+                    .and_then(|entry| entry.error.as_ref());
+                progress.finish_tool_result(tool_call_id, failed, now_ms(), result, error);
                 if failed && crate::chat::progress::as_of_refusal(result) {
                     progress.skip_tool(tool_call_id);
                 }
@@ -291,7 +299,11 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                         .and_then(|event| event.get("delta"))
                         .and_then(Value::as_str)
                     {
-                        first_text_ms.get_or_insert_with(|| elapsed_millis(chat_started_at));
+                        let elapsed = elapsed_millis(chat_started_at);
+                        first_text_ms.get_or_insert(elapsed);
+                        if !delta.is_empty() {
+                            answer_text_ms.get_or_insert(elapsed);
+                        }
                         if let Err(message) =
                             assistant_capture.observe_text_delta(delta, MAX_CHAT_OUTPUT_BYTES)
                         {
@@ -345,12 +357,14 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                     publish_settled_answer(on_event, task_run_id, progress, commentary, &streamed);
                 }
                 Ok(Some(AssistantTurnEnd::ToolUse(_))) => {
+                    *answer_text_ms = None;
                     progress.finish_assistant_turn(false);
                     publish_progress(on_event, task_run_id, progress, commentary);
                 }
                 Ok(Some(
                     AssistantTurnEnd::Length | AssistantTurnEnd::Error | AssistantTurnEnd::Aborted,
                 )) => {
+                    *answer_text_ms = None;
                     progress.finish_assistant_turn(false);
                     publish_progress(on_event, task_run_id, progress, commentary);
                 }
@@ -411,6 +425,7 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                                         performance: ChatPerformanceDto {
                                             setup_ms,
                                             first_text_ms: *first_text_ms,
+                                            answer_text_ms: *answer_text_ms,
                                             generation_ms: generation_elapsed,
                                             total_ms: elapsed,
                                             session_cache: if resumed {

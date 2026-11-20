@@ -85,6 +85,61 @@ rows dated on or before it, like other daily series. DefiLlama recomputes past v
 when it adds or corrects sources, so every result warns that it is not a historical
 vintage.
 
+`fx_rate` uses the European Central Bank's daily euro reference table, never a
+live quote. Its date is the source's own calendar day and its revision is
+`ecb:YYYY-MM-DD`; all pairs in a turn use the first successfully resolved table.
+The host keeps one private file, `<app data>/cache/fx-reference/latest.json`,
+with schema `loupist-fx-reference/1`, revision, source date, fetch time and
+positive finite per-euro values (EUR is always 1), with no archive or database
+row. A malformed or unreadable file is ignored; evaluation replay neither reads
+nor writes it. A table is fresh when dated at least the latest weekday whose
+16:30 in `Europe/Berlin` has passed. Otherwise one refresh runs at a time and
+tool callers wait for it. A display read returns the cache snapshot immediately
+and starts the same refresh if due and its Loupist has the grant. Only a completed
+attempt reserves the three-hour retry wait. Cancelling a pending read wakes tool
+callers and lets the next permitted caller refresh immediately. A successful read returning an older day, such as a TARGET
+holiday, is not behind.
+
+After a failed read, a stored table returns its own date and
+`behind: {expected_date, because}`. `because` is `offline` only when the request
+never reached the server, `provider_failed` for provider or HTTP failures, or
+`connection_off` when this Loupist has not enabled Market data platform.
+The failure reason persists during the retry wait and clears only on a successful
+read. Without a stored table the original typed offline or provider failure is
+returned, or the connection-off refusal.
+
+The `fx_display` command binds the requested Loupist and reads the global
+`appearance.display_currency` setting. It returns `unset` without reading rates
+when the setting is absent. For a cache with a table, the publication day takes
+precedence. A table older than seven calendar days in Berlin yields `too_old`
+with its last publication day, even during refresh. For a usable table, a
+missing target yields `no_rate_for_currency`. Otherwise `ready` gives the
+publication day, retrieval timestamp, revision and six-significant-digit rates
+in target units per one source unit, including EUR and 1 for the target. When
+available, `usable_until` gives the UTC instant of Berlin midnight at the start
+of the eighth calendar day after publication. At that instant the same table
+yields `too_old`. Settings
+receives the source string `European Central Bank euro foreign exchange reference rates`.
+A usable cache remains available during refresh, with `connection_off` for this
+Loupist if its grant is off, or the latest settled `offline` or `provider_failed`
+reason for enabled callers. With a cold cache, the order is `connection_off`,
+`waiting` while a permitted read is in flight, then the settled provider reason.
+The seven-day limit applies only to display.
+
+Display refreshes use the fixed ECB route and the requested Loupist's Market
+data platform grant. They keep no turn, Source, dataset or observation. The
+shared `fx-changed` event sends a state and optional revision after a publication
+or a meaningful refresh outcome, including changed failure reasons at the same
+revision. It also sends `{"state":"invalidated"}` after an `openbb.platform`
+execute grant changes or the configuration command changes the global display
+currency. Each window can reload the current preference and reread for its
+Loupist. Emitting a hint starts no provider read.
+
+The optional key needs no database migration. Older builds reject
+`appearance.display_currency` until the line is removed from global `config.toml`.
+Stored observations, primary prices, charts, alerts, other tool results and
+saved receipts keep their original currencies.
+
 A native finance or web read that never reaches its server fails with the error
 code `offline`, naming the host or provider. OpenBB DNS, connection and timeout
 failures carry the same code from its Python worker through the Rust broker,

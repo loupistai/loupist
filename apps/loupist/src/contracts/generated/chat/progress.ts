@@ -64,6 +64,7 @@ export type ChatProgressItem =
     detailId?: string,
     filePath?: string,
     status: ChatProgressStatus,
+    failureReason?: ChatStepFailureReason,
     /** Set on a failed step the host refused under a security rule. */
     refusal?: ChatStepRefusal,
     startedAtMs: number,
@@ -78,6 +79,7 @@ export type ChatProgressItem =
     target: string | null,
     href: string | null,
     status: ChatProgressStatus,
+    failureReason?: ChatStepFailureReason,
     startedAtMs: number,
     finishedAtMs: number | null,
   };
@@ -128,6 +130,14 @@ export type ChatProgressSourceKind =
   | "capability";
 
 export type ChatProgressStatus = "running" | "succeeded" | "failed" | "stopped" | "skipped";
+
+/** A fixed presentation category; remote diagnostics never become UI copy. */
+export type ChatStepFailureReason =
+  | "timeout"
+  | "unreachable"
+  | "provider_error"
+  | "empty_result"
+  | "invalid_input";
 
 /**
  * Why the host refused a failed step, when a security rule or the user's own

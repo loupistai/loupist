@@ -42,6 +42,12 @@ Puppeteer peer closure installed. E2E overrides pin Puppeteer 25, current glob
 and FTP/address parsers, and Cheerio's patched Undici. Verify the resolved tree
 with `npm ls` and run the native suites after changing those overrides.
 
+Provider HTTP uses rustls, except OpenDART on macOS: its servers offer only TLS 1.2
+with RSA key exchange, which rustls does not implement, so `FinanceDataService` sends
+OpenDART requests through reqwest's `native-tls` (Security.framework), enabled for the
+macOS target only. Check with `openssl s_client -connect opendart.fss.or.kr:443 -tls1_2
+-cipher ECDHE+AESGCM` before removing it; a handshake failure there means it is still needed.
+
 An additional OSV/RustSec lockfile review updated pulldown-cmark, quinn-proto,
 rustls-webpki, Tokio and webpki-root-certs. RustSec also reports maintenance
 notices for transitive fxhash, paste, proc-macro-error, ttf-parser, unsafe-libyaml,
@@ -87,14 +93,20 @@ merge that partial upgrade or relax its tests. A Pi upgrade must update the
 whole package family, security pins, platform archive digests and packaged
 runtime checks together, then pass host isolation and native/package tests.
 
-## Pi 1.5.0 (2026-11-06)
+## Pi 1.5.2 (2026-11-10)
 
-The whole `@earendil-works/*` family moves from 1.0.1 to 1.5.0 together, along
-with `pi-security.json`, `PI_VERSION`, the stage and check scripts, and the
-platform archive digests. The digests are checked against the
-release's `SHA256SUMS`. `@earendil-works/pi-schema` is new in the family, and
-Pi no longer depends on `chord`. Pi itself now pins undici 8.12.3, and the
-minimatch 11.0.4 override still applies.
+The `@earendil-works/*` family, `pi-security.json`, Rust runtime validation and
+both platform stage and package checks pin 1.5.2. Verify archives against the
+release's [SHA256SUMS](https://github.com/earendil-works/pi/releases/download/v1.5.2/SHA256SUMS)
+before staging. The archive pins undici 8.12.3 and brace-expansion 5.0.12. The
+development SDK keeps the minimatch 11.0.4 override. Pi's terminal diagram
+renderer replaces grok-mermaid 0.2.3 with lovely-mermaid 0.3.3 (Apache-2.0).
+
+Pi 1.5.1 added a graceful shutdown barrier for in-progress OAuth writes and
+stopped resolving OAuth tokens for public model catalogs. It also enabled idle
+cache warming by default. Loupist's Chat extension declines idle cache refreshes
+through Pi's warming decision hook. Pi 1.5.2 inherits these changes. Its
+missing-directory session fork is an interactive CLI choice.
 
 Pi 1.5 validates tool arguments with pi-schema, which coerces values. A lone
 value becomes a one-item array, and `null` drops the field. Rust still checks
@@ -113,3 +125,48 @@ smallest addition that lets the two hook rules run; the config enables nothing
 else. The lockfile gains 77 development packages (MIT, Apache-2.0, ISC and BSD
 licenses), none with install scripts, and changes no existing package. Update the
 three together and keep `react-hooks/rules-of-hooks` an error.
+
+## Local embedding model
+
+World and knowledge search embed text with MinishLab
+[blink-multilingual-64M](https://huggingface.co/minishlab/blink-multilingual-64M) at
+revision `a7198ef875b9a756b8b641ab064542f7408e50f3` (2026-11-20). It replaces the
+English-only potion-base-4M, whose Korean vectors were noise, so knowledge search
+can find a Source written in the other language; the measurements are in
+[Names across languages](../knowledge/world-search.md#names-across-languages).
+
+The Hugging Face model card declares the MIT License; the repository has no LICENSE
+file, so re-check both before moving the pin. Its token embeddings were initialized
+from BAAI/bge-m3 (MIT), distilled on minishlab/tokenlearn-c4-multilingual-bge-m3
+(multilingual C4) and trained on public retrieval pairs from
+hotchpotch/bekko-embedding-v1-unsupervised. Loupist ships the weights, not the
+training data. `src/knowledge/embed_assets/NOTICE` travels with the staged files
+and `THIRD_PARTY_NOTICES.md` records the same terms.
+
+The model is not committed. `stage-embed-assets.py` downloads the upstream
+`config.json`, `tokenizer.json` and 256 MB float32 `model.safetensors` at the
+revision in `src/knowledge/embed_assets/pin.json`, checks each file's sha256, and
+derives the 65 MB int8 table (one float32 scale per row, levels rounded and clamped
+to ±127) whose sha256 the pin also records. The derivation needs no numpy and
+reproduces the pinned bytes exactly. The staged model is 73.3 MB, against 15.8 MB
+for potion-base-4M. Moving the pin means re-running the
+[search recall test](tests.md#search-recall) and updating both digests.
+
+model2vec-rs moves from 0.2.1 to 0.4.0 (MIT), which reads int8 tables and reports
+the model's width; the lockfile drops its ndarray and clap closure. It pins
+tokenizers 0.21.4, which registers the tokenizer's 30,002 added Chinese and
+Japanese words one at a time, comparing each with every earlier one. Removing
+those words loads in 0.5 seconds but lowered top-1 hits on a small Chinese and
+Japanese check from 15 of 16 to 13 of 16, so they stay and the app loads the model
+off the launch path. The dev profile optimizes `tokenizers` and `model2vec-rs`,
+where that loop is instantiated; unoptimized, a debug load takes 34 seconds.
+
+Measured on Apple Silicon in a release build (three runs each, 2026-11-20), against
+potion-base-4M with lexical-first ranking:
+
+| | potion-base-4M | blink-multilingual-64M |
+| --- | ---: | ---: |
+| First load, CPU | 0.04 s | 2.3–2.5 s |
+| Resident memory added by the loaded model | 48–50 MB | 223–227 MB |
+| Knowledge search, 2,000 Sources and 1,200 claims, median | 51–54 ms | 53–58 ms |
+| The same, 90th percentile | 55–61 ms | 60–72 ms |

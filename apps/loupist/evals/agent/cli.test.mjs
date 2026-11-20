@@ -256,6 +256,48 @@ test('judge blocks same-family requested and observed models, with an explicit w
   assert.equal(calls, 3);
 });
 
+test('the claude backend judges Sol traces without an override and refuses traces from Claude models', async (t) => {
+  const f = await splitFixture(t);
+  const calls = [];
+  // Stands in for the claude process, so no model is called.
+  const judgeRun = async (command, args, options) => {
+    calls.push({ command, args, options });
+    return JSON.stringify({ type: 'result', subtype: 'success', is_error: false, stop_reason: 'end_turn',
+      structured_output: { pass: true, reason: 'The answer describes the supplied figure.' } });
+  };
+  const sol = f.rows.map((row) => JSON.stringify({ ...row, model: { provider: 'openai-codex', model: 'gpt-6.2-sol' }, observed_model: 'openai-codex/gpt-6.2-sol' }));
+  await writeFile(f.tracePath, sol.join('\n'));
+  const judged = await main(['judge', '--backend', 'claude', ...f.args], { judgeRun, warn: () => assert.fail('no same-family warning') });
+  assert.equal(judged.length, 2);
+  assert.equal(judged.every((row) => row.model === 'claude-opus-5-5' && row.pass === true && row.cache === 'miss'), true);
+  assert.equal(calls.length, 2);
+  for (const { command, args, options } of calls) {
+    assert.equal(command, 'claude');
+    assert.equal(args[args.indexOf('--model') + 1], 'claude-opus-5-5');
+    assert.equal(args[args.indexOf('--tools') + 1], '');
+    assert.match(options.input, /^You are a binary judge/u);
+  }
+  assert.notEqual(calls[0].options.cwd, calls[1].options.cwd);
+  await main(['judge', '--backend', 'claude', '--model', 'claude-sonnet-5-5', '--reasoning-effort', 'high', ...f.args], { judgeRun });
+  assert.equal(calls.length, 4);
+  assert.deepEqual(calls.slice(2).map(({ args }) => [args[args.indexOf('--model') + 1], args[args.indexOf('--effort') + 1]]),
+    [['claude-sonnet-5-5', 'high'], ['claude-sonnet-5-5', 'high']]);
+  for (const modelFields of [
+    { model: { provider: 'anthropic', model: 'claude-opus-5-5' }, observed_model: null },
+    { model: { provider: 'custom', model: 'unknown' }, observed_model: 'anthropic/claude-sonnet-5-5' },
+  ]) {
+    await writeFile(f.tracePath, JSON.stringify({ ...f.rows[0], ...modelFields }));
+    await assert.rejects(main(['judge', '--backend', 'claude', ...f.args], { judgeRun }), (error) => {
+      assert.equal(error.exitCode, 2);
+      assert.match(error.message, /Judge claude-opus-5-5 shares model family anthropic.*--allow-same-family/u);
+      return true;
+    });
+  }
+  assert.equal(calls.length, 4);
+  await assert.rejects(main(['judge', '--backend', 'cluade', ...f.args], { judgeRun }), /--backend must be one of grok, codex, claude, openai/u);
+  assert.equal(calls.length, 4);
+});
+
 async function calibrationFixture(t) {
   const f = await splitFixture(t);
   const rows = f.rows.flatMap((row) => Array.from({ length: 30 }, (_, trial) => ({ ...row, trial, run_id: `run-${trial}` })));

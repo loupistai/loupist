@@ -152,6 +152,22 @@ export type LaterNote = { noteId: string, chatId: string, title: string, updated
 
 export type LensUseStatus = "considered" | "applied" | "adapted" | "rejected";
 
+/**
+ * Where a user-provided capture (`SourceClass::UserProvided`) came from: the
+ * Chat message its bytes were copied from verbatim, when that message was
+ * sent, and the link and publisher the user named for the material. The host
+ * checked that the text, the link and the publisher appear in the user's own
+ * messages in that Chat; it never checked that the material comes from that
+ * link or publisher.
+ */
+export type ProvidedOrigin = {
+  chatId: string,
+  messageId: string,
+  pastedAtMs: number,
+  statedUrl?: string,
+  statedPublisher?: string,
+};
+
 export type Qualifier = { key: string, value: string };
 
 export type QueryScan = { strategy: string, nodesScanned: number, claimsScanned: number };

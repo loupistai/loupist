@@ -32,7 +32,7 @@ export function RunDiagnostics({ bridge, loupistId }: { bridge: LoupistBridge; l
   };
   return <section className="agent-config-group" aria-labelledby="run-diagnostics-title">
     <h4 id="run-diagnostics-title">{t("runDiagnostics.title")}</h4>
-    <p>{t("runDiagnostics.description")}</p>
+    <p>{t(loupistId ? "runDiagnostics.loupistDescription" : "runDiagnostics.description")}</p>
     <div className="agent-config-field">
       <div className="agent-config-label">{t("runDiagnostics.runLogs")}</div>
       <div className="agent-config-control">

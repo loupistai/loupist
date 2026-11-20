@@ -1,6 +1,7 @@
 import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber } from "@/i18n/format";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { focusForKeyboard } from "../../lib/inputModality";
 import { ChartNoAxesCombinedIcon, FileTextIcon, TableIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -20,12 +21,15 @@ type Load = { status: "loading" | "ready" | "failed"; items: LoupistArtifactItem
  * document this Loupist made, across its chats, newest first, with the charts the
  * visible chat is building on top. Opening a row shows it in place.
  */
-export function WorkspaceWorkList({ bridge, loupistId, refreshKey, building, onOpen }: {
+export function WorkspaceWorkList({ bridge, loupistId, refreshKey, building, returnTo, onReturned, onOpen }: {
   bridge: LoupistBridge;
   loupistId: string;
   /** Changes when the visible chat publishes something, so the list re-reads. */
   refreshKey: string | number;
   building: readonly BuildingWork[];
+  /** The item just closed with "All work": its row takes keyboard focus once the list is back. */
+  returnTo?: string | null;
+  onReturned?: () => void;
   onOpen: (item: LoupistArtifactItem) => Promise<void>;
 }) {
   useTranslation("chat");
@@ -34,6 +38,7 @@ export function WorkspaceWorkList({ bridge, loupistId, refreshKey, building, onO
   const [attempt, setAttempt] = useState(0);
   const [opening, setOpening] = useState<string | null>(null);
   const [openError, setOpenError] = useState(false);
+  const listRef = useRef<HTMLUListElement>(null);
   const open = async (item: LoupistArtifactItem) => {
     setOpening(item.artifact.id);
     setOpenError(false);
@@ -49,6 +54,11 @@ export function WorkspaceWorkList({ bridge, loupistId, refreshKey, building, onO
       .catch(() => { if (live) setLoad((current) => ({ status: "failed", items: current.items })); });
     return () => { live = false; };
   }, [bridge, loupistId, limit, refreshKey, attempt]);
+  useEffect(() => {
+    if (!returnTo || load.status === "loading") return;
+    focusForKeyboard([...listRef.current?.querySelectorAll<HTMLElement>("[data-work-id]") ?? []].find((row) => row.dataset.workId === returnTo));
+    onReturned?.();
+  }, [load.status, returnTo, onReturned]);
 
   if (load.status === "failed" && !load.items.length) {
     return <div className="artifact-panel-state" role="alert">
@@ -72,7 +82,7 @@ export function WorkspaceWorkList({ bridge, loupistId, refreshKey, building, onO
       tables ? t("workList.tables", { count: tables, formattedCount: formatNumber(tables) }) : "",
       documents ? t("workList.documents", { count: documents, formattedCount: formatNumber(documents) }) : "",
     ].filter(Boolean).join(" · ")}</p>
-    <ul aria-label={t("workList.label")}>
+    <ul ref={listRef} aria-label={t("workList.label")}>
       {building.map((item) => <li key={item.key}>
         <div className="work-row" data-state="building" role="status">
           <ChartNoAxesCombinedIcon aria-hidden="true" />
@@ -91,7 +101,7 @@ export function WorkspaceWorkList({ bridge, loupistId, refreshKey, building, onO
         ].join(" · ");
         const meta = item.chat_title ? `${facts} · ${item.chat_title}` : facts;
         return <li key={artifact.id}>
-          <button type="button" className="work-row" aria-busy={opening === artifact.id || undefined} disabled={opening !== null} onClick={() => void open(item)}>
+          <button type="button" className="work-row" data-work-id={artifact.id} aria-busy={opening === artifact.id || undefined} aria-disabled={opening !== null || undefined} onClick={() => { if (opening === null) void open(item); }}>
             {artifact.kind === "chart" ? <ChartNoAxesCombinedIcon aria-hidden="true" /> : artifact.kind === "grid" ? <TableIcon aria-hidden="true" /> : <FileTextIcon aria-hidden="true" />}
             <span className="work-row-text">
               <strong title={artifact.title}>{artifact.title}</strong>

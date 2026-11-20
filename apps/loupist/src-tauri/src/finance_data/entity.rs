@@ -232,7 +232,7 @@ impl FinanceDataService {
             .append_pair("crtfc_key", credential);
         let raw = self
             .fetch_provider(
-                self.client.get(public_url.clone()),
+                self.dart_client.get(public_url.clone()),
                 OPENDART_SOURCE_ID,
                 public_url.to_string(),
                 MAX_LARGE_PROVIDER_BYTES,

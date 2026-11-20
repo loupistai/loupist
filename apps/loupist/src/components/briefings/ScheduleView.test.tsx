@@ -4,10 +4,11 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { MOCK_LOUPISTS } from "../../bridge/mock/fixtures";
 import type { InboxChangedEvent } from "../../contracts/scheduled";
 import type { ChatMessage, LoupistWorkspace, ScheduledRun, ScheduledTaskListItem } from "@/types";
-import { ScheduleView } from "./ScheduleView";
+import { inboxItemOf, ScheduleView } from "./ScheduleView";
 
 const loupist = MOCK_LOUPISTS[0]!;
 const running: ScheduledRun = {
+  quiet: false,
   briefing_context: null, kind: "custom", summary: "", read_at_ms: null, message_id: null, skipped_tools: [], id: "run-row", task_id: "task-1",
   loupist_id: loupist.id, task_revision: 1, task_title: "Chip news", thread_id: "chat-run", run_id: "run-1", scheduled_for_ms: 0,
   started_at_ms: Date.now(), finished_at_ms: null, status: "running", error: null,
@@ -34,7 +35,7 @@ it("shows the answer of a run left open while it runs once the run finishes", as
 
   const runningSection = await screen.findByRole("region", { name: "Running now" });
   await user.click(within(runningSection).getByRole("button", { name: "Open" }));
-  expect(await screen.findByText("Preparing your briefing…", { selector: "p" })).toBeVisible();
+  expect(await screen.findByText("Running this research…", { selector: "p" })).toBeVisible();
 
   run = { ...running, status: "succeeded", message_id: answer.id, finished_at_ms: Date.now(), summary: "Chip demand held up this week." };
   await act(async () => { changed?.({ loupistId: loupist.id }); });
@@ -63,4 +64,131 @@ it("labels a task's prompt in its detail, and hides one that only repeats the ti
   const repeated = await screen.findByRole("article", { name: "Chip news" });
   expect(within(repeated).queryByRole("heading", { name: "Prompt" })).toBeNull();
   expect(within(repeated).getAllByText("Chip news")).toHaveLength(1);
+});
+
+it("lists no Watching item and names a briefing's followed tickers by their saved names", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  bridge.assets.installAsset({ name: "NVIDIA", ticker: "NVDA", exchange: "US", figi: "BBG000BBJQV0" });
+  const briefing: ScheduledRun = {
+    ...running, kind: "briefing", task_id: "briefing", task_title: "Briefings", status: "succeeded", finished_at_ms: Date.now(), thread_id: null, summary: "A quiet day.",
+    briefing_context: { symbols: ["NVDA", "TSM"], principlesChecked: 0, newFacts: 0, disputedEntityIds: [], changed: { names: 0, relations: 0, conflicts: 0, rows: [] }, ahead: [] },
+  };
+  vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([{ ...task(briefing), id: "briefing", kind: "briefing", title: "Briefings" } as ScheduledTaskListItem]);
+  vi.spyOn(bridge, "inboxList").mockResolvedValue({ items: [inboxItemOf(briefing)], nextCursor: null });
+  render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} initialRunId="run-1" />);
+
+  expect(await screen.findByText("NVIDIA · TSM")).toBeVisible();
+  expect(screen.getByText("A quiet day.")).toBeVisible();
+  expect(screen.queryByRole("list", { name: "Watching" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Watching/ })).toBeNull();
+});
+
+it("tries a failed run again by running its task now, then shows that task", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const failed: ScheduledRun = { ...running, status: "failed", finished_at_ms: Date.now(), error: "connect ECONNREFUSED", thread_id: null };
+  vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([task(failed)]);
+  vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([failed]);
+  vi.spyOn(bridge, "inboxList").mockResolvedValue({ items: [inboxItemOf(failed)], nextCursor: null });
+  const runNow = vi.spyOn(bridge, "scheduledTaskRunNow").mockResolvedValue(undefined as never);
+  render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} initialRunId="run-1" />);
+
+  // Reloading would show the same failure; the failure offers running the task once more.
+  const failure = await screen.findByRole("alert");
+  expect(within(failure).queryByRole("button", { name: "Try again" })).toBeNull();
+  await user.click(within(failure).getByRole("button", { name: "Run now" }));
+  expect(runNow).toHaveBeenCalledWith({ loupist_id: loupist.id, task_id: "task-1" });
+  expect(await screen.findByRole("article", { name: "Chip news" })).toBeVisible();
+});
+
+it("leads from the footer's 'tell Bot' to Bot", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const finished: ScheduledRun = { ...running, status: "succeeded", finished_at_ms: Date.now() };
+  vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([task(finished)]);
+  vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([]);
+  const onAskHome = vi.fn();
+  const { container } = render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} onAskHome={onAskHome} />);
+  await screen.findByRole("button", { name: /Chip news/ });
+  const footer = container.querySelector<HTMLElement>(".schedule-footer")!;
+  expect(footer).toHaveTextContent("tell Bot what you want and when");
+  await user.click(within(footer).getByRole("button", { name: "Ask in Bot" }));
+  expect(onAskHome).toHaveBeenCalledExactlyOnceWith("");
+});
+
+it("words a failed run by its task's kind, and an unknown failure by its title and Details alone", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const failed: ScheduledRun = { ...running, status: "failed", finished_at_ms: Date.now(), error: "An unexpected execution error", thread_id: null };
+  vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([task(failed)]);
+  vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([failed]);
+  render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} />);
+
+  await user.click(await screen.findByRole("button", { name: /Chip news/ }));
+  const detail = await screen.findByRole("article", { name: "Chip news" });
+  expect(within(detail).getByRole("status")).toHaveTextContent(/^The last run didn't finish\.$/);
+  const row = await within(detail).findByRole("button", { name: /Couldn't finish this scheduled research/ });
+  expect(row).not.toHaveTextContent("briefing");
+  await user.click(row);
+  const failure = await screen.findByRole("alert");
+  expect(within(failure).getByRole("heading", { level: 3 })).toHaveTextContent("Couldn't finish this scheduled research");
+  expect(failure.querySelector(":scope > p")).toBeNull();
+  expect(within(failure).getByText("Details")).toBeInTheDocument();
+});
+
+it("keeps a briefing's own words for its failure and its reason", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const failed: ScheduledRun = { ...running, kind: "briefing", task_title: "Briefing", status: "failed", finished_at_ms: Date.now(), error: "connect ECONNREFUSED", thread_id: null };
+  vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([{ ...task(failed), kind: "briefing", title: "Briefing" } as ScheduledTaskListItem]);
+  vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([failed]);
+  vi.spyOn(bridge, "inboxList").mockResolvedValue({ items: [inboxItemOf(failed)], nextCursor: null });
+  render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} initialRunId="run-1" />);
+
+  const failure = await screen.findByRole("alert");
+  expect(within(failure).getByRole("heading", { level: 3 })).toHaveTextContent("Couldn't finish this briefing");
+  expect(within(failure).getByText("Couldn't reach your AI provider. Check your connection and try again.")).toBeVisible();
+});
+
+it("marks a check that found nothing to report as quiet, never as waiting to be read", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const finished = (id: string, at: number, extra: Partial<ScheduledRun>): ScheduledRun =>
+    ({ ...running, id: `row-${id}`, run_id: id, status: "succeeded", started_at_ms: at, finished_at_ms: at + 1_000, ...extra });
+  const quiet = finished("quiet-run", Date.now() - 86_400_000, { quiet: true, summary: "Neither crossed its line." });
+  const reported = finished("reported-run", Date.now(), { summary: "SK hynix crossed its 52-week low." });
+  vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([task(reported)]);
+  vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([reported, quiet]);
+  render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} />);
+
+  await user.click(await screen.findByRole("button", { name: /Chip news/ }));
+  const history = await screen.findByRole("list", { name: "Runs of Chip news" });
+  const [reportedRow, quietRow] = within(history).getAllByRole("button");
+  expect(reportedRow).toHaveAttribute("data-unread", "true");
+  expect(within(reportedRow!).queryByText("Nothing to report")).toBeNull();
+  expect(quietRow).toHaveAttribute("data-unread", "false");
+  expect(quietRow).toHaveAttribute("data-quiet", "true");
+  expect(within(quietRow!).getByText("Nothing to report")).toBeVisible();
+  expect(within(quietRow!).getByText("Neither crossed its line.")).toBeVisible();
+  expect(within(quietRow!).queryByText("Unread")).toBeNull();
+});
+
+it("says a run's session was removed when Continue in Chat finds it gone with its run", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const finished: ScheduledRun = { ...running, status: "succeeded", finished_at_ms: Date.now(), summary: "Chip demand held up." };
+  vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([task(finished)]);
+  const runs = vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([finished]);
+  vi.spyOn(bridge, "inboxList").mockResolvedValue({ items: [inboxItemOf(finished)], nextCursor: null });
+  const onOpenChat = vi.fn(async () => false);
+  render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={onOpenChat} initialRunId="run-1" />);
+
+  const resume = await screen.findByRole("button", { name: "Continue in Chat →" });
+  await vi.waitFor(() => expect(runs).toHaveBeenCalled());
+  const reads = runs.mock.calls.length;
+  await user.click(resume);
+  expect(onOpenChat).toHaveBeenCalledWith(expect.objectContaining({ runId: "run-1", threadId: "chat-run" }));
+  expect(await screen.findByText("This run's session was removed.")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Continue in Chat →" })).toBeNull();
+  // The history is read again, so a run that left it leaves the list too.
+  await vi.waitFor(() => expect(runs.mock.calls.length).toBeGreaterThan(reads));
 });

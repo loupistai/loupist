@@ -856,6 +856,26 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                     &["Southmere", "4.25%"],
                 ));
             }
+            "T-057" => {
+                cases.push(call(
+                    "krx_daily_quote",
+                    "krx.daily_quote",
+                    json!({"symbol":"990221","date":"2026-04-16","market":"kospi"}),
+                    &["990221", "21950", "64012"],
+                ));
+                cases.push(call(
+                    "krx_daily_quote",
+                    "krx.daily_quote",
+                    json!({"symbol":"990905","date":"2026-04-16","market":"kosdaq"}),
+                    &["990905", "8200", "301455"],
+                ));
+                cases.push(call(
+                    "fx_rate",
+                    "fx.rate",
+                    json!({"from":"KRW","to":"USD"}),
+                    &["to_per_from", "0.000749134", "ecb:2026-11-16"],
+                ));
+            }
             _ => panic!("uncovered replay scenario {id}"),
         }
         for (index, (case, expected)) in cases.into_iter().enumerate() {

@@ -30,7 +30,6 @@
 .connect-primary-block { display: grid; gap: var(--gg-space-2); }
 .onboarding-step .connect-meta,
 .connect-meta { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
-.connect-key-stays { margin-top: var(--gg-space-3); }
 
 /* The waiting card replaces the primary button while a browser or device sign-in runs. */
 .signin-card { display: grid; gap: var(--gg-space-3); padding: var(--gg-space-4); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); animation: connect-cross-fade var(--gg-motion-normal) var(--gg-ease-out); }
@@ -90,7 +89,9 @@
 /* Fields scroll. The connect or add action stays below them, so a short window does not cover the last field. */
 .connect-sheet .dialog-body:has(.connect-sheet-scroll) { display: flex; flex-direction: column; overflow: hidden; }
 .connect-sheet-section:has(.connect-sheet-scroll) { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden; }
-.connect-sheet-scroll { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--gg-space-4); }
+/* Rows keep their content height. An auto row would give the found-models list (itself a scroll box) its
+   zero minimum when the fields outgrow a short window, and the list would vanish. */
+.connect-sheet-scroll { min-height: 0; overflow-y: auto; display: grid; grid-auto-rows: max-content; align-content: start; gap: var(--gg-space-4); }
 .connect-actions-start { justify-content: flex-start; }
 .connect-primary { justify-self: stretch; min-height: var(--gg-size-control-lg); }
 .connect-progress { display: flex; align-items: center; gap: var(--gg-space-2); margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
@@ -144,5 +145,6 @@
   .connect-row, .connect-state-dot { transition: none; }
   /* A still "…" replaces the rotating spinner. */
   .signin-spinner, .connect-spinner { display: none; }
-  .signin-title::after { content: "…"; }
+  /* The title's flex gap would part the dots from the last word. */
+  .signin-title::after { content: "…"; margin-inline-start: calc(-1 * var(--gg-space-2)); }
 }

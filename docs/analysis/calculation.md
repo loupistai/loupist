@@ -1,6 +1,6 @@
 # Calculation
 
-Arithmetic and sensitivity cards are host calculations from pinned inputs. A missing cost stays a before-cost result.
+Arithmetic and sensitivity ranges are host calculations from pinned inputs. A missing cost stays a before-cost result.
 
 ## Calculation
 
@@ -9,8 +9,8 @@ Arithmetic and sensitivity cards are host calculations from pinned inputs. A mis
 arithmetic and needs no runtime: percent change, CAGR,
 margin, ratio, payout ratio, net debt to EBITDA, free cash flow, growth series,
 returns summary (return, volatility and drawdown dates), moving average, sum,
-holdings overlap, a savings-goal grid, regular-investing history, and DCF
-and reverse-DCF grids over WACC × terminal growth (never one point value). Inputs
+holdings overlap, currency conversion, a savings-goal grid, regular-investing history,
+and DCF and reverse-DCF grids over WACC × terminal growth (never one point value). Inputs
 are JSON numbers, decimal strings, or cells and columns of a pinned dataset
 revision this Loupist owns, checked against its stored digest. Arithmetic is
 IEEE-754 binary64 with reported values rounded to 15 significant digits; a missing
@@ -35,14 +35,15 @@ The everyday operations live in `calculations/series.rs` and `calculations/retai
   return. A series without dividends gives a price return.
 
 `reverse_dcf` takes an optional `reference_growth_pct` (above −50%, at most 100%;
-usually a cited `cagr`, its period in `labels.reference_growth_pct`); its grid then adds
+a cited `cagr` of the same measure as `cash_flow` over the last five fiscal years of
+growth, its period in `labels.reference_growth_pct`); its grid then adds
 `reference` and a per-cell `above_reference`, and a note counts the cells above it. Every
 input carries `label`, the name its formula prints (its `labels` entry, else the host's
 word: Revenue, OCF, from, years…), and `unit`, how it is printed: `number` (years,
 shares, or a unit Rust cannot place, kept as `text`), `percent` (`*_pct` inputs and a
 `returns_pct` series), `points`, `basis_points`, `multiple`, `price` (a per-share price
 in the request's currency) or `amount` with the ISO `currency` and power-of-ten `scale`
-the request's `unit` states ("KRW billions" → KRW, 9). The reference input keeps the
+the request's `unit` states ("KRW billions" → KRW, 9; "KRW 100 million" → KRW, 8). The reference input keeps the
 label "reference growth" and carries `labels.reference_growth_pct` as `period`.
 
 Each result returns values with units, a one-line formula with the inputs
@@ -62,37 +63,40 @@ typed input then records provenance `{kind: "cited", evidence_id, status}`: Rust
 [looks for](number-checks.md#number-matching) its value among the cited result's numbers within half
 a unit of its last written digit, read in the input's own unit (`*_pct` inputs as
 percents, `years`, `shares` and `forecast_years` as counts, `price` as a per-share
-amount with or without its currency, other inputs in the request's `unit`), and
+amount with or without its currency, other inputs in the request's `unit`, or, when
+the request has no `unit`, as the evidence prints the amount in its own scale: `52`
+matches `52억원`; a negative input also matches a fall its evidence
+[states in words](number-checks.md#number-matching), `-9` for `9% 줄었고`), and
 records `matched`, `rounded` or `not_found`. A dataset-cell input keeps its pinned
 provenance.
 
-### Sensitivity cards
+`convert` takes `inputs.amount` and `inputs.rate`, a `unit` with the amount's
+ISO currency code and scale (for example, `USD billions`), and a different
+uppercase target code in `to`. It multiplies the amount by its scale and by
+the positive rate, returning `converted` in base units of `to`. The formula uses
+the amount's scale for reading and shows the rate as target units per source unit.
 
-When the reply commits, `commands/tool_executor/sensitivity.rs` turns each top-level
-paragraph that is only one evidence link (outside lists, quotes and tables) to a
-`dcf_grid` or `reverse_dcf` result of this turn into a card, at most eight per answer,
-stored as the answer's `sensitivity_cards`
-([turn authority](../runtime/chat-turns.md#turn-authority-and-finalization)). The link text, cut
-to 80 characters, names the company. Rust copies the grid, forecast years, units, up to
-eight formula lines and twelve inputs from the retained result; each input names the
-result it was cited from (`input_sources`) or read out of (a dataset cell), with its
-check status. A reverse grid also keeps the price, dated by the matched row of its cited
-result or else by that evidence's publication date, and the reference with its label
-and, when cited from a `cagr` result, its years. Model text never supplies a value, and
-host-composed replies have no cards.
+A cited rate must come from this turn's [`fx_rate`](../agent/turn-tools.md#turn-tools)
+result in the requested direction. The rate must agree with its `to_per_from`
+within both half a unit of the last typed digit and half a unit of the sixth
+significant digit of the published rate. The formula shows the source and date,
+and `conversion` retains them with the rate table revision. An uncited rate is provided as an
+assumption. An amount from evidence must agree with the currency stated beside its
+matched or pinned cell. Rust checks `<field>_currency` first, then `currency`,
+`reported_currency` and `currency_code` in that row. A cited amount that matches
+a passage or a row with no stated currency records `currency_basis: "declared"`,
+as does a pinned cell with no stated currency. Currency codes in the requested
+unit and in source rows must use consistent case.
+Minor-unit markers such as `GBp`, `ZAc` and `ILA` are refused.
 
-The card (`src/components/chat/SensitivityCard.tsx`) replaces its paragraph: discount
-rates down, long-run growth across, the middle cell outlined as the base case and, only
-for a reverse DCF with a reference, the cells that need more growth than the reference
-shaded, with a legend swatch. A cell the solver could not place within −50% to 100% shows
-"—", and a plain caption counts them. The price and each input carry their source's citation (an
-input that needs checking is flagged) and the reference is a number chip. How this
-was calculated shows the step inline (the formulas, where there is no step); Copy data
-copies tab-separated rows; Change the rates fills the composer and never sends; an as-of
-answer adds "Known as of {date}". On the [results card](results.md#results-before-and-after), Open
-the grid shows the host's price-implied grid the same way, without a reference; the
-price and the cash flow carry their source chips, and Rust labels the cash flow with its
-fiscal year ("free cash flow FY2025").
+### Sensitivity ranges
+
+`dcf_grid` returns a range of values across discount rates and terminal growth
+assumptions. For `reverse_dcf`, the answer explains the implied growth range at
+the dated price and compares it with historical growth when available. Figures
+link to the retained calculation and its inputs. A link on a line of its own
+opens the cited evidence: it stays a citation in its own paragraph while the
+answer streams and after it is saved, and no answer stores a card for it.
 
 ## Execution and history
 
@@ -116,4 +120,4 @@ Unspecified costs produce a before-cost result. Prices without total-return adju
 
 ## Code
 
-- Calculations and sensitivity cards: `src-tauri/src/calculations/`, `src-tauri/src/commands/tool_executor/sensitivity.rs`, `src-tauri/src/domain/answer_checks.rs`, `src/chat/sensitivity.ts`, `src/components/chat/SensitivityCard.tsx`
+- Calculations and sensitivity ranges: `src-tauri/src/calculations/`, `src-tauri/src/commands/tool_executor/sensitivity.rs`, `src-tauri/src/domain/answer_checks.rs`, `src/components/assets/SensitivityCard.tsx`, `src/components/assets/sensitivityText.ts`

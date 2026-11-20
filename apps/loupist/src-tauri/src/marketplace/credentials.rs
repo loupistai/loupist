@@ -41,6 +41,7 @@ enum McpCredentialProbeError {
     Rejected,
     /// The provider refused the key because it is not in the format it issues.
     RejectedFormat,
+    PaidPlanRequired,
     /// The provider could not be reached, or the probe could not run.
     Unavailable,
     /// The provider answered without any data, which proves nothing about the
@@ -53,7 +54,9 @@ impl McpCredentialProbeError {
         use crate::finance_credentials::VerificationOutcome;
         match self {
             Self::Rejected | Self::RejectedFormat => VerificationOutcome::Rejected,
-            Self::Unavailable | Self::NoData => VerificationOutcome::TemporarilyUnavailable,
+            Self::PaidPlanRequired | Self::Unavailable | Self::NoData => {
+                VerificationOutcome::TemporarilyUnavailable
+            }
         }
     }
 
@@ -67,6 +70,9 @@ impl McpCredentialProbeError {
             Self::RejectedFormat => CommandError::new(
                 "credential_format_rejected",
                 "The provider rejected this key because it is not in the format the provider issues.",
+            ),
+            Self::PaidPlanRequired => CommandError::new(
+                "provider_plan_required", "This needs a paid Alpha Vantage plan."
             ),
             Self::Unavailable => CommandError::new(
                 "provider_unavailable",
@@ -96,12 +102,27 @@ fn classify_probe_response(response: &McpCallResult) -> Result<(), McpCredential
             .and_then(|marker| marker.get("reason"))
             .and_then(Value::as_str);
         return Err(match (kind, reason) {
+            (Some("alpha_vantage_paid_plan_required"), _) => {
+                McpCredentialProbeError::PaidPlanRequired
+            }
             (Some("offline"), _) => McpCredentialProbeError::Unavailable,
             (Some("credential_rejected"), Some("key_format")) => {
                 McpCredentialProbeError::RejectedFormat
             }
             _ => McpCredentialProbeError::Rejected,
         });
+    }
+    // The compact Alpha Vantage endpoint accepts invented keys. Nasdaq search
+    // never sends the key. Records from either route cannot verify a candidate.
+    if matches!(
+        response
+            .structured_content
+            .as_ref()
+            .and_then(|v| v.get("provider"))
+            .and_then(Value::as_str),
+        Some("alpha_vantage" | "nasdaq")
+    ) {
+        return Err(McpCredentialProbeError::Unavailable);
     }
     let has_records = response
         .structured_content
@@ -179,7 +200,7 @@ pub(super) fn credential_statuses(
                         MarketplaceCredentialVerification::TemporarilyUnavailable
                     }
                 }
-            } else if active {
+            } else if active && status.verified_at.is_some() {
                 MarketplaceCredentialVerification::Verified
             } else {
                 MarketplaceCredentialVerification::Never
@@ -404,6 +425,15 @@ pub(super) fn save_credential_for_state(
     reconcile_connector_configs_locked(state, &_lifecycle_guard)?;
     let entry = credential_entry(&catalog, &request.entry_id)?;
     validate_credential_secrets(entry, &request.secrets)?;
+    if entry.id == super::ASSET_LOOKUP_SOURCE_ID {
+        let key = request
+            .secrets
+            .get("api_key")
+            .ok_or_else(|| CommandError::invalid("Enter an OpenFIGI API key."))?;
+        crate::finance_credentials::save_lookup_key(&state.credential_environment, key)
+            .map_err(credential_store_error)?;
+        return credential_statuses(state, entry);
+    }
     // Saving is the user's own action: a key refused earlier this session is
     // read again here (macOS may ask) rather than reported as locked.
     let current =
@@ -700,6 +730,11 @@ pub async fn marketplace_credential_verify(
     let catalog = bundled_catalog()?;
     ensure_installable(&request.entry_id)?;
     let entry = credential_entry(&catalog, &request.entry_id)?;
+    if entry.id == super::ASSET_LOOKUP_SOURCE_ID {
+        return Err(CommandError::invalid(
+            "The optional OpenFIGI key is used when you search for a listing.",
+        ));
+    }
     let (
         candidate,
         candidate_secrets,
@@ -859,7 +894,12 @@ pub(super) fn delete_credential_for_state(
     ensure_installable(&request.entry_id)?;
     let entry = credential_entry(&catalog, &request.entry_id)?;
     let lifecycle_guard = connector_lifecycle_lock()?;
-    disable_bindings_and_delete_credentials_locked(state, &request.entry_id, &lifecycle_guard)?;
+    if entry.id == super::ASSET_LOOKUP_SOURCE_ID {
+        crate::finance_credentials::delete(&state.credential_environment, &entry.id)
+            .map_err(credential_store_error)?;
+    } else {
+        disable_bindings_and_delete_credentials_locked(state, &request.entry_id, &lifecycle_guard)?;
+    }
     credential_statuses(state, entry)
 }
 
@@ -886,12 +926,13 @@ pub(super) fn disable_bindings_and_delete_credentials_locked(
             }
         };
         if binding.enabled || !binding.granted_permissions.is_empty() {
+            let fx_was_granted = super::fx_granted(&binding);
             binding.enabled = false;
             binding.granted_permissions.clear();
             binding.updated_at_ms = Utc::now()
                 .timestamp_millis()
                 .max(binding.updated_at_ms.saturating_add(1));
-            if state.store.save_loupist_capability(&binding).is_err() {
+            if super::persist_binding(state, &binding, fx_was_granted).is_err() {
                 unavailable.push(format!("{} ({})", loupist.name, loupist.workspace_root));
             }
         }
@@ -924,6 +965,21 @@ mod probe_tests {
         match classify_probe_response(response) {
             Ok(()) => VerificationOutcome::Verified,
             Err(error) => error.outcome(),
+        }
+    }
+
+    #[test]
+    fn public_probe_records_cannot_verify_a_secret() {
+        for provider in ["alpha_vantage", "nasdaq"] {
+            let response = answer(
+                false,
+                Some(json!({"provider": provider, "results": [{"close": 185.64}]})),
+                "",
+            );
+            assert_eq!(
+                outcome(&response),
+                VerificationOutcome::TemporarilyUnavailable
+            );
         }
     }
 
@@ -973,6 +1029,22 @@ mod probe_tests {
         assert_eq!(
             classify_probe_response(&format),
             Err(McpCredentialProbeError::RejectedFormat)
+        );
+        let paid = answer(
+            true,
+            Some(json!({"loupist_error": {"kind": "alpha_vantage_paid_plan_required"}})),
+            "",
+        );
+        assert_eq!(
+            classify_probe_response(&paid),
+            Err(McpCredentialProbeError::PaidPlanRequired)
+        );
+        assert_eq!(outcome(&paid), VerificationOutcome::TemporarilyUnavailable);
+        assert_eq!(
+            McpCredentialProbeError::PaidPlanRequired
+                .command_error()
+                .code,
+            "provider_plan_required"
         );
         let not_accepted = answer(
             true,

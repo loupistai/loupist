@@ -1,7 +1,9 @@
+import i18n from "@/i18n";
 import { readUIMessageStream } from "ai";
 import { applyChatProgressPatch, applyChatProgressSnapshot, fromLoupistUIMessage, fromStoreKeepingAnswers, TauriChatTransport, toLoupistUIMessage } from "./ai-sdk";
 import type { LoupistUIMessage } from "./ai-sdk";
-import type { ChatMessage, ChatSendRequest, ChatStreamEvent, LoupistBridge } from "../types";
+import type { ChatArtifactView, ChatMessage, ChatSendRequest, ChatStreamEvent, LoupistBridge } from "../types";
+import { GRID_SCHEMA } from "../contracts/chat";
 import { evidenceFixture } from "../test/evidenceFixtures";
 import { deriveTurnView } from "./turnView";
 import { completedRun } from "../test/streamFixtures";
@@ -174,6 +176,26 @@ describe("native stream transport", () => {
     }
   });
 
+  it("shows the kept draft of a stopped reply in Korean too, not a stop sentence in its place", async () => {
+    await i18n.changeLanguage("ko");
+    try {
+      const draft = { id: "draft", kind: "commentary" as const, text: "새 생산라인의 가동률과 재고일수를 함께 보면" };
+      const stream = await transport(async (sent, onEvent) => {
+        onEvent({ type: "started", run_id: sent.run_id! });
+        onEvent({ type: "progress", run_id: sent.run_id!, sequence: 1, progress: { startedAtMs: 1, items: [draft], finishedAtMs: null } });
+        onEvent({ type: "aborted", run_id: sent.run_id! });
+        return { run_id: sent.run_id! };
+      }).sendMessages({ ...request, body });
+      const stopped = (await project(stream as ReadableStream<never>)).at(-1)!;
+      const turn = deriveTurnView({ message: stopped, now: 2, lastActivityAt: 2, stopping: false, retry: { attempt: 1, offered: false } });
+      const prose = turn.segments.flatMap((segment) => segment.kind === "prose" ? [segment.text] : []);
+      expect(prose).toEqual([draft.text]);
+      expect(prose.join("")).not.toContain("응답을 중지했습니다");
+    } finally {
+      await i18n.changeLanguage("en");
+    }
+  });
+
   it("ignores a stream event type this build does not know and finishes the reply", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
@@ -272,6 +294,45 @@ describe("native stream transport", () => {
     }
     expect(projections.at(-1)).toMatchObject({ status: "complete", artifact_refs: [artifact], staged_artifacts: [view] });
     expect(onArtifact).toHaveBeenCalledExactlyOnceWith("loupist-a", "chat-a", artifact);
+  });
+
+  it("keeps one staged part per table revision: a corrected draft of the same id and revision replaces the first", async () => {
+    const draft = (digest: string, payout: string): ChatArtifactView => ({
+      artifact: { id: "grid-1", chat_session_id: "chat-a", kind: "grid", title: "Payers", current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+      revision: { artifact_id: "grid-1", revision: 1, digest, source_message_id: "answer", created_at_ms: 0, payload: { kind: "grid", schema: GRID_SCHEMA, grid: {
+        layout: "assets", rows: [{ symbol: "990221", market: "KRX", label: "Solsup Foods" }], columns: [{ id: "payout", label: "Payout", unit: "percent" }],
+        cells: [[{ value: payout, evidence_id: "ev", check: { link_index: 0, text: payout, evidence_id: "ev", kind: "data", status: "matched" }, sort: Number.parseFloat(payout) }]],
+      } } },
+    } as ChatArtifactView);
+    const first = draft("a".repeat(64), "42.0%");
+    const corrected = draft("b".repeat(64), "40.2%");
+    const stream = await transport(async ({ run_id }, emit) => {
+      emit({ type: "started", run_id: run_id! });
+      emit({ type: "artifact_staged", run_id: run_id!, view: first });
+      emit({ type: "artifact_staged", run_id: run_id!, view: corrected });
+      emit({ type: "aborted", run_id: run_id! });
+      return { run_id: run_id! };
+    }).sendMessages({ ...request, body });
+    const parts: LoupistUIMessage["parts"][] = [];
+    for await (const message of readUIMessageStream<LoupistUIMessage>({ stream: stream as ReadableStream<never> })) parts.push(structuredClone(message.parts));
+    const staged = (list: LoupistUIMessage["parts"]) => list.filter((part) => part.type === "data-staged_artifact");
+    // The first draft was on screen before the correction arrived.
+    expect(parts.map((list) => staged(list).map((part) => (part.data as ChatArtifactView).revision.digest))).toContainEqual([first.revision.digest]);
+    expect(staged(parts.at(-1)!)).toEqual([{ type: "data-staged_artifact", id: "grid-1:1", data: corrected }]);
+    expect(fromLoupistUIMessage({ id: "a", role: "assistant", parts: parts.at(-1)! }).staged_artifacts).toEqual([corrected]);
+  });
+
+  it("keeps the research session ID on the live and restored Bot acknowledgement", async () => {
+    const stream = await transport(async ({ run_id }, onEvent) => {
+      onEvent({ type: "started", run_id });
+      onEvent({ type: "completed", ...completedRun, run_id, message_id: "bot-reply", final_text: "Handed off.", research_session_id: "session-2",
+        created_at: "2026-10-28T00:00:00Z", execution_model: { profile_id: "test", name: "Test", provider: "test", model: "test", thinking_level: "medium", run_options: {} },
+        agent_harness: { schema: "test", mode: "chat", skill_ids: [], capability_ids: [], digest: "test" } });
+      return { run_id };
+    }).sendMessages({ ...request, body });
+    const live = (await project(stream as ReadableStream<never>)).at(-1)!;
+    expect(live.research_session_id).toBe("session-2");
+    expect(fromLoupistUIMessage(toLoupistUIMessage(live)).research_session_id).toBe("session-2");
   });
 
   it("carries custom tool refusals from stream completion into the answer", async () => {

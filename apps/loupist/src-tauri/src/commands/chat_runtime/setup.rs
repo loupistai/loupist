@@ -4,8 +4,9 @@
 use super::*;
 use crate::commands::{loupist_configuration, ChatConnectorAuthority};
 use crate::{
-    agent_harness::AgentHostContext,
+    agent_harness::{workspace::AgentWorkspaceSnapshot, AgentHostContext},
     chat::activity::ActivityRecorder,
+    chat::surface::ChatSurface,
     commands::{attachments::PreparedChatAttachment, knowledge::HostMemoryContext},
     domain::{ChatSession, LoupistProfile},
     fs::loupist_root::{profile_workspace, BoundLoupistRoot},
@@ -22,6 +23,7 @@ pub(super) struct PreparedChatTurn {
     pub bound_workspace: BoundLoupistRoot,
     pub runtime_policy_sha256: String,
     pub runtime_surface_sha256: String,
+    pub appearance: crate::scoped_config::ResolvedAppearanceConfig,
 }
 
 impl PreparedChatTurn {
@@ -31,7 +33,7 @@ impl PreparedChatTurn {
         profile: &LoupistProfile,
         mut execution: PiExecutionConfig,
         prompt: &str,
-        interactive: bool,
+        surface: ChatSurface,
     ) -> Result<Self, CommandError> {
         let config = loupist_configuration(state, &profile.id)?;
         let skill_ids = config.enabled_skill_ids();
@@ -49,28 +51,6 @@ impl PreparedChatTurn {
         } else {
             crate::web::WebSearchPolicy::default()
         };
-        let harness =
-            agent_harness::snapshot("chat", &skill_ids, capabilities).map_err(map_internal)?;
-        let runtime = agent_harness::AgentRuntimeProfile::new(
-            "chat",
-            request.use_memory,
-            request.update_memory,
-            capabilities,
-        )
-        .map_err(map_internal)?;
-        let surface = crate::chat::surface::ChatSurface::resolve(
-            state,
-            &profile.id,
-            &request.thread_id,
-            interactive,
-        )?;
-        let runtime = surface.restrict(runtime);
-        let preload_component_ids = agent_harness::preload_component_ids_for_mentions(
-            &request.mentioned_connection_ids,
-            capabilities,
-            &runtime,
-        )
-        .map_err(map_internal)?;
         let bound_workspace = profile_workspace(profile)?;
         let workspace = agent_harness::workspace::workspace_snapshot_with_preferences(
             bound_workspace.path(),
@@ -78,17 +58,25 @@ impl PreparedChatTurn {
             &config.skills,
         )
         .map_err(map_internal)?;
+        let context = chat_host_context(
+            request,
+            prompt,
+            surface,
+            &skill_ids,
+            capabilities,
+            workspace,
+        )?;
         let runtime_policy_sha256 = pi_session_cache_runtime_policy_sha256(
             request.as_of.as_deref(),
             web_search_policy,
-            &workspace.digest,
+            &context.workspace.digest,
             &config.execution_digest(),
         )?;
         let runtime_surface_sha256 = crate::util::sha256(
             format!(
                 "{}:{}",
                 pi_session_cache_runtime_surface_sha256(capabilities)?,
-                surface.name()
+                context.surface.name()
             )
             .as_bytes(),
         );
@@ -101,21 +89,51 @@ impl PreparedChatTurn {
             bound_workspace,
             runtime_policy_sha256,
             runtime_surface_sha256,
-            context: AgentHostContext {
-                agent_harness: harness,
-                agent_runtime: runtime,
-                workspace,
-                preload_component_ids,
-                // Parse only raw current user intent, before attachments/history.
-                explicit_skill_names: agent_harness::explicit_skill_names(prompt),
-                surface,
-            },
+            appearance: config.appearance,
+            context,
         })
     }
 }
 
+pub(super) fn chat_host_context(
+    request: &ChatSendRequest,
+    prompt: &str,
+    surface: ChatSurface,
+    skill_ids: &[String],
+    capabilities: &[String],
+    workspace: AgentWorkspaceSnapshot,
+) -> Result<AgentHostContext, CommandError> {
+    let agent_harness =
+        agent_harness::snapshot("chat", skill_ids, capabilities).map_err(map_internal)?;
+    let agent_runtime = surface.restrict(
+        agent_harness::AgentRuntimeProfile::new(
+            "chat",
+            request.use_memory,
+            request.update_memory,
+            capabilities,
+        )
+        .map_err(map_internal)?,
+    );
+    let preload_component_ids = agent_harness::preload_component_ids_for_mentions(
+        &request.mentioned_connection_ids,
+        capabilities,
+        &agent_runtime,
+    )
+    .map_err(map_internal)?;
+    Ok(AgentHostContext {
+        agent_harness,
+        agent_runtime,
+        workspace,
+        preload_component_ids,
+        // Parse only raw current user intent, before attachments/history.
+        explicit_skill_names: agent_harness::explicit_skill_names(prompt),
+        surface,
+    })
+}
+
 /// Context gathered during setup that launch renders into the turn envelope.
 pub(super) struct TurnEnvelopeInputs {
+    pub appearance: crate::scoped_config::ResolvedAppearanceConfig,
     pub mentioned_connections: Vec<agent_harness::MentionedConnection>,
     pub selected_artifact: Option<Value>,
     pub host_memory: Option<HostMemoryContext>,
@@ -126,6 +144,8 @@ pub(super) struct TurnEnvelopeInputs {
     pub bot_memory: Option<crate::chat::bot_memory::BotMemoryContext>,
     /// Memory the as-of cutoff left out of the automatic context.
     pub left_out: crate::commands::knowledge::as_of::LeftOut,
+    /// A custom scheduled run's facts about its task's last finished run.
+    pub previous_run: Option<crate::scheduled_tasks::types::PreviousRun>,
 }
 
 /// Setup → launch handoff: the admitted run, its durable user turn and the
@@ -141,7 +161,10 @@ pub(super) struct AdmittedChatTurn {
     pub request: ChatSendRequest,
     pub on_event: ChatEventSink,
     pub surface: crate::chat::surface::ChatSurface,
+    pub host_handoff: bool,
     pub untrusted_context: bool,
+    pub handoff_trust: Option<crate::chat::handoff::HandoffTrust>,
+    pub retained_handoff_text: bool,
     pub chat_started_at: Instant,
     pub run_id: String,
     pub chat_controls: ChatControlReceiver,
@@ -203,7 +226,7 @@ pub(in crate::commands) fn validate_turn_as_of(as_of: Option<&str>) -> Result<()
 /// `Err` returns before the user turn is appended. `Break` means the user
 /// turn is durable and its reply already ended (failed, or stopped first).
 pub(super) fn admit_chat_turn(
-    request: ChatSendRequest,
+    mut request: ChatSendRequest,
     mut on_event: ChatEventSink,
     state: &AppState,
     admission: Option<ChatAdmission>,
@@ -233,6 +256,13 @@ pub(super) fn admit_chat_turn(
         None => ChatAdmission::new(state, &run_id, &request.loupist_id, &request.thread_id)?,
     };
     let untrusted_context = admission.untrusted_text;
+    let scheduled_turn = admission.scheduled;
+    let previous_run = admission.previous_run;
+    let scheduled_custom = scheduled_turn
+        .as_ref()
+        .is_some_and(|turn| turn.task_kind == crate::scheduled_tasks::types::TaskKind::Custom);
+    let mut handoff = admission.handoff;
+    let host_handoff = handoff.is_some();
     let registration = admission.registration;
     let chat_controls = admission.controls;
     let cancel = registration.cancel;
@@ -252,7 +282,11 @@ pub(super) fn admit_chat_turn(
         &ChatProgressProjection::new(progress_started_at_ms),
         0,
     );
-    let prompt = request.prompt.trim().to_owned();
+    let prompt = if handoff.is_some() {
+        request.prompt.clone()
+    } else {
+        request.prompt.trim().to_owned()
+    };
     if prompt.len() > MAX_PROMPT_BYTES || prompt.contains('\0') {
         return Err(CommandError::invalid(format!(
             "prompt must contain at most {MAX_PROMPT_BYTES} bytes"
@@ -265,13 +299,45 @@ pub(super) fn admit_chat_turn(
             "a prompt or at least one attachment is required",
         ));
     }
-    let pi_execution = state.pi_execution(
-        &request.model_profile_id,
-        request.thinking_level.as_str(),
-        &request.run_options,
-    )?;
+    let level = if request.thinking_level.is_empty() {
+        crate::providers::auto::research_level(
+            state,
+            &request.loupist_id,
+            &request.model_profile_id,
+        )?
+    } else {
+        request.thinking_level.clone()
+    };
+    let pi_execution =
+        state.pi_execution(&request.model_profile_id, &level, &request.run_options)?;
+    if handoff.is_some()
+        && (request.model_profile_id != pi_execution.model.id
+            || request.thinking_level != pi_execution.thinking_level
+            || request.run_options != pi_execution.run_options)
+    {
+        return Err(CommandError::invalid(
+            "the hand-off's selected Chat settings are unavailable",
+        ));
+    }
+    if let Some(admission) = &handoff {
+        request.update_memory &= !admission.trust.dont_save();
+        if request.use_memory {
+            request.pins = crate::commands::knowledge::resolve_handoff_pins(
+                state,
+                &request.loupist_id,
+                &admission.pins,
+            )?;
+        }
+    }
     let pi_artifacts = pi_execution.artifacts.clone();
     let configured_model = pi_execution.model.clone();
+    #[cfg(feature = "e2e")]
+    let pi_artifacts = crate::commands::handoff_fixture::select(
+        state,
+        &configured_model.id,
+        host_handoff,
+        pi_artifacts,
+    )?;
     let has_images = prepared_attachments
         .iter()
         .any(|attachment| attachment.record.media_type.starts_with("image/"));
@@ -296,27 +362,58 @@ pub(super) fn admit_chat_turn(
         .get_loupist(&request.loupist_id)
         .map_err(map_store)?
         .ok_or_else(|| CommandError::not_found("Loupist"))?;
+    let surface = if admission.price_setup {
+        ChatSurface::PriceSetup
+    } else if handoff.as_ref().is_some_and(|admission| {
+        matches!(
+            admission.action,
+            Some(crate::domain::HandoffAction::Link { .. })
+        )
+    }) {
+        ChatSurface::Session
+    } else {
+        ChatSurface::resolve(
+            &request.loupist_id,
+            &request.thread_id,
+            interactive,
+            handoff.as_ref().map(|admission| admission.id.as_str()),
+        )
+    };
     let setup::PreparedChatTurn {
         execution: pi_execution,
-        context,
+        mut context,
         skill_files,
         connector_authority,
         web_search_policy,
         bound_workspace,
         runtime_policy_sha256,
         runtime_surface_sha256,
+        appearance,
     } = setup::PreparedChatTurn::resolve(
         state,
         &request,
         &profile,
         pi_execution,
-        &prompt,
-        interactive,
+        if handoff.is_some() { "" } else { &prompt },
+        surface,
     )?;
+    if !scheduled_custom {
+        context
+            .agent_runtime
+            .core_tool_names
+            .retain(|name| name != "schedule_quiet");
+    }
+    if host_handoff {
+        context
+            .agent_runtime
+            .core_tool_names
+            .retain(|name| name != "ask_user");
+    }
     let policy = context.tool_policy(
         profile.id.clone(),
         request.thread_id.clone(),
         request.as_of.clone(),
+        &appearance,
     );
     let instruction_roots = (
         context.workspace.root.clone(),
@@ -350,6 +447,12 @@ pub(super) fn admit_chat_turn(
         request.selected_artifact.as_ref(),
     )?;
     let had_prior_messages = !chat.messages.is_empty();
+    let retained_handoff_text = chat.messages.iter().any(|message| {
+        message
+            .handoff_note
+            .as_ref()
+            .is_some_and(|note| note.untrusted_id.is_some())
+    });
     let expected_chat = chat.clone();
     crate::commands::knowledge::validate_selected_references(&request.pins)?;
     let cutoff = crate::commands::knowledge::as_of::Cutoff::parse(request.as_of.as_deref());
@@ -366,13 +469,7 @@ pub(super) fn admit_chat_turn(
         left_out.merge(std::mem::take(&mut memory.left_out));
     }
     let followed = if request.use_memory {
-        let context = state.store.map_context().map_err(map_store)?;
-        // Holdings are today's positions, so an as-of turn never sees them.
-        Some(if cutoff.is_some() {
-            agent_harness::followed_interests(context)
-        } else {
-            agent_harness::followed_companies(context)
-        })
+        Some(agent_harness::followed_context(state, &profile.id)?)
     } else {
         None
     };
@@ -381,6 +478,17 @@ pub(super) fn admit_chat_turn(
     } else {
         None
     };
+    if let Some(admission) = &mut handoff {
+        if (untrusted_context
+            || retained_handoff_text
+            || host_memory
+                .as_ref()
+                .is_some_and(|memory| memory.shared_pauses))
+            && admission.note.untrusted_id.is_none()
+        {
+            admission.note.untrusted_id = Some(crate::custom_connections::taint::fresh_id());
+        }
+    }
     // The Bot carries its conversation in Bot memory, not a research working note.
     let working_context = if request.use_memory && !surface.is_bot() {
         crate::commands::knowledge::current_working_context(state, &profile.id, &chat.id)?.filter(
@@ -518,13 +626,17 @@ pub(super) fn admit_chat_turn(
         replaced_model: None,
         as_of: request.as_of.clone(),
         number_checks: Vec::new(),
-        sensitivity_cards: Vec::new(),
         as_of_report: None,
         alert: None,
-        watch: None,
-        earnings: None,
+
         vocabulary: None,
         handoff: None,
+        research_session_id: None,
+        handoff_note: handoff.as_ref().map(|admission| admission.note.clone()),
+        handoff_action: handoff
+            .as_ref()
+            .and_then(|admission| admission.action.clone()),
+        scheduled: scheduled_turn,
         link: None,
         id: user_message_id.clone(),
         role: ChatRole::User,
@@ -557,7 +669,10 @@ pub(super) fn admit_chat_turn(
     // generation that Pi may already have mutated. Assistant content and the
     // replacement cache state are sealed together by the later exact CAS.
     chat.pi_session_cache = None;
-    chat.updated_at_ms = timestamp;
+    // A custom scheduled reply may commit quietly and preserve session recency.
+    if !scheduled_custom {
+        chat.updated_at_ms = timestamp;
+    }
     if let Err(error) = state.store.replace_chat(&expected_chat, &chat) {
         if let Some(pending) = pending_attachments {
             pending.rollback()?;
@@ -614,7 +729,10 @@ pub(super) fn admit_chat_turn(
         request,
         on_event,
         surface,
+        host_handoff,
         untrusted_context,
+        handoff_trust: handoff.map(|admission| admission.trust),
+        retained_handoff_text,
         chat_started_at,
         run_id,
         chat_controls,
@@ -640,6 +758,7 @@ pub(super) fn admit_chat_turn(
         chat,
         had_prior_messages,
         envelope: TurnEnvelopeInputs {
+            appearance,
             mentioned_connections,
             selected_artifact,
             host_memory,
@@ -648,6 +767,7 @@ pub(super) fn admit_chat_turn(
             working_context,
             bot_memory,
             left_out,
+            previous_run,
         },
         activity_recorder,
         memory_revision,

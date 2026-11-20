@@ -20,6 +20,9 @@ it("shows host counts and what stays, then requires the typed confirmation", asy
   const confirm = within(dialog).getByRole("button", { name: "Reset" });
   expect(confirm).toBeDisabled();
   expect(await within(dialog).findByText("6")).toBeVisible();
+  // Every row counts what goes, including the Loupist's sections on pages the user keeps.
+  expect(within(dialog).getByText("Sections it wrote on pages you keep").nextElementSibling).toHaveTextContent("1");
+  expect(within(dialog).queryByText(/Sections kept/)).toBeNull();
   expect(within(dialog).getByText(/Your writing, shared items/)).toBeVisible();
   const input = within(dialog).getByRole("textbox", { name: "Type RESET to confirm" });
   await user.type(input, "reset");

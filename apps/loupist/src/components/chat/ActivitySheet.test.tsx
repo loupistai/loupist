@@ -1,0 +1,215 @@
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { ActivitySheet, OPEN_ACTIVITY_EVENT, useActivitySheet } from "./ActivitySheet";
+import { ChatLightboxProvider } from "./ChatLightbox";
+import { MOCK_LOUPISTS } from "../../bridge/mock/fixtures";
+import type { RailData } from "../../chat/chatRail";
+import type { ChatMessage, LoupistBridge } from "../../types";
+
+const step = (id: string, toolName: string, extra: Record<string, unknown> = {}) => ({
+  id, kind: "tool", toolName, category: "finance", operation: "read", action: "Read", target: "NVDA", href: null,
+  status: "succeeded", startedAtMs: 1_000, finishedAtMs: 1_400, ...extra,
+});
+const question: ChatMessage = { id: "q1", role: "user", content: "How is NVIDIA doing", created_at: "2026-10-28T00:00:00Z", status: "complete" };
+const first = {
+  id: "a1", role: "assistant", status: "complete", content: "NVIDIA closed lower.", created_at: "2026-10-28T00:00:10Z",
+  progress: { startedAtMs: 0, finishedAtMs: 9_000, items: [
+    step("s1", "mcp__openbb__equity_price_quote"),
+    step("s2", "mcp__openbb__equity_price_quote", { target: "AMD" }),
+    step("s3", "mcp__openbb__equity_estimates_forward_eps", { status: "failed", finishedAtMs: 3_000 }),
+  ] },
+  evidence_refs: [{ id: "e1", title: "NVDA quote", kind: "original", tool_name: "equity_price_quote", provider: "yfinance", retrieved_at: "2026-10-28T00:00:00Z", excerpt: "", excerpt_truncated: false, content_sha256: "", warnings: [] }],
+  number_checks: [{ link_index: 0, text: "$162.85", evidence_id: "e1", kind: "data", status: "matched" }],
+} as unknown as ChatMessage;
+const second = { ...first, id: "a2", created_at: "2026-10-28T00:05:10Z", progress: { startedAtMs: 0, finishedAtMs: 2_000, items: [step("t1", "web_search", { category: "web", operation: "search", target: "chip export rules" })] }, number_checks: [], evidence_refs: [] } as unknown as ChatMessage;
+
+const rail: RailData = {
+  files: [{ key: "memo", kind: "file", filename: "memo.md", path: "memo.md", fromLoupist: true }],
+  using: [{ key: "principle:p1", kind: "principle", label: "Check operating cash flow", recordId: "p1" }, { key: "connection:Morrow", kind: "connection", label: "Morrow" }],
+  learned: { names: 2, relationships: 1, methods: 0, chips: [{ id: "hanul", label: "Hanul Precision", swatch: "company" }], highlightIds: new Set(["hanul", "morrow"]) },
+  learningPending: false, needs: [], waiting: [], questions: [], hasCards: true,
+};
+
+function Harness({ data = rail, messages = [question, first, { ...question, id: "q2" }, second], onShowOnMap = vi.fn(), onOpenFile = vi.fn(), onOpenUsing = vi.fn() }: {
+  data?: RailData; messages?: ChatMessage[]; onShowOnMap?: (ids?: ReadonlySet<string>) => void; onOpenFile?: (path: string) => void; onOpenUsing?: () => void;
+}) {
+  const sheet = useActivitySheet(true);
+  return <ChatLightboxProvider messages={messages} onRead={async () => ""}>
+    <section ref={sheet.layoutRef} className="chat-layout">
+      <button type="button" data-header-activity onClick={() => window.dispatchEvent(new CustomEvent(OPEN_ACTIVITY_EVENT, { detail: { toggle: true } }))}>Activity</button>
+      <textarea aria-label="Composer" />
+      <ActivitySheet sheet={sheet} loupist={MOCK_LOUPISTS[0]!} messages={messages} running={false} rail={data} bridge={{} as LoupistBridge} execution={null}
+        onOpenUsing={onOpenUsing} onOpenFile={onOpenFile} onShowOnMap={onShowOnMap} />
+    </section>
+  </ChatLightboxProvider>;
+}
+
+const openActivity = (detail?: Record<string, unknown>) => act(() => { window.dispatchEvent(new CustomEvent(OPEN_ACTIVITY_EVENT, { detail })); });
+
+it("heads the sheet with its tabs and close alone: no face or name, the answer's time once, Working only while a reply runs", () => {
+  function Sheet({ running }: { running: boolean }) {
+    const sheet = useActivitySheet(true);
+    const messages = [question, first];
+    return <ChatLightboxProvider messages={messages} onRead={async () => ""}>
+      <section ref={sheet.layoutRef} className="chat-layout">
+        <ActivitySheet sheet={sheet} loupist={MOCK_LOUPISTS[0]!} messages={messages} running={running} rail={rail} bridge={{} as LoupistBridge} execution={null} onOpenUsing={vi.fn()} onOpenFile={vi.fn()} />
+      </section>
+    </ChatLightboxProvider>;
+  }
+  const { rerender } = render(<Sheet running={false} />);
+  openActivity();
+  const sheet = screen.getByTestId("activity-sheet");
+  const header = sheet.querySelector("header")!;
+  expect(header).not.toHaveTextContent(MOCK_LOUPISTS[0]!.name);
+  expect(header.querySelector(".loupist-avatar")).toBeNull();
+  // The time is shown once, in What it did; the header only speaks its status.
+  expect(within(header).getByRole("status")).toHaveClass("sr-only");
+  expect(within(header).getByRole("status")).toHaveTextContent(/^Answered at /);
+  expect(sheet.querySelector("[data-activity-section=steps] h3")).toHaveTextContent(/This answer · /);
+  rerender(<Sheet running />);
+  expect(within(header).getByRole("status")).toHaveTextContent("Working");
+  expect(within(header).getByRole("status")).not.toHaveClass("sr-only");
+});
+
+it("never opens by itself, then opens on the event at the latest answer and closes with Esc", async () => {
+  render(<Harness />);
+  expect(screen.queryByTestId("activity-sheet")).toBeNull();
+  openActivity();
+  const sheet = screen.getByRole("complementary", { name: "Activity" });
+  expect(within(sheet).getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true");
+  expect(sheet).toHaveTextContent("Searched the web");
+  expect(document.querySelector("[data-header-activity]")).toHaveAttribute("aria-pressed", "true");
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByTestId("activity-sheet")).toBeNull();
+  expect(document.querySelector("[data-header-activity]")).toHaveAttribute("aria-pressed", "false");
+});
+
+it("moves between tabs with the arrows, Home and End", async () => {
+  const user = userEvent.setup();
+  render(<Harness />);
+  openActivity();
+  const sheet = screen.getByRole("complementary", { name: "Activity" });
+  within(sheet).getByRole("tab", { name: "Activity" }).focus();
+  await user.keyboard("{End}");
+  expect(within(sheet).getByRole("tab", { name: "In use" })).toHaveFocus();
+  expect(within(sheet).getByRole("tab", { name: "In use" })).toHaveAttribute("aria-selected", "true");
+  await user.keyboard("{Home}");
+  expect(within(sheet).getByRole("tab", { name: "Activity" })).toHaveFocus();
+  await user.keyboard("{ArrowLeft}");
+  expect(within(sheet).getByRole("tab", { name: "In use" })).toHaveAttribute("aria-selected", "true");
+});
+
+it("heads files only when the chat has some", async () => {
+  const user = userEvent.setup();
+  const view = render(<Harness data={{ ...rail, files: [] }} />);
+  openActivity();
+  await user.click(screen.getByRole("tab", { name: "In use" }));
+  expect(screen.queryByText("Files in this chat")).toBeNull();
+  expect(screen.getByRole("button", { name: "Open chat materials" })).toBeVisible();
+  view.unmount();
+  function NoMap() {
+    const sheet = useActivitySheet(true);
+    return <section ref={sheet.layoutRef} className="chat-layout">
+      <ActivitySheet sheet={sheet} loupist={MOCK_LOUPISTS[0]!} messages={[question, first]} running={false} rail={{ ...rail, files: [] }} bridge={{} as LoupistBridge} execution={null} onOpenUsing={vi.fn()} onOpenFile={vi.fn()} />
+    </section>;
+  }
+  render(<NoMap />);
+  openActivity({ tab: "connections" });
+  expect(screen.getByTestId("activity-sheet").querySelector("[data-activity-section=files]")).toBeNull();
+});
+
+it("selects the asked-for answer: same-kind steps collapse with a count, failures keep their reason, sources and checks open", async () => {
+  const user = userEvent.setup();
+  render(<Harness />);
+  openActivity({ messageId: "a1", tab: "sources" });
+  const sheet = screen.getByTestId("activity-sheet");
+  const groups = within(sheet).getAllByTestId("activity-step-group");
+  expect(groups.map((group) => group.querySelector(".activity-step-label")?.textContent)).toEqual(["Read current quote", "Read earnings estimates"]);
+  expect(groups[0]).toHaveTextContent("2");
+  expect(groups[0]).toHaveTextContent("NVDA, AMD");
+  expect(groups[0]).toHaveTextContent("0.8s");
+  expect(groups[1]).toHaveAttribute("data-state", "bad");
+  expect(groups[1]).toHaveTextContent("It ended with an error. It was not used in the answer.");
+  expect(groups[1]).toHaveTextContent("2.0s");
+  await user.click(within(groups[0]!).getByRole("button", { name: "Show each of 2" }));
+  expect(within(groups[0]!).getAllByTestId("activity-step").map((row) => row.textContent)).toEqual(["NVDA0.4s", "AMD0.4s"]);
+  // The source is listed under "What it read" and named again beside the figure it backs.
+  expect(within(sheet.querySelector("[data-activity-section=sources]") as HTMLElement).getByText("NVDA quote")).toBeInTheDocument();
+  expect(within(sheet.querySelector("[data-activity-section=checks]") as HTMLElement).getByText("NVDA quote")).toBeInTheDocument();
+  expect(sheet).toHaveTextContent("1 figure checked against its source");
+  expect(sheet).toHaveTextContent("$162.85Matches");
+  // Earlier answers switch the sheet to that answer.
+  await user.click(within(sheet).getByRole("button", { name: /How is NVIDIA doing/ }));
+  expect(sheet).toHaveTextContent("Searched the web");
+});
+
+it("keeps what was learned and what is in use behind their tabs, with the map and the chat's materials one click away", async () => {
+  const user = userEvent.setup();
+  const onShowOnMap = vi.fn();
+  const onOpenFile = vi.fn();
+  const onOpenUsing = vi.fn();
+  const { rerender } = render(<Harness onShowOnMap={onShowOnMap} onOpenFile={onOpenFile} onOpenUsing={onOpenUsing} />);
+  openActivity({ tab: "learned" });
+  const sheet = screen.getByTestId("activity-sheet");
+  expect(sheet).toHaveTextContent("+2 on the map");
+  await user.click(within(sheet).getByRole("button", { name: "Hanul Precision" }));
+  expect(onShowOnMap).toHaveBeenCalledWith(new Set(["hanul"]));
+  await user.click(within(sheet).getByRole("button", { name: "Show on the map" }));
+  expect(onShowOnMap).toHaveBeenLastCalledWith(rail.learned!.highlightIds);
+  // A source review still running is a quiet line, not a spinner.
+  rerender(<Harness data={{ ...rail, learningPending: true }} onShowOnMap={onShowOnMap} />);
+  expect(within(sheet).getAllByRole("status").some((line) => line.textContent === "Reviewing sources…")).toBe(true);
+  expect(sheet).toHaveTextContent("Reviewing sources");
+  expect(sheet.querySelector(".animate-spin")).toBeNull();
+
+  rerender(<Harness onShowOnMap={onShowOnMap} onOpenFile={onOpenFile} onOpenUsing={onOpenUsing} />);
+  await user.click(within(sheet).getByRole("tab", { name: "In use" }));
+  await user.click(within(sheet).getByRole("button", { name: /Check operating cash flow/ }));
+  expect(onOpenUsing).toHaveBeenCalledWith(rail.using[0]);
+  expect(within(sheet).queryByRole("button", { name: /Morrow/ })).toBeNull();
+  await user.click(within(sheet).getByRole("button", { name: /memo\.md/ }));
+  expect(onOpenFile).toHaveBeenCalledWith("memo.md");
+  await user.click(within(sheet).getByRole("button", { name: "Open chat materials" }));
+  expect(onShowOnMap).toHaveBeenLastCalledWith();
+});
+
+it("toggles from the header's button, keeps Esc for the composer while docked, and closes on a click outside while it overlays", async () => {
+  const user = userEvent.setup();
+  render(<Harness />);
+  await user.click(screen.getByRole("button", { name: "Activity" }));
+  expect(screen.getByTestId("activity-sheet")).toHaveAttribute("data-placement", "overlay");
+  await user.click(screen.getByRole("button", { name: "Activity" }));
+  expect(screen.queryByTestId("activity-sheet")).toBeNull();
+  openActivity();
+  await user.click(screen.getByRole("textbox", { name: "Composer" }));
+  expect(screen.queryByTestId("activity-sheet")).toBeNull();
+});
+
+it("stops an overlaying sheet above the composer, says the reply is done while sources are reviewed, and lists no host post as an answer", () => {
+  const post = { id: "post", role: "assistant", status: "complete", content: "The map now also tracks process nodes.", created_at: "2026-10-28T00:06:00Z", host_composed: true,
+    vocabulary: { added: [] } } as unknown as ChatMessage;
+  const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const edges = this.classList.contains("composer-shell") ? { top: 640, bottom: 760 } : { top: 0, bottom: 760 };
+    return { ...edges, left: 0, right: 600, width: 600, height: edges.bottom - edges.top, x: 0, y: edges.top, toJSON: () => ({}) } as DOMRect;
+  });
+  function WithComposer() {
+    const sheet = useActivitySheet(true);
+    const messages = [question, first, { ...question, id: "q2" }, second, post];
+    return <ChatLightboxProvider messages={messages} onRead={async () => ""}>
+      <section ref={sheet.layoutRef} className="chat-layout"><div className="composer-shell" />
+        <ActivitySheet sheet={sheet} loupist={MOCK_LOUPISTS[0]!} messages={messages} running={false} rail={{ ...rail, learningPending: true }} bridge={{} as LoupistBridge} execution={null}
+          onOpenUsing={vi.fn()} onOpenFile={vi.fn()} />
+      </section>
+    </ChatLightboxProvider>;
+  }
+  render(<WithComposer />);
+  openActivity();
+  const sheet = screen.getByTestId("activity-sheet");
+  expect(sheet).toHaveAttribute("data-placement", "overlay");
+  expect(sheet.style.bottom).toBe("120px");
+  expect(document.querySelector<HTMLElement>(".activity-sheet-scrim")!.style.bottom).toBe("120px");
+  expect(within(sheet).getAllByRole("status")[0]).toHaveTextContent(/^Answered at /);
+  // The newest answer is shown; the host's own post is not one of the earlier answers.
+  expect(sheet.querySelector("[data-activity-section=earlier]")!.querySelectorAll(":scope > ol > li")).toHaveLength(1);
+  box.mockRestore();
+});

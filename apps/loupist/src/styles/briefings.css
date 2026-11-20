@@ -1,6 +1,5 @@
 .briefings-view { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .briefings-bar { min-height: 52px; padding: 0 var(--gg-space-5); border-bottom: 1px solid var(--gg-color-border-subtle); display: flex; align-items: center; gap: var(--gg-space-4); flex-wrap: wrap; }
-.briefings-bar h1 { font-size: var(--gg-text-title); line-height: var(--gg-leading-title); font-weight: var(--gg-weight-semibold); margin: 0; }
 .briefings-meta { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .briefings-bar > p { flex: 1; min-width: 0; }
 .briefings-actions { display: flex; align-items: center; gap: var(--gg-space-2); flex-wrap: wrap; }
@@ -12,6 +11,8 @@
 .briefings-item-heading strong { min-width: 0; flex: 1; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); font-weight: var(--gg-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .briefings-item[data-unread="true"] strong { font-weight: var(--gg-weight-semibold); }
 .briefings-item time { font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); color: var(--gg-color-text-secondary); font-variant-numeric: tabular-nums; }
+/* A quiet check: it found nothing to report and posted nothing. */
+.schedule-run-quiet { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .briefings-unread { align-self: center; flex: 0 0 var(--gg-space-2); height: var(--gg-space-2); border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
 .briefings-summary { margin-top: var(--gg-space-1); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .briefings-summary svg { display: inline; width: var(--gg-space-3); height: var(--gg-space-3); margin-right: var(--gg-space-1); }
@@ -107,14 +108,16 @@
 .schedule-task-controls { margin-top: var(--gg-space-3); display: grid; gap: var(--gg-space-2); }
 .schedule-task-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); }
 .schedule-task-change { margin: 0; }
-.schedule-task-change .schedule-task-ask { height: auto; padding: 0; vertical-align: baseline; }
+.schedule-task-change .schedule-task-ask, .schedule-footer .schedule-task-ask { height: auto; padding: 0; vertical-align: baseline; }
 .schedule-task-error { margin: var(--gg-space-3) 0 0; }
 @media (max-width: 899px) {
   .schedule-create { margin-inline: var(--gg-space-4); }
   .schedule-create > button[type="submit"] { flex: 1 1 auto; }
 }
-/* The spending line is the bar's second row on the list; a task or run detail keeps its height. */
-.briefings-bar > .schedule-spending { flex: 1 0 100%; max-width: 72ch; margin: 0; padding-bottom: var(--gg-space-2); }
+/* The spending line is the bar's second row on the list; a task or run detail keeps its height.
+   No max-width: it would shrink the line's basis below 100% and pull it up beside the count at the far right of a wide window. */
+.briefings-bar > .schedule-spending { flex: 1 0 100%; margin: 0; }
+.schedule-view .briefings-bar { padding-block: var(--gg-space-2); row-gap: var(--gg-space-1); align-content: center; }
 .schedule-view:has(.briefings-layout[data-reader-open]) .schedule-spending { display: none; }
 
 /* S1/S3: the detail status leads with the state; rows end in a quiet chevron; the list ends with how to add a task. */
@@ -124,3 +127,9 @@
 .schedule-empty { text-align: start; align-items: flex-start; margin: var(--gg-space-4); }
 .schedule-footer { margin: var(--gg-space-4); max-width: 72ch; }
 .schedule-task-row .schedule-task-summary { padding-right: calc(var(--gg-space-3) + 20px); }
+
+/* The morning message in Bot (owner redesign, area E): what moved, what is coming up and what
+   changed sit in one card under the lead; sections are divided by hairlines. */
+.morning-card { gap: 10px; }
+.morning-card > * + * { padding-top: 10px; border-top: 1px solid var(--gg-color-border-subtle); }
+.morning-card .morning-bullets { margin: 0; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }

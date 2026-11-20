@@ -16,11 +16,24 @@
 //! every step matches a fresh database.
 //!
 //! Lazily created tables (`CREATE TABLE IF NOT EXISTS` in their owning module,
-//! such as sharing, provider status or artifact history) are outside the
+//! such as sharing, provider status, artifact history or each Loupist's
+//! follows, which the catalog creates when it opens) are outside the
 //! ladder: a database may or may not contain them, and their module creates
 //! them on first use at their current shape. Their DDL must never change shape
 //! in place. A shape change is a ladder step that alters the table only when it
 //! exists, together with the module's DDL for databases that never created it.
+//!
+//! Retired ownership tables (`retired_*`) are also outside the ladder. Fresh
+//! databases have none; schema convergence ignores them and folder admission
+//! accepts them. No ladder step may drop them: only the later export task may
+//! read and export their rows, then drop them. Store 7→8 only renames nonempty
+//! ownership tables, preserving every field and their foreign-key relationships.
+//! Store 8→9 replaces the followed ticker rows with durable registry handles.
+//! Store 9→10 records identifier assertions and identity events.
+//! Store 10→11 removes embedded chat cards from saved answers.
+//! Store 11→12 keeps asset names and references and drops the app-wide followed list.
+//! Knowledge 7→8 binds existing prices to each page's legacy listing.
+//! Knowledge 9→10 adds where a user-provided Source capture came from.
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
@@ -40,9 +53,23 @@ pub(crate) const KNOWLEDGE_BASELINE_VERSION: i64 = 6;
 type Step = fn(&Transaction<'_>) -> StoreResult<()>;
 
 /// Store steps; index 0 upgrades `STORE_BASELINE_VERSION` by one.
-const STORE_STEPS: &[Step] = &[store_4_to_5, store_5_to_6];
+const STORE_STEPS: &[Step] = &[
+    store_4_to_5,
+    store_5_to_6,
+    store_6_to_7,
+    store_7_to_8,
+    store_8_to_9,
+    store_9_to_10,
+    store_10_to_11,
+    store_11_to_12,
+];
 /// Knowledge steps; index 0 upgrades `KNOWLEDGE_BASELINE_VERSION` by one.
-const KNOWLEDGE_STEPS: &[Step] = &[knowledge_6_to_7];
+const KNOWLEDGE_STEPS: &[Step] = &[
+    knowledge_6_to_7,
+    knowledge_7_to_8,
+    knowledge_8_to_9,
+    knowledge_9_to_10,
+];
 
 const _: () = assert!(STORE_BASELINE_VERSION + STORE_STEPS.len() as i64 == STORE_SCHEMA_VERSION);
 const _: () =
@@ -513,6 +540,278 @@ fn store_5_to_6(transaction: &Transaction<'_>) -> StoreResult<()> {
     Ok(())
 }
 
+// --- Store 6 → 7 ------------------------------------------------------
+
+/// Preserve the latest held identities as ordinary follows, keeping existing follows.
+fn store_6_to_7(transaction: &Transaction<'_>) -> StoreResult<()> {
+    transaction.execute_batch(
+        "INSERT OR IGNORE INTO user_watchlist(symbol, market, display_name, added_at_ms)
+         SELECT p.symbol, p.market, p.display_name, s.imported_at_ms
+         FROM (SELECT s.snapshot_id, s.source, s.wallet_id, s.imported_at_ms
+               FROM user_holdings_snapshots s
+               WHERE NOT EXISTS (SELECT 1 FROM user_holdings_snapshots t
+                   WHERE t.source = s.source AND t.wallet_id IS s.wallet_id
+                   AND (t.imported_at_ms > s.imported_at_ms
+                       OR (t.imported_at_ms = s.imported_at_ms AND t.rowid > s.rowid)))) s
+         JOIN user_holdings_positions p ON p.snapshot_id = s.snapshot_id
+         ORDER BY p.display_name IS NULL, s.imported_at_ms;",
+    )?;
+    Ok(())
+}
+
+/// Frozen store-8 identities: never consult the current registry or class table.
+fn store_8_to_9(transaction: &Transaction<'_>) -> StoreResult<()> {
+    transaction.execute_batch(
+        r#"CREATE TABLE instruments (
+  instrument_id TEXT PRIMARY KEY NOT NULL,
+  kind TEXT NOT NULL,
+  form TEXT,
+  name TEXT NOT NULL,
+  state TEXT NOT NULL,
+  status TEXT NOT NULL,
+  ended_on TEXT,
+  ended_reason TEXT,
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+) STRICT;
+CREATE TABLE assets (
+  asset_id TEXT PRIMARY KEY NOT NULL,
+  instrument_id TEXT NOT NULL REFERENCES instruments(instrument_id),
+  pricing_ref TEXT,
+  user_name TEXT,
+  superseded_by TEXT,
+  origin TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+) STRICT;
+CREATE TABLE listings (
+  listing_id TEXT PRIMARY KEY NOT NULL,
+  instrument_id TEXT NOT NULL REFERENCES instruments(instrument_id),
+  venue TEXT,
+  venue_level TEXT,
+  symbol TEXT,
+  route_market TEXT,
+  currency TEXT,
+  state TEXT NOT NULL,
+  status TEXT NOT NULL,
+  ended_on TEXT,
+  ended_reason TEXT,
+  revision INTEGER NOT NULL,
+  hold TEXT,
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+) STRICT;
+CREATE TABLE user_follows (
+  asset_id TEXT PRIMARY KEY NOT NULL REFERENCES assets(asset_id),
+  added_at_ms INTEGER NOT NULL
+) STRICT;"#,
+    )?;
+    let mut statement = transaction.prepare("SELECT symbol,market,display_name,added_at_ms FROM user_watchlist ORDER BY added_at_ms,rowid")?;
+    let rows = statement
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut seen = std::collections::HashSet::new();
+    for (symbol, market, name, at) in rows {
+        let normalized_symbol = symbol.trim().to_uppercase();
+        let normalized_market = market.trim().to_uppercase();
+        let digest =
+            crate::util::sha256(format!("{normalized_symbol}:{normalized_market}").as_bytes());
+        let h = &digest[..16];
+        if !seen.insert(h.to_owned()) {
+            continue;
+        }
+        let currencies = [
+            "USD", "EUR", "JPY", "GBP", "KRW", "CNY", "CNH", "CHF", "AUD", "CAD", "HKD", "SGD",
+            "NZD", "SEK", "NOK", "DKK", "INR", "TWD", "MXN", "BRL", "ZAR",
+        ];
+        let pair = normalized_symbol.replace(['/', '-', '='], "");
+        let is_pair = pair.len() == 6
+            && pair.is_ascii()
+            && currencies.contains(&&pair[..3])
+            && currencies.contains(&&pair[3..]);
+        let kind = match normalized_market.as_str() {
+            "CRYPTO" | "UPBIT" | "BITHUMB" | "BINANCE" | "COINBASE" | "KRAKEN" | "BYBIT"
+            | "OKX" => "crypto",
+            "CME" | "COMEX" | "NYMEX" | "ICE" => "commodity",
+            "FX" | "FOREX" | "RATES" | "UST" => "rates_fx",
+            "REAL" => "real_asset",
+            "POLYMARKET" | "KALSHI" => "prediction",
+            "PRIVATE" => "other",
+            _ if is_pair => "rates_fx",
+            _ => "equity",
+        };
+        let asset = format!("ast_{h}");
+        let instrument = format!("ins_{h}");
+        let listing = format!("lst_{h}");
+        let instrument_name = name
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(&symbol);
+        let venue = (!market.is_empty() && market != "UNKNOWN").then_some(&market);
+        transaction.execute(
+            "INSERT INTO instruments VALUES (?1,?2,NULL,?3,'unverified','live',NULL,NULL,?4,?4)",
+            rusqlite::params![instrument, kind, instrument_name, at],
+        )?;
+        transaction.execute("INSERT INTO listings VALUES (?1,?2,?3,NULL,?4,?5,NULL,'unverified','live',NULL,NULL,1,NULL,?6,?6)", rusqlite::params![listing,instrument,venue,symbol,market,at])?;
+        transaction.execute(
+            "INSERT INTO assets VALUES (?1,?2,?3,?4,NULL,'migration',1,?5,?5)",
+            rusqlite::params![asset, instrument, listing, name, at],
+        )?;
+        transaction.execute(
+            "INSERT INTO user_follows VALUES (?1,?2)",
+            rusqlite::params![asset, at],
+        )?;
+    }
+    transaction.execute_batch("DROP TABLE user_watchlist;")?;
+    Ok(())
+}
+
+/// Preserve what this database knew, without assigning effective dates.
+fn store_9_to_10(transaction: &Transaction<'_>) -> StoreResult<()> {
+    transaction.execute_batch(
+        "CREATE TABLE identifiers (
+  identifier_id TEXT PRIMARY KEY NOT NULL,
+  subject_kind TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  scheme TEXT NOT NULL,
+  value TEXT NOT NULL,
+  qualifier TEXT NOT NULL DEFAULT '',
+  state TEXT NOT NULL,
+  valid_from TEXT,
+  valid_to TEXT,
+  observed_from_ms INTEGER NOT NULL,
+  observed_until_ms INTEGER,
+  supersedes TEXT,
+  source TEXT NOT NULL,
+  evidence_json TEXT
+) STRICT;
+CREATE INDEX identifiers_by_value ON identifiers(scheme,value,qualifier);
+CREATE INDEX identifiers_by_subject ON identifiers(subject_kind,subject_id);
+CREATE TABLE events (
+  event_id TEXT PRIMARY KEY NOT NULL,
+  asset_id TEXT,
+  subject_kind TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  effective_on TEXT,
+  detected_on TEXT NOT NULL,
+  facts_json TEXT NOT NULL,
+  source TEXT NOT NULL,
+  evidence_json TEXT,
+  state TEXT NOT NULL,
+  supersedes TEXT,
+  recorded_at_ms INTEGER NOT NULL
+) STRICT;
+
+INSERT INTO identifiers
+SELECT 'id_migration_ticker_' || l.listing_id, 'listing', l.listing_id, 'ticker',
+       l.symbol, CASE WHEN l.venue IS NULL OR upper(trim(l.venue))='UNKNOWN' THEN '' ELSE l.venue END,
+       'accepted', NULL, NULL,
+       COALESCE((SELECT min(f.added_at_ms) FROM assets a JOIN user_follows f USING(asset_id)
+                 WHERE a.pricing_ref=l.listing_id), l.created_at_ms),
+       NULL, NULL, 'migration', NULL
+FROM listings l WHERE trim(l.symbol)<>'';
+
+INSERT INTO identifiers
+SELECT 'id_migration_name_' || i.instrument_id, 'instrument', i.instrument_id, 'name',
+       i.name, '', 'accepted', NULL, NULL, i.created_at_ms, NULL, NULL, 'migration', NULL
+FROM instruments i
+WHERE trim(i.name)<>'' AND i.state IN ('local','identified');
+
+-- Store 9 copied personal labels into the unverified instrument projection.
+-- The current personal label remains in assets.user_name.
+UPDATE instruments
+SET name=COALESCE((SELECT l.symbol FROM listings l
+                  WHERE l.instrument_id=instruments.instrument_id AND trim(l.symbol)<>''
+                  ORDER BY l.listing_id LIMIT 1), '')
+WHERE state='unverified';",
+    )?;
+    Ok(())
+}
+
+/// Remove only the two store 10 message fields. Work on concrete array
+/// indices, including saved versions, and update only rows with those keys.
+/// SQLite preserves the compact writer's member order, string escapes and
+/// number tokens. Chat writes compare the resulting text byte for byte.
+fn store_10_to_11(transaction: &Transaction<'_>) -> StoreResult<()> {
+    transaction.execute_batch(
+        "WITH RECURSIVE
+         chats(row_id, value) AS NOT MATERIALIZED (
+             SELECT rowid, CASE WHEN json_valid(data_json) THEN data_json END
+             FROM chat_sessions
+         ),
+         message_paths(row_id, path, value) AS (
+             SELECT c.row_id, message.fullkey,
+                    CASE WHEN message.type = 'object' THEN message.value END
+             FROM chats c, json_each(c.value, '$.messages') message
+             WHERE typeof(message.key) = 'integer' AND message.type = 'object'
+             UNION ALL
+             SELECT c.row_id, message.fullkey,
+                    CASE WHEN message.type = 'object' THEN message.value END
+             FROM chats c,
+                  json_each(c.value, '$.versions') version,
+                  json_each(c.value, version.fullkey || '.messages') message
+             WHERE typeof(version.key) = 'integer' AND version.type = 'object'
+               AND typeof(message.key) = 'integer' AND message.type = 'object'
+         ),
+         targets AS (
+             SELECT row_id, path,
+                    row_number() OVER (PARTITION BY row_id ORDER BY path) AS step,
+                    count(*) OVER (PARTITION BY row_id) AS total
+             FROM message_paths
+             WHERE json_type(value, '$.assetSnapshots') IS NOT NULL
+                OR json_type(value, '$.sensitivityCards') IS NOT NULL
+         ),
+         stripped(row_id, value, step, total) AS (
+             SELECT c.rowid, jsonb(c.data_json), 0, t.total
+             FROM targets t JOIN chat_sessions c ON c.rowid = t.row_id
+             WHERE t.step = 1
+             UNION ALL
+             SELECT s.row_id,
+                    jsonb_remove(s.value, t.path || '.assetSnapshots', t.path || '.sensitivityCards'),
+                    t.step, t.total
+             FROM stripped s JOIN targets t ON t.row_id = s.row_id AND t.step = s.step + 1
+         )
+         UPDATE chat_sessions
+         SET data_json = json(stripped.value)
+         FROM stripped
+         WHERE chat_sessions.rowid = stripped.row_id AND stripped.step = stripped.total;",
+    )?;
+    Ok(())
+}
+
+/// Retires the stored ownership feature without deleting any existing row.
+fn store_7_to_8(transaction: &Transaction<'_>) -> StoreResult<()> {
+    let has_rows: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM user_wallet_addresses)
+             OR EXISTS(SELECT 1 FROM user_holdings_snapshots)
+             OR EXISTS(SELECT 1 FROM user_holdings_positions)",
+        [],
+        |row| row.get(0),
+    )?;
+    transaction.execute_batch(if has_rows {
+        "ALTER TABLE user_wallet_addresses RENAME TO retired_wallet_addresses;
+         ALTER TABLE user_holdings_snapshots RENAME TO retired_holdings_snapshots;
+         ALTER TABLE user_holdings_positions RENAME TO retired_holdings_positions;"
+    } else {
+        "DROP TABLE user_holdings_positions;
+         DROP TABLE user_holdings_snapshots;
+         DROP TABLE user_wallet_addresses;"
+    })?;
+    transaction.execute_batch(
+        "DELETE FROM loupist_capability_bindings WHERE entry_id = 'onchain.wallets';",
+    )?;
+    Ok(())
+}
+
 // --- Knowledge 6 → 7 ------------------------------------------------------
 
 /// As `STORE_5_ENUMERATIONS`. The immutable provenance and revision tables
@@ -552,6 +851,129 @@ fn knowledge_6_to_7(transaction: &Transaction<'_>) -> StoreResult<()> {
     for (table, columns) in KNOWLEDGE_7_ENUMERATIONS {
         rebuild_without_enumerations(transaction, table, columns)?;
     }
+    Ok(())
+}
+
+fn knowledge_7_to_8(transaction: &Transaction<'_>) -> StoreResult<()> {
+    transaction.execute_batch(
+        "ALTER TABLE knowledge_asset_observations ADD COLUMN series_ref TEXT;
+         ALTER TABLE knowledge_asset_pages ADD COLUMN pricing_ref TEXT;
+         ALTER TABLE knowledge_asset_pages ADD COLUMN pricing_rev INTEGER NOT NULL DEFAULT 0;
+         ALTER TABLE knowledge_asset_pages ADD COLUMN pricing_hold TEXT;
+         ALTER TABLE knowledge_asset_pages ADD COLUMN series_symbol TEXT;
+         ALTER TABLE knowledge_asset_pages ADD COLUMN entity_source TEXT;
+         ALTER TABLE knowledge_asset_pages ADD COLUMN entity_evidence_json TEXT;
+         ALTER TABLE knowledge_asset_pages ADD COLUMN identity_json TEXT NOT NULL DEFAULT '{}';
+
+         UPDATE knowledge_asset_pages
+         SET pricing_ref = 'lst_' || substr(asset_id, 5), series_symbol = symbol
+         WHERE trim(symbol) <> '';
+         UPDATE knowledge_asset_pages SET entity_source = 'auto' WHERE entity_id IS NOT NULL;
+         UPDATE knowledge_asset_observations AS observation
+         SET series_ref = page.pricing_ref, dedupe_key = page.pricing_ref || '|' || observation.dedupe_key
+         FROM knowledge_asset_pages AS page
+         WHERE observation.loupist_id = page.loupist_id AND observation.asset_id = page.asset_id
+           AND observation.kind IN ('close', 'quote') AND page.pricing_ref IS NOT NULL;",
+    )?;
+    Ok(())
+}
+
+/// Keeps catalog asset handles with their names and references and clears
+/// local results jobs and their posts. The app-wide followed list belongs to
+/// no Loupist, so it is dropped: each Loupist follows its own assets.
+fn store_11_to_12(tx: &Transaction<'_>) -> StoreResult<()> {
+    tx.execute_batch("ALTER TABLE assets RENAME TO assets_v11;")?;
+    tx.execute_batch(super::user_context::DDL)?;
+    tx.execute_batch(
+        r#"
+        INSERT INTO assets(asset_id,name,reference_json,created_at_ms)
+        SELECT a.asset_id,
+            coalesce(nullif(trim(a.user_name),''),nullif(trim(i.name),''),nullif(trim(l.symbol),''),a.asset_id),
+            CASE WHEN nullif(trim(l.symbol),'') IS NULL AND nullif(trim(l.route_market),'') IS NULL
+                 THEN NULL ELSE json_object('ticker',nullif(trim(l.symbol),''),
+                    'exchange', CASE WHEN upper(trim(l.route_market))='UNKNOWN'
+                        THEN NULL ELSE nullif(trim(l.route_market),'') END,
+                    'origin','imported') END,
+            a.created_at_ms
+        FROM assets_v11 a JOIN instruments i USING(instrument_id)
+        LEFT JOIN listings l ON l.listing_id=a.pricing_ref;
+        DROP TABLE user_follows;
+        DROP TABLE assets_v11;
+        DROP TABLE listings;
+        DROP TABLE instruments;
+        DROP TABLE identifiers;
+        DROP TABLE events;
+        DELETE FROM scheduled_task_runs WHERE json_extract(data_json,'$.kind')='earnings'
+            OR task_id IN (SELECT id FROM scheduled_tasks WHERE json_extract(data_json,'$.kind')='earnings');
+        DELETE FROM scheduled_tasks WHERE json_extract(data_json,'$.kind')='earnings';
+        UPDATE scheduled_task_runs SET data_json=json_remove(data_json,
+            '$.summary_items','$.briefing_context.assets','$.briefing_context.earnings',
+            '$.briefing_context.watchEvents')
+        WHERE json_type(data_json,'$.briefing_context')='object' OR json_type(data_json,'$.summary_items') IS NOT NULL;
+        "#,
+    )?;
+    // Delete by descending array index so subsequent paths keep their meaning.
+    let paths = {
+        let mut statement = tx.prepare(
+            "SELECT session.rowid, message.fullkey
+             FROM chat_sessions session, json_tree(CASE WHEN json_valid(session.data_json) THEN session.data_json END) message
+             WHERE message.type='object' AND
+               (message.path='$.messages' OR message.path LIKE '$.versions[%].messages')
+               AND (json_type(CASE WHEN message.type='object' THEN message.value END,'$.watch')='object' OR json_type(CASE WHEN message.type='object' THEN message.value END,'$.earnings')='object')
+             ORDER BY session.rowid, message.id DESC",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for (id, path) in paths {
+        tx.execute("UPDATE chat_sessions SET data_json=json_remove(json_set(data_json,'$.piSessionCache',NULL),?2) WHERE rowid=?1",
+            rusqlite::params![id,path])?;
+    }
+    Ok(())
+}
+
+fn knowledge_8_to_9(tx: &Transaction<'_>) -> StoreResult<()> {
+    tx.execute_batch("ALTER TABLE knowledge_asset_pages RENAME TO knowledge_asset_pages_v8;")?;
+    tx.execute_batch(crate::knowledge::assets::PAGE_DDL)?;
+    tx.execute_batch(crate::knowledge::assets::READ_DDL)?;
+    tx.execute_batch(
+        r#"
+        INSERT INTO knowledge_asset_pages(loupist_id,asset_id,display_name,entity_id,verdict,
+            verdict_move_id,created_at_ms,revision,entity_source,entity_evidence_json)
+        SELECT loupist_id,asset_id,display_name,entity_id,verdict,
+            verdict_move_id,created_at_ms,revision,entity_source,entity_evidence_json
+        FROM knowledge_asset_pages_v8;
+        INSERT OR IGNORE INTO knowledge_asset_line_readings
+            (loupist_id,asset_id,journal_id,fact_date,observed,evidence_json,recorded_at_ms)
+        SELECT loupist_id,asset_id,json_extract(facts_json,'$.journalId'),fact_date,
+            json_extract(facts_json,'$.observed'),
+            coalesce(json_extract(facts_json,'$.evidence'),json_array(json(evidence_json))),recorded_at_ms
+        FROM knowledge_asset_observations WHERE kind='line' AND
+            json_type(facts_json,'$.journalId')='text' AND
+            json_type(facts_json,'$.observed') IN ('real','integer');
+        DROP TABLE knowledge_asset_pages_v8;
+        DROP TABLE knowledge_asset_observations;
+        DROP TABLE knowledge_asset_section_deltas;
+        DROP TABLE knowledge_watch_assets;
+        DROP TABLE knowledge_watch_events;
+        DROP TABLE knowledge_watch_routes;
+        DROP TABLE knowledge_watch_settings;
+        DROP TABLE knowledge_watch_state;
+        DROP TABLE knowledge_earnings_notices;
+        DROP TABLE knowledge_earnings_rows;
+        DROP TABLE knowledge_earnings_tone;
+        DROP TABLE knowledge_earnings_events;
+        "#,
+    )?;
+    Ok(())
+}
+
+/// The Chat message, paste time and stated link and publisher of a
+/// user-provided capture. Existing captures have none.
+fn knowledge_9_to_10(tx: &Transaction<'_>) -> StoreResult<()> {
+    tx.execute_batch("ALTER TABLE knowledge_source_captures ADD COLUMN provided_json TEXT;")?;
     Ok(())
 }
 
@@ -932,6 +1354,16 @@ fn rename_created_table(sql: &str, from: &str, to: &str) -> Option<String> {
 pub(crate) const BASELINE_FIXTURE: &str =
     include_str!("tests/fixtures/baseline-store4-knowledge6.sql");
 
+/// Builds historical fixture versions through their frozen steps, without a file backup.
+#[cfg(test)]
+pub(crate) fn upgrade_store_for_test(connection: &mut Connection, version: i64) {
+    let ladder = Ladder {
+        steps: &STORE_STEPS[..(version - STORE_BASELINE_VERSION) as usize],
+        ..STORE
+    };
+    upgrade_with(connection, None, &[ladder, KNOWLEDGE]).unwrap();
+}
+
 /// Test support: gives a current database the baseline shape and versions, as
 /// an installed 0.0.1 build left it, keeping its rows.
 #[cfg(test)]
@@ -940,6 +1372,100 @@ pub(crate) fn restore_baseline_for_test(connection: &mut Connection) {
         .execute_batch("PRAGMA foreign_keys = OFF")
         .unwrap();
     let transaction = connection.transaction().unwrap();
+    for table in [
+        "user_watchlist",
+        "user_wallet_addresses",
+        "user_holdings_snapshots",
+        "user_holdings_positions",
+    ] {
+        let exists: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?1)",
+                [table],
+                |row| row.get(0),
+            )
+            .unwrap();
+        if !exists {
+            let start = BASELINE_FIXTURE
+                .find(&format!("CREATE TABLE {table} ("))
+                .unwrap();
+            let end =
+                start + BASELINE_FIXTURE[start..].find(") STRICT;").unwrap() + ") STRICT;".len();
+            transaction
+                .execute_batch(&BASELINE_FIXTURE[start..end])
+                .unwrap();
+        }
+    }
+    // A 0.0.1 build kept one followed list for the app, in `user_watchlist`.
+    let follows: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='asset_follows')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    if follows {
+        transaction
+            .execute_batch(
+                "INSERT INTO user_watchlist
+                 SELECT json_extract(a.reference_json,'$.ticker'),
+                   coalesce(json_extract(a.reference_json,'$.exchange'),'UNKNOWN'),a.name,f.at
+                 FROM assets a JOIN (SELECT asset_id,min(followed_at_ms) AS at FROM asset_follows
+                   GROUP BY asset_id) f USING(asset_id)
+                 WHERE json_type(a.reference_json,'$.ticker')='text';
+                 DROP TABLE asset_follows;",
+            )
+            .unwrap();
+    }
+    transaction
+        .execute_batch(
+            "ALTER TABLE knowledge_asset_pages RENAME TO thin_test_pages;
+         DROP TABLE knowledge_asset_line_readings;
+         DROP TABLE knowledge_asset_price_points;
+         DROP TABLE knowledge_saved_price_reads;",
+        )
+        .unwrap();
+    for table in [
+        "knowledge_asset_pages",
+        "knowledge_asset_observations",
+        "knowledge_asset_section_deltas",
+        "knowledge_earnings_events",
+        "knowledge_earnings_notices",
+        "knowledge_earnings_rows",
+        "knowledge_earnings_tone",
+        "knowledge_watch_assets",
+        "knowledge_watch_events",
+        "knowledge_watch_routes",
+        "knowledge_watch_settings",
+        "knowledge_watch_state",
+    ] {
+        let start = BASELINE_FIXTURE
+            .find(&format!("CREATE TABLE {table} ("))
+            .unwrap();
+        let end = start + BASELINE_FIXTURE[start..].find(") STRICT;").unwrap() + ") STRICT;".len();
+        transaction
+            .execute_batch(&BASELINE_FIXTURE[start..end])
+            .unwrap();
+    }
+    for line in BASELINE_FIXTURE.lines().filter(|line| {
+        line.starts_with("CREATE INDEX")
+            && [
+                "knowledge_asset_observations",
+                "knowledge_watch_",
+                "knowledge_earnings_",
+            ]
+            .iter()
+            .any(|table| line.contains(table))
+    }) {
+        transaction.execute_batch(line).unwrap();
+    }
+    transaction.execute_batch(
+        "INSERT INTO knowledge_asset_pages
+           (loupist_id,asset_id,symbol,market,display_name,class,class_source,entity_id,verdict,verdict_move_id,created_at_ms,revision)
+         SELECT loupist_id,asset_id,'','',display_name,'equity','default',entity_id,verdict,verdict_move_id,created_at_ms,revision
+         FROM thin_test_pages;
+         DROP TABLE thin_test_pages;",
+    ).unwrap();
     for (table, _) in STORE_5_ENUMERATIONS.iter().chain(KNOWLEDGE_7_ENUMERATIONS) {
         let start = BASELINE_FIXTURE
             .find(&format!("CREATE TABLE {table} ("))
@@ -949,7 +1475,9 @@ pub(crate) fn restore_baseline_for_test(connection: &mut Connection) {
     }
     transaction
         .execute_batch(&format!(
-            "DROP INDEX IF EXISTS knowledge_spans_by_id;
+            "DROP TABLE assets;
+             ALTER TABLE knowledge_source_captures DROP COLUMN provided_json;
+             DROP INDEX IF EXISTS knowledge_spans_by_id;
              DROP INDEX IF EXISTS knowledge_representations_by_id;
              PRAGMA user_version = {STORE_BASELINE_VERSION};
              UPDATE knowledge_schema SET version = {KNOWLEDGE_BASELINE_VERSION};"

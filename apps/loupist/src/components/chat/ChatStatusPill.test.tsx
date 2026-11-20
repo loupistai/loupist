@@ -43,6 +43,33 @@ it("shows the live label and clock with Jump to latest once the end is out of vi
   expect(screen.queryByRole("status")).toBeNull();
 });
 
+it("names the latest note's sentence, which the pill's place does not show, and keeps the clock", () => {
+  const noted: ChatMessage = { ...streaming, phase: "thinking", progress: { ...streaming.progress!, items: [
+    { ...streaming.progress!.items[0]!, status: "succeeded" } as NonNullable<ChatMessage["progress"]>["items"][number],
+    { id: "n1", kind: "commentary", text: "Utilization is up. Next I’ll compare it with inventory days over the last four quarters." },
+  ] } };
+  const { container, scrollAway } = renderPill(noted, { running: true });
+  scrollAway();
+  expect(container.querySelector(".chat-status-pill-text")).toHaveTextContent("Next I’ll compare it with inventory days over the last four quarters.");
+  expect(container.querySelector(".chat-status-pill-clock")).toHaveTextContent("0:42");
+});
+
+it.each([
+  ["a reference link", "Compared with [the filing][1].\n\n[1]: https://secret.example/a", "Compared with the filing."],
+  ["an HTML anchor", 'Read <a href="https://secret.example/h">the filing</a>.', "Read the filing."],
+  ["an autolink", "See <https://secret.example/token>.", "See secret.example."],
+  ["a bare URL", "Details are at https://secret.example/path?token=abc.", "Details are at secret.example."],
+])("names a note with %s as its reader sees it, never the link's target", (_name, text, shown) => {
+  const noted: ChatMessage = { ...streaming, phase: "thinking", progress: { ...streaming.progress!, items: [
+    { ...streaming.progress!.items[0]!, status: "succeeded" } as NonNullable<ChatMessage["progress"]>["items"][number],
+    { id: "n1", kind: "commentary", text },
+  ] } };
+  const { container, scrollAway } = renderPill(noted, { running: true });
+  scrollAway();
+  expect(container.querySelector(".chat-status-pill-text")?.textContent).toBe(shown);
+  expect(container.querySelector(".chat-status-pill")).not.toHaveTextContent(/secret\.example\/|https?:/u);
+});
+
 it("says a question waits for the reader, and that a failed reply could not finish", () => {
   const waiting: ChatMessage = { ...streaming, progress: { ...streaming.progress!, questions: [{ requestId: "q", itemId: "compare", question: "Which?", options: [{ label: "A" }], state: "waiting", requestedAtMs: start }] } };
   const first = renderPill(waiting, { running: true });

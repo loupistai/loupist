@@ -1,3 +1,35 @@
+import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
+
+const BUILTIN_PROVIDERS = new Set(getBuiltinProviders());
+const EXACT_BASE_URL_PROVIDERS = new Set(["openai", "openai-codex", "xai"]);
+
+function sameHeaders(headers, bundled) {
+  const entries = Object.entries(headers ?? {});
+  return entries.length === Object.keys(bundled ?? {}).length
+    && entries.every(([name, value]) => Object.hasOwn(bundled ?? {}, name) && bundled[name] === value);
+}
+
+export function hasTrustedModelEndpoint(model) {
+  try {
+    // Pi's public overlay is only applied to built-ins. Custom endpoints use
+    // the address saved by the user and do not take models from that overlay.
+    if (!BUILTIN_PROVIDERS.has(model?.provider)) return true;
+    if (typeof model.baseUrl !== "string") return false;
+    const url = URL.parse(model.baseUrl);
+    return getBuiltinModels(model.provider).some((bundled) => {
+      if (model.api !== bundled.api || !sameHeaders(model.headers, bundled.headers)) return false;
+      // Some bundled addresses are templates or empty (the SDK takes the
+      // address from local configuration). Keep those forms exactly as shipped.
+      return model.baseUrl === bundled.baseUrl || (!EXACT_BASE_URL_PROVIDERS.has(model.provider)
+        && url?.protocol === "https:"
+        && !url.username && !url.password && !url.search && !url.hash
+        && !bundled.baseUrl.includes("{") && url.origin === URL.parse(bundled.baseUrl)?.origin);
+    });
+  } catch {
+    return false;
+  }
+}
+
 const PERFORMANCE_APIS = new Set([
   "openai-responses",
   "openai-codex-responses",

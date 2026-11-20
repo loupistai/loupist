@@ -11,23 +11,24 @@ async fn connected(root: &std::path::Path) -> AppState {
     state
 }
 
-fn follow_and_hold(state: &AppState) {
+fn follow_two_assets(state: &AppState, loupist_id: &str) {
     state
         .store
-        .watchlist_add("hanul", "krx", Some(" Hanul Precision "))
-        .unwrap();
-    state
-        .store
-        .watchlist_add("MORROW", "NASDAQ", Some("Morrow Components"))
-        .unwrap();
-    let preview = state
-        .store
-        .preview_csv_bytes(b"symbol,market,name,quantity,cost,value,currency\nBLUEH,NYSE,Bluehaven Memory,1234.5,77.25,98765.43,USD\nMORROW,NASDAQ,Morrow Components,10,3,30,USD\n")
+        .seed_followed_listing(loupist_id, "HANUL", "KRX", Some(" Hanul Precision "))
         .unwrap();
     state
         .store
-        .holdings_commit_csv(&preview.preview_id)
+        .seed_followed_listing(loupist_id, "MORROW", "NASDAQ", Some("Morrow Components"))
         .unwrap();
+}
+
+/// A new Loupist that then follows two assets, written to its Map as a burst of
+/// follows writes them.
+async fn following_two(state: &AppState) -> String {
+    let loupist_id = create_managed(state).await;
+    follow_two_assets(state, &loupist_id);
+    sync_followed_assets(state, &loupist_id).unwrap();
+    loupist_id
 }
 
 async fn create_managed(state: &AppState) -> String {
@@ -105,11 +106,12 @@ fn library_sources(
 async fn followed_library_preview_contains_asset_lines_without_the_model_lead() {
     let root = tempfile::tempdir().unwrap();
     let state = connected(root.path()).await;
+    let loupist_id = create_managed(&state).await;
     state
         .store
-        .watchlist_add("NVDA", "NASDAQ", Some("NVIDIA"))
+        .seed_followed_listing(&loupist_id, "NVDA", "NASDAQ", Some("NVIDIA"))
         .unwrap();
-    let loupist_id = create_managed(&state).await;
+    sync_followed_assets(&state, &loupist_id).unwrap();
     let sources = library_sources(&state, &loupist_id);
     assert_eq!(sources.len(), 1);
     assert_eq!(
@@ -118,21 +120,22 @@ async fn followed_library_preview_contains_asset_lines_without_the_model_lead() 
     );
     // Presentation must not alter the exact material the World worker reads.
     assert!(bodies(&followed_state(&state, &loupist_id).1)[0]
-        .starts_with("Assets the user follows. Each line is one asset"));
+        .starts_with("Assets the user follows. A line is one asset"));
 }
 
 #[tokio::test]
 async fn followed_library_previews_each_addition_with_only_its_own_asset_lines() {
     let root = tempfile::tempdir().unwrap();
     let state = connected(root.path()).await;
-    state
-        .store
-        .watchlist_add("NVDA", "NASDAQ", Some("NVIDIA"))
-        .unwrap();
     let loupist_id = create_managed(&state).await;
     state
         .store
-        .watchlist_add("005930", "KRX", Some("삼성전자"))
+        .seed_followed_listing(&loupist_id, "NVDA", "NASDAQ", Some("NVIDIA"))
+        .unwrap();
+    assert_eq!(sync_followed_assets(&state, &loupist_id).unwrap(), 1);
+    state
+        .store
+        .seed_followed_listing(&loupist_id, "005930", "KRX", Some("삼성전자"))
         .unwrap();
     assert_eq!(sync_followed_assets(&state, &loupist_id).unwrap(), 1);
     let sources = library_sources(&state, &loupist_id);
@@ -158,11 +161,10 @@ async fn followed_library_previews_each_addition_with_only_its_own_asset_lines()
 }
 
 #[tokio::test]
-async fn a_new_loupist_reads_what_the_user_follows_by_name_only() {
+async fn a_loupists_first_follows_reach_its_map_by_name_only() {
     let root = tempfile::tempdir().unwrap();
     let state = connected(root.path()).await;
-    follow_and_hold(&state);
-    let loupist_id = create_managed(&state).await;
+    let loupist_id = following_two(&state).await;
     let (sources, jobs, settings) = followed_state(&state, &loupist_id);
     assert_eq!(
         sources
@@ -171,13 +173,23 @@ async fn a_new_loupist_reads_what_the_user_follows_by_name_only() {
             .collect::<Vec<_>>(),
         ["What you follow"]
     );
-    // One ordinary World job reads it; watched first, then held, each asset once.
+    with_loupist_knowledge(&state, &loupist_id, |tx, _| {
+        let origin: String = tx.query_row(
+            "SELECT origin_locator FROM knowledge_sources WHERE provider_identity=?1",
+            [crate::knowledge::FOLLOWED_PROVIDER],
+            |row| row.get(0),
+        )?;
+        assert_eq!(origin, "What you follow");
+        Ok(())
+    })
+    .unwrap();
+    // One ordinary World job reads the saved list, each asset once.
     assert_eq!(jobs.len(), 1);
     let job = &jobs[0];
     assert_eq!(job.document.episode_kind, "source_span");
     assert_eq!(
         job.document.body,
-        "Assets the user follows. Each line is one asset (a company's shares, a fund, a crypto asset, a commodity or another instrument) with its ticker in parentheses, written TICKER:MARKET when the market is known.\n- Hanul Precision (HANUL:KRX)\n- Morrow Components (MORROW:NASDAQ)\n- Bluehaven Memory (BLUEH:NYSE)\n"
+        "Assets the user follows. A line is one asset (a company's shares, a fund, a crypto asset, a commodity or another instrument); assets with no ticker that share a name are one line. The ticker is in parentheses when the asset has one, written TICKER:MARKET when the market is known.\n- Hanul Precision (HANUL:KRX)\n- Morrow Components (MORROW:NASDAQ)\n"
     );
     for private in ["1234", "98765", "77.25", "USD", "quantity", "hold"] {
         assert!(!job.document.body.contains(private), "{private}");
@@ -200,17 +212,13 @@ async fn a_new_loupist_reads_what_the_user_follows_by_name_only() {
                 "Morrow Components",
                 vec!["MORROW".to_owned(), "MORROW:NASDAQ".to_owned()]
             ),
-            (
-                "Bluehaven Memory",
-                vec!["BLUEH".to_owned(), "BLUEH:NYSE".to_owned()]
-            ),
         ]
     );
     assert_eq!(
         job_status(&state, &loupist_id),
         FollowedStatus {
             state: FollowedState::Queued,
-            assets: 3,
+            assets: 2,
             queued_at_ms: Some(job.created_at_ms),
         }
     );
@@ -222,14 +230,14 @@ async fn what_the_user_follows_waits_for_a_model_and_is_skipped_when_nothing_is_
     let state = AppState::for_folder_test(root.path().join("app"));
     state.graph.shutdown().await.unwrap();
     let empty = create_managed(&state).await;
+    assert_eq!(sync_followed_assets(&state, &empty).unwrap(), 0);
     let (sources, jobs, settings) = followed_state(&state, &empty);
     assert!(sources.is_empty() && jobs.is_empty() && settings.anchors.is_empty());
     assert_eq!(
         followed_status(&state, &empty).unwrap().state,
         FollowedState::None
     );
-    follow_and_hold(&state);
-    let loupist_id = create_managed(&state).await;
+    let loupist_id = following_two(&state).await;
     let (sources, jobs, _) = followed_state(&state, &loupist_id);
     assert_eq!(sources.len(), 1);
     assert!(jobs.is_empty(), "no model is connected yet");
@@ -237,7 +245,7 @@ async fn what_the_user_follows_waits_for_a_model_and_is_skipped_when_nothing_is_
         followed_status(&state, &loupist_id).unwrap(),
         FollowedStatus {
             state: FollowedState::Waiting,
-            assets: 3,
+            assets: 2,
             queued_at_ms: None,
         }
     );
@@ -255,20 +263,35 @@ async fn what_the_user_follows_waits_for_a_model_and_is_skipped_when_nothing_is_
 async fn assets_followed_later_get_a_new_source_listing_only_them() {
     let root = tempfile::tempdir().unwrap();
     let state = connected(root.path()).await;
-    follow_and_hold(&state);
-    let loupist_id = create_managed(&state).await;
+    let loupist_id = following_two(&state).await;
     // Unfollowing removes nothing, and following again adds nothing new.
-    state.store.watchlist_remove("HANUL", "KRX").unwrap();
+    let followed = state
+        .store
+        .assets_list(&loupist_id, true)
+        .unwrap()
+        .into_iter()
+        .find(|row| {
+            row.reference
+                .as_ref()
+                .and_then(|reference| reference.fields.ticker.as_deref())
+                == Some("HANUL")
+        })
+        .unwrap();
+    state
+        .store
+        .set_asset_followed(&loupist_id, &followed.asset_id, None)
+        .unwrap();
     assert_eq!(sync_followed_assets(&state, &loupist_id).unwrap(), 0);
-    state.store.watchlist_add("HANUL", "KRX", None).unwrap();
-    state
-        .store
-        .watchlist_add("BTC", "CRYPTO", Some("Bitcoin"))
-        .unwrap();
-    state
-        .store
-        .watchlist_add("005930", "KRX", Some("삼성전자"))
-        .unwrap();
+    for (symbol, market, name) in [
+        ("HANUL", "KRX", None),
+        ("BTC", "CRYPTO", Some("Bitcoin")),
+        ("005930", "KRX", Some("삼성전자")),
+    ] {
+        state
+            .store
+            .seed_followed_listing(&loupist_id, symbol, market, name)
+            .unwrap();
+    }
     assert_eq!(sync_followed_assets(&state, &loupist_id).unwrap(), 1);
     let (sources, jobs, settings) = followed_state(&state, &loupist_id);
     assert_eq!(sources.len(), 2);
@@ -277,7 +300,7 @@ async fn assets_followed_later_get_a_new_source_listing_only_them() {
         .all(|record| record.title == "What you follow"));
     assert_eq!(
         bodies(&jobs)[1],
-        "Assets the user follows. Each line is one asset (a company's shares, a fund, a crypto asset, a commodity or another instrument) with its ticker in parentheses, written TICKER:MARKET when the market is known.\n- 삼성전자 (005930:KRX)\n- Bitcoin (BTC:CRYPTO)\n"
+        "Assets the user follows. A line is one asset (a company's shares, a fund, a crypto asset, a commodity or another instrument); assets with no ticker that share a name are one line. The ticker is in parentheses when the asset has one, written TICKER:MARKET when the market is known.\n- Bitcoin (BTC:CRYPTO)\n- 삼성전자 (005930:KRX)\n"
     );
     assert!(settings
         .anchors
@@ -290,16 +313,107 @@ async fn assets_followed_later_get_a_new_source_listing_only_them() {
     assert_eq!((sources.len(), jobs.len()), (2, 2));
     // The status covers every "What you follow" Source.
     let status = job_status(&state, &loupist_id);
-    assert_eq!((status.state, status.assets), (FollowedState::Queued, 5));
+    assert_eq!((status.state, status.assets), (FollowedState::Queued, 4));
     assert_eq!(status.queued_at_ms, Some(jobs[0].created_at_ms));
+}
+
+#[tokio::test]
+async fn each_loupist_writes_and_marks_only_its_own_follows_until_it_is_removed() {
+    let root = tempfile::tempdir().unwrap();
+    let state = connected(root.path()).await;
+    let a = create_managed(&state).await;
+    let b = create_managed(&state).await;
+    follow_two_assets(&state, &a);
+    state
+        .store
+        .seed_followed_listing(&b, "BTC", "CRYPTO", Some("Bitcoin"))
+        .unwrap();
+    // B follows one of A's assets too: one catalog asset, two follows.
+    let hanul = state
+        .store
+        .seed_followed_listing(&b, "HANUL", "KRX", None)
+        .unwrap();
+    assert_eq!(hanul.name, "Hanul Precision");
+    // The write after a burst of follows brings each Loupist up to date from its own list.
+    sync_every_loupist(&state);
+    let lines = |loupist: &str| {
+        let mut lines: Vec<String> = bodies(&followed_state(&state, loupist).1)
+            .iter()
+            .flat_map(|body| body.lines().filter(|line| line.starts_with("- ")))
+            .map(str::to_owned)
+            .collect();
+        lines.sort();
+        lines
+    };
+    assert_eq!(
+        lines(&a),
+        [
+            "- Hanul Precision (HANUL:KRX)",
+            "- Morrow Components (MORROW:NASDAQ)"
+        ]
+    );
+    assert_eq!(
+        lines(&b),
+        ["- Bitcoin (BTC:CRYPTO)", "- Hanul Precision (HANUL:KRX)"]
+    );
+    assert_eq!(job_status(&state, &a).assets, 2);
+    assert_eq!(job_status(&state, &b).assets, 2);
+    // The Map marks what its own Loupist follows; nothing is on either Map yet.
+    let unmatched = |loupist: &str| {
+        let mut symbols: Vec<String> = super::super::map(
+            &state,
+            crate::knowledge::KnowledgeMapQuery {
+                loupist_id: loupist.into(),
+                max_nodes: None,
+            },
+        )
+        .unwrap()
+        .unmatched_watchlist
+        .into_iter()
+        .map(|item| item.symbol)
+        .collect();
+        symbols.sort();
+        symbols
+    };
+    assert_eq!(unmatched(&a), ["HANUL", "MORROW"]);
+    assert_eq!(unmatched(&b), ["BTC", "HANUL"]);
+
+    // A new Loupist follows nothing, whatever the others follow.
+    let c = create_managed(&state).await;
+    assert!(state.store.assets_list(&c, true).unwrap().is_empty());
+    assert_eq!(sync_followed_assets(&state, &c).unwrap(), 0);
+
+    // Removing A removes its follows; B keeps its own, the shared asset included.
+    crate::commands::loupist::delete_loupist_inner(&state, &a)
+        .await
+        .unwrap();
+    let left: i64 = state
+        .store
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM asset_follows WHERE loupist_id=?1",
+            [&a],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(left, 0);
+    let kept: Vec<_> = state
+        .store
+        .assets_list(&b, true)
+        .unwrap()
+        .into_iter()
+        .map(|row| row.asset_id)
+        .collect();
+    assert_eq!(kept.len(), 2);
+    assert!(kept.contains(&hanul.asset_id));
 }
 
 #[tokio::test]
 async fn the_status_follows_the_jobs() {
     let root = tempfile::tempdir().unwrap();
     let state = connected(root.path()).await;
-    follow_and_hold(&state);
-    let loupist_id = create_managed(&state).await;
+    let loupist_id = following_two(&state).await;
     for (job, expected) in [
         ("running", FollowedState::Running),
         ("completed", FollowedState::Done),
@@ -315,7 +429,7 @@ async fn the_status_follows_the_jobs() {
     // A running read wins over a finished one.
     state
         .store
-        .watchlist_add("BTC", "CRYPTO", Some("Bitcoin"))
+        .seed_followed_listing(&loupist_id, "BTC", "CRYPTO", Some("Bitcoin"))
         .unwrap();
     sync_followed_assets(&state, &loupist_id).unwrap();
     assert_eq!(job_status(&state, &loupist_id).state, FollowedState::Queued);
@@ -345,32 +459,5 @@ fn a_queued_read_waits_only_on_what_the_user_can_fix() {
         ("reconciliation_required", FollowedState::Waiting),
     ] {
         assert_eq!(queued_state(readiness), expected, "{readiness}");
-    }
-}
-
-#[tokio::test(start_paused = true)]
-async fn a_burst_of_follows_makes_one_source_and_one_job_per_loupist() {
-    let root = tempfile::tempdir().unwrap();
-    let state = connected(root.path()).await;
-    follow_and_hold(&state);
-    let first = create_managed(&state).await;
-    let second = create_managed(&state).await;
-    for (symbol, name) in [("TSLA", "Tesla"), ("ETH", "Ethereum"), ("GC", "Gold")] {
-        crate::commands::user_context::follow(&state, symbol, "NASDAQ", Some(name), None).unwrap();
-        tokio::time::advance(Duration::from_secs(1)).await;
-    }
-    // Nothing is written while the burst goes on.
-    assert_eq!(followed_state(&state, &first).1.len(), 1);
-    tokio::time::sleep(QUIET).await;
-    for _ in 0..20 {
-        tokio::task::yield_now().await;
-    }
-    for loupist_id in [&first, &second] {
-        let (sources, jobs, _) = followed_state(&state, loupist_id);
-        assert_eq!((sources.len(), jobs.len()), (2, 2), "{loupist_id}");
-        assert_eq!(
-            bodies(&jobs)[1],
-            "Assets the user follows. Each line is one asset (a company's shares, a fund, a crypto asset, a commodity or another instrument) with its ticker in parentheses, written TICKER:MARKET when the market is known.\n- Ethereum (ETH:NASDAQ)\n- Gold (GC:NASDAQ)\n- Tesla (TSLA:NASDAQ)\n"
-        );
     }
 }

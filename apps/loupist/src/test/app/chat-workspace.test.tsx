@@ -1,4 +1,4 @@
-import { headerAction } from "../renderApp";
+import { headerAction, openChatMaterials } from "../renderApp";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -36,7 +36,7 @@ describe("Loupist · Chat workspace", () => {
       ], active_tab_id: "saved-source" }],
     });
     await openApp(bridge);
-    const panel = await screen.findByLabelText("Chat workspace panel");
+    const panel = await screen.findByLabelText("Side panel");
     expect(panel).toHaveAttribute("data-placement", "bottom");
     // A saved reader reopens as the Evidence tab's current entry.
     expect(within(panel).getByRole("tab", { name: "Evidence" })).toHaveAttribute("aria-selected", "true");
@@ -44,54 +44,37 @@ describe("Loupist · Chat workspace", () => {
     await waitFor(() => expect(sourceRead).toHaveBeenCalledWith(expect.objectContaining({ recordId: source.recordId, revisionId: source.revisionId, sourceId: source.objects[0].id })));
   });
 
-  it("chooses a panel and split from the header while preserving the current chat draft", async () => {
+  it("opens Map and Lens as pages from the sidebar and the chat's materials from the activity sheet, keeping the draft", async () => {
     const user = userEvent.setup();
     await openApp();
     const composer = screen.getByRole("textbox", { name: "Message Loupist" });
     await user.type(composer, "A question I am still writing");
-    expect(screen.queryByLabelText("Chat workspace panel")).not.toBeInTheDocument();
-    const kind = screen.getByRole("button", { name: /Panel kind/ });
-    await user.click(kind);
-    const kinds = screen.getAllByRole("menuitemradio");
-    expect(kinds).toHaveLength(3);
-    expect(kinds[0]).toHaveAccessibleName("Map");
-    expect(kinds[1]).toHaveAccessibleName("Lens");
-    expect(kinds[2]).toHaveAccessibleName("Chat materials");
-    expect(kinds[1]).toHaveAccessibleDescription("Your research principles and methods");
-    expect(kinds[2]).toHaveAccessibleDescription("This chat's map, evidence and outputs");
-    await user.click(screen.getByRole("menuitemradio", { name: "Lens" }));
-    const workspace = await screen.findByLabelText("Chat workspace panel");
-    expect(workspace).toHaveAttribute("data-panel-kind", "lens");
+    expect(screen.queryByLabelText("Side panel")).not.toBeInTheDocument();
+    await user.click(headerAction("Lens"));
+    expect(await screen.findByTestId("memory-page")).toBeVisible();
+    expect(screen.queryByLabelText("Side panel")).not.toBeInTheDocument();
+    await user.click(headerAction("Map"));
+    expect(await screen.findByTestId("map-view")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Back to chat" }));
     expect(composer).toHaveValue("A question I am still writing");
-    await user.click(screen.getByRole("button", { name: "Split top and bottom" }));
-    expect(workspace).toHaveAttribute("data-placement", "bottom");
-    expect(screen.getByRole("button", { name: "Split top and bottom" })).toHaveAttribute("aria-pressed", "true");
-    await user.click(kind);
-    await user.click(screen.getByRole("menuitemradio", { name: "Map" }));
-    expect(workspace).toHaveAttribute("data-panel-kind", "world");
-    expect(workspace).toHaveAttribute("data-placement", "bottom");
-    expect(composer).toHaveValue("A question I am still writing");
-    await user.click(kind);
-    await user.click(screen.getByRole("menuitemradio", { name: "Chat materials" }));
-    expect(workspace).toHaveAttribute("data-panel-kind", "materials");
+    // The header's one action opens the activity sheet; its In use tab opens the chat's materials.
+    expect(headerAction("Activity")).not.toHaveAttribute("aria-pressed", "true");
+    await openChatMaterials(user);
+    const workspace = await screen.findByLabelText("Side panel");
+    expect(headerAction("Activity")).toHaveAttribute("aria-pressed", "true");
+    await user.click(headerAction("Activity"));
+    expect(screen.queryByRole("complementary", { name: "Activity" })).not.toBeInTheDocument();
     await user.click(within(workspace).getByRole("tab", { name: "Evidence" }));
     await user.click(within(workspace).getByRole("button", { name: "Panel menu" }));
     await user.click(await screen.findByRole("menuitem", { name: "Expand" }));
     expect(workspace).toHaveAttribute("data-expanded", "true");
     await user.click(within(workspace).getByRole("button", { name: "Back to chat" }));
     expect(workspace).not.toHaveAttribute("data-expanded");
-    await user.click(within(workspace).getByRole("button", { name: "Close workspace" }));
-    expect(screen.queryByLabelText("Chat workspace panel")).not.toBeInTheDocument();
-    // Selecting the current kind reopens it. Keyboard selection moves to Close.
-    kind.focus();
-    await user.keyboard("{Enter}");
-    await user.keyboard("{End}{Enter}");
-    const close = await screen.findByRole("button", { name: "Close workspace" });
-    await waitFor(() => expect(close).toHaveFocus());
-    await user.keyboard("{Enter}");
-    expect(kind).toHaveFocus();
+    await user.click(within(workspace).getByRole("button", { name: "Close panel" }));
+    expect(screen.queryByLabelText("Side panel")).not.toBeInTheDocument();
+    // ⌘\ still opens and closes the panel from the keyboard.
     await user.keyboard("{Meta>}\\{/Meta}");
-    expect(await screen.findByLabelText("Chat workspace panel")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Side panel")).toBeInTheDocument();
     expect(composer).toHaveValue("A question I am still writing");
   });
 
@@ -108,18 +91,18 @@ describe("Loupist · Chat workspace", () => {
       const composer = screen.getByRole("textbox", { name: "Message Loupist" });
       await requestDocument(user, bridge);
       // The overlay sheet would take focus, so a finished document never opens it by itself.
-      expect(screen.queryByRole("dialog", { name: "Chat workspace panel" })).not.toBeInTheDocument();
-      await user.click(headerAction("Panel"));
-      const dialog = await screen.findByRole("dialog", { name: "Chat workspace panel" });
+      expect(screen.queryByRole("dialog", { name: "Side panel" })).not.toBeInTheDocument();
+      await openChatMaterials(user);
+      const dialog = await screen.findByRole("dialog", { name: "Side panel" });
       // The overlay sheet offers Close only; Expand and Dock belong to the docked panel menu.
       expect(within(dialog).queryByRole("button", { name: "Panel menu" })).not.toBeInTheDocument();
       expect(screen.queryByRole("menuitem", { name: "Expand" })).not.toBeInTheDocument();
-      expect(within(dialog).getByRole("button", { name: "Close workspace" })).toBeVisible();
+      expect(within(dialog).getByRole("button", { name: "Close panel" })).toBeVisible();
       composer.focus();
       fireEvent.keyDown(document, { key: "Tab" });
       expect(dialog).toContainElement(document.activeElement as HTMLElement);
       fireEvent.keyDown(window, { key: "Escape" });
-      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Chat workspace panel" })).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Side panel" })).not.toBeInTheDocument());
       expect(composer.closest("[inert]")).toBeNull();
     } finally {
       if (previous) matchMedia.mockImplementation(previous);
@@ -133,7 +116,7 @@ describe("Loupist · Chat workspace", () => {
     await openApp(bridge);
     await requestDocument(user, bridge);
     await user.click(screen.getByRole("button", { name: "Open document Research note" }));
-    const workspace = await screen.findByLabelText("Chat workspace panel");
+    const workspace = await screen.findByLabelText("Side panel");
     expect(within(workspace).getByRole("heading", { name: "Research note" })).toBeVisible();
     const ask = await within(workspace).findByRole("button", { name: "Ask about this" });
     await waitFor(() => expect(ask).toBeEnabled());
@@ -160,7 +143,7 @@ describe("Loupist · Chat workspace", () => {
     await openApp(bridge);
     await requestDocument(user, bridge);
     await user.click(screen.getByRole("button", { name: "Open document Research note" }));
-    const workspace = await screen.findByLabelText("Chat workspace panel");
+    const workspace = await screen.findByLabelText("Side panel");
     const ask = await within(workspace).findByRole("button", { name: "Ask about this" });
     await waitFor(() => expect(ask).toBeEnabled());
     await user.click(ask);
@@ -192,7 +175,7 @@ describe("Loupist · Chat workspace", () => {
     const answerLink = await screen.findByRole("link", { name: /Example source/ });
     await user.click(answerLink);
     await user.click(answerLink);
-    const workspace = await screen.findByLabelText("Chat workspace panel");
+    const workspace = await screen.findByLabelText("Side panel");
     await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
     await user.click(await screen.findByRole("link", { name: "Second source" }));
     await waitFor(() => expect(open).toHaveBeenCalledTimes(2));

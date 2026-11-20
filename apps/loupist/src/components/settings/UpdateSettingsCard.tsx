@@ -7,13 +7,7 @@ import {
   ShieldAlertIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import type { UpdatePhase, UpdateState } from "../../types";
 
 type Props = {
@@ -55,8 +49,8 @@ const blockerLabel = (kind: string) => {
     case "memory_mutation": return i18n.t("settings:updateSettingsCard.blockers.memoryChange");
     case "loupist_mutation": return i18n.t("settings:updateSettingsCard.blockers.loupistChange");
     case "loupist_deletion": return i18n.t("settings:updateSettingsCard.blockers.loupistDeletion");
-    case "marketplace_configuration": return i18n.t("settings:updateSettingsCard.blockers.marketplaceSettings");
-    case "marketplace_credential": return i18n.t("settings:updateSettingsCard.blockers.marketplaceCredentials");
+    case "marketplace_configuration": return i18n.t("settings:updateSettingsCard.blockers.connectionSettings");
+    case "marketplace_credential": return i18n.t("settings:updateSettingsCard.blockers.connectionCredentials");
     case "provider_inference": return i18n.t("settings:updateSettingsCard.blockers.modelWork");
     case "provider_support": return i18n.t("settings:updateSettingsCard.blockers.modelConnection");
     case "graph": return i18n.t("settings:updateSettingsCard.blockers.map");
@@ -97,12 +91,8 @@ export function UpdateSettingsCard({
               : null;
 
   return (
+    // The page's lead line says what this card does; the card starts with the versions.
     <Card className="update-card">
-      <CardHeader>
-        <CardTitle>{i18n.t("settings:updateSettingsCard.loupistTerminalUpdates")}</CardTitle>
-        <CardDescription>
-          {i18n.t("settings:updateSettingsCard.checkHereForNewVersionsNothingInstallsUntil")}</CardDescription>
-      </CardHeader>
       <CardContent className="update-card-content">
         <dl className="update-version-grid">
           <div>

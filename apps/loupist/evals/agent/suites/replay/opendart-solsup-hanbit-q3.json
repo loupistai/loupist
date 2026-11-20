@@ -1,0 +1,5592 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/corpCode.xml"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAIAAAAIVyebtgf9wAAAG0CAAAMAAAAQ09SUENPREUueG1ss7GvyM1RKEstKs7Mz7NVMtQzUFJIzUvOT8nMS7dVCg1x07VQsrezKUotLs0psbPJySwGksn5RQXxQDWpdpaWBkZGhgYGNvoIMYh0XmJuqt2btilvOja96Z77dlIHVAlYHKIkNS8dwg3OzykuLVBwy89PKYYqg8vZFJfkJ2cj22ajjyRkkwt0alplfEpiSaqdkYGRmYGxAVAFsqiNPsTVWNxuamqE2+1zt7zpWvN6zZ7XS2fgcbtncWppjoJPfjrQ9MxkQs4HWkhF55ubm+N0/tupc17vnP125pS3U2ficb5HYl5SZomCc0ZqLgGnAy0j1+n60OQDAFBLAQIUAxQAAAAIAAAAIVyebtgf9wAAAG0CAAAMAAAAAAAAAAAAAACAAQAAAABDT1JQQ09ERS54bWxQSwUGAAAAAAEAAQA6AAAAIQEAAAAA"
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99022100&bsns_year=2026&reprt_code=11014&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20261113990221",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "126400000000",
+              "thstrm_add_amount": "363200000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261113990221",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "90800000000",
+              "thstrm_add_amount": "262800000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261113990221",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "35600000000",
+              "thstrm_add_amount": "100400000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261113990221",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "23600000000",
+              "thstrm_add_amount": "69100000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261113990221",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "12000000000",
+              "thstrm_add_amount": "31300000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261113990221",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "7100000000",
+              "thstrm_add_amount": "18200000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261113990221",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "7000000000",
+              "thstrm_add_amount": "17900000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99022100&bsns_year=2026&reprt_code=11012&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20260813990221",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "120300000000",
+              "thstrm_add_amount": "236800000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260813990221",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "87400000000",
+              "thstrm_add_amount": "172000000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260813990221",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "32900000000",
+              "thstrm_add_amount": "64800000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260813990221",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "22700000000",
+              "thstrm_add_amount": "45500000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260813990221",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "10200000000",
+              "thstrm_add_amount": "19300000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260813990221",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "5900000000",
+              "thstrm_add_amount": "11100000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260813990221",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "5800000000",
+              "thstrm_add_amount": "10900000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99022100&bsns_year=2026&reprt_code=11013&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20260514990221",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "116500000000",
+              "thstrm_add_amount": "116500000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260514990221",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "84600000000",
+              "thstrm_add_amount": "84600000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260514990221",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "31900000000",
+              "thstrm_add_amount": "31900000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260514990221",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "22800000000",
+              "thstrm_add_amount": "22800000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260514990221",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "9100000000",
+              "thstrm_add_amount": "9100000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260514990221",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "5200000000",
+              "thstrm_add_amount": "5200000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260514990221",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "5100000000",
+              "thstrm_add_amount": "5100000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99022100&bsns_year=2025&reprt_code=11011&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "452300000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "330100000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "122200000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "84100000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "38100000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "21400000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260318990221",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "21000000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99022100&bsns_year=2025&reprt_code=11014&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20251114990221",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "114200000000",
+              "thstrm_add_amount": "334500000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251114990221",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "83000000000",
+              "thstrm_add_amount": "244200000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251114990221",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "31200000000",
+              "thstrm_add_amount": "90300000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251114990221",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "21300000000",
+              "thstrm_add_amount": "62500000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251114990221",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "9900000000",
+              "thstrm_add_amount": "27800000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251114990221",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "5400000000",
+              "thstrm_add_amount": "15700000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251114990221",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "5300000000",
+              "thstrm_add_amount": "15400000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99022100&bsns_year=2025&reprt_code=11012&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20250814990221",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "111900000000",
+              "thstrm_add_amount": "220300000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250814990221",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "81700000000",
+              "thstrm_add_amount": "161200000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250814990221",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "30200000000",
+              "thstrm_add_amount": "59100000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250814990221",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "20900000000",
+              "thstrm_add_amount": "41200000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250814990221",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "9300000000",
+              "thstrm_add_amount": "17900000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250814990221",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "5300000000",
+              "thstrm_add_amount": "10300000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250814990221",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "5200000000",
+              "thstrm_add_amount": "10100000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99022100&bsns_year=2025&reprt_code=11013&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20250515990221",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "108400000000",
+              "thstrm_add_amount": "108400000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250515990221",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "79500000000",
+              "thstrm_add_amount": "79500000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250515990221",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "28900000000",
+              "thstrm_add_amount": "28900000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250515990221",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "20300000000",
+              "thstrm_add_amount": "20300000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250515990221",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "8600000000",
+              "thstrm_add_amount": "8600000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250515990221",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "5000000000",
+              "thstrm_add_amount": "5000000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250515990221",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99022100",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "4900000000",
+              "thstrm_add_amount": "4900000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/company.json?corp_code=99022100"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "corp_code": "99022100",
+          "acc_mt": "12"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20261113990221"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAAAAAAIVzIzRt4IgMAACIDAAASAAAAMjAyNjExMTM5OTAyMjEueG1sPD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48RE9DVU1FTlQ+PERPQ1VNRU5ULU5BTUU+67aE6riw67O06rOg7IScPC9ET0NVTUVOVC1OQU1FPjxCT0RZPjxTRUNUSU9OLTE+PFRJVExFPuu2hOq4sOuztOqzoOyEnCAoMjAyNi4wOSk8L1RJVExFPjxQPuqwgOyDgeydmCDshpTsiLLsi53tkogg7KCcMTjquLAgM+u2hOq4sCgyMDI2LjA3LjAxfjIwMjYuMDkuMzApIOu2hOq4sOuztOqzoOyEnOyeheuLiOuLpC4g7KCc7Lac7J28IDIwMjYtMTEtMTMuPC9QPjxQPklJLiDsgqzsl4XsnZgg64K07JqpIC0g7JiB7JeF7Iuk7KCBOiDri7nrtoTquLAg7Jew6rKwIOunpOy2nOyVoeydgCAxLDI2NOyWteybkCjsoITrhYTrj5nquLAgMSwxNDLslrXsm5ApLCDsmIHsl4XsnbTsnbXsnYAgMTIw7Ja17JuQKOyghOuFhOuPmeq4sCA5OeyWteybkCnsnoXri4jri6QuPC9QPjxQPuqwhO2OuOyLnSDsi6DsoJztkojsnZgg7YyQ66ekIO2YuOyhsOyZgCA37JuUIO2MkOunpOqwgOqyqSDsnbjsg4HsnLzroZwg66ek7Lac7J20IOuKmOyXiOqzoCwg6rOh66y8IOuTsSDsm5Dsnqzro4wg6rWs66ek64uo6rCA6rCAIOyViOygleuQmOyWtCDrp6Tstpzsm5DqsIDsnKjsnbQg64Ku7JWE7KGM7Iq164uI64ukLjwvUD48UD5GaWN0aW9uYWwgU29sc3VwIEZvb2RzLCBRMyAyMDI2IGNvbnNvbGlkYXRlZDogcmV2ZW51ZSBLUlcgMTI2LjRibiAoUTMgMjAyNTogS1JXIDExNC4yYm4pLCBvcGVyYXRpbmcgaW5jb21lIEtSVyAxMi4wYm4gKFEzIDIwMjU6IEtSVyA5LjlibikuPC9QPjwvU0VDVElPTi0xPjwvQk9EWT48L0RPQ1VNRU5UPlBLAQIUAxQAAAAAAAAAIVzIzRt4IgMAACIDAAASAAAAAAAAAAAAAACAAQAAAAAyMDI2MTExMzk5MDIyMS54bWxQSwUGAAAAAAEAAQBAAAAAUgMAAAAA"
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20260813990221"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAAAAAAIVy/gnKmTgIAAE4CAAASAAAAMjAyNjA4MTM5OTAyMjEueG1sPD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48RE9DVU1FTlQ+PERPQ1VNRU5ULU5BTUU+67CY6riw67O06rOg7IScPC9ET0NVTUVOVC1OQU1FPjxCT0RZPjxTRUNUSU9OLTE+PFRJVExFPuuwmOq4sOuztOqzoOyEnCAoMjAyNi4wNik8L1RJVExFPjxQPuqwgOyDgeydmCDshpTsiLLsi53tkogg7KCcMTjquLAg67CY6riwKDIwMjYuMDEuMDF+MjAyNi4wNi4zMCkg67CY6riw67O06rOg7ISc7J6F64uI64ukLiDsoJzstpzsnbwgMjAyNi0wOC0xMy48L1A+PFA+SUkuIOyCrOyXheydmCDrgrTsmqkgLSDsmIHsl4Xsi6TsoIE6IDLrtoTquLAg7Jew6rKwIOunpOy2nOyVoeydgCAxLDIwM+yWteybkCwg7JiB7JeF7J207J217J2AIDEwMuyWteybkOyeheuLiOuLpC4g7IOB67CY6riwIOuIhOyggSDrp6TstpzslaHsnYAgMiwzNjjslrXsm5DsnoXri4jri6QuPC9QPjxQPuqwhO2OuOyLnSDtjJDrp6Trn4nsnbQg64qY7JeI6rOgLCDtmozsgqzripQgN+yblOu2gO2EsCDso7zsmpQg7KCc7ZKI7J2YIO2MkOunpOqwgOqyqeydhCDsnbjsg4HtlaAg6rOE7ZqN7J6F64uI64ukLjwvUD48L1NFQ1RJT04tMT48L0JPRFk+PC9ET0NVTUVOVD5QSwECFAMUAAAAAAAAACFcv4Jypk4CAABOAgAAEgAAAAAAAAAAAAAAgAEAAAAAMjAyNjA4MTM5OTAyMjEueG1sUEsFBgAAAAABAAEAQAAAAH4CAAAAAA=="
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20251114&end_de=20261113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251114"
+        },
+        "end_de": {
+          "at_least": "20261113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 5,
+          "total_count": 5,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261113990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20261113",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251114990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20251114",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20251114&end_de=20261113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251114"
+        },
+        "end_de": {
+          "at_least": "20261113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 5,
+          "total_count": 5,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261113990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20261113",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251114990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20251114",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20251114&end_de=20260813&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251114"
+        },
+        "end_de": {
+          "at_least": "20260813"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 4,
+          "total_count": 4,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251114990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20251114",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20251114&end_de=20260813&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251114"
+        },
+        "end_de": {
+          "at_least": "20260813"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 4,
+          "total_count": 4,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251114990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20251114",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260318&end_de=20261113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20261113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 4,
+          "total_count": 4,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261113990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20261113",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260318&end_de=20261113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20261113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 4,
+          "total_count": 4,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261113990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20261113",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20251114&end_de=20260514&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251114"
+        },
+        "end_de": {
+          "at_least": "20260514"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251114990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20251114",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20251114&end_de=20260514&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251114"
+        },
+        "end_de": {
+          "at_least": "20260514"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251114990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20251114",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260318&end_de=20260813&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20260813"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260318&end_de=20260813&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20260813"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260514&end_de=20261113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260514"
+        },
+        "end_de": {
+          "at_least": "20261113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261113990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20261113",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260514&end_de=20261113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260514"
+        },
+        "end_de": {
+          "at_least": "20261113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261113990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20261113",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20251114&end_de=20260318&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251114"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251114990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20251114",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20251114&end_de=20260318&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251114"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251114990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20251114",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260318&end_de=20260514&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20260514"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260318&end_de=20260514&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20260514"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260514&end_de=20260813&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260514"
+        },
+        "end_de": {
+          "at_least": "20260813"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260514&end_de=20260813&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260514"
+        },
+        "end_de": {
+          "at_least": "20260813"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260813&end_de=20261113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260813"
+        },
+        "end_de": {
+          "at_least": "20261113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261113990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20261113",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260813&end_de=20261113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260813"
+        },
+        "end_de": {
+          "at_least": "20261113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261113990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20261113",
+              "rm": ""
+            },
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20251114&end_de=20251114&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251114"
+        },
+        "end_de": {
+          "at_least": "20251114"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251114990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20251114",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20251114&end_de=20251114&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251114"
+        },
+        "end_de": {
+          "at_least": "20251114"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251114990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20251114",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260318&end_de=20260318&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260318&end_de=20260318&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260318"
+        },
+        "end_de": {
+          "at_least": "20260318"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260318990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260318",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260514&end_de=20260514&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260514"
+        },
+        "end_de": {
+          "at_least": "20260514"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260514&end_de=20260514&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260514"
+        },
+        "end_de": {
+          "at_least": "20260514"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260514990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260514",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260813&end_de=20260813&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260813"
+        },
+        "end_de": {
+          "at_least": "20260813"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20260813&end_de=20260813&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260813"
+        },
+        "end_de": {
+          "at_least": "20260813"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260813990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20260813",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20261113&end_de=20261113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20261113"
+        },
+        "end_de": {
+          "at_least": "20261113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261113990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20261113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99022100&bgn_de=20261113&end_de=20261113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20261113"
+        },
+        "end_de": {
+          "at_least": "20261113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99022100",
+              "corp_cls": "Y",
+              "corp_name": "솔숲식품",
+              "stock_code": "990221",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261113990221",
+              "flr_nm": "솔숲식품",
+              "rcept_dt": "20261113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99077700&bsns_year=2026&reprt_code=11014&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20261112990777",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "67500000000",
+              "thstrm_add_amount": "207800000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261112990777",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "54700000000",
+              "thstrm_add_amount": "166700000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261112990777",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "12800000000",
+              "thstrm_add_amount": "41100000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261112990777",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "7600000000",
+              "thstrm_add_amount": "22500000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261112990777",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "5200000000",
+              "thstrm_add_amount": "18600000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261112990777",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "3100000000",
+              "thstrm_add_amount": "11400000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20261112990777",
+              "reprt_code": "11014",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 3분기",
+              "thstrm_amount": "3000000000",
+              "thstrm_add_amount": "11100000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99077700&bsns_year=2026&reprt_code=11012&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20260812990777",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "69400000000",
+              "thstrm_add_amount": "140300000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260812990777",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "55600000000",
+              "thstrm_add_amount": "112000000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260812990777",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "13800000000",
+              "thstrm_add_amount": "28300000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260812990777",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "7500000000",
+              "thstrm_add_amount": "14900000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260812990777",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "6300000000",
+              "thstrm_add_amount": "13400000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260812990777",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "3900000000",
+              "thstrm_add_amount": "8300000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260812990777",
+              "reprt_code": "11012",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 반기",
+              "thstrm_amount": "3800000000",
+              "thstrm_add_amount": "8100000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99077700&bsns_year=2026&reprt_code=11013&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20260513990777",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "70900000000",
+              "thstrm_add_amount": "70900000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260513990777",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "56400000000",
+              "thstrm_add_amount": "56400000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260513990777",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "14500000000",
+              "thstrm_add_amount": "14500000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260513990777",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "7400000000",
+              "thstrm_add_amount": "7400000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260513990777",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "7100000000",
+              "thstrm_add_amount": "7100000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260513990777",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "4400000000",
+              "thstrm_add_amount": "4400000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260513990777",
+              "reprt_code": "11013",
+              "bsns_year": "2026",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 18 기 1분기",
+              "thstrm_amount": "4300000000",
+              "thstrm_add_amount": "4300000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99077700&bsns_year=2025&reprt_code=11011&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20260319990777",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "286500000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260319990777",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "225700000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260319990777",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "60800000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260319990777",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "29400000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260319990777",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "31400000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260319990777",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "19800000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20260319990777",
+              "reprt_code": "11011",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기",
+              "thstrm_amount": "19400000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99077700&bsns_year=2025&reprt_code=11014&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20251113990777",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "72300000000",
+              "thstrm_add_amount": "213700000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251113990777",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "56900000000",
+              "thstrm_add_amount": "168300000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251113990777",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "15400000000",
+              "thstrm_add_amount": "45400000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251113990777",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "7400000000",
+              "thstrm_add_amount": "21900000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251113990777",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "8000000000",
+              "thstrm_add_amount": "23500000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251113990777",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "5000000000",
+              "thstrm_add_amount": "14800000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20251113990777",
+              "reprt_code": "11014",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 3분기",
+              "thstrm_amount": "4900000000",
+              "thstrm_add_amount": "14500000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99077700&bsns_year=2025&reprt_code=11012&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20250813990777",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "71600000000",
+              "thstrm_add_amount": "141400000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250813990777",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "56200000000",
+              "thstrm_add_amount": "111400000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250813990777",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "15400000000",
+              "thstrm_add_amount": "30000000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250813990777",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "7300000000",
+              "thstrm_add_amount": "14500000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250813990777",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "8100000000",
+              "thstrm_add_amount": "15500000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250813990777",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "5100000000",
+              "thstrm_add_amount": "9800000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250813990777",
+              "reprt_code": "11012",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 반기",
+              "thstrm_amount": "5000000000",
+              "thstrm_add_amount": "9600000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?corp_code=99077700&bsns_year=2025&reprt_code=11013&fs_div=CFS"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "list": [
+            {
+              "rcept_no": "20250514990777",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_Revenue",
+              "account_nm": "매출액",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "69800000000",
+              "thstrm_add_amount": "69800000000",
+              "ord": "1",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250514990777",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_CostOfSales",
+              "account_nm": "매출원가",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "55200000000",
+              "thstrm_add_amount": "55200000000",
+              "ord": "2",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250514990777",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_GrossProfit",
+              "account_nm": "매출총이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "14600000000",
+              "thstrm_add_amount": "14600000000",
+              "ord": "3",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250514990777",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_TotalSellingGeneralAdministrativeExpenses",
+              "account_nm": "판매비와관리비",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "7200000000",
+              "thstrm_add_amount": "7200000000",
+              "ord": "4",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250514990777",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "dart_OperatingIncomeLoss",
+              "account_nm": "영업이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "7400000000",
+              "thstrm_add_amount": "7400000000",
+              "ord": "5",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250514990777",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLoss",
+              "account_nm": "당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "4700000000",
+              "thstrm_add_amount": "4700000000",
+              "ord": "6",
+              "currency": "KRW"
+            },
+            {
+              "rcept_no": "20250514990777",
+              "reprt_code": "11013",
+              "bsns_year": "2025",
+              "corp_code": "99077700",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "fs_div": "CFS",
+              "sj_div": "IS",
+              "sj_nm": "손익계산서",
+              "account_id": "ifrs-full_ProfitLossAttributableToOwnersOfParent",
+              "account_nm": "지배기업의 소유주에게 귀속되는 당기순이익",
+              "account_detail": "-",
+              "thstrm_nm": "제 17 기 1분기",
+              "thstrm_amount": "4600000000",
+              "thstrm_add_amount": "4600000000",
+              "ord": "7",
+              "currency": "KRW"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/company.json?corp_code=99077700"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "corp_code": "99077700",
+          "acc_mt": "12"
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20261112990777"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAAAAAAIVxdPuoBXQQAAF0EAAASAAAAMjAyNjExMTI5OTA3NzcueG1sPD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48RE9DVU1FTlQ+PERPQ1VNRU5ULU5BTUU+67aE6riw67O06rOg7IScPC9ET0NVTUVOVC1OQU1FPjxCT0RZPjxTRUNUSU9OLTE+PFRJVExFPuu2hOq4sOuztOqzoOyEnCAoMjAyNi4wOSk8L1RJVExFPjxQPuqwgOyDgeydmCDtlZzruZvtmZTtlZkg7KCcMTjquLAgM+u2hOq4sCgyMDI2LjA3LjAxfjIwMjYuMDkuMzApIOu2hOq4sOuztOqzoOyEnOyeheuLiOuLpC4g7KCc7Lac7J28IDIwMjYtMTEtMTIuPC9QPjxQPklJLiDsgqzsl4XsnZgg64K07JqpIC0g7JiB7JeF7Iuk7KCBOiDri7nrtoTquLAg7Jew6rKwIOunpOy2nOyVoeydgCA2NzXslrXsm5Ao7KCE64WE64+Z6riwIDcyM+yWteybkCksIOyYgeyXheydtOydteydgCA1MuyWteybkCjsoITrhYTrj5nquLAgODDslrXsm5Ap7J6F64uI64ukLjwvUD48UD7sl6zsiJjqs7XsnqXsnYAgMjAyNuuFhCA47JuUIDI07J2867aA7YSwIOygleq4sOuztOyImOyXkCDrk6TslrTqsIAg64u567aE6riwIOykkSAzOOydvOqwhCDqsIDrj5nsnYQg66mI7LaU7JeI6rOgLCDsnbTroZwg7J247ZW0IO2MkOunpOufieydtCDspITsl4jsirXri4jri6QuIOuztOqzoOyEnCDsnpHshLHquLDspIDsnbwoMjAyNi4wOS4zMCkg7ZiE7J6sIOygleq4sOuztOyImOuKlCDsp4Ttlokg7KSR7J2066mwIDEw7JuUIOunkCDsmYTro4zrpbwg66qp7ZGc66GcIO2VmOqzoCDsnojsirXri4jri6QuPC9QPjxQPuuCmO2UhO2DgCDrk7Eg7JuQ7J6s66OMIOqwgOqyqSDsg4HsirnrtoTsnYQg7KCc7ZKIIO2MkOunpOqwgOqyqeyXkCDrqqjrkZAg67CY7JiB7ZWY7KeAIOuqu+2VtCDrp6Tstpzsm5DqsIDsnKjsnbQg64aS7JWE7KGM7Iq164uI64ukLjwvUD48UD5GaWN0aW9uYWwgSGFuYml0IENoZW0sIFEzIDIwMjYgY29uc29saWRhdGVkOiByZXZlbnVlIEtSVyA2Ny41Ym4gKFEzIDIwMjU6IEtSVyA3Mi4zYm4pLCBvcGVyYXRpbmcgaW5jb21lIEtSVyA1LjJibiAoUTMgMjAyNTogS1JXIDguMGJuKS4gVGhlIFllb3N1IHBsYW50IHdhcyBzaHV0IGZvciBzY2hlZHVsZWQgbWFpbnRlbmFuY2UgZm9yIDM4IGRheXMgb2YgdGhlIHF1YXJ0ZXIuPC9QPjwvU0VDVElPTi0xPjwvQk9EWT48L0RPQ1VNRU5UPlBLAQIUAxQAAAAAAAAAIVxdPuoBXQQAAF0EAAASAAAAAAAAAAAAAACAAQAAAAAyMDI2MTExMjk5MDc3Ny54bWxQSwUGAAAAAAEAAQBAAAAAjQQAAAAA"
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/document.xml?rcept_no=20260812990777"
+      },
+      "response": {
+        "status": 200,
+        "content_type": "application/zip",
+        "body_base64": "UEsDBBQAAAAAAAAAIVwbonAhXwIAAF8CAAASAAAAMjAyNjA4MTI5OTA3NzcueG1sPD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48RE9DVU1FTlQ+PERPQ1VNRU5ULU5BTUU+67CY6riw67O06rOg7IScPC9ET0NVTUVOVC1OQU1FPjxCT0RZPjxTRUNUSU9OLTE+PFRJVExFPuuwmOq4sOuztOqzoOyEnCAoMjAyNi4wNik8L1RJVExFPjxQPuqwgOyDgeydmCDtlZzruZvtmZTtlZkg7KCcMTjquLAg67CY6riwKDIwMjYuMDEuMDF+MjAyNi4wNi4zMCkg67CY6riw67O06rOg7ISc7J6F64uI64ukLiDsoJzstpzsnbwgMjAyNi0wOC0xMi48L1A+PFA+SUkuIOyCrOyXheydmCDrgrTsmqkgLSDsmIHsl4Xsi6TsoIE6IDLrtoTquLAg7Jew6rKwIOunpOy2nOyVoeydgCA2OTTslrXsm5AsIOyYgeyXheydtOydteydgCA2M+yWteybkOyeheuLiOuLpC4g7IOB67CY6riwIOuIhOyggSDrp6TstpzslaHsnYAgMSw0MDPslrXsm5DsnoXri4jri6QuPC9QPjxQPuybkOyerOujjCDqsIDqsqnsnbQg7Jis6528IOygnO2SiCDsiqTtlITroIjrk5zqsIAg7KSE7JeI7Iq164uI64ukLiDsl6zsiJjqs7XsnqUg7KCV6riw67O07IiY64qUIDPrtoTquLAg7KSRIOyLnOyeke2VoCDsmIjsoJXsnoXri4jri6QuPC9QPjwvU0VDVElPTi0xPjwvQk9EWT48L0RPQ1VNRU5UPlBLAQIUAxQAAAAAAAAAIVwbonAhXwIAAF8CAAASAAAAAAAAAAAAAACAAQAAAAAyMDI2MDgxMjk5MDc3Ny54bWxQSwUGAAAAAAEAAQBAAAAAjwIAAAAA"
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20251113&end_de=20261112&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251113"
+        },
+        "end_de": {
+          "at_least": "20261112"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 5,
+          "total_count": 5,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261112990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20261112",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251113990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20251113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20251113&end_de=20261112&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251113"
+        },
+        "end_de": {
+          "at_least": "20261112"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 5,
+          "total_count": 5,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261112990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20261112",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251113990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20251113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20251113&end_de=20260812&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251113"
+        },
+        "end_de": {
+          "at_least": "20260812"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 4,
+          "total_count": 4,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251113990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20251113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20251113&end_de=20260812&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251113"
+        },
+        "end_de": {
+          "at_least": "20260812"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 4,
+          "total_count": 4,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251113990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20251113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260319&end_de=20261112&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260319"
+        },
+        "end_de": {
+          "at_least": "20261112"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 4,
+          "total_count": 4,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261112990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20261112",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260319&end_de=20261112&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260319"
+        },
+        "end_de": {
+          "at_least": "20261112"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 4,
+          "total_count": 4,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261112990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20261112",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20251113&end_de=20260513&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251113"
+        },
+        "end_de": {
+          "at_least": "20260513"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251113990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20251113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20251113&end_de=20260513&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251113"
+        },
+        "end_de": {
+          "at_least": "20260513"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251113990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20251113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260319&end_de=20260812&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260319"
+        },
+        "end_de": {
+          "at_least": "20260812"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260319&end_de=20260812&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260319"
+        },
+        "end_de": {
+          "at_least": "20260812"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260513&end_de=20261112&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260513"
+        },
+        "end_de": {
+          "at_least": "20261112"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261112990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20261112",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260513&end_de=20261112&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260513"
+        },
+        "end_de": {
+          "at_least": "20261112"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 3,
+          "total_count": 3,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261112990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20261112",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20251113&end_de=20260319&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251113"
+        },
+        "end_de": {
+          "at_least": "20260319"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251113990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20251113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20251113&end_de=20260319&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251113"
+        },
+        "end_de": {
+          "at_least": "20260319"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251113990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20251113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260319&end_de=20260513&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260319"
+        },
+        "end_de": {
+          "at_least": "20260513"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260319&end_de=20260513&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260319"
+        },
+        "end_de": {
+          "at_least": "20260513"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260513&end_de=20260812&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260513"
+        },
+        "end_de": {
+          "at_least": "20260812"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260513&end_de=20260812&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260513"
+        },
+        "end_de": {
+          "at_least": "20260812"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260812&end_de=20261112&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260812"
+        },
+        "end_de": {
+          "at_least": "20261112"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261112990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20261112",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260812&end_de=20261112&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260812"
+        },
+        "end_de": {
+          "at_least": "20261112"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 2,
+          "total_count": 2,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261112990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20261112",
+              "rm": ""
+            },
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20251113&end_de=20251113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251113"
+        },
+        "end_de": {
+          "at_least": "20251113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251113990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20251113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20251113&end_de=20251113&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20251113"
+        },
+        "end_de": {
+          "at_least": "20251113"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2025.09)",
+              "rcept_no": "20251113990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20251113",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260319&end_de=20260319&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260319"
+        },
+        "end_de": {
+          "at_least": "20260319"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260319&end_de=20260319&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260319"
+        },
+        "end_de": {
+          "at_least": "20260319"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "사업보고서 (2025.12)",
+              "rcept_no": "20260319990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260319",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260513&end_de=20260513&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260513"
+        },
+        "end_de": {
+          "at_least": "20260513"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260513&end_de=20260513&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260513"
+        },
+        "end_de": {
+          "at_least": "20260513"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.03)",
+              "rcept_no": "20260513990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260513",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260812&end_de=20260812&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260812"
+        },
+        "end_de": {
+          "at_least": "20260812"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20260812&end_de=20260812&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20260812"
+        },
+        "end_de": {
+          "at_least": "20260812"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "반기보고서 (2026.06)",
+              "rcept_no": "20260812990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20260812",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20261112&end_de=20261112&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20261112"
+        },
+        "end_de": {
+          "at_least": "20261112"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261112990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20261112",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "request": {
+        "url": "https://opendart.fss.or.kr/api/list.json?corp_code=99077700&bgn_de=20261112&end_de=20261112&last_reprt_at=N&sort=date&sort_mth=desc&page_no=1&page_count=100&pblntf_ty=A"
+      },
+      "query_match": {
+        "bgn_de": {
+          "at_most": "20261112"
+        },
+        "end_de": {
+          "at_least": "20261112"
+        },
+        "page_count": "ignore",
+        "page_no": "ignore",
+        "sort": "ignore",
+        "sort_mth": "ignore"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "000",
+          "message": "정상",
+          "page_no": 1,
+          "page_count": 1,
+          "total_count": 1,
+          "total_page": 1,
+          "list": [
+            {
+              "corp_code": "99077700",
+              "corp_cls": "Y",
+              "corp_name": "한빛화학",
+              "stock_code": "990777",
+              "report_nm": "분기보고서 (2026.09)",
+              "rcept_no": "20261112990777",
+              "flr_nm": "한빛화학",
+              "rcept_dt": "20261112",
+              "rm": ""
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "otherwise": [
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/list.json?",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/company.json?",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?",
+      "response": {
+        "status": 200,
+        "body": {
+          "status": "013",
+          "message": "조회된 데이타가 없습니다."
+        }
+      }
+    },
+    {
+      "provider": "opendart.disclosures",
+      "url_prefix": "https://opendart.fss.or.kr/api/document.xml?",
+      "response": {
+        "status": 200,
+        "content_type": "application/xml",
+        "text": "<result><status>013</status><message>조회된 데이타가 없습니다.</message></result>"
+      }
+    }
+  ]
+}

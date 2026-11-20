@@ -50,7 +50,7 @@ pub(super) fn cited_result<'a>(
     })
 }
 
-fn bounded(value: &str, maximum: usize) -> String {
+pub(super) fn bounded(value: &str, maximum: usize) -> String {
     let mut end = value.len().min(maximum);
     while !value.is_char_boundary(end) {
         end -= 1;
@@ -76,7 +76,19 @@ fn saved_read_ref(result: &RunResult) -> Option<String> {
     (value.len() <= 256 && !value.is_empty() && !value.contains('\0')).then(|| value.to_string())
 }
 
-fn safe_url(value: &str) -> Option<String> {
+/// A Source read that returned material the user pasted earlier. The host
+/// writes `source.sourceClass` from the stored Source, never from the model.
+fn saved_user_provided(result: &RunResult) -> bool {
+    result.producer.origin == RunResultOrigin::SavedContext
+        && result.producer.tool_name == "world_read"
+        && result
+            .payload
+            .pointer("/source/sourceClass")
+            .and_then(Value::as_str)
+            == Some(crate::knowledge::SourceClass::UserProvided.as_str())
+}
+
+pub(super) fn safe_url(value: &str) -> Option<String> {
     let parsed = reqwest::Url::parse(value).ok()?;
     let normalized = parsed.to_string();
     (matches!(parsed.scheme(), "https" | "http")
@@ -139,13 +151,22 @@ fn excerpt_match(result: &RunResult, excerpt: &str) -> Option<ChatEvidenceMatch>
 
 pub(super) fn project(result: &RunResult) -> ChatEvidenceRef {
     let payload = &result.payload;
-    let title = string_at(
-        payload,
-        &["/title", "/name", "/path", "/metadata/title", "/data/title"],
-        512,
-    )
-    .or_else(|| result.origin.as_deref().map(|origin| bounded(origin, 512)))
-    .unwrap_or_else(|| result.producer.tool_name.replace('_', " "));
+    let fx = result.producer.tool_name == "fx_rate";
+    let title = if fx {
+        format!(
+            "{}/{} · European Central Bank reference rates",
+            payload["from"].as_str().unwrap_or_default(),
+            payload["to"].as_str().unwrap_or_default()
+        )
+    } else {
+        string_at(
+            payload,
+            &["/title", "/name", "/path", "/metadata/title", "/data/title"],
+            512,
+        )
+        .or_else(|| result.origin.as_deref().map(|origin| bounded(origin, 512)))
+        .unwrap_or_else(|| result.producer.tool_name.replace('_', " "))
+    };
     let url = [
         "/final_url",
         "/url",
@@ -160,7 +181,8 @@ pub(super) fn project(result: &RunResult) -> ChatEvidenceRef {
             .and_then(Value::as_str)
             .and_then(safe_url)
     })
-    .or_else(|| result.origin.as_deref().and_then(safe_url));
+    .or_else(|| result.origin.as_deref().and_then(safe_url))
+    .or_else(|| fx.then(|| crate::finance_data::fx::SOURCE_URL.to_owned()));
     let text = string_at(
         payload,
         &[
@@ -193,6 +215,7 @@ pub(super) fn project(result: &RunResult) -> ChatEvidenceRef {
     let kind = match result.producer.origin {
         RunResultOrigin::AcquiredOriginal => ChatEvidenceKind::Original,
         RunResultOrigin::WorkspaceFile => ChatEvidenceKind::LocalFile,
+        RunResultOrigin::UserProvided => ChatEvidenceKind::UserProvided,
         RunResultOrigin::Discovery => ChatEvidenceKind::Discovery,
         RunResultOrigin::Derived => ChatEvidenceKind::Derived,
         RunResultOrigin::SavedContext => ChatEvidenceKind::SavedContext,
@@ -202,8 +225,19 @@ pub(super) fn project(result: &RunResult) -> ChatEvidenceRef {
         title,
         kind,
         url,
-        provider: result.producer.provider.clone(),
+        provider: result.producer.provider.clone().or_else(|| {
+            string_at(
+                payload,
+                &[
+                    "/figure_sources/price/provider",
+                    "/figure_sources/valuation/provider",
+                    "/figure_sources/results/provider",
+                ],
+                128,
+            )
+        }),
         tool_name: result.producer.tool_name.clone(),
+        user_provided: saved_user_provided(result),
         calc_operation: (result.producer.tool_name == "calculate")
             .then(|| payload.get("operation").cloned())
             .flatten()
@@ -219,7 +253,11 @@ pub(super) fn project(result: &RunResult) -> ChatEvidenceRef {
         } else {
             result.retrieved_at.clone()
         },
-        published_at: string_at(payload, &["/published_at", "/provenance/published_at"], 128),
+        published_at: if fx {
+            string_at(payload, &["/date"], 128)
+        } else {
+            string_at(payload, &["/published_at", "/provenance/published_at"], 128)
+        },
         as_of: string_at(
             payload,
             &[

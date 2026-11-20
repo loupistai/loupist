@@ -4,7 +4,7 @@ import { StrictMode } from "react";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { LoupistWorkspace } from "../../types";
-import { loupistIsRunning, openApp, openChat } from "../renderApp";
+import { loupistIsRunning, openApp, openChat, rowIsRunning } from "../renderApp";
 
 const run = (run_id: string, loupist_id: string, target: string, started_at_ms: number) => ({ run_id, loupist_id, kind: "chat" as const, target, started_at_ms });
 
@@ -34,7 +34,7 @@ describe("Loupist · Chat run lifecycle", () => {
     await openChat("How should we read the margin decline?");
     expect(loupistIsRunning("Quality Compounder")).toBe(true);
     expect(loupistIsRunning("Contrarian Value")).toBe(true);
-    expect(screen.getByRole("status", { name: "Capital allocation checklist is running" })).toBeVisible();
+    expect(rowIsRunning("Capital allocation checklist")).toBe(true);
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Stop response" }));
     await waitFor(() => expect(chatAbort).toHaveBeenCalledTimes(2));

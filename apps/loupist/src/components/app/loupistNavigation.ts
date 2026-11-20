@@ -3,10 +3,12 @@ import type { ChatThread } from "../../types";
 
 const RECENT_CHAT_COUNT = 5;
 
-/** The home Thread leads; topic chats follow, newest first. */
-export function getLoupistChatList(threads: ChatThread[] = []) {
-  // The home Thread leads; topic chats follow, newest first.
-  const saved = threads.filter((thread) => !isEmptyChatThreadId(thread.id));
+/**
+ * The home Thread leads; topic chats follow, newest first. A session the host keeps out of
+ * the list (a scheduled run's, a price setup) is still listed while it is the one open.
+ */
+export function getLoupistChatList(threads: ChatThread[] = [], activeThreadId: string | null = null) {
+  const saved = threads.filter((thread) => (!thread.hide_from_recent || thread.id === activeThreadId) && !isEmptyChatThreadId(thread.id));
   const chats = [
     ...saved.filter((thread) => thread.home),
     ...saved.filter((thread) => !thread.home).sort((a, b) => b.updated_at.localeCompare(a.updated_at)),

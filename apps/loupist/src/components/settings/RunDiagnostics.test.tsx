@@ -12,6 +12,9 @@ describe("Run diagnostics", () => {
     const lastError = vi.spyOn(bridge, "runLogsLastError").mockResolvedValue(line);
     const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     render(<RunDiagnostics bridge={bridge} loupistId="loupist-quality" />);
+    // A Loupist's page speaks of its own runs, not of app sign-ins elsewhere.
+    expect(screen.getByText("This Loupist's run details, kept on this Mac.")).toBeVisible();
+    expect(screen.queryByText(/app sign-ins/u)).toBeNull();
     await user.click(screen.getByRole("button", { name: "Reveal in Finder" }));
     expect(reveal).toHaveBeenCalledWith({ loupist_id: "loupist-quality" });
     await user.click(screen.getByRole("button", { name: "Copy last error details" }));
@@ -25,6 +28,7 @@ describe("Run diagnostics", () => {
     const lastError = vi.spyOn(bridge, "runLogsLastError").mockResolvedValueOnce(null).mockResolvedValue('{"status":"failed"}');
     vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
     render(<RunDiagnostics bridge={bridge} loupistId={null} />);
+    expect(screen.getByText(/This page shows app sign-ins/u)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Copy last error details" }));
     expect(lastError).toHaveBeenCalledWith({ loupist_id: null });
     expect(await screen.findByRole("status")).toHaveTextContent("No failed runs recorded.");

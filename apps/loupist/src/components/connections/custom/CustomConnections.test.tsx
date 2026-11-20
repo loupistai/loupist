@@ -132,6 +132,19 @@ it("requires confirmation before removing and writes per-Loupist enablement", as
   await user.click(within(dialog).getByRole("button", { name: "Remove connection" }));
   expect(remove).toHaveBeenCalledWith({ connection_id: record.id });
 });
+it("moves focus to Add a connection after a connection is removed", async () => {
+  const bridge = setup();
+  await connection(bridge);
+  const loupists = await bridge.loupistList();
+  render(<CustomConnections bridge={bridge} loupists={loupists} initialLoupistId={loupists[0]!.id} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /^Research/u }));
+  await user.click(screen.getByRole("button", { name: "Remove connection" }));
+  await user.click(within(screen.getByRole("dialog", { name: "Remove Research?" })).getByRole("button", { name: "Remove connection" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Add a connection" })).toHaveFocus());
+  expect(screen.queryByRole("button", { name: /^Research/u })).toBeNull();
+});
+
 it("cancels browser sign-in and keeps Done disabled while authorization is pending", async () => {
   const bridge = setup(); const record = await connection(bridge);
   record.pending = true; record.tools = []; record.auth_state = "sign_in_needed";
@@ -180,4 +193,22 @@ it("shows approvals only for the selected Loupist", async () => {
   await userEvent.setup().selectOptions(screen.getByRole("combobox", { name: "Loupist" }), second.id);
   expect(await screen.findByText("Online server · 0 tools allowed")).toBeVisible();
   expect(screen.queryByText("Online server · 1 tool allowed")).toBeNull();
+});
+it("offers Show more only for a tool description the clamp cuts short", async () => {
+  const bridge = setup();
+  const record = await connection(bridge);
+  record.tools[1] = { ...record.tools[1], name: "read_filings", server_description: "Read public company filings. ".repeat(20), eligibility: "read_only" };
+  // jsdom has no layout: a clamped paragraph with a long text reports more content than its three-line box.
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("custom-description-clamp") && (this.textContent ?? "").length > 100 ? 200 : 60; });
+  const client = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(60);
+  try {
+    render(<ToolReview bridge={bridge} connection={record} loupistId="loupist-one" onChanged={() => {}} onError={() => {}} />);
+    const short = screen.getByText("Read market prices.").closest("li")!;
+    const long = screen.getByText(/Read public company filings/).closest("li")!;
+    expect(within(short).queryByRole("button", { name: "Show more" })).toBeNull();
+    await userEvent.setup().click(await within(long).findByRole("button", { name: "Show more" }));
+    expect(within(long).getByRole("button", { name: "Show less" })).toHaveAttribute("aria-expanded", "true");
+  } finally {
+    scroll.mockRestore(); client.mockRestore();
+  }
 });

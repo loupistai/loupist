@@ -9,8 +9,7 @@ The Map is this Loupist's source-grounded map: entities, events, relationships,
 dates and attributed claims. A relation may be a forecast, a hypothesis or
 disputed; keep its status and source.
 
-Find material with `world_search` (queries in English: names and facts are
-stored in English, with original-language names as aliases), then exact-read it
+Find material with `world_search`, then exact-read it
 before citing. Search hits and graph connections are discovery. An empty or
 `partial` result does not prove absence, and a Source hit marked `mapPending` is
 not on the map yet: read the Source.

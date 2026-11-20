@@ -13,10 +13,12 @@ use super::KnowledgeResult;
 pub(super) struct EmbeddingCache {
     connection: Connection,
     model: String,
+    /// Width of the model's vectors; a row of any other width is a miss.
+    dimension: usize,
 }
 
 impl EmbeddingCache {
-    pub(super) fn open(path: &Path, model: &str) -> KnowledgeResult<Self> {
+    pub(super) fn open(path: &Path, model: &str, dimension: usize) -> KnowledgeResult<Self> {
         crate::fs::artifact_trust::ensure_private_directory(
             path.parent()
                 .ok_or(super::KnowledgeError::Invalid("cache path has no parent"))?,
@@ -41,6 +43,7 @@ impl EmbeddingCache {
         Ok(Self {
             connection,
             model: model.into(),
+            dimension,
         })
     }
 
@@ -52,7 +55,7 @@ impl EmbeddingCache {
             .query_row(params![self.model, digest], |row| row.get(0))
             .optional()
             .ok()??;
-        if bytes.len() != 128 * 4 {
+        if bytes.len() != self.dimension * 4 {
             return None;
         }
         let vector: Vec<f32> = bytes
@@ -76,7 +79,7 @@ impl EmbeddingCache {
         let mut insert_reference =
             tx.prepare_cached("INSERT OR IGNORE INTO revision_vectors VALUES (?1, ?2, ?3)")?;
         for (revision, digest, vector) in rows {
-            if vector.len() != 128 || !vector.iter().all(|value| value.is_finite()) {
+            if vector.len() != self.dimension || !vector.iter().all(|value| value.is_finite()) {
                 continue;
             }
             let bytes: Vec<u8> = vector
@@ -105,7 +108,7 @@ impl EmbeddingCache {
         if !path.try_exists()? {
             return Ok(());
         }
-        Self::open(path, "")?.prune_revisions(current, false)
+        Self::open(path, "", 0)?.prune_revisions(current, false)
     }
 
     fn prune_revisions(
@@ -145,7 +148,7 @@ mod tests {
     fn changed_revisions_reuse_unchanged_text_and_collect_unreferenced_vectors() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("vectors.sqlite3");
-        let mut cache = EmbeddingCache::open(&path, "model-a").unwrap();
+        let mut cache = EmbeddingCache::open(&path, "model-a", 128).unwrap();
         let vector = vec![0.25; 128];
         cache
             .remember(&[
@@ -184,20 +187,34 @@ mod tests {
     fn model_changes_and_invalid_vectors_are_cache_misses() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("vectors.sqlite3");
-        let mut old = EmbeddingCache::open(&path, "old-model").unwrap();
+        // A folder cached with the earlier 128-wide model meets a 256-wide one.
+        let mut old = EmbeddingCache::open(&path, "old-model", 128).unwrap();
         old.remember(&[("current", "text", &[0.5; 128])]).unwrap();
-        let mut new = EmbeddingCache::open(&path, "new-model").unwrap();
+        let mut new = EmbeddingCache::open(&path, "new-model", 256).unwrap();
         assert_eq!(new.get("text"), None);
+        // A vector of the wrong width is never stored or returned.
         new.remember(&[("current", "text", &[0.25; 128])]).unwrap();
-        assert_eq!(new.get("text"), Some(vec![0.25; 128]));
+        assert_eq!(new.get("text"), None);
+        new.remember(&[("current", "text", &[0.25; 256])]).unwrap();
+        assert_eq!(new.get("text"), Some(vec![0.25; 256]));
         new.prune(&BTreeSet::from(["current".into()])).unwrap();
         assert_eq!(old.get("text"), None);
+        assert_eq!(
+            new.connection
+                .query_row(
+                    "SELECT count(*) FROM vectors WHERE model='old-model'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
         new.connection
             .execute("UPDATE vectors SET vector=x'0102'", [])
             .unwrap();
         assert_eq!(new.get("text"), None);
-        new.remember(&[("current", "text", &[0.25; 128])]).unwrap();
-        let non_finite: Vec<_> = [f32::NAN; 128]
+        new.remember(&[("current", "text", &[0.25; 256])]).unwrap();
+        let non_finite: Vec<_> = [f32::NAN; 256]
             .iter()
             .flat_map(|value| value.to_le_bytes())
             .collect();

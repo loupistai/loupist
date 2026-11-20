@@ -108,11 +108,9 @@ function authenticatedHeaders(auth) {
 
 async function search({ request, model, auth, deps, signal }) {
   const headers = authenticatedHeaders(auth);
-  const base = (auth.baseUrl || "https://api.x.ai/v1").replace(/\/+$/, "");
-  const url = base.endsWith("/responses") ? base : `${base}/responses`;
   const text = await postJson({
     fetchImpl: deps.fetchImpl ?? fetch,
-    url,
+    url: "https://api.x.ai/v1/responses",
     headers,
     body: buildXaiBody(request, model),
     signal,

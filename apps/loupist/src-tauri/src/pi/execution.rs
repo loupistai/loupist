@@ -13,7 +13,12 @@ use crate::{
     providers::catalog::{ConfiguredModel, ExecutionModelLock},
 };
 
+/// One control on a Pi that is already running, such as the cursor read after a turn.
 const PI_CONTROL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Pi's boot plus its first pipelined controls. On a heavily loaded Mac (load
+/// 90-200) Pi took longer than 10 s to boot. Stop and a Pi exit still end this
+/// wait at once, so the bound only catches a Pi that is alive but never answers.
+const PI_SESSION_INIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// A catalog-resolved execution choice. Every model-backed product path must
 /// carry this value through process launch and verify it against live Pi state
@@ -106,7 +111,7 @@ async fn wait_for_pi_responses(
 ) -> Result<BTreeMap<u64, Value>, CommandError> {
     let mut pending = requests.iter().copied().collect::<BTreeMap<_, _>>();
     let mut responses = BTreeMap::new();
-    timeout(PI_CONTROL_TIMEOUT, async {
+    timeout(PI_SESSION_INIT_TIMEOUT, async {
         while !pending.is_empty() {
             match receiver.recv().await {
                 Ok(PiEvent::Rpc { payload })
@@ -619,6 +624,47 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error.code, "pi_unavailable");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn session_initialization_outlasts_a_slow_boot_but_a_running_control_stays_short() {
+        use tokio::time::{sleep, Duration, Instant};
+        let response = |id: u64| PiEvent::Rpc {
+            payload: json!({"type": "response", "id": id, "success": true, "data": id}),
+        };
+        // A busy machine boots Pi for longer than the running-control bound.
+        let (events, mut receiver) = broadcast::channel(8);
+        let started = Instant::now();
+        let slow = tokio::spawn(async move {
+            sleep(PI_CONTROL_TIMEOUT * 3).await;
+            events.send(response(1)).unwrap();
+            events
+        });
+        let responses = wait_for_pi_responses(&mut receiver, &[(1, "levels")])
+            .await
+            .unwrap();
+        assert_eq!(responses, BTreeMap::from([(1, json!(1))]));
+        assert!(started.elapsed() >= PI_CONTROL_TIMEOUT * 3);
+        let events = slow.await.unwrap();
+
+        // A Pi that is alive but never answers is still bounded.
+        let started = Instant::now();
+        let error = wait_for_pi_responses(&mut receiver, &[(2, "levels")])
+            .await
+            .unwrap_err();
+        assert_eq!(error.message, "Pi session initialization timed out");
+        assert!(started.elapsed() >= PI_SESSION_INIT_TIMEOUT);
+        assert!(started.elapsed() < PI_SESSION_INIT_TIMEOUT + Duration::from_secs(1));
+
+        // One control on a running Pi keeps the short bound.
+        let started = Instant::now();
+        let error = wait_for_pi_response(&mut receiver, 3, "session cursor read")
+            .await
+            .unwrap_err();
+        assert_eq!(error.message, "Pi session cursor read control timed out");
+        assert!(started.elapsed() >= PI_CONTROL_TIMEOUT);
+        assert!(started.elapsed() < PI_CONTROL_TIMEOUT + Duration::from_secs(1));
+        drop(events);
     }
 
     #[test]

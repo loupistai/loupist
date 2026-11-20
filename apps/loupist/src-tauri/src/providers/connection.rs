@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -239,6 +239,7 @@ pub enum ProviderConnectionEvent {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectFailure {
+    ChatgptConnectionRejected,
     PlanPermissionDeclined,
     PlanNotEligible,
     PortInUse,
@@ -256,6 +257,7 @@ impl ConnectFailure {
 
     fn code(self) -> &'static str {
         match self {
+            Self::ChatgptConnectionRejected => "chatgpt_connection_rejected",
             Self::PlanPermissionDeclined => "plan_permission_declined",
             Self::PlanNotEligible => "plan_not_eligible",
             Self::PortInUse => "port_in_use",
@@ -288,7 +290,13 @@ struct ProviderResult {
     #[serde(rename = "type")]
     result_type: String,
     provider: String,
-    models: Vec<ProviderModelOption>,
+    models: Vec<Value>,
+    #[serde(default)]
+    dropped_endpoints: Vec<u32>,
+    #[serde(default)]
+    public_refresh_failed: bool,
+    #[serde(default)]
+    live_filtered: bool,
 }
 
 pub(crate) struct SupportFiles {
@@ -312,15 +320,104 @@ pub async fn provider_models(
     request: ProviderModelsRequest,
     state: State<'_, AppState>,
 ) -> Result<ModelCatalogView, CommandError> {
-    validate_connectable(&state, &request.provider)?;
-    if let Some(catalog) = cached_provider_models(&state, &request.provider)? {
-        return Ok(catalog);
+    load_provider_models(&state, &request.provider).await
+}
+
+/// App setup starts this once, alongside reads of the saved catalog.
+pub(crate) async fn refresh_upgraded_models(state: &AppState, changed: impl Fn()) {
+    if state.artifacts.pi.is_none() {
+        return;
     }
-    let admission = state.provider_support.try_acquire_discovery()?;
-    let result = discover_provider_models(&state, &request.provider, &admission).await;
-    drop(admission);
-    state.graph.wake();
-    result
+    refresh_upgraded_models_through(state, changed, |provider, admission| async move {
+        discover_provider_models(state, provider, &admission).await
+    })
+    .await;
+}
+
+async fn refresh_upgraded_models_through<F>(
+    state: &AppState,
+    changed: impl Fn(),
+    discover: impl Fn(&'static str, ProviderSupportLease) -> F,
+) where
+    F: std::future::Future<Output = Result<ModelCatalogView, CommandError>>,
+{
+    for provider in provider_options()
+        .into_iter()
+        .filter(|option| option.oauth.is_some())
+    {
+        let result = async {
+            if !needs_upgrade_rediscovery(state, provider.id)? {
+                return Ok(false);
+            }
+            let admission = state.provider_support.acquire_upgrade_discovery().await?;
+            // Settings or a credential change may have won admission first.
+            if !needs_upgrade_rediscovery(state, provider.id)? {
+                return Ok(false);
+            }
+            let result = discover(provider.id, admission).await;
+            state.graph.wake();
+            result.map(|_| true)
+        }
+        .await;
+        match result {
+            Ok(true) => changed(),
+            Ok(false) => {}
+            Err(error) if error.code == "plan_models_unavailable" => {
+                eprintln!(
+                    "Loupist could not read the {} plan model list after upgrading Pi",
+                    provider.id
+                );
+            }
+            Err(_) => eprintln!(
+                "Loupist could not rediscover {} models after upgrading Pi",
+                provider.id
+            ),
+        }
+    }
+}
+
+fn needs_upgrade_rediscovery(state: &AppState, provider: &str) -> Result<bool, CommandError> {
+    let agent_dir = state.pi_agent_data_dir()?;
+    let kind = crate::providers::catalog::provider_credential_kind(&agent_dir, provider)?;
+    Ok(kind.as_deref() == Some("oauth") && model_discovery_version_is_stale(state, provider)?)
+}
+
+fn model_discovery_version_is_stale(
+    state: &AppState,
+    provider: &str,
+) -> Result<bool, CommandError> {
+    let versions = state
+        .store
+        .model_discovery_versions()
+        .map_err(crate::commands::map_store)?;
+    Ok(versions.get(provider).map(String::as_str) != Some(crate::pi::PI_VERSION))
+}
+
+async fn load_provider_models(
+    state: &AppState,
+    provider: &str,
+) -> Result<ModelCatalogView, CommandError> {
+    loop {
+        validate_connectable(state, provider)?;
+        if let Some(catalog) = cached_provider_models(state, provider)? {
+            return Ok(catalog);
+        }
+        let admission = state.provider_support.acquire_discovery().await?;
+        // Another caller may have populated the cache while this one waited.
+        // Recheck credentials too: disconnects and key changes have priority.
+        validate_connectable(state, provider)?;
+        if let Some(catalog) = cached_provider_models(state, provider)? {
+            return Ok(catalog);
+        }
+        let result = discover_provider_models(state, provider, &admission).await;
+        let preempted = admission.is_cancelled();
+        drop(admission);
+        state.graph.wake();
+        if !preempted {
+            return result;
+        }
+        // A sign-in cancelled this helper; retry against the new durable account.
+    }
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -346,7 +443,7 @@ pub async fn provider_configure(
     let admission = if mutates_credentials {
         state.provider_support.acquire_mutation().await?
     } else {
-        state.provider_support.try_acquire_discovery()?
+        state.provider_support.acquire_discovery().await?
     };
     if mutates_credentials {
         // Invalidate before mutation: a support command can change its durable
@@ -770,21 +867,45 @@ async fn discover_provider_models(
     provider: &str,
     admission: &ProviderSupportLease,
 ) -> Result<ModelCatalogView, CommandError> {
+    discover_provider_models_through(state, provider, admission, |command| {
+        run_support_command(
+            state,
+            command,
+            None,
+            provider_credential_from_environment(provider),
+            None,
+            admission,
+            None,
+        )
+    })
+    .await
+}
+
+async fn discover_provider_models_through<F>(
+    state: &AppState,
+    provider: &str,
+    admission: &ProviderSupportLease,
+    discover: impl FnOnce(String) -> F,
+) -> Result<ModelCatalogView, CommandError>
+where
+    F: std::future::Future<Output = Result<ProviderResult, CommandError>>,
+{
     let agent_data_dir = state.pi_agent_data_dir()?;
     let credential_generation = provider_credential_generation(&agent_data_dir, provider)?
         .ok_or_else(|| {
             CommandError::invalid("connect the provider before loading its Pi models")
         })?;
-    // Recheck after admission. A preceding request may have completed while
-    // this caller was entering the support path.
-    if state
-        .provider_model_cache
-        .is_fresh(provider, &credential_generation)
+    // A queued load can reuse a preceding discovery. The upgrade pass uses
+    // the durable version marker and only signals a reload after publishing.
+    let read_only_auth = admission.is_upgrade_discovery();
+    if !read_only_auth
+        && state
+            .provider_model_cache
+            .is_fresh(provider, &credential_generation)
     {
         return state.model_catalog_view();
     }
-    // A ChatGPT sign-in lists what the plan offers (`GET /v1/models`); the
-    // extension falls back to Pi's catalog when that call fails.
+    // A ChatGPT sign-in can list what the plan offers (`GET /v1/models`).
     let was_oauth = crate::providers::catalog::provider_credential_kind(&agent_data_dir, provider)?
         .as_deref()
         == Some("oauth");
@@ -792,29 +913,54 @@ async fn discover_provider_models(
         .and_then(|spec| spec.sign_in.as_ref())
         .is_some_and(|sign_in| sign_in.live_models)
         && was_oauth;
-    let result = run_support_command(
-        state,
-        format!(
-            "/loupist-provider-models {provider}{}",
-            if live { " --live" } else { "" }
-        ),
-        None,
-        provider_credential_from_environment(provider),
-        None,
-        admission,
-        None,
-    )
-    .await?;
-    if result.result_type != "models" || result.provider != provider {
-        return Err(CommandError::internal(
-            "Pi returned the wrong provider catalog",
+    let refresh_public = was_oauth && model_discovery_version_is_stale(state, provider)?;
+    if admission.is_cancelled() {
+        return Err(provider_operation_cancelled());
+    }
+    let result = discover(format!(
+        "/loupist-provider-models {provider}{}{}{}",
+        if live { " --live" } else { "" },
+        if refresh_public {
+            " --refresh-public"
+        } else {
+            ""
+        },
+        if read_only_auth {
+            " --read-only-auth"
+        } else {
+            ""
+        },
+    ))
+    .await
+    .and_then(|result| {
+        if result.result_type != "models" || result.provider != provider {
+            return Err(CommandError::internal(
+                "Pi returned the wrong provider catalog",
+            ));
+        }
+        if result.public_refresh_failed {
+            eprintln!("Loupist could not refresh the public catalog for {provider}");
+        }
+        Ok(result)
+    });
+    if read_only_auth && live && !result.as_ref().is_ok_and(|result| result.live_filtered) {
+        if admission.is_cancelled() {
+            return Err(provider_operation_cancelled());
+        }
+        return Err(CommandError::new(
+            "plan_models_unavailable",
+            "The plan model list was unavailable. The saved model list was kept.",
         ));
     }
-    let models = result
-        .models
-        .into_iter()
-        .map(|model| configured_model(provider, model))
-        .collect::<Result<Vec<_>, _>>()?;
+    // A completed failed attempt (including an unreachable pi.dev) should
+    // cost one launch only. Leave it pending if a credential change preempted us.
+    if refresh_public && !admission.is_cancelled() {
+        state
+            .store
+            .record_model_discovery_version(provider, crate::pi::PI_VERSION)
+            .map_err(crate::commands::map_store)?;
+    }
+    let models = discovered_models(result?);
     publish_discovered_provider_models(
         state,
         provider,
@@ -879,10 +1025,15 @@ fn publish_provider_models(
         .store
         .gone_models(provider)
         .map_err(|error| CommandError::internal(error.to_string()))?;
-    let models = models
+    let models: Vec<_> = models
         .into_iter()
         .filter(|model| !gone.contains(&model.id))
         .collect();
+    if models.is_empty() {
+        return Err(CommandError::internal(
+            "Pi returned no usable provider models. The saved model list was kept.",
+        ));
+    }
     state.replace_provider_models(provider, models)?;
     crate::commands::knowledge::complete_pending_world_models(state)?;
     state
@@ -908,6 +1059,35 @@ fn cached_provider_models(
         return state.model_catalog_view().map(Some);
     }
     Ok(None)
+}
+
+fn discovered_models(result: ProviderResult) -> Vec<ConfiguredModel> {
+    let provider = result.provider.as_str();
+    for index in result.dropped_endpoints {
+        eprintln!("Loupist skipped Pi model row {index} for {provider}: untrusted endpoint");
+    }
+    let mut ids = HashSet::new();
+    result
+        .models
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, row)| {
+            // Never log raw catalog fields, even when a row contains an unexpected field.
+            let parsed = serde_json::from_value(row)
+                .map_err(|_| CommandError::invalid("invalid model row"))
+                .and_then(|row| configured_model(provider, row));
+            match parsed {
+                Ok(model) if ids.insert(model.id.clone()) => Some(model),
+                _ => {
+                    eprintln!(
+                        "Loupist skipped invalid Pi model row {} for {provider}",
+                        index + 1
+                    );
+                    None
+                }
+            }
+        })
+        .collect()
 }
 
 fn configured_model(
@@ -1430,7 +1610,7 @@ pub async fn run_native_web_search(
     }
     let _admission = state
         .provider_support
-        .try_acquire()
+        .try_acquire_search()
         .map_err(|_| WebError::ProviderUnavailable)?;
     let pi = state
         .artifacts
@@ -1580,14 +1760,16 @@ fn handle_provider_event(
             )
         }
         ExtensionProviderEvent::Failed { reason } => {
+            let reason = ConnectFailure::from_extension(&reason);
             if let Some(session) = oauth {
                 *session
                     .failure
                     .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner()) =
-                    Some(ConnectFailure::from_extension(&reason));
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(reason);
             }
-            Ok(())
+            // Pi may acknowledge the slash command before its async login fails.
+            // No completed credential file will follow: end support and reap Pi now.
+            Err(connect_failed(reason))
         }
         ExtensionProviderEvent::Progress { message } => {
             let _ = message;
@@ -1684,11 +1866,7 @@ pub(crate) async fn eval_models(
             "Pi returned the wrong provider catalog",
         ));
     }
-    result
-        .models
-        .into_iter()
-        .map(|model| configured_model(provider, model))
-        .collect()
+    Ok(discovered_models(result))
 }
 
 #[cfg(test)]
@@ -1919,11 +2097,16 @@ mod tests {
         .unwrap();
         assert!(handle_provider_event(elsewhere, Some(&session), &admission).is_err());
 
-        // A failure reason is held for the command result; unknown text reads as other.
+        // A failure terminates support immediately, even if Pi never finishes its command.
+        // Unknown provider text becomes the fixed Other reason.
         for (reason, expected) in [
             (
                 "plan_permission_declined",
                 ConnectFailure::PlanPermissionDeclined,
+            ),
+            (
+                "chatgpt_connection_rejected",
+                ConnectFailure::ChatgptConnectionRejected,
             ),
             ("some provider text", ConnectFailure::Other),
         ] {
@@ -1932,7 +2115,9 @@ mod tests {
             ))
             .unwrap()
             .unwrap();
-            handle_provider_event(failed, Some(&session), &admission).unwrap();
+            let error = handle_provider_event(failed, Some(&session), &admission).unwrap_err();
+            assert_eq!(error.code, "provider_connect_failed");
+            assert_eq!(error.message, expected.code());
             assert_eq!(*session.failure.lock().unwrap(), Some(expected));
         }
         assert_eq!(
@@ -2033,6 +2218,309 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn upgrade_rediscovery_retries_preempted_sign_ins_and_signals_only_after_publish() {
+        let root = tempfile::tempdir().unwrap();
+        let state = &AppState::for_test(root.path().join("app"));
+        let agent = state.pi_agent_data_dir().unwrap();
+        let auth = agent.join("auth.json");
+        ensure_private_regular_file(&auth).unwrap();
+        let sign_in = serde_json::json!({
+            "type": "oauth", "access": "fixture-access", "refresh": "fixture-refresh", "expires": 1,
+        });
+        std::fs::write(
+            auth,
+            serde_json::to_vec(&serde_json::json!({
+                "xai": sign_in,
+                "openai": {"type": "api_key", "key": "fixture-key"},
+                "anthropic": sign_in,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        state
+            .replace_provider_models("xai", vec![discovery_model("Saved")])
+            .unwrap();
+        let generation = provider_credential_generation(&agent, "xai")
+            .unwrap()
+            .unwrap();
+        state.provider_model_cache.record("xai", generation);
+        let model_name = || {
+            state
+                .model_catalog()
+                .unwrap()
+                .resolve("xai/test-model")
+                .unwrap()
+                .name
+        };
+        let attempts = &std::cell::Cell::new(0);
+        let reloads = std::cell::Cell::new(0);
+        for interrupted in [true, false] {
+            refresh_upgraded_models_through(
+                state,
+                || {
+                    assert_eq!(model_name(), "Rediscovered");
+                    reloads.set(reloads.get() + 1);
+                },
+                |provider, admission| async move {
+                    assert_eq!(provider, "xai");
+                    discover_provider_models_through(state, provider, &admission, |command| {
+                        assert_eq!(
+                            command,
+                            "/loupist-provider-models xai --refresh-public --read-only-auth"
+                        );
+                        attempts.set(attempts.get() + 1);
+                        async {
+                            if interrupted {
+                                let reconnect = state.provider_support.acquire_oauth();
+                                tokio::pin!(reconnect);
+                                tokio::select! {
+                                    _ = admission.cancelled() => {}
+                                    result = &mut reconnect => panic!("credential change admitted early: {result:?}"),
+                                }
+                            }
+                            Ok(serde_json::from_value(serde_json::json!({
+                                "protocol": PROVIDER_PROTOCOL, "type": "models", "provider": "xai",
+                                "models": [{
+                                    "id": "test-model", "name": "Rediscovered", "reasoning": false,
+                                    "context_window": 128_000, "max_tokens": 4096, "input": ["text"],
+                                    "thinking_levels": ["off"], "thinking_level_map": {}, "run_controls": [],
+                                }],
+                            }))
+                            .unwrap())
+                        }
+                    })
+                    .await
+                },
+            )
+            .await;
+            assert_eq!(
+                needs_upgrade_rediscovery(state, "xai").unwrap(),
+                interrupted
+            );
+            assert_eq!(reloads.get(), u32::from(!interrupted));
+            assert_eq!(
+                model_name(),
+                if interrupted { "Saved" } else { "Rediscovered" }
+            );
+        }
+        assert_eq!(attempts.get(), 2);
+        let recorded = state.store.model_discovery_versions().unwrap();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded["xai"], crate::pi::PI_VERSION);
+    }
+
+    #[tokio::test]
+    async fn an_upgrade_attempt_is_recorded_per_provider_even_when_the_network_fails() {
+        for fallback_catalog in [true, false] {
+            let root = tempfile::tempdir().unwrap();
+            let app_dir = root.path().join("app");
+            let state = AppState::for_persistent_test(app_dir.clone());
+            let auth = state.pi_agent_data_dir().unwrap().join("auth.json");
+            ensure_private_regular_file(&auth).unwrap();
+            let saved = serde_json::json!({
+                "type": "oauth", "access": "fixture-access", "refresh": "fixture-refresh", "expires": 1900000000000_u64
+            });
+            std::fs::write(
+                &auth,
+                serde_json::to_vec(&serde_json::json!({
+                    "xai": saved, "openai": saved,
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            state
+                .replace_provider_models("xai", vec![discovery_model("Saved catalog")])
+                .unwrap();
+            state
+                .store
+                .record_model_discovery_version("xai", "1.5.0")
+                .unwrap();
+            assert!(needs_upgrade_rediscovery(&state, "xai").unwrap());
+
+            let admission = state
+                .provider_support
+                .acquire_upgrade_discovery()
+                .await
+                .unwrap();
+            let result =
+                discover_provider_models_through(&state, "xai", &admission, |command| async move {
+                    assert_eq!(
+                        command,
+                        "/loupist-provider-models xai --refresh-public --read-only-auth"
+                    );
+                    if !fallback_catalog {
+                        return Err(CommandError::internal("fixture timeout"));
+                    }
+                    Ok(serde_json::from_value(serde_json::json!({
+                    "protocol": PROVIDER_PROTOCOL, "type": "models", "provider": "xai",
+                    "public_refresh_failed": true,
+                    "models": [{
+                        "id": "test-model", "name": "Fallback catalog", "reasoning": false,
+                        "context_window": 128_000, "max_tokens": 4096, "input": ["text"],
+                        "thinking_levels": ["off"], "thinking_level_map": {}, "run_controls": [],
+                    }]
+                })).unwrap())
+                })
+                .await;
+            assert_eq!(result.is_ok(), fallback_catalog);
+            drop(admission);
+            state.close_for_restart_test();
+
+            let restarted = AppState::for_persistent_test(app_dir);
+            assert!(!needs_upgrade_rediscovery(&restarted, "xai").unwrap());
+            assert!(needs_upgrade_rediscovery(&restarted, "openai").unwrap());
+            assert_eq!(
+                restarted
+                    .model_catalog()
+                    .unwrap()
+                    .resolve("xai/test-model")
+                    .unwrap()
+                    .name,
+                if fallback_catalog {
+                    "Fallback catalog"
+                } else {
+                    "Saved catalog"
+                },
+            );
+            let admission = restarted
+                .provider_support
+                .acquire_discovery()
+                .await
+                .unwrap();
+            discover_provider_models_through(&restarted, "xai", &admission, |command| async move {
+                assert_eq!(command, "/loupist-provider-models xai");
+                Err(CommandError::internal("fixture timeout"))
+            })
+            .await
+            .unwrap_err();
+        }
+    }
+
+    #[tokio::test]
+    async fn read_only_plan_discovery_keeps_saved_models_until_it_gets_a_filtered_list() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        let agent = state.pi_agent_data_dir().unwrap();
+        let auth = agent.join("auth.json");
+        ensure_private_regular_file(&auth).unwrap();
+        std::fs::write(
+            auth,
+            br#"{"openai":{"type":"oauth","access":"fixture-access","refresh":"fixture-refresh","expires":1}}"#,
+        )
+        .unwrap();
+        let saved = ConfiguredModel {
+            provider: "openai".into(),
+            id: "openai/test-model".into(),
+            ..discovery_model("Saved plan model")
+        };
+        state
+            .replace_provider_models("openai", vec![saved.clone()])
+            .unwrap();
+        let original = state.model_catalog().unwrap();
+        let generation = provider_credential_generation(&agent, "openai")
+            .unwrap()
+            .unwrap();
+        for (id, filtered) in [("outside-the-plan", false), ("test-model", true)] {
+            let admission = state
+                .provider_support
+                .acquire_upgrade_discovery()
+                .await
+                .unwrap();
+            let result =
+                discover_provider_models_through(&state, "openai", &admission, |command| async move {
+                    assert_eq!(
+                        command,
+                        "/loupist-provider-models openai --live --refresh-public --read-only-auth"
+                    );
+                    let mut response = serde_json::json!({
+                        "protocol": PROVIDER_PROTOCOL, "type": "models", "provider": "openai",
+                        "models": [{
+                            "id": id, "name": "Rediscovered model", "reasoning": false,
+                            "context_window": 128_000, "max_tokens": 4096, "input": ["text"],
+                            "thinking_levels": ["off"], "thinking_level_map": {}, "run_controls": [],
+                        }],
+                    });
+                    if filtered {
+                        response["live_filtered"] = Value::Bool(true);
+                    }
+                    Ok(serde_json::from_value(response).unwrap())
+                })
+                .await;
+            assert_eq!(
+                needs_upgrade_rediscovery(&state, "openai").unwrap(),
+                !filtered
+            );
+            assert_eq!(
+                state.provider_model_cache.is_fresh("openai", &generation),
+                filtered
+            );
+            if filtered {
+                result.unwrap();
+                assert_eq!(
+                    state
+                        .model_catalog()
+                        .unwrap()
+                        .resolve(&saved.id)
+                        .unwrap()
+                        .name,
+                    "Rediscovered model"
+                );
+            } else {
+                assert_eq!(result.unwrap_err().code, "plan_models_unavailable");
+                assert_eq!(state.model_catalog().unwrap(), original);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_queued_catalog_read_reuses_the_models_discovered_while_it_waited() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        let provider = custom::CustomProvider {
+            id: "custom-queued-fixture".into(),
+            name: "Fixture".into(),
+            base_url: "https://models.example/v1".into(),
+            api: "openai-completions".into(),
+            model_ids: vec!["test-model".into()],
+        };
+        let agent = state.pi_agent_data_dir().unwrap();
+        custom::write(&agent, &provider).unwrap();
+        let auth = agent.join("auth.json");
+        ensure_private_regular_file(&auth).unwrap();
+        std::fs::write(
+            &auth,
+            serde_json::to_vec(&serde_json::json!({
+                provider.id.clone(): {"type": "api_key", "key": "fixture-only"}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let active = state.provider_support.try_acquire_discovery().unwrap();
+        let queued = load_provider_models(&state, &provider.id);
+        tokio::pin!(queued);
+        tokio::select! {
+            result = &mut queued => panic!("Catalog read should wait, not fail: {result:?}"),
+            _ = tokio::task::yield_now() => {},
+        }
+        let mut model = discovery_model("Discovered while waiting");
+        model.provider = provider.id.clone();
+        model.id = format!("{}/test-model", provider.id);
+        state
+            .replace_provider_models(&provider.id, vec![model])
+            .unwrap();
+        let generation = provider_credential_generation(&agent, &provider.id)
+            .unwrap()
+            .unwrap();
+        state.provider_model_cache.record(&provider.id, generation);
+        drop(active);
+        let catalog = queued.await.unwrap();
+        assert!(catalog
+            .models
+            .iter()
+            .any(|model| model.name == "Discovered while waiting"));
+    }
+
+    #[tokio::test]
     async fn discovery_accepts_a_durably_rotated_oauth_token_and_caches_the_new_generation() {
         let root = tempfile::tempdir().unwrap();
         let state = AppState::for_test(root.path().join("app"));
@@ -2112,6 +2600,63 @@ mod tests {
             Some("https://console.upstage.ai/api-keys")
         );
         assert_eq!(console_url("https://evil.example"), None);
+    }
+
+    #[test]
+    fn a_malformed_discovery_row_does_not_discard_its_siblings() {
+        let root = tempfile::tempdir().unwrap();
+        let files = create_support_files(root.path()).unwrap();
+        let valid = serde_json::json!({
+            "id": "kept", "name": "Kept model", "reasoning": false,
+            "context_window": 128_000, "max_tokens": 4096, "input": ["text"],
+            "thinking_levels": ["off"], "thinking_level_map": {}, "run_controls": [],
+        });
+        let mut unsupported = valid.clone();
+        unsupported["input"] = serde_json::json!(["audio"]);
+        std::fs::write(
+            &files.result,
+            serde_json::to_vec(&serde_json::json!({
+                "protocol": PROVIDER_PROTOCOL, "type": "models", "provider": "xai",
+                "models": [unsupported, {"id": "incomplete"}, valid],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let result = read_support_result(&files.result).unwrap();
+        let models = discovered_models(result);
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].id, "xai/kept");
+    }
+
+    #[test]
+    fn a_discovery_with_no_usable_rows_keeps_the_saved_provider_models() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        state
+            .replace_provider_models("xai", vec![discovery_model("Saved model")])
+            .unwrap();
+        let saved = state.model_catalog().unwrap();
+        let admission = state.provider_support.try_acquire_discovery().unwrap();
+        let result = serde_json::from_value(serde_json::json!({
+            "protocol": PROVIDER_PROTOCOL, "type": "models", "provider": "xai",
+            "models": [{"id": "incomplete"}], "dropped_endpoints": [2],
+        }))
+        .unwrap();
+
+        let error = publish_provider_models(
+            &state,
+            "xai",
+            discovered_models(result),
+            "original",
+            Some("original"),
+            &admission,
+        )
+        .unwrap_err();
+        assert!(error.message.contains("no usable provider models"));
+        assert_eq!(state.model_catalog().unwrap(), saved);
+        assert_eq!(state.store.get_model_catalog().unwrap(), Some(saved));
+        assert!(!state.provider_model_cache.is_fresh("xai", "original"));
     }
 
     #[test]
@@ -2247,6 +2792,37 @@ mod tests {
             .is_ok());
         record_status(&state, "xai", Trigger::Connected(CredentialKind::ApiKey));
         assert!(refresh());
+    }
+
+    #[test]
+    fn discovery_keeps_the_saved_catalog_when_every_returned_model_is_gone() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(directory.path().join("app"));
+        let gone = ConfiguredModel {
+            id: "xai/retired".into(),
+            model: "retired".into(),
+            ..discovery_model("Retired")
+        };
+        state
+            .replace_provider_models("xai", vec![discovery_model("Kept"), gone.clone()])
+            .unwrap();
+        crate::providers::auto::prune_gone(&state, &gone.id);
+        let saved = state.model_catalog().unwrap();
+        let admission = state.provider_support.try_acquire_discovery().unwrap();
+        let result = publish_provider_models(
+            &state,
+            "xai",
+            vec![gone],
+            "original",
+            Some("original"),
+            &admission,
+        );
+        assert!(result
+            .unwrap_err()
+            .message
+            .contains("no usable provider models"));
+        assert_eq!(state.model_catalog().unwrap(), saved);
+        assert!(!state.provider_model_cache.is_fresh("xai", "original"));
     }
 
     #[tokio::test]

@@ -141,7 +141,7 @@ it("labels a refused page as paused in Korean and steps by the catalog's words",
     fireEvent.click(screen.getByRole("button", { name: /2초 작업 · 3단계 · 실행 1건 실패/ }));
     const paused = screen.getByText("example.com/page").closest(".chat-progress-row")!;
     expect(within(paused as HTMLElement).getAllByText("일시 중지").length).toBeGreaterThan(0);
-    expect(within(paused as HTMLElement).getByRole("note")).toHaveTextContent("다른 사이트의 글을 읽어서, 이번 답변에서는 이 페이지 열기가 꺼져 있어요.");
+    expect(within(paused as HTMLElement).getByRole("note")).toHaveTextContent("다른 사이트의 글을 읽었으므로, 이번 답변에서는 이 페이지 열기가 꺼져 있습니다.");
     expect(screen.getAllByText("파이썬 실행함")).toHaveLength(2);
   } finally { await i18n.changeLanguage("en"); }
 });
@@ -217,7 +217,7 @@ describe("names a step read", () => {
 
   it("shows those names on the chat map when it holds them", async () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    vi.spyOn(bridge, "knowledgeMap").mockResolvedValue({ nodes: ["a", "b"].map((id) => ({ id, label: id, kind: "entity", degree: 1, watched: false, held: false })), edges: [], worldRevisionId: "rev" } as never);
+    vi.spyOn(bridge, "knowledgeMap").mockResolvedValue({ nodes: ["a", "b"].map((id) => ({ id, label: id, kind: "entity", degree: 1, watched: false })), edges: [], worldRevisionId: "rev" } as never);
     vi.spyOn(bridge, "knowledgeGrowthEvents").mockResolvedValue({ events: [], nextCursor: null });
     const onOpen = vi.fn();
     const message = { id: "live", role: "assistant" as const, content: "", created_at: "2026-10-28", status: "streaming" as const, progress: reading };
@@ -241,9 +241,10 @@ describe("plan", () => {
     { id: "calc", kind: "tool", category: "compute", operation: "calculate", action: "Calculated the ratio", running: "Calculating the ratio", status: "running", startedAtMs: 22, target: null, href: null, finishedAtMs: null },
   ];
 
-  it("says the plan position on the line and nests each step under the item that was active when it started", () => {
+  it("counts steps on the line, not the plan position, and nests each step under the item that was active when it started", () => {
     render(ledger({ startedAtMs: 1, items: steps, plan: plan(["done", "active", "pending"]), finishedAtMs: null }, "streaming"));
-    fireEvent.click(screen.getByRole("button", { name: "Plan 2 of 3 · Compare utilization with inventory days" }));
+    expect(screen.queryByRole("button", { name: /Plan \d+ of \d+/u })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "4 steps" }));
     const list = screen.getByRole("list", { name: "Plan" });
     const [done, active, pending] = within(list).getAllByRole("listitem").filter((item) => item.parentElement === list);
     expect(done).toHaveTextContent("Read the Q3 operating report");

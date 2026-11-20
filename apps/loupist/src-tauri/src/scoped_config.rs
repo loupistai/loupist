@@ -58,7 +58,9 @@ optional_config!(ConfigDocument {
 });
 optional_config!(AppearanceConfig {
     theme: String,
-    language: String
+    language: String,
+    price_colors: String,
+    display_currency: String,
 });
 optional_config!(ModelsConfig { hidden_model_profile_ids: Vec<String> });
 optional_config!(ChatConfig {
@@ -140,6 +142,11 @@ impl Default for PiConfig {
 pub struct ResolvedAppearanceConfig {
     pub theme: String,
     pub language: String,
+    /// Which colour means a rising price: `auto` follows the interface language.
+    pub price_colors: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub display_currency: Option<String>,
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -182,6 +189,8 @@ impl Default for ResolvedConfig {
             appearance: ResolvedAppearanceConfig {
                 theme: "system".into(),
                 language: "system".into(),
+                price_colors: "auto".into(),
+                display_currency: None,
             },
             models: ResolvedModelsConfig::default(),
             connectors: BTreeMap::new(),
@@ -791,6 +800,24 @@ fn validate(config: &ConfigDocument, scope: &ConfigScope) -> Result<(), String> 
             return Err("appearance.language must be system, en or ko".into());
         }
     }
+    if let Some(price_colors) = config
+        .appearance
+        .as_ref()
+        .and_then(|value| value.price_colors.as_deref())
+    {
+        if !["auto", "red-up", "green-up"].contains(&price_colors) {
+            return Err("appearance.price_colors must be auto, red-up or green-up".into());
+        }
+    }
+    if let Some(currency) = config
+        .appearance
+        .as_ref()
+        .and_then(|value| value.display_currency.as_deref())
+    {
+        if !crate::finance_data::fx::has_currency_code_shape(currency) {
+            return Err("appearance.display_currency must be three uppercase ASCII letters".into());
+        }
+    }
     if let Some(ids) = config
         .models
         .as_ref()
@@ -1105,7 +1132,9 @@ fn validate_unset(path: &[String], scope: &ConfigScope) -> Result<(), CommandErr
         "appearance" => {
             matches!(scope, ConfigScope::Global)
                 && (path.len() == 1
-                    || path.len() == 2 && ["theme", "language"].contains(&path[1].as_str()))
+                    || path.len() == 2
+                        && ["theme", "language", "price_colors", "display_currency"]
+                            .contains(&path[1].as_str()))
         }
         "models" => {
             matches!(scope, ConfigScope::Global)
@@ -1163,6 +1192,15 @@ pub fn update_scope(
     project_loupist_dir: Option<&Path>,
     request: &ConfigUpdateRequest,
 ) -> Result<ConfigSnapshot, CommandError> {
+    update_scope_with_display_change(global_root, project_loupist_dir, request)
+        .map(|(snapshot, _)| snapshot)
+}
+
+pub(crate) fn update_scope_with_display_change(
+    global_root: &Path,
+    project_loupist_dir: Option<&Path>,
+    request: &ConfigUpdateRequest,
+) -> Result<(ConfigSnapshot, bool), CommandError> {
     validate(&request.set, &request.scope).map_err(config_error)?;
     // A request names only settings this version has; ignoring is for the file.
     if let Some(ignored) = ignore_unknown_catalog_keys(&mut request.set.clone())
@@ -1201,8 +1239,18 @@ pub fn update_scope(
         .map_err(|_| config_error("Updated configuration is invalid"))?;
     // Settings the catalog no longer has stay as they were and do not block the save.
     validate(&result, &request.scope).map_err(config_error)?;
+    let previous_currency = loaded
+        .explicit
+        .and_then(|config| config.appearance)
+        .and_then(|appearance| appearance.display_currency);
+    let display_changed = matches!(request.scope, ConfigScope::Global)
+        && previous_currency
+            != result
+                .appearance
+                .and_then(|appearance| appearance.display_currency);
     directory.replace(source.as_bytes(), &request.expected_revision)?;
-    read_scope(global_root, project_loupist_dir, request.scope.clone())
+    let snapshot = read_scope(global_root, project_loupist_dir, request.scope.clone())?;
+    Ok((snapshot, display_changed))
 }
 
 pub fn read_global_connector_settings(

@@ -1,3 +1,5 @@
+import { hasTrustedModelEndpoint } from "../model-run-controls.mjs";
+
 export const DEFAULT_SEARCH_INSTRUCTIONS =
   "Find public sources for the given query. Prefer primary documents and recent reporting. Do not invent URLs.";
 export const SEARCH_HARD_TIMEOUT_MS = 60_000;
@@ -242,6 +244,7 @@ export async function postJson({ fetchImpl, url, headers, body, signal }) {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      redirect: "error",
       signal,
     });
   } catch (error) {
@@ -270,7 +273,9 @@ export async function completeThroughPi(ctx, {
   fetchImpl = fetch,
 }) {
   const selected = ctx.modelRegistry.find(provider, model);
-  if (!selected) throw new NativeSearchError("unavailable", "Pi search model is unavailable");
+  if (!selected || selected.provider !== provider || !hasTrustedModelEndpoint(selected)) {
+    throw new NativeSearchError("unavailable", "Pi search model is unavailable");
+  }
   let captured;
   const captureFetch = async (url, init) => {
     const response = await fetchImpl(url, init);

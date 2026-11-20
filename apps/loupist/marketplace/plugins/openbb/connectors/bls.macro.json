@@ -1,7 +1,7 @@
 {
   "id": "bls.macro",
   "name": "U.S. Bureau of Labor Statistics",
-  "summary": "BLS economic series; a key raises the public API limits.",
+  "summary": "BLS economic series; a key raises the public API limits. This connection requires a registered key for series. The public API allows 25 anonymous queries per day.",
   "publisher": "Loupist",
   "data_authority": "U.S. Bureau of Labor Statistics",
   "kind": "data_source",

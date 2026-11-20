@@ -526,6 +526,13 @@ impl RunCoordinator {
         Ok(())
     }
 
+    pub(crate) fn is_shutting_down(&self) -> bool {
+        self.inner
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .shutting_down
+    }
+
     pub(crate) async fn drain(&self) -> Result<(), CommandError> {
         let mut changes = self.changes.subscribe();
         loop {

@@ -5,9 +5,10 @@ import type { AgentHarnessSnapshot } from "../agent_harness";
 import type { LoupistAvailability } from "../app";
 import type { ChatArtifact, ChatArtifactRef, ChatArtifactRevision } from "../chat/artifacts";
 import type { ChartDataset } from "../chat/chart";
+import type { LinkPath } from "../chat/handoff";
 import type { ChatProgress, ChatProgressPatch } from "../chat/progress";
-import type { AsOfReport, NumberCheck, SensitivityCard } from "../domain/answer_checks";
-import type { ChatEvidenceRef, ChatFailureKind, ChatFeedback, ChatFeedbackRating, ChatMessageStatus, ChatPerformance, ChatToolRefusal, HomeAlert, HomeDelivery, HomeEarnings, HomeHandoff, HomeLink, HomeVocabulary, HomeWatch, MemoryUpdateResult, UnsavedThesis } from "../domain/chat";
+import type { AsOfReport, NumberCheck } from "../domain/answer_checks";
+import type { ChatEvidenceRef, ChatFailureKind, ChatFeedback, ChatFeedbackRating, ChatMessageStatus, ChatPerformance, ChatToolRefusal, HandoffAction, HomeAlert, HomeDelivery, HomeHandoff, HomeLink, HomeVocabulary, MemoryUpdateResult, ScheduledTurn, UnsavedThesis } from "../domain/chat";
 import type { LoupistTemplate, LoupistTone } from "../domain/loupist";
 import type { LensReceipt } from "../domain/memory";
 import type { ExecutionModelLock } from "../providers/catalog";
@@ -134,17 +135,18 @@ export type ChatMessageDto = {
   /** The model Rust replaced with Auto for this answer (W17.5). */
   replaced_model?: string,
   alert?: HomeAlert,
-  watch?: HomeWatch,
-  earnings?: HomeEarnings,
   vocabulary?: HomeVocabulary,
   link?: HomeLink,
   handoff: HomeHandoff | null,
+  research_session_id?: string,
+  handoff_note?: HandoffNoteDto,
+  handoff_action?: HandoffAction,
+  /** The request a scheduled run sent, which the user did not write. */
+  scheduled?: ScheduledTurn,
   /** The as-of date set for this request and its answer (`YYYY-MM-DD`). */
   as_of?: string,
   /** Number links Rust checked against their evidence (W16.3). */
   number_checks?: Array<NumberCheck>,
-  /** Grid results linked as paragraphs of their own (W16.8). */
-  sensitivity_cards?: Array<SensitivityCard>,
   /** What an as-of answer could not use (W16.5). */
   as_of_report?: AsOfReport,
   id: string,
@@ -202,6 +204,7 @@ export type ChatSendRequest = {
 
 export type ChatStreamEvent =
   | { "type": "started", run_id: string }
+  | { "type": "stream_reset", run_id: string }
   | { "type": "memory", run_id: string, memories: Array<MemoryRefDto> }
   | {
     "type": "delta",
@@ -225,6 +228,7 @@ export type ChatStreamEvent =
   | { "type": "artifact", run_id: string, artifact: ChatArtifactRef }
   | {
     "type": "completed",
+    research_session_id?: string,
     lens_receipts: Array<LensReceipt>,
     tool_refusals: Array<ChatToolRefusal>,
     offline_reads?: boolean,
@@ -240,7 +244,6 @@ export type ChatStreamEvent =
     replaced_model?: string,
     as_of?: string,
     number_checks?: Array<NumberCheck>,
-    sensitivity_cards?: Array<SensitivityCard>,
     as_of_report?: AsOfReport,
   }
   | { "type": "aborted", run_id: string }
@@ -265,6 +268,7 @@ export type ChatThreadDto = {
   loupist_id: string,
   /** The Loupist's home Thread: listed first, landed on, never renamed or deleted. */
   home: boolean,
+  hide_from_recent?: boolean,
   title: string,
   updated_at: string,
   use_memory: boolean,
@@ -274,6 +278,11 @@ export type ChatThreadDto = {
   /** Edit forks (X18): the other versions of this chat's tail, without their messages. */
   versions?: Array<ChatVersionDto>,
   messages: Array<ChatMessageDto>,
+  /**
+   * The Bot hand-off this research session is running, while this app runs it.
+   * Bot posts nothing until it ends, so the session is where it is followed.
+   */
+  handoff_run?: HandoffRunDto,
 };
 
 /** One other version of a chat's tail, as the renderer lists it. */
@@ -285,6 +294,24 @@ export type ChatVersionDto = {
 };
 
 export type ChatVersionSwitchRequest = { loupist_id: string, thread_id: string, version_id: string };
+
+export type ChatWatchRequest = { loupist_id: string, thread_id: string, subscription_id: string };
+
+export type ChatWatchSnapshot = { run_id: string, thread: ChatThreadDto };
+
+export type HandoffNoteDto = {
+  title: string,
+  question?: string,
+  brief?: string,
+  linkPath?: LinkPath,
+};
+
+export type HandoffRunDto = {
+  handoff_id: string,
+  run_id: string,
+  /** The Map link whose Look into it started it. */
+  connection_id?: string,
+};
 
 export type KnowledgeRefDto = {
   kind: string,

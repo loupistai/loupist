@@ -2,22 +2,41 @@
 
 Retrieval uses the local embedding model. Fresh folders take Rust's processing defaults, and startup resumes or quarantines unfinished work.
 
-Semantic retrieval uses the bundled **potion-base-4M, 128-dimensional** local
-embedding model from the repo-root `src/knowledge/embed_assets/`, with profile `local-en-128`.
-Its tokenizer is English-based (`baai/bge-base-en-v1.5`); do not describe it as the
-multilingual 256-dimensional model. Hybrid retrieval combines relationship hits
-and matched-entity neighborhoods. Lexical aliases and identifiers also participate
-in discovery. Because World text is English, the English embedding model covers it;
-original-language names match through aliases. Text the English model cannot encode
-gets a deterministic character-trigram fallback vector, so vector search never receives
-a zero vector; that fallback matches near-identical spellings only. Embedding caches
-are disposable and keyed by model/text identity. Rust keeps the loaded model and
-tokenizer in process, reading and hashing the asset bytes only on the first use of
-an asset directory or after its files change (size, modification time and, on Unix,
-file identity/change time). A changed or missing asset is checked before reuse;
-the fingerprint still identifies the exact bytes used to load the model. Local
-inference callbacks encode their texts in bounded batches, sharing one model
-lookup for the batch.
+Semantic retrieval uses the bundled **blink-multilingual-64M** local embedding
+model: 256-dimensional vectors over a 250,000-token multilingual vocabulary. World
+settings name it by the profile id `local-en-128`, which names whichever model is
+bundled. `stage-embed-assets.py` downloads it at the revision pinned in the repo-root
+`src/knowledge/embed_assets/pin.json`, checks each file's sha256 and stores the
+table as int8 with one scale per row. Its license and provenance are in the
+[dependency review](../dev/dependencies.md#local-embedding-model). Hybrid retrieval
+combines relationship hits and matched-entity neighborhoods. Lexical aliases and
+identifiers also participate in discovery. One model embeds English and Korean
+text alike, so a query in one language lands near text in the other; names in the
+original language also match through aliases. Text the model cannot encode gets a
+deterministic character-trigram fallback vector, so vector search never receives
+a zero vector; that fallback matches near-identical spellings only.
+
+The first load takes about 2.5 seconds of CPU on Apple Silicon (4 on a busy
+machine), nearly all of it the tokenizer registering 30,000 added Chinese and
+Japanese words, which are kept. The app starts the load on its own thread at
+launch, and nothing interactive waits for it. Until it finishes, knowledge search
+ranks by words and Map names alone and `world_search` adds a warning that a Source
+in another language may be missing, while the Map index answers from the snapshot
+with its unavailable warning. Only a search in the first seconds after launch meets
+this, and waiting would hold that turn for the rest of the load; the warning tells
+the model to search again rather than conclude that the material is absent. World
+jobs and local embedding callbacks, which run on blocking threads in the
+background, wait for the load.
+
+Rust keeps one loaded model per process and shares it. It reads and hashes the
+asset bytes only on the first use of an asset directory or after its files change
+(size, modification time and, on Unix, file identity/change time). A changed or
+missing asset is checked before reuse, and a failed load is retried only after the
+files change; the fingerprint identifies the exact bytes used to load the model.
+Embedding caches are disposable and keyed by that fingerprint and the vector
+width, so a library cached or indexed by another model embeds its texts again on
+first use. Local inference callbacks encode their texts in bounded batches,
+sharing one model lookup for the batch.
 
 Fresh folders receive World processing settings from Rust. New Loupist uses these
 defaults; Loupist settings → Map building exposes enablement and model selection.
@@ -61,6 +80,59 @@ untouched queued work continue. World processing publishes World; a shared pack'
 Add and Remove also publish it, without a model ([Sharing](sharing.md#sharing)). Method learning
 is a separate review, described under [Method learning](lens.md#method-learning).
 
+## Names across languages
+
+Knowledge search (`world_search`'s default scope, over Sources, Lens pages and Map
+claims) bridges names through the Map. When a query names a Map entity by its name,
+an alias or an upper-case ticker, a document that spells the entity another way
+counts as matching those query words: `한빛반도체` finds a Source that writes
+Hanbit Semiconductor, and the reverse. Nodes whose name keys meet (the
+[identity](lens.md#method-learning) components) share their spellings. A name
+counts only as a whole word, with a Korean particle allowed after it
+(`한빛반도체가`), so a generic word inside a name (`반도체` in `한빛반도체`) and a
+longer word that starts like one (`하이브리드`, `하이브`) expand to nothing. A
+ticker matches only in upper case (`ALL` is not `all`); a spelling two entities
+share, one under three letters or one Hangul syllable, and a number under six
+digits are never used. A short form, the first word of a name (`Hanbit`,
+`노스윈드`) or the start of a Korean name written as one word (`파인크레스트`),
+expands only when it belongs to one entity and at least half of the library's
+Sources and Lens pages that use it also spell a full name, so `bank` does not
+become the Bank of Korea. Names come from the current Map, read once per World
+revision; the query goes to no model or network.
+
+Knowledge search ranks by reciprocal rank fusion of the lexical order and the
+embedding's ten nearest texts from cosine 0.2, Graphiti's 1/rank as the Map index
+fuses BM25 and vectors. A hit's `score` is its sum of 1/rank in each list times
+1,000,000, and equal values share a rank. So a Source in another language that the
+model puts near the query is not buried under a same-language Source that shares
+one query word. The score says where a hit ranks, not how much of the request it
+matched. The Lens pointer therefore takes a page that matches two of the request's
+words, or every term group of a request that is one concept (`cash flow`), and not
+a page that matches one word of several. The World-scope merge puts the Map's
+fused rows first and keeps the other hits in knowledge-search order.
+
+Cross-language recall is measured by the [search recall test](../dev/tests.md#search-recall)
+(recall@5 in knowledge search; November 2026):
+
+| Ranking | Model | Korean→English | English→Korean |
+| --- | --- | --- | --- |
+| Before name bridging | potion-base-4M | 0.12 | 0.04 |
+| Name bridging, lexical first | potion-base-4M | 0.38 | 0.38 |
+| Name bridging, fusion | potion-base-4M | 0.29 | 0.25 |
+| Name bridging, lexical first | blink-multilingual-64M | 0.59 | 0.58 |
+| Name bridging, fusion | blink-multilingual-64M | 0.85 | 0.83 |
+
+Same-language queries stayed at 1.0 in every row. Lexical first added up to 200
+embedding points to a lexical match and admitted an embedding-only match from
+cosine 0.55. The English-only potion-base-4M model's misses named no Map entity (a
+Fed decision, copper prices) or differed in words other than the name, and its
+vectors for Korean text are noise, so fusion lowered its recall. On the Map index,
+blink-multilingual-64M finds all 13 Korean queries' English claims in the top five,
+against 3. The multilingual model pays for itself only with fusion, so the two were
+adopted together (the last row).
+
 ## Code
 
 - World defaults: `src-tauri/src/providers/world_defaults.rs`, `src-tauri/src/commands/knowledge/world_setup.rs`
+- Knowledge search, rank fusion and names across languages: `src-tauri/src/knowledge/search_index.rs`
+- Loading and sharing the embedding model: `src-tauri/src/knowledge/graph_inference.rs`; staging and pins: `apps/loupist/scripts/stage-embed-assets.py`, `src/knowledge/embed_assets/pin.json`

@@ -18,7 +18,7 @@ const savedRecordLink = (message: ChatMessage, toolName: string, readRef: string
 };
 
 describe("Loupist · Chat memory", () => {
-  it("shows outstanding source work in the header chip until the last job settles, including a job with no additions", async () => {
+  it("shows outstanding source work as a quiet line in the activity sheet until the last job settles, including a job with no additions", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const width = vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(900);
     try {
@@ -34,11 +34,15 @@ describe("Loupist · Chat memory", () => {
       }));
       vi.spyOn(bridge, "knowledgeGrowthEvents").mockResolvedValue({ events: [], nextCursor: null });
       await openApp(bridge);
+      // Nothing floats over the conversation: the review shows once the sheet is opened.
+      expect(screen.queryByRole("complementary", { name: "Activity" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+      const sheet = await screen.findByRole("complementary", { name: "Activity" });
+      fireEvent.click(within(sheet).getByRole("tab", { name: "Learned" }));
       const processing = () => screen.queryByText("Reviewing sources…");
       await waitFor(() => expect(processing()).toBeVisible());
-      const rail = screen.getByRole("complementary", { name: "In this chat" });
-      expect(within(rail).getByRole("status")).toHaveTextContent("Reviewing sources…");
-      expect(within(rail).queryByRole("button", { name: /Show on the Map/ })).toBeNull();
+      expect(processing()).toHaveAttribute("role", "status");
+      expect(within(sheet).queryByRole("button", { name: /Show on the map/ })).toBeNull();
       statuses = { first: "completed", second: "running" };
       await act(() => vi.advanceTimersByTimeAsync(5000));
       expect(processing()).toBeVisible();
@@ -95,7 +99,7 @@ describe("Loupist · Chat memory", () => {
     await openApp();
     fireEvent.change(screen.getByRole("textbox", { name: "Message Loupist" }), { target: { value: "Learn from this mistake" } });
     await user.click(screen.getByRole("button", { name: "Send" }));
-    const receipt = await screen.findByRole("button", { name: "Learned 1" }, { timeout: 40_000 });
+    const receipt = await screen.findByRole("button", { name: "Learned 1 thing" }, { timeout: 40_000 });
     await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Check the next quarter too");
     await user.click(receipt);
     const card = await screen.findByRole("group", { name: "Filed in this answer" });
@@ -104,15 +108,17 @@ describe("Loupist · Chat memory", () => {
 
     expect(screen.queryByRole("button", { name: "Revert" })).toBeNull();
     // A Lens page opens one way from chat: beside it, in the Evidence reader, with the composer untouched.
-    const panel = await screen.findByLabelText("Chat workspace panel");
+    const panel = await screen.findByLabelText("Side panel");
     expect(await within(panel).findByRole("button", { name: "Open in Lens" })).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Check the next quarter too");
+    // Open in Lens goes to the Lens page; Back to chat returns to the draft and the panel as they were.
     await user.click(within(panel).getByRole("button", { name: "Open in Lens" }));
     const page = await screen.findByRole("region", { name: /What .* knows/ });
-    expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Check the next quarter too");
+    expect(document.getElementById("main-panel-lens")).toContainElement(page);
     expect(await within(page).findByRole("complementary", { name: "Compare independent accounts" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Close workspace" }));
+    await user.click(screen.getByRole("button", { name: "Back to chat" }));
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Check the next quarter too");
+    expect(screen.getByLabelText("Side panel")).toBeVisible();
     // A streamed reply with a Memory update; a loaded suite needs room.
   }, 60_000);
 
@@ -122,7 +128,7 @@ describe("Loupist · Chat memory", () => {
     const send = vi.spyOn(bridge, "chatSend");
     fireEvent.change(screen.getByRole("textbox", { name: "Message Loupist" }), { target: { value: "Learn from this mistake" } });
     await user.click(screen.getByRole("button", { name: "Send" }));
-    await user.click(await screen.findByRole("button", { name: "Learned 1" }, { timeout: 40_000 }));
+    await user.click(await screen.findByRole("button", { name: "Learned 1 thing" }, { timeout: 40_000 }));
     const card = await screen.findByRole("group", { name: "Filed in this answer" });
     send.mockClear();
     await user.click(await within(card).findByRole("button", { name: "Fix Review lesson" }));

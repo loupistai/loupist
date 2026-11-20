@@ -40,11 +40,11 @@ function coreSchemaMap(): KnowledgeMap {
   });
   const nodes: KnowledgeMapNode[] = entities.map(entity => ({
     id: entity.id, kind: "entity", label: entity.label, localNames: entity.localNames, entityKind: entity.entityKind,
-    degree: degree.get(entity.id) ?? 0, firstSeenAtMs: seen, watched: false, held: false,
+    degree: degree.get(entity.id) ?? 0, firstSeenAtMs: seen, watched: false,
   }));
   const none = count(0);
   return {
-    nodes, edges, unmatchedHoldings: [], unmatchedWatchlist: [],
+    nodes, edges, unmatchedWatchlist: [],
     counts: {
       entity: count(nodes.length), lens_perspective: { ...none }, lens_principle: { ...none }, lens_method: { ...none }, lens_subject: { ...none }, lens_idea: { ...none }, journal: { ...none },
       claim: count(edges.length), lens_link: { ...none }, applies_to: { ...none }, about: { ...none },

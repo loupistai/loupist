@@ -10,9 +10,10 @@ import type { SignInController } from "./signIn";
 import "@/styles/connect.css";
 
 /** Copy for a typed connect failure; `warning` rows are recoverable by the user (spec providers §2.1). */
-type FailureKey = "wizard.declined" | "wizard.connectError" | "wizard.notEligible" | "wizard.portBusy" | "wizard.timedOut" | "wizard.offline";
+type FailureKey = "wizard.declined" | "wizard.chatgptRejected" | "wizard.connectError" | "wizard.notEligible" | "wizard.portBusy" | "wizard.timedOut" | "wizard.offline";
 export function signInFailureCopy(provider: string, reason: ProviderConnectFailure | null): { key: FailureKey; warning: boolean } {
   switch (reason) {
+    case "chatgpt_connection_rejected": return { key: "wizard.chatgptRejected", warning: true };
     case "plan_permission_declined": return { key: "wizard.declined", warning: true };
     case "denied": return provider === "openai" ? { key: "wizard.declined", warning: true } : { key: "wizard.connectError", warning: false };
     case "plan_not_eligible": return { key: "wizard.notEligible", warning: true };
@@ -109,7 +110,7 @@ function SignInError({ flow, onUseApiKey }: { flow: SignInController; onUseApiKe
   return <div className="signin-error" role="alert" data-tone={copy.warning ? "warning" : "negative"} data-reason={reason ?? "other"}>
     <p>{text}</p>
     <div className="signin-error-actions">
-      {reason === "plan_not_eligible" && onUseApiKey ? <Button type="button" size="sm" variant="outline" onClick={onUseApiKey}>{t("wizard.useApiKey")}</Button> : null}
+      {provider === "openai" && (reason === "plan_not_eligible" || reason === "plan_permission_declined" || reason === "denied" || reason === "chatgpt_connection_rejected") && onUseApiKey ? <Button type="button" size="sm" variant="outline" onClick={onUseApiKey}>{t("wizard.useApiKey")}</Button> : null}
       <Button type="button" size="sm" variant="outline" onClick={() => void flow.start(provider)}>{t("wizard.retry")}</Button>
     </div>
   </div>;

@@ -72,7 +72,7 @@ function runtimeContext(mode, coreToolNames, components = [], extra = {}) {
   };
 }
 
-function probeNativeExtensionStartup(temporary, context, runOptions = "{}", prompt = "/loupist-verify-settings {}") {
+function probeNativeExtensionStartup(temporary, context, runOptions = "{}", prompt = "/loupist-verify-settings {}", modelOverride = {}, failEndpointParse = false) {
   const contextPath = join(temporary, "host-context.json");
   writeFileSync(contextPath, typeof context === "string" ? context : JSON.stringify(context));
   const script = `
@@ -96,9 +96,16 @@ function probeNativeExtensionStartup(temporary, context, runOptions = "{}", prom
     let providerCalls = 0;
     faux.setResponses([() => { providerCalls++; return fauxAssistantMessage("Test reply."); }]);
     const { session } = await createAgentSession({
-      cwd: root, agentDir: root, modelRuntime, model: faux.getModel(), settingsManager,
+      cwd: root, agentDir: root, modelRuntime, model: { ...faux.getModel(), ...${JSON.stringify(modelOverride)} }, settingsManager,
       resourceLoader: loader, sessionManager: SessionManager.inMemory(root), noTools: "all",
     });
+    if (${failEndpointParse}) {
+      const parse = URL.parse;
+      URL.parse = (input, base) => {
+        if (input === ${JSON.stringify(modelOverride.baseUrl)}) throw new Error("Endpoint parser failed");
+        return parse(input, base);
+      };
+    }
     try {
       await session.bindExtensions({ mode: "rpc" });
       await session.prompt(${JSON.stringify(prompt)});
@@ -174,6 +181,54 @@ test("an invalid initial workspace snapshot terminates before Pi can continue wi
   assert.equal(probe.stdout, "");
   assert.match(probe.stderr, /Chat initialization failed/);
   assert.equal(existsSync(contextPath), false);
+});
+
+test("Chat refuses an offline-catalog model with a foreign endpoint during startup", (t) => {
+  const temporary = realpathSync(mkdtempSync(join(tmpdir(), "loupist-chat-model-endpoint-")));
+  t.after(() => rmSync(temporary, { recursive: true, force: true }));
+  const context = runtimeContext("chat", ["read"]);
+  context.workspace = emptyWorkspace(temporary);
+  const probe = probeNativeExtensionStartup(temporary, context, "{}", "Prompt fixture", {
+    provider: "openai", api: "openai-responses", baseUrl: "https://untrusted.example/v1",
+  });
+  assert.equal(probe.status, 76);
+  assert.match(probe.stderr, /refused an untrusted model endpoint/);
+});
+
+test("Chat refuses to start when endpoint validation throws", (t) => {
+  const temporary = realpathSync(mkdtempSync(join(tmpdir(), "loupist-chat-model-endpoint-")));
+  t.after(() => rmSync(temporary, { recursive: true, force: true }));
+  const context = runtimeContext("chat", ["read"], [], { workspace: emptyWorkspace(temporary) });
+  const probe = probeNativeExtensionStartup(temporary, context, "{}", "Prompt fixture", {
+    provider: "openai", api: "openai-responses", baseUrl: "https://api.openai.com/v1",
+  }, true);
+  assert.equal(probe.status, 76, probe.stderr);
+  assert.match(probe.stderr, /refused an untrusted model endpoint/);
+});
+
+test("Chat stops if Pi's session context throws while reading the model", (t) => {
+  const temporary = realpathSync(mkdtempSync(join(tmpdir(), "loupist-chat-stale-context-")));
+  t.after(() => rmSync(temporary, { recursive: true, force: true }));
+  const contextPath = join(temporary, "host-context.json");
+  writeFileSync(contextPath, JSON.stringify(runtimeContext("chat", ["read"], [], { workspace: emptyWorkspace(temporary) })), { mode: 0o600 });
+  const extensionUrl = new URL("./loupist-extension.mjs", import.meta.url).href;
+  const probe = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import extension from ${JSON.stringify(extensionUrl)};
+    const handlers = new Map();
+    extension({ registerCommand() {}, on: (name, handler) => handlers.set(name, handler), registerTool() {}, setActiveTools() {} });
+    try {
+      await handlers.get("session_start")({}, { get model() { throw new Error("Stale session context"); } });
+    } catch {
+      // Pi can continue after a handler rejects.
+    }
+    process.stdout.write("unexpected continuation");
+  `], {
+    encoding: "utf8", timeout: 10_000,
+    env: { PATH: process.env.PATH, LOUPIST_HOST_CONTEXT_FILE: contextPath, LOUPIST_MODEL_RUN_OPTIONS: "{}" },
+  });
+  assert.equal(probe.status, 76, probe.stderr);
+  assert.equal(probe.stdout, "");
+  assert.match(probe.stderr, /refused an untrusted model endpoint/);
 });
 
 test("chat diagnostics bypass stdout takeover and emit only opt-in bounded phases and valid statuses", (t) => {
@@ -762,6 +817,43 @@ test("scoped dataset, finance and chart calls reach the broker unchanged and can
   assert.throws(() => validate("chart_publish", { ...chart, dataset: { ...chart.dataset, ...inline } }));
 });
 
+test("interface_labels routes only requested keys through the interactive core tool", async (t) => {
+  useHostContext(t, runtimeContext("chat", ["interface_labels"]));
+  const received = await startToolBroker(t, () => ({ map: "Map" }));
+  const labels = loadExtension().registered.get("interface_labels");
+  const validate = (args) => validateToolArguments(labels, { id: "labels", name: labels.name, arguments: args });
+  const result = await labels.execute("labels", validate({ keys: ["map"] }), new AbortController().signal);
+  assert.deepEqual(received.at(-1).params, { keys: ["map"] });
+  assert.equal(received.at(-1).method, "interface.labels");
+  assert.deepEqual(result.details, { map: "Map" });
+  for (const rejected of [{}, { keys: [] }, { keys: ["map", "map"] }, { keys: ["unknown"] },
+    { keys: ["map"], locale: "en" }]) {
+    assert.throws(() => validate(rejected));
+  }
+});
+
+test("fx_rate passes omitted and explicit targets through Pi's argument validation", async (t) => {
+  useHostContext(t, runtimeContext("chat", ["capability_load", "fx_rate"], BUNDLED_COMPONENTS));
+  const received = await startToolBroker(t, (request) => ({ acknowledged: request.params }));
+  const fxRate = loadExtension().registered.get("fx_rate");
+  const validate = (args) => validateToolArguments(fxRate, { id: "fx", name: fxRate.name, arguments: args });
+  for (const [argumentsIn, brokerParams] of [
+    [{ from: "USD" }, { from: "USD" }],
+    [{ from: "USD", to: "KRW" }, { from: "USD", to: "KRW" }],
+    [{ from: "USD", to: null }, { from: "USD" }],
+    [{ from: "USD", to: "USD" }, { from: "USD", to: "USD" }],
+  ]) {
+    const validated = validate(argumentsIn);
+    assert.deepEqual(validated, brokerParams);
+    await fxRate.execute("fx", validated, new AbortController().signal);
+    assert.deepEqual(received.at(-1).params, brokerParams);
+  }
+  for (const rejected of [{ to: "KRW" }, { from: "USD", to: "krw" },
+    { from: "USD", to: 42 }, { from: "USD", amount: 1 }]) {
+    assert.throws(() => validate(rejected));
+  }
+});
+
 test("calculate accepts numbers, dataset cells and columns, and routes them unchanged", async (t) => {
   useHostContext(t, runtimeContext("chat", ["capability_load"], BUNDLED_COMPONENTS));
   const received = await startToolBroker(t, (request) => ({ values: [], acknowledged: request.params }));
@@ -917,16 +1009,19 @@ test("catalog schemas survive provider adapters and never ask the model for cred
   assert.match(line("openbb"), /Loading activates common price/);
   assert.doesNotMatch(line("custom.abc123"), /activates|available_tools/);
   assert.doesNotMatch(index, /Providers:/);
-  // Off connections cost one sentence of display names (no descriptions), and only when the model can act on it.
-  assert.match(index, /Not enabled for this Loupist: World Bank\. .* call connection_setup with that name/);
-  assert.doesNotMatch(index, /Country indicators/);
+  // Off connections cost one sentence: each display name with the first sentence of its purpose, so the model can tell which one a request needs.
+  assert.match(index, /Not enabled for this Loupist: World Bank \(Country indicators and macroeconomic time series\)\. .* name it and offer to set it up; call connection_setup with that name/);
   assert.match(formatRuntimeIndex({ ...runtime, unavailable_connections: [] }), /Other data sources .* call connection_setup/);
   const many = Array.from({ length: 40 }, (_, at) => ({ id: `c${at}`, name: `Source ${at}`, description: "x" }));
   assert.doesNotMatch(formatRuntimeIndex({ ...runtime, unavailable_connections: many }), /Source 24\b/);
-  assert.doesNotMatch(formatRuntimeIndex({ ...runtime, core_tool_names: ["capability_load"] }), /connection_setup/);
+  // Without the setup card the run still learns which connection would help, and nothing about setting it up.
+  const unattended = formatRuntimeIndex({ ...runtime, core_tool_names: ["capability_load"] });
+  assert.doesNotMatch(unattended, /connection_setup/);
+  assert.match(unattended, /Not enabled for this Loupist: World Bank \(Country indicators and macroeconomic time series\)\. This run cannot set them up/);
+  assert.doesNotMatch(formatRuntimeIndex({ ...runtime, core_tool_names: ["capability_load"], unavailable_connections: [] }), /Other data sources|Not enabled/);
   assert.doesNotMatch(index, /Built-in:/);
   assert.match(index, /# On-demand tool packs/);
-  assert.match(line("charts"), /chart_publish.*Load before publishing a chart or a comparison table/);
+  assert.match(line("charts"), /chart_publish.*Interactive charts and source-checked tables/);
 });
 
 test("capability resolution uses only unambiguous run ids and gives bounded repairs", () => {
@@ -1044,6 +1139,29 @@ test("ask_user settles before a destructive call in the same pinned Pi tool batc
   assert(settled >= 0 && deletion > settled, JSON.stringify(events));
 });
 
+test("loupist_setup settles before journal_save runs in the same pinned Pi batch", async (t) => {
+  const calls = await startToolBroker(t, () => ({ status: "staged", durable: false }));
+  const events = [];
+  await promptNativeSession(t, catalogResearchContext(true), [
+    fauxAssistantMessage([
+      fauxToolCall("loupist_setup", { follow: [{ name: "Tesla" }] }),
+      fauxToolCall("journal_save", { judgment: "I follow Tesla for its energy business.", thesis: { asset: "Tesla", role: "reason" } }),
+    ], { stopReason: "toolUse" }),
+    fauxAssistantMessage("I recorded your reason."),
+  ], "Follow Tesla. I follow it for its energy business.", session => session.subscribe(event => {
+    if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
+      events.push(`${event.type}:${event.toolName}`);
+    }
+  }));
+  assert.deepEqual(events, [
+    "tool_execution_start:loupist_setup",
+    "tool_execution_end:loupist_setup",
+    "tool_execution_start:journal_save",
+    "tool_execution_end:journal_save",
+  ]);
+  assert.equal(calls.length, 2);
+});
+
 test("first provider request omits on-demand schemas and measures the active tool JSON", async (t) => {
   const measurements = {};
   for (const [label, preloadAll] of [["before", true], ["after", false]]) {
@@ -1114,10 +1232,21 @@ test("an unattended chart-query pack never advertises missing publishing tools",
   };
   const readOnly = formatRuntimeIndex(runtime);
   assert.match(readOnly, /chart_query/);
-  assert.doesNotMatch(readOnly, /chart_publish|grid_publish|Load before publishing/);
+  assert.doesNotMatch(readOnly, /chart_publish|grid_publish|Interactive charts|sort and export/);
   for (const publisher of ["chart_publish", "grid_publish"]) {
     const offered = formatRuntimeIndex({ ...runtime, components: [tool("charts", "Charts", ["chart_query", publisher])] });
     assert(offered.includes(publisher));
-    assert.match(offered, /Load before publishing/);
+    assert.match(offered, /sort and export/);
   }
+});
+
+test("no tool declares a top-level schema combinator a provider refuses", () => {
+  // xAI answered every request with a provider error while one always-active tool
+  // declared `anyOf` beside `properties`. Function schemas
+  // must be a plain object at the top level; the host validates "one of" rules itself.
+  const refused = ["anyOf", "oneOf", "allOf", "not", "enum"];
+  const offenders = CATALOG.tools
+    .filter((tool) => refused.some((keyword) => Object.hasOwn(tool.parameters ?? {}, keyword)))
+    .map((tool) => tool.name);
+  assert.deepEqual(offenders, []);
 });

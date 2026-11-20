@@ -130,9 +130,33 @@ type Props = {
   incomingFiles?: IncomingFiles;
   /** The composer took `incomingFiles` into its tray (or refused them with its usual alert). */
   onIncomingFilesTaken?: () => void;
+  /** A layer over the conversation (the overlaying activity sheet) is open: Esc closes it before it stops a reply. */
+  layerOpen?: boolean;
 };
 
 export type IncomingFiles = { id: number; files: File[] };
+
+/**
+ * Sizes the message to its text; the CSS max-height caps it and the rest scrolls.
+ * `field-sizing: content` is missing from the WebKit of supported macOS releases,
+ * where a one-row textarea stayed one row high and cut off a second line.
+ * The scroll position is kept, so the line the browser scrolled to (the caret's) stays in view;
+ * with the caret at the end, the message scrolls to its last line.
+ */
+function fitPromptHeight(textarea: HTMLTextAreaElement) {
+  const { scrollTop } = textarea;
+  // Measured without a scrollbar, so a classic one cannot add a line that is not there.
+  textarea.style.overflowY = "hidden";
+  textarea.style.height = "auto";
+  const style = getComputedStyle(textarea);
+  const borders = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+  textarea.style.height = `${textarea.scrollHeight + borders}px`;
+  textarea.style.overflowY = "";
+  // Typing at the end keeps the last line in view even where WebKit has not yet scrolled
+  // to the caret when the height changes; elsewhere the browser's own scroll position stays.
+  const atEnd = textarea.selectionStart === textarea.value.length && textarea.selectionEnd === textarea.value.length;
+  textarea.scrollTop = atEnd ? textarea.scrollHeight : scrollTop;
+}
 
 /** Attaches files handed in from outside through the tray's own checks: size, count and type. */
 function ComposerIncomingFiles({ request, onTaken }: { request?: IncomingFiles; onTaken?: () => void }) {
@@ -159,12 +183,18 @@ function ComposerAttachmentTray({ onFilesChange }: { onFilesChange: (count: numb
   // The size of the file the user picked, in the one format files use everywhere ("1.2 MB").
   const size = (bytes?: number) => bytes === undefined ? "" : fileSize(bytes);
   const titled = (file: { filename?: string; sizeBytes?: number }) => [name(file.filename), size(file.sizeBytes)].filter(Boolean).join(" · ");
+  // The × goes away with its file, so focus returns to the message rather than to the page.
+  const remove = (id: string, event: { currentTarget: HTMLElement }) => {
+    const message = event.currentTarget.closest("form")?.querySelector("textarea");
+    attachments.remove(id);
+    message?.focus();
+  };
   return (
-    <div className="composer-attachments" aria-label={t("chatComposer.attachments.count", { count, formattedCount: formatNumber(count) })}>
+    <div className="composer-attachments" role="group" aria-label={t("chatComposer.attachments.count", { count, formattedCount: formatNumber(count) })}>
       {attachments.files.map((file) => file.mediaType.startsWith("image/") ? (
         <figure className="composer-thumb" key={file.id} title={titled(file)}>
           <img src={file.url} alt={name(file.filename)} />
-          <button type="button" aria-label={t("chatComposer.removeAttachment", { value1: name(file.filename) })} onClick={() => attachments.remove(file.id)}>
+          <button type="button" aria-label={t("chatComposer.removeAttachment", { value1: name(file.filename) })} onClick={(event) => remove(file.id, event)}>
             <XIcon aria-hidden="true" />
           </button>
         </figure>
@@ -173,14 +203,14 @@ function ComposerAttachmentTray({ onFilesChange }: { onFilesChange: (count: numb
           <FileIcon aria-hidden="true" />
           <span className="composer-file-name">{name(file.filename)}</span>
           {file.sizeBytes === undefined ? null : <span className="composer-file-size gg-num">{size(file.sizeBytes)}</span>}
-          <button type="button" aria-label={t("chatComposer.removeAttachment", { value1: name(file.filename) })} onClick={() => attachments.remove(file.id)}>
+          <button type="button" aria-label={t("chatComposer.removeAttachment", { value1: name(file.filename) })} onClick={(event) => remove(file.id, event)}>
             <XIcon aria-hidden="true" />
           </button>
         </span>
       ))}
       <span className="composer-attachments-meta">
         {t("chatComposer.attachments.count", { count, formattedCount: formatNumber(count) })}
-        {count >= 2 ? <button type="button" onClick={() => { for (const file of [...attachments.files]) attachments.remove(file.id); }}>{t("chatComposer.attachments.clearAll")}</button> : null}
+        {count >= 2 ? <button type="button" onClick={(event) => { const message = event.currentTarget.closest("form")?.querySelector("textarea"); for (const file of [...attachments.files]) attachments.remove(file.id); message?.focus(); }}>{t("chatComposer.attachments.clearAll")}</button> : null}
       </span>
     </div>
   );
@@ -332,42 +362,23 @@ function ClipboardAttachmentAction({
   );
 }
 
-function ComposerPromptTools({
+/** The + menu at the composer's leading edge: files, the clipboard, the map, saved Sources and private chat. */
+function ComposerAddMenu({
   privateChat,
-  models,
-  providers,
-  modelSelection,
   onPrivateChatChange,
-  onModelSelectionChange,
-  modelAuto,
-  onModelResetToAuto,
   onAttachmentError,
-  modelMenuSignal,
-  onOpenModelSettings,
-  onOpenUsage,
   mapScreenshot,
   evidenceSources,
   onAddKnowledgePin,
 }: {
   privateChat: boolean;
-  models: ConfiguredModel[];
-  providers: ModelProviderOption[];
-  modelSelection: ModelRunSelection;
   onPrivateChatChange: (enabled: boolean) => void;
-  onModelSelectionChange: (selection: ModelRunSelection) => void;
-  /** Nothing chosen for this Loupist: the composer shows "Auto". */
-  modelAuto: boolean;
-  onModelResetToAuto: () => void;
   onAttachmentError: (message: string | null) => void;
-  modelMenuSignal: number;
-  onOpenModelSettings?: () => void;
-  onOpenUsage?: (provider: string) => void;
   mapScreenshot?: MapScreenshot;
   evidenceSources?: readonly EvidenceSourceOption[];
   onAddKnowledgePin?: (pin: KnowledgePin) => void;
 }) {
   useTranslation("chat");
-  const accountConnected = hasAccount(models, providers);
   const addTrigger = useRef<HTMLButtonElement>(null);
   const [addMenuOffset, setAddMenuOffset] = useState({ side: 4, align: 0 });
   // The + menu shows its focus ring for keys only (WebKit would ring it after a click from the composer).
@@ -382,7 +393,6 @@ function ComposerPromptTools({
     setAddMenuOffset({ side: from.top - to.top + COMPOSER_MENU_GAP, align: to.left - from.left });
   };
   return (
-    <PromptInputTools className="composer-tools">
       <PromptInputActionMenu onOpenChange={anchorAddMenu}>
         <PromptInputActionMenuTrigger
           ref={addTrigger}
@@ -419,19 +429,6 @@ function ComposerPromptTools({
           </DropdownMenuCheckboxItem>
         </PromptInputActionMenuContent>
       </PromptInputActionMenu>
-      {/* Without an AI account the connect action takes the send slot (ChatComposer renders it there). */}
-      {accountConnected ? <ChatModelMenu
-        models={models}
-        providers={providers}
-        selection={modelSelection}
-        openSignal={modelMenuSignal}
-        onSelectionChange={onModelSelectionChange}
-        onManageModels={onOpenModelSettings}
-        onOpenUsage={onOpenUsage}
-        auto={modelAuto}
-        onResetToAuto={onModelResetToAuto}
-      /> : null}
-    </PromptInputTools>
   );
 }
 
@@ -499,14 +496,14 @@ function ComposerRunExtras({
 }
 
 /**
- * Send and Stop are one 28 px tile at the composer's trailing edge (DIRECTION
- * 10.2). The same button stays mounted from idle to running and back: its two
+ * Send and Stop are one round accent tile at the composer's trailing edge. The same button stays mounted from idle to running and back: its two
  * icons cross-fade in place (120 ms) and its box never changes. Pressing it
  * leaves focus in the textarea. After Stop it dims and ignores presses until
  * the host confirms.
  */
 function ComposerTile({
   running,
+  stopping,
   prompt,
   hasModel,
   disabledReason,
@@ -514,6 +511,8 @@ function ComposerTile({
   onPreserveFocus,
 }: {
   running: boolean;
+  /** Stop was pressed and the host has not confirmed it. */
+  stopping: boolean;
   prompt: string;
   hasModel: boolean;
   disabledReason?: string;
@@ -537,9 +536,14 @@ function ComposerTile({
           variant="default"
           type={running ? "button" : "submit"}
           disabled={!running && (empty || !hasModel || submitting)}
+          aria-disabled={running && stopping ? true : undefined}
           title={!running && !hasModel ? disabledReason : undefined}
           onMouseDown={onPreserveFocus}
-          onClick={running ? onAbort : undefined}
+          onClick={running ? (event) => {
+            // Stop turns the tile back into Send, which an empty message disables: the message keeps focus.
+            event.currentTarget.closest("form")?.querySelector("textarea")?.focus();
+            onAbort();
+          } : undefined}
         >
           <span className="composer-tile-icon" data-icon="send" aria-hidden="true">{submitting ? <Spinner /> : <ArrowUpIcon />}</span>
           <span className="composer-tile-icon" data-icon="stop" aria-hidden="true"><SquareIcon /></span>
@@ -600,6 +604,7 @@ export function ChatComposer({
   onAsOfChange,
   incomingFiles,
   onIncomingFilesTaken,
+  layerOpen = false,
 }: Props) {
   useTranslation("chat");
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -654,6 +659,7 @@ export function ChatComposer({
   const selectedModel = models.find(
     (model) => model.id === modelSelection.model_profile_id,
   );
+  const accountConnected = hasAccount(models, providers);
   const canSetAsOf = Boolean(onAsOfChange);
   const assistOptions = useMemo<AssistOption[]>(() => {
     if (!activeTrigger) return [];
@@ -697,16 +703,18 @@ export function ChatComposer({
     const commands = ([
       { id: "command:new-chat", kind: "command", label: t("chatComposer.newChat"), name: t("chatComposer.newChat"), detail: t("chatComposer.startAFreshConversation"), group: t("chatComposer.commands"), command: "new-chat" },
       { id: "command:model", kind: "command", label: t("chatComposer.model"), name: t("chatComposer.model"), detail: t("chatComposer.chooseTheModel"), group: t("chatComposer.commands"), command: "model" },
-      { id: "command:memory", kind: "command", label: t("chatComposer.memory"), name: t("chatComposer.memory"), detail: t("chatComposer.changeWhatThisMessageRemembers"), group: t("chatComposer.commands"), command: "memory" },
+      // Private chat, named as in the + menu; the line under it says what choosing it does now.
+      { id: "command:memory", kind: "command", label: t("chatComposer.privateChat"), name: t("chatComposer.privateChat"), detail: privateChat ? t("chatComposer.privateOff") : t("chatComposer.privateMenuDetail"), group: t("chatComposer.commands"), command: "memory" },
       { id: "command:attach", kind: "command", label: t("chatComposer.attachFiles"), name: t("chatComposer.attachFiles"), detail: t("chatComposer.addFilesOrImages"), group: t("chatComposer.commands"), command: "attach" },
     ] as const satisfies readonly AssistOption[]).filter((option) => {
-      const score = rankText(query, [option.name, option.detail]);
+      // "/memory" still finds private chat.
+      const score = rankText(query, [option.name, option.detail, ...(option.command === "memory" ? [t("chatComposer.memory")] : [])]);
       return query.trim() ? score >= 3 : score > 0;
     });
     const actions = commands.map((option) => ({ ...option, group: t("chatComposer.actions") }));
     return [...finance, ...skillOptions.slice(0, 8), ...actions];
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
-  }, [activeTrigger, contextOptions, skills, canSetAsOf, i18n.language]);
+  }, [activeTrigger, contextOptions, skills, canSetAsOf, privateChat, i18n.language]);
 
   useEffect(() => {
     if (activeTrigger?.symbol !== "@" || !canSearchContext) {
@@ -749,14 +757,35 @@ export function ChatComposer({
   const syncHighlightScroll = (target: HTMLTextAreaElement) => {
     const highlight = highlightRef.current;
     if (!highlight) return;
+    // A classic (always shown) scrollbar narrows the textarea's lines; the highlight wraps at the same width.
+    const style = getComputedStyle(target);
+    const scrollbar = Math.max(0, target.offsetWidth - target.clientWidth - (parseFloat(style.borderLeftWidth) || 0) - (parseFloat(style.borderRightWidth) || 0));
+    highlight.style.setProperty("--composer-scrollbar", `${scrollbar}px`);
     highlight.scrollTop = target.scrollTop;
     highlight.scrollLeft = target.scrollLeft;
   };
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
-    if (textarea) syncHighlightScroll(textarea);
+    if (!textarea) return;
+    fitPromptHeight(textarea);
+    syncHighlightScroll(textarea);
   }, [prompt]);
+
+  // A wider or narrower window rewraps the text, so the message is fitted again.
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || typeof ResizeObserver === "undefined") return;
+    let width = textarea.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (textarea.clientWidth === width) return;
+      fitPromptHeight(textarea);
+      syncHighlightScroll(textarea);
+      width = textarea.clientWidth;
+    });
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, []);
 
   const clearTrigger = () => {
     if (!activeTrigger) return;
@@ -944,8 +973,9 @@ export function ChatComposer({
         }
       }
     }
-    // Esc stops the reply in progress (the Stop tile's shortcut); an open menu took it above.
-    if (isRunning && event.key === "Escape" && !isStopping) {
+    // Esc stops the reply in progress (the Stop tile's shortcut); an open menu took it above, and a
+    // layer over the conversation closes first.
+    if (isRunning && event.key === "Escape" && !isStopping && !layerOpen) {
       event.preventDefault();
       onAbort();
       return;
@@ -965,7 +995,9 @@ export function ChatComposer({
   const showRunHelp = isRunning && (Boolean(submission) || hasAttachedContext);
 
   return (
-    <div className="composer-shell" aria-busy={isRunning}
+    // Not aria-busy while a reply runs: the reply is what changes, and a busy composer would hold back
+    // its own status region (start, stop, guidance) until the reply ended.
+    <div className="composer-shell"
       onChangeCapture={(event) => {
         if (event.target instanceof HTMLInputElement && event.target.type === "file") setAttachmentError(null);
       }}
@@ -1037,19 +1069,36 @@ export function ChatComposer({
             return queued !== false;
           }
           const sent = (await onSend(next, files, text)) !== false;
-          if (sent) updateChips([]);
+          if (sent) {
+            updateChips([]);
+            // Sent from the tile with the keyboard: the emptied message disables it, so the message takes focus back.
+            const focused = document.activeElement;
+            if (!focused || focused === document.body || (focused instanceof HTMLElement && focused.closest(".composer-run-actions"))) keepComposerFocus();
+          }
           return sent;
         }}
       >
         <ComposerAttachmentTray onFilesChange={onFilesChange} />
         <ComposerIncomingFiles request={incomingFiles} onTaken={onIncomingFilesTaken} />
         <ComposerDropOverlay />
+        {/* Waiting is said here. Once accepted, the Guiding row the conversation log adds says it,
+            so the accepted note is a new element that only shows. */}
+        {guidance ? (
+          <p key={guidance.phase} className="composer-guidance" data-state={guidance.phase} role={guidance.phase === "pending" ? "status" : undefined} title={guidance.text}>
+            {t(guidance.phase === "pending" ? "chatComposer.guidancePending" : "chatComposer.guidanceAdmitted", { text: guidance.text })}
+          </p>
+        ) : null}
+        {/* One row, in reading and tab order: +, the message, the model label, then Send or Stop. */}
+        <PromptInputFooter className="composer-footer">
+          <ComposerAddMenu
+            privateChat={privateChat}
+            onPrivateChatChange={onPrivateChatChange}
+            onAttachmentError={setAttachmentError}
+            mapScreenshot={mapScreenshot}
+            evidenceSources={evidenceSources}
+            onAddKnowledgePin={onAddKnowledgePin}
+          />
         <PromptInputBody>
-          {guidance ? (
-            <p className="composer-guidance" data-state={guidance.phase} role="status" title={guidance.text}>
-              {t(guidance.phase === "pending" ? "chatComposer.guidancePending" : "chatComposer.guidanceAdmitted", { text: guidance.text })}
-            </p>
-          ) : null}
           <div
             className={cn("composer-prompt", isComposing && "is-composing")}
             onCompositionStart={() => setIsComposing(true)}
@@ -1064,13 +1113,13 @@ export function ChatComposer({
             />
             <PromptInputTextarea
               ref={textareaRef}
-              data-chat-composer="true" aria-label={inputLabel}
+              data-chat-composer="true" aria-label={inputLabel} rows={1}
               aria-describedby={showRunHelp ? runHelpId : undefined}
               aria-keyshortcuts={isRunning ? "Enter Shift+Enter Control+Enter Meta+Enter" : "Enter Shift+Enter"}
               aria-autocomplete="list"
               aria-controls={activeTrigger ? assistId : undefined}
               aria-activedescendant={activeTrigger && assistOptions.length ? `${assistId}-${activeOption}` : undefined}
-              placeholder={asOf ? t("asOf.placeholder", { date: formatAsOf(asOf) }) : !hasAccount(models, providers) && onOpenModelSettings ? t("chatComposer.connectToAsk") : placeholder}
+              placeholder={asOf ? t("asOf.placeholder", { date: formatAsOf(asOf) }) : !accountConnected && onOpenModelSettings ? t("chatComposer.connectToAsk") : placeholder}
               value={prompt}
               onChange={handlePromptChange}
               onSelect={event => inline.rememberSelection(event.currentTarget)}
@@ -1088,37 +1137,20 @@ export function ChatComposer({
             />
           </div>
         </PromptInputBody>
-        {privateChat ? <div className="composer-private-status"><span className="composer-private-chip" title={t("chatComposer.privateStatus")} aria-description={t("chatComposer.privateStatus")}>
-          <EyeOffIcon aria-hidden="true" /><span>{t("chatComposer.privateChip")}</span>
-          <button type="button" aria-label={t("chatComposer.privateOff")} onClick={() => onPrivateChatChange(false)}><XIcon aria-hidden="true" /></button>
-        </span></div> : null}
-        <ComposerChipTray
-          chips={ownedChips.filter(chip => chip.kind === "skill")}
-          asOf={asOf}
-          onRemoveChip={(chip) => updateChips(ownedChips.filter((existing) => existing.key !== chip.key))}
-          onEditAsOf={() => setDatePanel({ trigger: null, initial: asOf })}
-          onRemoveAsOf={() => { onAsOfChange?.(undefined); textareaRef.current?.focus(); }}
-        />
-        <ComposerInlineReferenceControls items={inlineItems} onRemove={inline.remove} />
-        <PromptInputFooter className="composer-footer">
-          <ComposerPromptTools
-            privateChat={privateChat}
+          <PromptInputTools className="composer-tools">
+          {/* Without an AI account the connect action takes the send slot. */}
+          {accountConnected ? <ChatModelMenu
             models={models}
             providers={providers}
-            modelSelection={modelSelection}
-            onPrivateChatChange={onPrivateChatChange}
-            onModelSelectionChange={onModelSelectionChange}
-            modelAuto={modelAuto}
-            onModelResetToAuto={onModelResetToAuto}
-            onAttachmentError={setAttachmentError}
-            modelMenuSignal={modelMenuSignal + openModelMenuSignal}
-            onOpenModelSettings={onOpenModelSettings}
+            selection={modelSelection}
+            openSignal={modelMenuSignal + openModelMenuSignal}
+            onSelectionChange={onModelSelectionChange}
+            onManageModels={onOpenModelSettings}
             onOpenUsage={onOpenUsage}
-            mapScreenshot={mapScreenshot}
-            evidenceSources={evidenceSources}
-            onAddKnowledgePin={onAddKnowledgePin}
-          />
-          {!isRunning && !hasAccount(models, providers) && onOpenModelSettings ? (
+            auto={modelAuto}
+            onResetToAuto={onModelResetToAuto}
+          /> : null}
+          {!isRunning && !accountConnected && onOpenModelSettings ? (
             <ChatModelMenu models={models} providers={providers} selection={modelSelection} onSelectionChange={onModelSelectionChange}
               onManageModels={onOpenModelSettings} auto={modelAuto} onResetToAuto={onModelResetToAuto} />
           ) : (
@@ -1134,6 +1166,7 @@ export function ChatComposer({
               /> : null}
               <ComposerTile
                 running={isRunning}
+                stopping={isStopping}
                 prompt={submission}
                 hasModel={Boolean(
                   !sendDisabledReason && selectedModel && selectedModel.credential_source !== "missing" &&
@@ -1151,7 +1184,21 @@ export function ChatComposer({
               />
             </div>
           )}
+          </PromptInputTools>
         </PromptInputFooter>
+        {/* What applies to this message (private chat, Skill modes, the as-of date) sits under the row. */}
+        {privateChat ? <div className="composer-private-status"><span className="composer-private-chip" title={t("chatComposer.privateStatus")} aria-description={t("chatComposer.privateStatus")}>
+          <EyeOffIcon aria-hidden="true" /><span>{t("chatComposer.privateChip")}</span>
+          <button type="button" aria-label={t("chatComposer.privateOff")} onClick={() => { onPrivateChatChange(false); keepComposerFocus(); }}><XIcon aria-hidden="true" /></button>
+        </span></div> : null}
+        <ComposerChipTray
+          chips={ownedChips.filter(chip => chip.kind === "skill")}
+          asOf={asOf}
+          onRemoveChip={(chip) => { updateChips(ownedChips.filter((existing) => existing.key !== chip.key)); keepComposerFocus(); }}
+          onEditAsOf={() => setDatePanel({ trigger: null, initial: asOf })}
+          onRemoveAsOf={() => { onAsOfChange?.(undefined); textareaRef.current?.focus(); }}
+        />
+        <ComposerInlineReferenceControls items={inlineItems} onRemove={(key) => { inline.remove(key); keepComposerFocus(); }} />
         {showRunHelp ? <p id={runHelpId} className="composer-run-help">{hasAttachedContext
           ? t("chatComposer.useSendNextToIncludeAttachedFilesOrReferences")
           : t("chatComposer.runHelp", { send: shortcutFor("send"), guide: shortcutFor("guide"), newline: shortcutFor("newLine") })}</p> : null}

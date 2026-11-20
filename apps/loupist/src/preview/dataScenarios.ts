@@ -1,4 +1,5 @@
 import { prepareFixture } from "./fixtures";
+import { asSession } from "./scenarios/kit";
 import type { PreviewScenario } from "./scenarios";
 
 type Helpers = {
@@ -57,6 +58,7 @@ export function dataScenarios({ base, select, click, settings }: Helpers): Previ
           }], finishedAtMs: null };
           return workspace;
         };
+        asSession(bridge);
       },
     },
   ];

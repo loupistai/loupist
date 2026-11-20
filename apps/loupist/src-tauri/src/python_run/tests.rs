@@ -279,6 +279,7 @@ fn results_report_both_snapshot_omissions_and_writeback_truncation() {
     report.truncated = true;
     let outcome = super::WorkerOutcome {
         status: "completed",
+        exited_itself: true,
         exit_code: 0,
         stdout: Vec::new(),
         stderr: b"guest warning".to_vec(),
@@ -317,7 +318,7 @@ async fn a_symlink_worker_is_rejected_before_it_can_run() {
         &worker,
         dir.path(),
         b"{}",
-        1,
+        Duration::from_secs(1),
         SearchCancel::never(),
         SearchCancel::never(),
     )
@@ -1268,6 +1269,8 @@ fn queued_calls_cancel_and_time_out_before_creating_a_snapshot() {
     let _lock = lock_worker();
     let fixture = sample();
     runtime().block_on(async {
+        // A compiled cache keeps the queue bound at the call's own timeout.
+        warm().await;
         let _busy = super::WORKERS.acquire().await.unwrap();
         let (cancel, cancelled) = tokio::sync::watch::channel(false);
         let (started, ready) = tokio::sync::oneshot::channel();
@@ -1431,6 +1434,127 @@ fn a_cold_cache_finishes_the_default_chart_and_a_warm_call_reuses_it() {
         "python cache cold {cold_elapsed:?} peak {} MiB; warm {warm_elapsed:?} peak {} MiB",
         cold_rss_kb / 1024,
         warm_rss_kb / 1024
+    );
+}
+
+#[test]
+fn a_cold_cache_adds_the_compile_bound_until_this_build_compiled_there() {
+    let root = TempDir::new().unwrap();
+    let cache = super::PythonCache::prepare(root.path()).unwrap();
+    let cold = Duration::from_secs(60 + super::COLD_COMPILE_SECONDS);
+    assert_eq!(cache.wall_clock(Some("build-a"), 60), cold);
+    // A runtime that cannot be identified keeps the compile bound every time.
+    assert_eq!(cache.wall_clock(None, 60), cold);
+    cache.mark_compiled("build-a");
+    assert_eq!(
+        cache.wall_clock(Some("build-a"), 60),
+        Duration::from_secs(60)
+    );
+    // A new worker or runtime compiles again.
+    assert_eq!(cache.wall_clock(Some("build-b"), 60), cold);
+    // Wasmtime owns its directory; the marker lives beside it, never inside.
+    assert!(cache.compiled.starts_with(&cache.root) && cache.compiled != cache.root);
+    assert!(!cache.marker.starts_with(&cache.compiled));
+    for path in [&cache.root, &cache.compiled] {
+        assert_eq!(mode_bits(path), 0o700, "{}", path.display());
+    }
+}
+
+#[test]
+fn a_queued_call_may_wait_out_a_cold_compile_ahead_of_it() {
+    require_runtime();
+    let root = TempDir::new().unwrap();
+    assert_eq!(
+        super::queue_wait(root.path(), 5),
+        Duration::from_secs(5 + super::COLD_COMPILE_SECONDS)
+    );
+    let identity = super::compiled_identity(
+        &super::worker_path().unwrap(),
+        &super::runtime_dir().unwrap(),
+    )
+    .unwrap();
+    super::PythonCache::prepare(root.path())
+        .unwrap()
+        .mark_compiled(&identity);
+    assert_eq!(super::queue_wait(root.path(), 5), Duration::from_secs(5));
+}
+
+#[tokio::test]
+async fn only_a_worker_that_ends_by_itself_counts_as_compiled() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = TempDir::new().unwrap();
+    let worker = |name: &str, body: &str| {
+        let path = dir.path().join(name);
+        fs::write(&path, format!("#!/bin/sh\n/bin/cat > /dev/null\n{body}\n")).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    };
+    for (name, body, wall, compiled) in [
+        // A guest error still ran after the runtime loaded.
+        ("guest-error", "exit 1", Duration::from_secs(10), true),
+        ("completed", "exit 0", Duration::from_secs(10), true),
+        // The worker refused the request before loading anything.
+        ("refused", "exit 125", Duration::from_secs(10), false),
+        // Killed at the wall clock, possibly mid-compile.
+        (
+            "killed",
+            "exec /bin/sleep 30",
+            Duration::from_millis(200),
+            false,
+        ),
+    ] {
+        let outcome = super::supervise_worker(
+            &worker(name, body),
+            dir.path(),
+            b"{}",
+            wall,
+            SearchCancel::never(),
+            SearchCancel::never(),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert_eq!(outcome.exited_itself, compiled, "{name}");
+    }
+}
+
+#[test]
+fn a_cold_first_call_compiles_outside_its_timeout_and_a_warm_call_keeps_it() {
+    let _lock = lock_worker();
+    require_runtime();
+    let cache = TempDir::new().unwrap();
+    let fixture = sample();
+    // Compiling the runtime takes longer than this call's 5 s.
+    let started = Instant::now();
+    let cold = runtime()
+        .block_on(super::execute(
+            &fixture.roots,
+            cache.path(),
+            "print('compiled')",
+            5,
+            SearchCancel::never(),
+        ))
+        .expect("python.run");
+    assert_eq!(cold["status"], "completed", "{cold}");
+    eprintln!(
+        "cold run_python with a 5 s timeout: {:?}",
+        started.elapsed()
+    );
+    // Once this build compiled here, a stuck call ends at its own timeout.
+    let started = Instant::now();
+    let warm = runtime()
+        .block_on(super::execute(
+            &fixture.roots,
+            cache.path(),
+            "import time\ntime.sleep(120)",
+            3,
+            SearchCancel::never(),
+        ))
+        .expect("python.run");
+    assert_eq!(warm["status"], "timed_out", "{warm}");
+    assert!(
+        started.elapsed() < Duration::from_secs(60),
+        "{:?}",
+        started.elapsed()
     );
 }
 

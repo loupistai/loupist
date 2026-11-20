@@ -141,7 +141,69 @@ fn normalize_chart_note(note: Option<String>) -> Option<String> {
 /// What to do when a chart cannot be read as of the turn's date.
 const CHART_AS_OF_NEXT: &str = "Fetch the data again in this turn, where the as-of cutoff bounds the read, and draw a new chart from that dataset_ref.";
 
+/// The content delivered in this reply takes precedence over retained history.
+/// Pending deliveries are deliberately absent: a failed call cannot replace a read.
+pub(super) struct CurrentArtifact {
+    pub(super) artifact: ChatArtifact,
+    pub(super) revision: ChatArtifactRevision,
+    pub(super) chart_dataset: Option<crate::chat::chart::ChartDataset>,
+    pub(super) is_draft: bool,
+}
+
 impl AppToolExecutor {
+    pub(super) async fn current_artifact(
+        &self,
+        policy: &ToolPolicy,
+        artifact_id: &str,
+        revision_id: Option<u32>,
+    ) -> Result<CurrentArtifact, BrokerError> {
+        let drafts = self.capture.artifacts.lock().await;
+        if let Some(commit) = drafts
+            .iter()
+            .find(|commit| commit.artifact.id == artifact_id)
+        {
+            if commit.artifact.chat_session_id != policy.session_id {
+                return Err(BrokerError::invalid(
+                    "artifact_id",
+                    "Not an artifact in this Chat; list artifacts and use an ID from this Chat.",
+                ));
+            }
+            if revision_id.is_none_or(|revision| revision == commit.revision.revision) {
+                return Ok(CurrentArtifact {
+                    artifact: commit.artifact.clone(),
+                    revision: commit.revision.clone(),
+                    chart_dataset: commit.datasets.first().cloned(),
+                    is_draft: true,
+                });
+            }
+        }
+        drop(drafts);
+        let artifact = self
+            .state
+            .store
+            .get_chat_artifact(artifact_id)
+            .map_err(store_error)?
+            .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
+        if artifact.chat_session_id != policy.session_id {
+            return Err(BrokerError::invalid(
+                "artifact_id",
+                "Not an artifact in this Chat; list artifacts and use an ID from this Chat.",
+            ));
+        }
+        let snapshot = self
+            .state
+            .store
+            .read_chat_artifact(artifact_id, revision_id)
+            .map_err(store_error)?
+            .ok_or_else(|| BrokerError::Execution("artifact revision was not found".into()))?;
+        Ok(CurrentArtifact {
+            artifact: snapshot.artifact,
+            revision: snapshot.revision,
+            chart_dataset: snapshot.chart_dataset,
+            is_draft: false,
+        })
+    }
+
     /// Under an as-of date a chart shows what was known then only when its
     /// rows came from a dataset revision fetched under a cutoff on or before it.
     fn chart_within_cutoff(
@@ -187,17 +249,38 @@ impl AppToolExecutor {
         Err(super::as_of_turn::later_than(cutoff, "report"))
     }
 
-    pub(super) fn artifact_list(
+    pub(super) async fn artifact_list(
         &self,
         policy: &ToolPolicy,
         params: Value,
     ) -> Result<Value, BrokerError> {
         exact_object(&params, &[], &[])?;
-        let artifacts = self
+        let mut ids: BTreeSet<_> = self
             .state
             .store
             .list_chat_artifacts(&policy.session_id)
-            .map_err(store_error)?;
+            .map_err(store_error)?
+            .into_iter()
+            .map(|artifact| artifact.id)
+            .collect();
+        ids.extend(
+            self.capture
+                .artifacts
+                .lock()
+                .await
+                .iter()
+                .filter(|commit| commit.artifact.chat_session_id == policy.session_id)
+                .map(|commit| commit.artifact.id.clone()),
+        );
+        let mut artifacts = Vec::new();
+        for id in ids {
+            artifacts.push(self.current_artifact(policy, &id, None).await?.artifact);
+        }
+        artifacts.sort_by(|a, b| {
+            b.updated_at_ms
+                .cmp(&a.updated_at_ms)
+                .then_with(|| a.id.cmp(&b.id))
+        });
         Ok(json!({
             "artifacts": artifacts.into_iter().map(|artifact| json!({
                 "artifact_id": artifact.id,
@@ -221,18 +304,6 @@ impl AppToolExecutor {
             .and_then(Value::as_str)
             .ok_or(BrokerError::Malformed)?
             .to_owned();
-        let artifact = self
-            .state
-            .store
-            .get_chat_artifact(&artifact_id)
-            .map_err(store_error)?
-            .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
-        if artifact.chat_session_id != policy.session_id {
-            return Err(BrokerError::invalid(
-                "artifact_id",
-                "Not an artifact in this Chat; list artifacts and use an ID from this Chat.",
-            ));
-        }
         let revision_id = object
             .get("revision_id")
             .map(|value| {
@@ -246,11 +317,8 @@ impl AppToolExecutor {
             })
             .transpose()?;
         let snapshot = self
-            .state
-            .store
-            .read_chat_artifact(&artifact.id, revision_id)
-            .map_err(store_error)?
-            .ok_or_else(|| BrokerError::Execution("artifact revision was not found".into()))?;
+            .current_artifact(policy, &artifact_id, revision_id)
+            .await?;
         let artifact = snapshot.artifact;
         let revision = snapshot.revision;
         let dataset = snapshot.chart_dataset;
@@ -413,15 +481,9 @@ impl AppToolExecutor {
                         "artifact revision must be read before it can be revised".into(),
                     ));
                 }
-                let mut artifact = self
-                    .state
-                    .store
-                    .get_chat_artifact(&artifact_id)
-                    .map_err(store_error)?
-                    .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
-                if artifact.chat_session_id != policy.session_id {
-                    return Err(BrokerError::invalid("artifact_id", "Not an artifact in this Chat; list artifacts and use an ID from this Chat."));
-                }
+                let current = self.current_artifact(policy, &artifact_id, None).await?;
+                self.report_within_cutoff(policy, &artifact_id, current.revision.created_at_ms)?;
+                let mut artifact = current.artifact;
                 if artifact.current_revision != expected_revision {
                     return Err(BrokerError::Execution(
                         "artifact revision is stale; read the current revision".into(),
@@ -434,9 +496,17 @@ impl AppToolExecutor {
                 }
                 let created_at_ms = timestamp.max(artifact.updated_at_ms.saturating_add(1));
                 artifact.title = title;
-                artifact.current_revision = expected_revision.checked_add(1).ok_or_else(|| {
-                    BrokerError::Execution("artifact revision limit reached".into())
-                })?;
+                if !current.is_draft {
+                    artifact.current_revision =
+                        expected_revision.checked_add(1).ok_or_else(|| {
+                            BrokerError::Execution("artifact revision limit reached".into())
+                        })?;
+                }
+                if current.is_draft && artifact.current_revision == 1 {
+                    // The store requires a new artifact's creation and update
+                    // timestamps to agree; only this final draft is persisted.
+                    artifact.created_at_ms = created_at_ms;
+                }
                 artifact.updated_at_ms = created_at_ms;
                 let revision = ChatArtifactRevision::new(
                     artifact.id.clone(),
@@ -475,12 +545,10 @@ impl AppToolExecutor {
                 "expected an integer from 1 to 200",
             ));
         }
-        let artifact = self
-            .state
-            .store
-            .get_chat_artifact(&request.artifact_id)
-            .map_err(store_error)?
-            .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
+        let snapshot = self
+            .current_artifact(policy, &request.artifact_id, Some(request.revision))
+            .await?;
+        let artifact = &snapshot.artifact;
         if artifact.chat_session_id != policy.session_id || artifact.kind != ChatArtifactKind::Chart
         {
             return Err(BrokerError::invalid(
@@ -499,12 +567,6 @@ impl AppToolExecutor {
                 "the exact chart revision must be read before its rows can be queried".into(),
             ));
         }
-        let snapshot = self
-            .state
-            .store
-            .read_chat_artifact(&artifact.id, Some(request.revision))
-            .map_err(store_error)?
-            .ok_or_else(|| BrokerError::Execution("artifact revision was not found".into()))?;
         let revision = snapshot.revision;
         let ChatArtifactPayload::Chart { chart, .. } = revision.payload else {
             return Err(BrokerError::Execution("artifact is not a chart".into()));
@@ -766,25 +828,16 @@ impl AppToolExecutor {
                         "required when mode is revise; use the token returned by artifact_read",
                     )
                 })?;
-                let mut artifact = self
-                    .state
-                    .store
-                    .get_chat_artifact(artifact_id)
-                    .map_err(store_error)?
-                    .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
-                if artifact.chat_session_id != policy.session_id
-                    || artifact.kind != ChatArtifactKind::Chart
-                {
+                let resolved = self.current_artifact(policy, artifact_id, None).await?;
+                let mut artifact = resolved.artifact;
+                if artifact.kind != ChatArtifactKind::Chart {
                     return Err(BrokerError::invalid("artifact_id", "Not a chart in this Chat; list artifacts and use a chart ID from this Chat."));
                 }
-                let current = self
-                    .state
-                    .store
-                    .get_chat_artifact_current(&artifact.id)
-                    .map_err(store_error)?
-                    .ok_or_else(|| {
-                        BrokerError::Execution("artifact content was not found".into())
-                    })?;
+                let current = resolved.revision;
+                let current_dataset = resolved
+                    .chart_dataset
+                    .ok_or_else(|| BrokerError::Execution("chart dataset was not found".into()))?;
+                self.chart_within_cutoff(policy, artifact_id, &current_dataset)?;
                 if chart_edit_token(&current) != edit_token
                     || !self
                         .capture
@@ -807,13 +860,7 @@ impl AppToolExecutor {
                 let dataset = if let Some(dataset) = request.dataset {
                     self.materialize_chart_dataset(policy, dataset).await?
                 } else {
-                    self.state
-                        .store
-                        .get_chart_dataset(&current_chart.dataset_id)
-                        .map_err(store_error)?
-                        .ok_or_else(|| {
-                            BrokerError::Execution("chart dataset was not found".into())
-                        })?
+                    current_dataset
                 };
                 let document = crate::chat::chart::ChartDocument {
                     dataset_id: dataset.id.clone(),
@@ -833,10 +880,17 @@ impl AppToolExecutor {
                 validate_view_columns(&document.view, &dataset)?;
                 let created_at_ms = timestamp.max(artifact.updated_at_ms.saturating_add(1));
                 artifact.title = title;
-                artifact.current_revision =
-                    artifact.current_revision.checked_add(1).ok_or_else(|| {
-                        BrokerError::Execution("artifact revision limit reached".into())
-                    })?;
+                if !resolved.is_draft {
+                    artifact.current_revision =
+                        artifact.current_revision.checked_add(1).ok_or_else(|| {
+                            BrokerError::Execution("artifact revision limit reached".into())
+                        })?;
+                }
+                if resolved.is_draft && artifact.current_revision == 1 {
+                    // The store requires a new artifact's creation and update
+                    // timestamps to agree; only this final draft is persisted.
+                    artifact.created_at_ms = created_at_ms;
+                }
                 artifact.updated_at_ms = created_at_ms;
                 let revision = ChatArtifactRevision::new(
                     artifact.id.clone(),
@@ -874,27 +928,31 @@ impl AppToolExecutor {
             .validate()
             .map_err(|error| BrokerError::Execution(error.to_string()))?;
         let reference = commit.revision.artifact_ref(commit.artifact.title.clone());
+        let edit_token = chart_edit_token(&commit.revision);
         let mut pending = self.capture.pending_deliveries.lock().await;
         let committed = self.capture.artifacts.lock().await;
         let mut published_ids = BTreeSet::new();
         for existing in committed.iter() {
             published_ids.insert(existing.artifact.id.clone());
         }
+        let mut pending_ids = BTreeSet::new();
         for pending_capture in pending.values() {
             for existing in &pending_capture.artifacts {
                 published_ids.insert(existing.artifact.id.clone());
+                pending_ids.insert(existing.artifact.id.clone());
             }
         }
-        if published_ids.contains(&commit.artifact.id) {
+        if pending_ids.contains(&commit.artifact.id) {
             return Err(BrokerError::Execution(
-                "a Chat turn may not publish the same artifact twice".into(),
-            ));
+                "Another call in this batch is still publishing this artifact, so this call was not applied.".into(),
+            ).with_next("To apply this change, revise a chart or table with the edit_token from that call's result, or a document with expected_revision set to the revision from that call's result."));
         }
-        if published_ids.len() >= crate::chat::artifacts::MAX_CHAT_TURN_ARTIFACTS {
-            return Err(BrokerError::Execution(format!(
-                "a Chat turn may publish at most {} artifact revisions",
-                crate::chat::artifacts::MAX_CHAT_TURN_ARTIFACTS
-            )));
+        published_ids.insert(commit.artifact.id.clone());
+        if published_ids.len() > crate::chat::artifacts::MAX_CHAT_TURN_ARTIFACTS {
+            return Err(BrokerError::ArtifactLimit {
+                limit: crate::chat::artifacts::MAX_CHAT_TURN_ARTIFACTS,
+            }
+            .with_next("Those already published can still be revised."));
         }
         drop(committed);
         pending
@@ -905,6 +963,7 @@ impl AppToolExecutor {
         Ok(json!({
             "status": "staged",
             "artifact": reference,
+            "edit_token": edit_token,
             "message": message,
         }))
     }

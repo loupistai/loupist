@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { QuoteAsk } from "./QuoteAsk";
+import { QuoteAsk, quoteAskPosition, selectedLines } from "./QuoteAsk";
 import { composeSubmission, quoteChip } from "../../chat/composerChips";
 
 function selectText(node: Node, start: number, end: number) {
@@ -36,6 +36,61 @@ it("offers to ask about a phrase selected in an answer and hands over its messag
   await act(async () => { vi.runAllTimers(); });
   expect(screen.queryByRole("button", { name: "Ask about this" })).not.toBeInTheDocument();
   vi.useRealTimers();
+});
+
+describe("where the button sits", () => {
+  const size = { width: 120, height: 28 };
+  const view = { top: 60, bottom: 700, left: 300, right: 1200 };
+  // Two selected lines; the second ends at x 640. The citation box on the first line is a rectangle of the same line.
+  const twoLines = [
+    { top: 100, bottom: 124, left: 320, right: 860 }, { top: 102, bottom: 122, left: 866, right: 900 },
+    { top: 128, bottom: 152, left: 320, right: 640 },
+  ];
+  const overlaps = (at: { top: number; left: number }, line: { top: number; bottom: number; left: number; right: number }) =>
+    at.top < line.bottom && at.top + size.height > line.top && at.left < line.right && at.left + size.width > line.left;
+
+  it("goes just under the last selected line, centred where the selection ends, covering none of it", () => {
+    const lines = selectedLines(twoLines)!;
+    expect(lines.last).toEqual({ top: 128, bottom: 152, left: 320, right: 640 });
+    expect(lines.first.right).toBe(900);
+    const at = quoteAskPosition(lines, size, view);
+    expect(at).toEqual({ top: 158, left: 580 });
+    for (const line of twoLines) expect(overlaps(at, line)).toBe(false);
+  });
+
+  it("goes over the first line when the last one is at the bottom of the view, and stays inside the view", () => {
+    const low = twoLines.map((line) => ({ ...line, top: line.top + 540, bottom: line.bottom + 540 }));
+    const at = quoteAskPosition(selectedLines(low)!, size, view);
+    expect(at).toEqual({ top: 640 - 6 - 28, left: 320 });
+    for (const line of low) expect(overlaps(at, line)).toBe(false);
+    // A selection ending at the right edge keeps the button inside the view.
+    const edge = quoteAskPosition(selectedLines([{ top: 100, bottom: 124, left: 900, right: 1195 }])!, size, view);
+    expect(edge.left + size.width).toBeLessThanOrEqual(view.right - 8);
+    // Selected lines that fill the view: the button stays in it, at its foot.
+    const tall = quoteAskPosition(selectedLines([{ top: 40, bottom: 64, left: 320, right: 900 }, { top: 680, bottom: 704, left: 320, right: 900 }])!, size, view);
+    expect(tall.top).toBe(700 - 8 - 28);
+  });
+
+  it("places the button from the selected text's lines, not over them", async () => {
+    vi.useFakeTimers();
+    const lines = [{ top: 100, bottom: 124, left: 320, right: 860, width: 540, height: 24 }, { top: 128, bottom: 152, left: 320, right: 640, width: 320, height: 24 }];
+    const original = Object.getOwnPropertyDescriptor(Range.prototype, "getClientRects");
+    Object.defineProperty(Range.prototype, "getClientRects", { configurable: true, value: () => lines });
+    try {
+      render(<><article className="message assistant" data-message-id="answer-1"><div className="message-content"><p>Inventory is 54 days, so demand has not reached cash and margins fell.</p></div></article><QuoteAsk onQuote={vi.fn()} /></>);
+      selectText(screen.getByText(/Inventory is 54 days/).firstChild!, 0, 60);
+      fireEvent.mouseUp(document);
+      await act(async () => { vi.runAllTimers(); });
+      const button = screen.getByRole("button", { name: "Ask about this" });
+      const at = { top: Number.parseFloat(button.style.top), left: Number.parseFloat(button.style.left) };
+      expect(at).toEqual({ top: 158, left: 580 });
+      for (const line of lines) expect(overlaps(at, line)).toBe(false);
+    } finally {
+      if (original) Object.defineProperty(Range.prototype, "getClientRects", original);
+      else delete (Range.prototype as { getClientRects?: unknown }).getClientRects;
+      vi.useRealTimers();
+    }
+  });
 });
 
 it("sends a quote as a blockquote before the question, or asks to explain it alone", () => {

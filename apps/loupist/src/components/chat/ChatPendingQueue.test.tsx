@@ -71,7 +71,7 @@ it("does not send a queued message while the current response is running", async
   const props = handlers();
   render(<ChatPendingQueue models={[]} {...props} canSendNow={false} queued={[queued("q1", "Wait for the answer")]} />);
   await openActions(user);
-  const send = screen.getByRole("menuitem", { name: "Send queued message now" });
+  const send = screen.getByRole("menuitem", { name: /^Send queued message now/ });
   expect(send).toHaveAttribute("aria-disabled", "true");
   await user.click(send);
   expect(props.onSendNow).not.toHaveBeenCalled();
@@ -83,5 +83,47 @@ it("waits quietly while offline: no guide hint and no send-now", async () => {
   expect(screen.queryByText(/Guide now/)).toBeNull();
   expect(screen.queryByText("Queued")).toBeNull();
   await openActions(user);
-  expect(screen.getByRole("menuitem", { name: "Send queued message now" })).toHaveAttribute("aria-disabled", "true");
+  expect(screen.getByRole("menuitem", { name: "Send queued message now Waits until you're back online" })).toHaveAttribute("aria-disabled", "true");
+});
+
+it("says why Send now is unavailable: the running reply, or what to reconnect", async () => {
+  const user = userEvent.setup();
+  const { rerender } = render(<ChatPendingQueue models={[]} {...handlers()} canSendNow={false} queued={[queued("q1", "Next")]} />);
+  await openActions(user);
+  expect(screen.getByRole("menuitem", { name: "Send queued message now Waits until the current response finishes" })).toHaveAttribute("aria-disabled", "true");
+  await user.keyboard("{Escape}");
+  rerender(<ChatPendingQueue models={[]} {...handlers()} canSendNow={false} blockedReason="Reconnect the workspace folder to send messages" queued={[queued("q1", "Next")]} />);
+  await openActions(user);
+  expect(screen.getByRole("menuitem", { name: "Send queued message now Reconnect the workspace folder to send messages" })).toBeVisible();
+});
+
+it("offers the next message after a stopped reply held the queue", async () => {
+  const user = userEvent.setup();
+  const props = handlers();
+  const { rerender } = render(<ChatPendingQueue models={[]} {...props} holdReason="Response stopped. Queued messages were kept." queued={[queued("q1", "First"), queued("q2", "Second")]} />);
+  await user.click(screen.getByRole("button", { name: "Send next now" }));
+  expect(props.onSendNow).toHaveBeenCalledWith("q1");
+  // Nothing to offer while the message cannot go: offline, or while a reply runs.
+  rerender(<ChatPendingQueue models={[]} {...props} offline holdReason="Waiting to send until you're back online." queued={[queued("q1", "First")]} />);
+  expect(screen.queryByRole("button", { name: "Send next now" })).toBeNull();
+  rerender(<ChatPendingQueue models={[]} {...props} canSendNow={false} holdReason="Reconnect the workspace folder before sending." queued={[queued("q1", "First")]} />);
+  expect(screen.queryByRole("button", { name: "Send next now" })).toBeNull();
+});
+
+it("moves focus to the next row, then to the message, when a row's menu removes it", async () => {
+  const user = userEvent.setup();
+  const props = handlers();
+  const composer = document.createElement("textarea");
+  composer.setAttribute("data-chat-composer", "true");
+  document.body.append(composer);
+  const { rerender } = render(<ChatPendingQueue models={[]} {...props} queued={[queued("q1", "First"), queued("q2", "Second")]} />);
+  await openActions(user, 0);
+  await user.click(screen.getByRole("menuitem", { name: "Remove queued message" }));
+  rerender(<ChatPendingQueue models={[]} {...props} queued={[queued("q2", "Second")]} />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Queued message actions" })).toHaveFocus());
+  await openActions(user, 0);
+  await user.click(screen.getByRole("menuitem", { name: "Remove queued message" }));
+  rerender(<ChatPendingQueue models={[]} {...props} queued={[]} />);
+  await waitFor(() => expect(composer).toHaveFocus());
+  composer.remove();
 });

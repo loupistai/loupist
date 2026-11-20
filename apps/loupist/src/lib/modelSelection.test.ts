@@ -31,3 +31,14 @@ it("does not silently replace a stale explicit choice, but moves past a hidden o
   expect(resolve(catalog, { model_profile_id: "pi/luna", thinking_level: "removed-level", run_options: {} }, undefined)).toMatchObject({ model_profile_id: "pi/luna", thinking_level: "" });
   expect(resolve({ ...catalog, hidden_model_profile_ids: ["pi/luna"] }, { model_profile_id: "pi/luna", thinking_level: "max", run_options: {} }, undefined)).toMatchObject({ model_profile_id: "pi/sol", thinking_level: "max" });
 });
+
+it("resolves the same explicit, saved and model reasoning defaults on both surfaces", () => {
+  const grok = { ...luna, id: "xai/grok-4.7", provider: "xai", model: "grok-4.7", thinking_levels: ["low", "medium", "high"] };
+  const models = { ...catalog, models: [grok] };
+  const defaults = { model_profile_id: grok.id, thinking_level: "high", run_options: {} };
+  for (const surface of ["bot", "session"] as const) {
+    expect(resolve(models, undefined, defaults, undefined, surface).thinking_level).toBe("high");
+    expect(resolve(models, { model_profile_id: grok.id, thinking_level: "medium", run_options: {} }, defaults, undefined, surface).thinking_level).toBe("medium");
+    expect(resolve(models, undefined, { ...defaults, thinking_level: null }, undefined, surface).thinking_level).toBe("medium");
+  }
+});

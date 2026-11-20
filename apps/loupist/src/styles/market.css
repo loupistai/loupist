@@ -1,0 +1,38 @@
+/* Shared market primitives (src/components/market/): price, change, trend line and asset tile.
+   Up and down colours come from --gg-color-price-*, which follow appearance.price_colors;
+   they mean price direction only and decorate nothing else. */
+
+.market-price { font-weight: var(--gg-weight-strong); letter-spacing: -0.01em; white-space: nowrap; }
+.market-price[data-size="title"] { font-size: var(--gg-text-heading); line-height: var(--gg-leading-heading); font-weight: var(--gg-weight-bold); letter-spacing: -0.02em; }
+.market-price[data-size="figure"] { font-size: var(--gg-text-figure); line-height: var(--gg-leading-figure); font-weight: var(--gg-weight-bold); letter-spacing: -0.03em; }
+
+.market-change {
+  display: inline-flex; align-items: center; gap: 3px; flex: none;
+  height: 22px; padding: 0 var(--gg-space-2); border-radius: var(--gg-radius-full);
+  font-size: var(--gg-text-control); font-weight: var(--gg-weight-strong); line-height: 1; white-space: nowrap;
+  color: var(--gg-color-text-tertiary); background: var(--gg-color-bg-sunken);
+}
+.market-change[data-direction="up"] { color: var(--gg-color-price-up); background: var(--gg-color-price-up-soft); }
+.market-change[data-direction="down"] { color: var(--gg-color-price-down); background: var(--gg-color-price-down-soft); }
+.market-change[data-size="sm"] { height: 20px; padding: 0 6px; font-size: var(--gg-text-meta); }
+.market-change[data-size="lg"] { height: 26px; padding: 0 10px; font-size: var(--gg-text-body); }
+.market-change-glyph { font-size: 0.62em; }
+
+/* Sized by its width and height attributes, as a data mark, not by CSS. */
+.market-sparkline { display: block; flex: none; overflow: visible; color: var(--gg-color-text-tertiary); }
+.market-sparkline[data-direction="up"] { color: var(--gg-color-price-up); }
+.market-sparkline[data-direction="down"] { color: var(--gg-color-price-down); }
+.market-sparkline-line { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.market-sparkline-area { fill: currentColor; stroke: none; opacity: 0.1; }
+.market-sparkline-end { fill: currentColor; }
+
+.market-tile {
+  display: inline-grid; place-items: center; flex: none;
+  width: var(--gg-size-control-lg); height: var(--gg-size-control-lg); border-radius: var(--gg-radius-md);
+  color: var(--gg-color-text-secondary); background: var(--gg-color-bg-sunken);
+  box-shadow: inset 0 0 0 1px var(--gg-color-border-subtle);
+  font-size: var(--gg-text-meta); font-weight: var(--gg-weight-bold); letter-spacing: -0.02em; line-height: 1;
+  user-select: none;
+}
+.market-tile[data-size="sm"] { width: var(--gg-size-control-sm); height: var(--gg-size-control-sm); border-radius: var(--gg-radius-sm); font-size: var(--gg-text-caption); }
+.market-tile[data-size="lg"] { width: calc(var(--gg-space-8) + var(--gg-space-1)); height: calc(var(--gg-space-8) + var(--gg-space-1)); border-radius: var(--gg-radius-md); font-size: var(--gg-text-control); }

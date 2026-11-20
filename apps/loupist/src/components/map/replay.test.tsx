@@ -4,7 +4,7 @@ import { DAY_MS, presentAt, replayTime, replayVisible, useMapReplay, useReplayVi
 import userEvent from "@testing-library/user-event";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { frozenLayout } from "./layout";
-const node = (id: string, firstSeenAtMs?: number): KnowledgeMapNode => ({ id, label: id, kind: "entity", degree: 1, watched: false, held: false, firstSeenAtMs });
+const node = (id: string, firstSeenAtMs?: number): KnowledgeMapNode => ({ id, label: id, kind: "entity", degree: 1, watched: false, firstSeenAtMs });
 it("shows exactly timestamp <= t and undated nodes; edges wait for their timestamp and both endpoints", () => {
   const nodes = [node("undated"), node("zero", 0), node("earlier", 10), node("boundary", 20), node("later", 21)];
   const edges = [{ id: "early", kind: "claim" as const, source: "undated", target: "boundary" }, { id: "future-end", kind: "claim" as const, source: "boundary", target: "later" }, { id: "future-edge", kind: "claim" as const, source: "zero", target: "earlier", firstSeenAtMs: 21 }];

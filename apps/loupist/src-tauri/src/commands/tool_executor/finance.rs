@@ -265,7 +265,7 @@ impl AppToolExecutor {
                 "runtime_id": result.producer.runtime_id,
                 "tool_name": result.producer.tool_name,
                 "origin": result.producer.origin,
-                "source_save_allowed": matches!(result.producer.origin, RunResultOrigin::AcquiredOriginal | RunResultOrigin::Discovery | RunResultOrigin::WorkspaceFile),
+                "source_save_allowed": result.producer.origin.saveable_as_source(),
                 "provider": result.producer.provider,
                 "request_digest": result.request_digest,
                 "response_digest": result.response_digest,
@@ -504,11 +504,11 @@ impl AppToolExecutor {
             .filter(|value| value.is_object())
             .cloned()
             .ok_or(BrokerError::Malformed)?;
-        // An account read nobody reviewed for holdings is never made (D9).
+        // An account read without a reviewed field list is never made.
         let review = self.state.finance_data.kis_account_review(operation_id);
-        if review == Some(crate::privacy::holdings::AccountReview::Unreviewed) {
+        if review == Some(crate::privacy::account_fields::AccountReview::Unreviewed) {
             return Err(BrokerError::Execution(
-                crate::privacy::holdings::UNREVIEWED.into(),
+                crate::privacy::account_fields::UNREVIEWED.into(),
             ));
         }
         self.require_capability(crate::finance_data::KIS_SOURCE_ID)?;
@@ -554,8 +554,13 @@ impl AppToolExecutor {
         // Quantities, amounts, prices paid and their rates stay here: hidden
         // before the result reaches Pi, a dataset, a result ref or an export.
         let mut output = output;
-        if let Some(crate::privacy::holdings::AccountReview::Account(fields)) = review {
-            crate::privacy::holdings::redact_fields(&mut output, &fields);
+        if let Some(crate::privacy::account_fields::AccountReview::Account(fields)) = review {
+            if !crate::privacy::account_fields::account_fields_visible(
+                &self.state,
+                crate::finance_data::KIS_SOURCE_ID,
+            ) {
+                crate::privacy::account_fields::redact_fields(&mut output, &fields);
+            }
         }
         Ok(output)
     }
@@ -594,7 +599,7 @@ impl AppToolExecutor {
             .map_err(|error| match error {
                 crate::finance_data::FinanceDataError::NoData(_) if consolidated => {
                     finance_error(error).with_next(
-                        "Companies without subsidiaries file no consolidated statements; retry with basis separate and say so.",
+                        "OpenDART returned no consolidated statements for this company and period. The usual reason is that a company with no subsidiaries files only separate statements, so read the same period with basis separate. If that returns figures, the company filed no consolidated statements for the period: use the separate figures and tell the user that is why they are on a separate basis. If that returns nothing either, OpenDART has no report for the period.",
                     )
                 }
                 error => finance_error(error),
@@ -922,5 +927,206 @@ mod tests {
         .to_string();
         assert!(ambiguous.contains("00126380"));
         assert!(ambiguous.contains("00126362"));
+    }
+}
+
+/// The turn pins both its resolved table and each retained pair result.
+#[derive(Default)]
+pub(super) struct FxTurn {
+    pub(super) resolved: Option<crate::finance_data::fx::Resolved>,
+    upstream: Vec<String>,
+    pub(super) pairs: BTreeMap<(String, String), (String, Value)>,
+}
+
+fn fx_pair_params(
+    params: Value,
+    display_currency: Option<&str>,
+) -> Result<(String, String), BrokerError> {
+    let invalid_request = || {
+        BrokerError::invalid(
+            "request",
+            "expected only a `from` currency code and an optional `to` currency code",
+        )
+    };
+    let object = params.as_object().ok_or_else(invalid_request)?;
+    if object.keys().any(|key| key != "from" && key != "to") {
+        return Err(invalid_request());
+    }
+    let from = object
+        .get("from")
+        .and_then(Value::as_str)
+        .ok_or_else(invalid_request)?;
+    let invalid_to = || BrokerError::invalid("to", "expected three uppercase ASCII letters");
+    let to = match object.get("to") {
+        Some(value) => value.as_str().ok_or_else(invalid_to)?,
+        None => display_currency.ok_or_else(|| {
+            BrokerError::invalid(
+                "to",
+                "this turn has no display currency. Pass the target ISO 4217 code in `to`",
+            )
+        })?,
+    };
+    for (field, code) in [("from", from), ("to", to)] {
+        if !crate::finance_data::fx::has_currency_code_shape(code) {
+            return Err(BrokerError::invalid(
+                field,
+                "expected three uppercase ASCII letters",
+            ));
+        }
+    }
+    if from == to {
+        return Err(BrokerError::invalid("to", "the same currency as from"));
+    }
+    Ok((from.to_owned(), to.to_owned()))
+}
+
+impl AppToolExecutor {
+    pub(super) async fn fx_rate(
+        &self,
+        policy: &ToolPolicy,
+        params: Value,
+        delivery: &str,
+    ) -> Result<Value, BrokerError> {
+        use crate::finance_data::fx::{RATE_PROVIDER, RATE_ROUTE};
+        if policy.as_of.is_some() || self.capture.as_of_turn() {
+            return Err(BrokerError::Execution(
+                "as_of_unsupported: fx_rate supplies the latest rates only; currency_price_historical, a market data route, reads a currency pair's price bars up to the cutoff".into(),
+            ));
+        }
+        let (from, to) = fx_pair_params(params, policy.display_currency.as_deref())?;
+        let mut turn = self.capture.fx.lock().await;
+        if let Some((reference, result)) = turn.pairs.get(&(from.clone(), to.clone())) {
+            // A pending or discarded delivery does not retain its citation.
+            if self.capture.run_result(reference).await.is_some() {
+                return Ok(result.clone());
+            }
+        }
+        if turn.resolved.is_none() {
+            let upstream = std::sync::Mutex::new(Vec::new());
+            let resolved = self.state.fx_reference.resolve(chrono::Utc::now(), self.capability_ids.contains("openbb.platform"), || async {
+                self.host_connect(policy,"openbb", &[RATE_ROUTE]).await?;
+                // Use this turn's executor. The provider read remains
+                // upstream evidence but never becomes a separate answer Source.
+                let read_delivery = new_id("fx-read");
+                let raw = match self.mcp_call(policy,json!({"server_id":"openbb","tool_name":RATE_ROUTE,"arguments":{"provider":RATE_PROVIDER}}),&read_delivery).await {
+                    Ok(raw) => raw,
+                    Err(error) => { self.capture.discard_delivery(&read_delivery).await; return Err(error); }
+                };
+                if raw["call_error"] == true {
+                    self.capture.discard_delivery(&read_delivery).await;
+                    let message = raw["message"].as_str().unwrap_or("The MCP provider rejected the request");
+                    let error = BrokerError::Execution(message.strip_prefix("tool execution failed: ").unwrap_or(message).to_owned());
+                    return Err(match raw["next"].as_str() {
+                        Some(next) => error.with_next(next.to_owned()),
+                        None => error,
+                    });
+                }
+                if let Some(reference) = raw.pointer("/result/result_ref").and_then(Value::as_str) {
+                    upstream.lock().unwrap().push(reference.to_owned());
+                    self.capture.stage(&read_delivery, |pending| { pending.unlisted_results.insert(reference.into()); }).await;
+                }
+                self.capture.commit_delivery(&read_delivery).await;
+                Ok(raw)
+            }).await.map_err(crate::finance_data::fx::shared_error)?;
+            turn.upstream = upstream.into_inner().unwrap();
+            turn.resolved = Some(resolved);
+        }
+        let mut result = turn.resolved.as_ref().unwrap().pair(&from, &to)?;
+        let request = json!({"from":from,"to":to});
+        let producer = run_result_producer(ToolMethod::FxRate, &request, &result).unwrap();
+        let reference = self
+            .capture
+            .stage_run_result_with_delivery(
+                delivery,
+                producer,
+                &request,
+                result.clone(),
+                turn.upstream.clone(),
+                None,
+            )
+            .await?;
+        result["citation_url"] = json!(evidence::citation_url(&reference));
+        turn.pairs.insert((from, to), (reference, result.clone()));
+        Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod fx_tests {
+    use super::*;
+    #[test]
+    fn fx_reviewed_description_reaches_the_catalog() {
+        let catalog: Value =
+            serde_json::from_str(include_str!("../../../../agent/tool-catalog.json")).unwrap();
+        let tool = catalog["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "fx_rate")
+            .unwrap();
+        assert_eq!(tool["description"], "An exchange rate between two currencies, based on a central bank's reference rates published once a day on working days; it is not a live quote and is unavailable under an as-of date. to_per_from is units of `to` per one unit of `from`, with the day those rates were published and their source. `from` and `to` are ISO 4217 codes. If `to` is omitted, it defaults to the turn envelope's `interface.display_currency` when set. When a newer rate could not be read, an existing stored table supplies the result and `behind` says why; without a stored table, the call fails. For calculate convert, request `from` as the amount's currency and `to` as the result's currency, and pass to_per_from as `rate` with this result's citation_url in input_sources.");
+    }
+
+    #[test]
+    fn fx_schema_and_rust_validation_cover_defaulted_and_explicit_pairs() {
+        let catalog: Value =
+            serde_json::from_str(include_str!("../../../../agent/tool-catalog.json")).unwrap();
+        let schema = &catalog["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "fx_rate")
+            .unwrap()["parameters"];
+        assert_eq!(schema["additionalProperties"], false);
+        assert_eq!(schema["required"], json!(["from"]));
+        let pattern =
+            regex::Regex::new(schema["properties"]["from"]["pattern"].as_str().unwrap()).unwrap();
+        assert_eq!(schema["properties"]["to"], schema["properties"]["from"]);
+        for (params, schema_accepts, result) in [
+            (json!({"from":"USD","to":"THB"}), true, Ok("THB")),
+            (json!({"from":"USD"}), true, Ok("KRW")),
+            (json!({"from":"USD","to":"USD"}), true, Err("to")),
+            (json!({"from":"usd","to":"KRW"}), false, Err("from")),
+            (json!({"from":"US","to":"KRW"}), false, Err("from")),
+            (json!({"from":"ÜSD","to":"KRW"}), false, Err("from")),
+            (json!({"from":"USD","to":"krw"}), false, Err("to")),
+            (json!({"from":"USD","to":42}), false, Err("to")),
+            (json!({"from":"USD","to":null}), false, Err("to")),
+            (json!({"to":"KRW"}), false, Err("request")),
+            (json!({"from":"USD","amount":1}), false, Err("request")),
+        ] {
+            assert_eq!(
+                params
+                    .as_object()
+                    .is_some_and(|object| object.contains_key("from")
+                        && object
+                            .iter()
+                            .all(|(field, value)| ["from", "to"].contains(&field.as_str())
+                                && value.as_str().is_some_and(|code| pattern.is_match(code)))),
+                schema_accepts,
+                "{params}"
+            );
+            match (fx_pair_params(params.clone(), Some("KRW")), result) {
+                (Ok((from, to)), Ok(expected)) => {
+                    assert_eq!((from.as_str(), to.as_str()), ("USD", expected))
+                }
+                (Err(BrokerError::InvalidArguments { field, .. }), Err(expected)) => {
+                    assert_eq!(field, expected, "{params}")
+                }
+                (actual, expected) => panic!("{params}: {actual:?} != {expected:?}"),
+            }
+        }
+        // The pinned Pi runtime drops null on optional properties before
+        // calling the broker. A raw JSON null only reaches the direct Rust path.
+        let mut pi_args = json!({"from":"USD","to":null});
+        pi_args.as_object_mut().unwrap().remove("to");
+        assert_eq!(
+            fx_pair_params(pi_args.clone(), Some("KRW")).unwrap().1,
+            "KRW"
+        );
+        assert!(matches!(
+            fx_pair_params(pi_args, None),
+            Err(BrokerError::InvalidArguments { field, .. }) if field == "to"
+        ));
     }
 }

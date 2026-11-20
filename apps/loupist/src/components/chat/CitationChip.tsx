@@ -1,9 +1,9 @@
 import { useTranslation } from "@/i18n";
-import { formatDate } from "@/i18n/format";
 import { Popover } from "radix-ui";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ChatEvidenceRef } from "../../types";
 import { evidenceExcerptParts } from "../../chat/evidence";
+import { evidenceDate } from "../../chat/numberChecks";
 import { quoteEvidence } from "../../chat/quoteEvidence";
 import { quotePreviewLine } from "./QuoteEvidence";
 import { narrowWindow } from "../../chat/narrowWindow";
@@ -11,15 +11,10 @@ import { useOpenEvidenceId } from "./OpenEvidence";
 import { useOpenProps } from "../navigation/Open";
 import type { ChatDestination } from "../../chat/navigation";
 import { CLOSE_DELAY_MS, OPEN_DELAY_MS, useEvidencePopover } from "./useEvidencePopover";
+import { useConversationScroll } from "../ai-elements/conversation";
 
 /** How long a press is held before it opens the card instead of Evidence (narrow windows). */
 export const LONG_PRESS_MS = 500;
-
-const sourceDate = (evidence: ChatEvidenceRef) => {
-  const value = evidence.published_at ?? evidence.retrieved_at;
-  const time = value ? Date.parse(value) : Number.NaN;
-  return Number.isFinite(time) ? formatDate(time, /^\d{4}-\d{2}-\d{2}$/.test(value ?? "") ? { timeZone: "UTC" } : {}) : "";
-};
 
 /** A citation nothing can open: the number stays in the text, with the reason on hover. */
 export function UnavailableCitation({ children }: { children: ReactNode }) {
@@ -50,6 +45,7 @@ export function CitationChip({ evidence, label, title, source, to, children }: {
   children: ReactNode;
 }) {
   const { t } = useTranslation("chat");
+  const conversation = useConversationScroll();
   const link = useOpenProps(to);
   const [open, setOpen] = useState(false);
   const [byKeyboard, setByKeyboard] = useState(false);
@@ -62,7 +58,7 @@ export function CitationChip({ evidence, label, title, source, to, children }: {
   // Focus that follows a press is a click; focus without one came from the keyboard.
   const pressed = useRef(false);
   const cardId = useId();
-  const date = sourceDate(evidence);
+  const date = evidenceDate(evidence);
   // The chip whose passage the Evidence reader shows now reads as the current one.
   const current = useOpenEvidenceId() === evidence.id;
   const schedule = (next: boolean, delay: number) => {
@@ -102,6 +98,8 @@ export function CitationChip({ evidence, label, title, source, to, children }: {
             holdTimer.current = null;
             heldOpen.current = true;
             if (timer.current !== null) window.clearTimeout(timer.current);
+            // The card stays until dismissed, so the thread stays under it as it grows.
+            conversation?.holdScrollPosition();
             setByKeyboard(false);
             setPinned(true);
             setOpen(true);

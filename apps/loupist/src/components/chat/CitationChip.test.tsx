@@ -4,6 +4,10 @@ import { CitationChip, LONG_PRESS_MS } from "./CitationChip";
 import { renderWithOpen, destinations } from "../../test/open";
 import * as evidenceText from "../../chat/evidence";
 
+// The thread's scroll actions: a card the reader keeps open holds the page under it.
+const scroll = vi.hoisted(() => ({ holdScrollPosition: vi.fn(), jumpToLatest: vi.fn(), blockAppended: vi.fn() }));
+vi.mock("../ai-elements/conversation", async (load) => ({ ...(await load<typeof import("../ai-elements/conversation")>()), useConversationScroll: () => scroll }));
+
 const evidence = {
   id: "e1", title: "Hanul Precision Q3 operating review", kind: "original", url: "https://hanul.example/q3", provider: "Hanul IR",
   tool_name: "web_fetch", retrieved_at: "2026-10-28T00:00:00Z", published_at: "2026-10-27",
@@ -48,6 +52,7 @@ describe("citation card at 700 px (chat-run §2 breakpoints)", () => {
     expect(card).toHaveTextContent("operating margin 14.8%");
     expect(chip).toHaveAttribute("aria-expanded", "true");
     expect(onOpen).not.toHaveBeenCalled();
+    expect(scroll.holdScrollPosition).toHaveBeenCalled();
     // Lifting the finger off the chip does not close a card opened this way.
     fireEvent.pointerLeave(chip);
     act(() => { vi.advanceTimersByTime(1000); });

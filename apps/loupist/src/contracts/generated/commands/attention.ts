@@ -24,7 +24,6 @@ export type AttentionKind =
   | "lineCrossed"
   | "briefingConflict"
   | "unreadResults"
-  | "watchAlerts"
   | "checkDue";
 
 export type NotifyRequest = {

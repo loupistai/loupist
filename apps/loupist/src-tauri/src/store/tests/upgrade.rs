@@ -101,7 +101,7 @@ fn rows(connection: &Connection) -> BTreeMap<String, Vec<Vec<Value>>> {
 /// Every schema object with its whitespace-, case- and quote-normalized SQL.
 fn shape(connection: &Connection) -> BTreeMap<(String, String), Option<String>> {
     let mut statement = connection
-        .prepare("SELECT type, name, sql FROM sqlite_schema")
+        .prepare("SELECT type, name, sql FROM sqlite_schema WHERE tbl_name NOT LIKE 'retired_%'")
         .unwrap();
     let shape = statement
         .query_map([], |row| {
@@ -123,8 +123,9 @@ fn backups(directory: &Path) -> Vec<PathBuf> {
         .filter_map(|entry| {
             let path = entry.ok()?.path();
             let name = path.file_name()?.to_str()?;
-            name.starts_with("loupist.sqlite3.upgrade-backup-")
-                .then_some(path.clone())
+            (name.starts_with("loupist.sqlite3.upgrade-backup-")
+                || name.starts_with("catalog.sqlite3.upgrade-backup-"))
+            .then_some(path.clone())
         })
         .collect()
 }
@@ -172,7 +173,16 @@ fn a_baseline_database_upgrades_to_the_fresh_schema_with_its_data_intact() {
     std::fs::create_dir(&directory).unwrap();
     let path = baseline_database(&directory, BASELINE_FIXTURE);
     let before = rows(&Connection::open(&path).unwrap());
-    let data_before = data(&Connection::open(&path).unwrap());
+    let mut data_before = data(&Connection::open(&path).unwrap());
+    data_before.remove("user_watchlist");
+    for (old, retired) in [
+        ("user_wallet_addresses", "retired_wallet_addresses"),
+        ("user_holdings_snapshots", "retired_holdings_snapshots"),
+        ("user_holdings_positions", "retired_holdings_positions"),
+    ] {
+        let rows = data_before.remove(old).unwrap();
+        data_before.insert(retired.into(), rows);
+    }
 
     drop(SqliteStore::open(&path).unwrap());
 
@@ -184,7 +194,41 @@ fn a_baseline_database_upgrades_to_the_fresh_schema_with_its_data_intact() {
             crate::knowledge::KNOWLEDGE_SCHEMA_VERSION
         )
     );
-    assert_eq!(data(&upgraded), data_before, "rows and rowids are kept");
+    let mut actual = data(&upgraded);
+    for name in actual.keys() {
+        assert!(!matches!(
+            name.as_str(),
+            "instruments" | "listings" | "identifiers" | "events" | "user_follows"
+        ));
+    }
+    data_before.retain(|name, _| {
+        !name.starts_with("knowledge_watch_")
+            && !name.starts_with("knowledge_earnings_")
+            && !matches!(
+                name.as_str(),
+                "knowledge_asset_observations" | "knowledge_asset_section_deltas"
+            )
+    });
+    for table in [
+        "assets",
+        "knowledge_asset_line_readings",
+        "knowledge_asset_price_points",
+        "knowledge_saved_price_reads",
+    ] {
+        actual.remove(table);
+    }
+    // The app-wide followed list had no Loupist, so no Loupist follows it.
+    assert_eq!(actual.remove("asset_follows"), Some(Vec::new()));
+    assert_eq!(actual, data_before, "unrelated rows and rowids are kept");
+    let id = crate::knowledge::assets::asset_id("ETH", "CRYPTO");
+    assert_eq!(
+        upgraded.query_row(
+            "SELECT asset_id,name,json_extract(reference_json,'$.ticker'),json_extract(reference_json,'$.exchange') FROM assets",
+            [], |row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?,row.get::<_,String>(3)?))
+        ).unwrap(),
+        (id, "Ether".into(), "ETH".into(), "CRYPTO".into()),
+    );
+    assert!(!rows(&upgraded).contains_key("user_watchlist"));
     // An upgraded install has exactly the shape a fresh install has.
     let fresh = SqliteStore::open_in_memory().unwrap();
     assert_eq!(shape(&upgraded), shape(&fresh.lock().unwrap()));
@@ -221,7 +265,7 @@ fn a_baseline_database_upgrades_to_the_fresh_schema_with_its_data_intact() {
         .unwrap();
     assert!(upgraded
         .execute(
-            "INSERT INTO user_holdings_snapshots VALUES ('snapshot-c', 'wallet', NULL, 9, 'USD', NULL)",
+            "INSERT INTO retired_holdings_snapshots VALUES ('snapshot-c', 'wallet', NULL, 9, 'USD', NULL)",
             [],
         )
         .is_err());
@@ -238,9 +282,11 @@ fn a_baseline_database_upgrades_to_the_fresh_schema_with_its_data_intact() {
     let backup = Connection::open(&backup).unwrap();
     assert_eq!(versions(&backup), (4, 6));
     assert_eq!(rows(&backup), before);
+    let after = rows(&upgraded);
     // Opening the current database again writes no further backup.
     drop(SqliteStore::open(&path).unwrap());
     assert_eq!(backups(&directory).len(), 1);
+    assert_eq!(rows(&Connection::open(&path).unwrap()), after);
 }
 
 #[test]
@@ -502,20 +548,33 @@ fn a_restored_baseline_round_trips_through_the_ladder() {
     let path = temporary.path().join("loupist.sqlite3");
     drop(SqliteStore::open(&path).unwrap());
     let mut connection = Connection::open(&path).unwrap();
+    let before = data(&connection);
     crate::store::upgrade::restore_baseline_for_test(&mut connection);
     let baseline = Connection::open_in_memory().unwrap();
     baseline.execute_batch(BASELINE_FIXTURE).unwrap();
     assert_eq!(shape(&connection), shape(&baseline));
+    assert_eq!(versions(&connection), (4, 6));
+    drop(connection);
+    let upgraded = SqliteStore::open(&path).unwrap();
+    assert_eq!(data(&upgraded.lock().unwrap()), before);
 }
 
 #[test]
 fn store_five_adds_source_lookup_indexes_without_rewriting_rows() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("loupist.sqlite3");
-    drop(SqliteStore::open(&path).unwrap());
-    let prior = Connection::open(&path).unwrap();
-    prior.execute_batch("DROP INDEX knowledge_spans_by_id; DROP INDEX knowledge_representations_by_id; PRAGMA user_version=5;").unwrap();
-    let before = data(&prior);
+    let mut prior = Connection::open(&path).unwrap();
+    prior.execute_batch(BASELINE_FIXTURE).unwrap();
+    crate::store::upgrade::upgrade_store_for_test(&mut prior, 5);
+    let mut before = data(&prior);
+    for table in [
+        "user_watchlist",
+        "user_wallet_addresses",
+        "user_holdings_snapshots",
+        "user_holdings_positions",
+    ] {
+        assert!(before.remove(table).unwrap().is_empty());
+    }
     drop(prior);
     let upgraded = SqliteStore::open(&path).unwrap();
     let connection = upgraded.lock().unwrap();
@@ -526,7 +585,19 @@ fn store_five_adds_source_lookup_indexes_without_rewriting_rows() {
             crate::knowledge::KNOWLEDGE_SCHEMA_VERSION
         )
     );
-    assert_eq!(data(&connection), before);
+    let mut after = data(&connection);
+    for table in [
+        "assets",
+        "knowledge_asset_line_readings",
+        "knowledge_asset_price_points",
+        "knowledge_saved_price_reads",
+    ] {
+        before.remove(table);
+        after.remove(table);
+    }
+    // The catalog creates each Loupist's follows when it opens; none carry over.
+    assert_eq!(after.remove("asset_follows"), Some(Vec::new()));
+    assert_eq!(after, before);
     for (table, column, index) in [
         ("knowledge_source_spans", "span_id", "knowledge_spans_by_id"),
         (
@@ -545,4 +616,404 @@ fn store_five_adds_source_lookup_indexes_without_rewriting_rows() {
         assert!(plan.contains(index), "{plan}");
     }
     assert_eq!(backups(root.path()).len(), 1);
+}
+
+#[test]
+fn held_identity_upgrade_keeps_an_existing_follows_name_and_follows_nothing() {
+    let temporary = tempfile::tempdir().unwrap();
+    let path = baseline_database(temporary.path(), BASELINE_FIXTURE);
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch("INSERT INTO user_watchlist VALUES ('ETH', 'CRYPTO', 'My Ether', 3);")
+        .unwrap();
+    let store = SqliteStore::open(&path).unwrap();
+    let entries = store.assets_list("loupist-a", false).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(Some(entries[0].name.as_str()), Some("My Ether"));
+    // The app-wide list belonged to no Loupist.
+    assert_eq!(entries[0].followed_at_ms, None);
+}
+
+#[test]
+fn held_identity_upgrade_keeps_only_the_latest_snapshot_of_a_source() {
+    let temporary = tempfile::tempdir().unwrap();
+    let path = baseline_database(temporary.path(), BASELINE_FIXTURE);
+    Connection::open(&path).unwrap().execute_batch(
+        "INSERT INTO user_holdings_snapshots VALUES ('snapshot-new', 'wallet', 'wallet-a', 9, 'USD', NULL);
+         INSERT INTO user_holdings_positions VALUES ('snapshot-new', 'BTC', 'CRYPTO', 'Bitcoin', '1', NULL, NULL, 'USD');"
+    ).unwrap();
+    let store = SqliteStore::open(&path).unwrap();
+    let entries = store.assets_list("loupist-a", false).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0]
+            .reference
+            .as_ref()
+            .unwrap()
+            .fields
+            .ticker
+            .as_deref(),
+        Some("BTC")
+    );
+    assert_eq!(Some(entries[0].name.as_str()), Some("Bitcoin"));
+    assert_eq!(entries[0].followed_at_ms, None);
+    drop(store);
+    let before = rows(&Connection::open(&path).unwrap());
+    drop(SqliteStore::open(&path).unwrap());
+    assert_eq!(rows(&Connection::open(&path).unwrap()), before);
+}
+
+fn store_seven(directory: &Path, seed: &str) -> PathBuf {
+    let path = directory.join("loupist.sqlite3");
+    let mut db = Connection::open(&path).unwrap();
+    db.execute_batch(BASELINE_FIXTURE).unwrap();
+    crate::store::upgrade::upgrade_store_for_test(&mut db, 7);
+    db.execute_batch(seed).unwrap();
+    assert_eq!(versions(&db).0, 7);
+    path
+}
+
+#[test]
+fn ownership_retirement_keeps_all_sources_fields_and_foreign_keys() {
+    let root = tempfile::tempdir().unwrap();
+    let path = store_seven(
+        root.path(),
+        r#"
+        INSERT INTO loupist_profiles VALUES ('desk', 1, '/research/desk', NULL, NULL, '{}');
+        INSERT INTO loupist_capability_bindings VALUES ('desk','onchain.wallets',2,'{}');
+        INSERT INTO loupist_capability_bindings VALUES ('desk','defillama.tvl',3,'{}');
+        INSERT INTO user_wallet_addresses VALUES ('unread','evm','0xunread',NULL,1,NULL,NULL,'unread',0);
+        INSERT INTO user_wallet_addresses VALUES ('first','evm','0xfirst','First',2,3,3,'ok',1);
+        INSERT INTO user_wallet_addresses VALUES ('second','bitcoin','bc1second','Second',4,5,5,'failed',2);
+        INSERT INTO user_holdings_snapshots VALUES ('file','csv',NULL,10,'USD','exact file');
+        INSERT INTO user_holdings_snapshots VALUES ('broker','kis',NULL,11,'KRW',NULL);
+        INSERT INTO user_holdings_snapshots VALUES ('exchange','crypto_file',NULL,12,'','mixed');
+        INSERT INTO user_holdings_snapshots VALUES ('empty','csv',NULL,13,'USD','empty');
+        INSERT INTO user_holdings_snapshots VALUES ('wallet-first','wallet','first',14,'',NULL);
+        INSERT INTO user_holdings_snapshots VALUES ('wallet-second','wallet','second',15,'BTC',NULL);
+        INSERT INTO user_holdings_positions VALUES ('file','AAA','US','Alpha','1.230000','77.010','94.7223','USD');
+        INSERT INTO user_holdings_positions VALUES ('broker','990001','KRX',NULL,'1337','36061.2566','48213900','KRW');
+        INSERT INTO user_holdings_positions VALUES ('exchange','ETH','CRYPTO','Ether','0.4271000000',NULL,NULL,'');
+        INSERT INTO user_holdings_positions VALUES ('wallet-first','ETH','CRYPTO',NULL,'3.14159265',NULL,NULL,'');
+        INSERT INTO user_holdings_positions VALUES ('wallet-second','BTC','CRYPTO',NULL,'0.00000001',NULL,NULL,'BTC');
+    "#,
+    );
+    let before = rows(&Connection::open(&path).unwrap());
+    let store = SqliteStore::open(&path).unwrap();
+    let db = store.lock().unwrap();
+    let after = rows(&db);
+    for (old, retired) in [
+        ("user_wallet_addresses", "retired_wallet_addresses"),
+        ("user_holdings_snapshots", "retired_holdings_snapshots"),
+        ("user_holdings_positions", "retired_holdings_positions"),
+    ] {
+        assert!(!after.contains_key(old));
+        assert_eq!(
+            after.get(retired),
+            before.get(old),
+            "every field and rowid in {old}"
+        );
+    }
+    let bindings: Vec<String> = db
+        .prepare("SELECT entry_id FROM loupist_capability_bindings ORDER BY entry_id")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(bindings, ["defillama.tvl"]);
+    assert_eq!(
+        after["loupist_capability_bindings"],
+        before["loupist_capability_bindings"]
+            .iter()
+            .filter(|row| row[2] != Value::Text("onchain.wallets".into()))
+            .cloned()
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(db.query_row("SELECT count(*) FROM sqlite_schema WHERE sql LIKE '%user_holdings_%' OR sql LIKE '%user_wallet_addresses%'", [], |r| r.get::<_,i64>(0)).unwrap(), 0);
+    assert_eq!(db.query_row("SELECT count(*) FROM retired_holdings_positions p JOIN retired_holdings_snapshots s USING(snapshot_id) LEFT JOIN retired_wallet_addresses w ON w.id=s.wallet_id", [], |r| r.get::<_,i64>(0)).unwrap(), 5);
+    for (table, parent) in [
+        ("retired_holdings_snapshots", "retired_wallet_addresses"),
+        ("retired_holdings_positions", "retired_holdings_snapshots"),
+    ] {
+        let parents: Vec<String> = db
+            .prepare(&format!("PRAGMA foreign_key_list({table})"))
+            .unwrap()
+            .query_map([], |r| r.get(2))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(parents, [parent]);
+    }
+    assert!(!db
+        .prepare("PRAGMA foreign_key_check")
+        .unwrap()
+        .exists([])
+        .unwrap());
+    assert_eq!(versions(&db).0, STORE_SCHEMA_VERSION);
+    // Admission's read-only upgrade copy accepts extra retired tables too.
+    let copy = crate::store::upgrade::upgraded_copy(&db).unwrap();
+    assert_eq!(rows(&copy), after);
+    drop(db);
+    drop(store);
+    // A folder uses the same upgrade entry point, and a second opening is a no-op.
+    let folder = SqliteStore::open_folder(&path).unwrap();
+    assert_eq!(rows(&folder.lock().unwrap()), after);
+}
+
+#[test]
+fn ownership_retirement_drops_only_empty_tables() {
+    for seed in ["", "INSERT INTO user_wallet_addresses VALUES ('unread','evm','0xunread',NULL,1,NULL,NULL,'unread',0);"] {
+        let root = tempfile::tempdir().unwrap();
+        let path = store_seven(root.path(), seed);
+        let store = SqliteStore::open(&path).unwrap();
+        let actual = rows(&store.lock().unwrap());
+        for table in ["wallet_addresses", "holdings_snapshots", "holdings_positions"] {
+            assert!(!actual.contains_key(&format!("user_{table}")));
+            assert_eq!(actual.contains_key(&format!("retired_{table}")), !seed.is_empty());
+        }
+    }
+}
+
+#[test]
+fn ownership_retirement_runs_in_admission_copy_and_folder_open_without_losing_rows() {
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().canonicalize().unwrap();
+    let path = store_seven(&directory, "");
+    let original = Connection::open(&path).unwrap();
+    let mut profile = crate::test_fixtures::loupist_profile("folder-a");
+    profile.workspace_root = directory.display().to_string();
+    original
+        .execute(
+            "INSERT INTO loupist_profiles VALUES (?1,?2,?3,NULL,NULL,?4)",
+            rusqlite::params![
+                profile.id,
+                profile.updated_at_ms,
+                profile.workspace_root,
+                serde_json::to_string(&profile).unwrap()
+            ],
+        )
+        .unwrap();
+    original.execute_batch("INSERT INTO user_wallet_addresses VALUES ('wallet','evm','0xfixture',NULL,1,NULL,NULL,'unread',0);").unwrap();
+    crate::knowledge::validate_folder(&directory).unwrap();
+    let before = rows(&original);
+    let copy = crate::store::upgrade::upgraded_copy(&original).unwrap();
+    assert_eq!(versions(&copy).0, STORE_SCHEMA_VERSION);
+    assert_eq!(
+        rows(&original),
+        before,
+        "admission does not mutate the source"
+    );
+    let expected = rows(&copy);
+    drop(original);
+    let folder = SqliteStore::open_folder(&path).unwrap();
+    assert_eq!(rows(&folder.lock().unwrap()), expected);
+    crate::knowledge::validate_folder(&directory).unwrap();
+}
+
+fn store_ten(path: &Path) -> Connection {
+    let mut db = Connection::open(path).unwrap();
+    db.execute_batch(BASELINE_FIXTURE).unwrap();
+    crate::store::upgrade::upgrade_store_for_test(&mut db, 10);
+    let profile = crate::test_fixtures::loupist_profile("upgrade");
+    db.execute(
+        "INSERT INTO loupist_profiles VALUES (?1,1,?2,NULL,NULL,?3)",
+        rusqlite::params![
+            profile.id,
+            profile.workspace_root,
+            serde_json::to_string(&profile).unwrap()
+        ],
+    )
+    .unwrap();
+    db
+}
+
+fn chat_card_rows(db: &Connection) -> BTreeMap<String, String> {
+    db.prepare("SELECT id, data_json FROM chat_sessions")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+#[test]
+fn card_retirement_preserves_message_bytes_across_catalog_folder_and_admission() {
+    // These fragments use compact writer encoding. The objects inside
+    // evidence and the prose contain the very same key spellings.
+    let evidence = r#","evidenceRefs":[{"assetSnapshots":[1.25],"sensitivityCards":[-0.0,1e-7],"text":"\"quoted\" \\ path\n증거"}]"#;
+    let current = r#"{"status":"complete","content":"[증거](#evidence-ev_one)\n\n\"assetSnapshots\"","artifactRefs":[{"revision":2}],"numberChecks":[{"link_index":1}]"#;
+    let old_current = format!(
+        r#"{current}{evidence},"sensitivityCards":[{{"values":[[1.75]]}}],"assetSnapshots":[{{"price":3.5}}]}}"#
+    );
+    let old_aborted = r#"{"status":"aborted","assetSnapshots":[{}],"content":"stopped"}"#;
+    let old_error = r#"{"status":"error","sensitivityCards":[{}],"content":"failed"}"#;
+    let aborted = r#"{"status":"aborted","content":"stopped"}"#;
+    let error = r#"{"status":"error","content":"failed"}"#;
+    let old_session = format!(
+        r#"{{"versions":[{{"messages":[{old_aborted},{old_error}]}},{{}},{{"messages":[]}},{{"messages":[{old_current}]}}],"messages":[{{"content":"한글"}},{old_current}]}}"#
+    );
+    let expected_session = format!(
+        r#"{{"versions":[{{"messages":[{aborted},{error}]}},{{}},{{"messages":[]}},{{"messages":[{current}{evidence}}}]}}],"messages":[{{"content":"한글"}},{current}{evidence}}}]}}"#
+    );
+    let old_bot = format!(r#"{{"messages":[{old_aborted},{old_error}]}}"#);
+    let expected_bot = format!(r#"{{"messages":[{aborted},{error}]}}"#);
+    for name in ["catalog.sqlite3", "loupist.sqlite3"] {
+        let folder = name == "loupist.sqlite3";
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().canonicalize().unwrap();
+        let path = directory.join(name);
+        let db = store_ten(&path);
+        let fixtures = [
+            ("session", old_session.as_str(), expected_session.as_str()),
+            ("home-upgrade", old_bot.as_str(), expected_bot.as_str()),
+            (
+                "no-messages",
+                r#"{"assetSnapshots":[{}]}"#,
+                r#"{"assetSnapshots":[{}]}"#,
+            ),
+            ("empty", "{ \"messages\": [] }", "{ \"messages\": [] }"),
+            (
+                "mixed-messages",
+                r#"{"messages":["plain text",null,{"assetSnapshots":null,"content":"kept"}],"versions":[null,"plain text",{"messages":["archived text",{"sensitivityCards":null,"content":"archived"}]}]}"#,
+                r#"{"messages":["plain text",null,{"content":"kept"}],"versions":[null,"plain text",{"messages":["archived text",{"content":"archived"}]}]}"#,
+            ),
+            ("unreadable", "{ unreadable", "{ unreadable"),
+        ];
+        let mut original = BTreeMap::new();
+        let mut expected = BTreeMap::new();
+        for (id, old, new) in fixtures {
+            db.execute(
+                "INSERT INTO chat_sessions VALUES (?1, 'upgrade', 2, ?2)",
+                [id, old],
+            )
+            .unwrap();
+            original.insert(id.to_owned(), old.to_owned());
+            expected.insert(id.to_owned(), new.to_owned());
+        }
+        if folder {
+            let bytes = std::fs::read(&path).unwrap();
+            crate::knowledge::validate_folder(&directory).unwrap();
+            let copy = crate::store::upgraded_copy(&db).unwrap();
+            assert_eq!(versions(&copy), (12, 10));
+            assert_eq!(chat_card_rows(&copy), expected);
+            assert_eq!(versions(&db), (10, 10));
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+            assert!(backups(root.path()).is_empty());
+        }
+        drop(db);
+        let open = || {
+            if folder {
+                SqliteStore::open_folder(&path)
+            } else {
+                SqliteStore::open_catalog(&path)
+            }
+            .unwrap()
+        };
+        for _ in 0..2 {
+            let store = open();
+            let db = store.lock().unwrap();
+            assert_eq!(versions(&db), (12, 10));
+            assert_eq!(chat_card_rows(&db), expected);
+            assert_eq!(backups(root.path()).len(), 1);
+        }
+        let backup = Connection::open(&backups(root.path())[0]).unwrap();
+        assert_eq!(versions(&backup), (10, 10));
+        assert_eq!(chat_card_rows(&backup), original);
+    }
+}
+
+#[test]
+fn a_failed_card_removal_leaves_store_ten_and_the_original_answer_in_the_backup() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("catalog.sqlite3");
+    let db = store_ten(&path);
+    db.execute_batch(
+        r#"INSERT INTO chat_sessions VALUES ('answer', 'upgrade', 2, '{"messages":[{"sensitivityCards":[{}]}]}');
+           CREATE TRIGGER fail_chat_upgrade AFTER UPDATE OF data_json ON chat_sessions
+           BEGIN SELECT RAISE(FAIL, 'fixture failure after writing'); END;"#,
+    )
+    .unwrap();
+    let original = chat_card_rows(&db);
+    let error = SqliteStore::open_catalog(&path).err().unwrap();
+    assert!(matches!(error, StoreError::Upgrade(_)));
+    assert!(error.to_string().contains("fixture failure after writing"));
+    assert_eq!(versions(&db), (10, 10));
+    assert_eq!(chat_card_rows(&db), original);
+    let backup_path = &backups(root.path())[0];
+    assert!(error.to_string().contains(backup_path.to_str().unwrap()));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(backup_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    let backup = Connection::open(backup_path).unwrap();
+    assert_eq!(versions(&backup), (10, 10));
+    assert_eq!(chat_card_rows(&backup), original);
+}
+
+#[test]
+fn thin_host_upgrade_keeps_theses_and_drops_host_observations_and_posts() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("catalog.sqlite3");
+    let mut db = Connection::open(&path).unwrap();
+    db.execute_batch(BASELINE_FIXTURE).unwrap();
+    db.execute_batch(r#"
+        INSERT INTO loupist_profiles VALUES('l',1,'/research/l',NULL,NULL,'{}');
+        INSERT INTO user_watchlist VALUES('NVIDIA','US','Nvidia',7);
+        INSERT INTO chat_sessions VALUES('c','l',2,'{"messages":[{"content":"watch","watch":{}},{"content":"retained reply"}],"versions":[{"messages":[{"content":"results","earnings":{}}]}]}');
+    "#).unwrap();
+    let asset_id = crate::knowledge::assets::asset_id("NVIDIA", "US");
+    db.execute(
+        "INSERT INTO knowledge_asset_pages (loupist_id,asset_id,symbol,market,display_name,class,class_source,created_at_ms,revision)
+         VALUES ('l',?1,'NVIDIA','US','Nvidia','equity','market',7,1)",[&asset_id],
+    ).unwrap();
+    db.execute(
+        "INSERT INTO knowledge_asset_moves (move_id,loupist_id,asset_id,from_verdict,to_verdict,fact_date,reason,evidence_json,actor,at_ms)
+         VALUES ('move','l',?1,'holding','weakening','2026-03-01','Reasoned thesis move','[]','loupist',8)",[&asset_id],
+    ).unwrap();
+    crate::store::upgrade::upgrade_store_for_test(&mut db, 11);
+    drop(db);
+    let store = SqliteStore::open(&path).unwrap();
+    let row = store.asset_by_id("l", &asset_id).unwrap().unwrap();
+    assert_eq!(row.name, "Nvidia");
+    // The page keeps its thesis; the app-wide follow belonged to no Loupist.
+    assert_eq!(row.followed_at_ms, None);
+    assert_eq!(
+        row.reference.unwrap().fields.ticker.as_deref(),
+        Some("NVIDIA")
+    );
+    let db = store.lock().unwrap();
+    for table in [
+        "instruments",
+        "knowledge_asset_observations",
+        "knowledge_watch_events",
+        "knowledge_earnings_events",
+    ] {
+        assert!(!rows(&db).contains_key(table));
+    }
+    let moved: String = db
+        .query_row(
+            "SELECT reason FROM knowledge_asset_moves WHERE asset_id=?1",
+            [&asset_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(moved, "Reasoned thesis move");
+    let chat: String = db
+        .query_row(
+            "SELECT data_json FROM chat_sessions WHERE id='c'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let chat: serde_json::Value = serde_json::from_str(&chat).unwrap();
+    assert_eq!(
+        chat["messages"],
+        serde_json::json!([{"content":"retained reply"}])
+    );
+    assert_eq!(chat["versions"][0]["messages"], serde_json::json!([]));
 }

@@ -1,12 +1,10 @@
+import type { LegacyHoldingsStatus } from "./legacyHoldings";
 import type { NoticeSettings } from "../bridge/notice";
 import type { AttentionItem, AttentionNotifyRequest } from "./attention";
 import type { AssetBridge } from "./assets";
-import type { EarningsBridge } from "./earnings";
-import type { WatchBridge } from "./watch";
 import type { JournalListRequest, JournalCreateRequest, JournalUpdateRequest, JournalArchiveRequest } from "./knowledge";
 import type { BriefingSettings, BriefingSettingsRequest, InboxRequest, InboxPage, InboxUnreadCount, InboxChangedEvent, InboxOpenEvent, BriefingResidentSettings } from "./scheduled";
 import type { Principle, PrincipleListRequest, PrincipleCreateRequest, PrincipleUpdateRequest, PrincipleArchiveRequest } from "./knowledge";
-import type { UserContextBridge } from "./userContext";
 import type { CustomConnectionsBridge } from "./customConnections";
 import type { SharingBridge } from "./sharing";
 import type { SkillCatalog, SkillDocument, SkillReadRequest, SkillCreateRequest, SkillSaveRequest, SkillDeleteRequest, SkillImportRequest } from "./skills";
@@ -41,6 +39,8 @@ import type {
   ChatSendRequest,
   ChatStreamEvent,
   ChatThread,
+  ChatWatchRequest,
+  ChatWatchSnapshot,
   LoupistWorkspace,
   ResearchHandoffReceipt,
   ResearchHandoffRequest,
@@ -103,9 +103,16 @@ import type {
   UpdateState,
 } from "./runtime";
 
-import type { ConfigScope, ConfigSnapshot, ConfigUpdateRequest } from "./config";
+import type { ConfigScope, ConfigSnapshot, ConfigUpdateRequest, FxChanged, FxDisplay, FxDisplayRequest } from "./config";
 
-export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridge, AssetBridge, SharingBridge, EarningsBridge, WatchBridge {
+export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, SharingBridge {
+  legacyHoldingsStatus(): Promise<LegacyHoldingsStatus>;
+  legacyHoldingsRetry(): Promise<LegacyHoldingsStatus>;
+  legacyHoldingsReveal(): Promise<void>;
+  legacyHoldingsSaveCopy(): Promise<boolean>;
+  legacyHoldingsDismiss(): Promise<LegacyHoldingsStatus>;
+  /** `onListening` runs once change events can arrive (or the listener failed to attach); read the status after it. */
+  onLegacyHoldingsChanged(handler: (status: LegacyHoldingsStatus) => void, onListening?: () => void): () => void;
   noticeSettingsGet(): Promise<NoticeSettings>;
   noticeAcknowledge(): Promise<NoticeSettings>;
   learningReviewList(request: import("./knowledge").LearningReviewQuery): Promise<import("./knowledge").LearningReview[]>;
@@ -133,6 +140,9 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   skillsDelete(request: SkillDeleteRequest): Promise<SkillCatalog>;
   skillsImport(request: SkillImportRequest): Promise<SkillCatalog | null>;
   skillsReveal(request: SkillReadRequest): Promise<void>;
+  fxDisplay(request: FxDisplayRequest): Promise<FxDisplay>;
+  /** `onListening` runs once the listener is attached (or attaching failed), so a read after it cannot miss a hint. */
+  onFxChanged(handler: (event: FxChanged) => void, onListening?: () => void): () => void;
   configRead(request: { scope: ConfigScope }): Promise<ConfigSnapshot>;
   configUpdate(request: ConfigUpdateRequest): Promise<ConfigSnapshot>;
   configReveal(request: { scope: ConfigScope }): Promise<void>;
@@ -170,6 +180,8 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   scheduledTaskWatch(request: ScheduledRunIdentity, observer: StreamObserver<ChatStreamEvent>): Promise<ScheduledTaskWatch | null>;
 
   modelCatalogGet(): Promise<ModelCatalog>;
+  /** Read the catalog once the invalidation listener is attached. */
+  onModelCatalogChanged?(handler: () => void, onListening: () => void): () => void;
   modelVisibilityUpdate(
     request: ModelVisibilityUpdateRequest,
   ): Promise<ModelCatalog>;
@@ -302,6 +314,8 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
     observer: StreamObserver<ChatStreamEvent>,
   ): Promise<{ run_id: string }>;
   chatSteer(request: ChatControlRequest): Promise<ChatControlReceipt>;
+  chatWatch(request: ChatWatchRequest, observer: StreamObserver<ChatStreamEvent>): Promise<ChatWatchSnapshot | null>;
+  chatUnwatch(request: ChatWatchRequest): Promise<void>;
   /** `as_of` is the date the failed request was sent with; Retry repeats it. */
   chatRetryLast(request: ChatRetryRequest): Promise<{ prompt: string; as_of?: string }>;
   /** Opens a research session that runs on its own and reports into the Bot; a repeated key returns the same one. */
@@ -309,7 +323,6 @@ export interface LoupistBridge extends UserContextBridge, CustomConnectionsBridg
   /** Not useful: the link stays recorded so it is never found again. */
   knowledgeConnectionDismiss(request: { loupistId: string; connectionId: string }): Promise<import("./knowledge").ConnectionView>;
   /** Look into it: records that a research hand-off was started for the link. */
-  knowledgeConnectionOpen(request: { loupistId: string; connectionId: string }): Promise<import("./knowledge").ConnectionView>;
   chatAbort(run_id: string): Promise<void>;
   runActivityList(): Promise<RunActivity[]>;
   knowledgeGrowthEvents(request: import("./knowledge").GrowthEventsQuery): Promise<import("./knowledge").GrowthEventsPage>;

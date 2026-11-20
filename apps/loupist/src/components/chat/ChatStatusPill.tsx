@@ -32,7 +32,8 @@ function PillLabel({ message, run }: { message: ChatMessage; run?: ChatRunStatus
   const waiting = footer.line.kind === "waiting";
   return <span className="chat-status-pill-label" data-tone={waiting ? "you" : undefined} aria-hidden="true">
     {waiting ? <><span className="turn-live-dot" />{footer.line.label}</>
-      : <>{footer.line.label} · <span className="chat-status-pill-clock">{clockLabel(now - footer.sinceMs)}</span></>}
+      // The label gives way with an ellipsis; the clock always stays whole.
+      : <><span className="chat-status-pill-text">{footer.line.label}</span>{" · "}<span className="chat-status-pill-clock">{clockLabel(now - footer.sinceMs)}</span></>}
   </span>;
 }
 

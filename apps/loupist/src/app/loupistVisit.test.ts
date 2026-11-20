@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { lastSeenAt, recordVisit, useLoupistVisit } from "./loupistVisit";
+import { currentVisit, lastSeenAt, markActive, recordVisit, useCurrentVisit, useLoupistVisit } from "./loupistVisit";
 
 const MINUTE = 60_000;
 const START = new Date(2026, 9, 31, 9, 0).getTime();
@@ -51,5 +51,38 @@ describe("Loupist visits", () => {
     later(1);
     view.unmount();
     expect(lastSeenAt("loupist-a")).toBe(leftAt + 3 * MINUTE);
+  });
+
+  it("keeps the visit in progress per Loupist, starting each one inactive", () => {
+    const view = renderHook(({ loupistId }) => useLoupistVisit(loupistId, true), { initialProps: { loupistId: "loupist-a" } });
+    const watched = renderHook(() => useCurrentVisit("loupist-a"));
+    expect(watched.result.current).toEqual({ openedAtMs: START, active: false });
+    later(6);
+    markActive("loupist-b");
+    expect(currentVisit("loupist-b")).toBeUndefined();
+    expect(watched.result.current?.active).toBe(false);
+    act(() => markActive("loupist-a"));
+    expect(watched.result.current).toEqual({ openedAtMs: START, active: true });
+    // Marking a visit active is not the end of a visit: the last counted visit stays as it was.
+    expect(lastSeenAt("loupist-a")).toBeUndefined();
+    // Another Loupist: the first visit ends and is counted, the new one starts inactive.
+    view.rerender({ loupistId: "loupist-b" });
+    expect(watched.result.current).toBeUndefined();
+    expect(lastSeenAt("loupist-a")).toBe(START + 6 * MINUTE);
+    expect(currentVisit("loupist-b")).toEqual({ openedAtMs: START + 6 * MINUTE, active: false });
+    view.unmount();
+    expect(currentVisit("loupist-b")).toBeUndefined();
+  });
+
+  it("starts the visit after a long absence inactive again", () => {
+    const view = renderHook(() => useLoupistVisit("loupist-a", true));
+    act(() => markActive("loupist-a"));
+    later(6);
+    act(() => { window.dispatchEvent(new Event("blur")); });
+    later(6);
+    act(() => { window.dispatchEvent(new Event("focus")); });
+    expect(currentVisit("loupist-a")).toEqual({ openedAtMs: START + 12 * MINUTE, active: false });
+    expect(lastSeenAt("loupist-a")).toBe(START + 6 * MINUTE);
+    view.unmount();
   });
 });

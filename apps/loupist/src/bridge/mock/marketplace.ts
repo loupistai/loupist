@@ -16,7 +16,9 @@ type BundledConnectorEntry = Omit<MarketplaceEntry, "plugin" | "runtime"> & {
 
 type BundledMarketplaceIndex = {
   interface: Pick<MarketplacePlugin["interface"], "displayName">;
-  plugins: Array<Pick<MarketplacePlugin, "name" | "policy" | "category">>;
+  plugins: Array<Pick<MarketplacePlugin, "name" | "policy" | "category"> & {
+    source: { source: string; path: string };
+  }>;
 };
 
 const marketplaceIndex = marketplaceIndexJson as BundledMarketplaceIndex;
@@ -37,46 +39,54 @@ const pluginModules = import.meta.glob(
     description: string;
     author: MarketplacePlugin["author"];
     interface: MarketplacePlugin["interface"];
+    connectors: string;
   }
 >;
 
-function pluginNameFromPath(path: string, marker: string) {
-  const match = path.match(new RegExp(`/plugins/([^/]+)/${marker}`));
-  if (!match) {
-    throw new Error(`Could not read plugin name from ${path}`);
+const bundledPluginListings = marketplaceIndex.plugins.map((listing) => {
+  const { name, source } = listing;
+  if (source.source !== "local" || source.path !== `./plugins/${name}`) {
+    throw new Error(`Invalid bundled source for ${name}`);
   }
-  return match[1];
-}
+  const root = `../../../marketplace/${source.path.slice(2)}`;
+  const manifest = pluginModules[`${root}/.loupist-plugin/plugin.json`];
+  if (!manifest || manifest.name !== name) {
+    throw new Error(`Missing or mismatched plugin manifest for ${name}`);
+  }
+  return { listing, root, manifest };
+});
 
-const bundledEntries = Object.entries(connectorModules)
-  .map(([path, entry]) => ({
-    ...entry,
-    plugin: pluginNameFromPath(path, "connectors"),
-    runtime: entry.runtime,
-    trust: "first_party" as const,
-  }))
+const bundledEntries = bundledPluginListings
+  .flatMap(({ listing, root, manifest }) => {
+    const prefix = `${root}/${manifest.connectors.replace(/^\.\//u, "").replace(/\/$/u, "")}/`;
+    const entries = Object.entries(connectorModules)
+      .filter(([path]) => path.startsWith(prefix))
+      .map(([, entry]) => ({
+        ...entry,
+        plugin: listing.name,
+        setup: entry.setup ? {
+          credential_fields: entry.setup.credential_fields ?? [],
+          config_fields: entry.setup.config_fields ?? [],
+          credential_scope_fields: entry.setup.credential_scope_fields ?? [],
+        } : undefined,
+        trust: "first_party" as const,
+      }));
+    if (!entries.length) throw new Error(`No bundled connectors for ${listing.name}`);
+    return entries;
+  })
   .sort((left, right) => left.id.localeCompare(right.id));
 
-const bundledPlugins: MarketplacePlugin[] = marketplaceIndex.plugins.map(
-  (listing) => {
-    const manifest = Object.entries(pluginModules).find(
-      ([path]) =>
-        pluginNameFromPath(path, ".loupist-plugin") === listing.name,
-    )?.[1];
-    if (!manifest) {
-      throw new Error(`Missing plugin manifest for ${listing.name}`);
-    }
-    return {
-      name: manifest.name,
-      version: manifest.version,
-      description: manifest.description,
-      author: manifest.author,
-      interface: manifest.interface,
-      policy: listing.policy,
-      category: listing.category,
-    };
-  },
-);
+const bundledPlugins: MarketplacePlugin[] = bundledPluginListings.map(({ listing, manifest }) => ({
+  name: manifest.name,
+  version: manifest.version,
+  description: manifest.description,
+  author: manifest.author,
+  interface: manifest.interface,
+  policy: listing.policy,
+  category: listing.category,
+}));
+
+export const ASSET_LOOKUP_SOURCE_ID = "openfigi.lookup";
 
 const bundledCatalog: MarketplaceCatalog = {
   schema_version: "loupist-marketplace-catalog/1",
@@ -150,6 +160,7 @@ export function createMockMarketplaceSnapshot(
     const credentialReady = declaredCredentialFields.every(
       (field) => !field.required || activeFields.has(field.id),
     );
+    const verified = entry_id !== ASSET_LOOKUP_SOURCE_ID;
     return {
       entry_id,
       config,
@@ -165,10 +176,10 @@ export function createMockMarketplaceSnapshot(
             stored: activeFields.has(field.id) || pendingFields.has(field.id),
             active: activeFields.has(field.id),
             pending: pendingFields.has(field.id),
-            verification: activeFields.has(field.id)
+            verification: verified && activeFields.has(field.id)
               ? ("verified" as const)
               : ("never" as const),
-            verified_at: activeFields.has(field.id) ? 1 : null,
+            verified_at: verified && activeFields.has(field.id) ? 1 : null,
             last_error: null,
             locked: false,
           }))
@@ -209,8 +220,7 @@ export function createMockLoupistCapabilityBindings(
 ): LoupistCapabilityBinding[] {
   return presentIds.map((entry_id) => {
     const entry = bundledCatalog.entries.find(entry => entry.id === entry_id)!;
-    // Wallet reads are host-only and turn on with the first wallet address.
-    const defaultEnabled = entry.free_state === "keyless" && entry_id !== "onchain.wallets"
+    const defaultEnabled = entry.free_state === "keyless"
       && [...(entry.setup?.config_fields ?? []), ...(entry.setup?.credential_fields ?? [])].every(field => !field.required);
     const enabled = !disabled.has(entry_id) && (defaultEnabled || explicitlyEnabled.has(entry_id));
     return {

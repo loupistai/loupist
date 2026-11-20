@@ -166,17 +166,24 @@ pub struct ChatMessageDto {
     pub alert: Option<crate::domain::HomeAlert>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
-    pub watch: Option<crate::domain::HomeWatch>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    pub earnings: Option<crate::domain::HomeEarnings>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
     pub vocabulary: Option<crate::domain::HomeVocabulary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub link: Option<crate::domain::HomeLink>,
     pub handoff: Option<crate::domain::HomeHandoff>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub research_session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub handoff_note: Option<HandoffNoteDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub handoff_action: Option<crate::domain::HandoffAction>,
+    /// The request a scheduled run sent, which the user did not write.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub scheduled: Option<crate::domain::ScheduledTurn>,
     /// The as-of date set for this request and its answer (`YYYY-MM-DD`).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
@@ -185,10 +192,6 @@ pub struct ChatMessageDto {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(test, ts(optional = nullable))]
     pub number_checks: Vec<crate::domain::NumberCheck>,
-    /// Grid results linked as paragraphs of their own (W16.8).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[cfg_attr(test, ts(optional = nullable))]
-    pub sensitivity_cards: Vec<crate::domain::SensitivityCard>,
     /// What an as-of answer could not use (W16.5).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
@@ -255,11 +258,30 @@ pub struct ChatAttachmentDto {
 
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffNoteDto {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub question: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub brief: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub link_path: Option<crate::chat::handoff::LinkPath>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatThreadDto {
     pub id: String,
     pub loupist_id: String,
     /// The Loupist's home Thread: listed first, landed on, never renamed or deleted.
     pub home: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub hide_from_recent: bool,
     pub title: String,
     pub updated_at: String,
     pub use_memory: bool,
@@ -273,6 +295,38 @@ pub struct ChatThreadDto {
     #[cfg_attr(test, ts(optional = nullable))]
     pub versions: Vec<ChatVersionDto>,
     pub messages: Vec<ChatMessageDto>,
+    /// The Bot hand-off this research session is running, while this app runs it.
+    /// Bot posts nothing until it ends, so the session is where it is followed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub handoff_run: Option<HandoffRunDto>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct HandoffRunDto {
+    pub handoff_id: String,
+    pub run_id: String,
+    /// The Map link whose Look into it started it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub connection_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct ChatWatchRequest {
+    pub loupist_id: String,
+    pub thread_id: String,
+    pub subscription_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ChatWatchSnapshot {
+    pub run_id: String,
+    pub thread: ChatThreadDto,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -543,6 +597,9 @@ pub enum ChatStreamEvent {
     Started {
         run_id: String,
     },
+    StreamReset {
+        run_id: String,
+    },
     Memory {
         run_id: String,
         memories: Vec<MemoryRefDto>,
@@ -603,6 +660,9 @@ pub enum ChatStreamEvent {
         artifact: ChatArtifactRef,
     },
     Completed {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        research_session_id: Option<String>,
         lens_receipts: Vec<crate::domain::LensReceipt>,
         tool_refusals: Vec<crate::domain::ChatToolRefusal>,
         #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -628,9 +688,6 @@ pub enum ChatStreamEvent {
         #[serde(skip_serializing_if = "Vec::is_empty")]
         #[cfg_attr(test, ts(optional = nullable))]
         number_checks: Vec<crate::domain::NumberCheck>,
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        #[cfg_attr(test, ts(optional = nullable))]
-        sensitivity_cards: Vec<crate::domain::SensitivityCard>,
         #[serde(skip_serializing_if = "Option::is_none")]
         #[cfg_attr(test, ts(optional))]
         as_of_report: Option<Box<crate::domain::AsOfReport>>,
@@ -718,6 +775,19 @@ pub(crate) fn memory_ref_dto(memory: &MemoryRefSnapshot) -> MemoryRefDto {
     }
 }
 
+/// Research sessions lists what the user researches. A session the scheduler
+/// made is a run's record whose result reaches Bot and Schedule, so it joins
+/// the list once the user writes in it. Price setup is host work too.
+fn hide_from_recent(chat: &ChatSession) -> bool {
+    chat.id.starts_with("price-setup-")
+        || (chat
+            .id
+            .starts_with(crate::scheduled_tasks::store::RUN_CHAT_PREFIX)
+            && chat.messages.iter().all(|message| {
+                message.role != crate::domain::ChatRole::User || message.scheduled.is_some()
+            }))
+}
+
 pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError> {
     chat.validate().map_err(map_internal)?;
     let messages = chat
@@ -752,14 +822,28 @@ pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError
                 delivery: message.delivery.clone(),
                 replaced_model: message.replaced_model.clone(),
                 alert: message.alert.clone(),
-                watch: message.watch.clone(),
-                earnings: message.earnings.clone(),
+
                 vocabulary: message.vocabulary.clone(),
                 link: message.link.clone(),
                 handoff: message.handoff.clone(),
+                research_session_id: message.research_session_id.clone(),
+                handoff_note: message.handoff_note.as_ref().map(|note| HandoffNoteDto {
+                    title: note.title.clone(),
+                    question: note.question.clone(),
+                    brief: message
+                        .handoff_action
+                        .is_none()
+                        .then(|| note.brief.clone())
+                        .flatten(),
+                    link_path: message
+                        .handoff_action
+                        .as_ref()
+                        .and_then(|_| crate::chat::handoff::LinkPath::from_note(note)),
+                }),
+                handoff_action: message.handoff_action.clone(),
+                scheduled: message.scheduled.clone(),
                 as_of: message.as_of.clone(),
                 number_checks: message.number_checks.clone(),
-                sensitivity_cards: message.sensitivity_cards.clone(),
                 as_of_report: message.as_of_report.clone(),
                 id: message.id.clone(),
                 role,
@@ -801,6 +885,7 @@ pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError
         id: chat.id.clone(),
         loupist_id: chat.loupist_id.clone(),
         home: crate::chat::home::is_home(chat),
+        hide_from_recent: hide_from_recent(chat),
         title: chat.title.clone(),
         updated_at: iso_time(chat.updated_at_ms)?,
         use_memory: chat.memory_policy.use_memory,
@@ -820,5 +905,6 @@ pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError
             })
             .collect(),
         messages,
+        handoff_run: None,
     })
 }

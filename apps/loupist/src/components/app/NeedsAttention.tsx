@@ -1,10 +1,15 @@
 import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber, subjectName } from "@/i18n/format";
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel } from "@/components/ui/sidebar";
+import type { ChatThread } from "../../types";
+import type { AttentionRow } from "../../app/useAttention";
+import { scheduledTaskTitle } from "../briefings/scheduledPresentation";
+import { chatTitle } from "../../app/chatTitle";
 import type { AttentionItem } from "../../contracts/attention";
 
 const t = i18n.getFixedT(null, "app");
 const MAX_ROWS = 5;
+type Threads = Readonly<Record<string, readonly ChatThread[] | undefined>>;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Midnight of a YYYY-MM-DD date in local time. */
@@ -31,10 +36,9 @@ function approvalConnection(title: string) {
 
 /** Whether the sentence already names the Loupist; a check names its claim instead. */
 export const attentionNamesLoupist = (item: AttentionItem) => item.kind !== "checkDue" && item.kind !== "lineCrossed";
-const tDynamic = t as unknown as (key: string, options?: Record<string, unknown>) => string;
 
 /** One sentence that names what waits: the Loupist and the connection, scheduled result or check. */
-export function attentionWhat(item: AttentionItem, nowMs = Date.now()) {
+export function attentionWhat(item: AttentionRow, threads?: Threads, nowMs = Date.now()) {
   const loupist = item.loupistName;
   switch (item.kind) {
     case "approval": {
@@ -45,14 +49,14 @@ export function attentionWhat(item: AttentionItem, nowMs = Date.now()) {
     // The chat's title tells several waiting questions apart.
     case "question": {
       const loupistSubject = subjectName(loupist, i18n.language);
-      const chat = item.title.trim();
+      const thread = threads?.[item.loupistId]?.find(entry => entry.id === item.chatId);
+      const chat = item.taskKind ? scheduledTaskTitle(item.taskKind, item.title)
+        : thread && item.title.trim() ? chatTitle({ ...thread, title: item.title }) : item.title.trim();
       return chat ? t("attention.question", { loupistSubject, chat }) : t("attention.questionAny", { loupistSubject });
     }
     case "lineCrossed": return t("attention.lineCrossed", { name: item.title });
     case "briefingConflict": return t("attention.conflict", { loupist });
     case "unreadResults": return t("attention.unreadResults", { loupist, count: item.count ?? 1, formattedCount: formatNumber(item.count ?? 1) });
-    // "{Loupist} · {n} new alerts".
-    case "watchAlerts": return `${loupist} · ${tDynamic("attention.watchAlerts", { count: item.count ?? 1, formattedCount: formatNumber(item.count ?? 1) })}`;
     case "checkDue": {
       const due = item.dueDate ?? "";
       const late = due ? localDay(due) < new Date(nowMs).setHours(0, 0, 0, 0) : false;
@@ -66,8 +70,9 @@ export function attentionWhat(item: AttentionItem, nowMs = Date.now()) {
  * asked the user a question, unread scheduled results and Journal checks coming
  * due, across every Loupist. It is not rendered when nothing waits.
  */
-export function NeedsAttention({ items, onOpen, onMore }: {
+export function NeedsAttention({ items, threads, onOpen, onMore }: {
   items: readonly AttentionItem[];
+  threads?: Threads;
   onOpen: (item: AttentionItem) => void;
   /** "{n} more" opens the command palette on what needs attention. */
   onMore?: () => void;
@@ -83,7 +88,7 @@ export function NeedsAttention({ items, onOpen, onMore }: {
     <SidebarGroupContent>
       <ul>
         {shown.map((item) => {
-          const what = attentionWhat(item);
+          const what = attentionWhat(item, threads);
           const prefix = !attentionNamesLoupist(item) && manyLoupists;
           return <li key={`${item.kind}:${item.loupistId}:${item.chatId ?? item.recordId ?? ""}`}>
             <button type="button" className="needs-attention-row" data-kind={item.kind} title={attentionNamesLoupist(item) ? what : `${item.loupistName} · ${what}`} onClick={() => onOpen(item)}>

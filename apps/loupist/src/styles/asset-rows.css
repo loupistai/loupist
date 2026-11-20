@@ -8,26 +8,14 @@
 .verdict-ladder i[data-filled] { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .verdict-chip { transition: none; } }
 
-.morning-followed { display: grid; gap: var(--gg-space-1); margin: var(--gg-space-1) 0 0; padding: 0; list-style: none; }
-.morning-followed > li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1) var(--gg-space-2); }
-.morning-asset-name { font-weight: var(--gg-weight-medium); }
-
 /* The Map inspector's thesis block reads like its other sections: the heading owns the divider, the chip sits on its baseline. */
-.asset-thesis-summary { display: grid; gap: var(--gg-space-2); }
-.asset-thesis-summary-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--gg-space-2); margin: var(--gg-space-4) 0 0; padding-top: var(--gg-space-4); border-top: 1px solid var(--gg-color-border-subtle); }
-.map-inspector .asset-thesis-summary-head h3, .map-workspace .map-inspector .asset-thesis-summary-head h3 { margin: 0; padding: 0; border: 0; }
-.asset-thesis-summary [data-slot="button"] { justify-self: start; padding-inline: 0; }
-.asset-thesis-summary p { display: -webkit-box; margin: 0; overflow: hidden; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
-
-.briefing-assets { display: grid; gap: var(--gg-space-3); margin: 0; padding: 0; list-style: none; }
-.briefing-assets > li { display: grid; gap: var(--gg-space-1); }
-.briefing-asset-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); }
-.briefing-asset-rows { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); }
 
 .thread-alert { display: grid; gap: var(--gg-space-2); }
 .thread-alert p { margin: 0; }
 .thread-alert-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
 
-/* A followed asset in "What {Loupist} knows" opens its page. */
-.memory-chip-open { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.memory-chip-open:hover { color: var(--gg-color-accent-ink); text-decoration: underline; }
+.asset-thesis-summary { display: grid; gap: var(--gg-space-2); }
+.asset-thesis-summary-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--gg-space-2); margin: var(--gg-space-4) 0 0; padding-top: var(--gg-space-4); border-top: 1px solid var(--gg-color-border-subtle); }
+.map-inspector .asset-thesis-summary-head h3, .map-workspace .map-inspector .asset-thesis-summary-head h3 { margin: 0; padding: 0; border: 0; }
+.asset-thesis-summary [data-slot="button"] { justify-self: start; padding-inline: 0; }
+.asset-thesis-summary p { display: -webkit-box; margin: 0; overflow: hidden; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }

@@ -10,13 +10,15 @@ import { assertScenarioSplit, isHeldoutSuitePath } from './suite-contract.mjs';
 import { grade } from './grade.mjs';
 import { validateSuite, validateTraceRecord, positiveTrialCount } from './eval-contract.mjs';
 import { renderLensPages } from './lens-review.mjs';
-import { judgeAll, judgeItems, itemId, modelFamily, grokBackend, codexBackend, openAIBackend, DEFAULT_JUDGE_MODEL, DEFAULT_REASONING_EFFORT } from './judge.mjs';
+import { judgeAll, judgeItems, itemId, modelFamily, grokBackend, codexBackend, claudeBackend, openAIBackend,
+  DEFAULT_JUDGE_MODEL, DEFAULT_CLAUDE_JUDGE_MODEL, DEFAULT_REASONING_EFFORT } from './judge.mjs';
 import { agreement, importLabels, labelInteractive, labelViews } from './labels.mjs';
 import { compareReports, comparisonMarkdown } from './compare-reports.mjs';
 import { buildReport, compareRuns } from './report.mjs';
 import { assessAdoption } from './adopt.mjs';
 
 export const SUBCOMMANDS = ['run', 'grade', 'judge', 'label', 'lens-pages', 'calibrate', 'report', 'compare', 'adopt'];
+const JUDGE_BACKENDS = ['grok', 'codex', 'claude', 'openai'];
 export const DEFAULT_RUNNER = [
   'cargo', 'run', '--manifest-path', 'apps/loupist/src-tauri/Cargo.toml',
   '--locked', '--offline', '--features', 'eval-harness', '--example', 'agent_eval', '--',
@@ -56,6 +58,8 @@ export function helpText() {
     'calibrate requires --suite, --traces, --judgments, --labels; --out selects judge-calibration.json.',
     'Same-family judging requires --allow-same-family; unknown model families never block.',
     'Judge --reasoning-effort defaults to medium and is stored on each judgment and in the cache key.',
+    'Judge --backend grok (default, grok-4.7), codex (gpt-6-astra), claude (claude-opus-5-5, tool-free',
+    '  `claude -p` on the Claude subscription login) or openai (--endpoint, --api-key-env); --model overrides.',
     'run/report/compare --trials N defaults to 3; completion goals require all three trials.',
     'run passes --suite, --out, and --trials to the default or custom runner.',
     'run/grade/judge/report/calibrate --split capability|regression|heldout filters scenarios and traces.',
@@ -304,13 +308,18 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     return { ...calibration, exitCode: ready ? 0 : 3 };
   }
   if (command === 'judge') {
+    if (options.backend && !JUDGE_BACKENDS.includes(options.backend)) throw new Error(`--backend must be one of ${JUDGE_BACKENDS.join(', ')}`);
     const traces = await readRows(options.traces);
     const codex = options.backend === 'codex';
-    const model = options.model ?? (codex ? 'gpt-6-astra' : DEFAULT_JUDGE_MODEL);
+    const claude = options.backend === 'claude';
+    const model = options.model ?? (codex ? 'gpt-6-astra' : claude ? DEFAULT_CLAUDE_JUDGE_MODEL : DEFAULT_JUDGE_MODEL);
     const reasoningEffort = options['reasoning-effort'] ?? DEFAULT_REASONING_EFFORT;
+    // io.judgeRun replaces the judge CLI process in tests; undefined keeps each backend's own runner.
+    const run = io.judgeRun;
     const backend = io.backend ?? (options.endpoint || options.backend === 'openai'
       ? openAIBackend({ endpoint: options.endpoint, apiKeyEnv: options['api-key-env'], model, reasoningEffort })
-      : codex ? codexBackend({ model, reasoningEffort }) : grokBackend({ model, reasoningEffort }));
+      : codex ? codexBackend({ model, reasoningEffort, run })
+        : claude ? claudeBackend({ model, reasoningEffort, run }) : grokBackend({ model, reasoningEffort, run }));
     const judgeModel = backend.model ?? model;
     const family = modelFamily(judgeModel);
     const conflicts = [...new Set(traces.flatMap((trace) => [trace.observed_model, trace.model?.model])

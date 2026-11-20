@@ -1,11 +1,11 @@
 /** Preview scenarios, in the capture order `src/preview/scenarios.ts` assembles. */
 import { prepareFixture, previewKo } from "../fixtures";
-import { prepareMorningFixture, prepareUpcomingFixture } from "../fixtures/morning";
+import { prepareMorningFixture, writtenEarlier } from "../fixtures/morning";
 import { base, click, hasLayout, messagesRendered, runningHeader, select, submitPrompt, until, type PreviewScenario } from "./kit";
 
 /** The thread, answers, citations and the shapes a failed answer takes. */
 export const chatScenarios: PreviewScenario[] = [
-  base("chat-empty", "Empty chat: the Loupist's morning message", () => select('textarea[data-chat-composer]') && select('.morning-message[aria-busy="false"]')),
+  base("chat-empty", "Empty Bot: the Loupist greets and offers questions", () => select('textarea[data-chat-composer]') && select('.bot-greeting[aria-busy="false"]')),
   base("composer-focus", "Composer keyboard focus is a focus-colored edge with a soft halo", () => {
     const field = select('.composer [data-slot="input-group"]:has(textarea:focus-visible)');
     if (!field) return null;
@@ -17,23 +17,30 @@ export const chatScenarios: PreviewScenario[] = [
     const prompt = await until(() => select("textarea[data-chat-composer]"), "Composer did not appear");
     prompt.focus({ focusVisible: true });
   }),
-  ...([["thread-morning", "morning", "Morning message: changes since the last visit"], ["thread-first-day", "first-day", "Morning message: a new Loupist's first day"], ["thread-nothing-changed", "nothing-changed", "Morning message: nothing new since yesterday"]] as const).map(([id, state, title]): PreviewScenario => ({
-    ...base(id, title, () => select('textarea[data-chat-composer]') && select('.morning-message[aria-busy="false"] .morning-ask')),
+  // The empty composer is one row: +, the message, the model label and Send share a line in a pill under 50 px.
+  base("composer-compact", "Empty composer: one row with +, the message, Auto and an accent Send", () => {
+    const field = select('.composer [data-slot="input-group"]');
+    const row = field?.querySelector<HTMLElement>(".composer-footer");
+    if (!field || !row?.querySelector("textarea[data-chat-composer]") || !row.querySelector(".composer-add-trigger") || !row.querySelector(".composer-model-menu") || !row.querySelector(".composer-tile")) return null;
+    return !hasLayout() || field.getBoundingClientRect().height < 50 ? field : null;
+  }),
+  // The empty Bot's greeting a day after a visit, on a new Loupist's first day, and with nothing new.
+  ...([["thread-morning", "morning", "Bot greeting: two days since the last visit"], ["thread-first-day", "first-day", "Bot greeting: a new Loupist's first day"], ["thread-nothing-changed", "nothing-changed", "Bot greeting: nothing new since yesterday, so no news sentence"]] as const).map(([id, state, title]): PreviewScenario => ({
+    ...base(id, title, () => select('textarea[data-chat-composer]') && select('.bot-greeting[aria-busy="false"] .bot-asks')),
     setup: bridge => prepareMorningFixture(bridge, state),
   })),
-  // First run: nothing followed and no briefing on, so the home message offers three first moves.
-  { ...base("thread-first-run-setup", "Morning message: a new user's first moves", () => select('.morning-message[aria-busy="false"] [data-morning-setup]')),
+  // First run: nothing followed and no briefing on, so the greeting's cards are the first moves.
+  { ...base("thread-first-run-setup", "Bot greeting: a new user's first moves", () => select('.bot-greeting[aria-busy="false"] [data-ask="follow"]')),
     setup: async bridge => {
       await prepareMorningFixture(bridge, "first-day");
-      bridge.watchlistList = async () => [];
+      bridge.assetsList = async () => [];
       bridge.briefingSettingsGet = async () => ({ enabled: false, task: null, schedule: { kind: "weekly", days: [1, 2, 3, 4, 5], hour: 8, minute: 0, timezone: "UTC" } });
     } },
-  // W15.9e: the event strip above the lead, and the same message with nothing ahead (no strip).
-  { ...base("thread-upcoming", "Morning message: what is coming up for what you follow", () => select('.morning-message[aria-busy="false"] .morning-upcoming li:nth-child(5) .morning-upcoming-row')), setup: bridge => prepareUpcomingFixture(bridge, "events") },
-  { ...base("thread-upcoming-none", "Morning message: nothing ahead, so no event strip", () => {
-    const message = select('.morning-message[aria-busy="false"]');
-    return message?.querySelector(".morning-ask") && !message.querySelector(".morning-upcoming") ? message : null;
-  }), setup: bridge => prepareUpcomingFixture(bridge, "none") },
+  // The news that closes Bot when the user has not written this visit: the unread briefing and the checks coming due.
+  { ...base("thread-news", "Bot's news since the last visit: the briefing and the checks coming due", () => {
+    const message = select('.morning-message');
+    return message?.querySelector(".morning-bullets") && message.querySelector(".morning-ask") ? message : null;
+  }), setup: async bridge => { await prepareMorningFixture(bridge, "morning"); bridge.conversation = "answer"; writtenEarlier(bridge, 3); } },
   base("chat-private", "Private chat with persistent disclosure", () => select(".composer-private-status") && select(".composer-disclosure"), async (root) => {
     const trigger = await until(() => root.querySelector<HTMLElement>(".composer-add-trigger"), "The + control did not render");
     trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
@@ -41,29 +48,8 @@ export const chatScenarios: PreviewScenario[] = [
   }),
   { ...base("chat-answer", "Completed sourced answer", () => {
     const answer = select("article.message.assistant.complete");
-    return answer && answer.querySelectorAll(".message-content p").length >= 2 && answer.querySelector(".chat-receipt") && answer.querySelector("button.loupist-citation") ? answer : null;
+    return answer && answer.querySelectorAll(".message-content p").length >= 2 && answer.querySelector(".bot-trace") && answer.querySelector("button.loupist-citation") ? answer : null;
   }), setup: (bridge) => prepareFixture(bridge, "answer") },
-  // Chat design 33: the first answer that followed assets offers to watch them all.
-  { ...base("chat-follow-watch-offer", "A first follow offers Watch all", () => select('[data-watch-all="offer"] button')), setup: async (bridge) => {
-    await prepareFixture(bridge, "answer");
-    for (const entry of [{ symbol: "005930", market: "KRX", displayName: "Samsung Electronics" }, { symbol: "AAPL", market: "NASDAQ", displayName: "Apple" }]) await bridge.watchlistAdd(entry);
-    // A new install watches nothing yet: both followed names are offered.
-    const listed = bridge.watchSettingsList.bind(bridge);
-    bridge.watchSettingsList = async (request) => {
-      const settings = await listed(request);
-      return { ...settings, watched: [], notWatched: [...settings.watched, ...settings.notWatched].slice(0, 2) };
-    };
-    const original = bridge.loupistSelect.bind(bridge);
-    bridge.loupistSelect = async (loupistId) => {
-      const workspace = await original(loupistId);
-      const message = workspace.threads[0].messages.find((item) => item.id === "preview-answer")!;
-      message.memory_update = { status: "applied", commitId: "preview-follow", changes: [], setup: [
-        { change: "followed", symbol: "005930", market: "KRX", name: "Samsung Electronics" },
-        { change: "followed", symbol: "AAPL", market: "NASDAQ", name: "Apple" },
-      ] };
-      return workspace;
-    };
-  } },
   { ...base("chat-no-account", "Saved answer after the last AI account is removed", () => {
     const connect = select("button.composer-model-menu:not([aria-label])");
     return connect && select("article.message.assistant.complete");
@@ -85,7 +71,7 @@ export const chatScenarios: PreviewScenario[] = [
       if (question && answer) {
         thread.messages.push(
           { ...question, id: "preview-follow-up", content: previewKo() ? "재고일수는 어떻게 봐야 해?" : "How should I read the inventory days?", created_at: "2026-10-28T00:05:00Z" },
-          { ...answer, id: "preview-follow-up-answer", content: previewKo() ? "재고일수 54일은 같은 업종 평균보다 길어요. 수요가 현금으로 바뀌는 속도가 아직 느리다는 뜻이에요." : "At 54 days, inventory sits above the peer average. Demand has not yet turned into cash as fast as revenue suggests.", evidence_refs: [], memory_update: undefined, created_at: "2026-10-28T00:05:12Z" },
+          { ...answer, id: "preview-follow-up-answer", content: previewKo() ? "재고일수 54일은 같은 업종 평균보다 깁니다. 수요가 현금으로 바뀌는 속도가 아직 느리다는 뜻입니다." : "At 54 days, inventory sits above the peer average. Demand has not yet turned into cash as fast as revenue suggests.", evidence_refs: [], memory_update: undefined, created_at: "2026-10-28T00:05:12Z" },
         );
       }
       return workspace;
@@ -181,5 +167,18 @@ export const chatScenarios: PreviewScenario[] = [
   }), setup: async (bridge) => {
     bridge.guidedAnswer = true;
     await prepareFixture(bridge, "answer");
+  } },
+  // Back online: the banner goes and the message that waited is sent by itself.
+  { ...base("chat-back-online", "Back online, the message that waited is sent without another press",
+    () => !select(".chat-offline-banner") && !select(".chat-pending-card") ? select(".message.assistant[data-latest]") : null, async (root) => {
+      await submitPrompt(root, previewKo() ? "다시 연결되면 마진을 비교해 줘." : "Compare the margins once I'm back online.");
+      await until(() => select(".chat-pending-card"), "The message did not wait");
+      Object.defineProperty(window.navigator, "onLine", { configurable: true, get: () => true });
+      window.dispatchEvent(new Event("online"));
+      // The queue hands the message over as soon as the connection is back; its reply may still be on its way.
+      await until(() => !select(".chat-pending-card"), "The waiting message was not sent");
+    }), setup: async (bridge) => {
+    await prepareFixture(bridge, "answer");
+    Object.defineProperty(window.navigator, "onLine", { configurable: true, get: () => false });
   } },
 ];

@@ -1,6 +1,19 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { ResearchJournalForm } from "./ResearchJournalForm";
+
+it("moves focus into a check when it is added and back to Add a check when it is removed", async () => {
+  const user = userEvent.setup();
+  render(<ResearchJournalForm bridge={new MockLoupistBridge({ delay_ms: 0 })} loupistId="loupist-quality" onSaved={vi.fn()} onCancel={vi.fn()} />);
+  screen.getByRole("button", { name: "+ Add a check" }).focus();
+  await user.keyboard("{Enter}");
+  expect(screen.getByRole("textbox", { name: "What to watch" })).toHaveFocus();
+  screen.getByRole("button", { name: "Remove check" }).focus();
+  await user.keyboard("{Enter}");
+  expect(screen.queryByRole("group", { name: "Check" })).toBeNull();
+  expect(screen.getByRole("button", { name: "+ Add a check" })).toHaveFocus();
+});
 
 it("creates a user's judgment without a check or confidence", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });

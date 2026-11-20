@@ -1,19 +1,22 @@
-import { act, screen, within } from "@testing-library/react";
-import { openSpy, renderWithOpen } from "../../test/open";
+import { act, renderHook, screen, within } from "@testing-library/react";
+import { renderWithOpen } from "../../test/open";
 import userEvent from "@testing-library/user-event";
 import i18n from "../../i18n";
 import type { GrowthEvent, JournalRecord, KnowledgeMap } from "../../contracts/knowledge";
 import type { InboxItem } from "../../contracts/scheduled";
 import type { LoupistBridge } from "../../types";
 import { MorningMessage } from "./MorningMessage";
+import { mockAssetId } from "../../bridge/mock/assets";
+import { markActive, useLoupistVisit } from "../../app/loupistVisit";
 
 const HOUR = 3_600_000;
+// Saturday 9:00; the last visit ended Thursday.
 const NOW = new Date(2026, 9, 31, 9, 0).getTime();
 const LAST_SEEN = NOW - 2 * 24 * HOUR;
 
 const map = { nodes: [
-  { id: "hanul", kind: "entity", label: "Hanul Precision", localNames: ["한울정밀"], entityKind: "Organization", degree: 2, watched: true, held: false, recordId: "world-1" },
-  { id: "morrow", kind: "entity", label: "Morrow Components", entityKind: "Organization", degree: 1, watched: false, held: false, recordId: "world-1" },
+  { id: "hanul", kind: "entity", label: "Hanul Precision", localNames: ["한울정밀"], entityKind: "Organization", degree: 2, watched: true, recordId: "world-1" },
+  { id: "morrow", kind: "entity", label: "Morrow Components", entityKind: "Organization", degree: 1, watched: false, recordId: "world-1" },
 ], edges: [{ id: "c1", kind: "claim", source: "morrow", target: "hanul", relation: "supplies" }] } as unknown as KnowledgeMap;
 const growth = (kind: GrowthEvent["kind"], subjectId: string): GrowthEvent => ({
   eventId: `${kind}-${subjectId}`, loupistId: "loupist", atMs: LAST_SEEN + HOUR, kind, recordId: "world-1", subjectId,
@@ -30,21 +33,23 @@ function bridge(overrides: Partial<LoupistBridge> = {}) {
     knowledgeGrowthEvents: vi.fn(async () => ({ events: [growth("entity_added", "hanul"), growth("entity_added", "morrow"), growth("claim_added", "c1")], nextCursor: null })),
     inboxList: vi.fn(async () => ({ items: [briefing], nextCursor: null })),
     journalList: vi.fn(async () => journal),
-    watchlistList: vi.fn(async () => []),
+    assetsList: vi.fn(async () => [{ assetId: mockAssetId("NVIDIA"), name: "NVIDIA", reference: null, followedAtMs: 0, createdAtMs: 0 }]),
     ...overrides,
   } as unknown as LoupistBridge;
 }
 
-function renderMessage(source = bridge()) {
+function renderNews(source = bridge(), lastWroteAtMs?: number) {
   const handlers = { onAsk: vi.fn() };
-  const { open } = renderWithOpen(<MorningMessage bridge={source} loupistId="loupist" loupistName="Quality Compounder" {...handlers} />);
-  return { handlers, source, open };
+  const view = renderWithOpen(<MorningMessage bridge={source} loupistId="loupist" loupistName="Quality Compounder" lastWroteAtMs={lastWroteAtMs} {...handlers} />);
+  return { handlers, source, ...view };
 }
+
+const seen = (lastSeenAtMs: number) => localStorage.setItem("loupist.loupistVisit.v1", JSON.stringify({ loupist: { lastSeenAtMs } }));
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.setSystemTime(NOW);
-  localStorage.setItem("loupist.loupistVisit.v1", JSON.stringify({ loupist: { lastSeenAtMs: LAST_SEEN } }));
+  seen(LAST_SEEN);
 });
 afterEach(async () => {
   vi.useRealTimers();
@@ -52,39 +57,141 @@ afterEach(async () => {
   await act(async () => { await i18n.changeLanguage("en"); });
 });
 
-describe("Morning message", () => {
-  it("tells what changed since the last visit and opens each item where it lives", async () => {
+describe("Bot's news", () => {
+  it("tells only what the person follows, counts every line it shows, and opens each where it lives", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const { source, open } = renderMessage();
+    const { source, open } = renderNews();
     const message = await screen.findByRole("article", { name: "Message from Quality Compounder" });
-    expect(await within(message).findByText("3 things since Thursday.")).toBeVisible();
-    expect(source.knowledgeGrowthEvents).toHaveBeenCalledWith(expect.objectContaining({ loupistId: "loupist", sinceMs: LAST_SEEN + 1 }));
-    expect(within(message).getByText("+2 on the map and 1 relationship:")).toBeVisible();
+    // The briefing and the overdue check; prices are on the tiles and asset pages, not here.
+    expect(within(message).getByText("2 things since Thursday.")).toBeVisible();
+    expect(within(message).getAllByRole("listitem").filter((item) => item.closest(".morning-card"))).toHaveLength(2);
+    // The Map shows its own growth: no counts, no names from it, no questions built from it.
+    expect(source.knowledgeGrowthEvents).not.toHaveBeenCalled();
+    expect(message).not.toHaveTextContent(/on the map|relationship|Morrow Components/);
+    // A question about the overdue check says so, as the bullet above it does.
+    expect(within(screen.getByRole("region", { name: "You could ask" })).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Is my check on inventory days still on track?overdue since Oct 29",
+      "Give me a quick briefing on NVIDIAyou follow it",
+      "What should I know this week?",
+    ]);
     expect(within(message).getByText(/^Morning briefing \(Oct 31, .+\): Hanul Precision's qualification costs rose\.$/)).toBeVisible();
-    const overdue = within(message).getByText("Overdue");
-    expect(overdue).toHaveClass("morning-late");
-    expect(overdue.parentElement).toHaveTextContent("Overdue since Oct 29: Inventory days below 50");
+    expect(within(message).getByText("Overdue").parentElement).toHaveTextContent("Overdue since Oct 29: Inventory days below 50");
 
-    await user.click(within(message).getByRole("button", { name: "Hanul Precision" }));
-    expect(open).toHaveBeenLastCalledWith({ kind: "page", location: { loupistId: "loupist", surface: "world", recordId: "world-1", objectId: "hanul", selection: { kind: "node", id: "hanul" } } });
-    await user.click(within(message).getByRole("button", { name: "See all in Map" }));
-    expect(open).toHaveBeenLastCalledWith({ kind: "page", location: { loupistId: "loupist", surface: "world", view: { followCurrent: true, whatsNew: true } } });
     await user.click(within(message).getByRole("button", { name: "Open" }));
     expect(open).toHaveBeenLastCalledWith({ kind: "briefing", runId: "run-1" });
-    await user.click(within(message).getByRole("button", { name: "Review this check" }));
+    // Review says which check it opens: the line beside it describes it.
+    const review = within(message).getByRole("button", { name: "Review this check" });
+    expect(review).toHaveAccessibleDescription("Overdue since Oct 29: Inventory days below 50");
+    await user.click(review);
     expect(open).toHaveBeenLastCalledWith({ kind: "memory", location: { loupistId: "loupist", surface: "note", objectId: "j1", selection: { kind: "journal", journalId: "j1" } }, title: "Inventory days below 50" });
   });
 
-  it("offers three questions that go into the composer", async () => {
+  it("never appears while the person is using the app", async () => {
+    // They wrote 33 minutes ago, after a visit that ended two days ago.
+    const { source, unmount } = renderNews(bridge(), NOW - 33 * 60_000);
+    await act(async () => { vi.advanceTimersByTime(50); });
+    expect(screen.queryByRole("article")).toBeNull();
+    expect(source.assetsList).not.toHaveBeenCalled();
+    unmount();
+    // A visit that ended three hours ago this morning is not an absence either.
+    seen(NOW - 3 * HOUR);
+    const again = renderNews();
+    await act(async () => { vi.advanceTimersByTime(50); });
+    expect(screen.queryByRole("article")).toBeNull();
+    again.unmount();
+    // Four hours away is.
+    seen(NOW - 4 * HOUR);
+    renderNews();
+    expect(await screen.findByText("2 things since 5:00 AM.")).toBeVisible();
+  });
+
+  it("appears on the first open of a new day after an hour away", async () => {
+    vi.setSystemTime(new Date(2026, 9, 31, 0, 30).getTime());
+    seen(new Date(2026, 9, 30, 23, 0).getTime());
+    renderNews(bridge({ journalList: vi.fn(async () => []) }));
+    expect(await screen.findByText("One thing since Friday.")).toBeVisible();
+  });
+
+  it("says nothing when nothing the person follows has news, and leaves out a section that fails", async () => {
+    const quiet = renderNews(bridge({ inboxList: vi.fn(async () => ({ items: [], nextCursor: null })), journalList: vi.fn(async () => []) }));
+    await act(async () => { vi.advanceTimersByTime(50); });
+    expect(screen.queryByRole("article")).toBeNull();
+    quiet.unmount();
+    renderNews(bridge({ journalList: vi.fn(async () => { throw new Error("offline"); }) }));
+    const message = await screen.findByRole("article", { name: "Message from Quality Compounder" });
+    expect(within(message).getByText("One thing since Thursday.")).toBeVisible();
+    expect(within(message).queryByRole("button", { name: "Review this check" })).not.toBeInTheDocument();
+  });
+
+  describe("during a visit", () => {
+    const MINUTE = 60_000;
+    let visit: { unmount: () => void } | null = null;
+    /** Opens the Loupist at `openedAtMs` as the app does, then returns the clock to now. */
+    const openVisit = (openedAtMs: number) => {
+      vi.setSystemTime(openedAtMs);
+      visit = renderHook(() => useLoupistVisit("loupist", true));
+      vi.setSystemTime(NOW);
+    };
+    afterEach(() => { visit?.unmount(); visit = null; });
+
+    it("says nothing in a visit opened five hours ago with a session message ten minutes ago", async () => {
+      openVisit(NOW - 5 * HOUR);
+      vi.setSystemTime(NOW - 10 * MINUTE);
+      act(() => markActive("loupist"));
+      vi.setSystemTime(NOW);
+      const { source } = renderNews();
+      await act(async () => { vi.advanceTimersByTime(50); });
+      expect(screen.queryByRole("article")).toBeNull();
+      expect(source.assetsList).not.toHaveBeenCalled();
+    });
+
+    it("shows the news once in a visit that opened now after five hours away, and keeps it when the person then writes", async () => {
+      seen(NOW - 5 * HOUR);
+      openVisit(NOW);
+      const { rerender, source } = renderNews();
+      expect(await screen.findByText("2 things since 4:00 AM.")).toBeVisible();
+      rerender(<MorningMessage bridge={source} loupistId="loupist" loupistName="Quality Compounder" onAsk={vi.fn()} />);
+      expect(screen.getAllByRole("article")).toHaveLength(1);
+      // Answering the news is a send: what is already on screen stays.
+      act(() => markActive("loupist"));
+      expect(screen.getByText("2 things since 4:00 AM.")).toBeVisible();
+    });
+
+    it("says nothing when the news finishes loading after the person sent a message", async () => {
+      openVisit(NOW);
+      let release = () => {};
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      renderNews(bridge({ inboxList: vi.fn(async () => { await held; return { items: [briefing], nextCursor: null }; }) }));
+      await act(async () => { vi.advanceTimersByTime(50); });
+      expect(screen.queryByRole("article")).toBeNull();
+      act(() => markActive("loupist"));
+      await act(async () => { release(); vi.advanceTimersByTime(50); });
+      expect(screen.queryByRole("article")).toBeNull();
+    });
+  });
+
+  it("speaks Korean, and says one thing when one line is shown", async () => {
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    renderNews(bridge({ inboxList: vi.fn(async () => ({ items: [], nextCursor: null })) }));
+    expect(await screen.findByText("목요일 이후 한 가지입니다.")).toBeVisible();
+  });
+});
+
+describe("A research session's questions", () => {
+  function renderQuestions(source = bridge(), template?: "semiconductors" | "custom") {
+    const handlers = { onAsk: vi.fn() };
+    return { handlers, ...renderWithOpen(<MorningMessage bridge={source} loupistId="loupist" loupistName="Quality Compounder" mode="questions" template={template} {...handlers} />) };
+  }
+
+  it("offers three questions from what changed that go into the composer", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const { handlers } = renderMessage();
+    const { handlers } = renderQuestions();
     const ask = await screen.findByRole("region", { name: "You could ask" });
     const questions = within(ask).getAllByRole("button");
     expect(questions.map((button) => button.textContent)).toEqual([
       "What changed for Hanul Precision since Thursday?new on the map",
       "Why is Morrow Components linked to Hanul Precision?new relationship",
-      "Is my check on inventory days still on track?To check by Oct 29",
-      "Read a filing or article together",
+      "Is my check on inventory days still on track?overdue since Oct 29",
     ]);
     expect(questions[0]).toHaveAccessibleName("What changed for Hanul Precision since Thursday?");
     expect(questions[0]).toHaveAccessibleDescription("new on the map");
@@ -92,145 +199,19 @@ describe("Morning message", () => {
     expect(handlers.onAsk).toHaveBeenCalledWith("Why is Morrow Components linked to Hanul Precision?");
   });
 
-  it("leaves out a section that fails and keeps the rest", async () => {
-    renderMessage(bridge({ journalList: vi.fn(async () => { throw new Error("offline"); }), inboxList: vi.fn(async () => { throw new Error("offline"); }) }));
-    const message = await screen.findByRole("article", { name: "Message from Quality Compounder" });
-    expect(await within(message).findByText("One thing since Thursday.")).toBeVisible();
-    expect(within(message).queryByRole("button", { name: "Review this check" })).not.toBeInTheDocument();
-    expect(within(message).queryByRole("button", { name: "Open" })).not.toBeInTheDocument();
-    expect(within(message).getByRole("button", { name: "See all in Map" })).toBeVisible();
-  });
-
-  it("shows a placeholder line only for a section that is still loading after 400 ms", async () => {
-    let finish: (value: JournalRecord[]) => void = () => {};
-    renderMessage(bridge({ journalList: vi.fn(() => new Promise<JournalRecord[]>((resolve) => { finish = resolve; })) }));
-    const message = await screen.findByRole("article", { name: "Message from Quality Compounder" });
-    expect(message).toHaveAttribute("aria-busy", "true");
-    expect(message.querySelector(".morning-skeleton")).toBeNull();
-    await act(async () => { vi.advanceTimersByTime(450); });
-    expect(message.querySelectorAll(".morning-skeleton").length).toBeGreaterThan(0);
-    await act(async () => { finish(journal); });
-    expect(await within(message).findByText("3 things since Thursday.")).toBeVisible();
-    expect(message.querySelector(".morning-skeleton")).toBeNull();
-    expect(message).toHaveAttribute("aria-busy", "false");
-  });
-
-  it("greets a first visit and an empty Loupist", async () => {
+  it("asks general questions on a first visit, and about a preset's subject but not a free-text focus", async () => {
     localStorage.clear();
-    renderMessage(bridge({ knowledgeMap: vi.fn(async () => ({ ...map, nodes: [], edges: [] })), knowledgeGrowthEvents: vi.fn(async () => ({ events: [], nextCursor: null })),
-      inboxList: vi.fn(async () => ({ items: [], nextCursor: null })), journalList: vi.fn(async () => []) }));
-    expect(await screen.findByText("What are you researching?")).toBeVisible();
-    expect(within(screen.getByRole("region", { name: "You could ask" })).getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "What should I know this week?", "What happened in the markets this week?", "What risks should I keep an eye on?", "Read a filing or article together",
+    const empty = bridge({ knowledgeMap: vi.fn(async () => ({ ...map, nodes: [], edges: [] })), knowledgeGrowthEvents: vi.fn(async () => ({ events: [], nextCursor: null })),
+      journalList: vi.fn(async () => []), assetsList: vi.fn(async () => []) });
+    const first = renderQuestions(empty);
+    expect(within(await screen.findByRole("region", { name: "You could ask" })).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "What should I know this week?", "What happened in the markets this week?", "What risks should I keep an eye on?",
     ]);
-  });
-
-  it("names the connections a class template works best with on its first message only while they are missing", async () => {
-    const handlers = { onAsk: vi.fn() };
-    const open = openSpy();
-    const render = (ui: React.ReactElement) => renderWithOpen(ui, open);
-    const missing = bridge({ loupistCapabilityList: vi.fn(async () => [{ entry_id: "eia.energy", enabled: false, granted_permissions: [], available: false }]) });
-    // A later visit says nothing and does not ask.
-    const later = render(<MorningMessage bridge={missing} loupistId="loupist" loupistName="Commodity Loupist" template="commodities" {...handlers} />);
-    expect(await screen.findByText("3 things since Thursday.")).toBeVisible();
-    expect(screen.queryByText(/Works best with/)).not.toBeInTheDocument();
-    expect(missing.loupistCapabilityList).not.toHaveBeenCalled();
-    later.unmount();
-    // The first visit of a Commodities Loupist without EIA names it, with a way to Connections.
-    localStorage.clear();
-    const first = render(<MorningMessage bridge={missing} loupistId="loupist" loupistName="Commodity Loupist" template="commodities" {...handlers} />);
-    const line = await screen.findByText(/^Works best with EIA/);
-    expect(line).toHaveTextContent("Works best with EIA · Open Connections");
-    await userEvent.click(within(line).getByRole("button", { name: "Open Connections" }));
-    expect(open).toHaveBeenCalledExactlyOnceWith({ kind: "settings", section: "connections" });
-    await act(async () => { await i18n.changeLanguage("ko"); });
-    expect(await screen.findByText(/^함께 쓰면 더 좋은 연결: EIA/)).toHaveTextContent("함께 쓰면 더 좋은 연결: EIA · 연결 열기");
     first.unmount();
-    await act(async () => { await i18n.changeLanguage("en"); });
-    // Connected, or a template without recommendations, says nothing.
-    const connected = bridge({ loupistCapabilityList: vi.fn(async () => [{ entry_id: "eia.energy", enabled: true, granted_permissions: [], available: true }]) });
-    const done = render(<MorningMessage bridge={connected} loupistId="loupist" loupistName="Commodity Loupist" template="commodities" {...handlers} />);
-    await screen.findByRole("region", { name: "You could ask" });
-    expect(connected.loupistCapabilityList).toHaveBeenCalled();
-    expect(screen.queryByText(/Works best with/)).not.toBeInTheDocument();
-    done.unmount();
-    const custom = bridge({ loupistCapabilityList: vi.fn(async () => []) });
-    render(<MorningMessage bridge={custom} loupistId="loupist" loupistName="Desk" template="custom" {...handlers} />);
-    await screen.findByRole("region", { name: "You could ask" });
-    expect(custom.loupistCapabilityList).not.toHaveBeenCalled();
-    expect(screen.queryByText(/Works best with/)).not.toBeInTheDocument();
-  });
-
-  it("speaks Korean with local names", async () => {
-    await act(async () => { await i18n.changeLanguage("ko"); });
-    renderMessage(bridge({ journalList: vi.fn(async () => []), inboxList: vi.fn(async () => ({ items: [], nextCursor: null })) }));
-    expect(await screen.findByText("목요일 이후 한 가지예요.")).toBeVisible();
-    expect(screen.getByRole("button", { name: "한울정밀" })).toBeVisible();
-    expect(within(screen.getByRole("region", { name: "이렇게 물어볼 수 있어요" })).getAllByRole("button")[0]).toHaveTextContent(/^목요일 이후 한울정밀에 무슨 변화가 있었어\?/);
-  });
-  it("keeps a three-step checklist whose to-do rows fill the composer without sending and whose done rows are plain", async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const followed = bridge({
-      inboxList: vi.fn(async () => ({ items: [], nextCursor: null })),
-      watchlistList: vi.fn(async () => [{ symbol: "AAPL", market: "NASDAQ", displayName: "Apple", addedAtMs: 0 }]),
-      principleList: vi.fn(async () => []),
-      briefingSettingsGet: vi.fn(async () => ({ enabled: false, schedule: null, task: null })),
-    } as unknown as Partial<LoupistBridge>);
-    const { handlers } = renderMessage(followed);
-    const setup = await screen.findByRole("region", { name: "Get set up" });
-    expect(setup).toHaveTextContent("1 of 3");
-    const rows = within(setup).getAllByRole("listitem");
-    expect(rows[0]).toHaveTextContent("Done Follow a few companies");
-    expect(within(rows[0]!).queryByRole("button")).toBeNull();
-    expect(within(setup).getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Hide",
-      "Teach a principlee.g. check whether capacity costs are temporary before trusting a margin recovery",
-      "Get a briefing every morning",
-      "Import holdings (CSV)…",
-    ]);
-    await user.click(within(setup).getByRole("button", { name: "Get a briefing every morning" }));
-    expect(handlers.onAsk).toHaveBeenCalledWith("Send me a briefing every weekday at 8:00 AM.");
-    // Once something is set up, the questions follow the checklist.
-    expect(screen.getByRole("region", { name: "You could ask" })).toBeVisible();
-    await user.click(within(setup).getByRole("button", { name: "Hide" }));
-    expect(screen.queryByRole("region", { name: "Get set up" })).toBeNull();
-  });
-
-  it("shows only the checklist on a true first visit, and without an AI account leads with Connect and disables model steps", async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    const empty = bridge({ briefingSettingsGet: vi.fn(async () => ({ enabled: false, schedule: null, task: null })) } as unknown as Partial<LoupistBridge>);
-    const onConnectAccount = vi.fn();
-    const onOpenFollowing = vi.fn();
-    const onAsk = vi.fn();
-    renderWithOpen(<MorningMessage bridge={empty} loupistId="loupist" loupistName="Quality Compounder" onAsk={onAsk} accountConnected={false} onConnectAccount={onConnectAccount} onOpenFollowing={onOpenFollowing} />);
-    const setup = await screen.findByRole("region", { name: "Get set up" });
-    expect(screen.queryByRole("region", { name: "You could ask" })).toBeNull();
-    const buttons = within(setup).getAllByRole("button");
-    expect(buttons[1]).toHaveTextContent("Connect an AI account");
-    await user.click(buttons[1]!);
-    await user.click(within(setup).getByRole("button", { name: "Follow a few companies" }));
-    expect(onConnectAccount).toHaveBeenCalled();
-    expect(onOpenFollowing).toHaveBeenCalled();
-    const briefing = within(setup).getByRole("button", { name: /Get a briefing every morning/ });
-    expect(briefing).toHaveAttribute("aria-disabled", "true");
-    expect(briefing).toHaveTextContent("Needs an AI account");
-    await user.click(briefing);
-    expect(onAsk).not.toHaveBeenCalled();
-  });
-
-  it("asks about a preset's subject but not a free-text focus", async () => {
-    const on = bridge({
-      knowledgeGrowthEvents: vi.fn(async () => ({ events: [], nextCursor: null })),
-      inboxList: vi.fn(async () => ({ items: [], nextCursor: null })),
-      journalList: vi.fn(async () => []),
-      briefingSettingsGet: vi.fn(async () => ({ enabled: true, schedule: null, task: null })),
-    } as unknown as Partial<LoupistBridge>);
-    const handlers = { onAsk: vi.fn() };
-    const preset = renderWithOpen(<MorningMessage bridge={on} loupistId="loupist" loupistName="Chip Loupist" template="semiconductors" {...handlers} />);
-    await screen.findByRole("region", { name: "You could ask" });
-    expect(screen.getByText("What matters in semiconductors this week?")).toBeVisible();
+    const preset = renderQuestions(empty, "semiconductors");
+    expect(await screen.findByText("What matters in semiconductors this week?")).toBeVisible();
     preset.unmount();
-    renderWithOpen(<MorningMessage bridge={on} loupistId="loupist" loupistName="Desk" template="custom" {...handlers} />);
+    renderQuestions(empty, "custom");
     await screen.findByRole("region", { name: "You could ask" });
     expect(screen.queryByText(/^What matters in /)).toBeNull();
   });

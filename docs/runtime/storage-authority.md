@@ -60,8 +60,8 @@ independently created, renamed and deleted Chats.
 
 The Loupist settings page edits name, focus, avatar, tone and instructions through
 `loupist_profile_update`. Rust persists the profile; names are independent of folder
-names. Instructions are injected on every Chat turn, including Memory off and
-Briefings, and are bounded again to 4,000 characters at delivery. See
+names. Instructions and the focus are injected on every Chat turn, including Memory
+off and Briefings, and are bounded again at delivery (4,000 and 280 characters). See
 [context assembly](../agent/context.md#context-assembly-and-bounds). Native
 workspace instruction files still follow the [workspace contract](chat-turns.md#local-workspace-execution).
 
@@ -71,9 +71,19 @@ workspace instruction files still follow the [workspace contract](chat-turns.md#
 | `<workspace>/.loupist/loupist.sqlite3` | Loupist profile, Chats, Memory/growth events, asset pages, results events, watch settings and alerts, graph jobs, the derived World index (`world_index_*`: entity and claim vectors, FTS5), datasets, artifacts, sharing records and scheduled definitions/history |
 | `<workspace>/.loupist/knowledge-blobs/` | Retained material referenced by that Loupist's database |
 | `<workspace>/.loupist/packs/` | Files of each [shared pack](../knowledge/sharing.md#sharing) added, by import and version |
-| Global `catalog.sqlite3` | Folder registrations, environment identity, model-provider status, what you follow, holdings snapshots, read-only wallet addresses and other shared host state |
+| Global `catalog.sqlite3` | Folder registrations, environment identity, model-provider status, the shared asset catalog (`assets`), each Loupist's follows (`asset_follows`) and other shared host state |
 | Private Chat runtime | Disposable Pi session cache, output spill files and process leases |
 | Native credential store | Environment-scoped release connector secrets and the GitHub sharing token; debug builds keep both in process memory |
+
+The catalog owns asset identity (ID, name, reference) for every Loupist and,
+keyed by Loupist ID, which assets each Loupist follows and since when. A Loupist
+folder owns its asset pages, thesis, saved price reads and chart points. A replay
+records the provider's price, the quote kind stated by the selected field and dataset
+lineage in that folder. A failed replay keeps the last observation with its kind.
+Older prices and listing references open with an unknown kind or exchange name.
+These optional labels do not enter asset identity or Knowledge revision digests. Removing a
+Loupist removes its follows with its registration; a copied folder opened in
+another app brings its pages and no follows ([What you follow](../knowledge/follow.md#what-you-follow)).
 
 Rust routes canonical operations to the owning Loupist. An exclusive folder lock
 prevents concurrent app instances from writing the same data. Loupist databases use
@@ -100,38 +110,17 @@ Chat, scheduled run or Memory write until deletion finishes. Quarantine is priva
 in-memory host state, rebuilt from the deletion journal at startup, and is not
 part of the stored folder format.
 
-Holdings are app-level. Each import is a snapshot of one source (`csv`, `kis`,
-`crypto_file`, or one per wallet address), and holdings are the union of the latest
-snapshot per source (`LATEST_SNAPSHOTS` in `store/user_context.rs`); a successful
-file or KIS import prunes older snapshots and their positions for that source;
-a backwards host clock that would discard the new snapshot refuses the import. A
-crypto import never replaces stock holdings, and a symbol held in two sources is one item. Unknown
-stored holdings source kinds, wallet families and wallet statuses fail exact reads
-rather than becoming CSV imports, Bitcoin addresses or unread wallets. Holdings
-summaries, wallet lists and automatic wallet targets skip unreadable rows and
-log once without row contents; selecting one wallet to read stays strict. Your
-holdings (Update under About you) imports stock CSV
-files, Korea Investment, exchange balance files and up to 10 read-only wallet addresses.
-For an exchange file Rust detects the format (a Kraken ledger, a balances file, or the
-asset and balance columns the user picks), merges Kraken codes and staking variants into
-the base asset, skips fiat and zero rows, refuses a trade history and keeps the preview
-for 30 minutes. The preview shows quantities before commit; afterwards the store hands
-out only identities (symbol, market, name) and counts and dates per source and per kind
-(stocks and funds, crypto; `holdings_summary`). A wallet address is checked for its network (Bitcoin, EVM or
-Solana), and text that looks like a recovery phrase or private key is refused
-(`secret_refused`) without being stored, logged or echoed. The renderer sees a masked
-address (first six and last four characters), network, status and dates, never balances;
-the full address serves only Copy address. Balances come from
-[host reads](../capabilities/data-services.md#public-blockchains-and-defillama) on Add, Refresh and
-before each briefing, within 30 seconds each time; a failed read keeps the last good
-snapshot.
+The app keeps each Loupist's saved followed list, with no current ownership records or wallet
+addresses. Holdings imports, balance previews and wallet reads are removed.
+Existing legacy rows are retired by the upgrade below and are unavailable to app
+features or the agent.
 
 ### Schema versions and upgrades
 
 The global `catalog.sqlite3` and every folder's `loupist.sqlite3` share one schema
 (`initialize_schema` in `store/schema.rs`) and one upgrade ladder
-(`store/upgrade.rs`). The store schema is version 6 (`PRAGMA user_version`), the
-Knowledge schema version 7 (`knowledge_schema`) and the Knowledge format version 1.
+(`store/upgrade.rs`). The store schema is version 12 (`PRAGMA user_version`), the
+Knowledge schema version 10 (`knowledge_schema`) and the Knowledge format version 1.
 A fresh database is created at the current versions.
 
 A database from store 4 and Knowledge 6 onward (the format 0.0.1 installs use) is
@@ -158,7 +147,132 @@ had. A step that rebuilds a table follows SQLite's twelve-step ALTER procedure a
 keeps rowids, indexes and triggers, including the Memory immutability triggers;
 it may add no foreign-key violation. `store/tests/upgrade.rs` upgrades the frozen
 baseline (`store/tests/fixtures/baseline-store4-knowledge6.sql`) and requires the
-same shape as a fresh database.
+same shape as a fresh database, ignoring the retired tables below.
+
+Store 7 copies identities from the latest holdings snapshot per source and wallet
+into `user_watchlist` once. Copied rows use the snapshot import time as their added
+time and carry no origin; an existing follow keeps its name and added time. The
+saved list alone defines what is followed after this upgrade. The step uses frozen
+SQL in its transaction on the catalog, folder databases and admission copies; fresh
+DDL at store 8 contains no ownership tables.
+
+Store 8 retires `user_wallet_addresses`, `user_holdings_snapshots` and
+`user_holdings_positions`. If all three together contain no row, the step drops
+all three. Otherwise it renames all three to `retired_wallet_addresses`,
+`retired_holdings_snapshots` and `retired_holdings_positions`, preserving every row,
+column and reference. It also removes `onchain.wallets` capability bindings.
+The frozen SQL runs in the ladder transaction with foreign keys off; SQLite's
+renames update the references between the retired tables, and the ladder checks
+that no foreign-key violation was added. Catalogs, folder databases and admission
+copies all use the same step. Retired tables are outside the ladder: fresh schema
+comparison ignores them and folder admission accepts them. No app feature reads
+them, and no ladder step may drop them. Only the separate export task may
+read them into a verified file and then drop them.
+
+Store 9 replaces `user_watchlist` with `assets`, `instruments`, `listings` and
+`user_follows`. Each saved ticker keeps the `ast_` id its pages already use as a
+permanent handle. Names, route markets (including empty and `UNKNOWN`) and added
+times are kept as stored; a legacy hash collision keeps the first row ordered
+by added time and rowid. The frozen kind table supplies only a provisional instrument kind,
+never a page class. The transactional step drops the old table and runs through
+the same catalog, folder and admission-copy ladder; no Knowledge version changes.
+
+
+Store 10 adds the strict `identifiers` and `events` tables and the value and
+subject indexes. It gives every stored listing with a ticker an accepted
+assertion, observed at the saved follow time or at listing creation after
+unfollow. Identified and local instrument names keep their saved creation
+time. Unverified instruments use their saved symbol as the name fallback.
+A personal label stays on its handle. The step leaves the event table empty
+and keeps handle, listing and price keys as stored.
+
+Store 11 removes embedded asset snapshot and sensitivity grid records from
+saved Chat messages, including messages in earlier versions. The original
+answer text and evidence links stay in the conversation. A link on its own
+opens its evidence, and an inline valuation grid saved by an earlier build
+disappears. The pre-upgrade backup contains those old grid cells. The step
+runs for catalogs, bound folders and admission copies and keeps Knowledge
+at version 8.
+
+Knowledge 8 adds the preferred listing and its revision to each asset page and the
+owning series to each close and quote. The step derives the listing reference from
+the page's legacy asset id, keeps its ticker as the series symbol and prefixes its
+existing price keys with the listing reference. Pages without a ticker retain no
+price source, and legacy price rows without a ticker page remain stored and
+unselected. Existing Map links are marked `auto`. The same SQL runs in the
+catalog, folder and admission-copy ladder and needs only tables in that database.
+
+Store 12 migrates each asset to a name, optional ticker and exchange reference
+and creation time. The app-wide followed list belonged to no Loupist, so the
+step drops it: after the upgrade no Loupist follows anything, and each asset
+keeps its ID, name, reference and every page and saved read that points to it.
+It removes the instrument and listing registry, identity history, automatic
+results tasks, and watch and results portions of past runs and Bot messages.
+Per-Loupist follows live in `asset_follows`, a lazily created catalog table.
+
+Knowledge 9 keeps asset pages, thesis moves, Journal entries and line readings.
+It removes host financial observations, filing section deltas, watching and
+results records. Saved price reads and their chart points start empty.
+
+Knowledge 10 adds `provided_json` to Source captures: the Chat message, paste time
+and stated link and publisher of a
+[user-provided Source](../knowledge/sources-notes.md#user-provided-sources). Existing
+captures keep none.
+
+After initialization and window setup, a background host task exports the catalog's
+retired rows to `<app data directory>/legacy-holdings/holdings-export.json` (or a
+numbered name when an existing file cannot be verified). The directory is private
+(`0700`) and the UTF-8 JSON file is owner-only (`0600`). It contains every stored
+wallet, snapshot and position field, including nulls and decimal strings. The host
+syncs the app data directory after creating the export directory and before
+reusing it, so a failed parent sync is retried. It then syncs and reads back the
+file, checks its SHA-256 and row counts, publishes it without replacing an
+existing file, then syncs the directory. A foreign partial
+entry is preserved and skipped using a numbered partial name; it is never
+followed, deleted or hardened. One catalog transaction writes the `app_settings` receipt `legacy_holdings_export` and drops
+the retired tables. That is the only code path that drops retired tables; no
+ladder step or release deadline deletes unexported rows. The recovery guarantee
+covers crashes, power loss, full disks and I/O errors; another process running as
+the same user can still rewrite the app-private export file or catalog at a chosen
+instant before or after the receipt commits. File verification stays outside the
+catalog transaction so the catalog lock is never held across file I/O. Failures
+leave them for
+retry and never prevent startup or normal app use. An unwinding export releases
+its in-flight slot, wakes joined retries and reports failure so another attempt
+can run. Folder databases retain their
+retired rows; this exporter covers the catalog only. Before writing an export and
+again inside the receipt transaction, the host compares every retired table's
+column names and order with store 7, including generated or hidden columns. Any
+difference refuses export and deletion.
+
+The receipt records state, filename, SHA-256, counts, export time and notice
+dismissal, without a path or positions. Host commands expose only status, retry,
+dismissal, file-manager reveal and a native save-copy panel. The renderer never
+receives the path or rows, and the file is outside every agent workspace.
+A failed attempt and its dismissed notice are remembered only for this process;
+a successful export and its dismissal survive restart. Each failed run logs one
+line through the host logger with only fixed stage and error-kind tags; no error
+message, path, row value, address or amount is logged by the exporter.
+
+What the user sees (`LegacyHoldingsNotice` and `useLegacyHoldings`): one dismissible
+status line in the shell, never a dialog and never on Following. `exported` says
+holdings are no longer part of Loupist, that what was stored was saved to a file on
+this computer and that the assets are still in Following, with Show file, Save a
+copy… and Dismiss. `failed` says the stored data has not been deleted and the copy
+could not be saved yet, with Try again and Dismiss. `none`, `pending`, a dismissed
+status, a status that cannot be read and Following show nothing; the line follows every change
+event, and an event wins over a status read that started before it. The status is
+read only once the listener is attached, so an export that ends during startup is
+not missed. Dismissal goes
+to the host, so a dismissed export stays dismissed after restart and a dismissed
+failure returns next launch. Settings › General keeps one row with the export date,
+Show file and Save a copy… for as long as the status is `exported`, dismissed or
+not. No line or row shows a path, a file name or a count.
+
+The export stays until the user deletes it. Pre-upgrade backups beside the catalog
+still contain the old tables until later upgrades prune them (the two newest are
+kept). Secure erasure is not promised. Remove the exporter and its commands when
+the ladder's baseline moves past store 7.
 
 Store 6 adds covering indexes for Source lookups by `span_id` and
 `representation_id`. They are non-unique because retained material may appear in
@@ -207,7 +321,7 @@ older build refuses data a newer build upgraded, and the backup is the way back.
 
 `user_version` versions DDL only. Records kept as JSON carry no version of their
 own: the `data_json` columns (Chats, profiles, capability bindings, deletion
-journals, scheduled tasks and runs, artifacts and their revisions and datasets,
+journals, scheduled tasks and runs, research hand-offs, artifacts and their revisions and datasets,
 the model catalog and update schedule in `app_settings`), and app-written files
 (activity details, run logs, `connections.json`, briefing settings, keychain
 envelopes, the KRX cache). Their Rust types accept fields they do not know, so a
@@ -233,6 +347,18 @@ one. Change them only this way:
   of an enum without a fallback, or a removed, renamed or reinterpreted field.
   The step bumps `user_version`, so an older build reports `newer_version`
   instead of misreading the record.
+
+Research hand-offs record an optional origin, trust receipt and bounded note
+on the queued row. A new row and its target Chat come from the same folder
+transaction as the Bot reply or the retained link's opened status. At delivery,
+Rust stops a Created row whose authority is missing or invalid. An unavailable
+original message or link also stops the row. Completed rows keep their recorded
+status and target. The first message of a started hand-off stores its optional
+note and action attribution alongside the request.
+
+This pre-release hand-off change keeps store version 11 by owner decision.
+Use a build with receipt validation when opening pending hand-offs. An earlier
+store-11 launcher has no guard for the added authority.
 
 Input that crosses a boundary stays strict (`deny_unknown_fields`): renderer
 requests, model tool arguments, Pi and MCP output, bundled catalogs, shared packs
@@ -275,6 +401,15 @@ Loupist. World processing, connection grants and schedules live in the Loupist d
 The app-wide Chat defaults and Skills pages edit global configuration. Per-Loupist
 overrides are edited only on that Loupist's settings page, with its scope fixed.
 
+The optional global `appearance.display_currency` key accepts exactly three
+uppercase ASCII letters and defaults to unset. The shape is valid even if no
+current reference table covers the code. Project configuration refuses both
+setting and resetting it. Reset removes the key through the global revision
+and diagnostics path. Chat admission freezes the setting for its envelope
+and FX tool, and display reads resolve the current setting per request.
+The key needs no database migration. Older versions reject it until the line
+is removed from global `config.toml`.
+
 Fields resolve project → global → app default; arrays replace. Reset removes the
 scoped field. Explicit composer selections override Chat defaults, and new Chats
 inherit Memory defaults while existing Chats retain their saved policy. Scheduled
@@ -292,8 +427,9 @@ configuration is cached by path and scope, modification time, length and filesys
 identity (including Unix change time). Each hit still opens the file without
 following a link; external replacement, deletion and writes invalidate the cache.
 The process keeps at most 64 parsed files.
-Rust emits no configuration event: after its own save the renderer tells its other
-views through the `loupist-configuration-changed` window event, and edits made outside
+After a save the renderer tells its other views through the
+`loupist-configuration-changed` window event. A committed change to the global
+display currency also emits `fx-changed` across all windows. Edits made outside
 the app are read at reload, app activation and scope changes.
 
 
@@ -302,4 +438,4 @@ the app are read at reload, app activation and scope changes.
 - Schema versions and upgrades: `src-tauri/src/store/schema.rs`, `src-tauri/src/store/upgrade.rs`, `src-tauri/src/knowledge/folder.rs`, `src-tauri/src/app.rs` (`open_app_store`), `src/components/app/LoupistAvailabilityBoundary.tsx`
 - Stored JSON: `src-tauri/src/domain/chat.rs`, `src-tauri/src/scheduled_tasks/types.rs` (`TaskKind`), `src-tauri/src/scheduled_tasks/store.rs` (`readable`), `src-tauri/src/store/folder.rs` (`drop_pi_session_caches`)
 - Scoped configuration: `src-tauri/src/scoped_config.rs`, `src-tauri/src/commands/configuration.rs`, `src-tauri/src/marketplace/connector_config.rs` (`ignored_config_entries`)
-- Holdings, wallets and on-chain reads: `src-tauri/src/store/user_context.rs`, `src-tauri/src/commands/user_context.rs`, `src-tauri/src/finance_data/onchain.rs`, `src-tauri/src/finance_data/defillama.rs`, `src-tauri/src/privacy/holdings.rs`, `scripts/generate-kis-read-api.py`, `src/components/holdings/`
+- Followed assets: `src-tauri/src/store/user_context.rs`, `src-tauri/src/commands/assets.rs`; legacy table retirement: `src-tauri/src/store/upgrade.rs`; account-field privacy: `src-tauri/src/privacy/account_fields.rs`; DeFi research: `src-tauri/src/finance_data/defillama.rs`.

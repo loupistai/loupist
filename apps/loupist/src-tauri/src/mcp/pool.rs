@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
+    future::Future,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -9,9 +10,13 @@ use std::{
 };
 
 use serde_json::{json, Value};
-use tokio::sync::{watch, Mutex};
+use tokio::{
+    sync::{oneshot, watch, Mutex},
+    task::JoinHandle,
+};
 
 use crate::{
+    broker::BrokerError,
     fs::artifact_trust::{create_private_directory, ensure_private_directory},
     mcp::{McpError, McpSession, McpTool, ProviderlessToolPolicy},
     util::sha256,
@@ -29,6 +34,26 @@ pub(crate) struct McpPoolKey {
     pub server_id: String,
     pub authority_fingerprint: String,
 }
+
+/// What a process received when it started: its key without the Loupist. A
+/// process that has served no turn holds no Loupist's state, so the first turn
+/// whose authority matches may lease it from any Loupist.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StartKey {
+    server_id: String,
+    authority_fingerprint: String,
+}
+
+impl StartKey {
+    fn of(key: &McpPoolKey) -> Self {
+        Self {
+            server_id: key.server_id.clone(),
+            authority_fingerprint: key.authority_fingerprint.clone(),
+        }
+    }
+}
+
+pub(crate) type McpStartResult = Result<TurnMcpServer, BrokerError>;
 
 pub(crate) struct TurnMcpServer {
     pub session: McpSession,
@@ -48,11 +73,39 @@ struct IdleMcpProcess {
     idle_since: Instant,
 }
 
+/// Started by the pool and not yet leased by any turn.
+struct FreshMcpProcess {
+    key: StartKey,
+    server: TurnMcpServer,
+    idle_since: Instant,
+}
+
+struct StartingMcpProcess {
+    id: u64,
+    key: StartKey,
+    /// The one turn waiting for this start. A start with no waiter, or whose
+    /// waiter stopped waiting, becomes a fresh idle process.
+    waiter: Option<oneshot::Sender<McpStartResult>>,
+    task: Option<JoinHandle<()>>,
+}
+
+impl StartingMcpProcess {
+    fn awaited(&self) -> bool {
+        self.waiter
+            .as_ref()
+            .is_some_and(|waiter| !waiter.is_closed())
+    }
+}
+
 struct McpProcessPoolInner {
     idle: VecDeque<IdleMcpProcess>,
+    fresh: VecDeque<FreshMcpProcess>,
+    starting: Vec<StartingMcpProcess>,
+    next_start: u64,
 }
 
 struct PoolLifecycle {
+    openbb_connect_failed: AtomicBool,
     closing: AtomicBool,
     releases: AtomicUsize,
     changes: watch::Sender<u64>,
@@ -69,11 +122,17 @@ impl Drop for ReleaseLease {
     }
 }
 
+enum FreshLease {
+    Ready(Box<TurnMcpServer>),
+    Waiting(oneshot::Receiver<McpStartResult>),
+    Closed,
+}
+
 impl McpProcessPoolInner {
     fn take_expired(&mut self, ttl: Duration) -> Vec<TurnMcpServer> {
         let now = Instant::now();
-        let mut kept = VecDeque::new();
         let mut discarded = Vec::new();
+        let mut kept = VecDeque::new();
         while let Some(entry) = self.idle.pop_front() {
             if now.saturating_duration_since(entry.idle_since) >= ttl {
                 discarded.push(entry.server);
@@ -82,7 +141,56 @@ impl McpProcessPoolInner {
             }
         }
         self.idle = kept;
+        let mut kept = VecDeque::new();
+        while let Some(entry) = self.fresh.pop_front() {
+            if now.saturating_duration_since(entry.idle_since) >= ttl {
+                discarded.push(entry.server);
+            } else {
+                kept.push_back(entry);
+            }
+        }
+        self.fresh = kept;
         discarded
+    }
+
+    /// Evicts the longest-idle process, leased before or fresh, until one more fits.
+    fn make_room(&mut self, max_idle: usize, discarded: &mut Vec<TurnMcpServer>) {
+        while self.idle.len() + self.fresh.len() >= max_idle {
+            let fresh_is_older = match (self.idle.front(), self.fresh.front()) {
+                (Some(idle), Some(fresh)) => fresh.idle_since <= idle.idle_since,
+                (None, Some(_)) => true,
+                (_, None) => false,
+            };
+            let oldest = if fresh_is_older {
+                self.fresh.pop_front().map(|entry| entry.server)
+            } else {
+                self.idle.pop_front().map(|entry| entry.server)
+            };
+            match oldest {
+                Some(server) => discarded.push(server),
+                None => break,
+            }
+        }
+    }
+
+    fn place_fresh(
+        &mut self,
+        key: StartKey,
+        server: TurnMcpServer,
+        max_idle: usize,
+        discarded: &mut Vec<TurnMcpServer>,
+    ) {
+        // One started process per authority already hides the next start.
+        if self.fresh.iter().any(|entry| entry.key == key) {
+            discarded.push(server);
+            return;
+        }
+        self.make_room(max_idle, discarded);
+        self.fresh.push_back(FreshMcpProcess {
+            key,
+            server,
+            idle_since: Instant::now(),
+        });
     }
 }
 
@@ -110,8 +218,12 @@ impl McpProcessPool {
             max_idle: max_idle.max(1),
             inner: std::sync::Arc::new(Mutex::new(McpProcessPoolInner {
                 idle: VecDeque::new(),
+                fresh: VecDeque::new(),
+                starting: Vec::new(),
+                next_start: 0,
             })),
             lifecycle: Arc::new(PoolLifecycle {
+                openbb_connect_failed: AtomicBool::new(false),
                 closing: AtomicBool::new(false),
                 releases: AtomicUsize::new(0),
                 changes,
@@ -119,26 +231,32 @@ impl McpProcessPool {
         }
     }
 
-    pub(crate) fn create_scratch(
-        &self,
-        loupist_id: &str,
-        server_id: &str,
-    ) -> Result<PathBuf, String> {
+    pub(crate) fn record_openbb_connect(&self, connected: bool) {
+        self.lifecycle
+            .openbb_connect_failed
+            .store(!connected, Ordering::Relaxed);
+    }
+
+    pub(crate) fn openbb_connect_failed(&self) -> bool {
+        self.lifecycle.openbb_connect_failed.load(Ordering::Relaxed)
+    }
+
+    /// A private working directory for one process. It carries no Loupist,
+    /// because a fresh process may go to any Loupist with matching authority.
+    pub(crate) fn create_scratch(&self, server_id: &str) -> Result<PathBuf, String> {
         if self.lifecycle.closing.load(Ordering::Acquire) {
             return Err("MCP pool is closing".into());
         }
         if !valid_server_id(server_id) {
             return Err("invalid MCP server id".into());
         }
-        let loupist = sha256(loupist_id.as_bytes());
         let token = uuid::Uuid::new_v4().simple();
-        let path = self
-            .root
-            .join(format!("{}-{server_id}-{token}", &loupist[..12]));
+        let path = self.root.join(format!("{server_id}-{token}"));
         create_private_directory(&path).map_err(|error| error.to_string())?;
         Ok(path)
     }
 
+    /// A process this Loupist's earlier turn left with the same authority.
     pub(crate) async fn acquire(&self, key: &McpPoolKey) -> Option<TurnMcpServer> {
         let mut discarded = Vec::new();
         let found = {
@@ -159,6 +277,149 @@ impl McpProcessPool {
             server.discard().await;
         }
         found
+    }
+
+    /// A process for `key` that has served no turn: one already started, one
+    /// still starting (this turn waits for it rather than starting another),
+    /// or a new `start`. The pool owns every start, so a turn that stops
+    /// waiting leaves the process to the next turn with the same authority.
+    /// `start` runs only when neither exists.
+    pub(crate) async fn lease_fresh<F>(&self, key: &McpPoolKey, start: F) -> McpStartResult
+    where
+        F: Future<Output = McpStartResult> + Send + 'static,
+    {
+        let start_key = StartKey::of(key);
+        let (lease, discarded) = {
+            let mut inner = self.inner.lock().await;
+            let mut discarded = inner.take_expired(self.idle_ttl);
+            let mut ready = None;
+            while let Some(entry) = inner
+                .fresh
+                .iter()
+                .position(|entry| entry.key == start_key)
+                .and_then(|index| inner.fresh.remove(index))
+            {
+                // A process that exited while idle is not handed out.
+                if matches!(entry.server.session.is_running().await, Ok(true)) {
+                    ready = Some(entry.server);
+                    break;
+                }
+                discarded.push(entry.server);
+            }
+            let lease = if self.lifecycle.closing.load(Ordering::Acquire) {
+                discarded.extend(ready);
+                FreshLease::Closed
+            } else if let Some(server) = ready {
+                FreshLease::Ready(Box::new(server))
+            } else {
+                let (sender, receiver) = oneshot::channel();
+                match inner
+                    .starting
+                    .iter_mut()
+                    .find(|starting| starting.key == start_key && !starting.awaited())
+                {
+                    Some(starting) => starting.waiter = Some(sender),
+                    None => self.begin_start(&mut inner, start_key, Some(sender), start),
+                }
+                FreshLease::Waiting(receiver)
+            };
+            (lease, discarded)
+        };
+        for server in discarded {
+            server.discard().await;
+        }
+        match lease {
+            FreshLease::Ready(server) => Ok(*server),
+            // Shutdown dropped the start before it finished.
+            FreshLease::Waiting(receiver) => receiver.await.unwrap_or_else(|_| Err(stopped())),
+            FreshLease::Closed => Err(stopped()),
+        }
+    }
+
+    /// Starts one process for `key` in the background unless one with the
+    /// same authority has started or is starting. Nothing waits for it; a turn
+    /// leases it through `lease_fresh`, and unleased it expires like any idle
+    /// process. Returns whether a start began.
+    pub(crate) async fn prewarm<F>(&self, key: &McpPoolKey, start: F) -> bool
+    where
+        F: Future<Output = McpStartResult> + Send + 'static,
+    {
+        let start_key = StartKey::of(key);
+        let mut inner = self.inner.lock().await;
+        if self.lifecycle.closing.load(Ordering::Acquire)
+            || inner.fresh.iter().any(|entry| entry.key == start_key)
+            || inner
+                .starting
+                .iter()
+                .any(|starting| starting.key == start_key)
+        {
+            return false;
+        }
+        self.begin_start(&mut inner, start_key, None, start);
+        true
+    }
+
+    fn begin_start<F>(
+        &self,
+        inner: &mut McpProcessPoolInner,
+        key: StartKey,
+        waiter: Option<oneshot::Sender<McpStartResult>>,
+        start: F,
+    ) where
+        F: Future<Output = McpStartResult> + Send + 'static,
+    {
+        let id = inner.next_start;
+        inner.next_start = inner.next_start.wrapping_add(1);
+        let pool = self.clone();
+        // The entry is published under the lock this task needs to finish,
+        // so it always finds its entry unless shutdown took it. The start runs
+        // as its own task so a panic still answers the waiting turn; aborting
+        // this task drops the guard, which aborts the start and its process.
+        let task = tokio::spawn(async move {
+            let mut start = AbortOnDrop(tokio::spawn(start));
+            let result = (&mut start.0).await.unwrap_or_else(|_| Err(stopped()));
+            pool.finish_start(id, result).await;
+        });
+        inner.starting.push(StartingMcpProcess {
+            id,
+            key,
+            waiter,
+            task: Some(task),
+        });
+    }
+
+    async fn finish_start(&self, id: u64, result: McpStartResult) {
+        let mut discarded = Vec::new();
+        {
+            let mut inner = self.inner.lock().await;
+            let entry = inner
+                .starting
+                .iter()
+                .position(|starting| starting.id == id)
+                .map(|index| inner.starting.swap_remove(index));
+            match entry {
+                Some(StartingMcpProcess {
+                    key, mut waiter, ..
+                }) => {
+                    let unclaimed = match waiter.take() {
+                        Some(waiter) => waiter.send(result).err(),
+                        None => Some(result),
+                    };
+                    if let Some(Ok(server)) = unclaimed {
+                        if self.lifecycle.closing.load(Ordering::Acquire) {
+                            discarded.push(server);
+                        } else {
+                            inner.place_fresh(key, server, self.max_idle, &mut discarded);
+                        }
+                    }
+                }
+                // Shutdown already took this start: nobody may lease its process.
+                None => discarded.extend(result.ok()),
+            }
+        }
+        for server in discarded {
+            server.discard().await;
+        }
     }
 
     pub(crate) async fn release(&self, mut server: TurnMcpServer) {
@@ -194,11 +455,13 @@ impl McpProcessPool {
             if self.lifecycle.closing.load(Ordering::Acquire) {
                 discarded.push(server);
             } else {
-                while inner.idle.len() >= self.max_idle {
-                    if let Some(oldest) = inner.idle.pop_front() {
-                        discarded.push(oldest.server);
+                // Two turns of one Loupist can finish with the same authority.
+                if let Some(index) = inner.idle.iter().position(|entry| entry.key == key) {
+                    if let Some(previous) = inner.idle.remove(index) {
+                        discarded.push(previous.server);
                     }
                 }
+                inner.make_room(self.max_idle, &mut discarded);
                 inner.idle.push_back(IdleMcpProcess {
                     key,
                     server,
@@ -234,6 +497,16 @@ impl McpProcessPool {
         self.inner.lock().await.idle.len()
     }
 
+    #[cfg(test)]
+    pub(crate) async fn fresh_count(&self) -> usize {
+        self.inner.lock().await.fresh.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn starting_count(&self) -> usize {
+        self.inner.lock().await.starting.len()
+    }
+
     fn track_release(&self) -> ReleaseLease {
         self.lifecycle.releases.fetch_add(1, Ordering::AcqRel);
         ReleaseLease(self.lifecycle.clone())
@@ -255,13 +528,29 @@ impl McpProcessPool {
         }
     }
 
+    /// Stops every process the pool owns: idle, fresh and still starting. An
+    /// aborted start drops its process, which ends the process group; a turn
+    /// waiting for it gets an error.
     pub(crate) async fn shutdown(&self) {
         self.close_admission();
-        let idle = {
+        let (idle, fresh, starting) = {
             let mut inner = self.inner.lock().await;
-            std::mem::take(&mut inner.idle)
+            (
+                std::mem::take(&mut inner.idle),
+                std::mem::take(&mut inner.fresh),
+                std::mem::take(&mut inner.starting),
+            )
         };
+        for mut start in starting {
+            if let Some(task) = start.task.take() {
+                task.abort();
+                let _ = task.await;
+            }
+        }
         for entry in idle {
+            entry.server.discard().await;
+        }
+        for entry in fresh {
             entry.server.discard().await;
         }
         let mut changes = self.lifecycle.changes.subscribe();
@@ -270,6 +559,18 @@ impl McpProcessPool {
                 break;
             }
         }
+    }
+}
+
+fn stopped() -> BrokerError {
+    BrokerError::Execution("MCP turn stopped".into())
+}
+
+struct AbortOnDrop<T>(JoinHandle<T>);
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
     }
 }
 
@@ -361,10 +662,12 @@ mod tests {
     fn create_scratch_rejects_unsafe_server_ids() {
         let temporary = tempfile::tempdir().unwrap();
         let pool = McpProcessPool::with_limits(temporary.path().to_path_buf(), DEFAULT_IDLE_TTL, 1);
-        assert!(pool.create_scratch("loupist", "../openbb").is_err());
-        assert!(pool.create_scratch("loupist", "openbb/extra").is_err());
-        assert!(pool.create_scratch("loupist", "").is_err());
-        let scratch = pool.create_scratch("loupist-a", "openbb").unwrap();
+        assert!(pool.create_scratch("../openbb").is_err());
+        assert!(pool.create_scratch("openbb/extra").is_err());
+        assert!(pool.create_scratch("").is_err());
+        let scratch = pool.create_scratch("openbb").unwrap();
         assert!(scratch.starts_with(temporary.path()));
+        pool.close_admission();
+        assert!(pool.create_scratch("openbb").is_err());
     }
 }

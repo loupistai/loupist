@@ -1,6 +1,5 @@
-import { displayPageTitle, HOST_PERSPECTIVE_TITLE } from "../../knowledge/hostDefaults";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ImageIcon, ListIcon, MoreHorizontalIcon, SearchIcon, SlidersHorizontalIcon, VideoIcon, WaypointsIcon } from "lucide-react";
+import { PlayIcon, BookOpenIcon, ChevronDownIcon, HistoryIcon, ImageIcon, ListIcon, MoreHorizontalIcon, SearchIcon, SlidersHorizontalIcon, VideoIcon } from "lucide-react";
 import type { KnowledgeMapNode } from "../../contracts/knowledge";
 import { useTranslation } from "../../i18n";
 import { Button } from "../ui/button";
@@ -57,12 +56,12 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
 
   useEffect(() => setIndex(0), [nodes]);
   const choose = (node: KnowledgeMapNode) => { onSelect(node); setOpen(false); };
-  const listLabel = t(list ? "map.canvasView" : "map.listView");
   return <div className="map-toolbar" ref={bar}>
     <div className="map-search"><SearchIcon aria-hidden="true" /><Input disabled={disabled} role="combobox" aria-label={t("map.searchPlaceholder")} placeholder={t("map.searchPlaceholder")} value={query} aria-expanded={open && !!query.trim()} aria-controls={resultsId} aria-autocomplete="list" aria-activedescendant={open && nodes[index] ? `${resultsId}-${index}` : undefined}
       onFocus={() => setOpen(true)} onBlur={(e) => { if (!e.currentTarget.parentElement?.contains(e.relatedTarget)) setOpen(false); }}
       onChange={(e) => { onQuery(e.target.value); setOpen(true); }} onKeyDown={(e) => {
-        if (e.key === "Escape") { setOpen(false); e.stopPropagation(); }
+        // Escape closes an open result list first; with none open it reaches the Map (clearing a selection, closing a drawer).
+        if (e.key === "Escape" && open && query.trim()) { setOpen(false); e.stopPropagation(); }
         if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setOpen(true); setIndex((n) => Math.max(0, Math.min(nodes.length - 1, n + (e.key === "ArrowDown" ? 1 : -1)))); }
         if (e.key === "Enter" && open && nodes[index]) { e.preventDefault(); choose(nodes[index]); }
       }} />
@@ -92,7 +91,7 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
       <DropdownMenuTrigger asChild><Button className="map-toolbar-button" variant="ghost" data-map-more disabled={disabled || empty} aria-label={t("map.moreActions")} title={t("map.moreActions")}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="map-more-menu">
         <DropdownMenuItem role="menuitemcheckbox" aria-checked={!!replayActive} data-map-replay disabled={disabled || replayDisabled} onSelect={onReplay}><PlayIcon />{t("map.replay.label")}</DropdownMenuItem>
-        <DropdownMenuItem role="menuitemcheckbox" aria-checked={list} data-map-list disabled={disabled || listDisabled} onSelect={onList}>{list ? <WaypointsIcon /> : <ListIcon />}{listLabel}</DropdownMenuItem>
+        <DropdownMenuItem role="menuitemcheckbox" aria-checked={list} data-map-list disabled={disabled || listDisabled} onSelect={onList}><ListIcon />{t("map.listView")}</DropdownMenuItem>
         {exportActions ? <>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>{t("map.export.label")}</DropdownMenuLabel>
@@ -111,7 +110,6 @@ function LensMenu({ lenses, overlayId, onOverlay, disabled, appliedCounts, lensT
 }) {
   const { t } = useTranslation("knowledge");
   const defaultPerspective = t("lensWorkspace.defaultPerspective");
-  const hostTitle = displayPageTitle("perspective", HOST_PERSPECTIVE_TITLE);
   const titleOf = (node: KnowledgeMapNode) => lensTitles?.[node.id] ?? node.label;
   const groups = lensGroups.map(id => ({
     id,
@@ -127,7 +125,7 @@ function LensMenu({ lenses, overlayId, onOverlay, disabled, appliedCounts, lensT
         const applied = appliedCounts?.[lens.id] ?? 0;
         return <Button disabled={disabled} variant="ghost" key={lens.id} data-lens-id={lens.id} aria-pressed={overlayId === lens.id} onClick={() => { onOverlay(lens.id); onClose(); }}>
           <i className={`map-swatch is-${nodeCategory(lens)}`} aria-hidden="true" />
-          <span>{title}{baseLensIds?.has(lens.id) && title !== hostTitle ? <small>{defaultPerspective}</small> : null}<small>{applied ? t("map.appliedTo", { count: applied }) : t("map.notApplied")}</small></span>
+          <span>{title}{baseLensIds?.has(lens.id) ?<small>{defaultPerspective}</small> : null}<small>{applied ? t("map.appliedTo", { count: applied }) : t("map.notApplied")}</small></span>
         </Button>;
       })}
     </section>)}
@@ -143,7 +141,7 @@ function LocalControls({ local, disabled, scopeFolded }: { local: MapLocalContro
   const name = entityLabel(local.focal, i18n.language);
   const choose = (node: KnowledgeMapNode) => { local.onFocal(node); setAroundOpen(false); };
   const option = (node: KnowledgeMapNode) => <Button key={node.id} variant="ghost" disabled={disabled} aria-pressed={node.id === local.focal.id} onClick={() => choose(node)}>
-    {node.watched || node.held ? <i className={`map-swatch is-${node.held ? "holding" : "watching"}`} aria-hidden="true" /> : <i className={`map-swatch is-${nodeCategory(node)}`} aria-hidden="true" />}
+    {node.watched ? <i className="map-swatch is-watching" aria-hidden="true" /> : <i className={`map-swatch is-${nodeCategory(node)}`} aria-hidden="true" />}
     {entityLabel(node, i18n.language)}
   </Button>;
   const moveScope = (event: KeyboardEvent<HTMLDivElement>) => {

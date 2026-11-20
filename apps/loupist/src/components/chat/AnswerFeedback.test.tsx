@@ -29,6 +29,32 @@ it("toggles ratings, saves and clears corrections, and teaches only on explicit 
   expect(screen.queryByRole("button", { name: "Teach the Loupist" })).toBeNull();
 });
 
+it("returns focus to Suggest a correction when the editor closes by Cancel, Escape, Save or its own button", async () => {
+  const user = userEvent.setup();
+  const onSave = vi.fn(async (_id, value) => ({ ...value, correction: value.correction?.trim() || null, updatedAt: 1 }));
+  render(<AnswerFeedback message={message} onSave={onSave} onTeach={vi.fn()} />);
+  const correct = screen.getByRole("button", { name: "Suggest a correction" });
+  await user.click(correct);
+  expect(correct).toHaveAttribute("aria-expanded", "true");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(correct).toHaveFocus();
+  await user.click(correct);
+  expect(screen.getByRole("textbox", { name: "Your correction" })).toHaveFocus();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(correct).toHaveFocus();
+  await user.click(correct);
+  await user.click(correct);
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(correct).toHaveAttribute("aria-expanded", "false");
+  await user.click(correct);
+  await user.type(screen.getByRole("textbox", { name: "Your correction" }), "Use consolidated profit.");
+  await user.click(screen.getByRole("button", { name: "Save correction" }));
+  expect(onSave).toHaveBeenLastCalledWith("answer", { rating: null, correction: "Use consolidated profit." });
+  expect(correct).toHaveFocus();
+});
+
 it("disables feedback while a reply is in progress and restores it when the reply finishes", async () => {
   const user = userEvent.setup();
   const onSave = vi.fn(async (_id, value) => ({ ...value, correction: value.correction ?? null, updatedAt: 1 }));

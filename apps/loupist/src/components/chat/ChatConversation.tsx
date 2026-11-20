@@ -7,18 +7,21 @@ import {
   ConversationContent,
 } from "@/components/ai-elements/conversation";
 import { ChatStatusPill, type ChatRunStatus } from "./ChatStatusPill";
-import type { ChatArtifactRef, ChatMessage, GraphJobView } from "../../types";
-import type { LoupistBridge, LoupistTemplateId } from "../../types";
+import type { ChatArtifactRef, ChatMessage, ChatThread, GraphJobView } from "../../types";
+import type { HomeHandoff, LoupistBridge, LoupistTemplateId, ResearchHandoffChoices } from "../../types";
 import { revealFocused } from "../../lib/revealFocused";
 import { ChatMessageCard } from "./ChatMessageCard";
 import type { ProviderErrorAction } from "./ChatErrorState";
 import { QuoteAsk } from "./QuoteAsk";
-import { HomeSetup, MorningMessage } from "./MorningMessage";
+import { useSelectedCitations } from "./useSelectedCitations";
+import { MorningMessage } from "./MorningMessage";
+import { BotGreeting } from "./BotGreeting";
+import { ChatSurfaceProvider, type ChatSurface } from "./turnMotion";
+import type { LoupistAvatarId } from "../../contracts/loupist";
 import { ThreadDelivery } from "./ThreadDelivery";
+import { BotScheduleTasks, useBotScheduleTasks } from "./BotScheduleTasks";
 import { ThreadHandoff } from "./ThreadHandoff";
 import { ThreadAlert } from "./ThreadAlert";
-import { ThreadWatch } from "./ThreadWatch";
-import { ThreadEarnings } from "./ThreadEarnings";
 import { ThreadLink } from "./ThreadLink";
 import { ThreadVocabulary } from "./ThreadVocabulary";
 import { ChatDivider } from "./ChatDivider";
@@ -40,6 +43,8 @@ type Props = {
   loupistId: string;
   chatId?: string;
   loupistName: string;
+  /** The Loupist's face; Bot's messages carry it. */
+  loupistAvatar?: LoupistAvatarId;
   workspacePath?: string;
   progressFocus?: string | null;
   /** Guidance sent while the latest reply runs; shown in its timeline. */
@@ -78,10 +83,13 @@ type Props = {
   home?: boolean;
   /** An empty topic Chat offers starter questions unless its composer already holds a question (Look back). */
   offerQuestions?: boolean;
-  /** The composer's as-of date: the morning message leaves out its look-ahead event strip. */
-  asOf?: string;
   /** The Loupist's template: a class Loupist's first morning message names the connections it works best with. */
   loupistTemplate?: LoupistTemplateId;
+  /** The composer's run choices, read when a link's "Look into it" starts research. */
+  composerChoices?: () => ResearchHandoffChoices;
+  researchSessions?: readonly ChatThread[];
+  /** Look into it sessions at work, by link: Bot posts nothing for them until they end. */
+  runningLinks?: ReadonlyMap<string, HomeHandoff>;
 };
 
 export function ChatConversation({
@@ -92,6 +100,7 @@ export function ChatConversation({
   loupistId,
   chatId,
   loupistName,
+  loupistAvatar,
   workspacePath,
   progressFocus,
   guiding,
@@ -119,10 +128,13 @@ export function ChatConversation({
   run,
   home = false,
   offerQuestions = true,
-  asOf,
   loupistTemplate,
+  composerChoices,
+  researchSessions,
+  runningLinks,
 }: Props) {
   useTranslation("chat");
+  useSelectedCitations(active);
   // Edit forks (X18): the versions that part from the chat at a sent message, nearest first.
   const versionAt = (index: number, direction: "earlier" | "later", show: (versionId: string) => void) => {
     const anchor = index > 0 ? messages[index - 1]!.id : null;
@@ -142,8 +154,6 @@ export function ChatConversation({
     const index = messagesRef.current.findIndex(item => item.id === message.id);
     if (index >= 0) onEditUser?.(message, index);
   }, [onEditUser]);
-  // The answers already finished when the window lost focus, until it is focused again.
-  const answeredAtBlur = useRef<Set<string> | null>(null);
   const [newSinceId, setNewSinceId] = useState<string | undefined>(() => chatId && active ? firstNewSince(messages, chatSeenAt(chatId)) : undefined);
   const clearNewSince = useCallback(() => {
     setNewSinceId(undefined);
@@ -164,25 +174,10 @@ export function ChatConversation({
         if (pending) setNewSinceId(pending);
       }
     };
-    // Another app in front while this chat stays on screen: the answers that finish
-    // before the window is focused again are new, whatever their clocks say.
-    const onBlur = () => {
-      if (active) answeredAtBlur.current = new Set(messagesRef.current.flatMap((message) => settledAnswer(message) ? [message.id] : []));
-    };
-    const onFocus = () => {
-      const before = answeredAtBlur.current;
-      answeredAtBlur.current = null;
-      if (!active || !before) return;
-      const pending = messagesRef.current.find((message) => settledAnswer(message) && !before.has(message.id))?.id;
-      if (pending) setNewSinceId(pending);
-    };
+    // A visible window behind another app still shows this chat: losing focus is not leaving.
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("blur", onBlur);
-    window.addEventListener("focus", onFocus);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("blur", onBlur);
-      window.removeEventListener("focus", onFocus);
       if (active) markChatSeen(chatId);
     };
   }, [active, chatId]);
@@ -211,21 +206,24 @@ export function ChatConversation({
     setWasActive(active);
     if (active) setHomeRevision(homeRevision + 1);
   }
-  const morning = (mode: "full" | "news" | "questions") => bridge ? <MorningMessage
+  const lastWrote = lastUserIndex >= 0 ? Date.parse(messages[lastUserIndex]!.created_at) : Number.NaN;
+  const morning = (mode: "news" | "questions") => bridge ? <MorningMessage
     key={`${loupistId}:${mode}`}
     mode={mode}
     bridge={bridge}
     loupistId={loupistId}
     loupistName={loupistName}
     onAsk={onSuggestion}
-    accountConnected={accountConnected}
-    onConnectAccount={onConnectAccount}
-    onOpenFollowing={onOpenFollowing}
+    lastWroteAtMs={Number.isFinite(lastWrote) ? lastWrote : undefined}
     refreshRevision={homeRevision}
     deliveredRunIds={home ? deliveredRunIds : undefined}
-    asOf={asOf}
     template={loupistTemplate}
   /> : null;
+  // Bot is a conversation with the Loupist: its face, bubbles and the greeting. A research session stays a document.
+  const surface = useMemo<ChatSurface>(() => home ? { kind: "bot", loupist: { id: loupistId, name: loupistName, avatar: loupistAvatar } } : { kind: "session" },
+    [home, loupistId, loupistName, loupistAvatar]);
+  const greeting = bridge ? <BotGreeting key={loupistId} bridge={bridge} loupistId={loupistId} loupist={{ id: loupistId, name: loupistName, avatar: loupistAvatar }}
+    onAsk={onSuggestion} accountConnected={accountConnected} onConnectAccount={onConnectAccount} onOpenFollowing={onOpenFollowing} refreshRevision={homeRevision} /> : null;
   const latestPromptKey = messageKeys[lastUserIndex] ?? messages[lastUserIndex]?.id ?? "";
   // Messages already here when the thread opened are drawn settled; a question sent now rises in.
   const [openedWith] = useState(() => new Set(messageKeys));
@@ -236,6 +234,9 @@ export function ChatConversation({
     ? { id: `pending-reply:${shellAt}`, role: "assistant", status: "streaming", content: "", created_at: new Date().toISOString() }
     : null, [shellAt]);
   const turns = useMemo(() => turnGroups(messages), [messages]);
+  // A link's latest research: a session still at work, else the last one Bot posted.
+  const linkResearch = useMemo(() => new Map([...messages.flatMap(({ handoff }) =>
+    handoff?.connectionId ? [[handoff.connectionId, handoff] as const] : []), ...(runningLinks ?? [])]), [messages, runningLinks]);
   // The latest turn keeps a viewport of room below its question while it is the one being read.
   const reserve = Boolean(shell) || last?.status === "streaming" || (lastUserIndex >= 0 && !openedWith.has(latestPromptKey));
   const lastAssistantIndex = messages.reduce((last, message, index) => (message.role === "assistant" ? index : last), -1);
@@ -247,14 +248,22 @@ export function ChatConversation({
       return question;
     });
   }, [messages]);
+  // A scheduled run's request is run again by its task, not sent again as the user's turn.
+  const lastRequestScheduled = useMemo(() => [...messages].reverse().find((message) => message.role === "user" && !message.steer)?.scheduled, [messages]);
+  const receiptKey = home && active ? messages.flatMap(message => (message.schedule_receipts ?? [])
+    .flatMap(receipt => "revision" in receipt ? [`${receipt.task_id}:${receipt.revision}`] : [])).join(",") : "";
+  const botTasks = useBotScheduleTasks(bridge, loupistId, receiptKey);
   const dividerKey = JSON.stringify(messages.map(({ id, created_at }) => [id, created_at]));
   const dividerDay = new Date().toDateString();
-  const dividers = useMemo(() => messages.map((_, index) => dividersBefore(messages, index, newSinceId)),
+  // Bot keeps the day between messages; "new since you left" belongs to research sessions read later.
+  const dividers = useMemo(() => messages.map((_, index) => dividersBefore(messages, index, newSinceId).filter((divider) => !home || divider.kind !== "new")),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- dividers read only ids/timestamps; streaming text does not change a date boundary.
-    [dividerKey, dividerDay, newSinceId, i18n.language]);
+    [dividerKey, dividerDay, newSinceId, i18n.language, home]);
   return (
+    <ChatSurfaceProvider value={surface}><BotScheduleTasks.Provider value={botTasks}>
     <Conversation
       className="message-scroll"
+      data-surface={home ? "bot" : undefined}
       onFocus={revealFocused}
       aria-label={t("chatConversation.conversation")}
       aria-relevant="additions"
@@ -266,8 +275,8 @@ export function ChatConversation({
       {onQuote && active ? <QuoteAsk onQuote={onQuote} /> : null}
       <ConversationContent className="conversation-content">
         {!messages.length ? (
-          // The empty home Thread greets; an empty topic Chat only offers questions.
-          home ? morning("full") : offerQuestions ? morning("questions") : null
+          // The empty Bot greets; an empty topic Chat only offers questions.
+          home ? greeting : offerQuestions ? morning("questions") : null
         ) : (<>
           {turns.map((turn, turnIndex) => {
             const latestTurn = turnIndex === turns.length - 1;
@@ -275,14 +284,11 @@ export function ChatConversation({
               data-turn-latest={latestTurn || undefined} data-turn-reserve={(latestTurn && reserve) || undefined}>
           {turn.indexes.map((index) => { const message = messages[index]!; return <Fragment key={messageKeys[index] ?? message.id}>
             {dividers[index]?.map((divider) => <ChatDivider key={divider.kind} divider={divider} onPassed={divider.kind === "new" ? clearNewSince : undefined} />)}
-            {message.watch ? (
-            <ThreadWatch message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} active={active} />
-          ) : message.earnings ? (
-            <ThreadEarnings message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
-          ) : message.vocabulary ? (
+            {message.vocabulary ? (
             <ThreadVocabulary message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
           ) : message.link ? (
-            <ThreadLink message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
+            <ThreadLink message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} composerChoices={composerChoices}
+              research={linkResearch.get(message.link.connectionId)} />
           ) : message.alert ? (
             <ThreadAlert message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
           ) : message.delivery ? (
@@ -294,6 +300,8 @@ export function ChatConversation({
               bridge={bridge}
               active={active}
               message={message}
+              researchSession={home && message.role === "assistant" && message.research_session_id
+                ? researchSessions?.find(thread => thread.id === message.research_session_id && thread.loupist_id === loupistId && !thread.home) : undefined}
               onSaveFeedback={onSaveFeedback}
               onTeachFeedback={onTeachFeedback}
               feedbackBusy={message.role === "assistant" && feedbackBusy}
@@ -315,11 +323,13 @@ export function ChatConversation({
               onReadAttachment={onReadAttachment}
               mentionSkills={mentionSkills}
               mentionPlugins={mentionPlugins}
-              onEditUser={message.role === "user" && onEditUser ? editUser : undefined}
+              // A chosen action has no words of the user's to edit.
+              onEditUser={message.role === "user" && !message.handoff_action && !message.scheduled && onEditUser ? editUser : undefined}
               editDisabled={message.role === "user" && Boolean(run?.running)}
               onEarlierVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "earlier", onSwitchVersion) : undefined}
               onLaterVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "later", onSwitchVersion) : undefined}
-              onRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") ? onRetry : undefined}
+              onRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") && !lastRequestScheduled ? onRetry : undefined}
+              scheduledRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") ? lastRequestScheduled : undefined}
               latest={message.role === "assistant" ? index === lastAssistantIndex : index === lastUserIndex}
               providerName={message.status === "error" ? providerLabel?.(message.execution_model?.provider) : undefined}
               retryAttempt={index === messages.length - 1 ? retryAttempt : undefined}
@@ -334,13 +344,14 @@ export function ChatConversation({
             {latestTurn && shell ? <ChatMessageCard key={shell.id} bridge={bridge} active={active} message={shell} loupistId={loupistId} chatId={chatId} loupistName={loupistName}
               workspacePath={workspacePath} guiding={guiding} stopping={Boolean(run?.stopping)} onReadAttachment={onReadAttachment} entering /> : null}
           </section>; })}
-          {home && !hasUserMessage ? morning("full") : home && !repliedThisVisit ? morning("news") : null}
-          {/* The first message replaces the morning message, not the steps still open. */}
-          {home && hasUserMessage && bridge && !asOf ? <HomeSetup key={loupistId} bridge={bridge} loupistId={loupistId} loupistName={loupistName}
-            onAsk={onSuggestion} accountConnected={accountConnected} onConnectAccount={onConnectAccount} onOpenFollowing={onOpenFollowing} refreshRevision={homeRevision} /> : null}
+          {/* Bot greets until the user writes; setup steps live in the greeting, never under the conversation. */}
+          {home && !hasUserMessage ? greeting : home && !repliedThisVisit ? morning("news") : null}
         </>)}
+        {/* The first selectable point after the thread: a drag below the last message ends here (chat.css). */}
+        <div className="thread-selection-end" aria-hidden="true" />
       </ConversationContent>
     </Conversation>
+    </BotScheduleTasks.Provider></ChatSurfaceProvider>
   );
 }
 
@@ -361,6 +372,3 @@ function turnGroups(messages: readonly ChatMessage[]): Array<{ start: number | n
 /** An answer that draws a chart or table card, whose Ask button waits while a reply runs. */
 const hasCards = (message: ChatMessage) => message.role === "assistant" && (Boolean(message.artifact_refs?.length)
   || (message.progress?.items ?? []).some((item) => item.kind === "tool" && (item.toolName === "chart_publish" || item.toolName === "grid_publish")));
-
-/** A finished answer, as the "New since you left" divider counts them. */
-const settledAnswer = (message: ChatMessage) => message.role === "assistant" && message.status === "complete";

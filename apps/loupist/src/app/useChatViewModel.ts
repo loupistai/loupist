@@ -5,7 +5,7 @@ import type { ChatView } from "../components/ChatView";
 import type { ConnectSheetTarget } from "../components/settings/ConnectSheet";
 import type { LoupistUIMessage } from "../chat/ai-sdk";
 import type { RecoveredChatRun } from "../chat/loupistRunRegistry";
-import { chatSessionKey } from "../chat/sessionRegistry";
+import { chatSessionKey, type HostedWatchPhase } from "../chat/sessionRegistry";
 import { resolveConfiguredModelRunSelection } from "../lib/modelSelection";
 import type { ChatArtifactRef, ChatThread, LoupistBridge, LoupistSummary, ModelRunSelection } from "../types";
 import type { ChatDraft, useChatDrafts } from "./useChatDrafts";
@@ -46,7 +46,7 @@ type ChatViewModelInput = {
   refreshKnowledge: () => void;
   onOpenModelSettings: (target?: ConnectSheetTarget) => void;
   onOpenChatPreferences: (loupistId: string) => void;
-  /** Opens the Following page (the first-visit checklist without an AI account). */
+  /** Opens the Following page with its search field focused (Bot's "Add assets to follow" card). */
   onOpenFollowing: () => void;
 };
 
@@ -61,11 +61,13 @@ export function useChatViewModel({
   refreshKnowledge, onOpenModelSettings, onOpenChatPreferences, onOpenFollowing,
 }: ChatViewModelInput): ComponentProps<typeof ChatView> | null {
   const selectedLoupistId = selectedLoupist?.id ?? null;
+  const surface = threads.find((thread) => thread.id === effectiveThreadId)?.home ? "bot" : "session";
   const modelSelection = resolveConfiguredModelRunSelection(
     model.catalog,
     selectedLoupist ? model.selections[selectedLoupist.id] : undefined,
     configuration.snapshot?.effective.chat,
     selectedLoupist?.last_model_profile_id,
+    surface,
   );
   const { createThreadForLoupist } = threadActions;
   const { adopt } = drafts;
@@ -98,7 +100,7 @@ export function useChatViewModel({
     },
     [recordLastModel, selectedLoupistId],
   );
-  const { setThreadsForLoupist, setActiveThreadForLoupist, runRegistry } = chat;
+  const { setThreadsForLoupist, setActiveThreadForLoupist, runRegistry, chatRegistry } = chat;
   const setVisibleThreads = useCallback<Dispatch<SetStateAction<ChatThread[]>>>(
     (action) => {
       if (selectedLoupistId) setThreadsForLoupist(selectedLoupistId, action);
@@ -110,6 +112,11 @@ export function useChatViewModel({
       if (selectedLoupistId) setActiveThreadForLoupist(selectedLoupistId, threadId);
     },
     [selectedLoupistId, setActiveThreadForLoupist],
+  );
+  const watchHostedRun = useCallback(
+    (threadId: string, onPhase: (phase: HostedWatchPhase) => void) =>
+      selectedLoupistId ? chatRegistry.watchHosted(selectedLoupistId, threadId, onPhase) : () => {},
+    [chatRegistry, selectedLoupistId],
   );
   const abortVisibleRecoveredChat = useCallback(() => {
     if (selectedLoupistId && persistedThreadId) {
@@ -169,8 +176,8 @@ export function useChatViewModel({
       const catalog = model.catalog ? { ...model.catalog, hidden_model_profile_ids: next.effective.models.hidden_model_profile_ids } : null;
       // Nothing chosen here and no Chat default: Rust resolves Auto at admission (W17.5) and applies
       // the configured reasoning and run options where the model it picks supports them.
-      if (!model.selections[loupistId] && !next.effective.chat.model_profile_id) return { model_profile_id: "", thinking_level: next.effective.chat.thinking_level ?? "", run_options: { ...next.effective.chat.run_options }, auto: true, memoryDefaults: next.effective.chat };
-      return { ...resolveConfiguredModelRunSelection(catalog, model.selections[loupistId], next.effective.chat, selectedLoupist.last_model_profile_id), memoryDefaults: next.effective.chat };
+      if (!model.selections[loupistId] && !next.effective.chat.model_profile_id) return { model_profile_id: "", thinking_level: surface === "bot" ? "" : next.effective.chat.thinking_level ?? "", run_options: { ...next.effective.chat.run_options }, auto: true, memoryDefaults: next.effective.chat };
+      return { ...resolveConfiguredModelRunSelection(catalog, model.selections[loupistId], next.effective.chat, selectedLoupist.last_model_profile_id, surface), memoryDefaults: next.effective.chat };
     },
     selectedArtifact: effectiveChatKey ? workspace.selectedArtifacts[effectiveChatKey] : undefined,
     onClearSelectedArtifact: () => { if (effectiveChatKey) workspace.selectArtifactForChat(effectiveChatKey); },
@@ -184,6 +191,7 @@ export function useChatViewModel({
     onWorldChanged: refreshKnowledge,
     progressFocus,
     onAbortRecoveredRun: abortVisibleRecoveredChat,
+    onWatchHostedRun: watchHostedRun,
     draft: activeDraft ?? undefined,
     sessionDrafts: drafts.getSession(loupistId),
     initialPrompt: activeDraft?.prompt ?? "",

@@ -53,8 +53,8 @@ this category from the terminal host log for that exact run as
 without the field remain readable, and missing diagnostics do not change the
 eval result.
 
-The logger never takes prompts, answer or Source text, file contents, holdings
-quantities, credential/header values, or raw error bodies. It applies the shared
+The logger never takes prompts, answer or Source text, file contents,
+credential/header values, or raw error bodies. It applies the shared
 credential detector to metadata strings and map keys.
 Logging failure does not change a completed run's result; stderr reports only
 that diagnostics could not be written. Abrupt process termination may leave no

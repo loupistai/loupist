@@ -18,16 +18,17 @@ fn scope() -> Scope {
         None
     }
 }
-pub(crate) struct Guard(Scope);
+pub(crate) struct Guard(Scope, Option<DateTime<Utc>>, bool);
 pub(crate) fn install(value: Option<&str>) -> Result<Guard, String> {
     let scope = scope();
     if let Some(value) = value {
         let value = DateTime::parse_from_rfc3339(value)
             .map_err(|_| "scenario clock must be RFC 3339")?
             .with_timezone(&Utc);
-        clocks().write().unwrap().insert(scope, value);
+        let previous = clocks().write().unwrap().insert(scope, value);
+        return Ok(Guard(scope, previous, true));
     }
-    Ok(Guard(scope))
+    Ok(Guard(scope, None, false))
 }
 pub(crate) fn now() -> DateTime<Utc> {
     clocks()
@@ -39,7 +40,14 @@ pub(crate) fn now() -> DateTime<Utc> {
 }
 impl Drop for Guard {
     fn drop(&mut self) {
-        clocks().write().unwrap().remove(&self.0);
+        if self.2 {
+            let mut clocks = clocks().write().unwrap();
+            if let Some(previous) = self.1 {
+                clocks.insert(self.0, previous);
+            } else {
+                clocks.remove(&self.0);
+            }
+        }
     }
 }
 #[cfg(test)]

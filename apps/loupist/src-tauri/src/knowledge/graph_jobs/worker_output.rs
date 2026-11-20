@@ -3,10 +3,13 @@
 //! names and aliases are capped. Unreadable nodes and claims, and claims whose
 //! endpoints were dropped, do not block the rest of the World.
 
+use std::collections::{HashMap, HashSet};
+
 use serde_json::{json, Value};
 
 use super::clip;
 use crate::knowledge::error::{KnowledgeError, KnowledgeResult};
+use crate::knowledge::lens::fold_lens_title;
 use crate::knowledge::model::{GraphClaim, GraphNode, TopicAnnotation};
 use crate::knowledge::worker::{adapt_worker_claim, adapt_worker_node};
 
@@ -143,16 +146,45 @@ fn bound_aliases(aliases: &mut Vec<String>) {
     *aliases = kept;
 }
 
+/// A relationship whose ends are all one entity: the same node, or nodes of
+/// one kind (or untyped `Entity`) that share a name or alias once folded, as
+/// "KRW-BTC" and a Bitcoin node aliased "KRW-BTC" do. Extraction drops a
+/// self-relation before resolution; this catches the ends resolution merged.
+/// A `REPORTS` claim keeps its subject in both roles: it is a reported value
+/// about one entity, not a relationship.
+fn relates_one_entity(claim: &GraphClaim, nodes: &HashMap<&str, &GraphNode>) -> bool {
+    if claim.relation == "REPORTS" || claim.endpoints.len() < 2 {
+        return false;
+    }
+    let node = |id: &str| nodes.get(id).copied();
+    let spellings = |node: &GraphNode| -> HashSet<String> {
+        std::iter::once(&node.name)
+            .chain(&node.aliases)
+            .map(|text| fold_lens_title(text))
+            .collect()
+    };
+    let Some(first) = node(&claim.endpoints[0].node_id) else {
+        return false;
+    };
+    let first_spellings = spellings(first);
+    claim.endpoints[1..].iter().all(|endpoint| {
+        endpoint.node_id == first.id
+            || node(&endpoint.node_id).is_some_and(|other| {
+                (other.kind == first.kind || other.kind == "Entity" || first.kind == "Entity")
+                    && !spellings(other).is_disjoint(&first_spellings)
+            })
+    })
+}
+
 /// The worker's snapshot as bounded nodes, claims and topic annotations.
 pub(super) fn project_worker_artifact(
     artifact_utf8: &str,
     previous_nodes: &[GraphNode],
 ) -> KnowledgeResult<WorkerProjection> {
     let snapshot: Value = serde_json::from_str(artifact_utf8)?;
-    let previous_ids: std::collections::HashSet<_> =
-        previous_nodes.iter().map(|node| node.id.as_str()).collect();
+    let previous_ids: HashSet<_> = previous_nodes.iter().map(|node| node.id.as_str()).collect();
     let mut nodes = Vec::new();
-    let mut non_entities = std::collections::HashSet::new();
+    let mut non_entities = HashSet::new();
     for node in snapshot
         .get("nodes")
         .and_then(Value::as_array)
@@ -190,8 +222,8 @@ pub(super) fn project_worker_artifact(
         bound_aliases(&mut adapted.aliases);
         nodes.push(adapted);
     }
-    let node_ids: std::collections::HashSet<_> =
-        nodes.iter().map(|node| node.id.as_str()).collect();
+    let by_id: HashMap<&str, &GraphNode> =
+        nodes.iter().map(|node| (node.id.as_str(), node)).collect();
     let mut claims = Vec::new();
     for claim in snapshot
         .get("claims")
@@ -209,7 +241,7 @@ pub(super) fn project_worker_artifact(
                     && adapted.endpoints.len() == 2
                     && adapted.endpoints[0].role == "source"
                     && adapted.endpoints[1].role == "target"
-                    && node_ids.contains(adapted.endpoints[0].node_id.as_str())
+                    && by_id.contains_key(adapted.endpoints[0].node_id.as_str())
                     && non_entities.contains(&adapted.endpoints[1].node_id)
                 {
                     adapted.endpoints[1].node_id = adapted.endpoints[0].node_id.clone();
@@ -217,7 +249,8 @@ pub(super) fn project_worker_artifact(
                 if adapted
                     .endpoints
                     .iter()
-                    .all(|endpoint| node_ids.contains(endpoint.node_id.as_str()))
+                    .all(|endpoint| by_id.contains_key(endpoint.node_id.as_str()))
+                    && !relates_one_entity(&adapted, &by_id)
                 {
                     claims.push(adapted);
                 }

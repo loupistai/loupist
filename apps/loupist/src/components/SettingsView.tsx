@@ -20,7 +20,9 @@ import type { useAppUpdate } from "./settings/useAppUpdate";
 import type { ConfigScope, LoupistSummary, LoupistBridge } from "../types";
 import { AgentSettings, ConfigurationDiagnostics } from "./settings/AgentSettings";
 import type { useConfiguration } from "../app/useConfiguration";
+import { useSharedDisplayFx } from "../app/useDisplayFx";
 import { useState } from "react";
+import { revealFocused } from "../lib/revealFocused";
 import { sharingReleaseVisible } from "../sharing/releaseVisibility";
 import { ShareSheet } from "./sharing/ShareSheet";
 
@@ -73,12 +75,15 @@ export function SettingsView({
   update,
 }: Props) {
   useTranslation("settings");
+  const displayFx = useSharedDisplayFx();
   const page = SETTINGS_SECTIONS.find((item) => item.id === section)!;
   const [shareTarget, setShareTarget] = useState<LoupistSummary | null>(null);
   const showSharing = sharingReleaseVisible();
   return (
-    <section className="settings-page" aria-labelledby={section === "connections" ? "marketplace-title" : "settings-title"} tabIndex={section === "keyboard" || section === "updates" ? 0 : undefined} onFocus={(event) => { if (event.target instanceof HTMLElement) event.target.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
-      {section !== "connections" ? <PageHeader className="settings-heading" titleId="settings-title" title={page.label}
+    // A focused control is revealed only when this column clips it, so focus never scrolls the window.
+    <section className="settings-page" aria-labelledby={section === "connections" ? "marketplace-title" : "settings-title"} tabIndex={section === "keyboard" || section === "updates" ? 0 : undefined} onFocus={revealFocused}>
+      {/* The window's page header names the section; the page opens with what it is for. */}
+      {section !== "connections" ? <PageHeader className="settings-heading" titleId="settings-title" title={page.label} hideTitle
         description={page.description} /> : null}
 
       <div className="settings-stack">
@@ -96,7 +101,12 @@ export function SettingsView({
         ) : null}
 
         {section === "appearance" ? (
-          <><AppearanceSettings language={language} onLanguageChange={onLanguageChange} theme={theme} onThemeChange={onThemeChange} disabled={appearanceConfiguration.busy || !appearanceConfiguration.snapshot || Boolean(appearanceConfiguration.snapshot.diagnostics.length)} />{appearanceConfiguration.error ? <p role="alert" className="inline-error">{appearanceConfiguration.error}</p> : null}<ConfigurationDiagnostics snapshot={appearanceConfiguration.snapshot} /><p className="settings-footnote"><span>{i18n.t("settings:settingsView.savedAutomaticallyForAllLoupistsOnThisDevice")}</span></p></>
+          <><AppearanceSettings language={language} onLanguageChange={onLanguageChange} theme={theme} onThemeChange={onThemeChange} priceColors={appearanceConfiguration.snapshot?.effective.appearance.price_colors} onPriceColorsChange={(price_colors) => { void appearanceConfiguration.update({ appearance: { price_colors } }); }}
+            displayCurrency={appearanceConfiguration.snapshot?.effective.appearance.display_currency || undefined} displayFx={displayFx}
+            /* A code is set globally; As listed removes the key. */
+            onDisplayCurrencyChange={(code) => { void (code ? appearanceConfiguration.update({ appearance: { display_currency: code } }) : appearanceConfiguration.update({}, [["appearance", "display_currency"]])); }}
+            onConnectMarketData={currentLoupistId && onOpenLoupistConnections ? () => onOpenLoupistConnections(currentLoupistId) : undefined}
+            disabled={appearanceConfiguration.busy || !appearanceConfiguration.snapshot || Boolean(appearanceConfiguration.snapshot.diagnostics.length)} />{appearanceConfiguration.error ? <p role="alert" className="inline-error">{appearanceConfiguration.error}</p> : null}<ConfigurationDiagnostics snapshot={appearanceConfiguration.snapshot} /><p className="settings-footnote"><span>{i18n.t("settings:settingsView.savedAutomaticallyForAllLoupistsOnThisDevice")}</span></p></>
         ) : null}
 
         {section === "keyboard" ? <KeyboardSettings /> : null}

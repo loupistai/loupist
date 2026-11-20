@@ -27,7 +27,8 @@ describe("Loupist · Map", () => {
     await user.click(await mainTab(/Map/));
     expect(await screen.findByRole("heading", { name: "Apple" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "More actions" }));
-    await user.click(screen.getByRole("menuitemcheckbox", { name: "Map view" }));
+    // The item keeps its name; its checked state says the list is showing.
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "List view", checked: true }));
     expect(await screen.findByRole("img", { name: "37 on the map · 36 relationships" })).toBeVisible();
   });
 

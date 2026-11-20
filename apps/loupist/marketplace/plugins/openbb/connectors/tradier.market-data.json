@@ -1,7 +1,7 @@
 {
   "id": "tradier.market-data",
   "name": "Tradier",
-  "summary": "Equity and options market data. Read-only: it cannot place trades.",
+  "summary": "Equity and options market data. Read-only: it cannot place trades. A Tradier brokerage account is required for both live and sandbox tokens.",
   "publisher": "Loupist",
   "data_authority": "Tradier",
   "kind": "data_source",
@@ -69,7 +69,7 @@
         "required": true,
         "min_length": 4,
         "max_length": 7,
-        "help_url": "https://documentation.tradier.com/"
+        "help_url": "https://docs.tradier.com/brokerage-api/getting-started"
       }
     ],
     "credential_scope_fields": [
@@ -84,7 +84,7 @@
         "required": true,
         "min_length": 8,
         "max_length": 512,
-        "help_url": "https://documentation.tradier.com/"
+        "help_url": "https://docs.tradier.com/brokerage-api/getting-started"
       }
     ]
   }

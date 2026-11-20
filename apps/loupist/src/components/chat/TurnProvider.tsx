@@ -5,6 +5,7 @@ import type { EvidenceStepLink } from "../../chat/workspace";
 import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
 import { useConversationScroll } from "../ai-elements/conversation";
 import { QuoteEvidencePopover } from "./QuoteEvidence";
+import { actionLabel } from "../../chat/runStatus";
 
 type RevealedResult = { id: string; request: number };
 
@@ -25,7 +26,7 @@ export const useTurn = () => useContext(TurnContext);
 
 function stepFor(message: ChatMessage, evidence: ChatEvidenceRef, cell: EvidenceStepLink["cell"]): EvidenceStepLink | undefined {
   const step = message.progress?.items.find((entry) => entry.kind === "tool" && entry.resultIds?.includes(evidence.id));
-  const link = step?.kind === "tool" ? { label: step.action, itemId: step.id } : undefined;
+  const link = step?.kind === "tool" ? { label: actionLabel(step), itemId: step.id } : undefined;
   return cell ? { label: link?.label ?? "", itemId: link?.itemId, cell } : link;
 }
 
@@ -49,6 +50,7 @@ export function TurnProvider({ message, loupistId, children }: { message: ChatMe
     switch (target.kind) {
       case "artifact": return { kind: "artifact-link", artifactId: target.artifactId };
       case "memory": return { kind: "memory", location: target.location, title: target.title };
+      // An asset page read opens that page by its id, else by its ticker.
       case "asset": return { kind: "asset", target: target.target };
       case "step": return () => {
         conversation?.holdScrollPosition();
@@ -57,7 +59,10 @@ export function TurnProvider({ message, loupistId, children }: { message: ChatMe
       case "quote": return () => {
         // The clicked control, not document.activeElement: a mouse click in WKWebView
         // can leave focus on the page, and a snapshot of that rectangle opens off screen.
-        if (how.anchor) setQuote({ evidence: to.evidence, anchor: how.anchor, pointer: to.cell?.pointer });
+        if (!how.anchor) return;
+        // The receipt stays beside its citation: the thread does not run on to its end under it.
+        conversation?.holdScrollPosition();
+        setQuote({ evidence: to.evidence, anchor: how.anchor, pointer: to.cell?.pointer });
       };
       case "browser":
       case "reader": return { ...to, step: to.step ?? stepFor(current, to.evidence, to.cell) };

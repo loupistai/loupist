@@ -31,11 +31,11 @@ async fn every_dart_statement_replay_returns_dated_facts() {
         let service = crate::finance_data::FinanceDataService::new().unwrap();
         for query in requests {
             let year: i32 = query["bsns_year"].parse().unwrap();
-            let period = match query["reprt_code"].as_str() {
-                "11011" => "annual",
-                "11013" => "q1",
-                "11012" => "half_year",
-                "11014" => "q3",
+            let (period, period_end, quarter_start) = match query["reprt_code"].as_str() {
+                "11011" => ("annual", "12-31", None),
+                "11013" => ("q1", "03-31", Some("01-01")),
+                "11012" => ("half_year", "06-30", Some("04-01")),
+                "11014" => ("q3", "09-30", Some("07-01")),
                 code => panic!("unknown fixture report code {code}"),
             };
             let result = service.opendart_company_facts(json!({
@@ -47,18 +47,28 @@ async fn every_dart_statement_replay_returns_dated_facts() {
             for fact in facts {
                 assert_eq!(
                     fact["period_end"],
-                    format!("{year}-12-31"),
+                    format!("{year}-{period_end}"),
                     "{}: {fact}",
                     path.display()
                 );
-                if fact["period_kind"] != "instant" {
-                    assert_eq!(
-                        fact["period_start"],
-                        format!("{year}-01-01"),
-                        "{}: {fact}",
+                let period_start = match fact["period_kind"].as_str() {
+                    Some("instant") => Value::Null,
+                    Some("annual" | "cumulative") => json!(format!("{year}-01-01")),
+                    Some("quarter") => json!(format!(
+                        "{year}-{}",
+                        quarter_start.expect("a quarter fact must name a quarterly report")
+                    )),
+                    kind => panic!(
+                        "{}: unexpected period kind {kind:?}: {fact}",
                         path.display()
-                    );
-                }
+                    ),
+                };
+                assert_eq!(
+                    fact["period_start"],
+                    period_start,
+                    "{}: {fact}",
+                    path.display()
+                );
             }
             assert!(
                 result["quality"]["checks"]

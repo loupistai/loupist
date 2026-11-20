@@ -1,6 +1,7 @@
 import type { ComponentProps } from "react";
 import type { Chat } from "@ai-sdk/react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import i18n from "@/i18n";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../bridge/mockBridge";
 import type { LoupistUIMessage } from "../chat/ai-sdk";
@@ -60,7 +61,7 @@ it("keeps historical ticker messages and new dollar text ordinary without fetchi
     { id: "ticker-question", role: "user", status: "complete", content: text, created_at: "2026-10-03T00:00:00Z" },
     { id: "ticker-answer", role: "assistant", status: "complete", content: "Operating margin increased.", created_at: "2026-10-03T00:00:01Z" },
   ]);
-  const watchlist = vi.spyOn(props.bridge, "watchlistList");
+  const watchlist = vi.spyOn(props.bridge, "assetsList");
   const asset = vi.spyOn(props.bridge, "assetPageGet");
   render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
   expect(await screen.findByText(text)).toBeVisible();
@@ -173,4 +174,195 @@ describe("teaching from feedback", () => {
     expect(composer().value.startsWith("Other draft\n\n")).toBe(true);
     expect(actions.submit).toHaveBeenCalledOnce();
   });
+});
+
+describe("a link's Look into it in Bot", () => {
+  const link = (connectionId: string): ChatMessage => ({
+    id: `link-${connectionId}`, role: "assistant", status: "complete", content: "New link.", created_at: "2026-11-18T09:00:00Z", host_composed: true,
+    link: { connectionId, seedName: `Seed ${connectionId}`, farName: "Far", path: [{ name: "Far", relation: "SUPPLIES" }], nodeIds: ["a", "b"] },
+  });
+  const botProps = async (extra: Partial<ComponentProps<typeof ChatView>> = {}) => {
+    const props = viewProps([link("con_1"), link("con_2")], { initialPrompt: "Unsent draft", ...extra });
+    props.threads = [{ ...props.threads[0]!, home: true }];
+    return { ...props, modelCatalog: await props.bridge.modelCatalogGet(), modelSelection: { model_profile_id: "model-test", thinking_level: "low", run_options: {} }, modelAuto: false, ...extra };
+  };
+  const lookInto = (seed: string) => within(screen.getByRole("article", { name: `New link: ${seed} and Far` })).getByRole("button", { name: "Look into it" });
+
+  it("runs with the composer's model, level and Memory choice, not the draft, and follows a changed choice", async () => {
+    const user = userEvent.setup();
+    const props = await botProps();
+    const start = vi.spyOn(props.bridge, "researchHandoffStart").mockResolvedValue({ chatId: "chat-9", handoffId: "handoff-9" });
+    const view = render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+    await user.type(composer(), " changed");
+    await user.click(await screen.findAllByRole("button", { name: "Look into it" }).then(() => lookInto("Seed con_1")));
+    // The Bot thread saves to Memory off (use_memory/update_memory false): false is sent as false.
+    expect(start).toHaveBeenLastCalledWith({ loupistId: "loupist-quality", connectionId: "con_1",
+      modelProfileId: "model-test", thinkingLevel: "low", runOptions: {}, useMemory: false, updateMemory: false });
+    expect(composer()).toHaveValue("Unsent draft changed");
+    expect(actions.submit).not.toHaveBeenCalled();
+
+    view.rerender(<TooltipProvider><ChatView {...props} modelSelection={{ model_profile_id: "model-test", thinking_level: "high", run_options: { verbosity: "low" } }} /></TooltipProvider>);
+    await user.click(lookInto("Seed con_2"));
+    expect(start).toHaveBeenLastCalledWith(expect.objectContaining({ connectionId: "con_2", thinkingLevel: "high", runOptions: { verbosity: "low" } }));
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads a link whose session is at work as opened, though Bot posts nothing for it yet", async () => {
+    const props = await botProps();
+    props.threads = [...props.threads, { ...props.threads[0]!, id: "chat-link", home: false, title: "Link: Seed con_1 and Far", messages: [],
+      handoff_run: { handoff_id: "handoff-7", run_id: "handoff-7a8b9c0d", connection_id: "con_1" } }];
+    render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+    const working = screen.getByRole("article", { name: "New link: Seed con_1 and Far" });
+    expect(within(working).getByText("Researching it. The result will arrive here.")).toBeVisible();
+    expect(within(working).queryByRole("button", { name: "Look into it" })).toBeNull();
+    expect(within(working).queryByRole("button", { name: "Not useful" })).toBeNull();
+    expect(lookInto("Seed con_2")).toBeVisible();
+    expect(screen.queryByRole("article", { name: /^Research: / })).toBeNull();
+  });
+
+  it("explicitly sends Auto when the composer leaves the choice to the host", async () => {
+    const props = await botProps({ hostAuto: true, modelAuto: true });
+    const start = vi.spyOn(props.bridge, "researchHandoffStart").mockResolvedValue({ chatId: "chat-9", handoffId: "handoff-9" });
+    render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+    await userEvent.setup().click(await screen.findAllByRole("button", { name: "Look into it" }).then(() => lookInto("Seed con_1")));
+    expect(start).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality", connectionId: "con_1",
+      modelProfileId: "", thinkingLevel: "", runOptions: {}, useMemory: false, updateMemory: false });
+  });
+});
+
+describe("a research session Bot handed off", () => {
+  const RUN = "handoff-1a2b3c4d";
+  // While it runs, the host reports the run on the session and Bot posts nothing; once it ends, Bot posts the result.
+  const result: ChatMessage = {
+    id: "handoff-card", role: "assistant", status: "complete", content: "HBM4 supply widens in 2027.", created_at: "2026-11-18T09:10:00Z", host_composed: true,
+    handoff: { handoffId: "handoff-1", chatId: "chat", title: "Hynix HBM supply", status: "done" },
+  };
+  const sessionProps = (status: "running" | "done", watch = vi.fn<NonNullable<ComponentProps<typeof ChatView>["onWatchHostedRun"]>>()) => {
+    const props = viewProps([{ id: "request", role: "user", status: "complete", content: "How tight is HBM4 supply into 2027?", created_at: "2026-11-18T09:00:00Z" }], { onWatchHostedRun: watch });
+    const bot: ChatThread = { ...props.threads[0]!, id: "home-loupist-quality", home: true, messages: status === "done" ? [result] : [] };
+    const session: ChatThread = { ...props.threads[0]!, ...(status === "running" ? { handoff_run: { handoff_id: "handoff-1", run_id: RUN } } : {}) };
+    return { ...props, threads: [bot, session] };
+  };
+  const botView = (props: ComponentProps<typeof ChatView>) => <TooltipProvider><ChatView {...props} activeThreadId="home-loupist-quality" chat={{ id: "home-loupist-quality" } as Chat<LoupistUIMessage>} /></TooltipProvider>;
+
+  it("links only the originating Bot reply to its session through running, completion and removal", async () => {
+    const props = sessionProps("running", vi.fn());
+    const [bot, session] = props.threads;
+    const reply: ChatMessage = { id: "origin", role: "assistant", content: "Handed off.", created_at: result.created_at, research_session_id: session!.id };
+    const home = { ...bot!, messages: [{ ...reply, id: "unrelated", content: "Earlier reply.", research_session_id: undefined }, reply] };
+    const show = (sessions: ChatThread[]) => botView({ ...props, threads: [home, ...sessions] });
+    const view = renderWithOpen(show([session!]));
+    const buttonInReply = () => within(screen.getByText("Handed off.").closest("article")!);
+    const card = buttonInReply().getByRole("button", { name: `${session!.title} Researching it. The result will arrive here.` });
+    expect(within(screen.getByText("Earlier reply.").closest("article")!).queryByText(session!.title)).toBeNull();
+    const user = userEvent.setup();
+    card.focus();
+    await user.keyboard("{Enter}");
+    await user.keyboard(" ");
+    await user.click(card);
+    expect(destinations(view.open)).toEqual(Array(3).fill({ kind: "chat", threadId: session!.id }));
+
+    view.rerender(show([{ ...session!, title: "Revised title", handoff_run: undefined }]));
+    expect(buttonInReply().getByRole("button", { name: "Revised title" })).toBeVisible();
+    expect(buttonInReply().queryByText(/Researching it/)).toBeNull();
+    view.rerender(show([]));
+    expect(buttonInReply().queryByRole("button", { name: "Revised title" })).toBeNull();
+  });
+
+  it("joins the run while the session is shown and leaves it, still running, when Bot is shown again", async () => {
+    const release = vi.fn();
+    const watch = vi.fn<NonNullable<ComponentProps<typeof ChatView>["onWatchHostedRun"]>>((_threadId, onPhase) => { onPhase("live"); return release; });
+    const view = render(<TooltipProvider><ChatView {...sessionProps("running", watch)} /></TooltipProvider>);
+    await waitFor(() => expect(watch).toHaveBeenCalledOnce());
+    expect(watch).toHaveBeenCalledWith("chat", expect.any(Function));
+    // The host stops reporting the run before the stream's own last event: the join stays to finish it.
+    view.rerender(<TooltipProvider><ChatView {...sessionProps("done", watch)} /></TooltipProvider>);
+    expect(release).not.toHaveBeenCalled();
+    view.rerender(botView(sessionProps("done", watch)));
+    expect(release).toHaveBeenCalledOnce();
+    expect(watch).toHaveBeenCalledOnce();
+  });
+
+  it("guides the run from the composer while joining, with no model chosen, and stops it by its id", async () => {
+    const user = userEvent.setup();
+    actions.steer.mockResolvedValue({ id: "guide", text: "Focus on Samsung too.", createdAt: "2026-11-18T09:02:00Z" });
+    const props = sessionProps("running", vi.fn(() => () => {}));
+    const abort = vi.spyOn(props.bridge, "chatAbort").mockResolvedValue();
+    render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+    await user.type(composer(), "Focus on Samsung too.");
+    await user.click(screen.getByRole("button", { name: "Guide this response" }));
+    await waitFor(() => expect(actions.steer).toHaveBeenCalledExactlyOnceWith("Focus on Samsung too."));
+    expect(actions.commitSteers).toHaveBeenCalledWith([{ id: "guide", text: "Focus on Samsung too.", createdAt: "2026-11-18T09:02:00Z" }]);
+    expect(actions.submit).not.toHaveBeenCalled();
+    await waitFor(() => expect(composer()).toHaveValue(""));
+    await user.click(screen.getByRole("button", { name: "Stop response" }));
+    expect(abort).toHaveBeenCalledExactlyOnceWith(RUN);
+    expect(props.onAbortRecoveredRun).not.toHaveBeenCalled();
+  });
+
+  it("shows the stored session without joining when the run finished, and once the join found nothing running", async () => {
+    const watch = vi.fn<NonNullable<ComponentProps<typeof ChatView>["onWatchHostedRun"]>>();
+    const view = render(<TooltipProvider><ChatView {...sessionProps("done", watch)} /></TooltipProvider>);
+    expect(await screen.findByText("How tight is HBM4 supply into 2027?")).toBeVisible();
+    expect(watch).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Stop response" })).toBeNull();
+    watch.mockImplementation((_threadId, onPhase) => { onPhase("attaching"); onPhase("idle"); return () => {}; });
+    view.rerender(<TooltipProvider><ChatView {...sessionProps("running", watch)} /></TooltipProvider>);
+    await waitFor(() => expect(watch).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("button", { name: "Stop response" })).toBeNull();
+  });
+
+  it("never joins Bot itself", () => {
+    const watch = vi.fn<NonNullable<ComponentProps<typeof ChatView>["onWatchHostedRun"]>>();
+    render(botView(sessionProps("running", watch)));
+    expect(watch).not.toHaveBeenCalled();
+  });
+});
+
+it("keeps Bot task cards in sync with Schedule through pauses and deletion", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const loupistId = MOCK_LOUPISTS[0]!.id;
+  const task = await bridge.proposeScheduledTask({
+    loupist_id: loupistId, title: "Compare inventory days", prompt: "Compare inventory days",
+    schedule: { kind: "daily", hour: 8, minute: 0, timezone: "Asia/Seoul" }, target: { kind: "new_chat" },
+    model_profile_id: "model", thinking_level: "medium", run_options: {}, use_memory: true, update_memory: false, status: "active",
+  });
+  const identity = { loupist_id: loupistId, task_id: task.id };
+  const active = await bridge.scheduledTaskConfirm(identity);
+  const props = viewProps([{ id: "answer", role: "assistant", status: "complete", created_at: "2026-10-03T00:00:00Z", content: "Scheduled.",
+    schedule_receipts: [{ ...active, task_id: task.id, action: "created" }] }], { bridge });
+  props.threads[0]!.home = true;
+  renderWithOpen(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+  const card = within(screen.getByRole("article", { name: "Scheduled task: Compare inventory days" }));
+  expect(card.queryByText("Active")).toBeNull();
+  expect(await card.findByText("Active")).toBeVisible();
+  expect(card.getByText(/^Next run /)).toBeVisible();
+  const paused = await act(() => bridge.scheduledTaskSetStatus({ ...identity, expected_revision: active.revision, status: "paused" }));
+  expect(await card.findByText("Paused")).toBeVisible();
+  expect(card.queryByText(/^Next run /)).toBeNull();
+  await act(() => bridge.scheduledTaskDelete({ ...identity, expected_revision: paused.revision }));
+  expect(await card.findByText("Deleted")).toBeVisible();
+  expect(card.getByText(task.title)).toBeVisible();
+  expect(card.queryByRole("button")).toBeNull();
+});
+
+it("uses Schedule's localized title on Bot cards and keeps a custom task with the same title", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const task = await bridge.proposeScheduledTask({
+    loupist_id: MOCK_LOUPISTS[0]!.id, title: "Briefings", prompt: "Report", schedule: { kind: "interval", every_minutes: 60 },
+    target: { kind: "new_chat" }, model_profile_id: "model", thinking_level: "medium", run_options: {}, use_memory: true, update_memory: false, status: "active",
+  });
+  bridge.installScheduledTask({ ...task, kind: "briefing", id: "built-in" });
+  const props = viewProps([{ id: "answer", role: "assistant", status: "complete", created_at: "2026-10-03T00:00:00Z", content: "Scheduled.",
+    schedule_receipts: [task.id, "built-in"].map(id => ({ ...task, task_id: id, action: "viewed" })) }], { bridge });
+  props.threads[0]!.home = true;
+  await i18n.changeLanguage("ko");
+  const view = renderWithOpen(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+  try {
+    expect(await screen.findByText("브리핑", { selector: ".message-schedule-heading strong" })).toBeVisible();
+    expect(screen.getByText("Briefings", { selector: ".message-schedule-heading strong" })).toBeVisible();
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage("en");
+  }
 });

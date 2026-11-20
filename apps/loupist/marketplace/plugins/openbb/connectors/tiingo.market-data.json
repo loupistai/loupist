@@ -1,7 +1,7 @@
 {
   "id": "tiingo.market-data",
   "name": "Tiingo",
-  "summary": "Equity, fund, crypto, and news data.",
+  "summary": "Equity, fund, crypto, and news data. Sign up, activate your account by email, then open your account’s API Token page.",
   "publisher": "Loupist",
   "data_authority": "Tiingo",
   "kind": "data_source",
@@ -66,7 +66,7 @@
         "required": true,
         "min_length": 8,
         "max_length": 512,
-        "help_url": "https://www.tiingo.com/account/api/token"
+        "help_url": "https://www.tiingo.com/documentation/"
       }
     ]
   }

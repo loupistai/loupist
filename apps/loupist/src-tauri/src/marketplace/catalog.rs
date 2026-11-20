@@ -711,6 +711,14 @@ pub(super) fn validate_catalog(catalog: &MarketplaceCatalogDto) -> Result<(), St
                 return Err(format!("entry {} has an invalid network host", entry.id));
             }
         }
+        let optional_native_key =
+            crate::finance_data::native_vendor(&entry.id).is_some_and(|vendor| {
+                vendor.credential == crate::finance_data::VendorCredential::OptionalOpenFigiKey
+            });
+        let setup = entry.setup.as_ref();
+        let credential_fields = setup
+            .map(|setup| setup.credential_fields.as_slice())
+            .unwrap_or_default();
         match entry.free_state {
             MarketplaceFreeState::FreeAccount if entry.permissions.credential_kinds.is_empty() => {
                 return Err(format!(
@@ -718,7 +726,12 @@ pub(super) fn validate_catalog(catalog: &MarketplaceCatalogDto) -> Result<(), St
                     entry.id
                 ));
             }
-            MarketplaceFreeState::Keyless if !entry.permissions.credential_kinds.is_empty() => {
+            MarketplaceFreeState::Keyless
+                if !optional_native_key
+                    && !credential_fields.is_empty()
+                    && (entry.runtime.kind != MarketplaceRuntimeKind::BundledMcp
+                        || credential_fields.iter().any(|field| field.required)) =>
+            {
                 return Err(format!(
                     "keyless or local entry {} cannot require a credential",
                     entry.id
@@ -726,10 +739,6 @@ pub(super) fn validate_catalog(catalog: &MarketplaceCatalogDto) -> Result<(), St
             }
             _ => {}
         }
-        let setup = entry.setup.as_ref();
-        let credential_fields = setup
-            .map(|setup| setup.credential_fields.as_slice())
-            .unwrap_or_default();
         if credential_fields.len() != entry.permissions.credential_kinds.len()
             || credential_fields.iter().any(|field| {
                 !entry
@@ -741,6 +750,17 @@ pub(super) fn validate_catalog(catalog: &MarketplaceCatalogDto) -> Result<(), St
         {
             return Err(format!(
                 "entry {} setup credentials do not match permissions",
+                entry.id
+            ));
+        }
+        if optional_native_key
+            && (entry.free_state != MarketplaceFreeState::Keyless
+                || entry.runtime.kind != MarketplaceRuntimeKind::Native
+                || !matches!(credential_fields, [field] if field.id == "api_key"
+                    && field.kind == MarketplaceSetupFieldKind::ApiKey && !field.required))
+        {
+            return Err(format!(
+                "entry {} must declare one optional native API key",
                 entry.id
             ));
         }

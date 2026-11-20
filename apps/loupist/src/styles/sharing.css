@@ -212,7 +212,7 @@
 .shared-pack-actions { display: flex; gap: var(--gg-space-1); }
 .shared-pack-banner { flex-basis: 100%; margin: 0; padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-warning-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); }
 .pack-remove-archive { display: flex; align-items: flex-start; gap: var(--gg-space-2); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
-.pack-remove-confirm { background: var(--gg-color-negative); color: var(--gg-color-text-on-accent); }
+.pack-remove-confirm { background: var(--gg-color-negative); color: var(--gg-color-text-on-negative); }
 .pack-remove-confirm:hover { background: var(--gg-color-negative); opacity: .9; }
 
 /* Origin line under a Lens or Map title. */
@@ -225,17 +225,6 @@
 /* New Loupist dialog: start from a shared Loupist. */
 .loupist-shared-entry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .loupist-shared-entry > span { margin-right: auto; }
-/* The shared-entry row takes a line from the scrolling form; on short windows the template cards tighten. Their
-   descriptions keep every line (the form scrolls), and the body fades at the fold instead of slicing a line. */
-/* token-exception: breakpoint; vars unsupported in query conditions */
-@media (max-height: 620px) {
-  .loupist-dialog:has([data-loupist-shared-entry]) .dialog-form { gap: var(--gg-space-3); }
-  /* A line crossing the fold fades (the map legend's edge fade) rather than being sliced; the padding lets the last line scroll clear of it. */
-  .loupist-dialog:has([data-loupist-shared-entry]) .dialog-body { padding-bottom: var(--gg-space-3); -webkit-mask-image: linear-gradient(to bottom, var(--gg-color-text-primary) calc(100% - var(--gg-space-3)), transparent); mask-image: linear-gradient(to bottom, var(--gg-color-text-primary) calc(100% - var(--gg-space-3)), transparent); }
-  .loupist-dialog:has([data-loupist-shared-entry]) .loupist-template-fields { gap: var(--gg-space-2); }
-  .loupist-dialog:has([data-loupist-shared-entry]) .loupist-template-grid { gap: var(--gg-space-1); }
-  .loupist-dialog:has([data-loupist-shared-entry]) .loupist-template-card { padding: var(--gg-space-2) var(--gg-space-4); }
-}
 
 /* Update diff under a shared Loupist's row (W19.5). */
 .shared-pack-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-2) var(--gg-space-3); }
@@ -279,7 +268,9 @@
 .gallery-body { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
 .gallery-notice { margin: 0; padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-warning-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); }
 .gallery-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2) var(--gg-space-3); }
-.gallery-search { flex: 1 1 260px; min-width: 0; height: var(--gg-size-field); }
+.gallery-search { position: relative; flex: 1 1 260px; min-width: 0; }
+.gallery-search input { height: var(--gg-size-field); padding-right: var(--gg-size-control-md); }
+.gallery-search > button { position: absolute; top: 50%; right: var(--gg-space-1); transform: translateY(-50%); }
 .gallery-filter { display: flex; align-items: center; gap: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); white-space: nowrap; }
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--gg-space-5); }
 .gallery-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); transition: box-shadow var(--gg-motion-instant) linear, border-color var(--gg-motion-instant) linear; }

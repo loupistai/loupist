@@ -1,7 +1,4 @@
 import type { ChatThread } from "./chat";
-import type { AssetChangeRow, Verdict } from "./assets";
-import type { EarningsMeasure, EarningsStatus } from "./earnings";
-import type { WatchEvent } from "./watch";
 import type * as Wire from "./generated";
 
 export type ScheduledCadence =
@@ -24,11 +21,8 @@ export type ScheduledTaskDefinition = {
   update_memory: boolean;
   status: "active" | "paused";
 };
-/**
- * `earnings` is the automatic "Results before and after" task: one per Loupist,
- * created by Rust, no model call; Pause/Resume and Run now only (no Edit, no Delete).
- */
-export type ScheduledTaskKind = "custom" | "briefing" | "earnings";
+/** The scheduler holds only agent work: the briefing and custom tasks (an alert is a custom task whose prompt states the condition). */
+export type ScheduledTaskKind = "custom" | "briefing";
 export type ScheduledTask = Omit<ScheduledTaskDefinition, "status"> & {
   kind: ScheduledTaskKind;
   id: string;
@@ -51,59 +45,8 @@ export type ScheduledTaskListItem = ScheduledTask & { latest_run: ScheduledRun |
 export type BriefingChange = Wire.BriefingChange;
 export type BriefingChanged = Wire.BriefingChanged;
 export type BriefingCheck = Wire.BriefingCheck;
-/** Host-computed at run start; the reader renders sections from it and never parses the narrative. */
-export type BriefingContext = {
-  symbols: string[]; principlesChecked: number; newFacts: number; disputedEntityIds: string[];
-  changed: BriefingChanged; ahead: BriefingCheck[];
-  /** "What you follow": followed assets with a delta, rows as the asset page renders them. */
-  assets: BriefingAsset[];
-  /** Results events around this briefing (at most 8), computed by Rust at run start. */
-  earnings?: BriefingEarnings[];
-  /** Watcher alerts since the previous briefing (at most 24); filings, insiders, 5% holders and flows join "What you follow". */
-  watchEvents?: WatchEvent[];
-};
-/**
- * One results event in a briefing: reported ones show the 2-measure mini table
- * and "See before and after"; upcoming ones go to "Looking ahead".
- */
-export type BriefingEarnings = {
-  assetId: string; eventId: string; name: string; symbol: string; market: string;
-  period: string; reportDate: string; status: EarningsStatus;
-  /** Expectations were captured before the report. */
-  captured: boolean;
-  /** At most two measures (reported events). */
-  measures: EarningsMeasure[];
-};
-export type BriefingAsset = {
-  assetId: string; symbol: string; market: string; name: string;
-  verdict: Verdict | null; verdictSince: string | null;
-  rows: AssetChangeRow[];
-};
-export type RunSummaryItem =
-  | { kind: "earnings_expected" | "earnings_reported"; name: string; period: string; count: number }
-  | { kind: "earnings_failed"; name: string; period: string }
-  | { kind: "earnings_nothing" };
-export type ScheduledRun = {
-  briefing_context: BriefingContext | null;
-  kind: ScheduledTaskKind;
-  summary: string;
-  summary_items?: RunSummaryItem[];
-  read_at_ms: number | null;
-  message_id: string | null;
-  skipped_tools: SkippedTool[];
-  id: string;
-  task_id: string;
-  loupist_id: string;
-  task_revision: number;
-  task_title: string;
-  thread_id: string | null;
-  run_id: string;
-  scheduled_for_ms: number;
-  started_at_ms: number;
-  finished_at_ms: number | null;
-  status: "running" | "succeeded" | "failed" | "interrupted";
-  error: string | null;
-};
+export type BriefingContext = Wire.BriefingContext;
+export type ScheduledRun = Wire.Run;
 export type ScheduledTaskIdentity = { loupist_id: string; task_id: string };
 export type ScheduledRunIdentity = ScheduledTaskIdentity & { run_id: string };
 export type ScheduledTaskCreateRequest = ScheduledTaskDefinition & { loupist_id: string };
@@ -131,13 +74,7 @@ export type BriefingSettings = { enabled: boolean; schedule: ScheduledCadence; t
 /** `keepRunningChoice` is the user's explicit menu-bar choice, which the host never overrides; null keeps the automatic default. */
 export type BriefingResidentSettings = { keepRunning: boolean; notificationPermissionAsked: boolean; keepRunningChoice: boolean | null };
 export type BriefingSettingsRequest = Wire.BriefingSettingsRequest;
-export type InboxItem = {
-  briefingContext: BriefingContext | null; error: string | null;
-  runId: string; taskId: string; kind: ScheduledTaskKind; title: string;
-  status: ScheduledRun["status"]; summary: string; summaryItems: RunSummaryItem[]; startedAtMs: number;
-  finishedAtMs: number | null; readAtMs: number | null; threadId: string | null;
-  messageId: string | null; skippedTools: SkippedTool[];
-};
+export type InboxItem = Wire.InboxItem;
 export type InboxRequest = Wire.InboxRequest;
 export type InboxPage = { items: InboxItem[]; nextCursor: string | null };
 export type InboxUnreadCount = { loupistId: string; count: number };

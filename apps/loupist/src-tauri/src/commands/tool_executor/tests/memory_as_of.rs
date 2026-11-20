@@ -243,13 +243,11 @@ async fn a_cutoff_leaves_out_later_sources_and_world_facts_and_counts_them() {
 async fn a_perspective_written_later_is_left_out_of_the_turn_and_its_reads() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
-    let standing = crate::commands::knowledge::ensure_perspective(
+    let standing = crate::commands::knowledge::file_test_perspective(
         &state,
         "loupist-a",
         "Buy durable compounders.",
-    )
-    .unwrap()
-    .unwrap();
+    );
     let today = crate::commands::knowledge::host_memory_context_for_turn(
         &state,
         "loupist-a",

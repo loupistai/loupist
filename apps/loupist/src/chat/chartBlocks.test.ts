@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatArtifactRef, ChatArtifactView, ChatMessage, ChatProgressItem } from "../types";
-import { chartBlocks, sameBlock } from "./chartBlocks";
+import { chartBlocks, gridBlocks, sameBlock } from "./chartBlocks";
 
 const chart = (overrides: Partial<ChatArtifactRef> = {}): ChatArtifactRef => ({
   artifact_id: "chart-1", revision: 1, kind: "chart", title: "Margin vs utilization", digest: "a".repeat(64), ...overrides,
@@ -52,6 +52,32 @@ describe("chartBlocks", () => {
     // A stopped or failed reply saved nothing, so its staged card goes.
     expect(chartBlocks(message({ status: "aborted", staged_artifacts: [staged], progress }))).toEqual([]);
     expect(chartBlocks(message({ status: "error", staged_artifacts: [staged], progress }))).toEqual([]);
+  });
+
+  it("draws a table corrected in the same reply as one card holding the corrected draft, and reads the store after the commit", () => {
+    const draft = (digest: string, payout: string): ChatArtifactView => ({
+      artifact: { id: "grid-1", chat_session_id: "chat", kind: "grid", title: "Payers", current_revision: 1, created_at_ms: 0, updated_at_ms: 0 },
+      revision: { artifact_id: "grid-1", revision: 1, digest, source_message_id: "answer", created_at_ms: 0, payload: { kind: "grid", schema: "loupist-grid/1", grid: {
+        layout: "assets", rows: [{ symbol: "990221", market: "KRX", label: "Solsup Foods" }], columns: [{ id: "payout", label: "Payout", unit: "percent" }],
+        cells: [[{ value: payout, evidence_id: "ev", check: { link_index: 0, text: payout, evidence_id: "ev", kind: "data", status: "matched" }, sort: 0 }]],
+      } } },
+    } as ChatArtifactView);
+    const first = draft("a".repeat(64), "42.0%");
+    const corrected = draft("b".repeat(64), "40.2%");
+    const published = step("succeeded", { id: "publish", toolName: "grid_publish", target: "Payers" });
+    const revised = step("succeeded", { id: "revise", toolName: "grid_publish", target: "Payers" });
+    const progress = { startedAtMs: 0, items: [published, revised], finishedAtMs: null };
+    // The stream keeps the latest part per id and revision; even a message holding both drafts draws one card, the later one.
+    const live = gridBlocks(message({ status: "streaming", staged_artifacts: [corrected], progress }));
+    const ref = { artifact_id: "grid-1", revision: 1, kind: "grid" as const, title: "Payers", digest: "b".repeat(64) };
+    expect(live).toEqual([{ kind: "ready", key: "grid:grid-1", artifact: ref, updating: false, stepId: "publish", staged: corrected }]);
+    expect(gridBlocks(message({ status: "streaming", staged_artifacts: [first, corrected], progress }))).toEqual(live);
+    // The commit's reference carries the corrected digest, so the card keeps drawing the corrected draft.
+    expect(gridBlocks(message({ status: "streaming", artifact_refs: [ref], staged_artifacts: [corrected], progress }))).toEqual(live);
+    // After the commit the card reads the stored revision, as any stored card does.
+    expect(gridBlocks(message({ status: "complete", artifact_refs: [ref], staged_artifacts: [corrected], progress }))).toEqual([
+      { kind: "ready", key: "grid:grid-1", artifact: ref, updating: false, stepId: "publish" },
+    ]);
   });
 
   it("ignores documents, keeps the latest chart revision, and marks a chart being revised", () => {

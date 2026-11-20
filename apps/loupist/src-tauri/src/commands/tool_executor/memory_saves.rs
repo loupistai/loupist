@@ -4,8 +4,81 @@ mod journal_input;
 mod receipts;
 
 use super::arguments::{bounded_text, optional_bounded_text, optional_unique_strings};
+use super::pasted::PASTED_TEXT_LOCATOR;
 use super::*;
 use journal_input::{journal_argument_error, parse_research_journal};
+
+use crate::commands::assets::wire::AssetRow;
+use crate::knowledge::assets::{self, PageRecord};
+use crate::store::user_context::matching;
+
+fn resolve_thesis_target(
+    store: &crate::store::SqliteStore,
+    loupist_id: &str,
+    pages: &[PageRecord],
+    follows: &[AssetRow],
+    query: &str,
+) -> Result<(String, Option<AssetRow>), BrokerError> {
+    let mut all = store.assets_list(loupist_id, false).map_err(store_error)?;
+    let mut seen: BTreeSet<String> = all.iter().map(|asset| asset.asset_id.clone()).collect();
+    all.extend(
+        follows
+            .iter()
+            .filter(|asset| seen.insert(asset.asset_id.clone()))
+            .cloned(),
+    );
+    all.extend(
+        pages
+            .iter()
+            .filter(|page| seen.insert(page.asset_id.clone()))
+            .map(|page| AssetRow {
+                asset_id: page.asset_id.clone(),
+                name: page.name.clone(),
+                reference: None,
+                followed_at_ms: None,
+                created_at_ms: page.created_at_ms,
+            }),
+    );
+    match matching(&all, query).as_slice() {
+        [asset] => {
+            let needs_page = !pages.iter().any(|page| page.asset_id == asset.asset_id);
+            Ok((asset.asset_id.clone(), needs_page.then(|| (*asset).clone())))
+        }
+        [] => Err(BrokerError::invalid("thesis.asset", "No asset matches.")),
+        candidates => Err(BrokerError::invalid(
+            "thesis.asset",
+            format!("Several assets match: {}", json!(candidates)),
+        )),
+    }
+}
+
+type StagedThesis = (assets::JournalThesis, Option<AssetRow>);
+
+fn same_thesis_target(a: &StagedThesis, b: &StagedThesis) -> bool {
+    a.0.asset_id == b.0.asset_id
+}
+
+pub(in crate::commands) fn finish_setup_theses(
+    store: &crate::store::SqliteStore,
+    loupist_id: &str,
+    research: &mut StagedResearch,
+) -> crate::store::StoreResult<bool> {
+    let mut skipped = false;
+    for entry in [&mut research.journal, &mut research.thesis_pair] {
+        let Some((thesis, Some(_))) = entry.as_ref().and_then(|journal| journal.thesis.as_ref())
+        else {
+            continue;
+        };
+        if store.asset_by_id(loupist_id, &thesis.asset_id)?.is_none() {
+            *entry = None;
+            skipped = true;
+        }
+    }
+    if research.journal.is_none() {
+        research.journal = research.thesis_pair.take();
+    }
+    Ok(skipped)
+}
 
 impl AppToolExecutor {
     async fn validate_note_references(
@@ -180,18 +253,13 @@ impl AppToolExecutor {
         })?;
         // Account and balance reads stay on this computer (D9).
         if result.producer.tool_name == "kis_read"
-            && crate::privacy::holdings::is_account_result(&result.payload)
+            && crate::privacy::account_fields::is_account_result(&result.payload)
         {
             return Err(BrokerError::Execution(
-                crate::privacy::holdings::NOT_SAVED.into(),
+                crate::privacy::account_fields::NOT_SAVED.into(),
             ));
         }
-        if !matches!(
-            result.producer.origin,
-            RunResultOrigin::AcquiredOriginal
-                | RunResultOrigin::Discovery
-                | RunResultOrigin::WorkspaceFile
-        ) {
+        if !result.producer.origin.saveable_as_source() {
             return Err(BrokerError::Execution(
                 "Only acquired originals can be saved as Sources; derived analysis and saved context belong in a note with their original evidence"
                     .into(),
@@ -210,7 +278,8 @@ impl AppToolExecutor {
             return Err(BrokerError::Execution("Only a summary of this result was delivered. Read a narrower original result before saving its exact payload as a Source".into()));
         }
         let workspace_file = result.producer.origin == RunResultOrigin::WorkspaceFile;
-        let bytes = if workspace_file {
+        let provided = self.provided_origin(policy, &result)?;
+        let bytes = if workspace_file || provided.is_some() {
             result
                 .payload
                 .get("content")
@@ -255,16 +324,20 @@ impl AppToolExecutor {
         }
         let material_role = if coverage == "included_excerpt" {
             "excerpt"
-        } else if workspace_file {
+        } else if workspace_file || provided.is_some() {
             "original"
         } else {
             "provider_payload"
         };
-        let document_id = match result.origin.as_deref() {
-            Some(origin) if !origin.is_empty() => {
+        let document_id = match (&provided, result.origin.as_deref()) {
+            (Some(provided), _) => format!(
+                "paste.{}",
+                &crate::util::sha256(provided.message_id.as_bytes())[..32]
+            ),
+            (None, Some(origin)) if !origin.is_empty() => {
                 format!("loc.{}", &crate::util::sha256(origin.as_bytes())[..32])
             }
-            _ => format!(
+            (None, _) => format!(
                 "tool.{}",
                 &crate::util::sha256(
                     format!(
@@ -285,7 +358,11 @@ impl AppToolExecutor {
             .origin()
             .filter(|origin| origin.connection_id == result.producer.runtime_id);
         let staged = StagedSource {
-            authorship: if workspace_file && result.payload["trust"] == "third_party_text" {
+            authorship: if provided.is_some() {
+                // The user handed it over; a publisher may have written it,
+                // but nothing here can vouch for that.
+                crate::knowledge::Authorship::User
+            } else if workspace_file && result.payload["trust"] == "third_party_text" {
                 // An app export is not reclassified as the user's own words.
                 // Tool authorship also keeps it private for sharing purposes.
                 crate::knowledge::Authorship::Tool
@@ -293,14 +370,16 @@ impl AppToolExecutor {
                 saved_authorship(&result.producer, custom_origin.is_some())
             },
             custom_origin,
-            source_class: if workspace_file {
+            source_class: if provided.is_some() {
+                crate::knowledge::SourceClass::UserProvided
+            } else if workspace_file {
                 crate::knowledge::SourceClass::UserFile
             } else {
                 crate::knowledge::SourceClass::ToolResult
             },
             title,
             bytes,
-            media_type: if workspace_file {
+            media_type: if workspace_file || provided.is_some() {
                 result
                     .payload
                     .get("media_type")
@@ -310,10 +389,16 @@ impl AppToolExecutor {
             } else {
                 "application/json".into()
             },
-            origin: result
-                .origin
-                .clone()
-                .unwrap_or_else(|| format!("tool:{}", result.producer.tool_name)),
+            origin: match &provided {
+                Some(provided) => provided
+                    .stated_url
+                    .clone()
+                    .unwrap_or_else(|| PASTED_TEXT_LOCATOR.into()),
+                None => result
+                    .origin
+                    .clone()
+                    .unwrap_or_else(|| format!("tool:{}", result.producer.tool_name)),
+            },
             coverage: coverage.to_string(),
             chat_id: policy.session_id.clone(),
             request_ref: save_ref.clone(),
@@ -324,7 +409,9 @@ impl AppToolExecutor {
                 .map(|value| serde_json::from_value(value.clone()))
                 .transpose()
                 .map_err(|_| BrokerError::Malformed)?,
-            provider_identity: {
+            provider_identity: if provided.is_some() {
+                "user".into()
+            } else {
                 let identity = result.producer.provider.clone().unwrap_or_else(|| {
                     format!(
                         "{}:{}",
@@ -342,6 +429,7 @@ impl AppToolExecutor {
             },
             document_id,
             material_role: material_role.into(),
+            provided,
         };
         // Under an as-of date only material published by then is saved; reads
         // under the cutoff already carry no later rows or pages. Undated
@@ -412,7 +500,7 @@ impl AppToolExecutor {
                 "requires the current turn's user message; save only the judgment that user stated",
             ));
         }
-        let journal = if review {
+        let (mut journal, thesis) = if review {
             let object = exact_object(
                 &params,
                 &["readRef", "outcome", "sourceReads"],
@@ -477,29 +565,32 @@ impl AppToolExecutor {
                     .map_err(journal_argument_error)?;
             // Only the host records the cutoff a review ran under.
             outcome.reviewed_as_of = cutoff.map(|cutoff| cutoff.to_string());
-            StagedResearchJournal {
-                thesis: None,
-                at_ms: now_ms(),
-                judgment: record.judgment,
-                reasoning: record.reasoning,
-                entities: record.entities,
-                check: record.check,
-                outcome: Some(outcome),
-                earlier: vec![StagedEarlierJournal {
-                    read_ref,
-                    relation: "review".into(),
-                }],
-                source_reads: optional_unique_strings(object.get("sourceReads"), 32, 128)?,
-                world_reads: optional_unique_strings(object.get("worldReads"), 8, 128)?,
-                lens_reads: Vec::new(),
-            }
+            (
+                StagedResearchJournal {
+                    thesis: None,
+                    at_ms: now_ms(),
+                    judgment: record.judgment,
+                    reasoning: record.reasoning,
+                    entities: record.entities,
+                    check: record.check,
+                    outcome: Some(outcome),
+                    earlier: vec![StagedEarlierJournal {
+                        read_ref,
+                        relation: "review".into(),
+                    }],
+                    source_reads: optional_unique_strings(object.get("sourceReads"), 32, 128)?,
+                    world_reads: optional_unique_strings(object.get("worldReads"), 8, 128)?,
+                    lens_reads: Vec::new(),
+                },
+                None,
+            )
         } else {
             parse_research_journal(&params, now_ms())?
         };
         // Shape validation alone cannot authorize World links. Use the same
         // complete-World check as the canonical writer before reserving a save
         // slot, so an unknown name/id can be repaired in this reply.
-        if !journal.entities.is_empty() {
+        let pages = if thesis.is_some() || !journal.entities.is_empty() {
             let mut connection = self
                 .state
                 .store
@@ -512,6 +603,44 @@ impl AppToolExecutor {
                 &tx,
                 &policy.loupist_id,
                 &journal.entities,
+            )
+            .map_err(journal_argument_error)?;
+            if thesis.is_some() {
+                crate::knowledge::assets::list_pages(&tx, &policy.loupist_id)
+                    .map_err(knowledge_error)?
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+        if let Some((query, role)) = thesis {
+            let follows = self
+                .capture
+                .staged_setup
+                .lock()
+                .await
+                .as_ref()
+                .map_or_else(Vec::new, |setup| setup.follow.clone());
+            let (asset_id, page) = resolve_thesis_target(
+                &self.state.store,
+                &self.loupist_id,
+                &pages,
+                &follows,
+                &query,
+            )?;
+            journal.thesis = Some((
+                crate::knowledge::assets::JournalThesis { asset_id, role },
+                page,
+            ));
+        }
+        if !review {
+            crate::knowledge::journal::validate_draft_fields(
+                &journal.judgment,
+                &journal.reasoning,
+                &journal.entities,
+                journal.check.as_ref(),
+                journal.thesis.as_ref().map(|(thesis, _)| thesis.role),
             )
             .map_err(journal_argument_error)?;
         }
@@ -541,10 +670,12 @@ impl AppToolExecutor {
                     .thesis
                     .as_ref()
                     .zip(journal.thesis.as_ref())
-                    .is_some_and(|((first, _), (second, _))| {
+                    .is_some_and(|(first_target, second_target)| {
+                        let (first, _) = first_target;
+                        let (second, _) = second_target;
                         reservation[0].1.outcome.is_none()
                             && journal.outcome.is_none()
-                            && first.asset_id == second.asset_id
+                            && same_thesis_target(first_target, second_target)
                             && first.role != second.role
                             && (if first.role == crate::knowledge::assets::ThesisRole::Line {
                                 &reservation[0].1
@@ -557,7 +688,7 @@ impl AppToolExecutor {
         {
             return Err(BrokerError::invalid("journal", "one Journal entry per reply, plus one more only when the two are a reason and a line for the same followed asset. This one was not saved; tell the user which part was not recorded."));
         }
-        if let Some((thesis, _)) = &journal.thesis {
+        if let Some(target @ (thesis, _)) = &journal.thesis {
             use crate::knowledge::assets::ThesisRole;
             match thesis.role {
                 ThesisRole::Reason => {
@@ -566,10 +697,14 @@ impl AppToolExecutor {
                 }
                 ThesisRole::Line => {
                     let check = journal.check.as_ref().expect("validated line check");
-                    let mut next = format!("Saved as a line. Tell the user what will be checked ({} {} {}{}) and that it has no date unless they gave one. Record a reading with thesis_update lineReading whenever a turn reads this figure.", check.metric, check.direction, check.threshold, check.unit.as_deref().unwrap_or(""));
+                    let when = match check.by_date.as_deref() {
+                        Some(date) => format!("It comes due for review on {date}."),
+                        None => "It has no date, so it never comes due for review.".to_owned(),
+                    };
+                    let mut next = format!("Saved as a line on this asset's page: {} {} {}{}. {} It is tested whenever a turn reads this metric from a filing, data result or fetched page: record the reading with thesis_update lineReading, and a reading past the level marks the thesis Broken and posts a message in Bot. Tell the user the level saved, how it is tested and whether it has a date, since a bare confirmation does not say whether anything watches the level.", check.metric, check.direction, check.threshold, check.unit.as_deref().unwrap_or(""), when);
                     let staged_reason = reservation.iter().any(|(_, entry)| {
-                        entry.thesis.as_ref().is_some_and(|(other, _)| {
-                            other.asset_id == thesis.asset_id && other.role == ThesisRole::Reason
+                        entry.thesis.as_ref().is_some_and(|other| {
+                            same_thesis_target(other, target) && other.0.role == ThesisRole::Reason
                         })
                     });
                     let has_reason = if staged_reason {

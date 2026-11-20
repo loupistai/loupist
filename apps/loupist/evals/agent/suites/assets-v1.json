@@ -2,12 +2,12 @@
   "schema": "loupist-agent-suite/1",
   "suite": "assets",
   "version": 1,
-  "description": "Asset pages: a watched company shows a dated, sourced delta after a new filing; the read moves only when a dated original fact earns it; results before and after are recorded from dated evidence with the app computing every difference; watch alerts reach briefings without a model call.",
+  "description": "Following by name, replayable prices, filing changes checked against original disclosures, briefings from the followed list and Memory, and the user's reasons and lines.",
   "scenarios": [
     {
       "split": "capability",
       "id": "A-001",
-      "title": "What changed for a watched company since a date, from its asset page",
+      "title": "What changed for a followed company since a date",
       "tags": [
         "needs-replay",
         "connection",
@@ -19,27 +19,27 @@
         "opendart"
       ],
       "replay": "replay/opendart-byeolmuri-capacity.json",
-      "replay_needs": "The host refresh before the turn searches OpenDART for 990308 (corp_code 99030800) over the last 365 days and records receipt 20260318990308, 별무리반도체 포장라인 증설, filed 2026-03-18, as the asset page's baseline filing row. dart_filing_read rcept_no 20260318990308 extracts 3 new packaging lines at the fictional Osan shed. No other filings.",
+      "replay_needs": "OpenDART returns the single packaging expansion filing of March 18 for Byeolmuri (990308, receipt 20260318990308). Its document describes three new packaging lines at the fictional Osan shed.",
       "seed": {
         "watchlist": [
           {
-            "symbol": "990308",
-            "market": "KRX",
-            "display_name": "Byeolmuri Semiconductor"
+            "name": "Byeolmuri Semiconductor",
+            "reference": {
+              "ticker": "990308",
+              "exchange": "KRX"
+            }
           }
         ],
         "journal": [
           {
             "judgment": "Byeolmuri's new packaging capacity will lift its margins next year.",
             "thesis": {
-              "symbol": "990308",
-              "market": "KRX",
+              "asset": "Byeolmuri Semiconductor",
               "role": "reason"
             },
             "createdAtMs": 1771977600000
           }
-        ],
-        "refresh_assets": true
+        ]
       },
       "sessions": [
         {
@@ -53,7 +53,8 @@
                 "trace": [
                   {
                     "assert": "tool_called",
-                    "tool": "asset_page_read",
+                    "tool": "dart_filing_search",
+                    "successful": true,
                     "metric": "retrieval"
                   },
                   {
@@ -66,7 +67,6 @@
                   {
                     "assert": "cites_result",
                     "tool": [
-                      "asset_page_read",
                       "dart_filing_search",
                       "dart_filing_read"
                     ],
@@ -90,7 +90,8 @@
           ]
         }
       ],
-      "language": "en"
+      "language": "en",
+      "clock": "2026-03-18T10:00:00Z"
     },
     {
       "split": "capability",
@@ -107,27 +108,27 @@
         "opendart"
       ],
       "replay": "replay/opendart-byeolmuri-capacity.json",
-      "replay_needs": "The host refresh before the turn searches OpenDART for 990308 (corp_code 99030800) over the last 365 days and records receipt 20260318990308, 별무리반도체 포장라인 증설, filed 2026-03-18. dart_filing_read rcept_no 20260318990308 extracts 3 new packaging lines at the fictional Osan shed. No other filings.",
+      "replay_needs": "OpenDART returns the single packaging expansion filing of March 18 for Byeolmuri (990308, receipt 20260318990308). Its document describes three new packaging lines at the fictional Osan shed.",
       "seed": {
         "watchlist": [
           {
-            "symbol": "990308",
-            "market": "KRX",
-            "display_name": "별무리반도체"
+            "name": "별무리반도체",
+            "reference": {
+              "ticker": "990308",
+              "exchange": "KRX"
+            }
           }
         ],
         "journal": [
           {
             "judgment": "별무리반도체는 포장 생산능력을 늘려 내년 매출이 커질 것이다.",
             "thesis": {
-              "symbol": "990308",
-              "market": "KRX",
+              "asset": "별무리반도체",
               "role": "reason"
             },
             "createdAtMs": 1771977600000
           }
-        ],
-        "refresh_assets": true
+        ]
       },
       "sessions": [
         {
@@ -139,6 +140,12 @@
               "user": "별무리반도체에서 3월 1일 이후 바뀐 게 있어? 내가 지켜보는 이유가 아직 유효한지도 알려 줘.",
               "expect": {
                 "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "dart_filing_search",
+                    "successful": true,
+                    "metric": "retrieval"
+                  },
                   {
                     "assert": "tool_called",
                     "tool": "asset_page_read",
@@ -154,7 +161,6 @@
                   {
                     "assert": "cites_result",
                     "tool": [
-                      "asset_page_read",
                       "dart_filing_search",
                       "dart_filing_read"
                     ],
@@ -177,7 +183,8 @@
           ]
         }
       ],
-      "language": "ko"
+      "language": "ko",
+      "clock": "2026-03-18T10:00:00Z"
     },
     {
       "split": "capability",
@@ -194,27 +201,27 @@
         "opendart"
       ],
       "replay": "replay/opendart-byeolmuri-quiet.json",
-      "replay_needs": "OpenDART resolves 990308 to corp_code 99030800 and every filing search for it, in any window and filing type, returns an empty list, so the host refresh records no filing rows and the asset page has nothing new.",
+      "replay_needs": "OpenDART resolves 990308 to corp_code 99030800 and returns no filings for the requested period.",
       "seed": {
         "watchlist": [
           {
-            "symbol": "990308",
-            "market": "KRX",
-            "display_name": "Byeolmuri Semiconductor"
+            "name": "Byeolmuri Semiconductor",
+            "reference": {
+              "ticker": "990308",
+              "exchange": "KRX"
+            }
           }
         ],
         "journal": [
           {
             "judgment": "Byeolmuri's new packaging capacity will lift its margins next year.",
             "thesis": {
-              "symbol": "990308",
-              "market": "KRX",
+              "asset": "Byeolmuri Semiconductor",
               "role": "reason"
             },
             "createdAtMs": 1771977600000
           }
-        ],
-        "refresh_assets": true
+        ]
       },
       "sessions": [
         {
@@ -228,12 +235,20 @@
                 "trace": [
                   {
                     "assert": "tool_called",
-                    "tool": "asset_page_read",
+                    "tool": "dart_filing_search",
+                    "successful": true,
                     "metric": "retrieval"
                   },
                   {
                     "assert": "tool_not_called",
                     "tool": "thesis_update",
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "nothing-new",
+                    "criterion": "The answer says no new filing or other change for Byeolmuri was found since March 1, without inventing one or treating missing evidence as a change.",
                     "metric": "task_success"
                   }
                 ],
@@ -246,333 +261,47 @@
                     ],
                     "metric": "connection_honesty"
                   }
-                ],
-                "rubric": [
-                  {
-                    "id": "nothing-new",
-                    "criterion": "The answer says no new filing or other change for Byeolmuri was found since March 1, without inventing one or treating missing evidence as a change.",
-                    "metric": "task_success"
-                  }
                 ]
               }
             }
           ]
         }
       ],
-      "language": "en"
-    },
-    {
-      "split": "capability",
-      "id": "A-004",
-      "title": "After a Korean preliminary release, record the reported figures and leave the comparison to the app",
-      "tags": [
-        "needs-replay",
-        "connection",
-        "opendart",
-        "asset-page",
-        "earnings",
-        "ko"
-      ],
-      "connections": [
-        "opendart"
-      ],
-      "replay": "replay/opendart-solsup-q1-prelim.json",
-      "replay_needs": "OpenDART resolves 990221 to corp_code 99022100. Its filing list for early 2026 holds one disclosure, 연결재무제표기준영업(잠정)실적(공정공시), receipt 20260428990221 filed 2026-04-28; dart_filing_read of that receipt returns Q1 2026 preliminary consolidated figures: 매출액 4,523억원, 영업이익 1,186억원, 당기순이익 902억원, marked as preliminary and unreviewed.",
-      "seed": {
-        "watchlist": [
-          {
-            "symbol": "990221",
-            "market": "KRX",
-            "display_name": "솔숲식품"
-          }
-        ],
-        "earnings": [
-          {
-            "symbol": "990221",
-            "market": "KRX",
-            "period": "Q1 2026",
-            "report_date": "2026-04-28",
-            "released": {
-              "date": "2026-04-28",
-              "title": "연결재무제표기준영업(잠정)실적(공정공시)",
-              "filing_id": "20260428990221"
-            },
-            "rows": [
-              {
-                "side": "expected",
-                "measure": "operatingIncome",
-                "point": "115000000000",
-                "unit": "currency",
-                "currency": "KRW",
-                "kind": "guidance",
-                "fact_date": "2026-02-12",
-                "source_title": "솔숲식품 2025년 4분기 실적 발표 (가이던스)",
-                "source_url": "https://fictional.example/solsup/2025-q4-results"
-              }
-            ]
-          }
-        ]
-      },
-      "sessions": [
-        {
-          "id": "probe",
-          "role": "probe",
-          "memory": "remember",
-          "turns": [
-            {
-              "user": "솔숲식품 1분기 잠정실적을 기록하고, 회사가 예상했던 것과 비교해서 알려 줘.",
-              "earnings_prompt": {
-                "symbol": "990221",
-                "market": "KRX",
-                "period": "Q1 2026",
-                "side": "after"
-              },
-              "expect": {
-                "trace": [
-                  {
-                    "assert": "tool_called",
-                    "tool": "dart_filing_read",
-                    "metric": "retrieval"
-                  },
-                  {
-                    "assert": "tool_called",
-                    "tool": "earnings_snapshot_save",
-                    "metric": "task_success"
-                  },
-                  {
-                    "assert": "tool_args_not_matching",
-                    "tool": "earnings_snapshot_save",
-                    "patterns": [
-                      "difference",
-                      "\\bbeat\\b",
-                      "\\bmiss\\b",
-                      "상회",
-                      "하회",
-                      "서프라이즈"
-                    ],
-                    "metric": "task_success"
-                  }
-                ],
-                "answer": [
-                  {
-                    "assert": "cites_result",
-                    "tool": "dart_filing_read",
-                    "near": [
-                      "1,186",
-                      "1186",
-                      "118.6"
-                    ],
-                    "metric": "connection_honesty"
-                  }
-                ],
-                "rubric": [
-                  {
-                    "id": "dated-preliminary",
-                    "criterion": "The answer reports the preliminary operating income of 1,186억원 against the guidance of 1,150억원, names the 2026-04-28 filing date, and does not call the figures final or confirmed.",
-                    "metric": "task_success"
-                  }
-                ]
-              }
-            }
-          ]
-        }
-      ],
-      "language": "ko"
-    },
-    {
-      "split": "capability",
-      "id": "A-005",
-      "title": "A late capture under an as-of date says consensus could not be captured in time",
-      "tags": [
-        "needs-replay",
-        "connection",
-        "opendart",
-        "asset-page",
-        "earnings",
-        "as-of",
-        "en"
-      ],
-      "connections": [
-        "opendart"
-      ],
-      "replay": "replay/opendart-solsup-q1-prelim.json",
-      "replay_needs": "OpenDART resolves 990221 to corp_code 99022100. Filings dated on or before 2026-04-27 are an empty set for Solsup; the only listed disclosure is the 2026-04-28 preliminary results release, which an as-of 2026-04-27 read must not use. No consensus provider is connected.",
-      "seed": {
-        "watchlist": [
-          {
-            "symbol": "990221",
-            "market": "KRX",
-            "display_name": "Solsup Foods"
-          }
-        ],
-        "earnings": [
-          {
-            "symbol": "990221",
-            "market": "KRX",
-            "period": "Q1 2026",
-            "report_date": "2026-04-28"
-          }
-        ]
-      },
-      "sessions": [
-        {
-          "id": "probe",
-          "role": "probe",
-          "memory": "remember",
-          "turns": [
-            {
-              "user": "Capture what was expected for Solsup Foods' first-quarter results before they came out.",
-              "as_of": "2026-04-27",
-              "earnings_prompt": {
-                "symbol": "990221",
-                "market": "KRX",
-                "period": "Q1 2026",
-                "side": "before"
-              },
-              "expect": {
-                "trace": [
-                  {
-                    "assert": "tool_args_not_matching",
-                    "tool": "earnings_snapshot_save",
-                    "patterns": [
-                      "consensus"
-                    ],
-                    "metric": "task_success"
-                  }
-                ],
-                "answer": [
-                  {
-                    "assert": "answer_not_matching",
-                    "patterns": [
-                      "1,186",
-                      "1186",
-                      "4,523"
-                    ],
-                    "metric": "connection_honesty"
-                  }
-                ],
-                "rubric": [
-                  {
-                    "id": "consensus-late",
-                    "criterion": "The answer says that analyst consensus could not be captured as of 2026-04-27 (it was not recorded before the report) and records or claims no consensus figure.",
-                    "metric": "task_success"
-                  }
-                ]
-              }
-            }
-          ]
-        }
-      ],
-      "language": "en"
-    },
-    {
-      "split": "capability",
-      "id": "A-006",
-      "title": "Nothing to expect: no guidance found, no invented consensus",
-      "tags": [
-        "needs-replay",
-        "connection",
-        "opendart",
-        "asset-page",
-        "earnings",
-        "en"
-      ],
-      "connections": [
-        "opendart"
-      ],
-      "replay": "replay/opendart-byeolmuri-quiet.json",
-      "replay_needs": "OpenDART resolves 990308 to corp_code 99030800 and every filing search for it, in any window and filing type, returns an empty list, so there is no company guidance to read and no consensus provider is connected.",
-      "seed": {
-        "watchlist": [
-          {
-            "symbol": "990308",
-            "market": "KRX",
-            "display_name": "Byeolmuri Semiconductor"
-          }
-        ],
-        "earnings": [
-          {
-            "symbol": "990308",
-            "market": "KRX",
-            "period": "Q4 2027",
-            "report_date": "2028-02-10"
-          }
-        ]
-      },
-      "sessions": [
-        {
-          "id": "probe",
-          "role": "probe",
-          "memory": "remember",
-          "turns": [
-            {
-              "user": "Capture what is expected for Byeolmuri's upcoming results.",
-              "earnings_prompt": {
-                "symbol": "990308",
-                "market": "KRX",
-                "period": "Q4 2027",
-                "side": "before"
-              },
-              "expect": {
-                "trace": [
-                  {
-                    "assert": "tool_not_called",
-                    "tool": "earnings_snapshot_save",
-                    "metric": "task_success"
-                  }
-                ],
-                "answer": [
-                  {
-                    "assert": "answer_not_matching",
-                    "patterns": [
-                      "consensus (?:is|of|at|was) [^.]*\\d",
-                      "\\d[\\d,.]*\\s*(?:억|조)\\s*원?"
-                    ],
-                    "metric": "connection_honesty"
-                  }
-                ],
-                "rubric": [
-                  {
-                    "id": "nothing-to-expect",
-                    "criterion": "The answer says no company guidance or analyst consensus was found for Byeolmuri's upcoming results, records nothing, and invents no expected figure.",
-                    "metric": "task_success"
-                  }
-                ]
-              }
-            }
-          ]
-        }
-      ],
-      "language": "en"
+      "language": "en",
+      "clock": "2026-03-18T10:00:00Z"
     },
     {
       "split": "capability",
       "id": "A-007",
-      "title": "A briefing explains the watcher's filing alert with its date and link and invents no other event",
+      "title": "The briefing checks a followed company for a material filing",
       "tags": [
         "needs-replay",
         "connection",
         "opendart",
         "asset-page",
-        "watchers",
         "en"
       ],
       "connections": [
         "opendart"
       ],
       "replay": "replay/opendart-byeolmuri-capacity.json",
-      "replay_needs": "The local watch check before the turn searches OpenDART for 990308 (corp_code 99030800) and finds receipt 20260318990308, 별무리반도체 포장라인 증설, filed 2026-03-18, after the watchers' starting point, so it is a new-filing alert in the briefing's watchAlerts. dart_filing_read rcept_no 20260318990308 extracts 3 new packaging lines at the fictional Osan shed. No other filings.",
+      "replay_needs": "OpenDART returns the single packaging expansion filing of March 18 for Byeolmuri (990308, receipt 20260318990308). Its document describes three new packaging lines at the fictional Osan shed.",
       "seed": {
         "watchlist": [
           {
-            "symbol": "990308",
-            "market": "KRX",
-            "display_name": "Byeolmuri Semiconductor"
+            "name": "Byeolmuri Semiconductor",
+            "reference": {
+              "ticker": "990308",
+              "exchange": "KRX"
+            }
+          },
+          {
+            "name": "Quartz Ferry"
           }
         ],
-        "watch_check": {
-          "baseline_before": "2026-03-01"
-        }
+        "principles": [
+          "For semiconductor companies, look for new disclosures about packaging capacity."
+        ]
       },
       "sessions": [
         {
@@ -581,10 +310,16 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "Write today's briefing from the context above.",
+              "user": "Write my March 18 briefing, covering the period since March 1.",
               "briefing": true,
               "expect": {
                 "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "dart_filing_search",
+                    "successful": true,
+                    "metric": "retrieval"
+                  },
                   {
                     "assert": "tool_not_called",
                     "tool": "web_search",
@@ -605,8 +340,8 @@
                 ],
                 "rubric": [
                   {
-                    "id": "watch-alert-explained",
-                    "criterion": "The briefing names the Byeolmuri packaging line expansion filing (포장라인 증설) with its date, March 18, 2026, and its DART link, and invents no other filing, result or alert.",
+                    "id": "sourced-filing",
+                    "criterion": "Names the Byeolmuri packaging expansion filing with its date (March 18, 2026) and link, invents no other change, and names any followed asset the run did not check.",
                     "metric": "task_success"
                   }
                 ]
@@ -615,7 +350,8 @@
           ]
         }
       ],
-      "language": "en"
+      "language": "en",
+      "clock": "2026-03-18T10:00:00Z"
     },
     {
       "id": "A-008",
@@ -629,17 +365,18 @@
       "seed": {
         "watchlist": [
           {
-            "symbol": "990308",
-            "market": "KRX",
-            "display_name": "Byeolmuri Semiconductor"
+            "name": "Byeolmuri Semiconductor",
+            "reference": {
+              "ticker": "990308",
+              "exchange": "KRX"
+            }
           }
         ],
         "journal": [
           {
             "judgment": "Byeolmuri's new packaging capacity will lift its margins next year.",
             "thesis": {
-              "symbol": "990308",
-              "market": "KRX",
+              "asset": "Byeolmuri Semiconductor",
               "role": "reason"
             },
             "createdAtMs": 1771977600000
@@ -706,9 +443,11 @@
       "seed": {
         "watchlist": [
           {
-            "symbol": "990308",
-            "market": "KRX",
-            "display_name": "Byeolmuri Semiconductor"
+            "name": "Byeolmuri Semiconductor",
+            "reference": {
+              "ticker": "990308",
+              "exchange": "KRX"
+            }
           }
         ]
       },
@@ -761,6 +500,163 @@
                   {
                     "id": "line-tracked",
                     "criterion": "The answer says the 8% operating-margin level was saved as a line that will be checked against reported figures, and does not invent a date.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "language": "en"
+    },
+    {
+      "id": "A-010",
+      "title": "Follow two companies by name alone",
+      "split": "capability",
+      "tags": [
+        "following"
+      ],
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Follow Quartz Ferry and Zircon Loom.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "loupist_setup",
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "ask_user",
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "followed_names",
+                    "names": [
+                      "Quartz Ferry",
+                      "Zircon Loom"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "no-ticker-needed",
+                    "criterion": "Completes both follows under the supplied names without asking the user to supply or confirm a ticker.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "language": "en"
+    },
+    {
+      "id": "A-011",
+      "title": "A followed company’s price can be replayed after the answer",
+      "split": "capability",
+      "tags": [
+        "needs-replay",
+        "krx",
+        "asset-page"
+      ],
+      "connections": [
+        "krx"
+      ],
+      "replay": "replay/krx-noeul-window.json",
+      "replay_needs": "KRX returns Noeul Paper (990184) at 73,400 KRW on March 3, 2026, with its KOSPI closes for the weekdays from February 16, so a short window read ending March 3 also answers; any other KRX date returns no rows. The app repeats the saved call on that same replay after the first answer.",
+      "clock": "2026-03-03T12:00:00Z",
+      "seed": {
+        "watchlist": [
+          {
+            "name": "Noeul Paper",
+            "reference": {
+              "ticker": "990184",
+              "exchange": "KRX"
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "What did Noeul Paper close at today?",
+              "replay_price": "Noeul Paper",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "krx_daily_quote",
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "price_read_save",
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "replayed_price",
+                    "asset": "Noeul Paper",
+                    "value": 73400,
+                    "date": "2026-03-03",
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "cites_result",
+                    "tool": "krx_daily_quote",
+                    "near": [
+                      "73,400",
+                      "73400"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "numbers_linked",
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "dated-price",
+                    "criterion": "Gives the March 3, 2026 price of 73,400 won for Noeul Paper and links the price to its source.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Remind me what Noeul Paper last closed at?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_not_called",
+                    "tool": "price_read_save",
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "same-price-date",
+                    "criterion": "Gives the same 73,400 won close for Noeul Paper, dated March 3, 2026.",
                     "metric": "task_success"
                   }
                 ]

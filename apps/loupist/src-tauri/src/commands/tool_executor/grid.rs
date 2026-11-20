@@ -17,7 +17,7 @@ use crate::knowledge::numbers::{self, Printed, Unit};
 /// What to do when an edit token does not match a current read.
 const GRID_REVISE_NEXT: &str =
     "Call artifact_read for this artifact_id, then revise using its returned edit_token.";
-const GRID_CHECK_NEXT: &str = "Cells marked differs or not_found do not match the source they cite: correct the value or cite the result it came from, then revise the grid with artifact_read's edit_token.";
+const GRID_CHECK_NEXT: &str = "Cells marked differs or not_found do not match the source they cite: correct the value or cite the result it came from, then call grid_publish again with mode revise, this artifact_id and this edit_token.";
 /// Leaves of a payload a literal (date or text) cell is looked for in.
 const MAX_LITERAL_LEAVES: usize = 50_000;
 
@@ -118,7 +118,8 @@ fn read_value(value: &str, unit: GridUnit) -> Option<Printed> {
         printed.unit = column(printed.unit);
         return Some(printed);
     }
-    let trimmed = value.trim();
+    // `−` (U+2212) is a minus sign.
+    let trimmed = value.trim().replace('−', "-");
     if trimmed.is_empty()
         || !trimmed
             .bytes()
@@ -138,6 +139,7 @@ fn read_value(value: &str, unit: GridUnit) -> Option<Printed> {
         value: number,
         unit: column(Unit::Plain),
         precision: 0.5 * 10f64.powi(-(decimals as i32)),
+        signed: trimmed.starts_with(['+', '-']),
     })
 }
 
@@ -190,6 +192,7 @@ fn literal_check(
         exact: None,
         pointer: None,
         span: span.filter(|_| kind == NumberCheckKind::Passage),
+        context: None,
         fields: Vec::new(),
         calc: None,
     }
@@ -353,6 +356,7 @@ impl AppToolExecutor {
             1..=MAX_GRID_COLUMNS,
             "columns",
         )?;
+        let cutoff = parse_as_of_date(policy.as_of.as_deref())?;
         let mut grid_rows = Vec::with_capacity(rows.len());
         let mut identities = BTreeSet::new();
         for (index, row) in rows.iter().enumerate() {
@@ -384,8 +388,38 @@ impl AppToolExecutor {
                 text.bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
             };
-            let asset_id = (token(&symbol) && token(&market))
-                .then(|| crate::knowledge::assets::asset_id(&symbol, &market));
+            let asset_id = if policy.use_memory && token(&symbol) && token(&market) {
+                let rows = self
+                    .state
+                    .store
+                    .assets_list(&self.loupist_id, false)
+                    .map_err(store_error)?;
+                let matches = crate::store::user_context::by_ticker(&rows, &symbol);
+                let mut candidates = matches.into_iter().filter(|asset| {
+                    asset.created_at_ms
+                        <= cutoff
+                            .map(|date| {
+                                date.and_time(
+                                    chrono::NaiveTime::from_hms_opt(23, 59, 59)
+                                        .expect("valid time"),
+                                )
+                                .and_utc()
+                                .timestamp_millis()
+                            })
+                            .unwrap_or(i64::MAX)
+                        && asset
+                            .reference
+                            .as_ref()
+                            .and_then(|reference| reference.fields.exchange.as_deref())
+                            .is_some_and(|exchange| exchange.eq_ignore_ascii_case(&market))
+                });
+                let first = candidates.next();
+                first
+                    .filter(|_| candidates.next().is_none())
+                    .map(|asset| asset.asset_id.clone())
+            } else {
+                None
+            };
             grid_rows.push(GridRow {
                 symbol,
                 market,
@@ -821,13 +855,20 @@ impl AppToolExecutor {
                     datasets: Vec::new(),
                 }
             }
-            Some(mut artifact) => {
+            Some(resolved) => {
+                let mut artifact = resolved.artifact;
                 let created_at_ms = timestamp.max(artifact.updated_at_ms.saturating_add(1));
                 artifact.title = title;
-                artifact.current_revision =
-                    artifact.current_revision.checked_add(1).ok_or_else(|| {
-                        BrokerError::Execution("artifact revision limit reached".into())
-                    })?;
+                if !resolved.is_draft {
+                    artifact.current_revision =
+                        artifact.current_revision.checked_add(1).ok_or_else(|| {
+                            BrokerError::Execution("artifact revision limit reached".into())
+                        })?;
+                }
+                if resolved.is_draft && artifact.current_revision == 1 {
+                    // New artifacts keep the store's initial timestamp binding.
+                    artifact.created_at_ms = created_at_ms;
+                }
                 artifact.updated_at_ms = created_at_ms;
                 let revision = ChatArtifactRevision::new(
                     artifact.id.clone(),
@@ -871,7 +912,7 @@ impl AppToolExecutor {
         &self,
         policy: &ToolPolicy,
         object: &Object,
-    ) -> Result<ChatArtifact, BrokerError> {
+    ) -> Result<super::artifacts::CurrentArtifact, BrokerError> {
         let artifact_id = object
             .get("artifact_id")
             .and_then(Value::as_str)
@@ -890,26 +931,19 @@ impl AppToolExecutor {
                     "required when mode is revise; use the token returned by artifact_read",
                 )
             })?;
-        let artifact = self
-            .state
-            .store
-            .get_chat_artifact(artifact_id)
-            .map_err(store_error)?
-            .ok_or_else(|| BrokerError::Execution("artifact was not found".into()))?;
-        if artifact.chat_session_id != policy.session_id || artifact.kind != ChatArtifactKind::Grid
-        {
+        let resolved = self.current_artifact(policy, artifact_id, None).await?;
+        let artifact = &resolved.artifact;
+        if artifact.kind != ChatArtifactKind::Grid {
             return Err(BrokerError::invalid(
                 "artifact_id",
                 "Not a table in this Chat; list artifacts and use a table ID from this Chat.",
             ));
         }
-        let current = self
-            .state
-            .store
-            .get_chat_artifact_current(&artifact.id)
-            .map_err(store_error)?
-            .ok_or_else(|| BrokerError::Execution("artifact content was not found".into()))?;
-        if chart_edit_token(&current) != edit_token
+        let current = &resolved.revision;
+        if let ChatArtifactPayload::Grid { grid, .. } = &current.payload {
+            self.grid_within_cutoff(policy, artifact_id, grid)?;
+        }
+        if chart_edit_token(current) != edit_token
             || !self
                 .capture
                 .artifact_reads
@@ -922,7 +956,7 @@ impl AppToolExecutor {
             )
             .with_next(GRID_REVISE_NEXT));
         }
-        Ok(artifact)
+        Ok(resolved)
     }
 
     /// Under an as-of date a grid shows what was known then only when it was
@@ -984,7 +1018,7 @@ pub(super) fn sources_disagree(view_json: &str) -> Option<Value> {
         json!({
             "claims": claims,
             "entity_ids": entities,
-            "next": "Sources disagree here. If the answer uses one of these claims, read each source (sourceTargets readArgs) and show the difference with grid_publish layout conflict, world_entity_id set to the entity; never average or silently pick one.",
+            "next": "Sources disagree here. If the answer uses one of these claims, read each source with its sourceTargets readArgs, then say what each reports and which you use and why, or why you cannot tell. grid_publish layout conflict, with world_entity_id set to the entity, shows them side by side.",
         })
     })
 }
@@ -1049,6 +1083,10 @@ mod tests {
         assert_eq!(read("1.2", GridUnit::Multiple), Some((1.2, Unit::Multiple)));
         // A small count is a value in a grid, not a numbered citation.
         assert_eq!(read("12", GridUnit::Number), Some((12.0, Unit::Plain)));
+        // `−` (U+2212) is a minus.
+        for text in ["−12", "-12"] {
+            assert_eq!(read(text, GridUnit::Number), Some((-12.0, Unit::Plain)));
+        }
         assert_eq!(read("2026-03-18", GridUnit::Date), None);
         assert_eq!(read("2026-03-18", GridUnit::Number), None);
         assert_eq!(

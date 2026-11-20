@@ -89,16 +89,17 @@ STATE_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/loupist-persistence-e2e.XXXXXX")
 SESSION_INFO="$STATE_ROOT/session.json"
 RUN_LOG=$(mktemp "${TMPDIR:-/tmp}/loupist-persistence-log.XXXXXX")
 
-# run_phase <seed|restart|copy> <state folder>
+# run_phase <seed|restart|copy|fork|reconnect> <state folder>
 run_phase() {
     phase=$1
     phase_root="$STATE_ROOT/$2"
-    mkdir -p "$phase_root"
-    cp "$SCRIPT_DIR/fixtures/journeys/holdings.csv" "$phase_root/holdings.csv"
+    # run-app.sh needs an explicit folder to exist; the default path is the same one.
+    mkdir -p "$phase_root/workspace"
     : >"$RUN_LOG"
     rm -f -- "$SESSION_INFO"
+    # The phase's own folder, also what the e2e folder chooser answers when a phase reconnects it.
+    LOUPIST_E2E_WORKSPACE_DIR="$phase_root/workspace" \
     LOUPIST_E2E_STATE_DIR="$phase_root" \
-        LOUPIST_E2E_PICK_FILE="$phase_root/holdings.csv" \
         LOUPIST_E2E_SESSION_INFO="$SESSION_INFO" \
         "$SCRIPT_DIR/run-app.sh" >"$RUN_LOG" 2>&1 &
     APP_PID=$!
@@ -129,7 +130,13 @@ export LOUPIST_E2E_KNOWLEDGE_SEED=1
 run_phase seed seed
 unset LOUPIST_E2E_KNOWLEDGE_SEED
 run_phase restart seed
-mkdir -p "$STATE_ROOT/copy"
+mkdir -p "$STATE_ROOT/copy" "$STATE_ROOT/fork"
 cp -R "$STATE_ROOT/seed/workspace" "$STATE_ROOT/copy/workspace"
+cp -R "$STATE_ROOT/seed/workspace" "$STATE_ROOT/fork/workspace"
 run_phase copy copy
+# A second copy on its own app data, then put at the first copy's path: the copy's app reconnects it.
+run_phase fork fork
+rm -rf "$STATE_ROOT/copy/workspace"
+cp -R "$STATE_ROOT/fork/workspace" "$STATE_ROOT/copy/workspace"
+run_phase reconnect copy
 echo "Loupist native persistence passed."

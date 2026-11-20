@@ -37,15 +37,19 @@ export type LabelPriority = {
 };
 /** How far a live node's glow halo reaches past its mark, in graph units. */
 export const LIVE_GLOW_REACH = 10;
+/** On screen a dot grows with the zoom only up to this many times its radius: zooming in spreads a drawing out instead of swelling its dots. */
+export const DOT_ZOOM_CAP = 1.5;
+/** The radius a node draws at this zoom, in graph units; rings, marks and names sit around it. */
+export const drawnRadius = (node: PositionedNode, scale: number) => nodeRadius(node) * Math.min(1, DOT_ZOOM_CAP / Math.max(scale, 0.001));
 export type NodeRing = { radius: number; width: number; color: string; dash: number[]; square?: boolean; clearance?: boolean };
 /** Shared geometry keeps the painted rings and label exclusion area identical.
  *  Clearance entries (the selection, a live glow) only reserve space. The canvas paints a halo and does not stroke them. */
 export function nodeRings(node: PositionedNode, scale: number, state: LabelPriority): NodeRing[] {
-  const r = nodeRadius(node), rings: NodeRing[] = [];
+  const r = drawnRadius(node, scale), rings: NodeRing[] = [];
   // Conflicting evidence is a dot at the upper right (`conflictMark`), never a ring: dashed rings mean "you watch".
   // Above the usual 1.5× fit, the ring keeps its on-screen weight instead of thickening with the zoom.
   const thin = Math.min(1, 1.5 / Math.max(scale, 0.001));
-  if (node.watched || node.held || state.highlightIds?.has(node.id)) rings.push({ radius: r + 3.5, width: (node.held ? 2.5 : 1.5) * thin, color: "holding-ring", dash: node.watched && !node.held ? [3 * thin, 2 * thin] : [] });
+  if (node.watched || state.highlightIds?.has(node.id)) rings.push({ radius: r + 3.5 * thin, width: 1.5 * thin, color: "followed-ring", dash: node.watched ? [3 * thin, 2 * thin] : [] });
   if (state.learnedIds?.has(node.id)) rings.push({ radius: 8 + 4 / scale, width: 2 / scale, color: "accent", dash: [], square: true });
   if (node.id === state.selectedId) {
     const radius = Math.max(r, ...rings.map(ring => ring.radius + ring.width / 2)) + 3 / scale;
@@ -57,20 +61,20 @@ export function nodeRings(node: PositionedNode, scale: number, state: LabelPrior
 }
 /** The conflicting-evidence dot: centre and radius in graph units, kept readable when zoomed out. */
 export function conflictMark(node: PositionedNode, scale: number) {
-  const r = nodeRadius(node);
+  const r = drawnRadius(node, scale);
   const radius = Math.min(r * .8, Math.max(r * .42, 2.5 / Math.max(scale, 0.001)));
   return { x: node.x + r * .72, y: node.y - r * .72, radius };
 }
 function labelOffset(node: PositionedNode, scale: number, state: LabelPriority) {
-  return Math.max(nodeRadius(node) + 1 / scale, ...nodeRings(node, scale, state).map(ring => ring.radius + ring.width)) + 3 / scale;
+  return Math.max(drawnRadius(node, scale) + 1 / scale, ...nodeRings(node, scale, state).map(ring => ring.radius + ring.width)) + 3 / scale;
 }
 const lensKind = (node: PositionedNode) => node.kind.startsWith("lens_");
 /** A metric is a label candidate only while the reader has selected or hovered it. */
 export function showMetricLabel(node: Pick<KnowledgeMapNode, "id" | "kind" | "entityKind" | "categoryOverride" | "kindLabels">, selectedId?: string, hoveredId?: string) {
   return !isMetricNode(node) || node.id === selectedId || node.id === hoveredId;
 }
-/** With a selection: that node, its neighbours, the focal name, held or watched, a linked Lens, then degree.
- *  With none: the focal name, held or watched, the newly learned item's linked nodes, the top hubs, then degree. */
+/** With a selection: that node, its neighbours, the focal name, followed names, a linked Lens, then degree.
+ *  With none: the focal name, followed names, the newly learned item's linked nodes, the top hubs, then degree. */
 function labelPriority(node: PositionedNode, priority: LabelPriority) {
   if (node.id === priority.selectedId) return 6;
   // The other side of a dispute with the selection is part of what the user is reading.
@@ -78,7 +82,7 @@ function labelPriority(node: PositionedNode, priority: LabelPriority) {
   if (priority.selectedId && priority.neighbors?.has(node.id)) return 4;
   // A focal view is about its centre, so the centre is named first.
   if (node.id === priority.focalId) return priority.selectedId ? 4 : 6;
-  if (node.held || node.watched) return priority.selectedId ? 3 : 5;
+  if (node.watched) return priority.selectedId ? 3 : 5;
   if (!priority.selectedId && priority.learnedLinkedIds?.has(node.id)) return 4;
   if (priority.topHubIds?.has(node.id)) return 3;
   if (lensKind(node) && priority.linkedIds?.has(node.id)) return 2;
@@ -87,7 +91,7 @@ function labelPriority(node: PositionedNode, priority: LabelPriority) {
 }
 const overlaps = (a: LabelBox, b: LabelBox) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 /** Below, above, right, then left. Each slot starts outside the node's own rings.
- *  A selection, its neighbours, and — when nothing is selected — held, watched, and
+ *  A selection, its neighbours, and — when nothing is selected — followed and
  *  learned-link labels also try shifted and diagonal gaps. */
 function labelSlots(node: PositionedNode, scale: number, priority: LabelPriority, textWidth: number, inward = 0): LabelBox[] {
   const w = textWidth + 4 / scale, h = 16 / scale, offset = labelOffset(node, scale, priority), x = node.x - w / 2;
@@ -101,7 +105,7 @@ function labelSlots(node: PositionedNode, scale: number, priority: LabelPriority
     // A Journal entry has no relationships, so the layout leaves its ring at the edge of the drawing,
     // where a centred name crosses the pane edge. It also tries names that grow toward the drawing:
     // starting under or over the ring, then beside it at a diagonal.
-    const r = nodeRadius(node), toward = inward < 0 ? -1 : 1;
+    const r = drawnRadius(node, scale), toward = inward < 0 ? -1 : 1;
     const startX = toward > 0 ? node.x - r : node.x + r - w;
     const sideX = toward > 0 ? node.x + offset : node.x - offset - w;
     return [...cardinals, { ...below, x: startX }, { ...above, x: startX }, { x: sideX, y: node.y + offset, w, h }, { x: sideX, y: node.y - offset - h, w, h }];
@@ -207,7 +211,7 @@ export function placeLabels(candidates: PositionedNode[], nodes: PositionedNode[
   const geometryFor: GeometryFor = node => {
     let mark = geometry.get(node);
     if (!mark) {
-      const radius = nodeRadius(node), rings = nodeRings(node, scale, priority);
+      const radius = drawnRadius(node, scale), rings = nodeRings(node, scale, priority);
       mark = { radius, rings, outer: Math.max(radius, ...rings.map(ring => ring.radius + ring.width / 2)), named: namedMark(node, priority),
         inFocus: !priority.selectedId || node.id === priority.selectedId || !!priority.neighbors?.has(node.id) || !!priority.linkedIds?.has(node.id) };
       geometry.set(node, mark);

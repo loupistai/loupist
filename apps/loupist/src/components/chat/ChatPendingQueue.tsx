@@ -32,6 +32,8 @@ type Props = {
   onMove: (id: string, offset: -1 | 1) => void;
   onSendNow: (id: string) => void;
   canSendNow?: boolean;
+  /** Why Send now is unavailable when it is not the running reply (a folder or an account to reconnect). */
+  blockedReason?: string;
   /** While offline nothing can be guided or sent now; queued messages wait for the connection. */
   offline?: boolean;
 };
@@ -45,16 +47,38 @@ export function ChatPendingQueue({
   onMove,
   onSendNow,
   canSendNow = true,
+  blockedReason,
   offline = false,
 }: Props) {
   useTranslation("chat");
   const modality = useInputModality();
   const listId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(true);
+  // A row whose menu removed or sent it takes its menu button with it: focus moves to the row now in
+  // its place, or to the message when none is left, never to the page.
+  const leaving = useRef<{ id: string; index: number } | null>(null);
+  useEffect(() => {
+    const row = leaving.current;
+    if (!row || queued.some((item) => item.id === row.id)) return undefined;
+    leaving.current = null;
+    // After the menu's own focus return, which aims at the button that left.
+    const timer = window.setTimeout(() => {
+      const focused = document.activeElement;
+      if (focused && focused !== document.body && focused.isConnected) return;
+      const menus = rootRef.current?.querySelectorAll<HTMLElement>(".chat-pending-more") ?? [];
+      const next = menus[Math.min(row.index, menus.length - 1)] ?? document.querySelector<HTMLElement>("textarea[data-chat-composer]");
+      next?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [queued]);
   if (queued.length === 0 && !holdReason) return null;
+  const sendable = canSendNow && !offline;
+  const leave = (id: string, index: number) => { leaving.current = { id, index }; };
+  const unavailable = offline ? t("chatPendingQueue.waitsUntilOnline") : blockedReason ?? t("chatPendingQueue.waitsUntilTheCurrentResponseFinishes");
 
   return (
-    <div className="chat-pending-queue" aria-label={t("chatPendingQueue.pendingChatInstructions")}>
+    <div ref={rootRef} className="chat-pending-queue" role="group" aria-label={t("chatPendingQueue.pendingChatInstructions")}>
       {queued.length > 0 ? (
         <button
           type="button"
@@ -70,7 +94,11 @@ export function ChatPendingQueue({
       ) : null}
       {holdReason && (
         <p className="chat-pending-hold" role="status">
-          {holdReason}
+          <span>{holdReason}</span>
+          {/* A stopped or failed reply holds the queue; the next message is one press away. */}
+          {queued[0] && sendable ? <button type="button" className="chat-pending-resume" onClick={() => { leave(queued[0]!.id, 0); onSendNow(queued[0]!.id); }}>
+            {t("chatPendingQueue.sendNextNow")}
+          </button> : null}
         </p>
       )}
       {queued.length > 0 ? (
@@ -82,12 +110,13 @@ export function ChatPendingQueue({
                 modelName={item.modelProfileId ? models.find((model) => model.id === item.modelProfileId)?.name ?? null : ""}
                 canMoveUp={index > 0}
                 canMoveDown={index < queued.length - 1}
-                onRemove={() => onRemove(item.id)}
+                onRemove={() => { leave(item.id, index); onRemove(item.id); }}
                 onEdit={(text) => onEdit(item.id, text)}
                 onMoveUp={() => onMove(item.id, -1)}
                 onMoveDown={() => onMove(item.id, 1)}
-                onSendNow={() => onSendNow(item.id)}
-                canSendNow={canSendNow && !offline}
+                onSendNow={() => { leave(item.id, index); onSendNow(item.id); }}
+                canSendNow={sendable}
+                unavailable={unavailable}
               />
             </li>
           ))}
@@ -108,6 +137,7 @@ function QueuedCard({
   onMoveDown,
   onSendNow,
   canSendNow,
+  unavailable,
 }: {
   item: QueuedChatMessage;
   /** Null when the queued turn's model is no longer available. */
@@ -120,6 +150,8 @@ function QueuedCard({
   onMoveDown: () => void;
   onSendNow: () => void;
   canSendNow: boolean;
+  /** Why Send now is unavailable, said under it. */
+  unavailable: string;
 }) {
   useTranslation("chat");
   const modality = useInputModality();
@@ -222,12 +254,10 @@ function QueuedCard({
               <DropdownMenuItem onSelect={beginEdit}>{t("chatPendingQueue.editQueuedMessage")}</DropdownMenuItem>
               <DropdownMenuItem disabled={!canMoveUp} onSelect={onMoveUp}>{t("chatPendingQueue.moveQueuedMessageUp")}</DropdownMenuItem>
               <DropdownMenuItem disabled={!canMoveDown} onSelect={onMoveDown}>{t("chatPendingQueue.moveQueuedMessageDown")}</DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!canSendNow}
-                title={canSendNow ? t("chatPendingQueue.sendNow") : t("chatPendingQueue.waitsUntilTheCurrentResponseFinishes")}
-                onSelect={onSendNow}
-              >
-                {t("chatPendingQueue.sendQueuedMessageNow")}
+              {/* A disabled item takes no pointer, so its reason is a line of its own rather than a tooltip. */}
+              <DropdownMenuItem disabled={!canSendNow} className="chat-pending-send-now" onSelect={onSendNow}>
+                <span>{t("chatPendingQueue.sendQueuedMessageNow")}</span>
+                {canSendNow ? null : <small>{unavailable}</small>}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={onRemove}>{t("chatPendingQueue.removeQueuedMessage")}</DropdownMenuItem>
             </DropdownMenuContent>

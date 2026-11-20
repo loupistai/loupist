@@ -1,7 +1,7 @@
 import type { KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
 import { defaultFocal, followedNames, localSet, neighborOrder } from "./localView";
 
-const node = (id: string, degree = 1, extra: Partial<KnowledgeMapNode> = {}): KnowledgeMapNode => ({ id, label: id, kind: "entity", entityKind: "Organization", degree, watched: false, held: false, ...extra });
+const node = (id: string, degree = 1, extra: Partial<KnowledgeMapNode> = {}): KnowledgeMapNode => ({ id, label: id, kind: "entity", entityKind: "Organization", degree, watched: false, ...extra });
 const claim = (source: string, target: string): KnowledgeMapEdge => ({ id: `${source}-${target}`, kind: "claim", source, target, status: "active" });
 
 describe("localSet", () => {
@@ -31,17 +31,19 @@ describe("localSet", () => {
 });
 
 describe("defaultFocal", () => {
-  it("prefers the remembered name, then a watched company, then a held one, then the best-connected company", () => {
-    const nodes = [node("big", 9), node("watched-small", 1, { watched: true }), node("held", 5, { held: true }), node("person", 20, { entityKind: "Person" })];
-    expect(defaultFocal(nodes, "held")).toBe("held");
+  it("prefers the remembered name, then a followed company, then the best-connected company", () => {
+    const nodes = [node("big", 9), node("watched-small", 1, { watched: true }), node("mid", 5), node("person", 20, { entityKind: "Person" })];
+    expect(defaultFocal(nodes, "mid")).toBe("mid");
     expect(defaultFocal(nodes, "missing")).toBe("watched-small");
-    expect(defaultFocal(nodes.filter((item) => !item.watched))).toBe("held");
-    expect(defaultFocal(nodes.filter((item) => !item.watched && !item.held))).toBe("big");
+    expect(defaultFocal(nodes.filter((item) => !item.watched))).toBe("big");
     expect(defaultFocal([node("person", 3, { entityKind: "Person" })])).toBeUndefined();
   });
 
-  it("lists watched names before held ones", () => {
-    expect(followedNames([node("h", 9, { held: true }), node("w", 1, { watched: true }), node("x")]).map((item) => item.id)).toEqual(["w", "h"]);
+  it("lists only followed names, by degree, even when an older host still marks a name held", () => {
+    // Hosts before holdings left the app sent `held`; it carries no meaning now.
+    const legacy = node("h", 9, { held: true } as Partial<KnowledgeMapNode>);
+    expect(followedNames([legacy, node("w", 1, { watched: true }), node("w2", 4, { watched: true }), node("x")]).map((item) => item.id)).toEqual(["w2", "w"]);
+    expect(defaultFocal([node("big", 12), legacy])).toBe("big");
   });
 });
 
