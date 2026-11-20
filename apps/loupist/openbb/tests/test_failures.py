@@ -155,7 +155,9 @@ class _ProviderResponse:
         return self._payload
 
 
-def _fred_series_with(monkeypatch: pytest.MonkeyPatch, status: int, payload: object, arguments=None):
+def _fred_series_with(
+    monkeypatch: pytest.MonkeyPatch, status: int, payload: object, arguments=None
+):
     from openbb_core.provider.utils import helpers as provider_helpers
     from openbb_fred.models.series import FredSeriesFetcher
     from openbb_fred.utils import rate_limiter
@@ -176,7 +178,9 @@ def _fred_series_with(monkeypatch: pytest.MonkeyPatch, status: int, payload: obj
     monkeypatch.setattr(rate_limiter, "MIN_INTERVAL_SECONDS", 0)
     rate_limiter.cache_clear()
     apply_fred_error_guard()
-    query = FredSeriesFetcher.transform_query(arguments or {"symbol": "GDP", "limit": 1})
+    query = FredSeriesFetcher.transform_query(
+        arguments or {"symbol": "GDP", "limit": 1}
+    )
     return asyncio.run(
         FredSeriesFetcher.aextract_data(query, {"fred_api_key": "private-canary"})
     )
@@ -231,7 +235,9 @@ def test_fred_other_errors_fail_without_provider_text(
 def test_fred_bundled_probe_skips_the_missing_first_gdp_observation(monkeypatch):
     root = Path(__file__).resolve().parents[2]
     descriptor = root / "marketplace/plugins/openbb/connectors/fred.macro.json"
-    arguments = json.loads(descriptor.read_text())["runtime"]["verification_probe"]["arguments"]
+    arguments = json.loads(descriptor.read_text())["runtime"]["verification_probe"][
+        "arguments"
+    ]
 
     def response(url):
         if urlsplit(url).path == "/fred/series":
@@ -241,9 +247,11 @@ def test_fred_bundled_probe_skips_the_missing_first_gdp_observation(monkeypatch)
         observations = [
             {"date": date, "value": value, "realtime_start": date, "realtime_end": date}
             for date, value in rows
-            if query.get("observation_start", [""])[0] <= date <= query.get("observation_end", ["9999"])[0]
+            if query.get("observation_start", [""])[0]
+            <= date
+            <= query.get("observation_end", ["9999"])[0]
         ]
-        return {"observations": observations[:int(query["limit"][0])]}
+        return {"observations": observations[: int(query["limit"][0])]}
 
     results = _fred_series_with(monkeypatch, 200, response, arguments)
     assert results[0]["GDP"]["data"] == {"2024-01-01": 28793.191}

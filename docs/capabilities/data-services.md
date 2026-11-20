@@ -62,6 +62,13 @@ run's grant. A failed platform connect marks its Settings row unavailable until
 a connect succeeds. A price setup that could not connect names the platform in
 its Bot report for assets still missing a price.
 
+Congress.gov bill and amendment lookups accept a congressional identifier or its
+official HTTPS API URL. The sidecar extracts the identifier before the provider
+constructs the request. Keyed lookups and their follow-up reads stay on
+`api.congress.gov`. Public congressional documents and SEC filings use their
+respective official sites. A redirect from a credentialed provider host may
+continue only on the same HTTPS origin, even when the run grants other providers.
+
 A [saved price read](../knowledge/asset-pages.md#saved-price-reads) reuses the
 original provider arguments and current grants. The replay keeps the provider's
 date and currency fields and the retained dataset reference. Revoking the grant

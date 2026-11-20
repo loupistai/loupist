@@ -265,7 +265,7 @@ function ledgerChips(actions: ActionItem[], evidenceById: Map<string, ChatEviden
     if (sources.length) {
       for (const source of sources) {
         // Saved notes read through a citation are the notes, never a product name.
-        if (source.tool_name.startsWith("world")) add({ key: `memory:${item.id}`, kind: "memory", label: capitalized(readNoun("world_read")) });
+        if (source.tool_name.startsWith("world_")) add({ key: `memory:${item.id}`, kind: "memory", label: capitalized(readNoun("world_read")) });
         else add({ key: `source:${source.id}`, kind: "source", label: sourceIdentityLabel(source), evidence: source });
       }
       continue;

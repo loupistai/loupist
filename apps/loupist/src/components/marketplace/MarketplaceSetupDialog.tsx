@@ -479,7 +479,7 @@ export function MarketplaceSetupDialog({
               {connector?.readiness === "runtime_unavailable" ? (
                 <div className="marketplace-setup-message" data-tone="error" role="alert">
                   <strong>{i18n.t("connections:marketplaceSetupDialog.connectionUnavailable")}</strong>
-                  <p>{i18n.t("connections:marketplaceSetupDialog.updateOrReinstallLoupistToRestoreThis")}</p>
+                  <p>{i18n.t("connections:readiness.unavailableNote")}</p>
                 </div>
               ) : !entry.setup ? (
                 <div className="marketplace-credential-note"><ShieldCheckIcon aria-hidden="true" /><p>{i18n.t("connections:marketplaceSetupDialog.noSetupNeededChooseWhichLoupistsCanUse")}</p></div>

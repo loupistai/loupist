@@ -9,6 +9,10 @@ open policy either: `TurnProvider` wraps it, and a step's page, a source row or 
 citation opens through the one `ChatDestination` path
 ([opening from chat](evidence-browser.md#opening-from-chat)).
 
+For a bundled connection read, the answer’s Sources summary and source chips use the
+catalog display name for the recorded provider. A World Bank Indicators read appears
+as an external source alongside other connection reads.
+
 System activity uses plain, localized status copy. Compaction appears as reviewing
 the earlier conversation, with distinct running, completed and incomplete labels;
 it does not expose summarization rules or session bookkeeping.

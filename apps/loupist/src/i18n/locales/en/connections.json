@@ -27,7 +27,6 @@
     "couldNotDeleteTheSavedCredentialsTryAgain": "Could not delete the saved credentials. Try again.",
     "couldNotOpenTheSetupGuide": "Could not open the setup guide.",
     "connectionUnavailable": "Connection unavailable",
-    "updateOrReinstallLoupistToRestoreThis": "Update or reinstall Loupist to restore this connection. Your saved settings are kept on this Mac.",
     "noSetupNeededChooseWhichLoupistsCanUse": "No setup needed. Choose which Loupists can use this connection in Loupist settings.",
     "setupHelp": "Setup help",
     "newConnectionScope": "New connection scope",
@@ -285,7 +284,7 @@
     "OnchainData": "On-chain data"
   },
   "readiness": {
-    "unavailableNote": "This connection is unavailable. Update or reinstall the app to restore it.",
+    "unavailableNote": "This connection couldn’t start. Loupist will try again on your next question. If this keeps happening, restart Loupist. Reinstall only if restarting doesn’t help.",
     "setupNote": "Set up in Data connections"
   },
   "state": {

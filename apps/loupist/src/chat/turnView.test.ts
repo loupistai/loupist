@@ -217,6 +217,13 @@ describe("the ledger", () => {
     ]);
   });
 
+  it("shows a World Bank result as a source chip", () => {
+    const source = evidenceFixture({ tool_name: "worldbank_series", provider: "world-bank.indicators" });
+    const read = step("series", { toolName: source.tool_name, category: "finance", operation: "read", resultIds: [source.id] });
+    const turn = view(message({ phase: "tool", evidence_refs: [source], progress: { startedAtMs: start, items: [read], finishedAtMs: null } }));
+    expect(ledger(turn)?.ledger.chips).toMatchObject([{ kind: "source", label: "World Bank Indicators" }]);
+  });
+
   it("gives no chip to loading a research tool, which reads nothing the answer can cite", () => {
     const load = step("load", { toolName: "capability_load", category: "finance", operation: "read", action: "Prepared a research tool" });
     const statements = step("fin", { toolName: "dart_financials", category: "finance", operation: "read" });

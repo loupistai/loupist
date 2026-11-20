@@ -3,6 +3,8 @@ import i18n from "@/i18n";
 import type { ChatEvidenceRef } from "../types";
 import { parseCredentialFreeHttpUrl } from "../lib/credentialFreeUrl";
 import { displayHost } from "../lib/displayHost";
+import { connectionText } from "../lib/connectionCopy";
+import type { MarketplaceEntry } from "../marketplace/types";
 import { providerName } from "../lib/marketProviderName";
 import { operationName } from "./numberText";
 
@@ -149,13 +151,27 @@ function evidenceSubjectKey(evidence: ChatEvidenceRef) {
 
 const isMarketDataRead = (tool: string) => tool === "asset_page_read" || /^mcp__openbb__/u.test(tool) || tool === "krx_daily_quote";
 
+// Native reads record the catalog entry ID. Market-platform reads record the upstream provider ID.
+const bundledConnections = Object.values(import.meta.glob<Pick<MarketplaceEntry, "id" | "name" | "runtime">>(
+  "../../marketplace/plugins/*/connectors/*.json", { eager: true, import: "default" },
+));
+const connectionNames = new Map(bundledConnections.map(entry => [entry.id, entry.name]));
+for (const { name, runtime } of bundledConnections) {
+  for (const provider of runtime.provider_ids) {
+    // A dedicated connector takes precedence over a platform listing several providers.
+    if (runtime.provider_ids.length === 1 || !connectionNames.has(provider)) connectionNames.set(provider, name);
+  }
+}
+
 export function sourceIdentityLabel(evidence: ChatEvidenceRef) {
   // Before the Map: a number checked against pasted text names who handed it over.
   if (isUserProvided(evidence)) return t("evidence.userProvided");
-  if (evidence.tool_name.startsWith("world")) return t("evidence.map");
+  if (evidence.tool_name.startsWith("world_")) return t("evidence.map");
   if (evidence.tool_name.startsWith("lens")) return t("evidence.lens");
   if (evidence.kind === "local_file") return t("evidence.files");
   if (evidence.kind === "saved_context") return t("evidence.memory");
+  const connection = evidence.provider && connectionNames.get(evidence.provider);
+  if (connection) return connectionText(connection);
   const host = displayHost(evidence.url);
   if (host) return host;
   // A provider by name; a runtime id nobody named falls through to what the read is.

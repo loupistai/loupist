@@ -111,6 +111,32 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
         .and_then(|value| value.pointer("/loupist_error/kind"))
         .and_then(Value::as_str)
     {
+        Some("invalid_destination") => {
+            let field = result
+                .structured_content
+                .as_ref()
+                .and_then(|value| value.pointer("/loupist_error/field"))
+                .and_then(Value::as_str);
+            let (field, expected) = match field {
+                Some("bill_url") => (
+                    "bill_url",
+                    "A bill as congress/type/number, such as 118/hr/1, or its address under https://api.congress.gov/v3/bill/. No other address is read.",
+                ),
+                Some("amendment_url") => (
+                    "amendment_url",
+                    "An amendment as congress/type/number, such as 119/hamdt/2, or its address under https://api.congress.gov/v3/amendment/. No other address is read.",
+                ),
+                Some("congress_gov") => (
+                    "congress_gov",
+                    "Document addresses on https://www.congress.gov/, or for bill text also https://www.govinfo.gov/, as the text_urls tool returns them. No other site is read.",
+                ),
+                _ => (
+                    "url",
+                    "A filing address on https://www.sec.gov/. No other site is read; web_fetch reads other public pages.",
+                ),
+            };
+            return BrokerError::invalid(field, expected);
+        }
         Some("unsupported_adjustment") => {
             return BrokerError::invalid("adjustment", YAHOO_ADJUSTMENT_EXPECTED);
         }
@@ -250,6 +276,17 @@ mod tests {
         assert!(
             matches!(error, BrokerError::InvalidArguments { field, expected }
             if field == "adjustment" && expected == YAHOO_ADJUSTMENT_EXPECTED)
+        );
+    }
+
+    #[test]
+    fn refused_destination_is_an_argument_error_without_remote_text() {
+        let result = serde_json::from_value(json!({
+            "isError": true, "content": [],
+            "structuredContent": {"loupist_error": {"kind": "invalid_destination", "field": "bill_url"}},
+        })).unwrap();
+        assert!(
+            matches!(rejected_mcp_result(&result), BrokerError::InvalidArguments { field, .. } if field == "bill_url")
         );
     }
 

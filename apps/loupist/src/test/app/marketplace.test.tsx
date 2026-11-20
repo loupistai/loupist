@@ -54,7 +54,7 @@ describe("Loupist · Connections", () => {
     expect(screen.queryByRole("heading", { name: "OpenDART" })).toBeNull();
   });
 
-  it("shows a missing bundled runtime instead of a dead setup action", async () => {
+  it("shows a runtime that cannot start instead of a dead setup action", async () => {
     const user = userEvent.setup();
     const bridge = await openApp();
     vi.spyOn(bridge, "marketplaceSnapshot").mockResolvedValue(createMockMarketplaceSnapshot(
@@ -66,7 +66,7 @@ describe("Loupist · Connections", () => {
     expect(openbb.getByText("Connection unavailable")).toBeVisible();
     await user.click(openbb.getByRole("button", { name: "Market data platform details" }));
     const dialog = screen.getByRole("dialog", { name: "Market data platform" });
-    expect(within(dialog).getByText(/Update or reinstall/)).toBeVisible();
+    expect(within(dialog).getByText(/couldn’t start\. Loupist will try again/)).toBeVisible();
     expect(within(dialog).queryByRole("button", { name: /Save/ })).not.toBeInTheDocument();
   });
 

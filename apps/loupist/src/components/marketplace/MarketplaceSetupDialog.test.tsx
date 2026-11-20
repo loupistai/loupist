@@ -204,7 +204,7 @@ it("explains an unavailable connection and blocks setup while retaining its deta
   const configure = vi.spyOn(bridge, "marketplaceConnectorConfigure");
   render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={{ ...connector, readiness: "runtime_unavailable" }} onClose={vi.fn()} onChanged={vi.fn()} />);
   expect(screen.getByRole("dialog", { name: "OpenDART" })).toBeVisible();
-  expect(screen.getByRole("alert")).toHaveTextContent("Update or reinstall Loupist");
+  expect(screen.getByRole("alert")).toHaveTextContent("Loupist will try again on your next question. If this keeps happening, restart Loupist. Reinstall only if restarting doesn’t help.");
   expect(screen.getByLabelText("OpenDART API key")).toBeDisabled();
   expect(screen.queryByRole("button", { name: "Save & verify" })).toBeNull();
   expect(configure).not.toHaveBeenCalled();

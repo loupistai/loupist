@@ -13,10 +13,15 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Callable, Iterable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import wraps
 from typing import Any, TypeVar, cast
 from urllib.parse import urlsplit
 
+from loupist_openbb.destinations import check_tool_destination
+
+_REDIRECT_HOST = ContextVar("credential_redirect_host", default=None)
 _NETWORK_ORIGINAL = "__loupist_network_original__"
 _PROXY_ENVIRONMENT = (
     "ALL_PROXY",
@@ -53,7 +58,22 @@ def validate_https_url(value: object, allowed_hosts: frozenset[str]) -> str:
         raise PermissionError(
             f"OpenBB network host is not enabled: {host or '<missing>'}"
         )
+    check_tool_destination(url, host)
+    origin = _REDIRECT_HOST.get()
+    if origin is not None and host != origin:
+        raise PermissionError("Cross-origin redirect from a credentialed provider")
     return url
+
+
+@contextmanager
+def _redirect_chain(url: str, credential_hosts: frozenset[str]):
+    host = urlsplit(url).hostname
+    token = _REDIRECT_HOST.set(host) if host in credential_hosts else None
+    try:
+        yield
+    finally:
+        if token is not None:
+            _REDIRECT_HOST.reset(token)
 
 
 def _original(function: _T) -> _T:
@@ -111,7 +131,9 @@ def _patch_openbb_helpers(allowed_hosts: frozenset[str]) -> None:
             setattr(module, "make_request", guarded_sync)
 
 
-def _patch_requests(allowed_hosts: frozenset[str]) -> None:
+def _patch_requests(
+    allowed_hosts: frozenset[str], credential_hosts: frozenset[str]
+) -> None:
     import requests
 
     previous = requests.sessions.Session.send
@@ -121,14 +143,26 @@ def _patch_requests(allowed_hosts: frozenset[str]) -> None:
     def guarded(self: Any, request: Any, **kwargs: Any) -> Any:
         validate_https_url(request.url, allowed_hosts)
         _reject_proxy_options(kwargs)
-        return original(self, request, **kwargs)
+        with _redirect_chain(request.url, credential_hosts):
+            return original(self, request, **kwargs)
 
     requests.sessions.Session.send = _mark(guarded, original)
 
 
-def _patch_aiohttp(allowed_hosts: frozenset[str]) -> None:
+def _patch_aiohttp(
+    allowed_hosts: frozenset[str], credential_hosts: frozenset[str]
+) -> None:
     import aiohttp
 
+    start = _original(aiohttp.ClientSession._request)
+
+    @wraps(start)
+    async def request(self, method, str_or_url, **kwargs):
+        url = validate_https_url(self._build_url(str_or_url), allowed_hosts)
+        with _redirect_chain(url, credential_hosts):
+            return await start(self, method, str_or_url, **kwargs)
+
+    aiohttp.ClientSession._request = _mark(request, start)
     previous = aiohttp.ClientRequest.__init__
     original = _original(previous)
 
@@ -141,9 +175,25 @@ def _patch_aiohttp(allowed_hosts: frozenset[str]) -> None:
     aiohttp.ClientRequest.__init__ = _mark(guarded, original)
 
 
-def _patch_httpx(allowed_hosts: frozenset[str]) -> None:
+def _patch_httpx(
+    allowed_hosts: frozenset[str], credential_hosts: frozenset[str]
+) -> None:
     import httpx
 
+    # httpx builds each redirect request from the preceding response.
+    from httpx._client import BaseClient
+
+    build = _original(BaseClient._build_redirect_request)
+
+    @wraps(build)
+    def build_redirect(self, request, response):
+        next_request = build(self, request, response)
+        if not isinstance(self._transport, httpx.ASGITransport):
+            with _redirect_chain(str(request.url), credential_hosts):
+                validate_https_url(next_request.url, allowed_hosts)
+        return next_request
+
+    BaseClient._build_redirect_request = _mark(build_redirect, build)
     previous_sync = httpx.Client._send_single_request
     original_sync = _original(previous_sync)
 
@@ -168,7 +218,9 @@ def _patch_httpx(allowed_hosts: frozenset[str]) -> None:
     httpx.AsyncClient._send_single_request = _mark(guarded_async, original_async)
 
 
-def _patch_urllib(allowed_hosts: frozenset[str]) -> None:
+def _patch_urllib(
+    allowed_hosts: frozenset[str], credential_hosts: frozenset[str]
+) -> None:
     import urllib.request
 
     previous = urllib.request.OpenerDirector.open
@@ -178,10 +230,11 @@ def _patch_urllib(allowed_hosts: frozenset[str]) -> None:
     def guarded(
         self: Any, fullurl: object, data: Any = None, timeout: Any = None
     ) -> Any:
-        validate_https_url(fullurl, allowed_hosts)
-        if timeout is None:
-            return original(self, fullurl, data)
-        return original(self, fullurl, data, timeout)
+        url = validate_https_url(fullurl, allowed_hosts)
+        with _redirect_chain(url, credential_hosts):
+            if timeout is None:
+                return original(self, fullurl, data)
+            return original(self, fullurl, data, timeout)
 
     urllib.request.OpenerDirector.open = _mark(guarded, original)
 
@@ -220,16 +273,18 @@ def _patch_curl_cffi(allowed_hosts: frozenset[str]) -> None:
     curl_requests.AsyncSession.request = _mark(guarded_async, original_async)
 
 
-def apply_network_policy(hosts: Iterable[str]) -> frozenset[str]:
+def apply_network_policy(
+    hosts: Iterable[str], credential_hosts: frozenset[str] = frozenset()
+) -> frozenset[str]:
     """Install HTTPS exact-host guards for every client in the pinned runtime."""
 
     allowed_hosts = frozenset(hosts)
     for name in _PROXY_ENVIRONMENT:
         os.environ.pop(name, None)
     _patch_openbb_helpers(allowed_hosts)
-    _patch_requests(allowed_hosts)
-    _patch_aiohttp(allowed_hosts)
-    _patch_httpx(allowed_hosts)
-    _patch_urllib(allowed_hosts)
+    _patch_requests(allowed_hosts, credential_hosts)
+    _patch_aiohttp(allowed_hosts, credential_hosts)
+    _patch_httpx(allowed_hosts, credential_hosts)
+    _patch_urllib(allowed_hosts, credential_hosts)
     _patch_curl_cffi(allowed_hosts)
     return allowed_hosts

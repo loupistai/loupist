@@ -94,3 +94,16 @@ it("labels pasted material as user-provided, in this reply and when a saved one 
   expect(evidencePresentation(saved).label).toBe("User-provided");
   expect(sourceIdentityLabel(map)).toBe("Map");
 });
+
+it.each([
+  ["worldbank_series", "world-bank.indicators", "World Bank Indicators"],
+  ["defillama_read", "defillama.tvl", "DefiLlama"],
+  ["krx_daily_quote", "krx.market-data", "KRX Open API"],
+  ["equity_price_historical", "tiingo", "Tiingo"],
+])("names the catalog connection that supplied %s, even with a result URL", (tool_name, provider, name) => {
+  expect(sourceIdentityLabel(evidenceFixture({ tool_name, provider }))).toBe(name);
+});
+
+it("keeps the existing label for a custom read with no recorded connection", () => {
+  expect(sourceIdentityLabel(evidenceFixture({ tool_name: "docs_search", provider: undefined, url: undefined }))).toBe("Web");
+});

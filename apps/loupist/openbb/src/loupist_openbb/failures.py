@@ -177,9 +177,7 @@ def classify_rest_failures(app: Any) -> None:
             if is_offline_error(error):
                 return JSONResponse(OFFLINE, status_code=503)
             if rejection := provider_refusal(error):
-                return JSONResponse(
-                    rejection, status_code=_refusal_status(rejection)
-                )
+                return JSONResponse(rejection, status_code=_refusal_status(rejection))
             return await handler(request, error)
 
         return classified
@@ -195,9 +193,7 @@ def classify_rest_failures(app: Any) -> None:
             if is_offline_error(error):
                 return JSONResponse(OFFLINE, status_code=503)
             if rejection := provider_refusal(error):
-                return JSONResponse(
-                    rejection, status_code=_refusal_status(rejection)
-                )
+                return JSONResponse(rejection, status_code=_refusal_status(rejection))
             raise error
 
         app.exception_handlers[Exception] = unhandled

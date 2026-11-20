@@ -26,6 +26,7 @@ from loupist_openbb.manifest import (
     resolve_providerless_tool_policy,
 )
 from loupist_openbb.yahoo_history import RAW_DAILY_REQUEST, apply_yahoo_history
+from loupist_openbb.destinations import guard_tool_destinations
 from loupist_openbb.network import apply_network_policy
 from loupist_openbb.failures import (
     AlphaVantagePaidPlanRequired,
@@ -365,7 +366,11 @@ def _canonicalize_implicit_provider_result(result: Any, provider: str) -> Any:
 
 
 def mark_registered_tools_read_only(
-    server: Any, implicit_provider: dict[str, str], *, yahoo_raw_daily: bool = False
+    server: Any,
+    implicit_provider: dict[str, str],
+    *,
+    yahoo_raw_daily: bool = False,
+    provider_hosts: dict[str, frozenset[str]] | None = None,
 ) -> int:
     """Attach MCP safety annotations and bound generated output schemas.
 
@@ -467,7 +472,10 @@ def mark_registered_tools_read_only(
 
                 # OpenAPITool is a Pydantic model and rejects ordinary
                 # assignment to methods. Wrap only the trusted frozen instance.
-                object.__setattr__(tool, "run", run_with_provider)
+                guarded = guard_tool_destinations(
+                    tool, run_with_provider, provider_id, provider_hosts
+                )
+                object.__setattr__(tool, "run", guarded)
                 if provider_id is not None:
                     stamped.add(tool.name)
                 marked += 1
@@ -492,7 +500,16 @@ def create_server(bootstrap: Bootstrap) -> Any:
     # Install the process-local egress guard before importing the OpenBB app,
     # provider registry, or FastMCP. Provider modules that bind OpenBB request
     # helpers during import therefore receive the guarded functions.
-    apply_network_policy(bootstrap.settings.allowed_network_hosts)
+    provider_hosts = {
+        provider["id"]: frozenset(provider["network_hosts"])
+        for provider in manifest["providers"]
+        if any(key in credentials for key in provider["credential_mapping"].values())
+        or (provider["id"] == "sec" and provider_config.get("sec_contact_email"))
+    }
+    apply_network_policy(
+        bootstrap.settings.allowed_network_hosts,
+        frozenset().union(*provider_hosts.values()),
+    )
 
     from openbb_core.api.rest_api import app as openbb_app
     from openbb_core.app.service.system_service import SystemService
@@ -550,6 +567,7 @@ def create_server(bootstrap: Bootstrap) -> Any:
             if provider_id in enabled_provider_ids
         },
         yahoo_raw_daily="yfinance" in enabled_provider_ids,
+        provider_hosts=provider_hosts,
     )
     server.disable(names=_DISABLED_COMPONENTS)
     return server

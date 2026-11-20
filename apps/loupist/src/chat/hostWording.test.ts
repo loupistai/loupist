@@ -19,6 +19,7 @@ describe("text the renderer chooses around host steps", () => {
     expect(sourceIdentityLabel(snapshot)).toBe("시장 데이터");
     expect(sourceIdentityLabel({ ...snapshot, tool_name: "world_read" })).toBe("지도");
     expect(sourceIdentityLabel({ ...snapshot, tool_name: "web_fetch" })).toBe("웹");
+    expect(sourceIdentityLabel({ ...snapshot, tool_name: "asset_lookup", provider: "openfigi.lookup" })).toBe("자산 검색");
     // The host's record kind ("Source") is never shown as English.
     expect(memoryChangeVerb({ operation: "create", kind: "Source" })).toBe("만든 자료");
     expect(memoryChangeVerb({ operation: "create", kind: "World" })).toBe("만든 지도 항목");

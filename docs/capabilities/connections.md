@@ -150,7 +150,10 @@ key failed, so the renderer separates them:
 | Ready | Ready | positive | no |
 | Not set up | Not connected | neutral | no |
 | Stored key or setting failing | Needs attention | warning | yes |
-| Runtime missing | Connection unavailable | negative | no |
+| Runtime unavailable | Connection unavailable | negative | no |
+
+When a connection cannot start, the unavailable note explains that Loupist retries on the
+next question. A repeated failure calls for restarting Loupist before reinstalling.
 
 Needs attention means a stored credential that is rejected, unverified or unavailable,
 a saved setting that no longer validates, or a candidate key not yet verified. An optional
