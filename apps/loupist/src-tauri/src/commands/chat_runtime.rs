@@ -243,6 +243,8 @@ impl ChatEventSink {
                 if let Some((store, mut record)) = pending.take() {
                     record.refusals(&self.tool_refusals());
                     record.trace(&self.tool_trace.snapshot());
+                    record.connector_keychain_statuses =
+                        self.tool_trace.connector_keychain_statuses();
                     crate::store::bounded_chat_save(|| record.record(store.as_ref()));
                 }
             }

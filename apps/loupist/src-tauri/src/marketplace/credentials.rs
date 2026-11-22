@@ -153,6 +153,12 @@ pub(super) fn credential_statuses(
     }
     let status = match crate::finance_credentials::status_for_state(state, &entry.id) {
         Ok(status) => status,
+        Err(crate::finance_credentials::FinanceCredentialError::Locked)
+            if entry.runtime.kind == MarketplaceRuntimeKind::BundledMcp
+                && !crate::finance_credentials::has_saved_key(state, &entry.id) =>
+        {
+            Default::default()
+        }
         // One unreadable key never fails the list: only its own connection
         // shows it, as locked (macOS refused access) or as a read error.
         Err(error) => {
@@ -232,7 +238,8 @@ pub(super) fn credential_statuses(
                 verified_at: active.then_some(status.verified_at).flatten(),
                 last_error,
                 krx_coverage: status.krx_coverage,
-                locked: read_timed_out,
+                locked: read_timed_out
+                    && (entry.runtime.kind != MarketplaceRuntimeKind::BundledMcp || status.stored),
             }
         })
         .collect())

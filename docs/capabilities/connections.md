@@ -62,7 +62,9 @@ While macOS is still answering a timed-out read, the connection shows its
 permission message and an explicit check action in Settings. The native call
 continues, and a late success refreshes the status so the next use can read
 the item normally. A denial blocks automatic attempts for the rest of the
-session. The user can ask for one new read from Connections. An unresolved
+session. The user can ask for one new read from Connections. A refused read
+preserves the last non-secret status record. Bundled market data reports a
+refused saved key when that record confirms a key exists. An unresolved
 prompt leaves other runs, Settings, the scheduler and World building free.
 The updater returns its existing
 blocked result while a native write or delete is pending. The OS call keeps

@@ -604,13 +604,15 @@ test("a rejected MCP inventory never produces an activation receipt or partially
 test("preloads mentioned MCP capabilities before the agent starts", async (t) => {
   const context = runtimeContext("chat", ["capability_load"], [OPENBB_COMPONENT], { preload_component_ids: ["openbb"] });
   useHostContext(t, context);
-  const frames = await startToolBroker(t, () => ({ server_id: "openbb", tools: [ACTIVATE_CARD] }));
+  const notice = "FRED (fred.macro) — This connection's saved key needs the user's permission in macOS first.";
+  const frames = await startToolBroker(t, () => ({ server_id: "openbb", tools: [ACTIVATE_CARD], notices: [notice] }));
   const { handlers, active } = loadExtension();
   const event = promptEvent();
   await handlers.get("before_agent_start")(event);
   assert.deepEqual(frames.map((frame) => frame.method), ["mcp.connect"]);
   assert(active().includes(ACTIVATE_CARD.name));
-  assert.equal(event.systemPromptOptions.sections.loupist_runtime, formatRuntimeIndex(context.agent_runtime));
+  assert.equal(event.systemPromptOptions.sections.loupist_runtime,
+    `${formatRuntimeIndex(context.agent_runtime)}\n- ${notice}`);
   assert.deepEqual(active(), orderedToolNames(active()));
 });
 
@@ -959,7 +961,8 @@ test("warm resume restores allowed components in catalog order and drops revoked
 test("warm resume asks the host for exactly the MCP tools the last turn ended with", async (t) => {
   useHostContext(t, runtimeContext("chat", ["capability_load"], [OPENBB_COMPONENT]));
   const holdingsCard = { ...ACTIVATE_CARD, name: "mcp__openbb__etf_holdings", mcp_name: "etf_holdings", label: "ETF holdings" };
-  const frames = await startToolBroker(t, () => ({ server_id: "openbb", tools: [ACTIVATE_CARD, holdingsCard] }));
+  const notice = "FRED (fred.macro) — This connection's saved key needs the user's permission in macOS first.";
+  const frames = await startToolBroker(t, () => ({ server_id: "openbb", tools: [ACTIVATE_CARD, holdingsCard], notices: [notice] }));
   const { handlers, active } = loadExtension();
   await handlers.get("session_start")(undefined, {
     sessionManager: {
@@ -976,6 +979,9 @@ test("warm resume asks the host for exactly the MCP tools the last turn ended wi
     ["mcp.connect", { server_id: "openbb", activate_tool_names: ["activate_tools", "etf_holdings"] }],
   ]);
   assert.deepEqual(active().filter((name) => name.startsWith("mcp__")), ["mcp__openbb__activate_tools", "mcp__openbb__etf_holdings"]);
+  const event = promptEvent();
+  await handlers.get("before_agent_start")(event);
+  assert(event.systemPromptOptions.sections.loupist_runtime.includes(notice));
 });
 
 test("catalog schemas survive provider adapters and never ask the model for credentials", () => {

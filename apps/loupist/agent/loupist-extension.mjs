@@ -118,7 +118,7 @@ function formatCapabilityLine(component) {
 }
 
 /** Model-facing capability index. Volatile turn data stays in the user envelope. */
-export function formatRuntimeIndex(runtime) {
+export function formatRuntimeIndex(runtime, connectionNotices = []) {
   const lines = [
     `memory_access_enabled: ${runtime.memory_access_enabled === true}`,
     `memory_update_enabled: ${runtime.memory_update_enabled === true}`,
@@ -136,6 +136,7 @@ export function formatRuntimeIndex(runtime) {
   }
   const sources = otherSourcesNote(runtime.unavailable_connections, (runtime.core_tool_names ?? []).includes("connection_setup"));
   if (sources) lines.push(sources);
+  for (const notice of connectionNotices) lines.push(`- ${notice}`);
   const onDemand = components.filter((component) => !component.connection && COMPONENT_SPECS.get(component.id)?.preload === false);
   if (onDemand.length > 0) {
     lines.push("", "# On-demand tool packs");
@@ -347,7 +348,7 @@ function validRuntimeComponent(component) {
 /** Host-written setup notes for an MCP connection, such as a provider that needs setup. */
 function validMcpNotices(notices) {
   if (notices === undefined) return [];
-  if (!Array.isArray(notices) || notices.length > 8 ||
+  if (!Array.isArray(notices) || notices.length > 32 ||
       notices.some((notice) => typeof notice !== "string" || notice.length === 0 || notice.length > 400)) {
     throw new Error("MCP connection notices are invalid");
   }
@@ -473,6 +474,7 @@ function registerLoupistExtension(originalPi) {
   const activeTools = new Set(hostContext.initialTools);
   const registeredToolCards = new Map();
   const mcpCards = new Map();
+  const mcpNotices = new Map();
   const ensureWorkspaceResourcesUnchanged = registerWorkspaceResources(originalPi, hostContext.workspace, hostContext.explicitSkillNames);
 
   // Pi reports grouped missing properties at the first child's path. Include
@@ -625,6 +627,7 @@ function registerLoupistExtension(originalPi) {
     for (const name of component.tool_names) activeTools.delete(name);
     component.tool_names = [];
     component.loaded = false;
+    mcpNotices.delete(component.id);
     publishActiveTools();
   }
 
@@ -710,6 +713,7 @@ function registerLoupistExtension(originalPi) {
       }
       const notices = validMcpNotices(connected.notices);
       reconcileMcpTools(component, connected.tools);
+      mcpNotices.set(component.id, notices);
       return {
         id: component.id,
         kind: component.kind,
@@ -765,7 +769,8 @@ function registerLoupistExtension(originalPi) {
     for (const component of hostContext.components.values()) {
       if (component.kind === "tool") component.loaded = component.tool_names.every((name) => activeTools.has(name));
     }
-    applyWorkspacePrompt(event, hostContext.workspace, formatRuntimeIndex(hostContext.runtime));
+    applyWorkspacePrompt(event, hostContext.workspace,
+      formatRuntimeIndex(hostContext.runtime, [...mcpNotices.values()].flat()));
   });
   originalPi.on("before_provider_request", (event, ctx) => {
     emitE2eDiagnostic("before_provider_request");

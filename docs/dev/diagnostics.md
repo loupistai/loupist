@@ -42,6 +42,9 @@ host made (refused requests excluded), `queueWaitMs`, how long the job waited be
 this attempt, and `stageMs`, the time paid calls took per extraction stage (calls
 sent together overlap, so the sum can exceed the duration); Chat entries carry `openbbFirstCallMs`, the
 duration of the turn's first OpenBB call including any cold start.
+Chat entries with a refused connector credential read carry
+`connectorKeychainStatuses`, a set of Security status categories. It can include
+`no_default_keychain`, `database_locked`, `interaction_not_allowed` and `other`.
 
 A failed Chat commit also records `memoryCommitFailure { stage, reason }`. Both
 values come from fixed host enums: the stage identifies the first failed commit

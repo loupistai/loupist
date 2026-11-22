@@ -37,6 +37,12 @@ const MCP_SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 type SharedMcpServer = Arc<RwLock<Option<TurnMcpServer>>>;
 
+#[derive(Clone)]
+struct McpTurnConnection {
+    server: SharedMcpServer,
+    notices: Arc<[String]>,
+}
+
 fn protected_values(
     credentials: &BTreeMap<String, String>,
     app_data: &std::path::Path,
@@ -54,27 +60,27 @@ fn protected_values(
 
 #[derive(Default)]
 pub(super) struct McpTurnSessions {
-    by_server: BTreeMap<String, SharedMcpServer>,
+    by_server: BTreeMap<String, McpTurnConnection>,
     closed: bool,
 }
 
 impl McpTurnSessions {
-    fn get(&self, server_id: &str) -> Option<SharedMcpServer> {
+    fn get(&self, server_id: &str) -> Option<McpTurnConnection> {
         self.by_server.get(server_id).cloned()
     }
 
     fn insert_shared_if_absent(
         &mut self,
         server_id: &str,
-        server: SharedMcpServer,
-    ) -> Result<Option<SharedMcpServer>, ()> {
+        connection: McpTurnConnection,
+    ) -> Result<Option<McpTurnConnection>, ()> {
         if self.closed {
             return Err(());
         }
         if let Some(existing) = self.by_server.get(server_id) {
             return Ok(Some(existing.clone()));
         }
-        self.by_server.insert(server_id.to_owned(), server);
+        self.by_server.insert(server_id.to_owned(), connection);
         Ok(None)
     }
 
@@ -82,7 +88,7 @@ impl McpTurnSessions {
         if self
             .by_server
             .get(server_id)
-            .is_some_and(|current| Arc::ptr_eq(current, expected))
+            .is_some_and(|current| Arc::ptr_eq(&current.server, expected))
         {
             self.by_server.remove(server_id);
         }
@@ -90,14 +96,17 @@ impl McpTurnSessions {
 
     fn close_and_take_all(&mut self) -> Vec<SharedMcpServer> {
         self.closed = true;
-        std::mem::take(&mut self.by_server).into_values().collect()
+        std::mem::take(&mut self.by_server)
+            .into_values()
+            .map(|connection| connection.server)
+            .collect()
     }
 }
 
 enum McpServerInstall {
     Installed,
     Occupied {
-        tools: Vec<Value>,
+        response: Value,
         candidate: Box<TurnMcpServer>,
     },
 }
@@ -108,7 +117,7 @@ struct McpRunAuthority {
     allowed_network_hosts: BTreeSet<String>,
     credentials: BTreeMap<String, String>,
     provider_config: BTreeMap<String, BTreeMap<String, String>>,
-    /// Model-facing notes for granted providers that cannot run until set up.
+    /// Model-facing notes about setup and saved keys that could not be read.
     setup_notices: Vec<String>,
 }
 
@@ -380,7 +389,11 @@ impl ToolCapture {
     }
 
     pub(super) async fn mcp_session(&self, server_id: &str) -> Option<SharedMcpServer> {
-        self.mcp_sessions.lock().await.get(server_id)
+        self.mcp_sessions
+            .lock()
+            .await
+            .get(server_id)
+            .map(|connection| connection.server)
     }
 
     async fn remove_mcp_session(&self, server_id: &str, expected: &SharedMcpServer) {
@@ -406,14 +419,19 @@ impl ToolCapture {
         &self,
         server_id: &str,
         server: TurnMcpServer,
+        notices: Arc<[String]>,
     ) -> Result<McpServerInstall, BrokerError> {
         let candidate = Arc::new(RwLock::new(Some(server)));
+        let connection = McpTurnConnection {
+            server: candidate.clone(),
+            notices,
+        };
         loop {
             let existing = self
                 .mcp_sessions
                 .lock()
                 .await
-                .insert_shared_if_absent(server_id, candidate.clone());
+                .insert_shared_if_absent(server_id, connection.clone());
             let existing = match existing {
                 Ok(existing) => existing,
                 Err(()) => {
@@ -429,21 +447,22 @@ impl ToolCapture {
             let Some(existing) = existing else {
                 return Ok(McpServerInstall::Installed);
             };
-            let tools = {
-                let existing = existing.write().await;
-                existing
-                    .as_ref()
-                    .map(|server| server_cards(server_id, server))
+            let response = {
+                let server = existing.server.write().await;
+                server.as_ref().map(|server| {
+                    server_cards(server_id, server)
+                        .map(|tools| connect_response(server_id, tools, &existing.notices))
+                })
             };
-            if let Some(tools) = tools {
+            if let Some(response) = response {
                 let candidate = candidate
                     .write()
                     .await
                     .take()
                     .expect("unpublished MCP candidate disappeared");
-                return match tools {
-                    Ok(tools) => Ok(McpServerInstall::Occupied {
-                        tools,
+                return match response {
+                    Ok(response) => Ok(McpServerInstall::Occupied {
+                        response,
                         candidate: Box::new(candidate),
                     }),
                     Err(error) => {
@@ -452,7 +471,7 @@ impl ToolCapture {
                     }
                 };
             }
-            self.remove_mcp_session(server_id, &existing).await;
+            self.remove_mcp_session(server_id, &existing.server).await;
         }
     }
 }
@@ -470,18 +489,12 @@ impl AppToolExecutor {
                     .into(),
             ));
         }
-        if let Some(tools) = self.connected_mcp_tools(&request.server_id).await? {
-            return Ok(json!({
-                "server_id": request.server_id,
-                "tools": tools,
-            }));
+        if let Some(response) = self.connected_mcp_response(&request.server_id).await? {
+            return Ok(response);
         }
         let authority = self.mcp_run_authority(&request.server_id).await?;
-        if let Some(tools) = self.connected_mcp_tools(&request.server_id).await? {
-            return Ok(json!({
-                "server_id": request.server_id,
-                "tools": tools,
-            }));
+        if let Some(response) = self.connected_mcp_response(&request.server_id).await? {
+            return Ok(response);
         }
 
         let result = self
@@ -500,11 +513,13 @@ impl AppToolExecutor {
         }
     }
 
-    async fn connected_mcp_tools(
-        &self,
-        server_id: &str,
-    ) -> Result<Option<Vec<Value>>, BrokerError> {
-        let Some(session) = self.capture.mcp_session(server_id).await else {
+    async fn connected_mcp_response(&self, server_id: &str) -> Result<Option<Value>, BrokerError> {
+        let connected = self.capture.mcp_sessions.lock().await.get(server_id);
+        let Some(McpTurnConnection {
+            server: session,
+            notices,
+        }) = connected
+        else {
             return Ok(None);
         };
         let mut guard = session.write().await;
@@ -517,7 +532,8 @@ impl AppToolExecutor {
             Ok(false) => Ok(None),
             Err(error) => Err(map_mcp_error(error)),
             Ok(true) => match refresh_inventory(server_id, server, false).await {
-                Ok(_) => server_cards(server_id, server).map(Some),
+                Ok(_) => server_cards(server_id, server)
+                    .map(|tools| Some(connect_response(server_id, tools, &notices))),
                 Err(error) => Err(error),
             },
         };
@@ -543,7 +559,7 @@ impl AppToolExecutor {
         authority: McpRunAuthority,
         activate_tool_names: &[String],
     ) -> Result<Value, BrokerError> {
-        let notices = authority.setup_notices.clone();
+        let notices: Arc<[String]> = authority.setup_notices.clone().into();
         let activation = if server_id == openbb::OPENBB_SERVER_ID {
             authority.runtime.tool_activation.clone()
         } else {
@@ -568,13 +584,20 @@ impl AppToolExecutor {
                     Err(error) => Err(error),
                 };
                 match prepared {
-                    Ok(tools) => match self.capture.install_mcp_session(server_id, server).await? {
+                    Ok(tools) => match self
+                        .capture
+                        .install_mcp_session(server_id, server, notices.clone())
+                        .await?
+                    {
                         McpServerInstall::Installed => {
                             return Ok(connect_response(server_id, tools, &notices));
                         }
-                        McpServerInstall::Occupied { tools, candidate } => {
+                        McpServerInstall::Occupied {
+                            response,
+                            candidate,
+                        } => {
                             pool.release(*candidate).await;
-                            return Ok(connect_response(server_id, tools, &notices));
+                            return Ok(response);
                         }
                     },
                     Err(_) => {
@@ -641,14 +664,21 @@ impl AppToolExecutor {
                 return Err(error);
             }
         };
-        match self.capture.install_mcp_session(server_id, server).await? {
+        match self
+            .capture
+            .install_mcp_session(server_id, server, notices.clone())
+            .await?
+        {
             McpServerInstall::Installed => Ok(connect_response(server_id, cards, &notices)),
-            McpServerInstall::Occupied { tools, candidate } => {
+            McpServerInstall::Occupied {
+                response,
+                candidate,
+            } => {
                 match &self.capture.mcp_pool {
                     Some(pool) => pool.release(*candidate).await,
                     None => (*candidate).discard().await,
                 }
-                Ok(connect_response(server_id, tools, &notices))
+                Ok(response)
             }
         }
     }
@@ -736,13 +766,18 @@ impl AppToolExecutor {
             let entries = catalog.entries.iter().filter(|entry| {
                 entry.runtime.server_id.as_deref() == Some(request.server_id.as_str())
             });
-            let server_enabled = entries
-                .clone()
-                .any(|entry| self.capability_enabled(&entry.id));
+            let provider_available = entries.clone().any(|entry| {
+                self.capability_enabled(&entry.id)
+                    && provider.is_none_or(|provider| {
+                        entry.free_state == MarketplaceFreeState::Keyless
+                            && entry.runtime.provider_ids.iter().any(|id| id == provider)
+                    })
+            });
             for entry in entries.filter(|entry| {
-                provider.map_or(!server_enabled, |provider| {
-                    entry.runtime.provider_ids.iter().any(|id| id == provider)
-                })
+                !provider_available
+                    && provider.is_none_or(|provider| {
+                        entry.runtime.provider_ids.iter().any(|id| id == provider)
+                    })
             }) {
                 self.require_saved_key_permission(&entry.id)?;
             }
@@ -1221,22 +1256,45 @@ impl AppToolExecutor {
             })
             .collect::<Vec<_>>();
         let state = self.state.clone();
-        let (credentials, revisions) = tokio::task::spawn_blocking(move || {
+        let trace = self.capture.tool_trace.clone();
+        let (credentials, revisions, missing) = tokio::task::spawn_blocking(move || {
+            use crate::finance_credentials;
+
             let lookup_failed = || BrokerError::Execution("credential lookup failed".into());
             let mut credentials = BTreeMap::new();
             let mut revisions = BTreeMap::new();
+            let mut missing = BTreeMap::new();
             for (entry_id, access, mapping) in credential_specs {
-                let bundle = crate::finance_credentials::get_for_state(&state, &entry_id)
-                    .map_err(super::errors::credential_read_error)?;
-                revisions.insert(
-                    entry_id.clone(),
-                    bundle.as_ref().map(|bundle| bundle.revision().to_owned()),
-                );
-                let Some(bundle) = bundle else {
-                    if access == MarketplaceFreeState::Keyless {
+                let required = access != MarketplaceFreeState::Keyless;
+                let bundle = match finance_credentials::get_for_state(&state, &entry_id) {
+                    Ok(bundle) => {
+                        revisions.insert(
+                            entry_id.clone(),
+                            bundle.as_ref().map(|bundle| bundle.revision().to_owned()),
+                        );
+                        bundle
+                    }
+                    Err(error) => {
+                        if matches!(error, finance_credentials::FinanceCredentialError::Locked) {
+                            if let Some(status) =
+                                finance_credentials::refused_read_status(&state, &entry_id)
+                            {
+                                trace.record_connector_keychain_status(status);
+                            }
+                        }
+                        let saved_key_error = finance_credentials::has_saved_key(&state, &entry_id)
+                            .then(|| super::errors::credential_read_error(error));
+                        if required || saved_key_error.is_some() {
+                            missing.insert(entry_id, saved_key_error);
+                        }
                         continue;
                     }
-                    return Err(lookup_failed());
+                };
+                let Some(bundle) = bundle else {
+                    if required {
+                        missing.insert(entry_id, None);
+                    }
+                    continue;
                 };
                 for (field_id, target_id) in mapping {
                     let secret = bundle.get(&field_id).ok_or_else(lookup_failed)?.to_owned();
@@ -1245,17 +1303,27 @@ impl AppToolExecutor {
                     }
                 }
             }
-            Ok((credentials, revisions))
+            Ok((credentials, revisions, missing))
         })
         .await
         .map_err(|_| BrokerError::Execution("credential lookup failed".into()))??;
 
+        // A provider may have a public grant and a separate keyed grant. The
+        // public grant still admits that provider's credential-free routes.
+        let available_provider_ids = entries
+            .iter()
+            .filter(|entry| {
+                entry.free_state == MarketplaceFreeState::Keyless
+                    || !missing.contains_key(&entry.id)
+            })
+            .flat_map(|entry| entry.runtime.provider_ids.iter().cloned())
+            .collect::<BTreeSet<_>>();
         let provider_config = {
             let _guard = crate::marketplace::connector_lifecycle_lock().map_err(command_error)?;
             let config = collect_server_provider_config(
                 server_id,
                 &catalog.entries,
-                &requested_provider_ids,
+                &available_provider_ids,
                 |entry_id, field_id| match crate::marketplace::connector_config_value(
                     &self.state,
                     entry_id,
@@ -1282,22 +1350,48 @@ impl AppToolExecutor {
         // the platform catalog, but do not expose or authorize it for a run
         // until every manifest-declared config field is present.
         let enabled_provider_ids = configured_provider_ids(
-            requested_provider_ids.clone(),
+            available_provider_ids.clone(),
             &runtime.provider_config_fields,
             &provider_config,
         );
-        let setup_notices = setup_notices(
+        let mut setup_notices = setup_notices(
             &catalog.entries,
             server_id,
-            requested_provider_ids.difference(&enabled_provider_ids),
+            available_provider_ids.difference(&enabled_provider_ids),
         );
+        let mut needs_setup = !setup_notices.is_empty();
+        for entry in entries {
+            match missing.get(&entry.id) {
+                Some(Some(error)) => {
+                    let body = crate::broker::error_body(error);
+                    if let Some(message) = body["message"].as_str() {
+                        setup_notices.push(format!("{} ({}) — {message}", entry.name, entry.id));
+                    }
+                }
+                Some(None) => {
+                    if let [provider] = entry.runtime.provider_ids.as_slice() {
+                        setup_notices.push(provider_setup_notice(entry, provider, true));
+                        needs_setup = true;
+                    }
+                }
+                None => {}
+            }
+        }
         if enabled_provider_ids.is_empty() {
-            return Err(BrokerError::Execution(if setup_notices.is_empty() {
+            let error = BrokerError::Execution(if setup_notices.is_empty() {
                 "MCP provider setup is incomplete".into()
             } else {
                 setup_notices.join(" ")
-            })
-            .with_next(PROVIDER_SETUP_NEXT));
+            });
+            if !needs_setup {
+                if let Some(saved_key_error) = missing.into_values().flatten().next() {
+                    let body = crate::broker::error_body(&saved_key_error);
+                    return Err(
+                        error.with_next(body["next"].as_str().unwrap_or_default().to_owned())
+                    );
+                }
+            }
+            return Err(error.with_next(PROVIDER_SETUP_NEXT));
         }
         let allowed_network_hosts = enabled_provider_ids
             .iter()
@@ -1331,26 +1425,39 @@ fn setup_notices<'a>(
                     && !entry.runtime.config_mapping.is_empty()
                     && entry.runtime.provider_ids.as_slice() == [provider.clone()]
             })?;
-            let fields = entry
-                .setup
-                .as_ref()
-                .map(|setup| {
-                    setup
-                        .config_fields
-                        .iter()
-                        .map(|field| field.label.clone())
-                        .collect::<Vec<_>>()
-                })
-                .filter(|labels| !labels.is_empty())
-                .map(|labels| labels.join(" and "))
-                .unwrap_or_else(|| "its setup".into());
-            Some(format!(
-                "{name} (provider {provider}) is unavailable until the user adds the {fields}: if connection_setup is available, call it with {{id: \"{id}\"}} and the user finishes it in a card; otherwise point them to Connections. Until then do not present another provider's data as {name} data.",
-                name = entry.name,
-                id = entry.id,
-            ))
+            Some(provider_setup_notice(entry, provider, false))
         })
         .collect()
+}
+
+fn provider_setup_notice(entry: &MarketplaceEntryDto, provider: &str, credential: bool) -> String {
+    let fields = entry
+        .setup
+        .as_ref()
+        .map(|setup| {
+            if credential {
+                setup
+                    .credential_fields
+                    .iter()
+                    .filter(|field| field.required)
+                    .map(|field| field.label.as_str())
+                    .collect::<Vec<_>>()
+            } else {
+                setup
+                    .config_fields
+                    .iter()
+                    .map(|field| field.label.as_str())
+                    .collect::<Vec<_>>()
+            }
+        })
+        .filter(|labels| !labels.is_empty())
+        .map(|labels| labels.join(" and "))
+        .unwrap_or_else(|| "its setup".into());
+    format!(
+        "{name} (provider {provider}) is unavailable until the user adds the {fields}: if connection_setup is available, call it with {{id: \"{id}\"}} and the user finishes it in a card; otherwise point them to Connections. Until then do not present another provider's data as {name} data.",
+        name = entry.name,
+        id = entry.id,
+    )
 }
 
 const PROVIDER_SETUP_NEXT: &str = "The providers named above need setup before they can run. If connection_setup is available, call it with the named connection id so the user finishes setup in a card; otherwise tell the user to check that provider in Connections. Use another provider only when its tool schema lists it, and name it when citing.";
@@ -2582,7 +2689,9 @@ done
     #[cfg(unix)]
     async fn install(capture: &ToolCapture, server: TurnMcpServer) {
         assert!(matches!(
-            capture.install_mcp_session("openbb", server).await,
+            capture
+                .install_mcp_session("openbb", server, Arc::from([]))
+                .await,
             Ok(McpServerInstall::Installed)
         ));
     }
@@ -2869,7 +2978,7 @@ done
         // A server whose spawn finishes after the turn stopped is discarded, not installed.
         let late = spawn_server(&temporary, "late", "yfinance", None).await;
         assert!(turn
-            .install_mcp_session("openbb", late.server)
+            .install_mcp_session("openbb", late.server, Arc::from([]))
             .await
             .is_err());
         assert!(turn.mcp_sessions.lock().await.get("openbb").is_none());
@@ -3117,6 +3226,313 @@ done
             temporary.path(),
             &temporary.path().join("leases"),
         );
+    }
+
+    #[cfg(unix)]
+    fn credential_fallback_runtime(temporary: &tempfile::TempDir) -> AppState {
+        let mut state = AppState::for_persistent_test(temporary.path().join("app"));
+        install_manifest_runtime_fixture(&mut state, temporary);
+        let runtime = Arc::make_mut(&mut state.artifacts)
+            .mcp_runtimes
+            .get_mut("openbb")
+            .unwrap();
+        let controls = runtime
+            .control_tool_names
+            .iter()
+            .map(|name| json!(providerless_tool(name)))
+            .collect::<Vec<_>>();
+        let mut activated = controls.clone();
+        activated.extend([
+            json!(market_data_tool("equity_price_quote", &["fmp", "yfinance"])),
+            json!(market_data_tool("cftc_cot_search", &["cftc"])),
+            json!(market_data_tool("economy_fred_series", &["fred"])),
+        ]);
+        let source = temporary.path().join("credential-fixture.c");
+        let executable = temporary.path().join("credential-fixture");
+        // Use a native process so its executable identity matches its lease.
+        fs::write(
+            &source,
+            r#"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+int main(void) {
+    char *line = NULL;
+    size_t size = 0;
+    int active = 0;
+    int fmp_key = 0;
+    while (getline(&line, &size, stdin) >= 0) {
+        if (strstr(line, "\"type\":\"loupist.bootstrap\"")) {
+            if (strstr(line, "\"fred_api_key\"") || strstr(line, "\"cftc_app_token\"")
+                    || strstr(line, "\"api.stlouisfed.org\"")) return 1;
+            fmp_key = strstr(line, "\"fmp_api_key\":\"fixture-fmp-key\"") != NULL;
+        }
+        char *id = strstr(line, "\"id\":\"");
+        if (!id) continue;
+        id += 6;
+        char *end = strchr(id, '"');
+        if (!end) return 2;
+        printf("{\"jsonrpc\":\"2.0\",\"id\":\"%.*s\",\"result\":", (int)(end - id), id);
+        if (strstr(line, "\"method\":\"initialize\"")) {
+            printf("{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"serverInfo\":{\"name\":\"fixture\",\"version\":\"1\"}}");
+        } else if (strstr(line, "\"method\":\"tools/list\"")) {
+            printf("{\"tools\":%s}", active ? ACTIVE_TOOLS : CONTROL_TOOLS);
+        } else if (strstr(line, "\"name\":\"activate_tools\"")) {
+            active = 1;
+            printf("{\"content\":[]}");
+        } else {
+            const char *provider = strstr(line, "\"provider\":\"cftc\"") ? "cftc"
+                : strstr(line, "\"provider\":\"fmp\"") && fmp_key ? "fmp" : "yfinance";
+            printf("{\"content\":[],\"structuredContent\":{\"provider\":\"%s\",\"results\":[{\"value\":123}]}}", provider);
+        }
+        puts("}"); fflush(stdout);
+    }
+    free(line);
+    return 0;
+}
+"#
+            .replace("ACTIVE_TOOLS", &json!(json!(activated).to_string()).to_string())
+            .replace("CONTROL_TOOLS", &json!(json!(controls).to_string()).to_string()),
+        )
+        .unwrap();
+        let compiled = std::process::Command::new("cc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .output()
+            .unwrap();
+        assert!(
+            compiled.status.success(),
+            "{}",
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+        runtime.executable = executable;
+        state
+    }
+
+    #[cfg(unix)]
+    fn verified_test_key(state: &AppState, id: &str, field: &str, value: &str) {
+        use crate::finance_credentials as credentials;
+        credentials::mutate(state, id, {
+            let fields = BTreeMap::from([(field.to_owned(), value.to_owned())]);
+            move |state, id| {
+                let env = &state.credential_environment;
+                credentials::stage(env, id, &fields)?;
+                let candidate = credentials::candidate(env, id)?.unwrap();
+                credentials::finish_verification(
+                    env,
+                    id,
+                    candidate.revision(),
+                    credentials::VerificationOutcome::Verified,
+                    1,
+                    None,
+                )
+            }
+        })
+        .unwrap();
+    }
+
+    #[cfg(unix)]
+    async fn check_anonymous_tools(executor: &AppToolExecutor, connected: &Value) {
+        let tools = tool_names(connected);
+        assert!(tools.iter().any(|name| name == "equity_price_quote"));
+        assert!(tools.iter().any(|name| name == "cftc_cot_search"));
+        assert!(!tools.iter().any(|name| name == "economy_fred_series"));
+        for (tool, provider) in [
+            ("equity_price_quote", "yfinance"),
+            ("cftc_cot_search", "cftc"),
+        ] {
+            let read = call(executor, tool, json!({"provider": provider}))
+                .await
+                .unwrap();
+            assert_eq!(read["result"]["structuredContent"]["provider"], provider);
+            assert_eq!(
+                read["result"]["structuredContent"]["results"][0]["value"],
+                123
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn security_lookup_failures_leave_public_tools_and_boot_with_readable_keys() {
+        use crate::finance_credentials::{test_store, KeychainReadStatus};
+        let temporary = tempfile::tempdir().unwrap();
+        let state = credential_fallback_runtime(&temporary);
+        let environment = &state.credential_environment;
+        // The same run must still receive credentials from successful lookups.
+        verified_test_key(&state, "fmp.market-data", "api_key", "fixture-fmp-key");
+        for (status, diagnostic) in [
+            (-25307, KeychainReadStatus::NoDefaultKeychain),
+            (-67869, KeychainReadStatus::DatabaseLocked),
+            (-25308, KeychainReadStatus::InteractionNotAllowed),
+            (-25293, KeychainReadStatus::Other),
+        ] {
+            for id in ["cftc.commitments", "fred.macro"] {
+                test_store::restart(environment, id);
+                test_store::fail_with_security_status(environment, id, status);
+            }
+            let mut executor = turn_executor(
+                &temporary,
+                &state,
+                "loupist-a",
+                capture(&temporary, "fallback", None),
+            );
+            // An already captured grant can outlive removal of its key.
+            executor.capability_ids = [
+                "openbb.platform",
+                "cftc.commitments",
+                "fred.macro",
+                "fmp.market-data",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+            let connected = executor
+                .mcp_connect(json!({"server_id":"openbb"}))
+                .await
+                .unwrap();
+            check_anonymous_tools(&executor, &connected).await;
+            let notices = connected["notices"].to_string();
+            assert!(notices.contains("fred.macro") && notices.contains("FRED API key"));
+            assert!(!notices.contains("saved key") && !notices.contains("cftc.commitments"));
+            let fmp = call(&executor, "equity_price_quote", json!({"provider":"fmp"}))
+                .await
+                .unwrap();
+            assert_eq!(fmp["result"]["structuredContent"]["provider"], "fmp");
+            assert!(!connected.to_string().contains("fixture-fmp-key"));
+            assert_eq!(
+                executor.capture.tool_trace.connector_keychain_statuses(),
+                BTreeSet::from([diagnostic])
+            );
+            executor.capture.shutdown_mcp().await;
+        }
+        for id in ["cftc.commitments", "fred.macro"] {
+            assert_eq!(test_store::secret_reads(environment, id), 4);
+            assert!(state
+                .store
+                .connector_credential_status(id)
+                .unwrap()
+                .is_none());
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn saved_key_refusal_is_named_on_each_connect_without_claiming_an_optional_key_exists() {
+        use crate::finance_credentials::test_store;
+        let temporary = tempfile::tempdir().unwrap();
+        let state = credential_fallback_runtime(&temporary);
+        let environment = &state.credential_environment;
+        let loupist_id = "loupist-a";
+        let fred = "fred.macro";
+        verified_test_key(&state, fred, "api_key", "fixture-fred-key");
+        test_store::restart(environment, fred);
+        let mut executor = turn_executor(
+            &temporary,
+            &state,
+            loupist_id,
+            capture(&temporary, "first", None),
+        );
+        {
+            let guard = crate::marketplace::connector_lifecycle_lock().unwrap();
+            crate::marketplace::enable_ready_bindings_locked(&state, fred, &guard).unwrap();
+        }
+        let reads = test_store::secret_reads(environment, fred);
+        // A 0.1.3 refusal could persist this status even with no saved item.
+        state
+            .store
+            .set_connector_credential_status("cftc.commitments", r#""Locked""#)
+            .unwrap();
+        test_store::fail_with_security_status(environment, fred, -25308);
+        test_store::fail_with_security_status(environment, "cftc.commitments", -25308);
+        for turn in ["first", "next"] {
+            let authority =
+                crate::commands::capture_chat_connector_authority(&state, loupist_id).unwrap();
+            executor.capability_ids = authority.capability_ids.into_iter().collect();
+            assert!(executor.capability_ids.contains(fred));
+            assert!(executor.capability_ids.contains("cftc.commitments"));
+            let connected = executor
+                .mcp_connect(json!({"server_id":"openbb"}))
+                .await
+                .unwrap();
+            check_anonymous_tools(&executor, &connected).await;
+            let notices = connected["notices"].as_array().unwrap();
+            let saved = notices
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|notice| notice.contains("macOS did not release the saved key"))
+                .collect::<Vec<_>>();
+            assert_eq!(saved.len(), 1);
+            assert!(saved[0].contains(fred));
+            assert!(
+                !connected.to_string().contains("fixture-fred-key"),
+                "{turn}"
+            );
+            let cached = executor
+                .mcp_connect(json!({"server_id":"openbb"}))
+                .await
+                .unwrap();
+            assert_eq!(cached["notices"], connected["notices"]);
+            executor.capture.shutdown_mcp().await;
+            executor.capture = capture(&temporary, "next", None);
+        }
+        assert_eq!(test_store::secret_reads(environment, fred), reads + 1);
+        assert!(crate::finance_credentials::has_saved_key(&state, fred));
+        assert!(!crate::finance_credentials::has_saved_key(
+            &state,
+            "cftc.commitments"
+        ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pending_legacy_keys_are_still_protected_and_do_not_block_the_platform() {
+        use crate::finance_credentials::test_store;
+        let temporary = tempfile::tempdir().unwrap();
+        let state = credential_fallback_runtime(&temporary);
+        let environment = &state.credential_environment;
+        let loupist_id = "loupist-a";
+        let mut executor = turn_executor(
+            &temporary,
+            &state,
+            loupist_id,
+            capture(&temporary, "legacy", None),
+        );
+        for (id, field) in [("fred.macro", "api_key"), ("cftc.commitments", "app_token")] {
+            verified_test_key(&state, id, field, "fixture-legacy-key");
+            {
+                let guard = crate::marketplace::connector_lifecycle_lock().unwrap();
+                crate::marketplace::enable_ready_bindings_locked(&state, id, &guard).unwrap();
+            }
+            test_store::restart(environment, id);
+            state
+                .store
+                .set_connector_credential_status(id, r#""PresentUnread""#)
+                .unwrap();
+        }
+        let reads = test_store::backend_calls(environment);
+        let authority =
+            crate::commands::capture_chat_connector_authority(&state, loupist_id).unwrap();
+        assert_eq!(
+            authority.saved_keys_needing_permission,
+            ["cftc.commitments".to_owned(), "fred.macro".to_owned()].into()
+        );
+        executor.capability_ids = authority.capability_ids.into_iter().collect();
+        Arc::get_mut(&mut executor.capture)
+            .unwrap()
+            .saved_keys_needing_permission = authority.saved_keys_needing_permission;
+        let connected = executor
+            .mcp_connect(json!({"server_id":"openbb"}))
+            .await
+            .unwrap();
+        check_anonymous_tools(&executor, &connected).await;
+        assert!(matches!(
+            call(&executor, "economy_fred_series", json!({"provider":"fred"})).await,
+            Err(BrokerError::KeychainPermissionRequired)
+        ));
+        assert_eq!(test_store::backend_calls(environment), reads);
+        executor.capture.shutdown_mcp().await;
     }
 
     #[cfg(unix)]

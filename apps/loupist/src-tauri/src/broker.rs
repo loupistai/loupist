@@ -1650,6 +1650,8 @@ pub struct ToolTraceCapture {
 #[derive(Default)]
 struct ToolTraceState {
     trace: crate::domain::ChatToolTrace,
+    connector_keychain_statuses:
+        std::collections::BTreeSet<crate::finance_credentials::KeychainReadStatus>,
     observed:
         std::collections::BTreeMap<String, (crate::domain::ChatToolTraceEntry, std::time::Instant)>,
 }
@@ -1827,6 +1829,24 @@ fn trace_error(value: &Value) -> Value {
 }
 
 impl ToolTraceCapture {
+    pub(crate) fn record_connector_keychain_status(
+        &self,
+        status: crate::finance_credentials::KeychainReadStatus,
+    ) {
+        if let Ok(mut state) = self.state.lock() {
+            state.connector_keychain_statuses.insert(status);
+        }
+    }
+
+    pub(crate) fn connector_keychain_statuses(
+        &self,
+    ) -> std::collections::BTreeSet<crate::finance_credentials::KeychainReadStatus> {
+        self.state
+            .lock()
+            .map(|state| state.connector_keychain_statuses.clone())
+            .unwrap_or_default()
+    }
+
     fn entry(
         &self,
         call_id: Option<&str>,

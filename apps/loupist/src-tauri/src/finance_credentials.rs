@@ -28,6 +28,8 @@ pub enum FinanceCredentialError {
     Unsupported,
     #[error("the native credential store operation failed")]
     Store,
+    #[error("the native credential store read failed")]
+    SecurityReadFailed(KeychainReadStatus),
     /// macOS did not let Loupist read this saved key (the access prompt was
     /// denied or could not be answered). Remembered for the session.
     #[error("access to this saved key was not allowed in macOS")]
@@ -40,6 +42,46 @@ pub enum FinanceCredentialError {
     Unavailable,
     #[error("Loupist is installing an update")]
     UpdateInstalling,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeychainReadStatus {
+    NoDefaultKeychain,
+    DatabaseLocked,
+    InteractionNotAllowed,
+    Other,
+}
+
+#[cfg(any(
+    test,
+    all(target_os = "macos", not(any(debug_assertions, feature = "webdriver")))
+))]
+fn security_read_failure(status: i32) -> FinanceCredentialError {
+    FinanceCredentialError::SecurityReadFailed(match status {
+        -25307 => KeychainReadStatus::NoDefaultKeychain, // errSecNoDefaultKeychain
+        -67869 => KeychainReadStatus::DatabaseLocked,    // errSecDatabaseLocked
+        -25308 => KeychainReadStatus::InteractionNotAllowed, // errSecInteractionNotAllowed
+        _ => KeychainReadStatus::Other,
+    })
+}
+
+#[cfg(all(
+    target_os = "macos",
+    any(test, not(any(debug_assertions, feature = "webdriver")))
+))]
+fn macos_read_failure(error: keyring::Error) -> FinanceCredentialError {
+    match error {
+        keyring::Error::PlatformFailure(error) | keyring::Error::NoStorageAccess(error) => {
+            security_read_failure(
+                error
+                    .downcast_ref::<security_framework::base::Error>()
+                    .copied()
+                    .map_or(0, security_framework::base::Error::code),
+            )
+        }
+        _ => FinanceCredentialError::Store,
+    }
 }
 
 impl From<KeychainError> for FinanceCredentialError {
@@ -306,6 +348,22 @@ pub(crate) mod test_store {
         DENIED.get_or_init(Default::default)
     }
 
+    fn security_failures() -> &'static Mutex<BTreeMap<String, i32>> {
+        static FAILURES: OnceLock<Mutex<BTreeMap<String, i32>>> = OnceLock::new();
+        FAILURES.get_or_init(Default::default)
+    }
+
+    pub(crate) fn fail_with_security_status(environment_id: &str, entry_id: &str, status: i32) {
+        security_failures()
+            .lock()
+            .unwrap()
+            .insert(super::native_account(environment_id, entry_id), status);
+    }
+
+    pub(super) fn take_security_failure(account: &str) -> Option<i32> {
+        security_failures().lock().unwrap().remove(account)
+    }
+
     type Barriers = BTreeMap<String, std::sync::mpsc::Receiver<bool>>;
 
     fn write_barriers() -> &'static Mutex<Barriers> {
@@ -460,8 +518,19 @@ fn read_memory_blob(
     entry_id: &str,
 ) -> Result<Option<String>, FinanceCredentialError> {
     #[cfg(test)]
-    if !test_store::record_read(&native_account(environment_id, entry_id)) {
-        return Err(FinanceCredentialError::Store);
+    {
+        let account = native_account(environment_id, entry_id);
+        if !test_store::record_read(&account) {
+            return Err(FinanceCredentialError::Store);
+        }
+        if let Some(status) = test_store::take_security_failure(&account) {
+            #[cfg(target_os = "macos")]
+            return Err(macos_read_failure(keyring::macos::decode_error(
+                security_framework::base::Error::from_code(status),
+            )));
+            #[cfg(not(target_os = "macos"))]
+            return Err(security_read_failure(status));
+        }
     }
     Ok(memory_store()
         .lock()
@@ -527,6 +596,9 @@ fn read_native_blob(
     match native_entry(environment_id, service, entry_id)?.get_password() {
         Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
+        #[cfg(target_os = "macos")]
+        Err(error) => Err(macos_read_failure(error)),
+        #[cfg(windows)]
         Err(_) => Err(FinanceCredentialError::Store),
     }
 }
@@ -658,7 +730,10 @@ enum SessionAccess {
         #[serde(default)]
         last_store_failure: bool,
     },
+    /// Older builds wrote this without evidence of a saved item.
     Locked,
+    #[serde(skip)]
+    ReadRefused(KeychainReadStatus),
     Unconfirmed,
     StoreUnavailable,
     /// The item exists. Its fields and active revision are still unknown.
@@ -713,16 +788,17 @@ fn load(
 ) -> Result<CredentialEnvelope, FinanceCredentialError> {
     validate_revision(environment_id)?;
     validate_entry_id(entry_id)?;
-    if matches!(
-        remembered(environment_id, entry_id),
-        Some(SessionAccess::Locked)
-    ) {
+    if is_locked(environment_id, entry_id) {
         return Err(FinanceCredentialError::Locked);
     }
     let envelope = match read_envelope(environment_id, entry_id) {
         Ok(envelope) => envelope,
-        Err(FinanceCredentialError::Locked) => {
-            remember(environment_id, entry_id, Some(SessionAccess::Locked));
+        Err(FinanceCredentialError::SecurityReadFailed(status)) => {
+            remember(
+                environment_id,
+                entry_id,
+                Some(SessionAccess::ReadRefused(status)),
+            );
             return Err(FinanceCredentialError::Locked);
         }
         Err(error) => return Err(error),
@@ -736,7 +812,9 @@ fn read_envelope(
     entry_id: &str,
 ) -> Result<CredentialEnvelope, FinanceCredentialError> {
     let Some(value) = read_blob(environment_id, entry_id).map_err(|error| match error {
-        FinanceCredentialError::Store => FinanceCredentialError::Locked,
+        FinanceCredentialError::Store => {
+            FinanceCredentialError::SecurityReadFailed(KeychainReadStatus::Other)
+        }
         error => error,
     })?
     else {
@@ -755,10 +833,7 @@ fn load_for_user(
 ) -> Result<CredentialEnvelope, FinanceCredentialError> {
     validate_revision(environment_id)?;
     validate_entry_id(entry_id)?;
-    if matches!(
-        remembered(environment_id, entry_id),
-        Some(SessionAccess::Locked)
-    ) {
+    if is_locked(environment_id, entry_id) {
         remember(environment_id, entry_id, None);
     }
     load(environment_id, entry_id)
@@ -1025,7 +1100,9 @@ pub fn status(
     }
     match remembered(environment_id, entry_id) {
         Some(SessionAccess::Known { status, .. }) => Ok(status),
-        Some(SessionAccess::Locked) => Err(FinanceCredentialError::Locked),
+        Some(SessionAccess::Locked | SessionAccess::ReadRefused(_)) => {
+            Err(FinanceCredentialError::Locked)
+        }
         Some(
             SessionAccess::Unconfirmed
             | SessionAccess::StoreUnavailable
@@ -1040,8 +1117,15 @@ pub fn status(
 pub fn is_locked(environment_id: &str, entry_id: &str) -> bool {
     matches!(
         remembered(environment_id, entry_id),
-        Some(SessionAccess::Locked)
+        Some(SessionAccess::Locked | SessionAccess::ReadRefused(_))
     )
+}
+
+pub(crate) fn refused_read_status(state: &AppState, entry_id: &str) -> Option<KeychainReadStatus> {
+    match remembered(&state.credential_environment, entry_id) {
+        Some(SessionAccess::ReadRefused(status)) => Some(status),
+        _ => None,
+    }
 }
 
 /// Try again: forgets a remembered denial and reads the credential once more,
@@ -1092,7 +1176,9 @@ pub(crate) fn active_revision(
         Some(SessionAccess::Known {
             active_revision, ..
         }) => Ok(active_revision),
-        Some(SessionAccess::Locked) => Err(FinanceCredentialError::Locked),
+        Some(SessionAccess::Locked | SessionAccess::ReadRefused(_)) => {
+            Err(FinanceCredentialError::Locked)
+        }
         Some(
             SessionAccess::Unconfirmed
             | SessionAccess::StoreUnavailable
@@ -1113,16 +1199,39 @@ pub fn delete(environment_id: &str, entry_id: &str) -> Result<(), FinanceCredent
 }
 
 fn publish_session(state: &AppState, entry_id: &str) -> Result<(), FinanceCredentialError> {
-    let access = remembered(&state.credential_environment, entry_id);
-    if let Some(access) = access {
-        let serialized =
-            serde_json::to_string(&access).map_err(|_| FinanceCredentialError::Store)?;
-        state
-            .store
-            .set_connector_credential_status(entry_id, &serialized)
-            .map_err(|_| FinanceCredentialError::Store)?;
+    if let Some(access) = remembered(&state.credential_environment, entry_id) {
+        if !matches!(
+            access,
+            SessionAccess::Locked | SessionAccess::ReadRefused(_)
+        ) {
+            persist_access(state, entry_id, &access)?;
+        }
     }
     Ok(())
+}
+
+fn persist_access(
+    state: &AppState,
+    entry_id: &str,
+    access: &SessionAccess,
+) -> Result<(), FinanceCredentialError> {
+    let serialized = serde_json::to_string(access).map_err(|_| FinanceCredentialError::Store)?;
+    state
+        .store
+        .set_connector_credential_status(entry_id, &serialized)
+        .map_err(|_| FinanceCredentialError::Store)
+}
+
+fn persisted_access(
+    state: &AppState,
+    entry_id: &str,
+) -> Result<Option<SessionAccess>, FinanceCredentialError> {
+    state
+        .store
+        .connector_credential_status(entry_id)
+        .map_err(|_| FinanceCredentialError::Store)?
+        .map(|encoded| serde_json::from_str(&encoded).map_err(|_| FinanceCredentialError::Store))
+        .transpose()
 }
 
 fn status_projection(
@@ -1133,13 +1242,34 @@ fn status_projection(
     if let Some(access) = remembered(environment, entry_id) {
         return Ok(Some(access));
     }
-    let saved = state
-        .store
-        .connector_credential_status(entry_id)
-        .map_err(|_| FinanceCredentialError::Store)?
-        .map(|encoded| serde_json::from_str(&encoded).map_err(|_| FinanceCredentialError::Store))
-        .transpose()?;
+    let saved = persisted_access(state, entry_id)?;
     Ok(remembered(environment, entry_id).or(saved))
+}
+
+/// A refused read cannot establish presence. Keep the last non-secret
+/// attestation available even while the session remembers the refusal.
+fn known_access(state: &AppState, entry_id: &str) -> Option<SessionAccess> {
+    match status_projection(state, entry_id).ok().flatten()? {
+        SessionAccess::Locked | SessionAccess::ReadRefused(_) => {
+            persisted_access(state, entry_id).ok().flatten()
+        }
+        known => Some(known),
+    }
+}
+
+pub(crate) fn has_saved_key(state: &AppState, entry_id: &str) -> bool {
+    match known_access(state, entry_id) {
+        Some(SessionAccess::Known { status, .. }) => status.stored,
+        Some(SessionAccess::PresentUnread | SessionAccess::PresentDenied) => true,
+        _ => false,
+    }
+}
+
+pub(crate) fn known_active_fields(state: &AppState, entry_id: &str) -> BTreeSet<String> {
+    match known_access(state, entry_id) {
+        Some(SessionAccess::Known { status, .. }) => status.active_fields,
+        _ => BTreeSet::new(),
+    }
 }
 
 pub(crate) fn status_for_state(
@@ -1153,7 +1283,9 @@ pub(crate) fn status_for_state(
     }
     match status_projection(state, entry_id)? {
         Some(SessionAccess::Known { status, .. }) => Ok(status),
-        Some(SessionAccess::Locked) => Err(FinanceCredentialError::Locked),
+        Some(SessionAccess::Locked | SessionAccess::ReadRefused(_)) => {
+            Err(FinanceCredentialError::Locked)
+        }
         Some(
             SessionAccess::Unconfirmed
             | SessionAccess::StoreUnavailable
@@ -1233,7 +1365,7 @@ pub(crate) fn read_saved_key_permission(
     }
     match result {
         Ok(envelope) => remember_envelope(environment, entry_id, &envelope),
-        Err(FinanceCredentialError::Locked) => {
+        Err(FinanceCredentialError::SecurityReadFailed(_)) => {
             remember(environment, entry_id, Some(SessionAccess::PresentDenied));
         }
         Err(error) => return Err(error),
@@ -1266,7 +1398,9 @@ pub(crate) fn revision_for_state(
         Some(SessionAccess::Known {
             active_revision, ..
         }) => Ok(active_revision),
-        Some(SessionAccess::Locked) => Err(FinanceCredentialError::Locked),
+        Some(SessionAccess::Locked | SessionAccess::ReadRefused(_)) => {
+            Err(FinanceCredentialError::Locked)
+        }
         Some(
             SessionAccess::Unconfirmed
             | SessionAccess::StoreUnavailable
@@ -1350,7 +1484,7 @@ fn mutate_with_timeout<T: Send + 'static>(
     operation.mutate_with_timeout(&maintenance, timeout, move || {
         // A quit after the OS changes the item but before its result publishes
         // leaves the projection unknown. The next explicit check reads the item.
-        let prior = status_projection(&state, &entry_id).ok().flatten();
+        let prior = known_access(&state, &entry_id);
         let pending = serde_json::to_string(&SessionAccess::Unconfirmed)
             .map_err(|_| FinanceCredentialError::Store)?;
         state
@@ -1358,6 +1492,12 @@ fn mutate_with_timeout<T: Send + 'static>(
             .set_connector_credential_status(&entry_id, &pending)
             .map_err(|_| FinanceCredentialError::Store)?;
         let result = action(&state, &entry_id);
+        if matches!(result, Err(FinanceCredentialError::Locked)) {
+            if let Some(prior) = prior {
+                persist_access(&state, &entry_id, &prior)?;
+            }
+            return result;
+        }
         if matches!(
             result,
             Err(FinanceCredentialError::Store
@@ -1375,7 +1515,7 @@ fn mutate_with_timeout<T: Send + 'static>(
                     active_revision,
                     last_store_failure: true,
                 },
-                Some(SessionAccess::Locked) => SessionAccess::Locked,
+                Some(access @ (SessionAccess::Locked | SessionAccess::ReadRefused(_))) => access,
                 _ => SessionAccess::StoreUnavailable,
             };
             remember(environment, &entry_id, Some(access));
