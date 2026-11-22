@@ -1849,3 +1849,6 @@ fn saved_key_permission_is_in_run_context_and_scheduled_delivery_without_a_secre
     );
     assert_eq!(test_store::secret_reads(environment, entry), reads);
 }
+
+mod pending_memory;
+mod price_reads;

@@ -1202,6 +1202,7 @@ fn processed_chat_source_stamps_world_growth_and_a_map_source_does_not() {
                 loupist_id: loupist.into(),
                 since_ms: None,
                 until_ms: None,
+                world_revision_id: None,
                 limit: Some(100),
                 cursor: None,
             })

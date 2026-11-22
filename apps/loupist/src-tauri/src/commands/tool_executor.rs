@@ -24,6 +24,7 @@ mod dataset_import;
 mod dataset_tests;
 mod datasets;
 mod discarded_memory;
+pub(super) use discarded_memory::discarded_price_reads;
 mod errors;
 mod evidence;
 pub(in crate::commands) use evidence::evidence_id;
@@ -245,6 +246,7 @@ pub(super) struct ToolCapture {
 
 #[derive(Default)]
 struct PendingToolCapture {
+    web_links: crate::custom_connections::taint::DeliveredLinks,
     price_reads: Vec<(
         crate::commands::assets::wire::AssetRow,
         crate::knowledge::assets::saved_read::StagedPriceRead,
@@ -675,6 +677,8 @@ impl ToolCapture {
         let Some(mut pending) = pending_deliveries.remove(delivery_id) else {
             return;
         };
+        self.turn_taint
+            .note_delivered_links(std::mem::take(&mut pending.web_links));
         let call_id = pending.call_id.clone();
         let mut delivered_evidence = Vec::new();
         for (result_ref, captured) in std::mem::take(&mut pending.run_results) {
@@ -1262,6 +1266,9 @@ impl AppToolExecutor {
             // A fresh-enough saved result stands in for the provider call.
             _ if reused_payload.is_some() => Ok(reused_payload.take().unwrap_or_default()),
             ToolMethod::NativeAuthorize => self.native_authorize(&params).await,
+            ToolMethod::NativeDeliveredText => {
+                return self.native_delivered_text(&params, delivery_id).await;
+            }
             ToolMethod::ScheduleList
             | ToolMethod::ScheduleRead
             | ToolMethod::ScheduleCreate
@@ -1427,11 +1434,9 @@ impl AppToolExecutor {
         if returning.is_some() {
             self.capture.turn_taint.mark_untrusted_text();
         }
-        // What web_fetch may open once third-party text has arrived: the
-        // locators the host delivered, never the user's own Memory text.
-        self.capture
-            .turn_taint
-            .note_delivered_locators(method, &result);
+        if method == ToolMethod::WebSearch {
+            self.capture.turn_taint.note_search_results(&result);
+        }
         returning::protect_private_text(&self.capture.turn_taint, method, &result);
         let mut upstream = take_resolved_upstream(&mut result).unwrap_or_default();
         if matches!(
@@ -1536,14 +1541,21 @@ impl AppToolExecutor {
         }
         // Full datasets stay in the host; large model-facing views are bounded.
         let mut delivered = model_payload.unwrap_or(result);
+        let mut links = crate::custom_connections::taint::DeliveredLinks::default();
         crate::custom_connections::taint::delimit_untrusted_bodies(
             method,
             &request,
             &self.state.artifacts.mcp_runtimes,
             &mut delivered,
+            &mut links,
         );
         if let Some(returning) = &returning {
-            crate::custom_connections::taint::delimit_returning(method, returning, &mut delivered);
+            crate::custom_connections::taint::delimit_returning(
+                method,
+                returning,
+                &mut delivered,
+                &mut links,
+            );
         }
         if method.safety().pack_text == PackText::Delimited {
             // Text from shared packs arrives delimited and pauses commands for this turn.
@@ -1552,7 +1564,13 @@ impl AppToolExecutor {
                 &self.loupist_id,
                 &mut delivered,
                 &self.capture.turn_taint,
+                &mut links,
             );
+        }
+        if !links.is_empty() {
+            self.capture
+                .stage(delivery_id, |pending| pending.web_links = links)
+                .await;
         }
         if self.capture.turn_taint.has_untrusted_content() {
             self.capture.tool_trace.mark_untrusted_text();

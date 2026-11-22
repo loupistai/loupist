@@ -216,6 +216,31 @@ impl AppToolExecutor {
         Ok(result)
     }
 
+    /// Pi sends the final text parts at the same point it wraps them. Native
+    /// authorization only sees the path, before Pi applies its read limits.
+    pub(super) async fn native_delivered_text(
+        &self,
+        params: &Value,
+        delivery_id: &str,
+    ) -> Result<Value, BrokerError> {
+        if self.capture.native.roots().is_none() || !self.capture.turn_taint.untrusted_text() {
+            return Err(BrokerError::MethodDenied);
+        }
+        let parts = exact_object(params, &["parts"], &[])?["parts"]
+            .as_array()
+            .ok_or(BrokerError::Malformed)?;
+        let mut links = crate::custom_connections::taint::DeliveredLinks::default();
+        for part in parts {
+            links.scan(part.as_str().ok_or(BrokerError::Malformed)?, None);
+        }
+        if !links.is_empty() {
+            self.capture
+                .stage(delivery_id, |pending| pending.web_links = links)
+                .await;
+        }
+        Ok(json!({}))
+    }
+
     /// The path gate for host tools that take a workspace-relative file
     /// (`workspace_capture`, `dataset_import`, `dataset_export`). Each takes
     /// the native decision for a read or write of the same path, so a model

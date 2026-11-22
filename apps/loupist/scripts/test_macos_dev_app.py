@@ -9,7 +9,8 @@ import tempfile
 import unittest
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "e2e/macos_dev_app.py"
+APP_ROOT = Path(__file__).resolve().parents[1]
+MODULE_PATH = APP_ROOT / "e2e/macos_dev_app.py"
 SPEC = importlib.util.spec_from_file_location("macos_dev_app", MODULE_PATH)
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -25,12 +26,16 @@ class DevelopmentAppTests(unittest.TestCase):
         self.binary.parent.mkdir(parents=True)
         self.binary.write_text('#!/bin/sh\nprintf "%s" "$1"\nexit 17\n')
         self.binary.chmod(0o700)
+        self.icon = self.root / "icons/icon.icns"
+        self.icon.parent.mkdir()
+        self.icon.write_bytes((APP_ROOT / "src-tauri/icons/icon.icns").read_bytes())
         (self.root / "tauri.conf.json").write_text(
             json.dumps(
                 {
                     "identifier": "com.monarchjuno.loupist",
                     "productName": "Loupist",
                     "version": "0.0.1",
+                    "bundle": {"icon": ["icons/32x32.png", "icons/icon.icns"]},
                 }
             )
         )
@@ -52,6 +57,18 @@ class DevelopmentAppTests(unittest.TestCase):
         self.assertEqual(info["CFBundleExecutable"], executable.name)
         self.assertEqual(info["CFBundlePackageType"], "APPL")
         self.assertEqual(self.binary.read_bytes(), executable.read_bytes())
+
+    def test_dev_and_e2e_bundles_use_the_packaged_icon(self):
+        e2e = (APP_ROOT / "src-tauri/tauri.e2e.conf.json").read_text()
+        for override in ("{}", e2e):
+            with self.subTest(override=override):
+                contents = self.prepare(override).parents[1]
+                info = plistlib.loads((contents / "Info.plist").read_bytes())
+                self.assertEqual(info["CFBundleIconFile"], "icon.icns")
+                self.assertEqual(
+                    (contents / "Resources" / info["CFBundleIconFile"]).read_bytes(),
+                    self.icon.read_bytes(),
+                )
 
     def test_manual_profile_keeps_separate_bundle_and_compiled_identity(self):
         first = self.prepare()

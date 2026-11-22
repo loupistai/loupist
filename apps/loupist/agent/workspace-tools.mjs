@@ -274,7 +274,7 @@ export function nativeRequest(workspaceRoot, name, input) {
  * Rust owns the permission policy, exported-text trust, the
  * canonical target (`resolved`) a read, write or edit is pinned to and the
  * `identity` a read must find. Analysis runs through the broker tool `run_python`. */
-export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
+export function registerWorkspaceTools(pi, workspaceRoot, authorize, reportUntrustedText) {
   const definitions = [
     createReadToolDefinition(workspaceRoot),
     createWriteToolDefinition(workspaceRoot),
@@ -297,10 +297,17 @@ export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
           content: result.content.map((part) => part.type === "text"
             ? { ...part, text: `${boundary.prefix}${part.text}${boundary.suffix}` } : part),
         } : result;
+        const finish = async (result) => {
+          if (boundary && reportUntrustedText) {
+            const parts = result.content.filter((part) => part.type === "text").map((part) => part.text);
+            if (parts.length) await reportUntrustedText(parts, signal);
+          }
+          return deliver(result);
+        };
         const expected = typeof permission?.resolved === "string"
           ? permission.resolved : request.path === undefined ? undefined : canonicalTargetPath(request.path);
         if (SEARCHERS.has(definition.name)) {
-          return deliver(await searchWorkspace(definition.name, input, permission, signal));
+          return finish(await searchWorkspace(definition.name, input, permission, signal));
         }
         // A search runs on the canonical root Rust decided about, and a
         // read opens the file Rust decided about, by identity when the
@@ -319,7 +326,7 @@ export function registerWorkspaceTools(pi, workspaceRoot, authorize) {
           ...ctx,
           cwd: workspaceRoot,
         });
-        return deliver(result);
+        return finish(result);
       },
     });
   }

@@ -649,6 +649,16 @@ pub struct GraphClaim {
     pub expired_at: Option<TimePoint>,
 }
 
+impl GraphClaim {
+    pub(crate) fn connects_names(&self) -> bool {
+        self.endpoints.first().is_some_and(|first| {
+            self.endpoints[1..]
+                .iter()
+                .any(|end| end.node_id != first.node_id)
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TopicAnnotation {
@@ -663,7 +673,7 @@ pub struct WorldSnapshotBody {
     pub nodes: Vec<GraphNode>,
     pub claims: Vec<GraphClaim>,
     pub annotations: Vec<TopicAnnotation>,
-    /// Observed relationship names. Open vocabulary, counted at seal time.
+    /// Observed names of relationships between distinct endpoints, counted at seal time.
     #[serde(default)]
     pub relation_vocabulary: Vec<RelationCount>,
 }

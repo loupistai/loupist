@@ -31,7 +31,7 @@ function setupLabel(change: SetupChange): string {
 
 const setupKey = (change: SetupChange) => change.change === "followed" || change.change === "unfollowed" ? `${change.change}:${change.symbol}:${change.market ?? ""}` : change.change;
 
-const savedKeys: Record<SavedReceiptGroup["kind"], CountKey> = {
+const savedKeys: Record<Exclude<SavedReceiptGroup["kind"], "PriceRead">, CountKey> = {
   Source: "chatReceipt.savedSources",
   principle: "chatReceipt.savedPrinciples",
   Journal: "chatReceipt.savedJournal",
@@ -63,11 +63,11 @@ type Segment = { key: string; node: ReactNode };
 export function MemorySaveWarning({ reason, items }: { reason?: MemorySaveSkipReason; items?: MemoryUpdateResult["discardedMemoryItems"] }) {
   useTranslation("chat");
   const listLabelId = useId();
-  if (!reason) return null;
+  if (!reason && !items?.length) return null;
   return <div className="memory-save-warning">
-    <p>{t(`memorySaving.skipped.${reason}`)}</p>
+    {reason ? <p>{t(`memorySaving.skipped.${reason}`)}</p> : null}
     {items?.length ? <>
-      <p>{t("memorySaving.claimNotKept")}</p>
+      {reason ? <p>{t("memorySaving.claimNotKept")}</p> : null}
       <p id={listLabelId}>{t("memorySaving.notKept")}</p>
       <ul aria-labelledby={listLabelId}>{items.map((item, index) => <li key={`${item.kind}:${item.title}:${index}`}>
         {t(`memorySaving.discardedKind.${item.kind}`)} · {item.title}
@@ -106,6 +106,7 @@ export function ChatReceipt({ receipt: given, showNothingNew, listId, listExpand
   // Bot's trace line already counts figures to check; the receipt does not repeat it there.
   const receipt = bot && given.numbersToCheck ? { ...given, numbersToCheck: 0 } : given;
   const skipped = message?.memory_update?.skipReason;
+  const discarded = message?.memory_update?.discardedMemoryItems;
   const segments: Segment[] = [];
   const usedToggle = (key: string, label: string) => <button type="button" className="chat-receipt-segment" data-receipt-used={key}
     aria-expanded={usedExpanded} aria-controls={usedExpanded ? usedListId : undefined} onClick={onToggleUsed}>{label}</button>;
@@ -153,14 +154,25 @@ export function ChatReceipt({ receipt: given, showNothingNew, listId, listExpand
   // The principles lead the line, so the pages segment counts every other page (a method, a perspective…), never one twice.
   const otherPages = receipt.usedPrinciples.length ? receipt.usedPages.filter(page => page.kind !== "principle") : receipt.usedPages;
   if (otherPages.length) segments.push({ key: "used", node: usedToggle("pages", count("chatReceipt.usedPages", otherPages.length)) });
-  for (const group of receipt.saved) segments.push({ key: `saved:${group.kind}`, node: <button
-    type="button"
-    className="chat-receipt-segment"
-    data-learned="true"
-    aria-expanded={listExpanded}
-    aria-controls={listExpanded ? listId : undefined}
-    onClick={() => onSaved(group)}
-  >{count(savedKeys[group.kind], group.items.length)}</button> });
+  for (const group of receipt.saved) {
+    if (group.kind === "PriceRead") {
+      for (const item of group.items) segments.push({
+        key: `price-read:${item.recordId}`,
+        node: <span className="chat-receipt-text" data-learned="true">
+          {t("toolProgress.price_read_save.done")} · {item.title}
+        </span>,
+      });
+    } else {
+      segments.push({ key: `saved:${group.kind}`, node: <button
+        type="button"
+        className="chat-receipt-segment"
+        data-learned="true"
+        aria-expanded={listExpanded}
+        aria-controls={listExpanded ? listId : undefined}
+        onClick={() => onSaved(group)}
+      >{count(savedKeys[group.kind], group.items.length)}</button> });
+    }
+  }
   // Shown only when a number did not match its source; always after the other segments.
   if (receipt.numbersToCheck) {
     const label = count("chatReceipt.numbersToCheck", receipt.numbersToCheck);
@@ -169,13 +181,13 @@ export function ChatReceipt({ receipt: given, showNothingNew, listId, listExpand
       : <span className="chat-receipt-text chat-receipt-check"><TriangleAlertIcon aria-hidden="true" />{label}</span> });
   }
 
-  if (!segments.length) {
+  if (!segments.length && !discarded?.length) {
     if (!skipped && !showNothingNew) return null;
     if (!skipped) segments.push({ key: "nothing-new", node: <span className="chat-receipt-text">{t("chatReceipt.nothingNew")}</span> });
   }
   // Every item carries its leading separator; the line clips the one that starts each row.
-  return <nav className="chat-receipt" data-save-skipped={skipped || undefined} aria-label={t("chatReceipt.label")}>
-    <MemorySaveWarning reason={skipped} items={message?.memory_update?.discardedMemoryItems} />
+  return <nav className="chat-receipt" data-save-skipped={skipped || Boolean(discarded?.length) || undefined} aria-label={t("chatReceipt.label")}>
+    <MemorySaveWarning reason={skipped} items={discarded} />
     {segments.length ? <div className="chat-receipt-line">
       {segments.map((segment) => <span className="chat-receipt-item" data-receipt={segment.key} key={segment.key}>
         <span className="chat-receipt-separator" aria-hidden="true">·</span>

@@ -70,12 +70,13 @@ export function UpdateSettingsCard({
   useTranslation("settings");
   const offer = updateState?.supported === true ? updateState.offer : null;
   const released = offer?.published_at ? displayPublishedAt(offer.published_at) : null;
+  const busy = phase !== "idle";
   const upToDate =
     updateState?.supported === true &&
     !offer &&
     updateState?.last_checked_at_ms != null &&
+    !busy &&
     !error;
-  const busy = phase !== "idle";
   const status =
     phase === "checking"
       ? i18n.t("settings:updateSettingsCard.checkingForUpdates")

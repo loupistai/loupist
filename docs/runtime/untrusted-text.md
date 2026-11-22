@@ -1,6 +1,6 @@
 # Untrusted text
 
-Third-party text raises a turn tier that pauses selected outbound tools and instruction-file writes, wraps the text the model sees, and keeps `web_fetch` to known sites. `run_python` stays allowed. Reviewed account fields are hidden before a connector result reaches the model.
+Third-party text raises a turn tier that pauses selected outbound tools and instruction-file writes, wraps the text the model sees, and limits `web_fetch` to known sites and exact links it has shown the model. `run_python` stays allowed. Reviewed account fields are hidden before a connector result reaches the model.
 
 Third-party text raises a weaker tier of the same `TurnTaint`
 (`apps/loupist/src-tauri/src/custom_connections/taint.rs`). Which broker methods each
@@ -61,7 +61,8 @@ markers under the app's private `export-trust` directory. Renderer-composed CSV
 and Markdown exports have no authoritative origin receipt, so they are tagged
 conservatively. Native `read` reports its resolved target to Rust, which recognizes
 those exact bytes, raises the tier and supplies fresh delimiters for the native
-result. Unchanged copies and renamed files are recognized; `dataset_import`
+result. The native adapter reports the final text for link recording after it
+applies the read limit. Unchanged copies and renamed files are recognized; `dataset_import`
 keeps tagged bytes in the third-party class. Workspace captures of tagged bytes
 are delimited too and retain tool authorship if saved as a Source. Files exported before tagging,
 externally changed bytes and derived files without declared lineage remain
@@ -79,21 +80,49 @@ unresolved, so the native result is conservatively delimited as file text and
 raises the untrusted-text tier. It never becomes a trusted result merely because
 the scan stopped. Small ordinary user files keep their existing tier.
 
-The web site rule below is unchanged: redirect hops, short private values on
-already-seen sites and `web_search` queries are not checked for exfiltration.
+Redirect hops, short private values on already-seen sites and `web_search`
+queries are not checked for exfiltration. A hostile publisher can offer many links
+and try to make the model choose one based on a private fact, leaking a few bits
+per fetch. The same channel already exists for search results.
 
-Once the tier is up, `web_fetch` keeps to sites the turn already knows
-(`TurnTaint::web_fetch_target`). A search result (by `source_id` or its exact URL), a
-page already read and a URL the user typed always open. A URL carrying a
-24-character run of the turn's principles,
-perspective, Lens bodies or notes and Journal text, is refused on any site. Official
-filing and statistics sites (`RESEARCH_SITES`) open. A site seen this turn (a search
-result's or fetched page's host, or a site named in the user's message) opens when its
-path is at most 1024 bytes and its query and fragment total at most 256 bytes. The
-path bound is wider because a percent-encoded Korean article slug is long. Anything
-else is refused with `untrusted_text_paused` and a `next` that says to find the page
-with `web_search` and fetch the result, whose exact URL then opens. Links and text
-inside a page, its alternates and a saved Source's own site never count as known.
+Once the tier is up, `TurnTaint::web_fetch_target` applies the same rules in
+interactive, scheduled and hand-off runs. A search result (by `source_id` or its
+exact URL), a URL acquired through a fetch with a site grant, and a URL the user
+typed open before the private-text check. The host refuses other URLs that
+contain a 24-character run of the turn's principles, perspective, Lens bodies or
+notes, or Journal text.
+
+A bare URL or Markdown link in the result text the model received can then open
+by exact URL. The model contributes only the choice among links it was shown.
+Returned history and derived files can also contain links a model composed.
+Opening an exact URL based on a delivered link passes the same private-text
+check as opening a composed URL.
+
+The host resolves relative Markdown link targets against the result's page URL
+when available and uses the same parsed URL comparison as for other known URLs.
+The comparison ignores fragments and normalizes default ports. A trailing slash
+on a non-root path and the case of existing percent escapes remain significant.
+Markdown decodes character references such as `&amp;`. In a bare URL the same
+characters are literal. Only delivered text contributes links. Each piece of a
+paged read contributes its own links when delivered. The host records up to 2,000
+links per result and 20,000 distinct links per turn, each at most 2,048 bytes.
+It silently skips links beyond those limits.
+
+A fetch admitted solely through a delivered link grants the exact requested URL,
+each reported redirect hop and the final URL for the rest of the reply. None of those
+URLs adds a site. Paging, passage reads and retries of the same page still work.
+Links delivered from that page can each be followed by exact URL under the same
+rule. A page's alternates and a saved Source's own address also grant no site.
+
+Search result URLs and sites named in the user's message add sites. Fetches
+allowed before third-party text, by an exact search result or user-typed URL,
+by an official filing or statistics site (`RESEARCH_SITES`), or by the rule for
+an already-seen site add the requested and final sites. A fetch uses that site
+grant if any of those reasons would admit it without the delivered link.
+On a site the turn already saw, a composed URL opens when its path is at most
+1,024 bytes and its query and fragment total at most 256 bytes. The path bound
+accommodates percent-encoded Korean article slugs. Other composed URLs are
+refused with `untrusted_text_paused` and guidance to use `web_search`.
 
 These URL privacy checks run in production builds as well as tests. The app has no current
 ownership records or wallet addresses. URLs with numbers follow the same site

@@ -7,7 +7,7 @@ pub(super) fn mcp_call_error_with_inventory(
     error: BrokerError,
 ) -> Result<Value, BrokerError> {
     // Preserve the typed broker code even when activation refreshed tools.
-    if is_offline(&error) || is_argument_failure(&error) {
+    if is_offline(&error) || is_argument_failure(&error) || is_sec_contact_required(&error) {
         return Err(error);
     }
     let message = safe_mcp_error_summary(&error);
@@ -31,6 +31,14 @@ pub(super) fn is_argument_failure(error: &BrokerError) -> bool {
     match error {
         BrokerError::InvalidArguments { .. } => true,
         BrokerError::WithNext { source, .. } => is_argument_failure(source),
+        _ => false,
+    }
+}
+
+pub(super) fn is_sec_contact_required(error: &BrokerError) -> bool {
+    match error {
+        BrokerError::SecContactRequired(_) => true,
+        BrokerError::WithNext { source, .. } => is_sec_contact_required(source),
         _ => false,
     }
 }
@@ -120,12 +128,11 @@ pub(super) fn map_mcp_error(error: McpError) -> BrokerError {
 const YAHOO_ADJUSTMENT_EXPECTED: &str = "splits_only or splits_and_dividends. Yahoo Finance restates its prices for later share splits, so it gives the price as traded only for a daily bar with no split after it. Read the adjusted price and say that it is adjusted, or read the price as traded from a connected source that serves unadjusted prices.";
 
 pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerError {
-    match result
+    let marker = result
         .structured_content
         .as_ref()
-        .and_then(|value| value.pointer("/loupist_error/kind"))
-        .and_then(Value::as_str)
-    {
+        .and_then(|value| value.get("loupist_error"));
+    match marker.and_then(|marker| marker["kind"].as_str()) {
         Some("invalid_destination") => {
             let field = result
                 .structured_content
@@ -153,10 +160,6 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
             return BrokerError::invalid(field, expected);
         }
         Some("invalid_arguments") => {
-            let marker = result
-                .structured_content
-                .as_ref()
-                .and_then(|v| v.get("loupist_error"));
             if marker.is_some_and(|marker| marker["provider"] == "fred") {
                 let field = marker
                     .filter(|marker| marker["field"] == "symbol")
@@ -170,6 +173,12 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
             return BrokerError::invalid("adjustment", YAHOO_ADJUSTMENT_EXPECTED);
         }
         Some("offline") => return BrokerError::Offline("market data provider".into()),
+        Some("sec_contact_required")
+            if marker.is_some_and(|marker| marker["provider"] == "sec") =>
+        {
+            return BrokerError::SecContactRequired("SEC answers only requests that declare a contact, and none is set in this app, so the sec provider was not used.")
+                .with_next("Call this tool again with another provider listed for it. Tell the user that adding their contact under Settings > Data connections > SEC EDGAR enables SEC data.");
+        }
         Some("alpha_vantage_paid_plan_required") => {
             return BrokerError::Execution("This needs a paid Alpha Vantage plan.".into());
         }
@@ -315,8 +324,9 @@ mod tests {
         .unwrap();
         let error = super::super::provider_failure(
             rejected_mcp_result(&result),
+            None,
             Some("yfinance"),
-            &Default::default(),
+            true,
         );
         assert!(
             matches!(error, BrokerError::InvalidArguments { field, expected }

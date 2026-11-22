@@ -231,7 +231,9 @@ Three tabs:
   reply shows that artifact ("The change was not applied. The earlier version is
   shown.", matched by the step's title, unless a later publish of that title in the
   reply succeeded), or a generic "It ended with an error. It
-  was not used in the answer."). Stopped, skipped and safety refusals keep their
+  was not used in the answer."). An SEC web or market-data read refused for a
+  missing contact uses the `invalid_input` category and points to contact setup
+  in Data connections. Stopped, skipped and safety refusals keep their
   reasons first. Labels come from the locale catalogs: the catalog's step label, a read's
   noun ("Read current quote"), the connection's name in the interface language ("Used Web Research", "웹 리서치 사용"), or a
   generic label for the step's kind; a tool's raw name and the host's English

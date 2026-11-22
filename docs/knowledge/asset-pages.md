@@ -45,7 +45,17 @@ The host checks that this turn acknowledged the result, that its original
 route is eligible for unattended read access, and that the retained payload
 contains a finite scalar and a stated date. A canonical decimal string can
 supply a scalar. The receipt and dataset preserve the source value. The
-save echoes the value that the page will show and commits with the reply.
+tool echoes the staged value. The host holds the extracted price, chart
+points and replay arguments in memory throughout the pending save.
+It can commit them after the cited dataset receives a newer revision.
+
+When Memory can save, the host applies the reply's follows in the catalog
+before it checks the staged reads. It saves each read for the same asset ID
+while that asset is followed and records it in the reply's Memory changes.
+If that ID is unavailable, the receipt lists the price read under items
+that were not kept. A followed asset with no saved read carries
+`price_read: "none"` in the followed context and can get its first saved
+read on a later reply.
 
 The saved call keeps its route and arguments. History can use a second call
 with two designated ISO date arguments and a rolling window. The rest of the

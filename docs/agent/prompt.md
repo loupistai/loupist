@@ -24,11 +24,11 @@ research. The data does not become a user instruction.
 
 Native file guidance names only admitted file/instruction/Skill paths. Bundled
 Skill reads have their own read-only root; adjacent agent internals stay private.
-The `web_fetch` search-result/site restriction applies after third-party text has
-been read in the current reply; before that, a public URL the user supplies can be
-opened directly. The Journal Skill routes durable
-assistant research to `lens_file`, while `note_save` keeps Chat progress and facts
-the user stated.
+After the current reply reads third-party text, `web_fetch` follows the
+[delivered-link and site rules](../runtime/untrusted-text.md#untrusted-text).
+Before that, a public URL the user supplies can be opened directly. The Journal
+Skill routes durable assistant research to `lens_file`, while `note_save` keeps
+Chat progress and facts the user stated.
 
 Ordinary research packs and enabled web research preload on every surface. The
 catalog marks charts and schedules with `preload: false`: they remain registered

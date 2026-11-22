@@ -2,7 +2,7 @@ import type { ChatMessage, GrowthEvent, LearnedDigest, LensKind, MapKind, Memory
 import type { Verdict } from "../contracts/assets";
 import { numbersToCheck } from "./numberChecks";
 
-export const SAVED_RECEIPT_KINDS = ["Source", "principle", "Journal", "Research", "World"] as const;
+export const SAVED_RECEIPT_KINDS = ["Source", "principle", "Journal", "Research", "World", "PriceRead"] as const;
 export type SavedReceiptKind = (typeof SAVED_RECEIPT_KINDS)[number];
 export type SavedReceiptGroup = { kind: SavedReceiptKind; items: MemoryUpdateChange[] };
 export type UsedPrinciple = { recordId: string; title: string };
@@ -96,7 +96,7 @@ export function chatReceipt(message: ChatMessage, additions?: MapAdditions, opti
     learned,
     saved,
     numbersToCheck: toCheck,
-    empty: !names && !relationships && !thesisMoves.length && !unsavedTheses.length && !skippedKinds.length && !setup.length && !usedPages.length && !learned && !saved.length && !toCheck,
+    empty: !names && !relationships && !thesisMoves.length && !unsavedTheses.length && !skippedKinds.length && !setup.length && !usedPages.length && !learned && !saved.length && !toCheck && !update?.discardedMemoryItems?.length,
   };
 }
 

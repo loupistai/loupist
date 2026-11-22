@@ -353,7 +353,7 @@ pub fn knowledge_growth_events(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_world_query(
     request: WorldGraphQuery,
     state: State<'_, AppState>,
@@ -383,7 +383,7 @@ pub(crate) fn map(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_source_read(
     request: KnowledgeSourceReadRequest,
     state: State<'_, AppState>,
@@ -1076,12 +1076,31 @@ pub(crate) fn catalog(
 
 pub(crate) fn world_query(
     state: &AppState,
-    request: WorldGraphQuery,
+    mut request: WorldGraphQuery,
 ) -> Result<WorldQueryDto, CommandError> {
     admit(state, &request.loupist_id)?;
     with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
-        world_view_with_sources(&crate::knowledge::KnowledgeWrite::bind(tx, blobs), request)
+        let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
+        // The renderer browses the live World. A continuation still belongs to
+        // the exact snapshot that issued its cursor, as do model reads.
+        if request.cursor.is_none() {
+            request.revision_id =
+                current_world_revision(&write, &request.loupist_id, &request.record_id)?;
+        }
+        world_view_with_sources(&write, request)
     })
+}
+
+fn current_world_revision(
+    write: &crate::knowledge::KnowledgeWrite<'_>,
+    loupist_id: &str,
+    record_id: &str,
+) -> crate::knowledge::KnowledgeResult<String> {
+    let record = write.owned_record(loupist_id, record_id)?;
+    if record.kind != RecordKind::World {
+        return Err(KnowledgeError::Unauthorized("record is not World"));
+    }
+    record.revision_id.ok_or(KnowledgeError::NotFound)
 }
 
 fn world_view_with_sources(
@@ -1169,15 +1188,18 @@ pub(crate) fn source_read(
         }
         let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
         let revision = match (&request.world_record_id, &request.world_revision_id) {
-            (Some(world_module), Some(world_revision)) => {
+            (Some(world_module), Some(_)) => {
                 let span = request
                     .span_id
                     .as_deref()
                     .ok_or(KnowledgeError::Invalid("World inspection requires a span"))?;
+                // Re-authorize the exact selected span against the live World.
+                let world_revision =
+                    current_world_revision(&write, &request.loupist_id, world_module)?;
                 let (target, revision) = write.world_source_revision(
                     &request.loupist_id,
                     world_module,
-                    world_revision,
+                    &world_revision,
                     span,
                 )?;
                 if target.record_id != request.record_id
@@ -1687,14 +1709,14 @@ fn with_loupist_knowledge<T>(
     let mut connection = state
         .store
         .lock_loupist(loupist_id)
-        .map_err(super::map_store)?;
+        .map_err(map_knowledge_store)?;
     let transaction = connection
         .transaction()
-        .map_err(|error| super::map_store(error.into()))?;
+        .map_err(|error| map_knowledge_store(error.into()))?;
     let value = body(&transaction, &blobs).map_err(map_knowledge)?;
     transaction
         .commit()
-        .map_err(|error| super::map_store(error.into()))?;
+        .map_err(|error| map_knowledge_store(error.into()))?;
     Ok(value)
 }
 
@@ -1720,11 +1742,30 @@ pub(crate) fn knowledge_blobs(state: &AppState) -> Result<BlobStore, CommandErro
     BlobStore::open(root).map_err(map_knowledge)
 }
 
+fn sqlite_is_busy(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(code, _)
+            if matches!(code.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+    )
+}
+
+fn map_knowledge_store(error: crate::store::StoreError) -> CommandError {
+    match error {
+        crate::store::StoreError::Sqlite(error) if sqlite_is_busy(&error) => {
+            map_knowledge(KnowledgeError::Sqlite(error))
+        }
+        other => super::map_store(other),
+    }
+}
+
 fn map_knowledge(error: KnowledgeError) -> CommandError {
     if let Some(message) = outdated_memory_message(&error) {
         return CommandError::new("schema_mismatch", message);
     }
-    if matches!(error, KnowledgeError::Invalid("world processing is busy")) {
+    if matches!(error, KnowledgeError::Invalid("world processing is busy"))
+        || matches!(&error, KnowledgeError::Sqlite(error) if sqlite_is_busy(error))
+    {
         return CommandError::new(
             "world_busy",
             "World is being updated. Try again in a minute.",
@@ -1780,6 +1821,7 @@ mod memory_error_tests {
                 loupist_id: "loupist-a".into(),
                 since_ms: None,
                 until_ms: None,
+                world_revision_id: None,
                 limit: None,
                 cursor: None,
             },

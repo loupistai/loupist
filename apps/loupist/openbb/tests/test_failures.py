@@ -24,12 +24,14 @@ from openbb_mcp_server.models.settings import MCPSettings
 from loupist_openbb.failures import (
     OFFLINE,
     PAID_ALPHA_PLAN,
+    SEC_CONTACT_REQUIRED,
     INVALID_ARGUMENTS,
     FRED_INVALID_ARGUMENTS,
     FRED_INVALID_SYMBOL,
     InvalidProviderArguments,
     AlphaVantagePaidPlanRequired,
     CredentialRejectedError,
+    SecContactRequired,
     credential_rejected,
     provider_refusal,
     is_offline_error,
@@ -80,6 +82,16 @@ def test_reachable_errors_and_provider_text_are_not_offline(error: Exception) ->
     assert not is_offline_error(error)
 
 
+def test_contact_refusal_is_typed_without_matching_exception_text() -> None:
+    assert provider_refusal(OpenBBError(SecContactRequired())) == SEC_CONTACT_REQUIRED
+    assert (
+        provider_refusal(
+            PermissionError("SEC requests require a configured contact email")
+        )
+        is None
+    )
+
+
 def test_network_failure_crosses_openbb_rest_and_mcp_without_private_text() -> None:
     app = FastAPI()
     AppLoader.add_exception_handlers(app)
@@ -90,6 +102,7 @@ def test_network_failure_crosses_openbb_rest_and_mcp_without_private_text() -> N
             return {"provider": provider, "results": [{"price": 12}]}
         errors = {
             "plan": AlphaVantagePaidPlanRequired(),
+            "sec": SecContactRequired(),
             "dns": socket.gaierror(
                 -2, "private-hostname.example?api_key=private-canary"
             ),
@@ -131,16 +144,20 @@ def test_network_failure_crosses_openbb_rest_and_mcp_without_private_text() -> N
             await client.call_tool(
                 "activate_tools", {"tool_names": ["equity_price_quote"]}
             )
-            for failure in ["dns", "connect", "timeout", "plan"]:
+            for failure, expected in [
+                ("dns", OFFLINE),
+                ("connect", OFFLINE),
+                ("timeout", OFFLINE),
+                ("plan", PAID_ALPHA_PLAN),
+                ("sec", SEC_CONTACT_REQUIRED),
+            ]:
                 result = await client.call_tool(
                     "equity_price_quote",
                     {"provider": "fixture", "failure": failure},
                     raise_on_error=False,
                 )
                 assert result.is_error
-                assert result.structured_content == (
-                    PAID_ALPHA_PLAN if failure == "plan" else OFFLINE
-                )
+                assert result.structured_content == expected
                 assert "private-canary" not in str(result)
             error = await client.call_tool(
                 "equity_price_quote",

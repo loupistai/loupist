@@ -289,11 +289,11 @@ fn supported(
     let mut spans =
         tx.prepare("SELECT record_id FROM knowledge_source_spans WHERE span_id = ?1")?;
     let mut claims_by_relation = BTreeMap::<String, (usize, BTreeSet<String>)>::new();
-    for claim in snapshot
-        .claims
-        .iter()
-        .filter(|claim| claim.status != super::ClaimStatus::Withdrawn && !claim.relation.is_empty())
-    {
+    for claim in snapshot.claims.iter().filter(|claim| {
+        claim.connects_names()
+            && claim.status != super::ClaimStatus::Withdrawn
+            && !claim.relation.is_empty()
+    }) {
         let entry = claims_by_relation
             .entry(relation_key(&claim.relation))
             .or_default();
@@ -653,7 +653,10 @@ fn review_lists(
 
     let mut grouped = std::collections::BTreeMap::<String, Vec<&GraphClaim>>::new();
     for claim in &body.claims {
-        if claim.relation.is_empty() || listed_relation(&claim.relation, extension) {
+        if !claim.connects_names()
+            || claim.relation.is_empty()
+            || listed_relation(&claim.relation, extension)
+        {
             continue;
         }
         grouped

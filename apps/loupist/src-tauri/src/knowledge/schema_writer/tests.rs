@@ -490,10 +490,31 @@ fn review_input_lists_untyped_names_then_open_relations_under_the_cap() {
         ],
         vec![
             claim_fact("claim-001", "COVERS_NODE", &long, &["node-a", "node-b"]),
-            claim_fact("claim-002", "COVERS_NODE", "Second cover", &["node-a"]),
-            claim_fact("claim-003", "RELATES_TO", "Open link", &["node-a"]),
+            claim_fact(
+                "claim-002",
+                "COVERS_NODE",
+                "Second cover",
+                &["node-a", "node-b"],
+            ),
+            claim_fact(
+                "claim-003",
+                "RELATES_TO",
+                "Open link",
+                &["node-a", "node-c"],
+            ),
             claim_fact("claim-004", "SUPPLIES", "Core link", &["node-a", "node-c"]),
-            claim_fact("claim-005", "FABRICATED_ON", "Extension link", &["node-b"]),
+            claim_fact(
+                "claim-005",
+                "FABRICATED_ON",
+                "Extension link",
+                &["node-b", "node-c"],
+            ),
+            claim_fact(
+                "claim-006",
+                "OBSERVED_MEASURE",
+                "A value about Most Linked",
+                &["node-a", "node-a"],
+            ),
         ],
     );
     due_review(&store);

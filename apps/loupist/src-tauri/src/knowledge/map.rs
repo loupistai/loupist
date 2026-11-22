@@ -220,13 +220,16 @@ pub(super) fn query(
         .collect::<KnowledgeResult<BTreeMap<_, _>>>()?;
     if let Some(body) = &body {
         for claim in &body.claims {
-            for id in claim
+            let endpoints = claim
                 .endpoints
                 .iter()
-                .map(|e| &e.node_id)
-                .collect::<BTreeSet<_>>()
-            {
-                *degrees.entry(id.clone()).or_default() += 1;
+                .map(|end| &end.node_id)
+                .collect::<BTreeSet<_>>();
+            let connects_names = endpoints.len() > 1;
+            for id in &endpoints {
+                if connects_names {
+                    *degrees.entry((*id).clone()).or_default() += 1;
+                }
                 if let Some(origin) = claim
                     .evidence
                     .iter()
@@ -234,12 +237,12 @@ pub(super) fn query(
                     .min_by(|a, b| a.connection_id.cmp(&b.connection_id))
                 {
                     custom_origins
-                        .entry(id.clone())
+                        .entry((*id).clone())
                         .or_insert_with(|| origin.clone());
                 }
                 if let Some(at) = claim.recorded_at_ms {
                     incident
-                        .entry(id.clone())
+                        .entry((*id).clone())
                         .and_modify(|old| *old = (*old).min(at))
                         .or_insert(at);
                 }
@@ -250,20 +253,19 @@ pub(super) fn query(
                 .or(claim.recorded_at_ms);
             generated = generated.max(at.unwrap_or(0));
             if let Some(source) = claim.endpoints.first() {
-                let targets = claim
-                    .endpoints
-                    .iter()
-                    .skip(1)
-                    .map(|e| &e.node_id)
-                    .collect::<BTreeSet<_>>();
-                // Unary claims are visible as self-loops; hyperclaims use their ordered first endpoint as the hub.
-                let targets = if targets.is_empty() {
-                    BTreeSet::from([&source.node_id])
+                // Facts keep an index entry for growth, without spending the
+                // relationship budget or contributing to degree and topology.
+                let targets: Vec<_> = if connects_names {
+                    endpoints
+                        .into_iter()
+                        .filter(|id| *id != &source.node_id)
+                        .collect()
                 } else {
-                    targets
+                    vec![&source.node_id]
                 };
+                let kind = if connects_names { "claim" } else { "fact" };
                 for target in &targets {
-                    let mut e = edge("claim", &source.node_id, target);
+                    let mut e = edge(kind, &source.node_id, target);
                     e.id = if targets.len() == 1 {
                         claim.id.clone()
                     } else {
@@ -394,7 +396,7 @@ pub(super) fn query(
     let (applications, application_total) = applications(tx, loupist, &nodes, &mut generated)?;
     edges.extend(applications);
     for e in &edges {
-        if e.kind != "claim" {
+        if e.kind != "claim" && e.kind != "fact" {
             for id in BTreeSet::from([&e.source, &e.target]) {
                 if let Some(node) = nodes.get_mut(id) {
                     node.degree += 1;
@@ -411,6 +413,7 @@ pub(super) fn query(
         "lens_subject",
         "lens_idea",
         "claim",
+        "fact",
         "lens_link",
         "applies_to",
         "journal",
@@ -499,10 +502,21 @@ pub(super) fn query(
         .into_values()
         .filter(|n| chosen.contains(&n.id))
         .collect();
+    let mut facts: Vec<_> = edges
+        .iter()
+        .filter(|edge| edge.kind == "fact" && chosen.contains(&edge.source))
+        .collect();
+    facts.sort_by_key(|edge| (std::cmp::Reverse(edge.first_seen_at_ms), edge.id.as_str()));
+    let selected_facts: BTreeSet<_> = facts
+        .into_iter()
+        .take(2000)
+        .map(|edge| edge.id.clone())
+        .collect();
     edges.retain(|e| {
         chosen.contains(&e.source)
             && chosen.contains(&e.target)
             && (e.kind != "claim" || selected_claims.contains(&e.id))
+            && (e.kind != "fact" || selected_facts.contains(&e.id))
     });
     edges.sort_by(|a, b| (&a.kind, &a.id).cmp(&(&b.kind, &b.id)));
     for node in &nodes {

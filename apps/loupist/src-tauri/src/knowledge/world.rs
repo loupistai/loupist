@@ -568,10 +568,10 @@ pub(super) fn normalize_world(mut body: WorldSnapshotBody) -> KnowledgeResult<Wo
     Ok(body)
 }
 
-fn relation_vocabulary(claims: &[GraphClaim]) -> Vec<super::model::RelationCount> {
+pub(super) fn relation_vocabulary(claims: &[GraphClaim]) -> Vec<super::model::RelationCount> {
     use std::collections::BTreeMap;
     let mut counts: BTreeMap<&str, super::model::RelationCount> = BTreeMap::new();
-    for claim in claims {
+    for claim in claims.iter().filter(|claim| claim.connects_names()) {
         let entry =
             counts
                 .entry(claim.relation.as_str())

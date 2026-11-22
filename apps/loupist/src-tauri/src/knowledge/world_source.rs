@@ -77,21 +77,13 @@ pub(super) fn related_claims(
                 .iter()
                 .any(|evidence| spans.contains(&evidence.span_id))
             {
-                // The World graph only counts links between distinct endpoints.
-                let is_relationship = claim.endpoints.first().is_some_and(|first| {
-                    claim
-                        .endpoints
-                        .iter()
-                        .skip(1)
-                        .any(|end| end.node_id != first.node_id)
-                });
                 result.push(SourceWorldClaim {
                     world_record_id: world_record_id.clone(),
                     world_revision_id: world_revision_id.clone(),
+                    is_relationship: claim.connects_names(),
                     claim_id: claim.id,
                     proposition: claim.proposition,
                     relation: claim.relation,
-                    is_relationship,
                 });
             }
         }

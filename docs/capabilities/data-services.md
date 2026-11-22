@@ -27,8 +27,11 @@ one. Only recognized provider diagnostic text reaches the tool error.
 
 OpenDART and KRX recognize structured input refusals in success and client-error
 responses. The bundled OpenBB sidecar sends a fixed argument-refusal marker for
-FRED, SEC and REST schema rejections. The MCP host preserves that broker error
-after tool activation. Custom MCP connections recognize JSON-RPC Invalid params
+FRED, SEC and REST schema rejections. An SEC request blocked by a missing contact
+uses `sec_contact_required` across the sidecar and host, with instructions to use
+another listed provider and add the contact in Settings. Direct SEC web reads use
+the same refusal code. The MCP host preserves these typed errors after tool
+activation. Custom MCP connections recognize JSON-RPC Invalid params
 and structured bad-request tool errors without exposing remote error prose.
 
 
@@ -62,10 +65,15 @@ components against the vendor rows.
 
 Market data bundles its runtime/provider packages: base `openbb` plus only the extensions the runtime manifest reaches, not `openbb[all]` ([OpenBB runtime](../../apps/loupist/openbb/README.md#development) owns the list). `openbb.platform` supplies
 keyless providers and is enabled for new Loupists; SEC additionally requires its
-configured contact email. Without it, runs leave the SEC provider out and the load
-result carries a model-visible notice that SEC is unavailable until the user adds
-the email, naming `connection_setup` with the entry id so the model can offer the
-[setup card](connections.md#connections-and-credentials). Credentialed providers have separate entries. New
+configured contact email. The platform reads the non-secret setting from SEC
+EDGAR even when that sibling connection is off for the Loupist. Without it, the
+run omits SEC from the bootstrap, its host allowlist and the available providers
+and tools. The load notice says SEC is unavailable until the user adds the email
+and names `connection_setup` with the entry ID for the
+[setup card](connections.md#connections-and-credentials).
+Credentialed providers have separate entries. The sidecar also checks each
+route's credential requirement. For providers with both public and protected
+routes, such as Nasdaq and BLS, the public routes remain usable without a key. New
 Loupists enable keyless entries without required setup, including the Market data
 platform, World Bank, DefiLlama, Web Research and Asset lookup. KIS, KRX and
 OpenDART start disabled in the optional Korea group. Rust filters read-only tool
@@ -116,9 +124,10 @@ falls back; Exa-only skips the model. Each provider's `native_search` in the
 [provider manifest](../runtime/providers.md#provider-manifest) says which. Web results, DART filing text and OpenBB
 results outside a reviewed numeric-only list raise the turn's
 [untrusted-text tier](../architecture.md#trust), which pauses custom-connection calls,
-selected schedule operations and instruction-file writes and keeps `web_fetch` to sites
-the turn already knows for the rest of that turn. Saved Sources and retained datasets holding such text raise it again
-when they come back.
+selected schedule operations and instruction-file writes. For the rest of the turn,
+`web_fetch` can open exact links from delivered text under the private-text check,
+and composed URLs follow the known-site rule. Saved Sources and retained datasets
+holding such text raise the tier again when they come back.
 
 Search and reading follow pi-web-access 0.47's behavior where it applies to a
 host-side reader. Exa results take `URL:` and `Published:` only from each result's
@@ -159,10 +168,11 @@ such as screener industries keep the bare union. The nine default cards fall fro
 No model-facing text names the runtime; the model and the user see "market
 data", and the capability index lists no provider ids. Scraped providers
 (yfinance, finviz, seeking_alpha, stockgrid, multpl, wsj) are labeled best
-effort. Their failures come from individual requests (layout changes, consent
-walls, blocking), so there is no active health probe: the first failure of one
-in a turn returns a hint naming only official providers enabled for the run, with
-the same listing-market limits. For an explicitly unadjusted Yahoo daily equity
+effort. Their failures come from individual requests such as layout changes,
+consent walls or blocking. For a provider error, recovery names up to four
+enabled alternatives on the same tool, with official sources first. When the
+tool has no alternative, the reply keeps the existing failure guidance. For an
+explicitly unadjusted Yahoo daily equity
 read, the sidecar checks split events through the present before cutting the
 chart to the requested range. It uses Yahoo's Close if the share basis is
 unchanged. A later split, missing split information, or a non-daily interval

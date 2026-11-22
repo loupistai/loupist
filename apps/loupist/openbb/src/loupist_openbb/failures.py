@@ -15,6 +15,9 @@ from urllib.error import URLError
 
 OFFLINE = {"loupist_error": {"kind": "offline"}}
 PAID_ALPHA_PLAN = {"loupist_error": {"kind": "alpha_vantage_paid_plan_required"}}
+SEC_CONTACT_REQUIRED = {
+    "loupist_error": {"kind": "sec_contact_required", "provider": "sec"}
+}
 YAHOO_ADJUSTMENT = {
     "loupist_error": {
         "kind": "unsupported_adjustment",
@@ -69,6 +72,11 @@ class YahooAdjustmentUnavailable(Exception):
     """Yahoo chart prices cannot establish an as-traded value for this range."""
 
 
+class SecContactRequired(PermissionError):
+    def __init__(self) -> None:
+        super().__init__("SEC requests require a configured contact email")
+
+
 class AlphaVantagePaidPlanRequired(Exception):
     def __init__(self) -> None:
         super().__init__("alpha_vantage_paid_plan_required")
@@ -104,6 +112,8 @@ def provider_refusal(error: BaseException) -> dict[str, Any] | None:
             return YAHOO_ADJUSTMENT
         if isinstance(current, AlphaVantagePaidPlanRequired):
             return PAID_ALPHA_PLAN
+        if isinstance(current, SecContactRequired):
+            return SEC_CONTACT_REQUIRED
         if isinstance(current, RequestValidationError):
             return INVALID_ARGUMENTS
         if isinstance(current, InvalidProviderArguments):
@@ -119,6 +129,8 @@ def provider_refusal(error: BaseException) -> dict[str, Any] | None:
                 return YAHOO_ADJUSTMENT
             if body == PAID_ALPHA_PLAN:
                 return PAID_ALPHA_PLAN
+            if body == SEC_CONTACT_REQUIRED:
+                return SEC_CONTACT_REQUIRED
             for refusal in ARGUMENT_REFUSALS:
                 if body == refusal:
                     return refusal
@@ -195,6 +207,8 @@ def is_offline_error(error: BaseException) -> bool:
 def _refusal_status(rejection):
     if rejection == YAHOO_ADJUSTMENT or rejection in ARGUMENT_REFUSALS:
         return 422
+    if rejection == SEC_CONTACT_REQUIRED:
+        return 403
     return 402 if rejection == PAID_ALPHA_PLAN else 401
 
 
@@ -249,7 +263,12 @@ async def call_tool_with_failures(
                 content=(
                     rejection["loupist_error"]["kind"]
                     if rejection
-                    in (PAID_ALPHA_PLAN, YAHOO_ADJUSTMENT, *ARGUMENT_REFUSALS)
+                    in (
+                        PAID_ALPHA_PLAN,
+                        SEC_CONTACT_REQUIRED,
+                        YAHOO_ADJUSTMENT,
+                        *ARGUMENT_REFUSALS,
+                    )
                     else "The data provider rejected the configured key."
                 ),
                 structured_content=rejection,

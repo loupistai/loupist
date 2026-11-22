@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TriangleAlertIcon, XIcon, PlayIcon } from "lucide-react";
 import type { KnowledgeMap } from "../../contracts/knowledge";
 import type { LoupistBridge } from "../../types";
@@ -19,19 +19,31 @@ const localDay = (value: string) => { const match = /^(\d{4})-(\d{2})-(\d{2})$/.
  * conflicting evidence and Lens entries, newest day first. Rows focus the name
  * on the Map, open the relationship or the Lens entry.
  */
-export function MapWhatsNew({ bridge, loupistId, map, lastSeenAtMs, nowMs, refreshKey, onOpenRow, onReplay, onClose }: {
-  bridge: LoupistBridge; loupistId: string; map: KnowledgeMap | undefined; lastSeenAtMs: number | undefined; nowMs: number; refreshKey?: unknown;
+export function MapWhatsNew({ bridge, loupistId, map, onRevisionChange, lastSeenAtMs, nowMs, onOpenRow, onReplay, onClose }: {
+  bridge: LoupistBridge; loupistId: string; map: KnowledgeMap | undefined; lastSeenAtMs: number | undefined; nowMs: number;
+  onRevisionChange?: () => void;
   onOpenRow: (row: WhatsNewRow) => void; onReplay: (sinceMs: number) => void; onClose: () => void;
 }) {
   const { t, i18n } = useTranslation("knowledge");
   const [choice, setChoice] = useState<WhatsNewSince>(() => lastSeenAtMs === undefined ? { kind: "days", days: 7 } : { kind: "lastVisit" });
   const since = sinceMs(choice, lastSeenAtMs, nowMs);
-  const load = useGrowthSince(bridge, loupistId, since, true, refreshKey);
+  const load = useGrowthSince(bridge, loupistId, since, !!map, map?.generatedAtMs, map?.worldRevisionId, onRevisionChange);
   const rows = useMemo(() => whatsNewRows(load.events, map, i18n.language), [load.events, map, i18n.language]);
   const groups = useMemo(() => groupByDay(rows, nowMs), [rows, nowMs]);
   const counts = whatsNewCounts(rows);
   const from = since ?? rows.at(-1)?.atMs ?? nowMs;
   const heading = useRef<HTMLHeadingElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const scrollAnchor = useRef<{ row: string; top: number } | undefined>(undefined);
+  useLayoutEffect(() => {
+    const scroller = list.current;
+    if (!scroller) return;
+    const anchor = scrollAnchor.current;
+    if (anchor && scroller.scrollTop > 0) {
+      const row = [...scroller.querySelectorAll<HTMLElement>("[data-growth-row]")].find(item => item.dataset.growthRow === anchor.row);
+      if (row) scroller.scrollTop += row.getBoundingClientRect().top - anchor.top;
+    }
+  }, [groups]);
   useEffect(() => { heading.current?.focus({ preventScroll: true }); }, []);
   const choices: { key: string; label: string; value: WhatsNewSince }[] = [
     ...(lastSeenAtMs === undefined ? [] : [{ key: "lastVisit", label: t("map.sinceLastVisit"), value: { kind: "lastVisit" } as const }]),
@@ -59,13 +71,18 @@ export function MapWhatsNew({ bridge, loupistId, map, lastSeenAtMs, nowMs, refre
         <Button variant="ghost" size="sm" className="map-whats-new-replay" onClick={() => onReplay(from)}><PlayIcon aria-hidden="true" />{t("map.replayThese")}</Button>
       </> : null}
     </div>
-    <div className="map-whats-new-list" aria-busy={load.status === "loading"}>
+    <div className="map-whats-new-list" ref={list} onScroll={event => {
+      const scroller = event.currentTarget;
+      const top = scroller.getBoundingClientRect().top;
+      const row = scroller.scrollTop > 0 ? [...scroller.querySelectorAll<HTMLElement>("[data-growth-row]")].find(item => item.getBoundingClientRect().bottom > top) : undefined;
+      scrollAnchor.current = row?.dataset?.growthRow ? { row: row.dataset.growthRow, top: row.getBoundingClientRect().top } : undefined;
+    }} aria-busy={load.status === "loading"}>
       {load.status === "loading" ? <div className="map-whats-new-skeleton" aria-hidden="true"><span /><span /><span /></div>
         : load.status === "failed" ? <div className="map-whats-new-state" role="alert"><p>{t("map.newError")}</p><Button variant="outline" size="sm" onClick={load.retry}>{t("map.retry")}</Button></div>
           : !rows.length ? <p className="map-whats-new-state" role="status">{t("map.newEmpty", { date: shortDate(from) })}</p>
             : groups.map((group) => <section key={group.dayMs} aria-labelledby={`map-whats-new-day-${group.dayMs}`}>
               <h3 id={`map-whats-new-day-${group.dayMs}`}>{dayLabel(group)}</h3>
-              <ul>{group.rows.map((row) => <li key={row.id}><WhatsNewRowButton row={row} onOpen={onOpenRow} /></li>)}</ul>
+              <ul>{group.rows.map((row) => <li key={row.id} data-growth-row={row.id}><WhatsNewRowButton row={row} onOpen={onOpenRow} /></li>)}</ul>
             </section>)}
     </div>
   </aside>;

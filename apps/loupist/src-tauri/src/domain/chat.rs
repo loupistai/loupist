@@ -209,6 +209,7 @@ pub struct MemoryUpdateResult {
 
 /// The skipped receipt key for a Journal entry whose staged asset was absent.
 pub(crate) const SKIPPED_JOURNAL_SAVE: &str = "journal_save";
+pub(crate) const PRICE_READ_CHANGE_KIND: &str = "PriceRead";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -305,9 +306,22 @@ impl MemoryUpdateResult {
     pub fn validate(&self) -> Result<(), DomainError> {
         validate_discarded_memory_items(
             self.discarded_memory_items.as_deref(),
-            self.skip_reason.is_some(),
+            self.skip_reason.is_some()
+                || self.discarded_memory_items.as_ref().is_some_and(|items| {
+                    items
+                        .iter()
+                        .all(|item| item.kind == DiscardedMemoryKind::PriceRead)
+                }),
         )?;
-        if self.changes.len() > 18 {
+        // Price reads have their own staging path and do not use the Memory
+        // proposal budget. Their receipts must not crowd out other changes.
+        if self
+            .changes
+            .iter()
+            .filter(|change| change.kind != PRICE_READ_CHANGE_KIND)
+            .count()
+            > 18
+        {
             return Err(DomainError::Invalid("memory update has too many changes"));
         }
         let mut ids = BTreeSet::new();
@@ -315,7 +329,13 @@ impl MemoryUpdateResult {
             require_bounded_text(&change.record_id, 512, "memory change reference is invalid")?;
             if !matches!(
                 change.kind.as_str(),
-                "Source" | "World" | "Lens" | "Journal" | "Research" | "principle"
+                "Source"
+                    | "World"
+                    | "Lens"
+                    | "Journal"
+                    | "Research"
+                    | "principle"
+                    | PRICE_READ_CHANGE_KIND
             ) || !matches!(
                 change.operation.as_str(),
                 "create" | "revise" | "rename" | "proposed"

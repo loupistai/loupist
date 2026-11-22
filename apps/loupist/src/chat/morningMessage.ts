@@ -82,7 +82,7 @@ const entityNodes = (map?: KnowledgeMap | null) => new Map((map?.nodes ?? []).fi
 
 function claimEdges(map?: KnowledgeMap | null) {
   const byClaim = new Map<string, KnowledgeMapEdge>();
-  for (const edge of map?.edges ?? []) if (edge.kind === "claim") byClaim.set(claimIdForEdge(edge), edge);
+  for (const edge of map?.edges ?? []) if (edge.kind === "claim" || edge.kind === "fact") byClaim.set(claimIdForEdge(edge), edge);
   return byClaim;
 }
 

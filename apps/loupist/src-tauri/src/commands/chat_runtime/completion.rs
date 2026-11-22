@@ -549,27 +549,11 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
             Vec::new()
         };
         let unattended = capture.unattended_run_id.is_some();
-        let mut price_reads = if asset_work {
+        let staged_price_reads = if asset_work {
             snapshot!(capture.staged_price_reads)
         } else {
             Vec::new()
         };
-        // A concurrent follow may have claimed a listing under another ID.
-        // Save a price only for an ID that is now registered and this Loupist follows.
-        crate::store::bounded_chat_save(|| {
-            price_reads.retain(|(asset, _)| {
-                match app_state
-                    .store
-                    .asset_by_id(task_loupist_id, &asset.asset_id)
-                {
-                    Ok(row) => row.is_some_and(|row| row.followed_at_ms.is_some()),
-                    Err(_) => {
-                        missing_snapshot = true;
-                        false
-                    }
-                }
-            })
-        });
         if missing_snapshot {
             record_commit_failure(
                 on_event,
@@ -680,6 +664,24 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     )
                 })
                 .unwrap_or_default();
+            // A same-turn follow can register this ID. A competing follow
+            // under a different ID or an unfollow during the wait can leave
+            // it unavailable. Read the catalog after both the wait and setup.
+            let mut price_reads = Vec::new();
+            let mut discarded_prices = Vec::new();
+            for (staged_asset, read) in &staged_price_reads {
+                match app_state
+                    .store
+                    .asset_by_id(task_loupist_id, &staged_asset.asset_id)
+                    .map_err(map_store)?
+                    .filter(|asset| asset.followed_at_ms.is_some())
+                {
+                    Some(asset) => price_reads.push((asset, read)),
+                    None => discarded_prices.push(staged_asset.name.as_str()),
+                }
+            }
+            let discarded_prices =
+                crate::commands::tool_executor::discarded_price_reads(discarded_prices);
             let skipped_journal = saved_research.as_mut().map_or(Ok(false), |research| {
                 crate::commands::tool_executor::finish_setup_theses(
                     &app_state.store,
@@ -886,13 +888,18 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     record_commit_failure(on_event, CommitStage::Assets, e.code());
                     crate::store::StoreError::Invalid(e.to_string())
                 })?;
-                crate::commands::tool_executor::commit_price_reads(
-                    transaction,
-                    task_loupist_id,
-                    created_at_ms,
-                    &price_reads,
-                )
-                .map_err(|error| crate::store::StoreError::Invalid(error.to_string()))?;
+                changes.extend(
+                    crate::commands::tool_executor::commit_price_reads(
+                        transaction,
+                        task_loupist_id,
+                        created_at_ms,
+                        price_reads.iter().map(|(asset, read)| (asset, *read)),
+                    )
+                    .map_err(|error| {
+                        record_commit_failure(on_event, CommitStage::Assets, error.code());
+                        crate::store::StoreError::Invalid(error.to_string())
+                    })?,
+                );
                 let mut skipped_kinds = crate::commands::tool_executor::commit_vocabulary(
                     transaction,
                     task_loupist_id,
@@ -1002,6 +1009,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     task_update_memory,
                     changes,
                     skipped_kinds,
+                    discarded_prices,
                     setup,
                     Some(performance),
                     turn_assets.trace_notes(elapsed_millis(chat_started_at)),
@@ -1045,7 +1053,16 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         match finalized {
             Ok((title_applied, completed_message, performance)) => {
                 app_state.graph.wake();
-                if !price_reads.is_empty() || !saved_theses.is_empty() {
+                let saved_price = completed_message
+                    .memory_update
+                    .as_ref()
+                    .is_some_and(|update| {
+                        update
+                            .changes
+                            .iter()
+                            .any(|change| change.kind == crate::domain::PRICE_READ_CHANGE_KIND)
+                    });
+                if saved_price || !saved_theses.is_empty() {
                     crate::commands::assets::changed();
                 }
                 if turn_assets.crossed {

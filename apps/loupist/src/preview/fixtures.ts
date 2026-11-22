@@ -164,6 +164,7 @@ export class PreviewBridge extends MockLoupistBridge {
   }
   override async knowledgeMap(request: import("../contracts/knowledge").KnowledgeMapQuery) {
     const map = await super.knowledgeMap(request);
+    if (map.worldRevisionId) map.worldRevisionId = revision.revisionId;
     const learned = map.nodes.find(node => node.id === "map-lens-2");
     if (learned && request.loupistId === "loupist-quality") {
       learned.learnedAtMs = FIXTURE_TIME;

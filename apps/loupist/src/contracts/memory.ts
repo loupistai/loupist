@@ -44,6 +44,7 @@ export type MemoryUpdateChange = {
   userProvided?: boolean;
 } & (
   | { kind: "Research"; knowledge?: never }
+  | { kind: "PriceRead"; knowledge?: never }
   | { kind: "principle"; statement: string; knowledge: KnowledgeReference }
   | { kind: Exclude<MemoryKind, "Research">; knowledge: KnowledgeReference }
 );

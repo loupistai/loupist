@@ -247,6 +247,7 @@ fn a_read_moves_one_step_with_dated_evidence_and_only_once_a_thesis_exists() {
                 loupist_id: LOUPIST.into(),
                 since_ms: None,
                 until_ms: None,
+                world_revision_id: None,
                 limit: None,
                 cursor: None,
             })

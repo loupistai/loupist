@@ -98,6 +98,21 @@ it("reports a skipped Journal save beside the completed setup", () => {
   expect(line).toHaveTextContent("Journal entry not saved");
 });
 
+it("names saved price reads and lists any the host could not keep", () => {
+  const message = { id: "answer", role: "assistant", content: "I saved both prices.", created_at: "2026-11-22T00:00:00Z", status: "complete",
+    memory_update: { status: "applied", commitId: "answer",
+      changes: [{ kind: "PriceRead", operation: "create", recordId: "ast_0123456789abcdef", title: "Noeul Paper", lesson: "", basis: "", futureUse: "" }],
+      discardedMemoryItems: [{ kind: "price_read", title: "Orchard Steel" }],
+      setup: [{ change: "followed", symbol: "990184", name: "Noeul Paper" }],
+    },
+  } satisfies import("../../types").ChatMessage;
+  render(<ChatReceipt receipt={chatReceipt(message)} showNothingNew listId="list" listExpanded={false} usedListId="used" usedExpanded={false} onToggleUsed={vi.fn()} onSaved={vi.fn()} {...panels} message={message} />);
+  const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
+  expect(receipt).toHaveTextContent("Following Noeul Paper");
+  expect(receipt).toHaveTextContent("Saved the price read · Noeul Paper");
+  expect(within(receipt).getByRole("list", { name: "Not kept" })).toHaveTextContent("Price read · Orchard Steel");
+});
+
 it("says what a setup reply now follows, its new focus and what World now also tracks, in the reader's language", async () => {
   // The memory update as Rust commits it for a Bot reply that called loupist_setup.
   const message = { id: "answer", role: "assistant", content: "Done.", created_at: "2026-11-07T00:00:00Z", status: "complete",

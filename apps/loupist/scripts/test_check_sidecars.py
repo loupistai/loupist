@@ -1,4 +1,4 @@
-"""Exercise the packaged provider smoke's private credential handshake offline."""
+"""Exercise packaged helper bootstrap and discovery contracts offline."""
 
 import importlib.util
 import unittest
@@ -61,6 +61,118 @@ class ProviderCredentialSmokeTest(unittest.TestCase):
                     ) as raised:
                         SIDECARS.provider_smoke_environment(*arguments)
                     self.assertNotIn(key, str(raised.exception))
+
+
+class OpenBBInventorySmokeTest(unittest.TestCase):
+    executable = Path("openbb/loupist-openbb")
+    runtime = executable.parent
+    manifest = {
+        "allowed_categories": ["equity", "regulators"],
+        "providers": [
+            {
+                "id": "sec",
+                "keyless": True,
+                "config_mapping": {"contact_email": "sec_contact_email"},
+                "credential_mapping": {},
+                "network_hosts": ["www.sec.gov"],
+            },
+            {
+                "id": "tradier",
+                "keyless": False,
+                "config_mapping": {"account_type": "tradier_account_type"},
+                "credential_mapping": {"api_key": "tradier_api_key"},
+                "network_hosts": ["api.tradier.com"],
+            },
+            {
+                "id": "fred",
+                "keyless": False,
+                "credential_mapping": {"api_key": "fred_api_key"},
+                "network_hosts": ["api.stlouisfed.org"],
+            },
+            {
+                "id": "nasdaq",
+                "keyless": True,
+                "credential_mapping": {"api_key": "nasdaq_api_key"},
+                "network_hosts": ["www.nasdaq.com"],
+            },
+        ],
+    }
+    configured = {
+        "filings": {"sec"},
+        "quote": {"tradier"},
+        "series": {"fred"},
+        "search": {"nasdaq"},
+    }
+    unconfigured = {"search": {"nasdaq"}}
+
+    def test_full_inventory_and_empty_setup_use_distinct_bootstraps(self):
+        with (
+            patch.object(
+                SIDECARS, "validate_openbb_bundle", return_value=self.manifest
+            ),
+            patch.object(
+                SIDECARS,
+                "_openbb_discovery",
+                side_effect=[self.configured, self.unconfigured],
+            ) as discovery,
+        ):
+            SIDECARS.openbb_smoke(self.executable, self.runtime)
+        full, empty = discovery.call_args_list
+        _, _, credentials, settings = full.args
+        self.assertEqual(
+            credentials,
+            dict.fromkeys(
+                ["fred_api_key", "nasdaq_api_key", "tradier_api_key"],
+                "loupist-package-smoke-fake-credential",
+            ),
+        )
+        self.assertEqual(
+            settings,
+            {
+                "allowed_categories": ["equity", "regulators"],
+                "enabled_provider_ids": ["fred", "nasdaq", "sec", "tradier"],
+                "allowed_network_hosts": [
+                    "api.stlouisfed.org",
+                    "api.tradier.com",
+                    "www.nasdaq.com",
+                    "www.sec.gov",
+                ],
+                "provider_config": {
+                    "sec": {"contact_email": "package-smoke@example.invalid"},
+                    "tradier": {"account_type": "sandbox"},
+                },
+            },
+        )
+        self.assertEqual(full.kwargs["expected_categories"], {"equity", "regulators"})
+        self.assertEqual(empty.args[2], {})
+        self.assertEqual(
+            empty.args[3],
+            {
+                "allowed_categories": ["equity", "regulators"],
+                "enabled_provider_ids": ["fred", "nasdaq"],
+                "allowed_network_hosts": ["api.stlouisfed.org", "www.nasdaq.com"],
+                "provider_config": {},
+            },
+        )
+
+    def test_empty_setup_rejects_protected_providers_and_sec_only_tools(self):
+        for unexpected, message in [
+            ({"series": {"fred"}}, "keyless provider discovery differs"),
+            ({"filings": set()}, "exposed SEC-only Tools without setup"),
+        ]:
+            with (
+                self.subTest(unexpected=unexpected),
+                patch.object(
+                    SIDECARS, "validate_openbb_bundle", return_value=self.manifest
+                ),
+                patch.object(
+                    SIDECARS,
+                    "_openbb_discovery",
+                    side_effect=[self.configured, self.unconfigured | unexpected],
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    SIDECARS.openbb_smoke(self.executable, self.runtime)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ use serde_json::Value;
 
 use super::store::SharedWorld;
 use crate::app::AppState;
-use crate::custom_connections::taint::TurnTaint;
+use crate::custom_connections::taint::{DeliveredLinks, TurnTaint};
 
 /// The `from` label when the shared lookup itself failed.
 const UNKNOWN_PACK: &str = "a shared Loupist";
@@ -244,7 +244,7 @@ impl Shared {
         None
     }
 
-    fn walk(&self, value: &mut Value, inherited: Option<&Owner>, delivery: &mut Delivery) {
+    fn walk(&self, value: &mut Value, inherited: Option<&Owner>, delivery: &mut Delivery<'_>) {
         match value {
             Value::Array(items) => {
                 for item in items {
@@ -260,7 +260,10 @@ impl Shared {
                         // A World read's view travels as JSON text: wrap inside it.
                         ("text", Value::String(text)) if world_view => {
                             if let Ok(mut view) = serde_json::from_str::<Value>(text) {
-                                let mut inner = Delivery::default();
+                                let mut inner = Delivery {
+                                    links: delivery.links.as_deref_mut(),
+                                    ..Delivery::default()
+                                };
                                 self.walk(&mut view, None, &mut inner);
                                 if inner.wrapped {
                                     *text = view.to_string();
@@ -272,6 +275,7 @@ impl Shared {
                         // A full body (a shared method or principle, a pack Source's material).
                         ("text", Value::String(text)) => {
                             if let Some(owner) = owner {
+                                delivery.record_links(text);
                                 *text = delimit(text, &owner.pack, &fresh_id());
                                 delivery.wrapped = true;
                                 delivery.pauses = true;
@@ -311,19 +315,36 @@ impl Shared {
     /// Wraps every shared field of one Memory tool delivery (lens and World
     /// search and reads); true when the delivery raises the tier.
     pub(crate) fn mark_delivery(&self, delivered: &mut Value) -> bool {
-        let mut delivery = Delivery::default();
+        self.wrap_delivery(delivered, None)
+    }
+
+    fn wrap_delivery(&self, delivered: &mut Value, links: Option<&mut DeliveredLinks>) -> bool {
+        let mut delivery = Delivery {
+            links,
+            ..Delivery::default()
+        };
         self.walk(delivered, None, &mut delivery);
         delivery.pauses
     }
 }
 
 #[derive(Default)]
-struct Delivery {
+struct Delivery<'a> {
     wrapped: bool,
     pauses: bool,
+    links: Option<&'a mut DeliveredLinks>,
 }
 
-fn wrap_inline(text: &mut String, owner: &Owner, delivery: &mut Delivery) {
+impl Delivery<'_> {
+    fn record_links(&mut self, text: &str) {
+        if let Some(links) = &mut self.links {
+            links.scan(text, None);
+        }
+    }
+}
+
+fn wrap_inline(text: &mut String, owner: &Owner, delivery: &mut Delivery<'_>) {
+    delivery.record_links(text);
     *text = delimit_inline(text, &owner.pack, &fresh_id());
     delivery.wrapped = true;
     delivery.pauses |= owner.pauses;
@@ -372,10 +393,12 @@ pub(crate) fn deliver(
     loupist_id: &str,
     delivered: &mut Value,
     taint: &TurnTaint,
+    links: &mut DeliveredLinks,
 ) {
     let mut records = BTreeSet::new();
     delivery_records(delivered, &mut records);
-    if Shared::load_records(state, loupist_id, Some(&records)).mark_delivery(delivered) {
+    if Shared::load_records(state, loupist_id, Some(&records)).wrap_delivery(delivered, Some(links))
+    {
         taint.mark_untrusted_text();
     }
 }

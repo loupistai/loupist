@@ -119,6 +119,7 @@ fn snapshot(state: &AppState, loupist: &str) -> Result<Value> {
             loupist_id: loupist.into(),
             since_ms: None,
             until_ms: None,
+            world_revision_id: None,
             limit: Some(200),
             cursor,
         })?;

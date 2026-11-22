@@ -5,7 +5,7 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { GrowthEvent, KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
 import type { KnowledgeLocation } from "../../types";
 import { MapView } from "./MapView";
-import { PreviewBridge } from "../../preview/fixtures";
+import { PreviewBridge, previewWorldPage } from "../../preview/fixtures";
 import { prepareConflictsFixture } from "../../preview/fixtures/conflicts";
 
 const fit = vi.hoisted(() => vi.fn());
@@ -21,6 +21,7 @@ vi.mock("./MapCanvas", () => ({ default: function Canvas({ nodes, controls, high
 } }));
 
 const NOW = Date.now();
+const LOCAL_REVISION = "local-test";
 const entity = (id: string, label: string, extra: Partial<KnowledgeMapNode> = {}): KnowledgeMapNode => ({ id, label, kind: "entity", entityKind: "Organization", degree: 0, watched: false, ...extra });
 const claim = (source: string, target: string): KnowledgeMapEdge => ({ id: `claim-${source}-${target}`, kind: "claim", source, target, relation: "SUPPLIES", status: "active" });
 
@@ -33,7 +34,7 @@ function localMap(): KnowledgeMap {
   for (let index = 1; index < 70; index++) edges.push(claim(`filler-${index - 1}`, `filler-${index}`));
   for (const edge of edges) for (const id of [edge.source, edge.target]) nodes.find((node) => node.id === id)!.degree++;
   const counts = Object.fromEntries(["entity", "lens_perspective", "lens_principle", "lens_method", "journal", "claim", "lens_link", "applies_to", "about"].map((kind) => [kind, { total: kind === "entity" ? nodes.length : kind === "claim" ? edges.length : 0, shown: kind === "entity" ? nodes.length : kind === "claim" ? edges.length : 0, truncated: false }])) as KnowledgeMap["counts"];
-  return { nodes, edges, counts, unmatchedWatchlist: [], worldRevisionId: "local-test", generatedAtMs: NOW };
+  return { nodes, edges, counts, unmatchedWatchlist: [], worldRevisionId: LOCAL_REVISION, generatedAtMs: NOW };
 }
 
 const growth = (kind: GrowthEvent["kind"], subjectId: string, atMs: number, summary = ""): GrowthEvent => ({ eventId: `${kind}:${subjectId}`, loupistId: "loupist-quality", atMs, kind, subjectId, recordId: "world", originChatId: null, originMessageId: null, actor: "loupist", summary, beforeSummary: null, afterSummary: null });
@@ -43,6 +44,8 @@ async function setup({ events = [] as GrowthEvent[], lastSeenAtMs, initialView, 
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const catalog = await bridge.knowledgeCatalog({ loupistId: "loupist-quality" });
   vi.spyOn(bridge, "knowledgeMap").mockResolvedValue(localMap());
+  const readWorld = bridge.knowledgeWorldQuery.bind(bridge);
+  vi.spyOn(bridge, "knowledgeWorldQuery").mockImplementation(async request => ({ ...await readWorld(request), revisionId: LOCAL_REVISION }));
   const growthRead = vi.spyOn(bridge, "knowledgeGrowthEvents").mockImplementation(async (request) => ({ events: events.filter((item) => request.sinceMs === undefined || item.atMs >= request.sinceMs), nextCursor: null }));
   const onOpen = vi.fn();
   let current: KnowledgeLocation | undefined;
@@ -255,4 +258,67 @@ it("opens What's new when the morning message asks for it, then clears the reque
   const { location } = await setup({ lastSeenAtMs: NOW - 86_400_000, initialView: { whatsNew: true } });
   expect(await screen.findByRole("dialog", { name: "What's new" })).toBeVisible();
   expect(location()?.view?.whatsNew).toBeUndefined();
+});
+
+
+it("keeps the selected name, scope and What's new rows when the World advances during a build", async () => {
+  const bridge = new PreviewBridge({ delay_ms: 0 });
+  const catalog = await bridge.knowledgeCatalog({ loupistId: "loupist-quality" });
+  const subaru = entity("subaru", "Subaru");
+  const snapshot = localMap();
+  snapshot.nodes.push(subaru);
+  snapshot.counts.entity.total++;
+  const spanId = "subaru-span";
+  const reports = ["Revenue was $32B.", "Market cap was $12B."].map((proposition, index) => {
+    const endpoints = [{ nodeId: subaru.id, role: "subject" }, { nodeId: subaru.id, role: "object" }];
+    const id = `subaru-claim-${index}`;
+    return { id, endpoints, relation: "REPORTS", status: "active" as const, claim: { id, endpoints, relation: "REPORTS", proposition, attribution: "Automakers table", qualifiers: [], evidence: [{ spanId, role: "supports" as const, attribution: "Automakers table" }], status: "active" as const, recordedAtMs: NOW, publicationTime: null, effectiveTime: null, validAt: null, invalidAt: null, expiredAt: null } };
+  });
+  snapshot.edges.push(...reports.map(report => ({ id: report.id, kind: "fact" as const, source: subaru.id, target: subaru.id, relation: "REPORTS" })));
+  const olderEvents = [growth("entity_added", subaru.id, NOW), ...reports.map(report => growth("claim_added", report.id, NOW))];
+  let current = false;
+  const readMap = vi.spyOn(bridge, "knowledgeMap").mockImplementation(async () => ({
+    ...snapshot, worldRevisionId: current ? "published" : LOCAL_REVISION, generatedAtMs: NOW + (current ? 20 : 0),
+  }));
+  const recordId = catalog.worlds[0]!.recordId;
+  const readDetail = vi.spyOn(bridge, "knowledgeWorldQuery").mockImplementation(async () => ({
+    ...previewWorldPage, recordId, revisionId: current ? "published" : LOCAL_REVISION, revisionDigest: "digest", readOnly: false,
+    nodes: [{ id: subaru.id, name: subaru.label, kind: "Organization", sourceRole: "subject", aliases: [], description: "Automaker", properties: {} }],
+    edges: reports, coverage: "sealed_snapshot", truncated: false, indexingState: "snapshot_only",
+    sourceTargets: { [spanId]: { recordId: "source", revisionId: "source-rev", sourceId: "automakers", spanId, worldRecordId: recordId, worldRevisionId: "published" } },
+  }));
+  const readGrowth = vi.spyOn(bridge, "knowledgeGrowthEvents").mockImplementation(async request => ({
+    events: [...olderEvents, growth("entity_added", "asml", NOW + 20)].filter(event => event.atMs <= (request.untilMs ?? Infinity)), nextCursor: null,
+  }));
+  function Harness() {
+    const [location, setLocation] = useState<KnowledgeLocation>({ loupistId: catalog.loupistId, surface: "world", recordId, revisionId: LOCAL_REVISION });
+    return <MapView bridge={bridge} catalog={catalog} location={location} building onPatch={setLocation} onOpen={vi.fn()} onAsk={vi.fn()} />;
+  }
+  render(<Harness />);
+  const user = userEvent.setup();
+  await screen.findByTestId("map-canvas");
+  expect(screen.getByTestId("map-stats")).toHaveTextContent("79 in World · 75 relationships");
+  await user.click(screen.getByRole("button", { name: "What's new" }));
+  const drawer = await screen.findByRole("dialog", { name: "What's new" });
+  expect(await within(drawer).findByText("2 new facts about Subaru")).toBeVisible();
+  expect(within(drawer).queryByText("ASML")).toBeNull();
+  current = true;
+  await user.click(within(drawer).getByText("Subaru").closest("button")!);
+  const inspector = await screen.findByRole("complementary", { name: "Subaru" });
+  expect(await within(inspector).findByText("Revenue was $32B.")).toBeVisible();
+  expect(within(inspector).getByText("Market cap was $12B.")).toBeVisible();
+  expect(within(inspector).getAllByRole("button", { name: "Open source" })).toHaveLength(2);
+  expect(within(inspector).getByRole("heading", { name: "Relationships (0)" })).toBeVisible();
+  expect(within(inspector).queryByRole("button", { name: "Relationships" })).toBeNull();
+  expect(within(inspector).queryByRole("button", { name: "Subaru" })).toBeNull();
+  expect(screen.getByText("Subaru has no relationships yet. Ask about it in Chat.")).toBeVisible();
+  expect(drawn()).toEqual(["subaru"]);
+  await user.click(screen.getByRole("button", { name: "One step further" }));
+  expect(drawn()).toEqual(["subaru"]);
+  expect(screen.getByRole("complementary", { name: "Subaru" })).toBe(inspector);
+  expect(await within(drawer).findByText("ASML")).toBeVisible();
+  expect(screen.getByRole("dialog", { name: "What's new" })).toBe(drawer);
+  expect(readMap).toHaveBeenCalledTimes(2);
+  expect(readDetail).toHaveBeenNthCalledWith(1, expect.objectContaining({ centerNodeId: "subaru", revisionId: LOCAL_REVISION }));
+  expect(readGrowth).toHaveBeenLastCalledWith(expect.objectContaining({ untilMs: NOW + 20, worldRevisionId: "published" }));
 });

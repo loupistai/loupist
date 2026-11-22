@@ -111,7 +111,7 @@ export function MessageMemoryRow({
   return (
     <div className="memory-row" data-testid="memory-row" data-expanded={expanded || usedExpanded || learnedExpanded}>
       {!skipped && go && edge && source && target && relation ? <button type="button" className="answer-map-preview" aria-label={relation} title={relation} onClick={() => go({ kind: "page", location: {
-        loupistId, surface: "world", view: { followCurrent: true }, selection: { kind: "claim", id: claimIdForEdge(edge) },
+        loupistId, surface: "world", selection: { kind: "claim", id: claimIdForEdge(edge) },
       } })}>
         {/* The Map's own glyph: the pill opens this relation there. */}
         <NetworkIcon aria-hidden="true" />

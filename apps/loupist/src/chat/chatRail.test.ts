@@ -111,6 +111,19 @@ describe("activity turn", () => {
     expect(turn.groups[1]!.steps[0]!.reason).toBe("The data provider could not be reached. It was not used in the answer.");
   });
 
+  it("gives web and market-data SEC refusals the contact setup reason", () => {
+    const tools = ["web_fetch", "mcp__openbb__equity_fundamental_income"];
+    const turn = activityTurn(reply(tools.map((tool) => step(tool, tool, {
+      status: "failed",
+      failureReason: "invalid_input",
+      refusal: "sec_contact_required",
+    }))));
+    expect(turn.groups.map((group) => group.steps[0]!.reason)).toEqual([
+      "SEC contact email. Set up in Data connections.",
+      "SEC contact email. Set up in Data connections.",
+    ]);
+  });
+
   it("gives every failed step a row of its own with a short reason", () => {
     const turn = activityTurn(reply([
       step("ok", "mcp__openbb__equity_price_quote"),

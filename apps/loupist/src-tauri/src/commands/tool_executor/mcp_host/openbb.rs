@@ -63,32 +63,25 @@ const PROVIDER_PREFERENCE: &[&str] = &[
     "deribit",
 ];
 
-/// Recovery text after a scraped provider fails: it names only official
-/// providers enabled for this run, so the model never retries with a provider
-/// the run cannot use.
-pub(super) fn best_effort_failure_next(enabled_provider_ids: &BTreeSet<String>) -> String {
-    let official = PROVIDER_PREFERENCE
+pub(super) const BEST_EFFORT_FAILURE_NEXT: &str = "This provider scrapes a website and just failed; treat it as unavailable for this turn. Use another official provider listed for the tool if one is enabled instead of retrying it, or report that the data is unavailable.";
+
+pub(super) fn provider_failure_next(tool: &McpTool, failed_provider: &str) -> Option<String> {
+    // Admission already intersected this tool's provider enum with the run grant.
+    let mut alternatives = tool
+        .input_schema
+        .pointer("/properties/provider/enum")?
+        .as_array()?
         .iter()
-        .copied()
-        .chain(["tmx"])
-        .filter(|provider| enabled_provider_ids.contains(*provider))
-        .take(4)
-        .map(|provider| {
-            listing_limit(provider).map_or_else(
-                || provider.to_owned(),
-                |limit| format!("{provider} {limit}"),
-            )
-        })
+        .filter_map(Value::as_str)
+        .filter(|provider| *provider != failed_provider)
         .collect::<Vec<_>>();
-    let alternative = if official.is_empty() {
-        "Use another official provider listed for the tool if one is enabled".to_owned()
-    } else {
-        format!(
-            "Use an official provider listed for the tool (for example {})",
-            official.join(", ")
-        )
-    };
-    format!("This provider scrapes a website and just failed; treat it as unavailable for this turn. {alternative} instead of retrying it, or report that the data is unavailable.")
+    alternatives.sort_by_key(|provider| preference_rank(provider));
+    alternatives.truncate(4);
+    if alternatives.is_empty() {
+        return None;
+    }
+    let providers = alternatives.join(", ");
+    Some(format!("This provider failed for this request. Call the tool again with another provider listed for it (for example {providers}), or report that the data is unavailable."))
 }
 
 pub(super) fn is_best_effort(provider: &str) -> bool {
@@ -152,12 +145,12 @@ fn curated_inactive_names() -> String {
 fn control_summary(tool_name: &str) -> Option<String> {
     Some(match tool_name {
         "available_categories" => format!(
-            "List market data categories and subcategories with tool counts. Common price, fundamentals, dividend and filing tools are already active. These exist too and need no listing, only activate_tools: {}. Use this only to find others.",
+            "List market data categories and subcategories with tool counts. Common price, fundamentals, dividend and filing tools are activated when available. When available, these need only activate_tools: {}. Use this only to find others.",
             curated_inactive_names()
         ),
         "available_tools" => "List the tools in one category (optional subcategory) with one-line summaries and whether each is active. Activate a tool before calling it.".into(),
         "activate_tools" => format!(
-            "Make the named market data tools callable for this turn. Pass exact names from available_tools, or one of these without listing: {}.",
+            "Make the named market data tools callable for this turn. Pass exact names from available_tools, or try one of these without listing: {}.",
             curated_inactive_names()
         ),
         "deactivate_tools" => "Remove named market data tools that are no longer needed this turn.".into(),
@@ -679,7 +672,7 @@ mod tests {
     }
 
     #[test]
-    fn provider_notes_limit_exchange_sources_in_place_and_in_recovery() {
+    fn provider_notes_limit_exchange_sources() {
         assert_eq!(provider_note(&["tmx".into(), "cboe".into(), "yfinance".into()], "equity_price_quote").unwrap(),
             "Providers: cboe for US-listed symbols only; tmx for Toronto-listed symbols only; yfinance best effort (scraped website data that can break or be blocked).");
         assert!(provider_note(&["nasdaq".into()], "equity_price_quote")
@@ -689,13 +682,6 @@ mod tests {
         assert!(news
             .contains("tmx: Toronto-listed symbols as written; a US listing with the :US suffix."));
         assert!(!news.contains("Toronto-listed symbols only"));
-        let next = best_effort_failure_next(&enabled(&["yfinance", "tmx", "cboe", "nasdaq"]));
-        assert!(
-            next.contains("tmx for Toronto-listed symbols only"),
-            "{next}"
-        );
-        assert!(next.contains("cboe for US-listed symbols only"), "{next}");
-        assert!(next.contains("nasdaq for US-listed symbols only"), "{next}");
     }
 
     #[test]
@@ -956,7 +942,7 @@ mod tests {
             shape_card(&mut card, &source, control, false, &enabled(&["yfinance"]));
             shaped.push(card.to_string());
         }
-        shaped.push(best_effort_failure_next(&enabled(&["yfinance", "nasdaq"])));
+        shaped.push(BEST_EFFORT_FAILURE_NEXT.into());
         for text in shaped {
             assert!(!text.to_ascii_lowercase().contains("openbb"), "{text}");
         }
@@ -980,19 +966,6 @@ mod tests {
             }
             assert!(!summary.contains("equity_price_quote"), "{summary}");
         }
-    }
-
-    #[test]
-    fn a_scraped_failure_recommends_only_enabled_official_providers() {
-        let next = best_effort_failure_next(&enabled(&["yfinance", "nasdaq", "tmx"]));
-        assert!(next.contains("nasdaq for US-listed symbols only"), "{next}");
-        assert!(
-            next.contains("tmx for Toronto-listed symbols only"),
-            "{next}"
-        );
-        assert!(!next.contains("sec"), "{next}");
-        let none = best_effort_failure_next(&enabled(&["yfinance"]));
-        assert!(none.contains("if one is enabled"), "{none}");
     }
 
     #[test]

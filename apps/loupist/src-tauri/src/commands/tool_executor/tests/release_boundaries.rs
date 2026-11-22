@@ -64,6 +64,7 @@ fn warning_receipts_preserve_the_existing_producer_trust_corpus() {
                 ToolMethod::RunResultsList,
                 &returning,
                 &mut receipt,
+                &mut crate::custom_connections::taint::DeliveredLinks::default(),
             );
             assert!(receipt["results"][0]["warnings"]
                 .as_str()

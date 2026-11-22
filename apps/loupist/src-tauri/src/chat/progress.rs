@@ -35,8 +35,7 @@ pub enum ChatStepFailureReason {
     InvalidInput,
 }
 
-/// Why the host refused a failed step, when a security rule or the user's own
-/// card answer did. The renderer explains it in the step and offers no override.
+/// Why the host refused a failed step. The renderer explains it in the step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
@@ -51,6 +50,8 @@ pub enum ChatStepRefusal {
     ProtectedPath,
     /// The path is outside the Loupist folder (`outside_workspace`).
     OutsideWorkspace,
+    /// The SEC read needs the contact configured in Data connections.
+    SecContactRequired,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1102,6 +1103,9 @@ impl ChatProgressProjection {
         self.finish_tool(call_id, failed, at_ms, summarize_tool_result(result));
         if failed {
             self.set_failure_reason(call_id, step_failure_reason(result, host_error));
+            if host_error.and_then(|error| error["code"].as_str()) == Some("sec_contact_required") {
+                self.refuse_tool(call_id, ChatStepRefusal::SecContactRequired);
+            }
         }
     }
 
@@ -1989,7 +1993,8 @@ pub(crate) fn step_failure_reason(
             | "outside_workspace"
             | "untrusted_text_paused"
             | "transaction_limit",
-        ) => InvalidInput,
+        )
+        | Some("sec_contact_required") => InvalidInput,
         _ => {
             // These are fixed diagnostics emitted by the host's MCP mapper.
             let message = host_error

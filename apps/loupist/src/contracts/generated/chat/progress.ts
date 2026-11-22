@@ -148,10 +148,11 @@ export type ChatStepFailureReason =
   | "empty_result"
   | "invalid_input";
 
-/**
- * Why the host refused a failed step, when a security rule or the user's own
- * card answer did. The renderer explains it in the step and offers no override.
- */
-export type ChatStepRefusal = "untrusted_text_paused" | "protected_path" | "outside_workspace";
+/** Why the host refused a failed step. The renderer explains it in the step. */
+export type ChatStepRefusal =
+  | "untrusted_text_paused"
+  | "protected_path"
+  | "outside_workspace"
+  | "sec_contact_required";
 
 export type CommentaryAppend = { id: string, text: string };

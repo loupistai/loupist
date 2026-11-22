@@ -5,7 +5,7 @@
 //! user's own files and statements, a shared pack's Sources (delimited by
 //! `sharing/delivery.rs`) and reviewed numeric data return as they are.
 use super::*;
-use crate::custom_connections::taint::{retained_trusted, Returning};
+use crate::custom_connections::taint::{retained_trusted, Returning, ReturningSource};
 
 impl AppToolExecutor {
     /// The third-party text this result brings back, if any. Called before the
@@ -79,7 +79,7 @@ impl AppToolExecutor {
                     .ok_or(BrokerError::Malformed)?;
                 Ok(self
                     .third_party_world(result, Some(&view))?
-                    .map(Returning::Whole))
+                    .map(Returning::Source))
             }
             ToolMethod::DatasetDescribe
             | ToolMethod::DatasetQuery
@@ -146,7 +146,7 @@ impl AppToolExecutor {
                 let revision_id = result.get("revisionId").and_then(Value::as_str);
                 Ok(self
                     .third_party_source(record_id, revision_id, span_id)?
-                    .map(Returning::Whole))
+                    .map(Returning::Source))
             }
             ToolMethod::WorldSearch => {
                 let mut sources = BTreeMap::new();
@@ -405,7 +405,7 @@ impl AppToolExecutor {
         &self,
         result: &Value,
         view: Option<&Value>,
-    ) -> Result<Option<String>, BrokerError> {
+    ) -> Result<Option<ReturningSource>, BrokerError> {
         let (targets, unresolved) = crate::commands::knowledge::returning_world_sources(
             &self.state,
             &self.loupist_id,
@@ -414,15 +414,20 @@ impl AppToolExecutor {
         )
         .map_err(command_error)?;
         if unresolved {
-            return Ok(Some("World claim with unavailable Source".into()));
+            return Ok(Some(ReturningSource {
+                label: "World claim with unavailable Source".into(),
+                page_url: None,
+            }));
         }
         for target in targets {
-            if let Some(label) = self.third_party_source(
+            if let Some(mut source) = self.third_party_source(
                 &target.record_id,
                 Some(&target.revision_id),
                 &target.span_id,
             )? {
-                return Ok(Some(label));
+                // A claim can span many Sources and has no page URL of its own.
+                source.page_url = None;
+                return Ok(Some(source));
             }
         }
         Ok(None)
@@ -439,7 +444,7 @@ impl AppToolExecutor {
         record_id: &str,
         revision_id: Option<&str>,
         span_id: &str,
-    ) -> Result<Option<String>, BrokerError> {
+    ) -> Result<Option<ReturningSource>, BrokerError> {
         let spans = crate::commands::knowledge::source_span_authorship(
             &self.state,
             &self.loupist_id,
@@ -449,7 +454,10 @@ impl AppToolExecutor {
         )
         .map_err(command_error)?;
         if spans.is_empty() {
-            return Ok(Some(format!("saved Source {record_id}")));
+            return Ok(Some(ReturningSource {
+                label: format!("saved Source {record_id}"),
+                page_url: None,
+            }));
         }
         let Some(span) = spans
             .into_iter()
@@ -460,9 +468,13 @@ impl AppToolExecutor {
         let locator = span
             .origin_locator
             .filter(|locator| locator.starts_with("http://") || locator.starts_with("https://"));
-        Ok(Some(match locator {
+        let label = match &locator {
             Some(locator) => format!("saved Source: {locator}"),
             None => format!("saved Source: {}", span.title),
+        };
+        Ok(Some(ReturningSource {
+            label,
+            page_url: locator,
         }))
     }
 }

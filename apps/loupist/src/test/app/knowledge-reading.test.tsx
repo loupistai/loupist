@@ -145,21 +145,20 @@ describe("Loupist · Source catalog", () => {
     expect(create.mock.calls[1][0]).toEqual(create.mock.calls[0][0]);
   });
 
-  it.each([true, false])("refreshes the World head only when following current knowledge (%s)", async (followCurrent) => {
+  it("refreshes the World head while keeping a deep-linked selection", async () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const loupist = (await bridge.loupistList())[0]!;
     const catalog = await bridge.knowledgeCatalog({ loupistId: loupist.id });
     const world = catalog.worlds[0];
     const fetch = vi.spyOn(bridge, "knowledgeCatalog").mockResolvedValue(catalog);
     const onPatch = vi.fn();
-    const navigation = { current: { loupistId: loupist.id, surface: "world" as const, recordId: world.recordId, revisionId: world.revisionId, selection: { kind: "node" as const, id: "node-http" }, view: { followCurrent, search: "HTTP" } }, views: {}, worldSurface: "world" as const, past: [], generation: 0 };
+    const navigation = { current: { loupistId: loupist.id, surface: "world" as const, recordId: world.recordId, revisionId: world.revisionId, selection: { kind: "node" as const, id: "node-http" }, view: { search: "HTTP" } }, views: {}, worldSurface: "world" as const, past: [], generation: 0 };
     const props = { bridge, loupist, navigation, onPatch, onOpen: vi.fn(), onBack: vi.fn(), onAsk: vi.fn() };
     const view = render(<MemoryWorkspace {...props} />);
     await screen.findByRole("heading", { name: "HTTP" });
     fetch.mockResolvedValue({ ...catalog, worlds: [{ ...world, revisionId: "world-updated" }] });
     view.rerender(<MemoryWorkspace {...props} refreshKey={1} />);
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-    if (followCurrent) await waitFor(() => expect(onPatch).toHaveBeenCalledWith(expect.objectContaining({ revisionId: "world-updated", selection: navigation.current.selection })));
-    else expect(onPatch).not.toHaveBeenCalledWith(expect.objectContaining({ revisionId: "world-updated" }));
+    await waitFor(() => expect(onPatch).toHaveBeenCalledWith(expect.objectContaining({ revisionId: "world-updated", selection: navigation.current.selection, view: navigation.current.view })));
   });
 });
