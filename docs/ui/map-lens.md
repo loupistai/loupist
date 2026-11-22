@@ -7,7 +7,12 @@ World (the code calls its components `map`) shows the names, facts and relations
 The Sources list and reader name tool origins using the completed research activity in the interface language. An unknown tool reads “Source saved”.
 
 
-The page draws entities, claims and their evidence from the `knowledge_map` projection. The status line names World and joins its parts (scope count, weekly count, disagreements, updating) with one " · " separator. On a narrow map it wraps inside the visible canvas, so each part stays whole.
+The page draws entities, claims and their evidence from the `knowledge_map` projection.
+A claim whose endpoints all identify the same node is a fact about that name.
+The inspector shows it in Key facts with its date and Source. Facts do not add
+to degree, relationship counts or the direct and two-hop scopes. The projection
+keeps bounded fact entries for What's new and disagreements, apart from the
+relationship budget. The status line names World and joins its parts (scope count, weekly count, disagreements, updating) with one " · " separator. On a narrow map it wraps inside the visible canvas, so each part stays whole.
 World search, layout and replay use the drawable World items. The sidebar's Lens and World rows (⌘4, ⌘3) open Lens (research principles and methods) or World as full pages in the main area, each under its own page header ("Lens", "World"); a conversation keeps its own view of World in its side panel ([workspace panel](workspace-panel.md)). Deep links, the palette's names and principles, What's new and Bot cards open the same pages, and a link to an entity opens its direct connections and details. The Bot's sidebar contextual menu opens scheduled-task history. Lens shows its title on one row under the page header, with no Back button of its own; a page title that is read after opening takes focus without a ring. In a wide Lens page the rule/method/history list and its document stay in separate, independently scrolling columns; a long list cannot take away the document's height. In a compact Lens page, opening an item replaces the list, and Back restores it. Compact section tabs retain their full accessible names when the visible labels are shortened. This release leaves pack Share off that row ([This release](../knowledge/sharing.md#this-release)). Linked principles and methods open the shared reader. Corrections go to the Bot with the item attached. A newly added relationship can open directly from an answer in World; a relationship whose two ends are one thing (same node or a shared name) is not offered.
 
 Under **Filter**, **Highlight Lens applications** highlights the entities the host already recorded with
@@ -61,7 +66,7 @@ is no Apply or Dismiss: changes already apply
 the Bot's "Your World now also tracks ..." message. Copy never says ontology, schema or
 entity type.
 
-Company and market entities offer a Relationships view in the inspector beside Facts:
+Companies and markets with a connection to another name offer a Relationships view beside Facts:
 claims grouped by relation, one row per counterpart ranked by weight, then degree,
 then name, six per group then "+n more", line weight by claim weight and dashed when
 disputed; Lens entries applied to the name (`applies_to`) close Other on one "Lenses applied" line with dotted rules in the method colour; pointing at a counterpart or Lens entry (hover or focus) widens its line on the canvas to 2.5 px (a Lens line stays dotted in the method colour); clicking a counterpart walks there and Back retraces. Clicking a Lens opens its document.
@@ -69,7 +74,13 @@ disputed; Lens entries applied to the name (`applies_to`) close Other on one "Le
 The Library drawer has three tabs: Sources, Journal (your entries) and Notes (the Loupist's research notes). A Journal selection, a Journal change in a chat receipt and the palette's "New Journal entry" open the Journal tab; the palette action also opens its new-entry form (`requestLibrary` in `components/map/libraryState.ts`).
 When the canvas is narrower than 720 px, Library covers it. Closing Library reveals World again.
 The source and note filters stay at the top of the list while it scrolls.
-Entity/claim inspectors and Source and note readers open alongside World.
+Entity and claim inspectors and Source and note readers open alongside World.
+World follows the latest published revision, including when opened from an
+older link. If a detail or search result is newer than the canvas, the page
+refreshes the overview before showing that result. Selection and scope stay
+open, and What's new keeps the row being read as new changes arrive. Its event
+read uses the overview's revision and ends at its latest recorded change. Busy reads retry twice
+before showing an error. Try again gets the current World.
 The sidebar World row shows the session spinner while the selected Loupist has
 Source processing queued or running, or a World rebuild in progress. Its tooltip
 and accessible name include the same Source count as the Library's Processing

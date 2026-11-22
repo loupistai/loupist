@@ -150,16 +150,17 @@ describe("Loupist · Chat memory", () => {
     expect(send).not.toHaveBeenCalled();
   }, 60_000);
 
-  it("opens a World citation at its saved revision", async () => {
+  it("opens a saved World claim at the current revision", async () => {
     const user = userEvent.setup();
     const bridge = await withFirstMessage((message) => {
       message.memory_refs = [{ read_ref: "world-read-1", kind: "world", title: "Protocol world", excerpt: "", access: "exact_read",
         knowledge: { kind: "world_claim", recordId: "world-protocols", revisionId: "saved-revision", objectId: "claim-1" }, as_of: null, section: null }];
       savedRecordLink(message, "world_read", "world-read-1");
     });
+    const { recordId, revisionId } = (await bridge.knowledgeCatalog({ loupistId: "loupist-quality" })).worlds[0]!;
     const endpoints = [{ nodeId: "node-1", role: "subject" }];
     const query = vi.spyOn(bridge, "knowledgeWorldQuery").mockResolvedValue({
-      recordId: "world-protocols", revisionId: "saved-revision", revisionDigest: "digest",
+      recordId, revisionId, revisionDigest: "digest",
       nodes: [{ id: "node-1", name: "Protocol", aliases: [], description: "", kind: "Concept", sourceRole: "owned", properties: {} }],
       edges: [{ id: "edge-1", relation: "DESCRIBES", endpoints, status: "active", claim: {
         id: "claim-1", proposition: "The protocol preserves the sender's original statement.", attribution: "Retained protocol notes",
@@ -181,7 +182,7 @@ describe("Loupist · Chat memory", () => {
     await user.click(await screen.findByRole("button", { name: "Saved record · Memory: Protocol world" }));
     const world = await screen.findByRole("region", { name: "World" });
     expect(await within(world).findByText("The protocol preserves the sender's original statement.")).toBeVisible();
-    expect(query).toHaveBeenCalledWith(expect.objectContaining({ recordId: "world-protocols", revisionId: "saved-revision" }));
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({ recordId, revisionId, centerClaimId: "claim-1" }));
   });
 
   it("reads private Journal content only after an explicit reference click", async () => {

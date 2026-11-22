@@ -412,6 +412,7 @@ mod tests {
                 loupist_id: "g".into(),
                 since_ms: None,
                 until_ms: None,
+                world_revision_id: None,
                 limit: None,
                 cursor: None,
             })

@@ -812,10 +812,18 @@ async fn files_outside_the_loupist_folder_are_refused_with_a_way_forward() {
 
 #[tokio::test]
 async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_turn() {
-    let _script = script::install(vec![(
-        "example.com/injected",
-        vec![script::ok("text/html", INJECTED_PAGE)],
-    )]);
+    let link = "https://retained.example/official";
+    let page = INJECTED_PAGE.replace(
+        "Consolidated revenue",
+        &format!("See <a href=\"{link}\">the issuer release</a>. Consolidated revenue"),
+    );
+    let _script = script::install(vec![
+        ("example.com/injected", vec![script::ok("text/html", page)]),
+        (
+            "retained.example/official",
+            vec![script::ok("text/html", PLAIN_PAGE); 2],
+        ),
+    ]);
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let instructions = json!({"name":"write","path":temporary.path().join("loupist/AGENTS.md")});
@@ -883,6 +891,8 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
     )
     .await;
     refused_with(&refused, INSTRUCTION_WRITE_REFUSAL);
+    let opened = broker_request(&socket, broker.token(), "web.fetch", json!({"url":link})).await;
+    assert_eq!(opened["ok"], true, "{opened}");
     broker.shutdown().await.unwrap();
 
     // Turn 3: an exact read of the Source raises the tier on its own.
@@ -910,6 +920,8 @@ async fn a_saved_web_source_comes_back_delimited_and_pauses_commands_in_a_later_
     assert!(body.contains("Ignore the user"), "{body}");
     let refused = broker_request(&socket, broker.token(), "native.authorize", instructions).await;
     refused_with(&refused, INSTRUCTION_WRITE_REFUSAL);
+    let opened = broker_request(&socket, broker.token(), "web.fetch", json!({"url":link})).await;
+    assert_eq!(opened["ok"], true, "{opened}");
     broker.shutdown().await.unwrap();
 }
 
@@ -1318,10 +1330,9 @@ async fn after_third_party_text_web_fetch_opens_seen_sites_and_refuses_new_ones_
         let refused = broker_request(&socket, broker.token(), "web.fetch", fetch(url)).await;
         refused_with(&refused, WEB_FETCH_SITE_REFUSAL);
     }
-    capture.turn_taint.note_delivered_locators(
-        ToolMethod::WebSearch,
-        &json!({"results":[{"url":"https://found.example/brief"}]}),
-    );
+    capture
+        .turn_taint
+        .note_search_results(&json!({"results":[{"url":"https://found.example/brief"}]}));
     let found = broker_request(
         &socket,
         broker.token(),
@@ -1344,6 +1355,525 @@ async fn after_third_party_text_web_fetch_opens_seen_sites_and_refuses_new_ones_
         "{requested:?}"
     );
     broker.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn delivered_links_open_as_each_web_page_or_search_snippet_arrives() {
+    let first_link = "https://issuer.example/results";
+    let nested_link = "https://appendix.example/notes";
+    let markdown_link = "https://archive.example/report?q=one&year=2026";
+    let relative_link = "https://relative.example/annex";
+    let local_query = format!("q={}", "x".repeat(300));
+    let local_link = format!("https://article.example/annex?{local_query}");
+    let later_link = "https://later.example/transcript";
+    let snippet_link = "https://slides.example/deck";
+    let document = format!(
+        "See {first_link}.\n[Report](https://archive.example/report?q=one&amp;year=2026)\n\
+         [Annex](//relative.example/annex)\n[Local annex](../annex?{local_query})\n\n{}\n\nSee {later_link}.\n",
+        "Filing data.\n".repeat(1_500)
+    );
+    let exa_body = json!({"result":{"content":[{"type":"text","text":
+        json!({"results":[{"title":"News","url":"https://news.example/story",
+            "text":format!("Slides from the issuer are at {snippet_link}.")}]}).to_string()
+    }]}})
+    .to_string();
+    let _script = script::install(vec![
+        (
+            "article.example/news/quarter",
+            vec![script::ok("text/markdown", document); 2],
+        ),
+        (
+            "mcp.exa.ai/mcp",
+            vec![script::ok("application/json", exa_body)],
+        ),
+        (
+            "issuer.example/results",
+            vec![script::ok(
+                "text/markdown",
+                format!(
+                    "Quarterly shipments rose four percent. See {nested_link}.\n\n{}",
+                    "Filing data.\n".repeat(1_500)
+                ),
+            )],
+        ),
+        (
+            "appendix.example/notes",
+            vec![script::ok("text/html", PLAIN_PAGE)],
+        ),
+        (
+            "archive.example/report",
+            vec![script::ok("text/html", PLAIN_PAGE)],
+        ),
+        (
+            "relative.example/annex",
+            vec![script::ok("text/html", PLAIN_PAGE)],
+        ),
+        (
+            "article.example/annex",
+            vec![script::ok("text/html", PLAIN_PAGE)],
+        ),
+        (
+            "later.example/transcript",
+            vec![script::ok("text/html", PLAIN_PAGE)],
+        ),
+        (
+            "slides.example/deck",
+            vec![script::ok("text/html", PLAIN_PAGE)],
+        ),
+        (".example/", vec![script::ok("text/html", PLAIN_PAGE)]),
+    ]);
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let capture = Arc::new(ToolCapture {
+        web_search_policy: crate::web::WebSearchPolicy::ExaOnly,
+        ..ToolCapture::default()
+    });
+    capture.turn_taint.protect_private_text(PROTECTED_LINK_TEXT);
+    let fetch = |url: &str| json!({"url": url});
+    let page_url = "https://article.example/news/quarter";
+    let executor = executor_for(&state, capture.clone());
+    let policy = policy(true, true);
+    let dropped = executor
+        .execute_for_delivery(&policy, ToolMethod::WebFetch, fetch(page_url), "no-ack")
+        .await
+        .unwrap();
+    assert!(dropped["content"].as_str().unwrap().contains(first_link));
+    assert_eq!(
+        capture.turn_taint.web_fetch_target(first_link),
+        crate::custom_connections::taint::WebFetchTarget::Refused(WEB_FETCH_SITE_REFUSAL),
+    );
+    executor.discard_delivery(&policy, "no-ack").await;
+
+    let (broker, socket) = start_turn(&state, &temporary, "follow-links", capture.clone()).await;
+    let first = broker_request(&socket, broker.token(), "web.fetch", fetch(page_url)).await;
+    let body = delimited_body(first["result"]["content"].as_str().unwrap()).unwrap();
+    assert!(body.contains(first_link));
+    assert!(!body.contains(later_link));
+    let next_offset = first["result"]["next_offset"].as_u64().unwrap();
+
+    let refused = broker_request_attributed(
+        &socket,
+        broker.token(),
+        "web.fetch",
+        fetch("https://issuer.example/other-path"),
+        Some("refused-compose"),
+    )
+    .await;
+    refused_with(&refused, WEB_FETCH_SITE_REFUSAL);
+    // This is the broker receipt the real Chat progress path uses for refusal.
+    assert!(capture
+        .tool_trace
+        .refused("refused-compose", "untrusted_text_paused"));
+    let private = broker_request(
+        &socket,
+        broker.token(),
+        "web.fetch",
+        fetch(&format!("{first_link}?label={PROTECTED_LINK_QUERY}")),
+    )
+    .await;
+    refused_with(&private, WEB_FETCH_PRIVATE_REFUSAL);
+    for url in [later_link, "https://unseen.example/composed"] {
+        let refused = broker_request(&socket, broker.token(), "web.fetch", fetch(url)).await;
+        refused_with(&refused, WEB_FETCH_SITE_REFUSAL);
+    }
+    for url in [markdown_link, relative_link, &local_link] {
+        let opened = broker_request(&socket, broker.token(), "web.fetch", fetch(url)).await;
+        assert_eq!(opened["ok"], true, "{url}: {opened}");
+    }
+
+    let linked = broker_request(&socket, broker.token(), "web.fetch", fetch(first_link)).await;
+    assert_eq!(linked["ok"], true, "{linked}");
+    for url in [
+        "https://issuer.example/other-path",
+        "https://issuer.example/results?view=summary",
+    ] {
+        let refused = broker_request(&socket, broker.token(), "web.fetch", fetch(url)).await;
+        refused_with(&refused, WEB_FETCH_SITE_REFUSAL);
+    }
+    let next = &linked["result"]["next_offset"];
+    assert!(next.as_u64().unwrap() > 0);
+    let linked_next = broker_request(
+        &socket,
+        broker.token(),
+        "web.fetch",
+        json!({"url":first_link,"offset":next}),
+    )
+    .await;
+    assert_eq!(linked_next["result"]["content_offset"], *next);
+    let passage = broker_request(
+        &socket,
+        broker.token(),
+        "web.fetch",
+        json!({
+            "result_ref":linked["result"]["result_ref"],
+            "find":"Quarterly shipments rose four percent."
+        }),
+    )
+    .await;
+    assert_eq!(passage["ok"], true, "{passage}");
+    let retried = broker_request(
+        &socket,
+        broker.token(),
+        "web.fetch",
+        json!({"source_id":linked["result"]["source_id"]}),
+    )
+    .await;
+    assert_eq!(
+        retried["result"]["content_sha256"],
+        linked["result"]["content_sha256"]
+    );
+
+    let nested = broker_request(&socket, broker.token(), "web.fetch", fetch(nested_link)).await;
+    assert_eq!(nested["ok"], true, "{nested}");
+    for url in [
+        "https://issuer.example/other-path",
+        "https://appendix.example/other-path",
+    ] {
+        let refused = broker_request(&socket, broker.token(), "web.fetch", fetch(url)).await;
+        refused_with(&refused, WEB_FETCH_SITE_REFUSAL);
+    }
+
+    let later = broker_request(
+        &socket,
+        broker.token(),
+        "web.fetch",
+        json!({"url":page_url,"offset":next_offset}),
+    )
+    .await;
+    assert!(later["result"]["content"]
+        .as_str()
+        .unwrap()
+        .contains(later_link));
+    let opened = broker_request(&socket, broker.token(), "web.fetch", fetch(later_link)).await;
+    assert_eq!(opened["ok"], true, "{opened}");
+
+    let search = broker_request(
+        &socket,
+        broker.token(),
+        "web.search",
+        json!({"query":"quarterly results"}),
+    )
+    .await;
+    let snippet = search["result"]["results"][0]["snippet"].as_str().unwrap();
+    assert!(delimited_body(snippet).unwrap().contains(snippet_link));
+    let refused = broker_request(
+        &socket,
+        broker.token(),
+        "web.fetch",
+        fetch("https://slides.example/other-deck"),
+    )
+    .await;
+    refused_with(&refused, WEB_FETCH_SITE_REFUSAL);
+    let opened = broker_request(&socket, broker.token(), "web.fetch", fetch(snippet_link)).await;
+    assert_eq!(opened["ok"], true, "{opened}");
+    broker.shutdown().await.unwrap();
+}
+
+fn web_redirect(location: &str) -> script::ScriptedResponse {
+    script::ScriptedResponse {
+        status: 302,
+        location: Some(location.to_owned()),
+        ..script::ok("text/plain", "")
+    }
+}
+
+#[tokio::test]
+async fn a_delivered_link_redirect_records_exact_hops_without_opening_sites() {
+    let link = "https://issuer.example/filing";
+    let hop = "https://redirect.example/filings/current";
+    let final_url = "https://publisher.example/disclosures/quarterly";
+    let _script = script::install(vec![
+        (
+            "news.example/story",
+            vec![script::ok(
+                "text/plain",
+                format!("See {link} for the filing."),
+            )],
+        ),
+        (link, vec![web_redirect(hop)]),
+        (hop, vec![web_redirect(final_url); 2]),
+        (final_url, vec![script::ok("text/html", PLAIN_PAGE); 3]),
+        (".example/", vec![script::ok("text/html", PLAIN_PAGE)]),
+    ]);
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let (broker, socket) =
+        start_turn(&state, &temporary, "redirect", bound_capture(&temporary)).await;
+    let fetch =
+        |url: &str| broker_request(&socket, broker.token(), "web.fetch", json!({"url":url}));
+
+    assert_eq!(fetch("https://news.example/story").await["ok"], true);
+    let linked = fetch(link).await;
+    assert_eq!(linked["result"]["final_url"], final_url, "{linked}");
+    for url in [hop, final_url] {
+        let opened = fetch(url).await;
+        assert_eq!(opened["ok"], true, "{url}: {opened}");
+    }
+    let count = script::requests().len();
+    for url in [
+        "https://issuer.example/other",
+        "https://redirect.example/other",
+        "https://publisher.example/other?view=summary",
+    ] {
+        refused_with(&fetch(url).await, WEB_FETCH_SITE_REFUSAL);
+    }
+    assert_eq!(script::requests().len(), count);
+    broker.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn parallel_link_and_search_result_fetches_keep_their_own_grants() {
+    let link = "https://issuer.example/filing";
+    let hit = "https://news.example/result";
+    let overlap = "https://second.example/result";
+    let user_url = "https://user.example/document";
+    let seen_link = "https://news.example/linked-page";
+    let link_final = "https://publisher.example/filing";
+    let search_final = "https://search-final.example/filing";
+    let overlap_final = "https://overlap-final.example/filing";
+    let user_final = "https://user-final.example/filing";
+    let seen_final = "https://seen-final.example/filing";
+    let exa_body = json!({"result":{"content":[{"type":"text","text":
+        json!({"results":[
+            {"title":"News","url":hit,"text":format!("See {link}, {overlap} and {seen_link}.")},
+            {"title":"Release","url":overlap,"text":"Quarterly release."}
+        ]}).to_string()
+    }]}})
+    .to_string();
+    let _script = script::install(vec![
+        (
+            "mcp.exa.ai/mcp",
+            vec![script::ok("application/json", exa_body)],
+        ),
+        (link, vec![web_redirect(link_final)]),
+        (hit, vec![web_redirect(search_final)]),
+        (overlap, vec![web_redirect(overlap_final)]),
+        (user_url, vec![web_redirect(user_final)]),
+        (seen_link, vec![web_redirect(seen_final)]),
+        (link_final, vec![script::ok("text/html", PLAIN_PAGE)]),
+        (
+            "search-final.example/",
+            vec![script::ok("text/html", PLAIN_PAGE); 2],
+        ),
+        (
+            "overlap-final.example/",
+            vec![script::ok("text/html", PLAIN_PAGE); 2],
+        ),
+        (
+            "user-final.example/",
+            vec![script::ok("text/html", PLAIN_PAGE); 2],
+        ),
+        (
+            "seen-final.example/",
+            vec![script::ok("text/html", PLAIN_PAGE); 2],
+        ),
+        (".example/", vec![script::ok("text/html", PLAIN_PAGE)]),
+    ]);
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let capture = Arc::new(ToolCapture {
+        web_search_policy: crate::web::WebSearchPolicy::ExaOnly,
+        ..ToolCapture::default()
+    });
+    capture.turn_taint.note_user_text(user_url);
+    let executor = executor_for(&state, capture.clone());
+    let policy = policy(true, true);
+    let (broker, socket) = start_turn(&state, &temporary, "parallel-fetch", capture).await;
+    let fetch = |params| broker_request(&socket, broker.token(), "web.fetch", params);
+    let search = broker_request(
+        &socket,
+        broker.token(),
+        "web.search",
+        json!({"query":"quarterly filings"}),
+    )
+    .await;
+    let hits = search["result"]["results"].as_array().unwrap();
+    let hit = hits.iter().find(|entry| entry["url"] == hit).unwrap();
+    assert!(hit["snippet"].as_str().unwrap().contains(overlap));
+
+    // Run both fetches concurrently in the same turn.
+    let (linked, searched) = tokio::join!(
+        executor.execute_for_delivery(&policy, ToolMethod::WebFetch, json!({"url":link}), "link"),
+        executor.execute_for_delivery(
+            &policy,
+            ToolMethod::WebFetch,
+            json!({"source_id":hit["source_id"]}),
+            "search-result",
+        ),
+    );
+    assert_eq!(linked.unwrap()["final_url"], link_final);
+    assert_eq!(searched.unwrap()["final_url"], search_final);
+    executor
+        .commit_delivery(&policy, "search-result")
+        .await
+        .unwrap();
+    executor.commit_delivery(&policy, "link").await.unwrap();
+    for url in [
+        "https://issuer.example/other",
+        "https://publisher.example/other",
+    ] {
+        refused_with(&fetch(json!({"url":url})).await, WEB_FETCH_SITE_REFUSAL);
+    }
+    let other = fetch(json!({"url":"https://search-final.example/other"})).await;
+    assert_eq!(other["ok"], true, "{other}");
+
+    for (url, final_url, other_url) in [
+        (
+            overlap,
+            overlap_final,
+            "https://overlap-final.example/other",
+        ),
+        (user_url, user_final, "https://user-final.example/other"),
+        (seen_link, seen_final, "https://seen-final.example/other"),
+    ] {
+        let opened = fetch(json!({"url":url})).await;
+        assert_eq!(opened["result"]["final_url"], final_url, "{opened}");
+        let other = fetch(json!({"url":other_url})).await;
+        assert_eq!(other["ok"], true, "{other}");
+    }
+    broker.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn delivered_links_in_a_dart_filing_open_by_exact_url() {
+    let link = "https://disclosure.example/supporting-exhibit";
+    let _script = script::install(vec![(
+        "disclosure.example/supporting-exhibit",
+        vec![script::ok("text/html", PLAIN_PAGE)],
+    )]);
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let capture = Arc::new(ToolCapture {
+        unattended_run_id: Some("scheduled-filings".into()),
+        ..ToolCapture::default()
+    });
+    let executor = executor_for(&state, capture.clone());
+    let mut request = json!({"rcept_no":"20260205990221"});
+    let key = executor.persistent_request_key(
+        &policy(true, true),
+        ToolMethod::DartFilingRead,
+        &request,
+        None,
+    );
+    executor
+        .retain_dataset(
+            &key,
+            &json!({"data":{"document":{"text":format!("See exhibit {link}.")}}}),
+            json!({"trust":"third_party_text"}),
+        )
+        .unwrap();
+    let (broker, socket) = start_turn(&state, &temporary, "dart-links", capture).await;
+    request["max_age"] = json!(3600);
+    let read = broker_request(&socket, broker.token(), "dart.filing_read", request).await;
+    assert_eq!(read["ok"], true, "{read}");
+    let text = read["result"]["data"]["document"]["text"].as_str().unwrap();
+    assert!(delimited_body(text).unwrap().contains(link));
+    let opened = broker_request(&socket, broker.token(), "web.fetch", json!({"url":link})).await;
+    assert_eq!(opened["ok"], true, "{opened}");
+    broker.shutdown().await.unwrap();
+}
+
+const PROTECTED_LINK_TEXT: &str =
+    "My private Lens checks recurring cash earnings before reported profit";
+const PROTECTED_LINK_QUERY: &str =
+    "My+private+Lens+checks+recurring+cash+earnings+before+reported+profit";
+
+#[tokio::test]
+async fn delivered_links_from_history_and_tagged_exports_still_check_private_text() {
+    let link = "https://saved.example/report";
+    let private_url = format!("{link}?note={PROTECTED_LINK_QUERY}");
+    let body = format!("Public report: {link}\nDerived link: {private_url}");
+    let _script = script::install(vec![(
+        "saved.example/report",
+        vec![
+            script::ok("text/html", PLAIN_PAGE),
+            script::ok("text/html", PLAIN_PAGE),
+        ],
+    )]);
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let trace = crate::broker::ToolTraceCapture::default();
+    trace.mark_untrusted_text();
+    let mut reply = chat_message("saved-link-reply", ChatRole::Assistant, &body);
+    reply.tool_trace = Some(trace.snapshot());
+    let expected = state.store.get_chat("chat-a").unwrap().unwrap();
+    let mut saved = expected.clone();
+    saved.messages.push(reply);
+    state.store.replace_chat(&expected, &saved).unwrap();
+
+    let dataset = state
+        .store
+        .dataset_put(
+            "loupist-a",
+            "derived-links",
+            &json!([{"private":private_url, "public":link}]),
+            json!({"trust":"third_party_text"}),
+        )
+        .unwrap();
+    let (broker, socket) =
+        start_turn(&state, &temporary, "make-export", bound_capture(&temporary)).await;
+    let filename = "derived-links.json";
+    let exported = broker_request(
+        &socket,
+        broker.token(),
+        "dataset.export",
+        json!({"dataset_id":dataset.dataset_id,"revision":dataset.revision,
+            "path":filename,"format":"json"}),
+    )
+    .await;
+    assert_eq!(exported["ok"], true, "{exported}");
+    broker.shutdown().await.unwrap();
+
+    for from_export in [false, true] {
+        let capture = bound_capture(&temporary);
+        capture.turn_taint.protect_private_text(PROTECTED_LINK_TEXT);
+        let (broker, socket) = start_turn(&state, &temporary, "saved-links", capture).await;
+        if from_export {
+            let path = temporary.path().join("loupist").join(filename);
+            let read = broker_request(
+                &socket,
+                broker.token(),
+                "native.authorize",
+                json!({"name":"read","path":path}),
+            )
+            .await;
+            assert!(read["result"]["untrusted_text"].is_object(), "{read}");
+            // Pi's native adapter reports only final delimited text parts. Its
+            // separate Node test exercises the real adapter and read limits.
+            let parts = [fs::read_to_string(path).unwrap()];
+            let reported = broker_request(
+                &socket,
+                broker.token(),
+                "native.delivered_text",
+                json!({"parts":parts}),
+            )
+            .await;
+            assert_eq!(reported["ok"], true, "{reported}");
+        } else {
+            let read = broker_request(
+                &socket,
+                broker.token(),
+                "chat.history",
+                json!({"message_id":"saved-link-reply"}),
+            )
+            .await;
+            let returned = read["result"]["content"].as_str().unwrap();
+            assert_eq!(delimited_body(returned), Some(body.as_str()));
+        }
+        let refused = broker_request(
+            &socket,
+            broker.token(),
+            "web.fetch",
+            json!({"url":private_url}),
+        )
+        .await;
+        refused_with(&refused, WEB_FETCH_PRIVATE_REFUSAL);
+        let opened =
+            broker_request(&socket, broker.token(), "web.fetch", json!({"url":link})).await;
+        assert_eq!(opened["ok"], true, "{opened}");
+        broker.shutdown().await.unwrap();
+    }
+    assert_eq!(script::requests().len(), 2);
 }
 
 /// A read's answer carries the canonical file and its identity, so the

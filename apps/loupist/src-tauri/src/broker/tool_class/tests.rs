@@ -10,7 +10,12 @@ fn all_methods() -> Vec<ToolMethod> {
         .filter_map(|tool| tool.method.as_deref())
         .map(|route| ToolMethod::parse(route).expect("catalog route"))
         .collect();
-    methods.extend([M::NativeAuthorize, M::McpConnect, M::McpCall]);
+    methods.extend([
+        M::NativeAuthorize,
+        M::NativeDeliveredText,
+        M::McpConnect,
+        M::McpCall,
+    ]);
     for (index, method) in methods.iter().enumerate() {
         assert!(!methods[..index].contains(method), "{method:?} twice");
     }
@@ -290,7 +295,9 @@ fn classification_columns_agree_with_each_other_and_the_catalog() {
         }
         // Every Memory write needs a Memory permission, and the reverse.
         let permission = match method {
-            M::NativeAuthorize | M::McpConnect | M::McpCall => ToolPermission::Always,
+            M::NativeAuthorize | M::NativeDeliveredText | M::McpConnect | M::McpCall => {
+                ToolPermission::Always
+            }
             method => method.permission(),
         };
         if permission == ToolPermission::MemoryWrite {

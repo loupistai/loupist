@@ -220,6 +220,7 @@ const fn default_memory_proposal_budget() -> u8 {
 #[serde(rename_all = "snake_case")]
 pub enum ToolMethod {
     NativeAuthorize,
+    NativeDeliveredText,
     ScheduleList,
     ScheduleRead,
     ScheduleCreate,
@@ -293,10 +294,11 @@ pub enum ToolMethod {
 
 impl ToolMethod {
     fn parse(value: &str) -> Option<Self> {
-        // MCP administration is host-only; all model-facing routes come from
+        // Native and MCP administration are host-only; model-facing routes come from
         // the shared catalog, never from client-supplied schemas or aliases.
         match value {
             "native.authorize" => Some(Self::NativeAuthorize),
+            "native.delivered_text" => Some(Self::NativeDeliveredText),
             "mcp.connect" => Some(Self::McpConnect),
             "mcp.call" => Some(Self::McpCall),
             "python.run" => Some(Self::PythonRun),
@@ -312,7 +314,11 @@ impl ToolMethod {
         use crate::broker::tools::{ToolPermission, TOOL_CATALOG};
         if matches!(
             self,
-            Self::NativeAuthorize | Self::McpConnect | Self::McpCall | Self::PythonRun
+            Self::NativeAuthorize
+                | Self::NativeDeliveredText
+                | Self::McpConnect
+                | Self::McpCall
+                | Self::PythonRun
         ) {
             return ToolPermission::Always;
         }
@@ -381,6 +387,8 @@ pub enum BrokerError {
     FrameTooLarge,
     #[error("tool execution failed: {0}")]
     Execution(String),
+    #[error("{0}")]
+    SecContactRequired(&'static str),
     #[error("The saved key for this connection is being changed right now, so it was not read.")]
     KeychainBusy,
     #[error("macOS did not release the saved key for this connection. It may be showing the user a permission prompt, or the keychain is locked.")]
@@ -1051,7 +1059,10 @@ where
     let request: BrokerRequest =
         serde_json::from_slice(&bytes).map_err(|_| BrokerError::Malformed)?;
     // Never collect the authentication token or unauthenticated requests.
-    let trace = if constant_time_eq(request.token.as_bytes(), expected_token.as_bytes()) {
+    // Native-delivery reports contain file contents and are internal to Pi.
+    let trace = if request.method != "native.delivered_text"
+        && constant_time_eq(request.token.as_bytes(), expected_token.as_bytes())
+    {
         executor.tool_trace().map(|capture| {
             let spec = crate::broker::tools::TOOL_CATALOG
                 .tools
@@ -1368,14 +1379,16 @@ async fn execute_request(
         let error = BrokerError::MethodDenied;
         (id.clone(), error)
     })?;
-    validate_argument_text(&request.params).map_err(|error| {
-        let error = if method == ToolMethod::InterfaceLabels {
-            BrokerError::invalid_interface_labels()
-        } else {
-            error
-        };
-        (id.clone(), error)
-    })?;
+    if method != ToolMethod::NativeDeliveredText {
+        validate_argument_text(&request.params).map_err(|error| {
+            let error = if method == ToolMethod::InterfaceLabels {
+                BrokerError::invalid_interface_labels()
+            } else {
+                error
+            };
+            (id.clone(), error)
+        })?;
+    }
     executor
         .enforce_turn_policy(method, &request.params)
         .map_err(|error| (id.clone(), error))?;
@@ -1537,7 +1550,7 @@ pub(crate) fn error_body(error: &BrokerError) -> Value {
             "Correct the request fields before calling again.",
             false,
         ),
-        BrokerError::InvalidArguments { .. } => ("", false),
+        BrokerError::InvalidArguments { .. } | BrokerError::SecContactRequired(_) => ("", false),
         BrokerError::FrameTooLarge => (
             "The result was too large. Request a smaller page or file instead of repeating this call.",
             false,
@@ -1615,6 +1628,7 @@ fn error_code(error: &BrokerError) -> &'static str {
         BrokerError::Malformed => "malformed_request",
         BrokerError::WithNext { source, .. } => error_code(source),
         BrokerError::Execution(message) => as_of_code(message).unwrap_or("execution_failed"),
+        BrokerError::SecContactRequired(_) => "sec_contact_required",
         BrokerError::KeychainBusy => "keychain_busy",
         BrokerError::KeychainUnavailable => "keychain_unavailable",
         BrokerError::KeychainPermissionRequired => "keychain_permission_required",

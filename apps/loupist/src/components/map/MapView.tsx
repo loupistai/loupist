@@ -27,10 +27,10 @@ import { followedNames, localSet, neighborOrder, type MapScope } from "./localVi
 import { MapList } from "./MapList";
 import { entityCategory, isMetricNode, nodeCategory } from "../../knowledge/mapKinds";
 import { isBasePerspective, isLensNode, lensAppliedEntities, lensDisplayTitle } from "./lensReading";
-import { entityLabel, isDrawnRelation, matchesMapQuery, projectClaim } from "../../knowledge/mapItems";
+import { claimDegree, entityLabel, isDrawnRelation, matchesMapQuery, projectClaim } from "../../knowledge/mapItems";
 import { processingSourceCount } from "../../knowledge/mapProcessing";
 import { frozenLayout } from "./layout";
-import { useMapData, useMapDetail, weeklyDrawnCount } from "./useMapData";
+import { useMapData, useMapDetail, useWorldReads, weeklyDrawnCount } from "./useMapData";
 import type { MapCanvasControls } from "./MapCanvas";
 import "../../styles/map.css";
 const MapCanvas = lazy(() => import("./MapCanvas"));
@@ -59,9 +59,10 @@ function filterMapNodes(nodes: KnowledgeMapNode[], disputed: Set<string>, filter
     return kindOk && (filters.metrics || !isMetricNode(node)) && (!filters.personal || node.watched) && (!filters.disputed || disputed.has(node.id));
   });
 }
-export function MapView({ initialAnchor, bridge, catalog, location, active = true, refreshKey, building, onPatch, onOpen, onAsk, onAskInChat, onAddSource, readerLocation, onReaderPatch = onPatch, onBack, onChanged = () => {}, onManageProcessing, onOpenLink, onOpenChat, onExplainDisagreement }: MapViewProps) {
+export function MapView({ initialAnchor, bridge, catalog, location: savedLocation, active = true, refreshKey, building, onPatch, onOpen, onAsk, onAskInChat, onAddSource, readerLocation, onReaderPatch = onPatch, onBack, onChanged = () => {}, onManageProcessing, onOpenLink, onOpenChat, onExplainDisagreement }: MapViewProps) {
   const { t, i18n } = useTranslation("knowledge");
-  const data = useMapData(bridge, location.loupistId, refreshKey ?? catalog, active);
+  const data = useMapData(bridge, savedLocation.loupistId, refreshKey ?? catalog, active, catalog.worlds[0]?.revisionId);
+  const location = { ...savedLocation, revisionId: data.map?.worldRevisionId ?? savedLocation.revisionId };
   const learning = useLearningState(bridge, location.loupistId);
   const learnedIds = useMemo(() => new Set(data.map?.nodes.filter(node => isNewMethod(node, learning.acknowledged)).map(node => node.id)), [data.map, learning.acknowledged]);
   const learningGlowIds = useMemo(() => {
@@ -114,28 +115,28 @@ export function MapView({ initialAnchor, bridge, catalog, location, active = tru
   useEffect(() => { if (location.view?.onlyDisputed !== undefined) setFilters(current => ({ ...current, disputed: !!location.view?.onlyDisputed })); }, [location.loupistId, location.view?.onlyDisputed, location.view?.highlightEntityIds]);
   const highlightIds = useMemo(() => location.view?.highlightEntityIds ? new Set(location.view.highlightEntityIds) : undefined, [location.view?.highlightEntityIds]);
   const [canvasFailed, setCanvasFailed] = useState(false);
-  const [searchNodes, setSearchNodes] = useState<{ query: string; nodes: KnowledgeMapNode[] }>({ query: "", nodes: [] });
+  const [searchNodes, setSearchNodes] = useState<KnowledgeMapNode[]>([]);
   const controls = useRef<MapCanvasControls | null>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   const list = location.view?.listMode || canvasFailed;
-  const highlights = useConflictHighlights(bridge, location, data.map);
+  const highlights = useConflictHighlights(bridge, location, data.map, data.retry);
   const baseMap = highlights.map;
   const selectedId = reading && baseMap ? relatedNodeId(reading, baseMap.nodes) : reading ? undefined : location.selection?.kind === "node" ? location.selection.id : undefined;
   const selectedClaimId = !reading && location.selection?.kind === "claim" ? location.selection.id : undefined;
   // An exact link or search can name an entity outside the bounded overview. Keep its
   // neighbourhood for the visit even after the user closes its details or selects a neighbour.
   const missingId = baseMap && [focalChoice, selectedId].find(id => id && !baseMap.nodes.some(node => node.id === id));
-  const missingDetail = useMapDetail(bridge, location, missingId);
+  const missingDetail = useMapDetail(bridge, location, missingId, "node", data.retry);
   const map = useMemo(() => {
     if (!baseMap || !missingId) return baseMap;
     const graph = missingDetail.graph;
     const extra = new Map<string, KnowledgeMapNode>();
-    const result = searchNodes.nodes.find(node => node.id === missingId);
+    const result = searchNodes.find(node => node.id === missingId);
     if (result) extra.set(result.id, result);
     if (graph) for (const node of graph.nodes) {
       if (node.id === missingId || focalChoice === missingId) extra.set(node.id, {
         id: node.id, label: node.name, localNames: node.aliases, kind: "entity", entityKind: node.kind,
-        degree: graph.edges.filter(edge => edge.endpoints.some(end => end.nodeId === node.id)).length, watched: false,
+        degree: claimDegree(graph.edges, node.id), watched: false,
       });
     }
     if (!extra.size) return baseMap;
@@ -147,10 +148,10 @@ export function MapView({ initialAnchor, bridge, catalog, location, active = tru
       for (const edge of projectClaim(claim)) if (ids.has(edge.source) && ids.has(edge.target)) edges.set(edge.id, edge);
     }
     return { ...baseMap, nodes, edges: [...edges.values()] };
-  }, [baseMap, missingId, focalChoice, searchNodes.nodes, missingDetail.graph]);
+  }, [baseMap, missingId, focalChoice, searchNodes, missingDetail.graph]);
   // The host seeds a standing Lens before the World has any drawable names.
   const worldNodes = useMemo(() => map?.nodes.filter(node => !isLensNode(node)) ?? [], [map]);
-  const worldEdges = useMemo(() => map?.edges.filter(edge => edge.kind === "claim" || edge.kind === "about") ?? [], [map]);
+  const worldEdges = useMemo(() => map?.edges.filter(edge => edge.kind === "claim" || edge.kind === "fact" || edge.kind === "about") ?? [], [map]);
   const hasWorldNodes = worldNodes.length > 0;
   const overlay = map?.nodes.find(n => n.id === overlayId);
   const appliedEntities = useMemo(() => overlay && map ? lensAppliedEntities(map.nodes, map.edges, overlay.id) : [], [overlay, map]);
@@ -161,23 +162,20 @@ export function MapView({ initialAnchor, bridge, catalog, location, active = tru
     setShowMapHint(false);
   }, [showMapHint, selected, selectedClaimId, reading, location.loupistId]);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- filters reset when the Loupist changes; a later view patch does not reset them.
-  useEffect(() => { setFilters({ ...defaultFilters(), disputed: !!location.view?.onlyDisputed }); setOverlayId(undefined); setSearchNodes({ query: "", nodes: [] }); }, [location.loupistId]);
+  useEffect(() => { setFilters({ ...defaultFilters(), disputed: !!location.view?.onlyDisputed }); setOverlayId(undefined); setSearchNodes([]); }, [location.loupistId]);
   useEffect(() => { const timer = setTimeout(() => setDebounced(query.trim()), 120); return () => clearTimeout(timer); }, [query]);
-  useEffect(() => {
-    if (!debounced || !location.recordId || !location.revisionId) return;
-    let cancelled = false;
-    void bridge.knowledgeWorldQuery({ loupistId: location.loupistId, recordId: location.recordId, revisionId: location.revisionId, search: debounced, kinds: [], relations: [], bindingRoles: [], statuses: [], byteLimit: 524288, nodeLimit: 8, edgeLimit: 8 }).then((graph) => {
-      if (!cancelled) setSearchNodes({ query: debounced, nodes: graph.nodes.filter((n) => `${n.name} ${n.aliases.join(" ")}`.toLocaleLowerCase().includes(debounced.toLocaleLowerCase())).map((n) => baseMap?.nodes.find((m) => m.id === n.id) ?? { id: n.id, kind: "entity", label: n.name, entityKind: n.kind, degree: 0, watched: false }) });
-    }).catch(() => { if (!cancelled) setSearchNodes({ query: debounced, nodes: [] }); });
-    return () => { cancelled = true; };
-  }, [bridge, debounced, location.loupistId, location.recordId, location.revisionId, baseMap]);
+  const search = useWorldReads(bridge, location, active && baseMap && debounced ? [{ search: debounced, nodeLimit: 8, edgeLimit: 8 }] : [], data.retry);
+  const exactMatches = search.graphs?.[0]?.nodes;
   const searchResults = useMemo(() => {
     if (debounced !== query.trim()) return [];
     const matches = worldNodes.filter((n) => matchesMapQuery(n, debounced));
     const unique = new Map(matches.map((n) => [n.id, n]));
-    if (searchNodes.query === debounced) for (const node of searchNodes.nodes) unique.set(node.id, node);
+    for (const node of exactMatches ?? []) {
+      const item: KnowledgeMapNode = { id: node.id, kind: "entity", label: node.name, localNames: node.aliases, entityKind: node.kind, degree: 0, watched: false };
+      if (matchesMapQuery(item, debounced) && !unique.has(item.id)) unique.set(item.id, item);
+    }
     return [...unique.values()].slice(0, 8);
-  }, [worldNodes, debounced, searchNodes, query]);
+  }, [worldNodes, debounced, exactMatches, query]);
   const timelineStart = useMemo(() => replayFrom ?? replayStart(worldNodes, worldEdges, Date.now()), [worldNodes, worldEdges, replayFrom]);
   const replay = useMapReplay(timelineStart, location.loupistId);
   const focal = replay.active ? undefined : map?.nodes.find(node => node.id === focalChoice && node.kind === "entity");
@@ -233,7 +231,7 @@ export function MapView({ initialAnchor, bridge, catalog, location, active = tru
       onOpen({ loupistId: location.loupistId, surface: "lens", recordId: node.recordId });
       return;
     }
-    if (isMetricNode(node)) setFilters(current => current.metrics ? current : { ...current, metrics: true }); if (!map?.nodes.some(item => item.id === node.id)) setSearchNodes(current => ({ ...current, nodes: [...current.nodes.filter(item => item.id !== node.id), node] })); onPatch({ ...location, selection: { kind: "node", id: node.id } }); controls.current?.focus(node.id);
+    if (isMetricNode(node)) setFilters(current => current.metrics ? current : { ...current, metrics: true }); if (!map?.nodes.some(item => item.id === node.id)) setSearchNodes(current => [...current.filter(item => item.id !== node.id), node]); onPatch({ ...location, selection: { kind: "node", id: node.id } }); controls.current?.focus(node.id);
   };
   const select = (node: KnowledgeMapNode, fromSearch = false) => {
     selectOnly(node);
@@ -254,7 +252,7 @@ export function MapView({ initialAnchor, bridge, catalog, location, active = tru
   }, [viewKey]);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `focalChoice` re-reads the stored recent list after a choice.
   const recent = useMemo(() => recentFocal(location.loupistId), [location.loupistId, focalChoice]);
-  const badge = useGrowthSince(bridge, location.loupistId, visit.lastSeenAtMs, active && visit.loupistId === location.loupistId && visit.lastSeenAtMs !== undefined, data.map?.generatedAtMs);
+  const badge = useGrowthSince(bridge, location.loupistId, visit.lastSeenAtMs, active && !!data.map && visit.loupistId === location.loupistId && visit.lastSeenAtMs !== undefined, data.map?.generatedAtMs, data.map?.worldRevisionId, data.retry);
   const badgeCount = useMemo(() => visit.lastSeenAtMs === undefined || badge.status !== "done" ? 0 : whatsNewRows(badge.events, map, i18n.language).length, [visit.lastSeenAtMs, badge.status, badge.events, map, i18n.language]);
   const openWhatsNew = () => { setLibraryOpen(false); setWhatsNewOpen(true); };
   const closeWhatsNew = () => { setWhatsNewOpen(false); toolbar.current?.querySelector<HTMLButtonElement>("[data-map-whats-new]")?.focus(); };
@@ -317,7 +315,7 @@ export function MapView({ initialAnchor, bridge, catalog, location, active = tru
     if (opener?.isConnected && !opener.closest("[inert]")) opener.focus();
     else toolbar.current?.querySelector<HTMLInputElement>("input")?.focus();
   };
-  const stats = mapStatsText(t, replayed.nodes.length, replayed.edges.filter(isDrawnRelation).length);
+  const stats = mapStatsText(t, replayed.nodes.length, replayed.edges.filter(edge => edge.kind === "claim" && isDrawnRelation(edge)).length);
   const weekly = weeklyDrawnCount(replayed.nodes);
   const showStats = !map || hasWorldNodes;
   const emptyLens = overlay && appliedEntities.length === 0 ? overlay : undefined;
@@ -352,6 +350,8 @@ export function MapView({ initialAnchor, bridge, catalog, location, active = tru
       <div className="map-stage" tabIndex={focal && !list ? 0 : undefined} role={focal && !list ? "group" : undefined} aria-label={focal && !list ? t("map.stageLabel", { name: focalName }) : undefined} aria-keyshortcuts={focal && !list ? "ArrowLeft ArrowRight Enter Shift+Enter Backspace 1 2 0" : undefined} onKeyDown={stageKeys}>
         {focal && !list ? <p className="sr-only" aria-live="polite">{cursor ? `${entityLabel(cursor, i18n.language)} · ${t(`map.kind.${nodeCategory(cursor) as "other"}`)}` : ""}</p> : null}
         {highlights.error ? <div className="map-error" role="alert">{t("map.detailError")}<Button variant="ghost" onClick={highlights.retry}>{t("map.retry")}</Button></div> : null}
+        {search.error && !!query ? <div className="map-error" role="alert">{t("map.detailError")}<Button variant="ghost" onClick={search.retry}>{t("map.retry")}</Button></div> : null}
+        {missingDetail.error && !selected ? <div className="map-error" role="alert">{t("map.detailError")}<Button variant="ghost" onClick={missingDetail.retry}>{t("map.retry")}</Button></div> : null}
         {data.error ? <div className="map-error" role="alert">{t("map.error")}<Button variant="ghost" onClick={data.retry}>{t("map.retry")}</Button></div> : null}
         <div className="map-status-stack">{showStats ? <div className="map-stats" data-testid="map-stats" role="status">{data.loading && !map ? t("map.loading") : <><span title={bounded || local?.capped ? t("map.searchForOthers") : undefined}>{localStats ?? stats}</span>{weekly > 0 ? <span className="map-growth" title={t("map.weeklyTip")}>{t("map.weekly", { n: formatNumber(weekly) })}</span> : null}{conflicts > 0 ? <span className="map-conflict-count" title={t("map.conflictTip")}>{t("map.conflictCount", { n: formatNumber(conflicts) })}</span> : null}{processing && !!map?.nodes.length && (!replay.active || replay.playing) ? <span className="map-updating"><i />{t("map.updating")}</span> : null}{bounded ? <small title={t("map.searchForOthers")}>{t("map.bounded", { shown: formatNumber(visible.length), total: formatNumber(total) })}</small> : null}{filtersActive(filters) ? <Button variant="link" onClick={() => { setFilters(defaultFilters()); setOverlayId(undefined); }}>{t("map.clearFilters")}</Button> : null}</>}</div> : null}{overlay && !emptyLens ? <div className="map-overlay-pill" role="status" data-lens-applied={overlay.id}><span><span className="map-overlay-title">{t("map.viewingThrough", { title: overlayTitle })}</span><small>{overlayOutsideScope ? t("map.overlayOutsideScope") : t("map.overlayLines")}</small></span><div className="map-applied-names" aria-label={t("map.appliedNames")}>{appliedEntities.map(node => <button type="button" key={node.id} onClick={() => select(node)}>{entityLabel(node, i18n.language)}</button>)}</div>{overlayOutsideScope ? <Button variant="link" onClick={() => setScope("all")}>{t("map.showWholeMap")}</Button> : null}<Button size="icon-sm" variant="ghost" aria-label={t("map.exitOverlay")} title={t("map.exitOverlay")} onClick={() => setOverlayId(undefined)}><XIcon /></Button></div> : null}{picking ? <p className="map-pick-hint" role="status">{t("map.pickHint")}</p> : null}{noNeighbors && focal ? <div className="map-no-neighbors" role="status"><p>{t("map.noNeighbors", { name: focalName })}</p><Button variant="outline" size="sm" onClick={onAskInChat} disabled={!onAskInChat}>{t("map.askInChat")}</Button></div> : null}</div>
         {data.loading && !map ? <div className="map-skeleton" /> : map && !hasWorldNodes ? <div className="map-empty" data-testid="map-empty"><h2>{t("map.emptyTitle")}</h2><p>{t("map.emptyBody")}</p><div><Button onClick={onAskInChat} disabled={!onAskInChat}>{t("map.askInChat")}</Button>{onAddSource ? <Button variant="outline" onClick={onAddSource}>{t("map.addSource")}</Button> : null}</div></div> : map ? <>
@@ -363,10 +363,10 @@ export function MapView({ initialAnchor, bridge, catalog, location, active = tru
         </> : null}
       </div>
       {libraryOpen ? <MapLibrary key={`${location.loupistId}:library`} bridge={bridge} catalog={catalog} location={readerLocation ?? location} onOpen={next => { onOpen(next); if ((toolbar.current?.clientWidth ?? 0) > 0 && toolbar.current!.clientWidth <= 900) setLibraryOpen(false); }} onAsk={onAsk} onChanged={onChanged} onClose={() => setLibraryOpen(false)} onAddSource={onAddSource} onManageProcessing={onManageProcessing} /> : null}
-      {whatsNewOpen ? <MapWhatsNew key={`${location.loupistId}:whats-new`} bridge={bridge} loupistId={location.loupistId} map={map} lastSeenAtMs={visit.lastSeenAtMs} nowMs={visit.nowMs} refreshKey={data.map?.generatedAtMs} onOpenRow={openWhatsNewRow} onReplay={replayThese} onClose={closeWhatsNew} /> : null}
+      {whatsNewOpen ? <MapWhatsNew key={`${location.loupistId}:whats-new`} bridge={bridge} loupistId={location.loupistId} map={map} onRevisionChange={data.retry} lastSeenAtMs={visit.lastSeenAtMs} nowMs={visit.nowMs} onOpenRow={openWhatsNewRow} onReplay={replayThese} onClose={closeWhatsNew} /> : null}
       {reading ? <MapReader key={`${location.loupistId}:${reading.surface}`} bridge={bridge} catalog={catalog} location={reading} onOpen={onOpen} onPatch={onReaderPatch} onAsk={onAsk} onChanged={onChanged} onClose={clear} onBack={onBack} onOpenLink={onOpenLink} onManageProcessing={onManageProcessing} /> : null}
-      {selectedClaimId ? <MapClaimInspector bridge={bridge} location={location} claimId={selectedClaimId} onClose={clear} onOpen={onOpen} onAsk={onAsk} /> : null}
-      {!reading && selected && map ? <MapInspector key={`${location.loupistId}:inspector`} node={selected} onShowConnections={!focal && !replay.active && selected.kind === "entity" ? () => changeFocal(selected.id) : undefined} map={map} onChanged={onChanged} onOpenChat={onOpenChat} catalog={catalog} bridge={bridge} location={location} providedGraph={selected.id === missingId ? missingDetail.graph : undefined} onClose={() => { setPointedEdge(undefined); clear(); }} onSelect={select} onOpen={onOpen} onAsk={onAsk} onExplainDisagreement={onExplainDisagreement} onPointRelationship={setPointedEdge} /> : null}
+      {selectedClaimId ? <MapClaimInspector bridge={bridge} location={location} claimId={selectedClaimId} onClose={clear} onOpen={onOpen} onAsk={onAsk} onRevisionChange={data.retry} /> : null}
+      {!reading && selected && map ? <MapInspector key={`${location.loupistId}:inspector`} node={selected} onShowConnections={!focal && !replay.active && selected.kind === "entity" ? () => changeFocal(selected.id) : undefined} map={map} onChanged={onChanged} onOpenChat={onOpenChat} catalog={catalog} bridge={bridge} location={location} providedGraph={selected.id === missingId ? missingDetail.graph : undefined} onClose={() => { setPointedEdge(undefined); clear(); }} onSelect={select} onOpen={onOpen} onAsk={onAsk} onExplainDisagreement={onExplainDisagreement} onPointRelationship={setPointedEdge} onRevisionChange={data.retry} /> : null}
     </div>
     {replay.active ? <MapReplayBar replay={{ ...replay, close: closeReplay }} disabled={recording} range={replayFrom !== undefined ? t("map.replayRange", { from: formatDate(replayFrom, { year: undefined, month: "short", day: "numeric" }) }) : undefined} /> : null}
   </div>;

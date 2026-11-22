@@ -225,9 +225,10 @@ pub(crate) struct WebFetchSnapshot {
     content_sha256: String,
     title: String,
     url: String,
-    requested_url: String,
+    pub(crate) requested_url: String,
     representation_url: String,
-    final_url: String,
+    pub(crate) final_url: String,
+    pub(crate) redirect_hops: Vec<Url>,
     status: u16,
     content_type: String,
     charset: Option<String>,
@@ -683,6 +684,7 @@ async fn fetch_official(
         requested_url: source.url.clone(),
         representation_url: target.representation_url.to_string(),
         final_url: response.final_url.to_string(),
+        redirect_hops: response.redirect_hops,
         status: response.status.as_u16(),
         content_type: media_type(&response.content_type),
         charset: Some("utf-8".into()),
@@ -745,6 +747,7 @@ async fn fetch_generic(
         requested_url: source.url.clone(),
         representation_url: response.final_url.to_string(),
         final_url: response.final_url.to_string(),
+        redirect_hops: response.redirect_hops,
         status: response.status.as_u16(),
         content_type,
         charset: decoded.charset,
@@ -844,6 +847,7 @@ struct BoundedResponse {
     challenge: bool,
     content_type: String,
     final_url: Url,
+    redirect_hops: Vec<Url>,
     bytes: Vec<u8>,
     retry_after: Option<Duration>,
 }
@@ -894,6 +898,7 @@ async fn request_bounded(
             challenge: false,
             content_type: response.content_type,
             final_url: url,
+            redirect_hops: Vec::new(),
             bytes,
             retry_after: None,
         });
@@ -909,6 +914,7 @@ async fn request_bounded(
         .dns_resolver(resolver.clone())
         .build()
         .map_err(|_| WebError::Provider)?;
+    let mut redirect_hops = Vec::new();
     for redirect_count in 0..=MAX_REDIRECTS {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
@@ -927,6 +933,7 @@ async fn request_bounded(
                 let location = scripted.location.ok_or(WebError::Provider)?;
                 url = url.join(&location).map_err(|_| WebError::UrlDenied)?;
                 validate_url_shape(&url)?;
+                redirect_hops.push(url.clone());
                 continue;
             }
             return Ok(BoundedResponse {
@@ -934,6 +941,7 @@ async fn request_bounded(
                 challenge: scripted.challenge,
                 content_type: scripted.content_type,
                 final_url: url,
+                redirect_hops,
                 bytes: scripted.body,
                 retry_after: parse_retry_after_header(
                     scripted
@@ -976,6 +984,7 @@ async fn request_bounded(
                 .ok_or(WebError::Provider)?;
             url = url.join(location).map_err(|_| WebError::UrlDenied)?;
             validate_url_shape(&url)?;
+            redirect_hops.push(url.clone());
             continue;
         }
         if response
@@ -1016,6 +1025,7 @@ async fn request_bounded(
             challenge,
             content_type,
             final_url,
+            redirect_hops,
             bytes,
             retry_after,
         });

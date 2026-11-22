@@ -237,7 +237,8 @@ pub fn run() {
             tauri::async_runtime::spawn_blocking(move || {
                 commands::records::release_host_sessions(&release_state);
             });
-            let update_coordinator = state.updates.clone();
+            // Start any due launch check before the renderer can read update status.
+            updater::start_auto_update_loop(app.handle().clone(), state.updates.clone());
             app.manage(state);
             let catalog_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -268,7 +269,6 @@ pub fn run() {
             if let Err(error) = app_menu::install(app.handle()) {
                 eprintln!("Loupist menu was not installed: {error}");
             }
-            updater::start_auto_update_loop(app.handle().clone(), update_coordinator);
             #[cfg(all(any(target_os = "macos", windows), not(feature = "e2e")))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;

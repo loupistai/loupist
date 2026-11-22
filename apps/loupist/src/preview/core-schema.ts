@@ -46,6 +46,7 @@ function coreSchemaMap(): KnowledgeMap {
   return {
     nodes, edges, unmatchedWatchlist: [],
     counts: {
+      fact: { total: 0, shown: 0, truncated: false },
       entity: count(nodes.length), lens_perspective: { ...none }, lens_principle: { ...none }, lens_method: { ...none }, lens_subject: { ...none }, lens_idea: { ...none }, journal: { ...none },
       claim: count(edges.length), lens_link: { ...none }, applies_to: { ...none }, about: { ...none },
     },

@@ -1,7 +1,10 @@
 # Chat composer
 
 The composer attaches context and does not send it. It is a compact pill (24 px radius) as wide as the reading column: one row holding, in reading and tab order, the + menu, the message, the name and thinking level of the model that will answer and the accent Send tile. The message starts one line high and grows with its text, line by line, up to 200 px or 30% of the window height, whichever is less; past that it scrolls and keeps the caret's line in view. The controls stay on its last line. An empty composer uses its one-line CSS height, including after the first message in a research session with a docked panel. `ChatComposer` measures height only while the textarea holds draft text: the WebKit of supported macOS releases has no `field-sizing: content`, so a CSS-only composer stayed one line high there (`assertComposerGrows` in `e2e/native-forms.mjs` measures it in the WebView). The placeholder addresses the Loupist by name ("Message Lumi", "루미에게 메시지"), and the one-line notice ("AI can be wrong. Not a licensed financial adviser.") sits under the pill in 11 px. Text and object references appear at the textarea cursor; attachments and guidance sit above the row inside the pill, and whole-message settings (private chat, Skills and the as-of date) sit under it, aligned with the text. Focus on the composer, including the automatic focus of a new chat, turns its 1px edge to the accent ink. It draws no 2px outline, which would frame the whole composer. Controls keep their own outline. Styles: `src/styles/composer.css`. `/asof` is the [date control](../analysis/point-in-time.md#composer-date-control). Width and the browser: [Evidence](evidence-browser.md).
-Answer table, code and diagram controls use the current UI language for their tooltips and accessible names. Copy confirmation clears after a short delay; refreshed snapshots of the same answer, number or grid preserve it. A stopped reply shows the localized run state without the runtime's English stop marker in the answer or its copy action.
+The composer shell keeps the same bottom inset while the side panel docks or overlays
+the chat and while a reply settles. Draft text rewraps to the composer width.
+Answer copy and feedback tooltips sit below their buttons and follow their position
+as the layout changes. Answer table, code and diagram controls use the current UI language for their tooltips and accessible names. Copy confirmation clears after a short delay; refreshed snapshots of the same answer, number or grid preserve it. A stopped reply shows the localized run state without the runtime's English stop marker in the answer or its copy action.
 The transcript keeps public progress notes, findings and citations in reading
 order. While work runs, short action labels grow down the conversation between
 public notes. Consecutive successful calls with the same action can share a
@@ -231,7 +234,9 @@ Three tabs:
   reply shows that artifact ("The change was not applied. The earlier version is
   shown.", matched by the step's title, unless a later publish of that title in the
   reply succeeded), or a generic "It ended with an error. It
-  was not used in the answer."). Stopped, skipped and safety refusals keep their
+  was not used in the answer."). An SEC web or market-data read refused for a
+  missing contact uses the `invalid_input` category and points to contact setup
+  in Data connections. Stopped, skipped and safety refusals keep their
   reasons first. Labels come from the locale catalogs: the catalog's step label, a read's
   noun ("Read current quote"), the connection's name in the interface language ("Used Web Research", "웹 리서치 사용"), or a
   generic label for the step's kind; a tool's raw name and the host's English

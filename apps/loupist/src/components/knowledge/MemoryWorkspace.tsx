@@ -33,9 +33,8 @@ export function MemoryWorkspace({ bridge, loupist, active = true, mapVisit, navi
   useEffect(() => { setAdding(false); }, [loupist.id]);
   const world = current?.worlds[0];
   const savedMap = location.surface === "world" ? location : navigation.views.world;
-  const mapLocation: KnowledgeLocation = savedMap ?? { loupistId: loupist.id, surface: "world", view: { followCurrent: true } };
-  const resolvedMap = !mapLocation.recordId || mapLocation.view?.followCurrent
-    ? { ...mapLocation, recordId: world?.recordId, revisionId: world?.revisionId } : mapLocation;
+  const mapLocation: KnowledgeLocation = savedMap ?? { loupistId: loupist.id, surface: "world" };
+  const resolvedMap = { ...mapLocation, recordId: world?.recordId, revisionId: world?.revisionId };
   useEffect(() => {
     if (active && current && (location.surface === "world" || location.surface === "home") && (location.surface === "home" || location.recordId !== resolvedMap.recordId || location.revisionId !== resolvedMap.revisionId)) onPatch(resolvedMap);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `resolvedMap` is rebuilt each render; its record and revision are what the patch compares.

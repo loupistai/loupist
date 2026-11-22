@@ -14,8 +14,8 @@ import { dateValue } from "../../knowledge/presentation";
 import { pinForClaim, pinForNode } from "../../knowledge/location";
 import { Button } from "../ui/button";
 import { extensionKindLabel, nodeCategory } from "../../knowledge/mapKinds";
-import { entityLabel } from "../../knowledge/mapItems";
-import { useMapDetail } from "./useMapData";
+import { entityLabel, isDrawnRelation } from "../../knowledge/mapItems";
+import { useInspectorScroll, useMapDetail } from "./useMapData";
 import { InspectorThesis } from "../assets/InspectorThesis";
 import { MapRelationships } from "./MapRelationships";
 import { hasRelationshipsView } from "./relationships";
@@ -23,7 +23,7 @@ import { isBasePerspective, isLensNode, isStandingPlaceholder, lensDisplayTitle 
 import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
-export function MapInspector({ onShowConnections, node, map, bridge, location, onClose, onSelect, onOpen, onAsk, providedGraph, catalog, onChanged, onOpenChat, onExplainDisagreement, onPointRelationship }: {
+export function MapInspector({ onShowConnections, node, map, bridge, location, onClose, onSelect, onOpen, onAsk, providedGraph, catalog, onChanged, onOpenChat, onExplainDisagreement, onPointRelationship, onRevisionChange }: {
   catalog?: KnowledgeCatalog; onChanged?: () => void; onOpenChat?: (chatId: string) => void;
   /** A relationship chip the user points at; the canvas widens that line. */
   onPointRelationship?: (edgeId?: string) => void;
@@ -32,6 +32,7 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
   providedGraph?: WorldGraphView;
   node: KnowledgeMapNode; map: KnowledgeMap; bridge: LoupistBridge; location: KnowledgeLocation;
   onShowConnections?: () => void;
+  onRevisionChange?: () => void;
   onClose: () => void; onSelect: (node: KnowledgeMapNode) => void; onOpen: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin) => void;
 }) {
   const { t, i18n } = useTranslation("knowledge");
@@ -39,8 +40,9 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
   const heading = useRef<HTMLHeadingElement>(null);
   const [more, setMore] = useState(false);
   const [allConnections, setAllConnections] = useState(false);
-  const detail = useMapDetail(bridge, location, node.kind === "entity" && !providedGraph ? node.id : undefined);
+  const detail = useMapDetail(bridge, location, node.kind === "entity" && !providedGraph ? node.id : undefined, "node", onRevisionChange);
   const graph = providedGraph ?? detail.graph;
+  const scroll = useInspectorScroll(node.id, !!graph);
   const { error, retry } = detail;
   const catalogLenses = catalog?.lenses ?? [];
   const lens = catalogLenses.find(l => l.recordId === node.recordId);
@@ -58,7 +60,8 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
   }, [bridge, location.loupistId, noteScope, catalog]);
   // Facts or Relationships; the choice stays while the user walks from name to name.
   const [view, setView] = useState<"facts" | "relationships">("facts");
-  const relationshipsAvailable = hasRelationshipsView(node);
+  const relationshipsAvailable = hasRelationshipsView(node) && map.edges.some(edge =>
+    edge.kind === "claim" && isDrawnRelation(edge) && (edge.source === node.id || edge.target === node.id));
   const showRelationships = relationshipsAvailable && view === "relationships";
   // Walking from a relationship chip keeps a back stack; selecting from anywhere else starts over.
   const [trail, setTrail] = useState<KnowledgeMapNode[]>([]);
@@ -82,7 +85,7 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
     walkingTo.current = previous.id;
     onSelect(previous);
   };
-  useEffect(() => { heading.current?.focus(); setMore(false); setAllConnections(false); }, [node.id]);
+  useEffect(() => { heading.current?.focus({ preventScroll: true }); setMore(false); setAllConnections(false); }, [node.id]);
   const claims = [...(graph?.edges ?? [])].filter((e) => e.endpoints.some((p) => p.nodeId === node.id)).sort((a, b) => (b.claim.recordedAtMs ?? 0) - (a.claim.recordedAtMs ?? 0)).slice(0, 6);
   const disputed = (graph?.edges ?? []).filter(edge => edge.claim.status === "disputed" && edge.endpoints.some(endpoint => endpoint.nodeId === node.id));
   // The World contract has no pair ID. Group reports about the same relation and
@@ -93,14 +96,14 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
   })).values()];
   const connected = map.edges.filter((e) => e.source === node.id || e.target === node.id);
   const lenses = connected.filter((e) => e.kind === "applies_to").map((e) => map.nodes.find((n) => n.id === (e.source === node.id ? e.target : e.source))).filter((n): n is KnowledgeMapNode => !!n && n.kind !== "entity");
-  const connections = connected.filter((e) => e.kind !== "applies_to").sort((a, b) => (a.relation ?? "").localeCompare(b.relation ?? ""));
+  const connections = connected.filter((e) => e.kind === "claim" && isDrawnRelation(e)).sort((a, b) => (a.relation ?? "").localeCompare(b.relation ?? ""));
   const openSource = (spanId: string) => {
     const target = graph?.sourceTargets?.[spanId];
     if (target) onOpen({ loupistId: location.loupistId, surface: "source", recordId: target.recordId, revisionId: target.revisionId, objectId: target.sourceId, selection: { kind: "source", sourceId: target.sourceId, spanId: target.spanId, worldRecordId: target.worldRecordId, worldRevisionId: target.worldRevisionId } });
   };
   if (node.kind === "journal") return <aside className="map-inspector journal-inspector" aria-label={t("journal.entry")}><Button variant="ghost" size="icon-sm" className="map-inspector-close" aria-label={t("map.close")} onClick={onClose}><XIcon /></Button><ResearchReader bridge={bridge} location={{ loupistId: location.loupistId, surface: "note", selection: { kind: "journal", journalId: node.id } }} onOpen={onOpen} onAsk={onAsk} onOpenChat={onOpenChat} onChanged={onChanged} /></aside>;
   if (node.kind === "lens_principle" && node.recordId) return <PrincipleInspector key={`${location.loupistId}:${node.recordId}`} bridge={bridge} loupistId={location.loupistId} refreshKey={lens?.revisionId ?? node.label} node={node} map={map} onClose={onClose} onSelect={onSelect} onChanged={onChanged} onOpenChat={onOpenChat} />;
-  return <aside className="map-inspector" aria-labelledby="map-inspector-title"><Button variant="ghost" size="icon-sm" className="map-inspector-close" aria-label={t("map.close")} onClick={onClose}><XIcon /></Button>
+  return <aside className="map-inspector" {...scroll} aria-labelledby="map-inspector-title"><Button variant="ghost" size="icon-sm" className="map-inspector-close" aria-label={t("map.close")} onClick={onClose}><XIcon /></Button>
     {trail.length ? <Button variant="ghost" size="sm" className="map-inspector-back" onClick={walkBack}><ArrowLeftIcon />{t("map.back")}</Button> : null}
     {/* The name leads; the kind sits above it in the side column and after it on the bottom sheet's one line. */}
     <div className="map-inspector-title">

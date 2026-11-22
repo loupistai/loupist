@@ -491,7 +491,6 @@ export type ConnectionView = Wire.ConnectionView;
 export type KnowledgeViewState = {
   highlightEntityIds?: string[];
   onlyDisputed?: boolean;
-  followCurrent?: boolean;
   sourceFilter?: "all" | "processing" | "attention";
   sourceScrollTop?: number;
   readerScrollTop?: number;
@@ -562,6 +561,7 @@ export type GrowthEventsQuery = {
   loupistId: string;
   sinceMs?: number;
   untilMs?: number;
+  worldRevisionId?: string;
   /** 1–5000; defaults to 500. Time bounds are inclusive. */
   limit?: number;
   cursor?: string;
@@ -573,7 +573,7 @@ export type GrowthEventsPage = {
 };
 
 export type KnowledgeMapNodeKind = "entity" | "lens_perspective" | "lens_principle" | "lens_method" | "lens_subject" | "lens_idea" | "journal";
-export type KnowledgeMapEdgeKind = "claim" | "lens_link" | "applies_to" | "about";
+export type KnowledgeMapEdgeKind = "claim" | "fact" | "lens_link" | "applies_to" | "about";
 export type KnowledgeMapQuery = { loupistId: string; maxNodes?: number };
 export type KnowledgeMapNode = {
   origin?: CustomConnectionOrigin;

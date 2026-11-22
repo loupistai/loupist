@@ -1429,7 +1429,7 @@ mod tests {
     #[test]
     fn delivered_entries_and_review_excerpts_never_leave_in_a_url_after_third_party_text() {
         use crate::custom_connections::taint::{
-            TurnTaint, WebFetchTarget, WEB_FETCH_PRIVATE_REFUSAL,
+            TurnTaint, WebFetchGrant, WebFetchTarget, WEB_FETCH_PRIVATE_REFUSAL,
         };
 
         let entry = "Sells half of Hanul Precision when it reaches 98,000 won";
@@ -1459,7 +1459,10 @@ mod tests {
             taint.mark_untrusted_text();
             taint.web_fetch_target(&url(text))
         };
-        assert_eq!(fetch(&TurnTaint::default(), entry), WebFetchTarget::Allowed);
+        assert_eq!(
+            fetch(&TurnTaint::default(), entry),
+            WebFetchTarget::Allowed(WebFetchGrant::Site)
+        );
         // ...unless it carries the user's words this turn received.
         let taint = TurnTaint::default();
         delivered.protect(&taint);
@@ -1478,7 +1481,7 @@ mod tests {
         );
         assert_eq!(
             fetch(&taint, said),
-            WebFetchTarget::Allowed,
+            WebFetchTarget::Allowed(WebFetchGrant::Site),
             "an excerpt not delivered is not registered"
         );
     }

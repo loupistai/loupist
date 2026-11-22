@@ -27,7 +27,7 @@ export function addedMapItems(map: KnowledgeMap, events: readonly GrowthEvent[])
     if (event.kind === "entity_added") {
       if (map.nodes.some(node => node.kind === "entity" && node.id === event.subjectId)) nodeIds.add(event.subjectId);
     } else if (event.kind === "claim_added") {
-      for (const edge of map.edges) if (edge.kind === "claim" && claimIdForEdge(edge) === event.subjectId) claimEdges.add(edge.id);
+      for (const edge of map.edges) if ((edge.kind === "claim" || edge.kind === "fact") && claimIdForEdge(edge) === event.subjectId) claimEdges.add(edge.id);
     }
   }
   // A value reported about one name still marks that name, but counts as no relationship.
@@ -48,7 +48,7 @@ export function chatMapData(map: KnowledgeMap, messages: readonly ChatMessage[],
     if (!reference) return;
     if (reference.kind === "world_node") seeds.add(reference.objectId);
     if (reference.kind === "world_claim") for (const edge of map.edges) {
-      if (edge.kind === "claim" && claimIdForEdge(edge) === reference.objectId) { seeds.add(edge.source); seeds.add(edge.target); }
+      if ((edge.kind === "claim" || edge.kind === "fact") && claimIdForEdge(edge) === reference.objectId) { seeds.add(edge.source); seeds.add(edge.target); }
     }
   };
   for (const message of messages) {

@@ -10,7 +10,7 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from fnmatch import fnmatchcase
 from functools import wraps
-from typing import Any
+from typing import Any, get_args
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from loupist_openbb.bootstrap import (
@@ -34,7 +34,9 @@ from loupist_openbb.failures import (
     CredentialRejectedError,
     FRED_INVALID_ARGUMENTS,
     FRED_INVALID_SYMBOL,
+    INVALID_ARGUMENTS,
     InvalidProviderArguments,
+    SecContactRequired,
     call_tool_with_failures,
     classify_rest_failures,
 )
@@ -70,8 +72,8 @@ def _tool_name_for_segments(segments: list[str]) -> str:
     return "_".join(parts)
 
 
-def _route_declares_provider(route: Any) -> bool:
-    """Inspect FastAPI dependencies for the top-level provider argument."""
+def _route_provider_parameter(route: Any) -> Any:
+    """Find the top-level provider argument in FastAPI's dependencies."""
 
     pending = [route.dependant]
     visited: set[int] = set()
@@ -91,9 +93,55 @@ def _route_declares_provider(route: Any) -> bool:
         for group in parameter_groups:
             for parameter in getattr(dependant, group, ()):
                 if getattr(parameter, "name", None) == "provider":
-                    return True
+                    return parameter
         pending.extend(getattr(dependant, "dependencies", ()))
-    return False
+    return None
+
+
+def _available_route_providers(
+    app: Any,
+    enabled_providers: set[str],
+    credential_fields: set[str],
+    manifest_providers: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    """Resolve the providers whose fetchers can run with this bootstrap."""
+    from fastapi.routing import APIRoute
+    from openbb_core.app.provider_interface import ProviderInterface
+
+    eligible = {
+        provider["id"]
+        for provider in manifest_providers
+        if provider["id"] in enabled_providers
+        and (
+            provider["keyless"]
+            or set(provider["credential_mapping"].values()) <= credential_fields
+        )
+    }
+    registry = ProviderInterface().create_executor().registry.providers
+    choices = {}
+    for route in app.router.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        parameter = _route_provider_parameter(route)
+        if parameter is None:
+            continue
+        model = (route.openapi_extra or {}).get("model")
+        providers = get_args(parameter.field_info.annotation) or (parameter.default,)
+        allowed = []
+        for name in providers:
+            if not isinstance(name, str) or name not in eligible:
+                continue
+            provider = registry[name]
+            fetcher = provider.fetcher_dict.get(model)
+            # Some public routes (e.g. Nasdaq search) opt out even when
+            # other routes of the same provider require a credential.
+            if (fetcher is None or fetcher.require_credentials) and not set(
+                provider.credentials or ()
+            ) <= credential_fields:
+                continue
+            allowed.append(name)
+        choices[route.path] = allowed
+    return choices
 
 
 def retain_read_only_routes(
@@ -105,6 +153,7 @@ def retain_read_only_routes(
     enabled_provider_ids: set[str] | None = None,
     providerless_local_tools: set[str] | None = None,
     providerless_implicit_provider: dict[str, str] | None = None,
+    available_route_providers: dict[str, list[str]] | None = None,
 ) -> Any:
     """Copy an OpenBB app and retain only authorized read-only routes.
 
@@ -135,7 +184,10 @@ def retain_read_only_routes(
             )
         )
         tool_name = _tool_name_for_segments(segments)
-        provider_allowed = _route_declares_provider(route)
+        if available_route_providers is None:
+            provider_allowed = _route_provider_parameter(route) is not None
+        else:
+            provider_allowed = bool(available_route_providers.get(route.path))
         if not provider_allowed and tool_name in local_tools:
             provider_allowed = True
         if not provider_allowed:
@@ -209,7 +261,7 @@ def apply_sec_contact_email(contact_email: str | None) -> None:
         if not _is_sec_url(url):
             return await original_async(url, *args, **kwargs)
         if contact_email is None:
-            raise PermissionError("SEC requests require a configured contact email")
+            raise SecContactRequired()
         kwargs["headers"] = _headers_with_identity(kwargs.get("headers"), user_agent)
         # The pinned helper accepts a positional callback after method and timeout.
         callback = args[2] if len(args) > 2 else kwargs.get("response_callback")
@@ -239,7 +291,7 @@ def apply_sec_contact_email(contact_email: str | None) -> None:
         if not _is_sec_url(url):
             return original_sync(url, *args, **kwargs)
         if contact_email is None:
-            raise PermissionError("SEC requests require a configured contact email")
+            raise SecContactRequired()
         kwargs["headers"] = _headers_with_identity(kwargs.get("headers"), user_agent)
         result = original_sync(url, *args, **kwargs)
         if result.status_code in {400, 422}:
@@ -404,6 +456,7 @@ def mark_registered_tools_read_only(
     *,
     yahoo_raw_daily: bool = False,
     provider_hosts: dict[str, frozenset[str]] | None = None,
+    available_route_providers: dict[str, list[str]] | None = None,
 ) -> int:
     """Attach MCP safety annotations and bound generated output schemas.
 
@@ -413,6 +466,7 @@ def mark_registered_tools_read_only(
     """
 
     from fastmcp.server.providers.openapi.components import OpenAPITool
+    from fastmcp.tools.tool import ToolResult
     from mcp.types import ToolAnnotations
 
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False)
@@ -424,6 +478,15 @@ def mark_registered_tools_read_only(
             continue
         for tool in tools.values():
             if isinstance(tool, OpenAPITool):
+                provider_choices = (available_route_providers or {}).get(
+                    tool._route.path
+                )
+                if provider_choices is not None:
+                    provider_schema = tool.parameters["properties"]["provider"]
+                    provider_schema["enum"] = provider_choices
+                    for key in ("const", "default"):
+                        if provider_schema.get(key) not in provider_choices:
+                            provider_schema.pop(key, None)
                 tool.annotations = annotations.model_copy(deep=True)
                 schema = tool.output_schema
                 if (
@@ -457,7 +520,17 @@ def mark_registered_tools_read_only(
                     _original_run: Callable[[dict[str, Any]], Any] = original_run,
                     _provider_id: str | None = provider_id,
                     _tool_name: str = tool.name,
+                    _choices: list[str] | None = provider_choices,
                 ) -> Any:
+                    if (
+                        _choices is not None
+                        and arguments.get("provider") not in _choices
+                    ):
+                        return ToolResult(
+                            content="invalid_arguments",
+                            structured_content=INVALID_ARGUMENTS,
+                            is_error=True,
+                        )
                     if (
                         _tool_name in {"equity_price_historical", "etf_historical"}
                         and arguments.get("provider") == "alpha_vantage"
@@ -480,8 +553,6 @@ def mark_registered_tools_read_only(
                         and arguments.get("adjustment") == "unadjusted"
                     ):
                         if arguments.get("interval", "1d") != "1d":
-                            from fastmcp.tools.tool import ToolResult
-
                             return ToolResult(
                                 content="unsupported_adjustment",
                                 structured_content=YAHOO_ADJUSTMENT,
@@ -549,6 +620,10 @@ def create_server(bootstrap: Bootstrap) -> Any:
     from openbb_mcp_server.app.app import create_mcp_server
     from openbb_mcp_server.models.settings import MCPSettings
 
+    enabled_provider_ids = set(bootstrap.settings.enabled_provider_ids)
+    available_route_providers = _available_route_providers(
+        openbb_app, enabled_provider_ids, set(credentials), manifest["providers"]
+    )
     apply_credentials(credentials)
     credentials.clear()
     apply_sec_contact_email(provider_config.get("sec_contact_email"))
@@ -566,9 +641,10 @@ def create_server(bootstrap: Bootstrap) -> Any:
         set(bootstrap.settings.allowed_categories),
         api_prefix,
         read_only_post_routes,
-        enabled_provider_ids=set(bootstrap.settings.enabled_provider_ids),
+        enabled_provider_ids=enabled_provider_ids,
         providerless_local_tools=local_tools,
         providerless_implicit_provider=implicit_provider,
+        available_route_providers=available_route_providers,
     )
     settings = MCPSettings(
         name="Loupist OpenBB",
@@ -591,7 +667,6 @@ def create_server(bootstrap: Bootstrap) -> Any:
         module_exclusion_map={"__loupist_none__": "__loupist_none__"},
     )
     server = create_mcp_server(settings, target_app)
-    enabled_provider_ids = set(bootstrap.settings.enabled_provider_ids)
     mark_registered_tools_read_only(
         server,
         {
@@ -601,6 +676,7 @@ def create_server(bootstrap: Bootstrap) -> Any:
         },
         yahoo_raw_daily="yfinance" in enabled_provider_ids,
         provider_hosts=provider_hosts,
+        available_route_providers=available_route_providers,
     )
     server.disable(names=_DISABLED_COMPONENTS)
     return server

@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readWindowGeometry, setWindowSize } from "./window-geometry.mjs";
 import { assertShellLayout, measureShellLayout } from "./shell-layout.mjs";
+import { verifyChatTransitions } from "./native-chat-transitions.mjs";
 
 export const layoutWidths = [700, 800, 899, 900, 1061, 1280, 1680, 2560];
 export const layoutScenarios = [
@@ -227,7 +228,7 @@ export async function runNativeLayoutRegression(browser, {
   const runtime = await browser.execute(() => ({ userAgent: navigator.userAgent, nativeBridge: Boolean(window.__TAURI_INTERNALS__) }));
   const report = { runtime, mode: !runtime.nativeBridge ? "headless-browser"
     : process.env.LOUPIST_E2E_ALLOW_UNFOCUSED === "1" ? "webview-only" : "focused-native",
-    cases: [], skipped: [], restoration: null };
+    cases: [], transitions: [], skipped: [], restoration: null };
   await mkdir(artifactDir, { recursive: true });
   const reportPath = resolve(artifactDir, `${prefix}.json`);
   const save = () => writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
@@ -248,6 +249,20 @@ export async function runNativeLayoutRegression(browser, {
   };
   let failure;
   try {
+    if (runtime.nativeBridge) {
+      await verifyChatTransitions(browser, {
+        cases: report.transitions,
+        open: async (scenario, locale) => {
+          await resetStorage();
+          await openLayoutPreview(browser, devUrl, { scenario, locale, theme: "light" });
+        },
+        capture: async (name) => {
+          const file = `${prefix}-${name}.png`;
+          await browser.saveScreenshot(resolve(artifactDir, file));
+          return file;
+        },
+      });
+    }
     for (const width of widths) {
       try { await setWindowSize(browser, { width, height }); }
       catch (error) {
@@ -338,10 +353,11 @@ export async function runNativeLayoutRegression(browser, {
 
 async function main() {
   const [sessionPath, ...args] = process.argv.slice(2);
-  assert.ok(sessionPath, "usage: node native-layout.mjs <session.json> [--widths=700,800] [--scenarios=activity-sheet] [--locales=en,ko] [--themes=dark] [--artifact-dir=PATH] [--prefix=NAME] [--no-panel-restoration]");
+  assert.ok(sessionPath, "usage: node native-layout.mjs <session.json> [--widths=700,800] [--scenarios=activity-sheet] [--locales=en,ko] [--themes=dark] [--artifact-dir=PATH] [--prefix=NAME] [--no-panel-restoration] [--transitions-only]");
   const options = {};
   for (const arg of args) {
     if (arg === "--no-panel-restoration") { options.panelRestoration = false; continue; }
+    if (arg === "--transitions-only") { options.widths = []; options.panelRestoration = false; continue; }
     const match = /^--(widths|scenarios|locales|themes|artifact-dir|prefix)=(.+)$/.exec(arg);
     assert.ok(match, `Unknown option: ${arg}`);
     const [, key, value] = match;
@@ -361,7 +377,7 @@ async function main() {
     await focusNativeWindow(browser, session);
     const result = await runNativeLayoutRegression(browser, { devUrl: session.devUrl ?? await browser.getUrl(),
       artifactDir: resolve(dirname(fileURLToPath(import.meta.url)), "artifacts/layout"), ...options });
-    console.log(`Native layout passed: ${result.cases.length} captures; ${result.skipped.length} skipped boundaries.`);
+    console.log(`Native layout passed: ${result.cases.length} geometry and ${result.transitions.length} transition captures; ${result.skipped.length} skipped boundaries.`);
   } finally { await browser.deleteSession(); }
 }
 

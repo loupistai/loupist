@@ -4,8 +4,8 @@ mod openbb;
 mod point_in_time;
 
 use errors::{
-    is_argument_failure, map_mcp_error, mcp_call_error_with_inventory, rejected_mcp_result,
-    stopped_mcp_response,
+    is_argument_failure, is_sec_contact_required, map_mcp_error, mcp_call_error_with_inventory,
+    rejected_mcp_result, stopped_mcp_response,
 };
 
 use std::{
@@ -281,6 +281,14 @@ async fn invoke_mcp_tool(
     server: &TurnMcpServer,
     plan: &McpCallPlan,
 ) -> Result<McpInvocation, BrokerError> {
+    let failure = |error, provider_error| {
+        McpInvocation::Failed(provider_failure(
+            error,
+            server.tools.get(&request.tool_name),
+            plan.requested_provider.as_deref(),
+            provider_error,
+        ))
+    };
     let call = server
         .session
         .call_tool(&request.tool_name, plan.arguments.clone(), MCP_CALL_TIMEOUT)
@@ -292,23 +300,16 @@ async fn invoke_mcp_tool(
                 &error,
                 McpError::Io(_) | McpError::Protocol | McpError::Stopped | McpError::FrameTooLarge
             );
+            let provider_error = matches!(&error, McpError::Remote(_));
             let mapped = map_mcp_error(error);
             if terminal {
                 return Ok(McpInvocation::Stopped(Some(mapped)));
             }
-            return Ok(McpInvocation::Failed(provider_failure(
-                call_failure_reason(&request.tool_name, mapped),
-                plan.requested_provider.as_deref(),
-                &server.enabled_provider_ids,
-            )));
+            return Ok(failure(mapped, provider_error));
         }
     };
     if result.is_error {
-        return Ok(McpInvocation::Failed(provider_failure(
-            call_failure_reason(&request.tool_name, rejected_mcp_result(&result)),
-            plan.requested_provider.as_deref(),
-            &server.enabled_provider_ids,
-        )));
+        return Ok(failure(rejected_mcp_result(&result), true));
     }
     if validate_result_provider(
         &result,
@@ -1255,11 +1256,16 @@ impl AppToolExecutor {
                 server_id,
                 &catalog.entries,
                 &requested_provider_ids,
-                |entry_id, field_id| {
-                    crate::marketplace::connector_config_value(&self.state, entry_id, field_id)
-                        .map_err(|_| {
-                            BrokerError::Execution("connector setup is unavailable".into())
-                        })
+                |entry_id, field_id| match crate::marketplace::connector_config_value(
+                    &self.state,
+                    entry_id,
+                    field_id,
+                ) {
+                    Ok(value) => Ok(value),
+                    Err(error) if error.code == "config_apply_pending" => Ok(None),
+                    Err(_) => Err(BrokerError::Execution(
+                        "connector setup is unavailable".into(),
+                    )),
                 },
             )?;
             for (entry, expected) in revisions {
@@ -1393,36 +1399,39 @@ async fn activate_tools(
     refresh_inventory(server_id, server, true).await
 }
 
-fn call_failure_reason(tool: &str, error: BrokerError) -> BrokerError {
-    if tool == "news_company" && !is_argument_failure(&error) {
-        let source = match error {
-            BrokerError::WithNext { source, .. } => *source,
-            other => other,
-        };
-        source.with_next(openbb::COMPANY_NEWS_UNAVAILABLE)
-    } else {
-        error
-    }
-}
-
-/// Scraped providers get a passive health signal: the first failure in a
-/// turn tells the model to switch to an official provider instead of retrying.
 fn provider_failure(
     error: BrokerError,
+    tool: Option<&McpTool>,
     provider: Option<&str>,
-    enabled_provider_ids: &BTreeSet<String>,
+    provider_error: bool,
 ) -> BrokerError {
-    if is_argument_failure(&error)
-        || matches!(&error, BrokerError::WithNext { next, .. } if next.as_ref() == openbb::COMPANY_NEWS_UNAVAILABLE)
-        || !provider.is_some_and(openbb::is_best_effort)
-    {
+    if is_argument_failure(&error) || is_sec_contact_required(&error) {
         return error;
     }
+    let source = match &error {
+        BrokerError::WithNext { source, .. } => source.as_ref(),
+        other => other,
+    };
+    let alternatives = provider
+        .filter(|_| provider_error && matches!(source, BrokerError::Execution(_)))
+        .and_then(|provider| openbb::provider_failure_next(tool?, provider));
+    let next = alternatives.map(std::borrow::Cow::Owned).or_else(|| {
+        if tool.is_some_and(|tool| tool.name == "news_company") {
+            Some(openbb::COMPANY_NEWS_UNAVAILABLE.into())
+        } else if provider.is_some_and(openbb::is_best_effort) {
+            Some(openbb::BEST_EFFORT_FAILURE_NEXT.into())
+        } else {
+            None
+        }
+    });
+    let Some(next) = next else {
+        return error;
+    };
     let source = match error {
         BrokerError::WithNext { source, .. } => *source,
         other => other,
     };
-    source.with_next(openbb::best_effort_failure_next(enabled_provider_ids))
+    source.with_next(next)
 }
 
 fn metadata_fetched_at(metadata: &Value) -> Option<String> {
@@ -1441,10 +1450,12 @@ fn configured_provider_ids(
         .into_iter()
         .filter(|provider_id| {
             required_config.get(provider_id).is_none_or(|required| {
-                required.is_empty()
-                    || provider_config.get(provider_id).is_some_and(|values| {
-                        required.iter().all(|field| values.contains_key(field))
-                    })
+                required.iter().all(|field| {
+                    provider_config
+                        .get(provider_id)
+                        .and_then(|values| values.get(field))
+                        .is_some_and(|value| !value.trim().is_empty())
+                })
             })
         })
         .collect()
@@ -1687,6 +1698,15 @@ fn pool_key(loupist_id: &str, server_id: &str, authority: &McpRunAuthority) -> M
     }
 }
 
+fn bootstrap_settings(authority: &McpRunAuthority) -> Value {
+    json!({
+        "allowed_categories": authority.runtime.allowed_categories,
+        "enabled_provider_ids": authority.enabled_provider_ids,
+        "allowed_network_hosts": authority.allowed_network_hosts,
+        "provider_config": authority.provider_config,
+    })
+}
+
 async fn prepare_acquired_session(
     server_id: &str,
     server: &mut TurnMcpServer,
@@ -1748,12 +1768,7 @@ async fn start_bundled_server(
         "run_id": format!("mcp:{}", uuid::Uuid::new_v4().simple()),
         "scratch_dir": scratch.to_string_lossy(),
         "credentials": authority.credentials,
-        "settings": {
-            "allowed_categories": authority.runtime.allowed_categories.clone(),
-            "enabled_provider_ids": enabled_provider_ids.clone(),
-            "allowed_network_hosts": authority.allowed_network_hosts,
-            "provider_config": authority.provider_config,
-        }
+        "settings": bootstrap_settings(&authority),
     });
     let launch = McpLaunchConfig {
         server_id: server_id.clone(),
@@ -2433,6 +2448,16 @@ while IFS= read -r line; do
 done
 "#;
 
+    fn market_data_tool(name: &str, providers: &[&str]) -> McpTool {
+        McpTool {
+            input_schema: json!({"type": "object", "properties": {
+                "symbol": {"type": "string"},
+                "provider": {"type": "string", "enum": providers},
+            }}),
+            ..providerless_tool(name)
+        }
+    }
+
     fn providerless_tool(name: &str) -> McpTool {
         McpTool {
             name: name.into(),
@@ -3080,10 +3105,7 @@ done
     }
 
     #[cfg(unix)]
-    #[tokio::test]
-    async fn v012_verified_fred_series_is_active_on_the_first_chat_connection() {
-        let temporary = tempfile::tempdir().unwrap();
-        let mut state = AppState::for_test(temporary.path().join("app"));
+    fn install_manifest_runtime_fixture(state: &mut AppState, temporary: &tempfile::TempDir) {
         let runtime = temporary.path().join("openbb-runtime");
         fs::create_dir(&runtime).unwrap();
         let bundle = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../openbb");
@@ -3095,6 +3117,143 @@ done
             temporary.path(),
             &temporary.path().join("leases"),
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn sec_contact_controls_platform_bootstrap_and_fundamental_cards() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut state = AppState::for_test(temporary.path().join("app"));
+        install_manifest_runtime_fixture(&mut state, &temporary);
+        let executor = AppToolExecutor::for_host(
+            &state,
+            "fixture",
+            BTreeSet::from(["openbb.platform".into()]),
+        );
+        let listed = [
+            market_data_tool(
+                "equity_fundamental_income",
+                &["fmp", "intrinio", "sec", "yfinance"],
+            ),
+            market_data_tool(
+                "equity_fundamental_cash",
+                &["fmp", "intrinio", "sec", "yfinance"],
+            ),
+            market_data_tool(
+                "equity_fundamental_balance",
+                &["fmp", "intrinio", "sec", "yfinance"],
+            ),
+            market_data_tool(
+                "equity_fundamental_metrics",
+                &["finviz", "fmp", "intrinio", "yfinance"],
+            ),
+            market_data_tool(
+                "equity_fundamental_filings",
+                &["fmp", "intrinio", "sec", "tmx"],
+            ),
+            market_data_tool("regulators_sec_filing_headers", &["sec"]),
+        ];
+
+        for contact in [None, Some("fixture@example.test"), None] {
+            crate::scoped_config::write_global_connector_settings(
+                &state.artifacts.app_data_dir,
+                "sec.edgar",
+                &contact
+                    .into_iter()
+                    .map(|value| ("contact_email".into(), value.into()))
+                    .collect(),
+            )
+            .unwrap();
+            crate::marketplace::connector_config::reconcile_connector_configs(&state).unwrap();
+            let grant = executor.mcp_run_authority("openbb").await.unwrap();
+            let settings = bootstrap_settings(&grant);
+            let enabled = &grant.enabled_provider_ids;
+            let platform = bundled_catalog()
+                .unwrap()
+                .entries
+                .into_iter()
+                .find(|entry| entry.id == "openbb.platform")
+                .unwrap();
+            let expected = platform
+                .runtime
+                .provider_ids
+                .into_iter()
+                .filter(|id| id != "sec" || contact.is_some())
+                .collect::<BTreeSet<_>>();
+            assert_eq!(settings["enabled_provider_ids"], json!(expected));
+            assert_eq!(
+                settings["allowed_network_hosts"],
+                json!(expected
+                    .iter()
+                    .flat_map(|id| &grant.runtime.provider_network_hosts[id])
+                    .collect::<BTreeSet<_>>())
+            );
+            assert_eq!(
+                settings["provider_config"]["sec"]["contact_email"].as_str(),
+                contact
+            );
+            assert_eq!(grant.setup_notices.is_empty(), contact.is_some());
+            if contact.is_none() {
+                assert!(grant.setup_notices[0]
+                    .contains(r#"connection_setup is available, call it with {id: "sec.edgar"}"#));
+            }
+
+            let controls = BTreeSet::new();
+            let policy = ProviderlessToolPolicy::default();
+            let tools = filter_inventory(&listed, &controls, enabled, &policy).unwrap();
+            let cards =
+                agent_tool_cards("openbb", tools.values(), &controls, enabled, &policy).unwrap();
+            assert_eq!(cards.len(), if contact.is_some() { 6 } else { 5 });
+            assert_eq!(
+                tools.contains_key("regulators_sec_filing_headers"),
+                contact.is_some()
+            );
+            for card in cards {
+                let name = card["name"].as_str().unwrap();
+                let description = card["description"].as_str().unwrap();
+                let choices = card
+                    .pointer("/parameters/properties/provider/enum")
+                    .unwrap();
+                let expected = if name.ends_with("_metrics") {
+                    json!(["finviz", "yfinance"])
+                } else if name.ends_with("_filings") {
+                    if contact.is_some() {
+                        json!(["sec", "tmx"])
+                    } else {
+                        json!(["tmx"])
+                    }
+                } else if name.ends_with("_filing_headers") {
+                    json!(["sec"])
+                } else if contact.is_some() {
+                    assert!(description.contains("sec preferred"));
+                    json!(["sec", "yfinance"])
+                } else {
+                    assert!(!description.contains("sec preferred"));
+                    json!(["yfinance"])
+                };
+                assert_eq!(choices, &expected, "{name}");
+                assert!(card["parameters"]["required"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("provider")));
+            }
+            if contact.is_none() {
+                assert!(validate_provider_argument(
+                    &tools["equity_fundamental_income"],
+                    &json!({"provider": "sec"}),
+                    enabled,
+                )
+                .is_err());
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn v012_verified_fred_series_is_active_on_the_first_chat_connection() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut state = AppState::for_test(temporary.path().join("app"));
+        install_manifest_runtime_fixture(&mut state, &temporary);
         let id = "fred.macro";
         let mut executor = turn_executor(
             &temporary,
@@ -3725,21 +3884,26 @@ done
     }
 
     #[test]
-    fn a_failed_scraped_provider_points_to_an_enabled_official_one() {
+    fn provider_failure_names_only_the_tools_enabled_alternatives() {
         let generic = || BrokerError::Execution("provider failed".into()).with_next("generic");
-        let enabled = BTreeSet::from(["yfinance".to_owned(), "tmx".to_owned()]);
-        let BrokerError::WithNext { next, .. } =
-            provider_failure(generic(), Some("yfinance"), &enabled)
-        else {
-            panic!("expected recovery guidance");
-        };
-        assert!(next.contains("for example tmx"), "{next}");
-        assert!(!next.contains("sec"), "{next}");
-        let BrokerError::WithNext { next, .. } = provider_failure(generic(), Some("sec"), &enabled)
-        else {
-            panic!("expected recovery guidance");
-        };
-        assert_eq!(next, "generic");
+        let listed = [market_data_tool(
+            "equity_fundamental_income",
+            &[
+                "sec", "fmp", "yfinance", "finviz", "intrinio", "nasdaq", "tmx", "fred",
+            ],
+        )];
+        let enabled = ["sec", "yfinance", "finviz", "nasdaq", "tmx", "fred"];
+        for (enabled, expected) in [
+            (&enabled[..], "This provider failed for this request. Call the tool again with another provider listed for it (for example nasdaq, tmx, fred, yfinance), or report that the data is unavailable."),
+            (&enabled[..2], "This provider failed for this request. Call the tool again with another provider listed for it (for example yfinance), or report that the data is unavailable."),
+            (&enabled[..1], "generic"),
+        ] {
+            let enabled = enabled.iter().map(|id| (*id).into()).collect();
+            let filtered = filter_inventory(&listed, &BTreeSet::new(), &enabled, &Default::default()).unwrap();
+            let tool = filtered.get("equity_fundamental_income");
+            let error = provider_failure(generic(), tool, Some("sec"), true);
+            assert_eq!(crate::broker::error_body(&error)["next"], expected);
+        }
     }
 
     #[cfg(unix)]
@@ -3777,6 +3941,57 @@ done
             };
             assert!(matches!(*source, BrokerError::Offline(_)));
         }
+        turn.shutdown_mcp().await;
+        wait_for_exit_marker(&spawned.exited).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn sec_contact_refusal_crosses_stdio_and_keeps_its_activity_reason() {
+        let _guard = crate::mcp::MCP_PROCESS_TEST_LOCK.lock().await;
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let turn = capture(&temporary, "sec-contact", None);
+        let script = ISOLATION_MCP_SCRIPT
+            .replace("fmp", "sec")
+            .replace("equity_quote", "equity_fundamental_income")
+            .replace(
+                r#""text":"quote"}],"structuredContent":{"provider":"%s","price":123},"isError":false"#,
+                r#""text":"sec_contact_required"}],"structuredContent":{"loupist_error":{"provider":"%s","kind":"sec_contact_required"}},"isError":true"#,
+            );
+        let spawned = spawn_script_server(&temporary, "sec-contact", "sec", None, &script).await;
+        install(&turn, spawned.server).await;
+        let executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
+        call(
+            &executor,
+            "activate_tools",
+            json!({"tool_names": ["equity_fundamental_income"]}),
+        )
+        .await
+        .unwrap();
+        let error = call(
+            &executor,
+            "equity_fundamental_income",
+            json!({"symbol": "TSLA", "provider": "sec", "period": "annual", "limit": 4}),
+        )
+        .await
+        .unwrap_err();
+        let body = crate::broker::error_body(&error);
+        assert_eq!(body["code"], "sec_contact_required");
+        assert_eq!(body["message"], "SEC answers only requests that declare a contact, and none is set in this app, so the sec provider was not used.");
+        assert_eq!(body["next"], "Call this tool again with another provider listed for it. Tell the user that adding their contact under Settings > Data connections > SEC EDGAR enables SEC data.");
+        let mut activity = crate::chat::progress::ChatProgressProjection::new(1);
+        activity.start_tool(
+            "call-sec",
+            "mcp__openbb__equity_fundamental_income",
+            &json!({}),
+            None,
+            2,
+        );
+        activity.finish_tool_result("call-sec", true, 3, &Value::Null, Some(&body));
+        let step = serde_json::to_value(&activity.snapshot().items[0]).unwrap();
+        assert_eq!(step["failureReason"], "invalid_input");
+        assert_eq!(step["refusal"], "sec_contact_required");
         turn.shutdown_mcp().await;
         wait_for_exit_marker(&spawned.exited).await;
     }

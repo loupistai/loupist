@@ -33,6 +33,9 @@ pub struct AgentToolSpec {
     _label: Option<String>,
     #[serde(rename = "description")]
     _description: Option<String>,
+    // A catalog maintainer note, omitted from the registered tool definition.
+    #[serde(rename = "_comment")]
+    _comment: Option<String>,
     #[serde(rename = "parameters")]
     _parameters: Option<serde_json::Value>,
     /// Display rules for Chat progress. The Pi adapter registers only name,

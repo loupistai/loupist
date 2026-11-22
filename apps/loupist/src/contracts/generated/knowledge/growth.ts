@@ -31,6 +31,8 @@ export type GrowthEventsQuery = {
   loupistId: string,
   sinceMs?: number | null,
   untilMs?: number | null,
+  /** World readers pin growth to the revision shown by their overview. */
+  worldRevisionId?: string | null,
   limit?: number | null,
   cursor?: string | null,
 };

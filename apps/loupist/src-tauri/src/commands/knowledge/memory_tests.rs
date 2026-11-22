@@ -304,6 +304,217 @@ async fn world_catalog_exposes_only_current_content_with_loupist_isolation() {
 }
 
 #[test]
+fn renderer_world_detail_across_a_publication() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(directory.path().join("app"));
+    let loupist = "loupist-a";
+    state
+        .store
+        .create_loupist(&loupist_profile(loupist))
+        .unwrap();
+    let (record, source) = with_loupist_knowledge(&state, loupist, |tx, blobs| {
+        let write = KnowledgeWrite::bind(tx, blobs);
+        Ok((
+            write.create_record(CreateRecord {
+                loupist_id: loupist.into(),
+                kind: RecordKind::World,
+                title: "World".into(),
+                at_ms: 7,
+            })?,
+            write.retain_new_source(text_source(loupist, "publisher-a", b"Subaru figures"))?,
+        ))
+    })
+    .unwrap();
+    let snapshot = |expected_revision_id, at_ms, revenue: &str| {
+        let mut claims = (0..1019)
+            .map(|i| {
+                let subject = if i < 2 {
+                    "subaru".into()
+                } else {
+                    format!("name-{}", i % 462)
+                };
+                let statement = match i {
+                    0 => revenue.into(),
+                    1 => "Market cap: $12B".into(),
+                    _ => format!("Figure {i}: {}", "supported measurement ".repeat(24)),
+                };
+                let mut fact = claim(&subject, &statement, source.span_id.as_deref());
+                fact.id = format!("claim-{i}");
+                fact.relation = "REPORTS".into();
+                fact.endpoints.push(ClaimEndpoint {
+                    node_id: subject,
+                    role: "object".into(),
+                });
+                fact
+            })
+            .collect::<Vec<_>>();
+        claims[0].recorded_at_ms = Some(at_ms);
+        claims[1018].endpoints.push(ClaimEndpoint {
+            node_id: "name-0".into(),
+            role: "counterparty".into(),
+        });
+        SealWorld {
+            loupist_id: loupist.into(),
+            record_id: record.record_id.clone(),
+            expected_revision_id,
+            at_ms,
+            nodes: std::iter::once(node("subaru", "Subaru"))
+                .chain((0..462).map(|i| node(&format!("name-{i}"), &format!("Name {i}"))))
+                .collect(),
+            claims,
+            annotations: vec![],
+            dependencies: vec![EvidenceRevision {
+                record_id: source.record_id.clone(),
+                revision_digest: source.revision_digest.clone(),
+                role: DependencyRole::WorldSource,
+            }],
+        }
+    };
+    let first = with_loupist_knowledge(&state, loupist, |tx, blobs| {
+        KnowledgeWrite::bind(tx, blobs).seal_world(snapshot(None, 8, "Revenue: $31B"))
+    })
+    .unwrap();
+    let page = map(
+        &state,
+        crate::knowledge::KnowledgeMapQuery {
+            loupist_id: loupist.into(),
+            max_nodes: Some(1000),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        page.world_revision_id.as_deref(),
+        Some(first.revision_id.as_str())
+    );
+    let detail: WorldGraphQuery = serde_json::from_value(serde_json::json!({
+        "loupistId": loupist, "recordId": record.record_id, "revisionId": page.world_revision_id,
+        "centerNodeId": "subaru", "byteLimit": 524288, "nodeLimit": 100, "edgeLimit": 100,
+    }))
+    .unwrap();
+    assert_eq!(page.counts["claim"].total, 1);
+    assert_eq!(page.counts["fact"].shown, 1018);
+    with_loupist_knowledge(&state, loupist, |tx, blobs| {
+        let revision = KnowledgeWrite::bind(tx, blobs).get_revision(loupist, &first.revision_id)?;
+        assert!(serde_json::to_vec(&revision.payload)?.len() > 524288);
+        assert_eq!(revision.payload["relationVocabulary"][0]["claims"], 1);
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        page.nodes
+            .iter()
+            .find(|node| node.id == "subaru")
+            .unwrap()
+            .degree,
+        0
+    );
+    let before = world_query(&state, detail.clone()).unwrap();
+    assert_eq!(before.view.edges.len(), 2);
+    assert_eq!(before.view.source_targets.len(), 1);
+    let target = before.view.source_targets.values().next().unwrap();
+    let source_request = || KnowledgeSourceReadRequest {
+        loupist_id: loupist.into(),
+        record_id: target.record_id.clone(),
+        revision_id: target.revision_id.clone(),
+        source_id: Some(target.source_id.clone()),
+        span_id: Some(target.span_id.clone()),
+        world_record_id: Some(target.world_record_id.clone()),
+        world_revision_id: Some(target.world_revision_id.clone()),
+        purpose: "renderer_inspection".into(),
+        figure: None,
+    };
+    // Start a renderer read while publication owns the store connection.
+    // It must wait for the transaction and resolve the head after the commit.
+    let (current, after) = std::thread::scope(|scope| {
+        let blobs = knowledge_blobs_for_loupist(&state, loupist).unwrap();
+        let mut connection = state.store.lock_loupist(loupist).unwrap();
+        let tx = connection.transaction().unwrap();
+        let current = KnowledgeWrite::bind(&tx, &blobs)
+            .seal_world(snapshot(
+                Some(first.revision_id.clone()),
+                9,
+                "Revenue: $32B",
+            ))
+            .unwrap();
+        let (started, wait) = std::sync::mpsc::channel();
+        let request = detail.clone();
+        let state = &state;
+        let reader = scope.spawn(move || {
+            started.send(()).unwrap();
+            world_query(state, request).unwrap()
+        });
+        wait.recv().unwrap();
+        tx.commit().unwrap();
+        drop(connection);
+        (current, reader.join().unwrap())
+    });
+    assert_eq!(after.view.revision_id, current.revision_id);
+    let growth_request = |revision_id: String| crate::knowledge::GrowthEventsQuery {
+        loupist_id: loupist.into(),
+        since_ms: None,
+        until_ms: Some(9),
+        world_revision_id: Some(revision_id),
+        limit: Some(5),
+        cursor: None,
+    };
+    let growth = |request| {
+        with_loupist_knowledge(&state, loupist, |tx, blobs| {
+            KnowledgeWrite::bind(tx, blobs).growth_events(&request)
+        })
+    };
+    assert_eq!(
+        growth(growth_request(first.revision_id))
+            .unwrap_err()
+            .code
+            .as_str(),
+        "conflict"
+    );
+    assert!(growth(growth_request(current.revision_id.clone()))
+        .unwrap()
+        .next_cursor
+        .is_some());
+
+    let pinned_error = with_loupist_knowledge(&state, loupist, |tx, blobs| {
+        world_view_with_sources(&KnowledgeWrite::bind(tx, blobs), detail)
+    })
+    .unwrap_err();
+    assert_eq!(pinned_error.code.as_str(), "not_found");
+    assert_eq!(after.view.edges.len(), 2);
+    assert!(after
+        .view
+        .edges
+        .iter()
+        .any(|edge| edge.claim.proposition == "Revenue: $32B"));
+    assert_eq!(
+        source_read(&state, source_request())
+            .unwrap()
+            .selected_span_id
+            .as_deref(),
+        Some(target.span_id.as_str())
+    );
+    with_loupist_knowledge(&state, loupist, |tx, blobs| {
+        KnowledgeWrite::bind(tx, blobs).seal_world(SealWorld {
+            loupist_id: loupist.into(),
+            record_id: record.record_id,
+            expected_revision_id: Some(current.revision_id),
+            at_ms: 10,
+            nodes: vec![node("subaru", "Subaru")],
+            claims: vec![],
+            annotations: vec![],
+            dependencies: vec![],
+        })
+    })
+    .unwrap();
+    assert_eq!(
+        source_read(&state, source_request())
+            .unwrap_err()
+            .code
+            .as_str(),
+        "unauthorized"
+    );
+}
+
+#[test]
 fn a_followed_asset_reason_commits_without_a_memory_read() {
     // journal_save stages a thesis reason with no reads (the asset page is its
     // context); the reply commit must accept what staging accepted.

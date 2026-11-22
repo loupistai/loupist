@@ -610,8 +610,8 @@ fn prepare(
             "graph episode has no source binding",
         ))?;
     let body = store.read(|read| load_body(read.tx, &job.world_revision_id))?;
-    let observed = body
-        .relation_vocabulary
+    // Earlier snapshots counted single-name facts in the stored vocabulary.
+    let observed = super::super::world::relation_vocabulary(&body.claims)
         .iter()
         .take(16)
         .map(|item| item.relation.clone())

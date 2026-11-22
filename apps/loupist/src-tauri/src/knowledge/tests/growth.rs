@@ -7,6 +7,7 @@ fn query(loupist_id: &str) -> GrowthEventsQuery {
         loupist_id: loupist_id.into(),
         since_ms: None,
         until_ms: None,
+        world_revision_id: None,
         limit: Some(5000),
         cursor: None,
     }

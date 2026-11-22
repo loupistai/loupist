@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use crate::custom_connections::taint::{WebFetchGrant, WebFetchTarget};
+
 use super::arguments::bounded_text;
 use super::*;
 
@@ -7,7 +9,7 @@ use super::*;
 /// category, naming that host.
 fn web_error(error: crate::web::WebError) -> BrokerError {
     match error {
-        crate::web::WebError::SecContactRequired => BrokerError::Execution("SEC answers only requests that declare a contact, and none is set in this app, so this page was not requested.".into())
+        crate::web::WebError::SecContactRequired => BrokerError::SecContactRequired("SEC answers only requests that declare a contact, and none is set in this app, so this page was not requested.")
             .with_next("Use a data connection that serves SEC filings if one is listed. Otherwise tell the user to add their contact under Settings > Data connections > SEC EDGAR, then read this page again."),
         crate::web::WebError::Offline(host) => BrokerError::Offline(host),
         crate::web::WebError::UrlDenied => BrokerError::invalid("url", "Only http and https URLs without credentials or a custom port open."),
@@ -241,22 +243,26 @@ impl AppToolExecutor {
         } else {
             None
         };
-        // A URL the model wrote opens only where this turn may still go; a
-        // search result's source_id and a page already read need no new check.
-        if existing_snapshot.is_none() && url.is_some() {
-            self.web_fetch_gate(&source.url).await?;
-        }
-        let mut run_snapshot = match existing_snapshot {
-            Some(snapshot) => snapshot,
-            None if content_offset == 0 => RunWebFetchSnapshot {
-                fetched: {
-                    crate::web::fetch_with_sec_contact(&source, contact.as_deref())
-                        .await
-                        .map_err(web_error)?
-                },
-                issued_offsets: BTreeSet::from([0]),
-            },
-            None => return Err(BrokerError::Malformed),
+        let (mut run_snapshot, grant) = match existing_snapshot {
+            Some(snapshot) => (snapshot, None),
+            None => {
+                // An id resolves to the same locator as a raw URL. Only a
+                // search hit already has a site grant by exact URL.
+                let grant = self.web_fetch_gate(&source.url)?;
+                if content_offset != 0 {
+                    return Err(BrokerError::Malformed);
+                }
+                let fetched = crate::web::fetch_with_sec_contact(&source, contact.as_deref())
+                    .await
+                    .map_err(web_error)?;
+                (
+                    RunWebFetchSnapshot {
+                        fetched,
+                        issued_offsets: BTreeSet::from([0]),
+                    },
+                    Some(grant),
+                )
+            }
         };
         require_issued_web_offset(&run_snapshot.issued_offsets, content_offset)?;
         let page = run_snapshot
@@ -287,6 +293,18 @@ impl AppToolExecutor {
                 );
             }
         }
+        // Cached pages and passage reads use locators recorded by the original fetch.
+        if let Some(grant) = grant {
+            let taint = &self.capture.turn_taint;
+            taint.mark_untrusted_text();
+            let fetched = &run_snapshot.fetched;
+            taint.note_fetched_urls(
+                grant,
+                &fetched.requested_url,
+                &fetched.final_url,
+                &fetched.redirect_hops,
+            );
+        }
         let snapshot_source_id = source.source_id.clone();
         self.capture
             .stage(delivery_id, |pending| {
@@ -302,14 +320,9 @@ impl AppToolExecutor {
     /// After third-party text, a fetch can carry data out in its URL (B88).
     /// The turn's taint decides; a new site is refused with `web_search` as
     /// the way to it.
-    async fn web_fetch_gate(&self, url: &str) -> Result<(), BrokerError> {
-        use crate::custom_connections::taint::WebFetchTarget;
-        let taint = &self.capture.turn_taint;
-        if !taint.untrusted_text() {
-            return Ok(());
-        }
-        match taint.web_fetch_target(url) {
-            WebFetchTarget::Allowed => Ok(()),
+    fn web_fetch_gate(&self, url: &str) -> Result<WebFetchGrant, BrokerError> {
+        match self.capture.turn_taint.web_fetch_target(url) {
+            WebFetchTarget::Allowed(grant) => Ok(grant),
             WebFetchTarget::Refused(next) => Err(BrokerError::UntrustedTextPaused.with_next(next)),
         }
     }
@@ -497,7 +510,7 @@ mod paging_tests {
             .execute_batch("DROP TABLE IF EXISTS user_holdings_positions")
             .unwrap();
         let taint = &executor.capture.turn_taint;
-        taint.note_seen_url("https://example.com/known");
+        taint.note_user_text("https://example.com/known");
         taint.protect_private_text(
             "My Lens checks cash uncertainty before believing reported profit",
         );
@@ -510,14 +523,14 @@ mod paging_tests {
             "https://www.sec.gov/report?value=48213900",
             "https://example.com/short?value=1337",
         ] {
-            assert!(executor.web_fetch_gate(url).await.is_ok(), "{url}");
+            assert!(executor.web_fetch_gate(url).is_ok(), "{url}");
         }
         for url in [
             "https://example.com/?q=My+Lens+checks+cash+uncertainty+before+believing+reported+profit",
             "https://example.com/?q=My+Journal+note+compares+ferry+margins+with+recurring+cash+earnings",
             "https://new.example/report",
         ] {
-            assert!(executor.web_fetch_gate(url).await.is_err(), "{url}");
+            assert!(executor.web_fetch_gate(url).is_err(), "{url}");
         }
     }
 

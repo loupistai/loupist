@@ -558,9 +558,9 @@ export const knowledgeWorldQuery = async (
   await shortPause(state);
   const store = ensure(state, request.loupistId);
   if (request.recordId !== WORLD) throw new Error("World not found.");
-  const graph =
-    request.revisionId === OWNED ? store.owned : null;
-  if (!graph) throw new Error("World revision not found.");
+  if (request.cursor && request.revisionId !== OWNED) throw new Error("World revision not found.");
+  const graph = store.owned;
+  request = { ...request, revisionId: OWNED };
   const queryKey = worldQueryKey(request);
   let offset = 0;
   if (request.cursor) {
@@ -1109,12 +1109,12 @@ export async function knowledgeMap(state: MockBridgeState, request: import("../.
   const shownNodes = nodes.filter((node) => chosen.has(node.id)).sort((a, b) => a.id.localeCompare(b.id));
   const shownEdges = edges.filter((edge) => chosen.has(edge.source) && chosen.has(edge.target)).sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
   const counts = {} as import("../../contracts/knowledge").KnowledgeMap["counts"];
-  for (const kind of ["entity", "lens_perspective", "lens_method", "lens_principle", "lens_subject", "lens_idea", "claim", "lens_link", "applies_to"] as const) {
+  for (const kind of ["entity", "lens_perspective", "lens_method", "lens_principle", "lens_subject", "lens_idea", "claim", "fact", "lens_link", "applies_to", "about", "journal"] as const) {
     const total = nodes.filter((node) => node.kind === kind).length + edges.filter((edge) => edge.kind === kind).length;
     const shown = shownNodes.filter((node) => node.kind === kind).length + shownEdges.filter((edge) => edge.kind === kind).length;
     counts[kind] = { total, shown, truncated: shown < total };
   }
-  return { nodes: shownNodes, edges: shownEdges, counts, unmatchedWatchlist: [], worldRevisionId: nodes.length ? "map-world-revision-1" : null, generatedAtMs: Math.max(nodes.length ? start + 29 * day : 0, ...ensure(state,request.loupistId).principles.map(p => p.updatedAtMs)) };
+  return { nodes: shownNodes, edges: shownEdges, counts, unmatchedWatchlist: [], worldRevisionId: nodes.length ? OWNED : null, generatedAtMs: Math.max(nodes.length ? start + 29 * day : 0, ...ensure(state,request.loupistId).principles.map(p => p.updatedAtMs)) };
 }
 
 function principleLens(p: Principle): PageView {

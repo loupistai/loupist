@@ -18,6 +18,33 @@ function Updates({ bridge }: { bridge: MockLoupistBridge }) {
 
 afterEach(async () => { await act(() => i18n.changeLanguage("en")); });
 
+const noNewerRelease = "No newer release is available.";
+const checked = { ...idle, last_checked_at_ms: 1_800_000_000_000 };
+
+it("shows checking until a relaunched check confirms a fresh offer", () => {
+  const actions = { onCheck: vi.fn(), onInstall: vi.fn() };
+  const { rerender } = render(
+    <UpdateSettingsCard {...actions} status={{ ...checked, phase: "checking" }} phase="checking" error={null} />,
+  );
+  expect(screen.getByRole("status")).toHaveTextContent("Checking for updates…");
+  expect(screen.queryByText(noNewerRelease)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Install and restart" })).not.toBeInTheDocument();
+
+  const offer = { offer_id: "fresh-offer", version: "0.1.1", notes: null, published_at: null };
+  rerender(<UpdateSettingsCard {...actions} status={{ ...checked, offer }} phase="idle" error={null} />);
+  expect(screen.getByText("Loupist 0.1.1 is available")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Install and restart" })).toBeEnabled();
+  expect(screen.queryByText(noNewerRelease)).not.toBeInTheDocument();
+});
+
+it("shows no newer release after a completed check found none", () => {
+  const actions = { onCheck: vi.fn(), onInstall: vi.fn() };
+  const { rerender } = render(<UpdateSettingsCard {...actions} status={idle} phase="idle" error={null} />);
+  expect(screen.queryByText(noNewerRelease)).not.toBeInTheDocument();
+  rerender(<UpdateSettingsCard {...actions} status={checked} phase="idle" error={null} />);
+  expect(screen.getByText(noNewerRelease)).toBeVisible();
+});
+
 const copy = {
   en: {
     background: "Couldn't check for updates. Loupist will try again later.",
@@ -62,9 +89,10 @@ for (const language of ["en", "ko"] as const) {
       ["unrecognized host diagnostics", words.status],
     ])("localizes background state: %s", async (hostError, expected) => {
       const bridge = new MockLoupistBridge({ delay_ms: 0 });
-      vi.spyOn(bridge, "updateStatus").mockResolvedValue({ ...idle, error: hostError });
+      vi.spyOn(bridge, "updateStatus").mockResolvedValue({ ...checked, error: hostError });
       render(<Updates bridge={bridge} />);
       expect(await screen.findByRole("alert")).toHaveTextContent(expected);
+      expect(screen.queryByText(noNewerRelease)).not.toBeInTheDocument();
     });
 
     it("localizes manual failures even when the host has no failed status", async () => {

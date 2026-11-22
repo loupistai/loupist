@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 - 2026-11-22
 
 - Open the Developer ID-signed, Apple-notarized Beta directly from Applications, without approving it in System Settings.
 - After updating from 0.1.2, open **Settings > Data connections**, choose **Allow access** and select **Always Allow** in each macOS prompt for your saved keys. Until then, Chat says which connections need permission and scheduled results name the connections they skipped.
@@ -22,6 +22,12 @@
 - Open links outside a chat in your browser, which now comes to the front.
 - Return to Loupist from a Loupist page after approving an AI account sign-in in your browser.
 - Understand a data provider's refusal: a mistyped series or code is reported as an input to correct.
+- Read a company's statements without an SEC contact: Loupist uses the other providers it has and says when SEC data needs your contact.
+- Follow an asset and see its price at once: a price saved in the reply that follows it is kept, and the receipt names it.
+- Keep your place in a conversation when the side panel opens and when an answer finishes.
+- Let Loupist follow a page's own link to the filing or release it reports on.
+- Open a name in World while World is being updated, and find facts about one name under Key facts instead of among its relationships.
+- Find Loupist in the Dock by its face: the app icon is now the Loupist character.
 - User-added Skills and custom connections are not available in this version. Any you added in 0.1.2 stay on your disk but are not shown or used.
 
 ## 0.1.2 - 2026-11-21

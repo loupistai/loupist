@@ -20,7 +20,16 @@ function whatsNewFixture(bridge: PreviewBridge, withChanges: boolean) {
     event(4, "claim_added", "map-claim-01", now - 50 * 60_000, "Apple depends on TSMC for its most advanced chips", { originMessageId: "preview-answer" }),
     event(5, "claim_disputed", "map-claim-08", now - 20 * 60_000, "TSMC packaging capacity reserved for SK hynix HBM (54% vs 48%)"),
   ] : [];
-  bridge.knowledgeGrowthEvents = async request => ({ events: events.filter(item => request.sinceMs === undefined || item.atMs >= request.sinceMs), nextCursor: null });
+  const readMap = bridge.knowledgeMap.bind(bridge);
+  bridge.knowledgeMap = async request => {
+    const map = await readMap(request);
+    map.generatedAtMs = Math.max(map.generatedAtMs, ...events.map(item => item.atMs));
+    return map;
+  };
+  bridge.knowledgeGrowthEvents = async request => ({
+    events: events.filter(item => item.atMs >= (request.sinceMs ?? -Infinity) && item.atMs <= (request.untilMs ?? Infinity)),
+    nextCursor: null,
+  });
 }
 
 /**
@@ -31,16 +40,18 @@ function reportedValuesFixture(bridge: PreviewBridge) {
   whatsNewFixture(bridge, true);
   const read = bridge.knowledgeMap.bind(bridge), changes = bridge.knowledgeGrowthEvents.bind(bridge);
   const ids = Array.from({ length: 6 }, (_, index) => `map-reported-${index + 1}`);
+  const atMs = Date.now() - 40 * 60_000;
   bridge.knowledgeMap = async request => {
     const map = await read(request);
-    map.edges.push(...ids.map(id => ({ id, kind: "claim" as const, source: "map-entity-03", target: "map-entity-03", relation: "REPORTS", status: "active" as const })));
+    map.edges.push(...ids.map(id => ({ id, kind: "fact" as const, source: "map-entity-03", target: "map-entity-03", relation: "REPORTS", status: "active" as const, firstSeenAtMs: atMs })));
+    map.counts.fact.total += ids.length;
+    map.counts.fact.shown += ids.length;
     return map;
   };
-  const atMs = Date.now() - 40 * 60_000;
   bridge.knowledgeGrowthEvents = async request => {
     const page = await changes(request);
     const reported = ids.map((id, index): GrowthEvent => ({ eventId: `reported-${index}`, loupistId: "loupist-quality", atMs, kind: "claim_added", subjectId: id, recordId: "map-world", originChatId: null, originMessageId: "preview-answer", actor: "loupist", summary: `NVIDIA reported data center revenue for week ${index + 1}`, beforeSummary: null, afterSummary: null }));
-    return { ...page, events: [...page.events, ...reported.filter(item => request.sinceMs === undefined || item.atMs >= request.sinceMs)] };
+    return { ...page, events: [...page.events, ...reported.filter(item => item.atMs >= (request.sinceMs ?? -Infinity) && item.atMs <= (request.untilMs ?? Infinity))] };
   };
 }
 

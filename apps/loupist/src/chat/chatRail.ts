@@ -261,7 +261,12 @@ function stepReason(item: ActionItem, message: ChatMessage): string | undefined 
   if (item.status === "stopped") return tDynamic("activitySheet.reason.stopped");
   if (item.status === "skipped") return message.as_of ? tDynamic("activitySheet.reason.skipped") : undefined;
   if (item.status !== "failed") return undefined;
-  if (item.kind === "tool" && item.refusal) return tDynamic(`activitySheet.reason.${REFUSAL_REASONS[item.refusal]}`);
+  if (item.kind === "tool" && item.refusal) {
+    if (item.refusal === "sec_contact_required") {
+      return `${i18n.t("connections:catalog.sec_edgar_contact_email")}. ${i18n.t("connections:readiness.setupNote")}.`;
+    }
+    return tDynamic(`activitySheet.reason.${REFUSAL_REASONS[item.refusal]}`);
+  }
   const refusal = item.kind === "tool" ? message.tool_refusals?.find((candidate) => sameTool(candidate.tool_name, item.toolName)) : undefined;
   if (refusal) return tDynamic(`activitySheet.reason.refusal.${refusal.reason}`);
   if (revisionKeptEarlier(item, message)) return tDynamic("activitySheet.reason.revisionNotApplied");

@@ -209,7 +209,8 @@ impl ToolMethod {
         use Unattended::*;
         match self {
             //                                reach     after text    result      memory        unattended    pack text
-            Self::NativeAuthorize      => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
+            Self::NativeAuthorize
+            | Self::NativeDeliveredText  => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
             Self::ScheduleList         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
             Self::ScheduleRead         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
             Self::ScheduleCreate       => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
@@ -330,6 +331,7 @@ impl ToolMethod {
             Self::DatasetImport        => native(WORKSPACE,          Derived,          Tool,      Turn),
             Self::Calculate            => native("host-calculation", Derived,          Tool,      Turn),
             Self::NativeAuthorize
+            | Self::NativeDeliveredText
             | Self::ScheduleList
             | Self::ScheduleRead
             | Self::ScheduleCreate

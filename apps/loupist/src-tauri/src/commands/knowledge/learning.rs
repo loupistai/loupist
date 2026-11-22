@@ -738,6 +738,7 @@ pub(in crate::commands) fn write_chat_learning_report(
     save_learning: bool,
     changes: Vec<MemoryUpdateChange>,
     skipped_kinds: Vec<crate::domain::MapKind>,
+    discarded_memory_items: Option<Vec<crate::domain::DiscardedMemoryItem>>,
     setup: Vec<crate::domain::SetupChange>,
     performance: Option<crate::domain::ChatPerformance>,
     // Run-log entries the commit itself produced (an asset read it could not save).
@@ -768,7 +769,7 @@ pub(in crate::commands) fn write_chat_learning_report(
     }
     let changed = !changes.is_empty() || !setup.is_empty();
     message.memory_update = save_learning.then(|| crate::domain::MemoryUpdateResult {
-        discarded_memory_items: None,
+        discarded_memory_items,
         skip_reason: None,
         status: if changed {
             crate::domain::MemoryUpdateStatus::Applied
@@ -795,6 +796,9 @@ pub(in crate::commands) fn write_chat_learning_report(
         message.content = changes
             .iter()
             .map(|change| {
+                if change.kind == crate::domain::PRICE_READ_CHANGE_KIND {
+                    return format!("Saved the price read for {}.", change.title);
+                }
                 format!(
                     "Saved {}{}: {}.",
                     change.kind,

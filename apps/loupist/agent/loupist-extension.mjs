@@ -688,7 +688,8 @@ function registerLoupistExtension(originalPi) {
   // search root, so a script cannot bypass a refusal or a card, and Rust can
   // keep private app data and instruction files out of reach.
   registerWorkspaceTools(pi, hostContext.workspace.root,
-    (name, request, signal, id) => requestBroker("native.authorize", { name, ...request }, signal, id));
+    (name, request, signal, id) => requestBroker("native.authorize", { name, ...request }, signal, id),
+    (parts, signal) => requestBroker("native.delivered_text", { parts }, signal));
   async function loadCapabilityComponent(component, signal, activateToolNames = []) {
     if ((component.kind === "mcp" && component.loaded === true) ||
         (component.kind !== "mcp" && component.tool_names.every((name) => activeTools.has(name)))) {

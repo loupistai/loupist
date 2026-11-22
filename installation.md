@@ -45,7 +45,7 @@ xcrun stapler validate /Applications/Loupist.app
 - It has been tested by its maintainer on one Mac. It has not been tested on every supported macOS version.
 - Your data stays in your Loupist folders and is upgraded in place by later versions, after a backup is written beside each database. Downgrading is not supported.
 - When updating from 0.1.2, macOS asks once per saved Data connection key because the app’s signing identity changes. Enter your Mac login password and click **Always Allow**. Later updates from the same Developer ID team should retain access to that key without another prompt. If you choose **Deny**, the key stays saved. Open **Settings → Data connections → Try again** to grant access later. A saved GitHub sharing token can prompt in the same way. AI sign-ins are unaffected.
-- Loupist never trades and is not a licensed adviser.
+- Loupist is a research tool. It places no orders and is not a licensed adviser. Read the [disclaimer](README.md#disclaimer) before you rely on it.
 
 ## 한국어 설치 안내
 
@@ -92,11 +92,19 @@ xcrun stapler validate /Applications/Loupist.app
 - 관리자가 Mac 한 대에서 테스트했습니다. 지원하는 모든 macOS 버전에서 테스트하지는 못했습니다.
 - 데이터는 각 Loupist 폴더에 남고, 이후 버전이 데이터베이스 옆에 백업을 만든 뒤 그 자리에서 업그레이드합니다. 다운그레이드는 지원하지 않습니다.
 - 0.1.2에서 업데이트하면 앱의 서명 정보가 바뀌기 때문에 macOS가 저장된 데이터 연결 키마다 한 번씩 접근 권한을 묻습니다. Mac 로그인 암호를 입력하고 **항상 허용**을 누르십시오. 이후 같은 Developer ID 팀이 서명한 업데이트에서는 다시 묻지 않고 키를 사용할 수 있을 것으로 예상합니다. **거부**해도 키는 저장된 상태로 남습니다. 나중에 **설정 → 데이터 연결 → 다시 시도**에서 접근을 허용할 수 있습니다. 저장된 GitHub 공유 토큰에도 같은 요청이 나타날 수 있습니다. AI 로그인에는 영향이 없습니다.
-- Loupist는 매매를 하지 않으며 인가받은 투자자문업자가 아닙니다.
+- Loupist는 리서치 도구입니다. 주문을 내지 않으며 인가받은 투자자문업자가 아닙니다. 사용하기 전에 [면책 조항](README.md#disclaimer)을 읽으십시오.
 
 ## Updates
 
 Loupist checks the stable signed update feed daily after a successful check, with shorter retries after failures. Settings → Updates also provides **Check for updates**. Download, installation, and restart always require user confirmation. Prereleases are never offered on the stable channel.
+
+If the last successful check found a release newer than the installed version,
+Loupist checks the feed again on launch. The update indicators return when the
+feed confirms an offer. A failed check keeps the remembered version for the next
+launch and follows the usual retry schedule while the app is open. When the
+installed version reaches the remembered version, normal scheduling resumes.
+The Updates page reports that no newer release is available after a successful
+check finds none, including a result remembered from before relaunch.
 
 Settings shows update errors and the kinds of work blocking installation in the
 interface language, never the host's diagnostic strings. A background check failure

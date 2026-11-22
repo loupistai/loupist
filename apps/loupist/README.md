@@ -51,6 +51,9 @@ World, Lens, Journal and visualization are always available app workflows. World
 settings, connection grants, scheduled tasks and execution state remain in
 SQLite; credentials stay in the private credential stores.
 
+Shipped builds show only the included Skills: adding your own is switched off in the host
+(`extension_availability.rs`; a debug build enables it with `LOUPIST_DEV_USER_SKILLS=1`), and the rest of
+this paragraph describes that switched-off surface.
 Settings → Skills lists included and user-added workflows, with search and
 shared enable/disable controls; Loupist settings manage local inheritance. Advanced holds Add skill, Create skill and
 Skill Creator, which starts off. Skill Installer is not bundled; Settings imports Skills without a model.

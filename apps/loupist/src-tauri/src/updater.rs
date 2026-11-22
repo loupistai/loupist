@@ -42,6 +42,7 @@ pub struct PersistedUpdateSchedule {
     failure_count: u32,
     last_attempt_at_ms: Option<i64>,
     last_successful_check_at_ms: Option<i64>,
+    last_offered_version: Option<String>,
     next_auto_check_at_ms: i64,
 }
 
@@ -52,6 +53,7 @@ impl Default for PersistedUpdateSchedule {
             failure_count: 0,
             last_attempt_at_ms: None,
             last_successful_check_at_ms: None,
+            last_offered_version: None,
             next_auto_check_at_ms: 0,
         }
     }
@@ -283,6 +285,12 @@ pub struct UpdateCoordinator {
     store: Arc<SqliteStore>,
 }
 
+enum CheckTrigger<'a> {
+    Launch(&'a tauri::PackageInfo),
+    Automatic,
+    Manual,
+}
+
 impl UpdateCoordinator {
     pub fn new(store: Arc<SqliteStore>) -> Result<Self, CommandError> {
         let schedule = store
@@ -328,11 +336,9 @@ impl UpdateCoordinator {
         })
     }
 
-    fn begin_check(&self, automatic: bool, now_ms: i64) -> Result<bool, CommandError> {
+    fn begin_check(&self, trigger: CheckTrigger<'_>, now_ms: i64) -> Result<bool, CommandError> {
         let mut state = self.lock()?;
-        if automatic && now_ms < state.schedule.next_auto_check_at_ms {
-            return Ok(false);
-        }
+        let automatic = !matches!(trigger, CheckTrigger::Manual);
         if state.phase != UpdatePhase::Idle {
             if automatic {
                 return Ok(false);
@@ -343,20 +349,42 @@ impl UpdateCoordinator {
             ));
         }
         let mut next_schedule = state.schedule.clone();
-        next_schedule.last_attempt_at_ms = Some(now_ms);
-        // Persist a conservative retry boundary before network I/O. If the app
-        // exits mid-check, the next launch will not immediately hammer the feed.
-        next_schedule.next_auto_check_at_ms = now_ms + retry_delay_ms(0, now_ms);
-        if let Err(error) = self.save_schedule(&next_schedule) {
-            state.error = Some("Could not save update scheduling state.".into());
-            return Err(CommandError::internal(error.to_string()));
+        let mut refresh_offer = false;
+        if let (CheckTrigger::Launch(package), Some(version)) =
+            (trigger, next_schedule.last_offered_version.as_ref())
+        {
+            refresh_offer = version
+                .parse()
+                .is_ok_and(|offered| package.version < offered);
+            if !refresh_offer {
+                next_schedule.last_offered_version = None;
+                // A check that offered a release cannot establish a no-update result.
+                next_schedule.last_successful_check_at_ms = None;
+            }
+        }
+        let should_check =
+            !automatic || refresh_offer || now_ms >= next_schedule.next_auto_check_at_ms;
+        if should_check {
+            next_schedule.last_attempt_at_ms = Some(now_ms);
+            // Keep a retry boundary if the app exits mid-check. Relaunches with
+            // an outstanding offer recheck independently of this boundary.
+            next_schedule.next_auto_check_at_ms = now_ms + retry_delay_ms(0, now_ms);
+        }
+        if next_schedule != state.schedule {
+            if let Err(error) = self.save_schedule(&next_schedule) {
+                state.error = Some("Could not save update scheduling state.".into());
+                return Err(CommandError::internal(error.to_string()));
+            }
+            state.schedule = next_schedule;
+        }
+        if !should_check {
+            return Ok(false);
         }
         state.phase = UpdatePhase::Checking;
         state.error = None;
         state.blockers.clear();
         state.downloaded_bytes = 0;
         state.total_bytes = None;
-        state.schedule = next_schedule;
         Ok(true)
     }
 
@@ -365,6 +393,7 @@ impl UpdateCoordinator {
         let mut next_schedule = state.schedule.clone();
         next_schedule.failure_count = 0;
         next_schedule.last_successful_check_at_ms = Some(now_ms);
+        next_schedule.last_offered_version = offer.as_ref().map(|offer| offer.version.clone());
         next_schedule.next_auto_check_at_ms = now_ms + SUCCESS_INTERVAL_MS;
         if let Err(error) = self.save_schedule(&next_schedule) {
             state.phase = UpdatePhase::Idle;
@@ -493,15 +522,6 @@ impl UpdateCoordinator {
         if let Ok(mut state) = self.lock() {
             state.phase = UpdatePhase::Restarting;
         }
-    }
-
-    fn auto_check_is_due(&self, now_ms: i64) -> bool {
-        self.inner
-            .lock()
-            .map(|state| {
-                state.phase == UpdatePhase::Idle && now_ms >= state.schedule.next_auto_check_at_ms
-            })
-            .unwrap_or(false)
     }
 }
 
@@ -753,17 +773,7 @@ pub fn update_status(
 async fn check_for_updates(
     app: &AppHandle,
     coordinator: &UpdateCoordinator,
-    automatic: bool,
 ) -> Result<UpdateStateDto, CommandError> {
-    let supported = updater_supported(app);
-    if !supported {
-        return coordinator.snapshot(false, current_version(app));
-    }
-    let now_ms = chrono::Utc::now().timestamp_millis();
-    if !coordinator.begin_check(automatic, now_ms)? {
-        return coordinator.snapshot(true, current_version(app));
-    }
-
     #[cfg(all(any(target_os = "macos", windows), not(debug_assertions)))]
     let checked = async {
         if configured_feed_is_absent(app).await? {
@@ -803,7 +813,13 @@ pub async fn update_check(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<UpdateStateDto, CommandError> {
-    check_for_updates(&app, &state.updates, false).await
+    if !updater_supported(&app) {
+        return state.updates.snapshot(false, current_version(&app));
+    }
+    state
+        .updates
+        .begin_check(CheckTrigger::Manual, chrono::Utc::now().timestamp_millis())?;
+    check_for_updates(&app, &state.updates).await
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -949,13 +965,25 @@ pub fn start_auto_update_loop(app: AppHandle, coordinator: UpdateCoordinator) {
     if !updater_supported(&app) {
         return;
     }
+    let launch_check = coordinator
+        .begin_check(
+            CheckTrigger::Launch(app.package_info()),
+            chrono::Utc::now().timestamp_millis(),
+        )
+        .unwrap_or(false);
     tauri::async_runtime::spawn(async move {
+        if launch_check {
+            let _ = check_for_updates(&app, &coordinator).await;
+        }
         loop {
-            let now_ms = chrono::Utc::now().timestamp_millis();
-            if coordinator.auto_check_is_due(now_ms) {
-                let _ = check_for_updates(&app, &coordinator, true).await;
-            }
             tokio::time::sleep(std::time::Duration::from_secs(15 * 60)).await;
+            let now_ms = chrono::Utc::now().timestamp_millis();
+            if coordinator
+                .begin_check(CheckTrigger::Automatic, now_ms)
+                .unwrap_or(false)
+            {
+                let _ = check_for_updates(&app, &coordinator).await;
+            }
         }
     });
 }
@@ -966,6 +994,39 @@ mod tests {
 
     use super::*;
     use tauri::utils::config::PluginConfig;
+
+    const CHECKED_AT: i64 = 1_800_000_000_000;
+
+    fn package(version: &str) -> tauri::PackageInfo {
+        tauri::PackageInfo {
+            name: "Loupist".into(),
+            version: version.parse().unwrap(),
+            authors: "",
+            description: "",
+            crate_name: "loupist",
+        }
+    }
+
+    fn offer(version: &str) -> UpdateOfferDto {
+        UpdateOfferDto {
+            offer_id: uuid::Uuid::new_v4().to_string(),
+            version: version.into(),
+            notes: None,
+            published_at: None,
+        }
+    }
+
+    fn store_with_offer() -> Arc<SqliteStore> {
+        let store = Arc::new(SqliteStore::open_in_memory().unwrap());
+        let coordinator = UpdateCoordinator::new(store.clone()).unwrap();
+        assert!(coordinator
+            .begin_check(CheckTrigger::Manual, CHECKED_AT - 1)
+            .unwrap());
+        coordinator
+            .finish_check(Some(offer("0.1.10")), CHECKED_AT)
+            .unwrap();
+        store
+    }
 
     fn words() -> serde_json::Value {
         serde_json::json!({
@@ -1133,7 +1194,9 @@ mod tests {
         let coordinator = UpdateCoordinator::new(store.clone()).unwrap();
         let now = 1_800_000_000_000_i64;
 
-        assert!(coordinator.begin_check(true, now).unwrap());
+        assert!(coordinator
+            .begin_check(CheckTrigger::Automatic, now)
+            .unwrap());
         coordinator.fail_check(now + 1).unwrap();
         let retry_at = store
             .get_update_schedule()
@@ -1143,8 +1206,10 @@ mod tests {
         assert!(retry_at >= now + RETRY_DELAYS_MS[0]);
 
         let reloaded = UpdateCoordinator::new(store.clone()).unwrap();
-        assert!(!reloaded.begin_check(true, now + 2).unwrap());
-        assert!(reloaded.begin_check(false, now + 2).unwrap());
+        assert!(!reloaded
+            .begin_check(CheckTrigger::Automatic, now + 2)
+            .unwrap());
+        assert!(reloaded.begin_check(CheckTrigger::Manual, now + 2).unwrap());
         reloaded.finish_check(None, now + 3).unwrap();
 
         let schedule = store.get_update_schedule().unwrap().unwrap();
@@ -1153,6 +1218,178 @@ mod tests {
             schedule.next_auto_check_at_ms,
             now + 3 + SUCCESS_INTERVAL_MS
         );
+    }
+
+    #[test]
+    fn launch_rechecks_a_remembered_offer_and_exposes_only_the_fresh_offer() {
+        let store = store_with_offer();
+        let reloaded = UpdateCoordinator::new(store).unwrap();
+        let current = package("0.1.9");
+        assert!(reloaded
+            .begin_check(CheckTrigger::Launch(&current), CHECKED_AT + 1)
+            .unwrap());
+        let checking = reloaded
+            .snapshot(true, current.version.to_string())
+            .unwrap();
+        assert_eq!(checking.phase, UpdatePhase::Checking);
+        assert_eq!(checking.offer, None);
+        assert_eq!(checking.error, None);
+        assert!(!reloaded
+            .begin_check(CheckTrigger::Automatic, CHECKED_AT + 2)
+            .unwrap());
+        assert_eq!(
+            reloaded
+                .begin_check(CheckTrigger::Manual, CHECKED_AT + 2)
+                .unwrap_err()
+                .code,
+            "update_busy"
+        );
+
+        let fresh = offer("0.1.10");
+        reloaded
+            .finish_check(Some(fresh.clone()), CHECKED_AT + 3)
+            .unwrap();
+        let checked = reloaded
+            .snapshot(true, current.version.to_string())
+            .unwrap();
+        assert_eq!(checked.phase, UpdatePhase::Idle);
+        assert_eq!(checked.offer, Some(fresh));
+        assert_eq!(
+            checked.next_auto_check_at_ms,
+            Some(CHECKED_AT + 3 + SUCCESS_INTERVAL_MS)
+        );
+    }
+
+    #[test]
+    fn offline_launch_keeps_the_remembered_offer_and_the_failure_backoff() {
+        let store = store_with_offer();
+        let current = package("0.1.9");
+        let reloaded = UpdateCoordinator::new(store.clone()).unwrap();
+        assert!(reloaded
+            .begin_check(CheckTrigger::Launch(&current), CHECKED_AT + 1)
+            .unwrap());
+        reloaded.fail_check(CHECKED_AT + 2).unwrap();
+        let failed = reloaded
+            .snapshot(true, current.version.to_string())
+            .unwrap();
+        assert_eq!(failed.phase, UpdatePhase::Idle);
+        assert_eq!(failed.offer, None);
+        assert_eq!(
+            failed.error.as_deref(),
+            Some("Could not check for updates. Loupist will retry.")
+        );
+        let retry_at = CHECKED_AT + 2 + retry_delay_ms(0, CHECKED_AT + 2);
+        assert_eq!(failed.next_auto_check_at_ms, Some(retry_at));
+        let schedule = store.get_update_schedule().unwrap().unwrap();
+        assert_eq!(schedule.last_offered_version.as_deref(), Some("0.1.10"));
+        assert!(!reloaded
+            .begin_check(CheckTrigger::Automatic, retry_at - 1)
+            .unwrap());
+        drop(reloaded);
+
+        let relaunched_offline = UpdateCoordinator::new(store.clone()).unwrap();
+        assert!(relaunched_offline
+            .begin_check(CheckTrigger::Launch(&current), CHECKED_AT + 3)
+            .unwrap());
+        relaunched_offline.fail_check(CHECKED_AT + 4).unwrap();
+
+        let retry_at = CHECKED_AT + 4 + retry_delay_ms(1, CHECKED_AT + 4);
+        assert!(relaunched_offline
+            .begin_check(CheckTrigger::Automatic, retry_at)
+            .unwrap());
+        relaunched_offline.finish_check(None, retry_at + 1).unwrap();
+        let no_offer = relaunched_offline
+            .snapshot(true, current.version.to_string())
+            .unwrap();
+        assert_eq!(no_offer.last_checked_at_ms, Some(retry_at + 1));
+        assert_eq!(no_offer.offer, None);
+        assert_eq!(no_offer.error, None);
+        let schedule = store.get_update_schedule().unwrap().unwrap();
+        assert_eq!(schedule.last_offered_version, None);
+    }
+
+    #[test]
+    fn launch_clears_an_installed_or_superseded_offer_without_an_extra_check() {
+        for version in ["0.1.10", "0.2.0"] {
+            let store = store_with_offer();
+            let reloaded = UpdateCoordinator::new(store.clone()).unwrap();
+            assert!(!reloaded
+                .begin_check(CheckTrigger::Launch(&package(version)), CHECKED_AT + 1)
+                .unwrap());
+            let status = reloaded.snapshot(true, version.into()).unwrap();
+            assert_eq!(status.phase, UpdatePhase::Idle);
+            assert_eq!(status.offer, None);
+            assert_eq!(status.last_checked_at_ms, None);
+            assert_eq!(
+                status.next_auto_check_at_ms,
+                Some(CHECKED_AT + SUCCESS_INTERVAL_MS)
+            );
+            let schedule = store.get_update_schedule().unwrap().unwrap();
+            assert_eq!(schedule.last_offered_version, None);
+        }
+    }
+
+    #[test]
+    fn launch_keeps_the_daily_interval_after_a_check_found_no_offer() {
+        let store = Arc::new(SqliteStore::open_in_memory().unwrap());
+        let coordinator = UpdateCoordinator::new(store.clone()).unwrap();
+        assert!(coordinator
+            .begin_check(CheckTrigger::Manual, CHECKED_AT - 1)
+            .unwrap());
+        coordinator.finish_check(None, CHECKED_AT).unwrap();
+
+        let reloaded = UpdateCoordinator::new(store).unwrap();
+        let due_at = CHECKED_AT + SUCCESS_INTERVAL_MS;
+        let current = package("0.1.9");
+        assert!(!reloaded
+            .begin_check(CheckTrigger::Launch(&current), due_at - 1)
+            .unwrap());
+        let status = reloaded
+            .snapshot(true, current.version.to_string())
+            .unwrap();
+        assert_eq!(status.phase, UpdatePhase::Idle);
+        assert_eq!(status.last_checked_at_ms, Some(CHECKED_AT));
+        assert_eq!(status.next_auto_check_at_ms, Some(due_at));
+        assert!(reloaded
+            .begin_check(CheckTrigger::Automatic, due_at)
+            .unwrap());
+    }
+
+    #[test]
+    fn a_stored_schedule_without_an_offer_version_loads_as_no_offer() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("loupist.sqlite3");
+        let store = SqliteStore::open(&path).unwrap();
+        let due_at = CHECKED_AT + SUCCESS_INTERVAL_MS;
+        let old_schedule = serde_json::json!({
+            "schema_version": 1,
+            "failure_count": 0,
+            "last_attempt_at_ms": CHECKED_AT - 1,
+            "last_successful_check_at_ms": CHECKED_AT,
+            "next_auto_check_at_ms": due_at,
+        });
+        store
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO app_settings (id, data_json) VALUES ('update', ?1)",
+                [old_schedule.to_string()],
+            )
+            .unwrap();
+        drop(store);
+
+        let reloaded = UpdateCoordinator::new(Arc::new(SqliteStore::open(&path).unwrap())).unwrap();
+        let current = package("0.1.9");
+        assert!(!reloaded
+            .begin_check(CheckTrigger::Launch(&current), CHECKED_AT + 1)
+            .unwrap());
+        let status = reloaded
+            .snapshot(true, current.version.to_string())
+            .unwrap();
+        assert_eq!(status.phase, UpdatePhase::Idle);
+        assert_eq!(status.offer, None);
+        assert_eq!(status.last_checked_at_ms, Some(CHECKED_AT));
+        assert_eq!(status.next_auto_check_at_ms, Some(due_at));
     }
 
     #[test]
@@ -1169,24 +1406,21 @@ mod tests {
 
         // Negative clocks fail schedule validation, a real store-commit failure.
         assert_eq!(
-            coordinator.begin_check(false, -1).unwrap_err().code,
+            coordinator
+                .begin_check(CheckTrigger::Manual, -1)
+                .unwrap_err()
+                .code,
             "internal"
         );
         assert_unchanged(&PersistedUpdateSchedule::default());
 
         let now = 1_800_000_000_000_i64;
-        coordinator.begin_check(false, now).unwrap();
+        coordinator.begin_check(CheckTrigger::Manual, now).unwrap();
         let committed = store.get_update_schedule().unwrap().unwrap();
-        let offer = UpdateOfferDto {
-            offer_id: uuid::Uuid::new_v4().to_string(),
-            version: "1.0.1".into(),
-            notes: None,
-            published_at: None,
-        };
-        assert!(coordinator.finish_check(Some(offer), -1).is_err());
+        assert!(coordinator.finish_check(Some(offer("1.0.1")), -1).is_err());
         assert_unchanged(&committed);
 
-        coordinator.begin_check(false, now).unwrap();
+        coordinator.begin_check(CheckTrigger::Manual, now).unwrap();
         let committed = store.get_update_schedule().unwrap().unwrap();
         assert!(coordinator.fail_check(-1_000_000_000_000_000).is_err());
         assert_unchanged(&committed);

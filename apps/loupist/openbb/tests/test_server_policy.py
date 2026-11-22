@@ -234,25 +234,68 @@ from loupist_openbb.manifest import (
 scratch = Path(sys.argv[1])
 configure_scratch_environment(scratch)
 from fastmcp import Client
-from loupist_openbb.server import create_server
+from loupist_openbb.server import _available_route_providers, create_server
+from loupist_openbb.failures import SEC_CONTACT_REQUIRED
+from openbb_core.api.rest_api import app
 
 manifest = load_runtime_manifest()
 categories = tuple(manifest["allowed_categories"])
 providers = tuple(provider["id"] for provider in manifest["providers"])
+credentials = {
+    key: "fixture-credential"
+    for provider in manifest["providers"]
+    for key in provider["credential_mapping"].values()
+}
 network_hosts = tuple(sorted(resolve_network_hosts(set(providers), manifest)))
 server = create_server(
     Bootstrap(
         run_id="admin-surface-test",
         scratch_dir=scratch,
-        credentials={},
+        credentials=credentials,
         settings=BootstrapSettings(
             allowed_categories=categories,
             enabled_provider_ids=providers,
             allowed_network_hosts=network_hosts,
-            provider_config={},
+            provider_config={"tradier": {"account_type": "sandbox"}},
         ),
     )
 )
+
+# Account for the providers with both protected and anonymous fetchers.
+fields = set(credentials) | {"tradier_account_type"}
+with_keys = _available_route_providers(app, set(providers), fields, manifest["providers"])
+keyless = _available_route_providers(app, set(providers) - {"sec"}, set(), manifest["providers"])
+anonymous = {
+    "bls": ("economy/survey/bls_search",),
+    "cftc": ("cftc/cot", "cftc/cot_search"),
+    "nasdaq": ("equity/search", "equity/calendar/earnings"),
+}
+for provider in manifest["providers"]:
+    name = provider["id"]
+    if not provider["credential_mapping"]:
+        continue
+    enabled_routes = {route for route, ids in with_keys.items() if name in ids}
+    assert enabled_routes, name
+    for key in provider["credential_mapping"].values():
+        missing_key = _available_route_providers(
+            app, set(providers), fields - {key}, manifest["providers"]
+        )
+        routes_without_key = {route for route, ids in missing_key.items() if name in ids}
+        if name == "cftc":
+            assert routes_without_key == enabled_routes
+        elif name in anonymous:
+            assert routes_without_key < enabled_routes
+        else:
+            assert not routes_without_key, (name, routes_without_key)
+        for route in anonymous.get(name, ()):
+            assert name in missing_key["/api/v1/" + route]
+assert keyless["/api/v1/equity/fundamental/filings"] == ["tmx"]
+assert keyless["/api/v1/equity/fundamental/metrics"] == ["finviz", "yfinance"]
+assert all("sec" not in ids for ids in keyless.values())
+without_account_type = _available_route_providers(
+    app, set(providers), fields - {"tradier_account_type"}, manifest["providers"]
+)
+assert all("tradier" not in ids for ids in without_account_type.values())
 
 async def check_surface():
     tools = await server.list_tools()
@@ -331,6 +374,15 @@ async def check_surface():
             activation = await client.call_tool("activate_category", {"category": category})
             assert not activation.is_error
         advertised = {tool.name: tool for tool in await client.list_tools()}
+        # Grant SEC without a contact to exercise the real request guard.
+        refusal = await client.call_tool(
+            "equity_fundamental_income",
+            {"symbol": "TSLA", "provider": "sec", "period": "annual", "limit": 4},
+            raise_on_error=False,
+        )
+        assert refusal.is_error
+        assert refusal.structured_content == SEC_CONTACT_REQUIRED
+        assert refusal.content[0].text == "sec_contact_required"
     assert set(advertised) == discovered_tools | {tool.name for tool in tools}
     cot = advertised["cftc_cot"]
     assert cot.outputSchema == {"type": "object"}

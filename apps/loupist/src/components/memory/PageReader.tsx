@@ -112,7 +112,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
 
   const body = page.body;
   const known = new Map([...page.links, ...page.backlinks].map(link => [link.recordId, link.title]));
-  const openMap = (nodeId: string) => onOpen({ loupistId, surface: "world", view: { followCurrent: true }, selection: { kind: "node", id: nodeId } });
+  const openMap = (nodeId: string) => onOpen({ loupistId, surface: "world", selection: { kind: "node", id: nodeId } });
   const openLens = (target: string) => {
     if (target.startsWith(WORLD_PREFIX)) {
       const nodeId = rewritten.ids[Number(target.slice(WORLD_PREFIX.length))];
@@ -121,7 +121,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
     }
     onOpenPage(target);
   };
-  const openClaim = (claimId: string) => onOpen({ loupistId, surface: "world", view: { followCurrent: true }, selection: { kind: "claim", id: claimId } });
+  const openClaim = (claimId: string) => onOpen({ loupistId, surface: "world", selection: { kind: "claim", id: claimId } });
   const forget = (section: SectionView) => void act(() => bridge.memorySectionForget({ loupistId, recordId, key: section.key }), next => {
     const entry = next.history.find(item => item.op === "retire" && item.key === section.key);
     setForgot(entry ? { opId: entry.opId, heading: section.heading } : null);

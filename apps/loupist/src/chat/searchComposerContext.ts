@@ -88,7 +88,7 @@ export async function searchComposerContext(
           group: "World",
           label: node.name,
           detail: world.title,
-          pin: { kind: "world_node", loupistId, recordId: world.recordId, revisionId: world.revisionId, objectId: node.id, label: node.name },
+          pin: { kind: "world_node", loupistId, recordId: graph.recordId, revisionId: graph.revisionId, objectId: node.id, label: node.name },
         });
       }
     } catch {

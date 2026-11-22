@@ -1,4 +1,5 @@
 import { SavedPassage } from "./SavedPassage";
+import { readWithWorldRetry } from "../../knowledge/readWithWorldRetry";
 import { SavedSourceData } from "./SavedSourceData";
 import { readableCitedPassages } from "./citedPassages";
 import { QuoteAsk } from "../chat/QuoteAsk";
@@ -140,7 +141,7 @@ export function SourceWorkspace({ bridge, catalog, location, sourceOpen, query =
     setWholeSavedText(false); setPassageIndex(null);
     setDetail(null); setError(null); setProcessing(undefined); setDetailRefreshError(null); setDetailRefreshing(false); setExporting(false); setExported(false); setExportError(null);
     if (!reading || !location.recordId || !location.revisionId) return;
-    void readSelectedSource()
+    void readWithWorldRetry(readSelectedSource, () => generation.current === ticket)
       .then((next) => { if (generation.current === ticket) { setDetail(next); setProcessing(next.processing?.status); } })
       .catch((cause: unknown) => { if (generation.current === ticket) setError(errorMessage(cause, t("sourceWorkspace.couldNotOpenThisSource"))); });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a request counter, not a DOM node: cleanup invalidates the request that is in flight.
@@ -154,7 +155,7 @@ export function SourceWorkspace({ bridge, catalog, location, sourceOpen, query =
     setDetailRefreshing(true);
     setDetailRefreshError(null);
     try {
-      const next = await readSelectedSource();
+      const next = await readWithWorldRetry(readSelectedSource, () => generation.current === ticket);
       if (generation.current !== ticket || currentScope.current !== captured) return;
       setDetail(next);
       setProcessing(next.processing?.status);

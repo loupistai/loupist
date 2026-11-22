@@ -22,7 +22,7 @@ export function ChatMiniMap({ onOpenFull }: { onOpenFull: (location: KnowledgeLo
   const positions = useMemo(() => map && state ? frozenLayout(`chat:${state.loupistId}:${state.chatId}`, map.worldRevisionId, map.nodes, map.edges) : [], [map, state?.loupistId, state?.chatId]);
   if (!state) return null;
   const nameCount = map?.nodes.length ?? 0;
-  const linkCount = map?.edges.filter(isDrawnRelation).length ?? 0;
+  const linkCount = map?.edges.filter(edge => edge.kind === "claim" && isDrawnRelation(edge)).length ?? 0;
   const stats = t("map.stats", { names: t("map.chatStatsNames", { count: nameCount, formattedCount: formatNumber(nameCount) }), links: t("map.statsLinks", { count: linkCount, formattedCount: formatNumber(linkCount) }) });
   const full = (selection?: KnowledgeLocation["selection"]) => onOpenFull({ loupistId: state.loupistId, surface: "world", selection });
   return <section className="chat-mini-map" aria-busy={state.loading}>

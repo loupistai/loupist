@@ -25,7 +25,6 @@ export function oneName(a: Pick<KnowledgeMapNode, "id" | "label" | "localNames">
   const first = new Set(names(a));
   return names(b).some(name => first.has(name));
 }
-/** The World claim a drawn edge projects; the Map suffixes a claim's id with its target. */
 /**
  * A relation the Map draws and counts: its two ends are different names. A value reported
  * about one name (`REPORTS`) links it to itself; that is no relationship, and the layout,
@@ -38,14 +37,20 @@ export function claimIdForEdge(edge: KnowledgeMapEdge) {
   return edge.id.endsWith(projectedSuffix) ? edge.id.slice(0, -projectedSuffix.length) : edge.id;
 }
 
-/** The host Map represents multi-endpoint claims as stars, and single-endpoint facts as self edges. */
+/** Relationship claims contribute once to the degree of each participating name. */
+export function claimDegree(edges: { endpoints: GraphClaim["endpoints"] }[], id: string) {
+  return edges.filter(({ endpoints }) => endpoints.some(end => end.nodeId === id) && endpoints.some(end => end.nodeId !== id)).length;
+}
+
+/** The host Map indexes facts and draws multi-name claims as stars. */
 export function projectClaim(claim: GraphClaim): KnowledgeMapEdge[] {
   const source = claim.endpoints[0]?.nodeId;
   if (!source) return [];
-  const targets = [...new Set(claim.endpoints.slice(1).map(endpoint => endpoint.nodeId))];
+  const targets = [...new Set(claim.endpoints.slice(1).map(endpoint => endpoint.nodeId).filter(id => id !== source))];
+  const kind = targets.length ? "claim" : "fact";
   if (!targets.length) targets.push(source);
   return targets.map(target => ({
     id: targets.length === 1 ? claim.id : `${claim.id}:${JSON.stringify(target)}`,
-    kind: "claim", source, target, relation: claim.relation, status: claim.status, firstSeenAtMs: claim.recordedAtMs ?? undefined,
+    kind, source, target, relation: claim.relation, status: claim.status, firstSeenAtMs: claim.recordedAtMs ?? undefined,
   }));
 }

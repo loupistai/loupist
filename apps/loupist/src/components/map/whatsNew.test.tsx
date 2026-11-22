@@ -61,7 +61,7 @@ it("groups rows by local day and resolves since-choices", () => {
 /** One Farside table read in one reply: a reported net flow per trading day on each name, and two holdings. */
 function farsideFixture() {
   const asset = (id: string, label: string, localNames?: string[]) => ({ id, label, localNames, kind: "entity", entityKind: "Asset", degree: 1, watched: true });
-  const self = (id: string, subject: string, status = "active") => ({ id, kind: "claim", source: subject, target: subject, relation: "REPORTS", status });
+  const self = (id: string, subject: string, status = "active") => ({ id, kind: "fact", source: subject, target: subject, relation: "REPORTS", status });
   const farsideMap = {
     nodes: [asset("krw-btc", "KRW-BTC"), asset("btc", "Bitcoin (BTC:CRYPTO)", ["비트코인"]), asset("btc-alias", "BTC", ["비트코인"]), { ...asset("strategy", "Strategy"), entityKind: "Organization" }],
     edges: [

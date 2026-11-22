@@ -1,7 +1,8 @@
 use super::*;
 use crate::{
-    commands::assets::wire::{PriceReadState, SavedPriceRead, SavedReadCall},
+    commands::assets::wire::{AssetRow, PriceReadState, SavedPriceRead, SavedReadCall},
     datasets::DatasetRef,
+    domain::{MemoryUpdateChange, PRICE_READ_CHANGE_KIND},
     knowledge::assets::saved_read::{self, SaveRequest, StagedPriceRead},
 };
 
@@ -196,6 +197,8 @@ impl AppToolExecutor {
             price,
             history: points,
         };
+        // Staged: stored with this reply's save. The tool card says so, and the
+        // receipt names the read as kept or discarded.
         let result = json!({"assetId":saved.asset_id,"price":saved.price,"savedRead":saved.read});
         self.capture
             .stage(delivery_id, |pending| {
@@ -292,17 +295,35 @@ impl AppToolExecutor {
     }
 }
 
-pub(in crate::commands) fn commit_price_reads(
+pub(in crate::commands) fn commit_price_reads<'a>(
     tx: &rusqlite::Transaction<'_>,
     loupist: &str,
     at_ms: i64,
-    reads: &[(crate::commands::assets::wire::AssetRow, StagedPriceRead)],
-) -> crate::knowledge::KnowledgeResult<()> {
+    reads: impl IntoIterator<Item = (&'a AssetRow, &'a StagedPriceRead)>,
+) -> crate::knowledge::KnowledgeResult<Vec<MemoryUpdateChange>> {
+    let mut reported = BTreeSet::new();
+    let mut changes = Vec::new();
     for (asset, read) in reads {
         crate::knowledge::assets::ensure_asset_page(tx, loupist, asset, at_ms)?;
-        saved_read::save(tx, loupist, read)?;
+        let revised = saved_read::save(tx, loupist, read)?;
+        if reported.insert(&asset.asset_id) {
+            changes.push(MemoryUpdateChange {
+                record_id: asset.asset_id.clone(),
+                kind: PRICE_READ_CHANGE_KIND.into(),
+                operation: if revised { "revise" } else { "create" }.into(),
+                title: asset.name.clone(),
+                lesson: "Saved the asset's price read.".into(),
+                basis: "Acknowledged provider result".into(),
+                future_use: "Repeat the saved read to update the asset's price.".into(),
+                knowledge: None,
+                world_job_id: None,
+                world_status: None,
+                outcomes: Vec::new(),
+                user_provided: false,
+            });
+        }
     }
-    Ok(())
+    Ok(changes)
 }
 
 #[cfg(test)]
@@ -421,7 +442,12 @@ mod tests {
 
         let reads = executor.capture.staged_price_reads.lock().await.clone();
         crate::commands::assets::with_assets(&state, loupist, true, |tx| {
-            commit_price_reads(tx, loupist, 2, &reads)
+            commit_price_reads(
+                tx,
+                loupist,
+                2,
+                reads.iter().map(|(asset, read)| (asset, read)),
+            )
         })
         .unwrap();
         let no_grant = AppToolExecutor::for_host(&state, loupist, BTreeSet::new());
@@ -499,7 +525,12 @@ mod tests {
             assert_eq!(result["price"]["value"], 73400.0);
             let staged = executor.capture.staged_price_reads.lock().await.clone();
             with_assets(&state, loupist, true, |tx| {
-                commit_price_reads(tx, loupist, 2, &staged)
+                commit_price_reads(
+                    tx,
+                    loupist,
+                    2,
+                    staged.iter().map(|(asset, read)| (asset, read)),
+                )
             })
             .unwrap();
         }

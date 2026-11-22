@@ -100,6 +100,16 @@ impl Items {
     }
 }
 
+pub(in crate::commands) fn discarded_price_reads<'a>(
+    titles: impl IntoIterator<Item = &'a str>,
+) -> Option<Vec<DiscardedMemoryItem>> {
+    let mut items = Items::default();
+    for title in titles {
+        items.push(Kind::PriceRead, title);
+    }
+    (!items.0.is_empty()).then_some(items.0)
+}
+
 impl ToolCapture {
     pub(in crate::commands) fn discarded_memory_items(
         &self,

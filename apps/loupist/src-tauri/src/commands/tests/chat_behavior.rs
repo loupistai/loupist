@@ -485,6 +485,7 @@ fn completed_chat_performance_survives_reload_and_matches_live_completion() {
                 false,
                 Vec::new(),
                 Vec::new(),
+                None,
                 Vec::new(),
                 Some(performance.clone()),
                 Vec::new(),

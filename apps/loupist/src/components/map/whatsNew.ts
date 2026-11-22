@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { TFunction } from "i18next";
 import type { GrowthEvent, KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
 import type { LoupistBridge } from "../../types";
+import { readWithWorldRetry } from "../../knowledge/readWithWorldRetry";
+import { commandErrorCode } from "../../lib/errors";
 import { relevantEvents } from "../../chat/morningMessage";
 import { claimIdForEdge, entityLabel, oneName } from "../../knowledge/mapItems";
 import { nodeCategory } from "../../knowledge/mapKinds";
@@ -73,7 +75,7 @@ export function whatsNewRows(events: readonly GrowthEvent[] | null | undefined, 
   const nodes = new Map((map?.nodes ?? []).map((node) => [node.id, node]));
   const lenses = new Map((map?.nodes ?? []).filter((node) => node.recordId && node.kind !== "entity").map((node) => [node.recordId!, node]));
   const claims = new Map<string, KnowledgeMapEdge>();
-  for (const edge of map?.edges ?? []) if (edge.kind === "claim" && !claims.has(claimIdForEdge(edge))) claims.set(claimIdForEdge(edge), edge);
+  for (const edge of map?.edges ?? []) if ((edge.kind === "claim" || edge.kind === "fact") && !claims.has(claimIdForEdge(edge))) claims.set(claimIdForEdge(edge), edge);
   const ordered = relevantEvents(events);
   const sources = new Map<string, string>();
   for (const event of ordered) if (event.kind === "source_retained" && event.originMessageId && event.summary.trim() && !sources.has(event.originMessageId)) sources.set(event.originMessageId, event.summary.trim());
@@ -123,7 +125,7 @@ export function whatsNewRows(events: readonly GrowthEvent[] | null | undefined, 
 export function whatsNewCounts(rows: readonly WhatsNewRow[]) {
   return {
     names: rows.filter((row) => row.kind === "name").length,
-    links: rows.filter((row) => row.kind === "relationship").length,
+    links: rows.filter((row) => row.kind === "relationship" && row.edge).length,
     conflicts: rows.filter((row) => row.kind === "conflict").length,
   };
 }
@@ -146,28 +148,35 @@ export function groupByDay(rows: readonly WhatsNewRow[], nowMs: number) {
 export type GrowthLoad = { status: "loading" | "done" | "failed"; events: GrowthEvent[] };
 
 /** Growth events since `since` (all of them when undefined); `enabled` false skips the read. */
-export function useGrowthSince(bridge: LoupistBridge, loupistId: string, since: number | undefined, enabled: boolean, refreshKey?: unknown): GrowthLoad & { retry: () => void } {
+export function useGrowthSince(bridge: LoupistBridge, loupistId: string, since: number | undefined, enabled: boolean, untilMs?: number, revisionId?: string | null, advance?: () => void): GrowthLoad & { retry: () => void } {
   const key = `${loupistId}:${since ?? "all"}`;
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<GrowthLoad & { key: string }>({ key, status: "loading", events: [] });
   useEffect(() => {
     if (!enabled) return;
     let current = true;
-    setState({ key, status: "loading", events: [] });
-    void (async () => {
+    setState(previous => previous.key === key && previous.status === "done" ? previous : { key, status: "loading", events: [] });
+    void readWithWorldRetry(async () => {
+      const sinceMs = since === undefined ? undefined : Math.max(0, Math.floor(since)) + 1;
+      if (sinceMs !== undefined && untilMs !== undefined && sinceMs > untilMs) return [];
       const all: GrowthEvent[] = [];
       let cursor: string | undefined;
       for (let page = 0; page < MAX_EVENT_PAGES; page += 1) {
-        const result = await bridge.knowledgeGrowthEvents({ loupistId, sinceMs: since === undefined ? undefined : Math.max(0, Math.floor(since)) + 1, limit: 5000, cursor });
+        const result = await bridge.knowledgeGrowthEvents({ loupistId, sinceMs, untilMs, worldRevisionId: revisionId ?? undefined, limit: 5000, cursor });
+        if (!current) return [];
         all.push(...result.events);
         cursor = result.nextCursor ?? undefined;
         if (!cursor) break;
       }
       return all;
-    })().then((events) => { if (current) setState({ key, status: "done", events }); })
-      .catch(() => { if (current) setState({ key, status: "failed", events: [] }); });
+    }, () => current).then((events) => { if (current) setState({ key, status: "done", events }); })
+      .catch(cause => {
+        if (!current) return;
+        if (advance && commandErrorCode(cause) === "conflict") advance();
+        else setState({ key, status: "failed", events: [] });
+      });
     return () => { current = false; };
-  }, [bridge, loupistId, key, since, enabled, attempt, refreshKey]);
+  }, [bridge, loupistId, key, since, enabled, attempt, untilMs, revisionId, advance]);
   const load = state.key === key ? state : { status: "loading" as const, events: [] };
   return { status: load.status, events: load.events, retry: () => setAttempt((value) => value + 1) };
 }

@@ -44,6 +44,8 @@ pub struct GrowthEventsQuery {
     pub loupist_id: String,
     pub since_ms: Option<i64>,
     pub until_ms: Option<i64>,
+    /// World readers pin growth to the revision shown by their overview.
+    pub world_revision_id: Option<String>,
     pub limit: Option<u32>,
     pub cursor: Option<String>,
 }
@@ -62,6 +64,7 @@ struct Cursor {
     loupist_id: String,
     since_ms: Option<i64>,
     until_ms: Option<i64>,
+    world_revision_id: Option<String>,
     at_ms: i64,
     event_id: String,
 }
@@ -230,6 +233,16 @@ pub(super) fn query(
     request: &GrowthEventsQuery,
 ) -> KnowledgeResult<GrowthEventsPage> {
     validate_loupist_id(&request.loupist_id)?;
+    if let Some(expected) = &request.world_revision_id {
+        let actual = super::catalog::world_record(tx, &request.loupist_id)?
+            .and_then(|record| record.revision_id);
+        if actual.as_ref() != Some(expected) {
+            return Err(KnowledgeError::RevisionConflict {
+                expected: Some(expected.clone()),
+                actual,
+            });
+        }
+    }
     let limit = request.limit.unwrap_or(500);
     if !(1..=5000).contains(&limit) {
         return Err(KnowledgeError::Invalid(
@@ -263,6 +276,7 @@ pub(super) fn query(
         cursor.loupist_id != request.loupist_id
             || cursor.since_ms != request.since_ms
             || cursor.until_ms != request.until_ms
+            || cursor.world_revision_id != request.world_revision_id
     }) {
         return Err(KnowledgeError::Invalid(
             "growth event cursor does not match the query",
@@ -335,6 +349,7 @@ pub(super) fn query(
             loupist_id: request.loupist_id.clone(),
             since_ms: request.since_ms,
             until_ms: request.until_ms,
+            world_revision_id: request.world_revision_id.clone(),
             at_ms: last.at_ms,
             event_id: last.event_id.clone(),
         })?)

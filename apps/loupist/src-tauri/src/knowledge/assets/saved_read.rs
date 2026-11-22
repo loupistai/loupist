@@ -132,11 +132,12 @@ fn point(price: &AssetStoredPrice) -> Option<AssetPricePoint> {
     })
 }
 
+/// Writes the saved read and returns whether it replaced an existing one.
 pub(crate) fn save(
     tx: &Transaction<'_>,
     loupist: &str,
     staged: &StagedPriceRead,
-) -> KnowledgeResult<()> {
+) -> KnowledgeResult<bool> {
     let asset = &staged.asset_id;
     let previous = load(tx, loupist, asset)?;
     if previous
@@ -158,7 +159,8 @@ pub(crate) fn save(
     if let Some(point) = point(&staged.price) {
         add_points(tx, loupist, asset, &[point])?;
     }
-    super::bump(tx, loupist, asset)
+    super::bump(tx, loupist, asset)?;
+    Ok(previous.is_some())
 }
 
 pub(crate) fn settle(

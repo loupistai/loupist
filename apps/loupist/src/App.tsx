@@ -297,7 +297,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     // ⌘1 is Home: the Loupist's home Thread (`home-{id}` on the host), not the last topic Chat.
     if (destination === "chat" && homeLoupistId) setActiveThreadForLoupist(homeLoupistId, `home-${homeLoupistId}`);
     if (destination === "map" && homeLoupistId) {
-      const overview: KnowledgeLocation = { loupistId: homeLoupistId, surface: "world", view: { followCurrent: true } };
+      const overview: KnowledgeLocation = { loupistId: homeLoupistId, surface: "world" };
       startMapVisit(overview);
       // Scope belongs to this visit; the graph inspector, list and Library keep their locations.
       if (!mapSurface || mapSurface === "home" || mapSurface === "lens") patchMap(overview);
@@ -1018,7 +1018,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   onBack={closeAssetPage}
                   onAsk={text => { closeAssetPage(); askInChat(text); }}
                   onOpenChat={threadId => { closeAssetPage(); chat.setActiveThreadForLoupist(selectedLoupist.id, threadId); setTab("chat"); }}
-                  onOpenMap={entityId => { closeAssetPage(); openKnowledgePage({ loupistId: selectedLoupist.id, surface: "world", ...(entityId ? { selection: { kind: "node", id: entityId } } : { view: { followCurrent: true } }) }); }}
+                  onOpenMap={entityId => { closeAssetPage(); openKnowledgePage({ loupistId: selectedLoupist.id, surface: "world", ...(entityId ? { selection: { kind: "node", id: entityId } } : {}) }); }}
                   onOpenLink={openLink}
                   onOpenSource={recordId => { closeAssetPage(); openKnowledgePage({ loupistId: selectedLoupist.id, surface: "source", recordId }); }}
                   onOpenConnections={() => { closeAssetPage(); openSettings("connections"); }}

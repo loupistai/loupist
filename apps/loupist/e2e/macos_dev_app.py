@@ -28,6 +28,16 @@ def real_directory(path: Path) -> None:
         )
 
 
+def replace_copy(source: Path, destination: Path) -> None:
+    fd, temporary = tempfile.mkstemp(prefix=".loupist-", dir=destination.parent)
+    os.close(fd)
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, destination)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
 def prepare_bundle(binary: Path, manifest: Path, override: str = "{}") -> Path:
     binary = binary.absolute()
     if binary.name != "loupist" or binary.parent.name != "debug":
@@ -37,6 +47,17 @@ def prepare_bundle(binary: Path, manifest: Path, override: str = "{}") -> Path:
     if binary.is_symlink() or not binary.is_file():
         raise ValueError("The development executable must be a real file")
     config = json.loads((manifest / "tauri.conf.json").read_text())
+    # The E2E override disables packaging. It still uses the base bundle's icon.
+    icon = next(
+        (
+            manifest / item
+            for item in config["bundle"]["icon"]
+            if item.endswith(".icns")
+        ),
+        None,
+    )
+    if icon is None or not icon.is_file():
+        raise ValueError("Missing macOS icon from the Tauri bundle configuration")
     config.update(json.loads(override))
     identifier = config["identifier"]
     if not re.fullmatch(r"com\.monarchjuno\.loupist(?:\.[a-z0-9-]+)*", identifier):
@@ -65,16 +86,13 @@ def prepare_bundle(binary: Path, manifest: Path, override: str = "{}") -> Path:
         marker.write_text(json.dumps(ownership) + "\n")
     real_directory(bundle / "Contents")
     real_directory(bundle / "Contents/MacOS")
+    resources = bundle / "Contents/Resources"
+    real_directory(resources)
     destination = bundle / "Contents/MacOS/loupist"
     # Replace atomically. A previous process can retain its executable inode
     # until Cargo's watcher stops it; never truncate an executable in place.
-    fd, temporary = tempfile.mkstemp(prefix=".loupist-", dir=destination.parent)
-    os.close(fd)
-    try:
-        shutil.copy2(binary, temporary)
-        os.replace(temporary, destination)
-    finally:
-        Path(temporary).unlink(missing_ok=True)
+    replace_copy(binary, destination)
+    replace_copy(icon, resources / icon.name)
     info = bundle / "Contents/Info.plist"
     if info.is_symlink():
         raise ValueError("Development bundle Info.plist cannot be a symlink")
@@ -86,6 +104,7 @@ def prepare_bundle(binary: Path, manifest: Path, override: str = "{}") -> Path:
                 "CFBundleName": label,
                 "CFBundleDisplayName": label,
                 "CFBundleExecutable": "loupist",
+                "CFBundleIconFile": icon.name,
                 "CFBundlePackageType": "APPL",
                 "CFBundleShortVersionString": config.get("version", "0.0.0"),
                 "CFBundleVersion": "1",

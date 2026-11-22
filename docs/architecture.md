@@ -15,7 +15,7 @@ to the effective user ID, including on Linux.
 
 ## Trust
 
-React submits typed intent. Rust owns credentials, SQLite transactions, broker permissions and process lifetime. Native file tools run as the user inside the Loupist folder. `run_python` is the only agent code execution tool. It runs in the pinned WASI worker, with no shell, network, DNS, process spawn or host environment, and it stays allowed after third-party text. Rust decides each file call from the target's path class and the reply's exposure. [Native tool permissions](runtime/permissions.md). Credentials, custom MCP and where bytes live: [Storage and authority](runtime/storage-authority.md#authority-and-credentials). The untrusted-text tier, the known-site rule and account-field redaction: [Untrusted text](runtime/untrusted-text.md). GitHub, the Gallery and import links: [Publishing](knowledge/publishing.md).
+React submits typed intent. Rust owns credentials, SQLite transactions, broker permissions and process lifetime. Native file tools run as the user inside the Loupist folder. `run_python` is the only agent code execution tool. It runs in the pinned WASI worker, with no shell, network, DNS, process spawn or host environment, and it stays allowed after third-party text. Rust decides each file call from the target's path class and the reply's exposure. [Native tool permissions](runtime/permissions.md). Credentials, custom MCP and where bytes live: [Storage and authority](runtime/storage-authority.md#authority-and-credentials). The untrusted-text tier, the web-fetch boundary and account-field redaction: [Untrusted text](runtime/untrusted-text.md). GitHub, the Gallery and import links: [Publishing](knowledge/publishing.md).
 
 ## Find a topic
 

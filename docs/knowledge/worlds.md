@@ -24,7 +24,11 @@ output digests, Source record/revision/span binding, selected extraction model,
 inference/usage status and sealed revision id. Rust commits publication and job
 completion atomically, then discards the extraction JSON. Superseded World revisions
 are also removed; these receipts are provenance and deduplication records, not a
-World history or restore feature. Job polling returns the receipt fields without
+World history or restore feature. The renderer resolves a first-page World query
+against the owned record's current head in the same read transaction. Cursors
+and model reads keep their revision pins. A Source opened through World checks
+the exact span and Source identity against the current head before reading it.
+Job polling returns the receipt fields without
 the internal extraction document or retained Source text. Recovery rebuilds the derived index from the
 current canonical World and retained Source evidence. An uncertain publication
 instead keeps its extraction JSON while quarantined for reconciliation.
@@ -241,8 +245,9 @@ job's Loupist follows are an extraction hint when the episode names them, and ea
 anchor ([What you follow](follow.md#what-you-follow)). A hint or anchor counts only when the
 episode names it as a whole word: a name in any case, a ticker or code (no lowercase
 letter) only as written, so ticker `A` is not every "a"; names in other scripts match
-anywhere because particles attach to them. The observed relationship hint counts canonical names after that
-alias mapping.
+anywhere because particles attach to them. The observed relationship hint counts
+claims between distinct node IDs after alias mapping. A fact about one name
+stays in the claims and evidence while contributing no relationship count.
 Organization records a stated ticker, exchange and identifier, and Asset a symbol,
 identifier and class. Organization, Person, Asset, Product, Place and Policy record a
 non-English original name, which becomes a searchable alias. A spelling the

@@ -41,6 +41,7 @@ const kindName = (kind: string) => {
 };
 
 export const memoryChangeVerb = (change: Pick<MemoryUpdateChange, "operation" | "kind">) => {
+  if (change.kind === "PriceRead") return t("toolProgress.price_read_save.done");
   const operation = change.operation === "revise" || change.operation === "rename" ? change.operation : "create";
   return change.kind === "Research" ? t(`memoryActivity.${operation}Note`) : t(`memoryActivity.${operation}Kind`, { kind: kindName(change.kind) });
 };

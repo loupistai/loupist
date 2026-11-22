@@ -200,6 +200,16 @@ impl ToolExecutor for CountingExecutor {
 }
 
 async fn broker_request(socket: &Path, token: &str, method: &str, params: Value) -> Value {
+    broker_request_attributed(socket, token, method, params, None).await
+}
+
+async fn broker_request_attributed(
+    socket: &Path,
+    token: &str,
+    method: &str,
+    params: Value,
+    call_id: Option<&str>,
+) -> Value {
     #[cfg(unix)]
     let mut stream = tokio::net::UnixStream::connect(socket).await.unwrap();
     #[cfg(windows)]
@@ -212,6 +222,7 @@ async fn broker_request(socket: &Path, token: &str, method: &str, params: Value)
         "token": token,
         "method": method,
         "params": params,
+        "call_id": call_id,
     }))
     .unwrap();
     request.push(b'\n');

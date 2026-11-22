@@ -82,3 +82,24 @@ price-direction colors for data. Avoid decorative AI brains,
 circuits and opaque intelligence scores. Preserve keyboard focus, long-form reading,
 light/dark themes and the minimum desktop size. The
 [design rubric](dev/ui-qa.md#design-rubric) owns measurable review standards.
+
+### Application icon
+
+The app icon uses the same round face and loupe as the in-app avatar, on a
+rounded paper tile. The generator reads the drawing from
+[`LOUPIST_FACE`](../apps/loupist/src/lib/loupistAvatar.ts) and the light and dark
+palettes from [the theme tokens](../apps/loupist/src/styles/tokens.css). The 16,
+24 and 32 px renditions use a larger face inside the tile so the eyes and lens
+remain visible. The browser favicon uses the 32 px rendition.
+
+With Pillow installed, run both commands to regenerate and verify the light and
+dark artwork, favicon, Tauri bundle icons and embedded provider sign-in icon.
+
+```sh
+python3 apps/loupist/assets/icon-source/make_loupist_icon.py
+python3 -m unittest discover -s apps/loupist/assets/icon-source
+```
+
+On macOS, development and E2E bundles copy the same ICNS as the release bundle.
+The menu bar uses Tauri's default window icon. The disk image contains the app
+with its bundled icon.
