@@ -321,7 +321,7 @@ mod turns {
         }
 
         async fn settled_handoffs(&self) -> Vec<handoff::Handoff> {
-            tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            let rows = tokio::time::timeout(std::time::Duration::from_secs(20), async {
                 loop {
                     let rows = handoff::list(&self.state, &self.loupist_id).unwrap();
                     if !rows.is_empty()
@@ -340,7 +340,11 @@ mod turns {
                 }
             })
             .await
-            .expect("the hand-off run did not settle")
+            .expect("the hand-off run did not settle");
+            // A row reaches its final status just before its run releases the Loupist; a test that
+            // sends the next message at once would meet "already has an active run" on a slow machine.
+            drain(&self.state).await;
+            rows
         }
     }
 
